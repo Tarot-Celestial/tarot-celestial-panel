@@ -1,42 +1,26 @@
-"use client";
-
-import { useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  async function login() {
-    await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
-    window.location.href = "/admin";
+async function login() {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    alert(error.message);
+    return;
   }
 
-  return (
-    <div style={{ padding: 40 }}>
-      <h1>Tarot Celestial</h1>
-      <input
-        placeholder="email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-      />
-      <br />
-      <input
-        placeholder="password"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-      />
-      <br />
-      <button onClick={login}>Entrar</button>
-    </div>
-  );
+  const token = data.session?.access_token;
+  if (!token) {
+    alert("No token");
+    return;
+  }
+
+  const me = await fetch("/api/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(r => r.json());
+
+  if (!me?.ok) {
+    alert(me?.error || "No role");
+    return;
+  }
+
+  if (me.role === "admin") window.location.href = "/admin";
+  else if (me.role === "central") window.location.href = "/panel-central";
+  else window.location.href = "/panel-tarotista";
 }
