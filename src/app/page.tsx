@@ -1,15 +1,5 @@
-export const metadata = {
-  title: "Panel Interno - Tarot Celestial"
-};
+import { redirect } from "next/navigation";
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="es">
-      <body>{children}</body>
-    </html>
-  );
+export default function Page() {
+  redirect("/login");
 }
