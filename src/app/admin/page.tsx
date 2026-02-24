@@ -408,7 +408,7 @@ export default function Admin() {
 
                   <div className="tc-hr" />
 
-                  <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ display: "grid", gap: 10 }}>
                     {(selLines || []).map((l: any) => (
                       <LineEditor
                         key={l.id}
@@ -423,7 +423,7 @@ export default function Admin() {
 
                   <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
 
-                  <div className="tc-row" style={{ marginTop: 8 }}>
+                  <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
                     <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
                       <option value="adjustment">adjustment</option>
                       <option value="incident">incident</option>
@@ -436,8 +436,8 @@ export default function Admin() {
                       <option value="salary_base">salary_base</option>
                     </select>
 
-                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 220 }} />
-                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 120 }} />
+                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
+                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 140 }} />
 
                     <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
                   </div>
@@ -496,26 +496,26 @@ function LineEditor({
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
         borderRadius: 14,
-        padding: 10,
+        padding: 12,
         background: "rgba(255,255,255,0.03)",
       }}
     >
-      <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
-        <div style={{ fontWeight: 800 }}>
-          {label}
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 220 }}>
+          <div style={{ fontWeight: 900 }}>{label}</div>
           {hasBreakdown && (
-            <span className="tc-sub" style={{ marginLeft: 10 }}>
-              — {numES(rate, 2)}€ x {numES(minutes, 0)} min = <b>{eur(calc)}</b>
-            </span>
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              {numES(rate, 2)}€ x {numES(minutes, 0)} min = <b>{eur(calc)}</b> · Código <b>{String(meta.code || "").toUpperCase()}</b>
+            </div>
           )}
         </div>
 
-        <div style={{ fontWeight: 800 }}>{eur(amount)}</div>
+        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(amount)}</div>
       </div>
 
-      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+      <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 10, flexWrap: "wrap" }}>
         <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
-        <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 140 }} />
+        <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
 
         <div className="tc-row">
           <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
@@ -526,22 +526,6 @@ function LineEditor({
           </button>
         </div>
       </div>
-
-      {hasBreakdown && (
-        <div className="tc-sub" style={{ marginTop: 8 }}>
-          Código: <b>{String(meta.code || "").toUpperCase()}</b> · Mes: <b>{meta.month}</b>
-        </div>
-      )}
     </div>
   );
-}
-
-function eur(n: any) {
-  const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
-}
-
-function numES(n: any, digits = 2) {
-  const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
