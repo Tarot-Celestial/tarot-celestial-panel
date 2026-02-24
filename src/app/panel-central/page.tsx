@@ -21,6 +21,13 @@ function eur(n: any) {
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
+function pctAny(v: any) {
+  let x = Number(v) || 0;
+  // si viene como 0..1 lo pasamos a 0..100
+  if (x > 0 && x <= 1) x = x * 100;
+  return x;
+}
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -41,11 +48,16 @@ export default function Central() {
   const [rankMsg, setRankMsg] = useState("");
 
   const [tarotists, setTarotists] = useState<any[]>([]);
+  const [tarotistsLoading, setTarotistsLoading] = useState(false);
+  const [tarotistsMsg, setTarotistsMsg] = useState("");
+
   const [incWorkerId, setIncWorkerId] = useState("");
   const [incAmount, setIncAmount] = useState("5");
   const [incReason, setIncReason] = useState("No contesta llamada");
   const [incMsg, setIncMsg] = useState("");
   const [incLoading, setIncLoading] = useState(false);
+
+  const [q, setQ] = useState(""); // buscador incidencias
 
   useEffect(() => {
     (async () => {
@@ -76,15 +88,22 @@ export default function Central() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const rnk = await safeJson(rnkRes);
-      setRank(rnk);
 
-      if (!rnk?._ok || rnk?.ok === false) setRankMsg("⚠️ Error cargando ranking.");
+      if (!rnk?._ok || rnk?.ok === false) {
+        setRank(null);
+        setRankMsg(`⚠️ Error cargando ranking: ${rnk?.error || `HTTP ${rnk?._status}`}`);
+        return;
+      }
+
+      setRank(rnk);
     } catch (e: any) {
       setRankMsg(`❌ ${e?.message || "Error"}`);
     }
   }
 
   async function loadTarotists() {
+    setTarotistsLoading(true);
+    setTarotistsMsg("");
     try {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
@@ -92,12 +111,23 @@ export default function Central() {
 
       const res = await fetch("/api/central/tarotists", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || "No se pudieron cargar tarotistas");
 
-      setTarotists(j.tarotists || []);
-      if (!incWorkerId && (j.tarotists || []).length) setIncWorkerId(j.tarotists[0].id);
+      if (!j?._ok || !j?.ok) {
+        setTarotists([]);
+        setTarotistsMsg(`❌ No se pudieron cargar tarotistas: ${j?.error || `HTTP ${j?._status}`}`);
+        return;
+      }
+
+      const list = j.tarotists || [];
+      setTarotists(list);
+      setTarotistsMsg(list.length ? `✅ Cargadas ${list.length} tarotistas` : "⚠️ No hay tarotistas (¿workers.role='tarotista'?)");
+
+      if (!incWorkerId && list.length) setIncWorkerId(list[0].id);
     } catch (e: any) {
-      setIncMsg(`❌ ${e?.message || "Error"}`);
+      setTarotists([]);
+      setTarotistsMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setTarotistsLoading(false);
     }
   }
 
@@ -114,6 +144,13 @@ export default function Central() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
+  // ✅ cuando entras a incidencias, recarga lista (evita “no carga nada” por un fallo anterior)
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "incidencias") loadTarotists();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
   const team = rank?.teams || {};
   const fuego = team?.fuego || {};
   const agua = team?.agua || {};
@@ -129,6 +166,17 @@ export default function Central() {
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
   const topRepite = rank?.top?.repite || [];
+
+  const tarotistsFiltered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return tarotists;
+    return (tarotists || []).filter((t) => String(t.display_name || "").toLowerCase().includes(qq));
+  }, [tarotists, q]);
+
+  const selectedTarotist = useMemo(
+    () => tarotists.find((t) => t.id === incWorkerId),
+    [tarotists, incWorkerId]
+  );
 
   async function crearIncidencia() {
     if (incLoading) return;
@@ -153,15 +201,13 @@ export default function Central() {
       const j = await safeJson(res);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      setIncMsg("✅ Incidencia creada. (Recuerda regenerar facturas para reflejarlo.)");
+      setIncMsg("✅ Incidencia creada. (Para reflejarlo en factura: generar facturas del mes.)");
     } catch (e: any) {
       setIncMsg(`❌ ${e?.message || "Error"}`);
     } finally {
       setIncLoading(false);
     }
   }
-
-  const selectedTarotist = useMemo(() => tarotists.find((t) => t.id === incWorkerId), [tarotists, incWorkerId]);
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
@@ -178,7 +224,7 @@ export default function Central() {
                 <div className="tc-sub">Competición · Incidencias · Ranking</div>
               </div>
 
-              <div className="tc-row">
+              <div className="tc-row" style={{ flexWrap: "wrap" }}>
                 <span className="tc-chip">Mes</span>
                 <input
                   className="tc-input"
@@ -208,7 +254,8 @@ export default function Central() {
             <div className="tc-card">
               <div className="tc-title">🔥💧 Competición por equipos</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Winner: <b>{winner}</b> · Bono central ganadora: <b>{eur(40)}</b> {rankMsg ? `· ${rankMsg}` : ""}
+                Ganador: <b>{winner}</b> · Bono central ganadora: <b>{eur(40)}</b>
+                {rankMsg ? ` · ${rankMsg}` : ""}
               </div>
 
               <div className="tc-hr" />
@@ -218,16 +265,16 @@ export default function Central() {
                   title="🔥 Fuego (Yami)"
                   score={fuegoScore}
                   pct={fuegoPct}
-                  aCliente={fuego?.avg_cliente ?? 0}
-                  aRepite={fuego?.avg_repite ?? 0}
+                  aCliente={pctAny(fuego?.avg_cliente ?? 0)}
+                  aRepite={pctAny(fuego?.avg_repite ?? 0)}
                   isWinner={winner === "fuego"}
                 />
                 <TeamBar
                   title="💧 Agua (Maria)"
                   score={aguaScore}
                   pct={aguaPct}
-                  aCliente={agua?.avg_cliente ?? 0}
-                  aRepite={agua?.avg_repite ?? 0}
+                  aCliente={pctAny(agua?.avg_cliente ?? 0)}
+                  aRepite={pctAny(agua?.avg_repite ?? 0)}
                   isWinner={winner === "agua"}
                 />
               </div>
@@ -235,46 +282,77 @@ export default function Central() {
               <div className="tc-hr" />
 
               <div className="tc-sub">
-                “Mejoras de equipo” (siguiente paso): aquí meteremos consejos automáticos según %cliente y %repite.
+                Siguiente: “Mejoras de equipo” automático (consejos según %cliente y %repite).
               </div>
             </div>
           )}
 
           {tab === "incidencias" && (
             <div className="tc-card">
-              <div className="tc-title">⚠️ Crear incidencia a tarotista</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Esto descuenta en la factura del mes seleccionado. {incMsg ? `· ${incMsg}` : ""}
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">⚠️ Incidencias</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Descuenta en la factura del mes seleccionado.
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ flexWrap: "wrap" }}>
+                  <button className="tc-btn tc-btn-gold" onClick={loadTarotists} disabled={tarotistsLoading}>
+                    {tarotistsLoading ? "Cargando…" : "Recargar tarotistas"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {tarotistsMsg || " "}
+                {incMsg ? ` · ${incMsg}` : ""}
               </div>
 
               <div className="tc-hr" />
 
-              <div className="tc-row" style={{ flexWrap: "wrap" }}>
-                <select className="tc-select" value={incWorkerId} onChange={(e) => setIncWorkerId(e.target.value)}>
-                  {tarotists.map((t) => (
+              <div className="tc-row" style={{ flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                <input
+                  className="tc-input"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar tarotista…"
+                  style={{ width: 260, maxWidth: "100%" }}
+                />
+
+                <select
+                  className="tc-select"
+                  value={incWorkerId}
+                  onChange={(e) => setIncWorkerId(e.target.value)}
+                  style={{ minWidth: 320, width: 360, maxWidth: "100%" }}
+                >
+                  {(tarotistsFiltered || []).map((t) => (
                     <option key={t.id} value={t.id}>
-                      {t.display_name} ({t.team_key || "—"})
+                      {t.display_name} {t.team_key ? `(${t.team_key})` : ""}
                     </option>
                   ))}
+                  {(!tarotistsFiltered || tarotistsFiltered.length === 0) && (
+                    <option value="">(Sin resultados)</option>
+                  )}
                 </select>
 
                 <input
                   className="tc-input"
                   value={incAmount}
                   onChange={(e) => setIncAmount(e.target.value)}
-                  style={{ width: 120 }}
-                  placeholder="5"
+                  style={{ width: 140 }}
+                  placeholder="Importe"
                 />
 
                 <input
                   className="tc-input"
                   value={incReason}
                   onChange={(e) => setIncReason(e.target.value)}
-                  style={{ width: 320, maxWidth: "100%" }}
+                  style={{ width: 360, maxWidth: "100%" }}
                   placeholder="Motivo"
                 />
 
-                <button className="tc-btn tc-btn-danger" onClick={crearIncidencia} disabled={incLoading}>
+                <button className="tc-btn tc-btn-danger" onClick={crearIncidencia} disabled={incLoading || !incWorkerId}>
                   {incLoading ? "Guardando…" : "Guardar incidencia"}
                 </button>
               </div>
@@ -282,12 +360,16 @@ export default function Central() {
               <div className="tc-hr" />
 
               <div className="tc-sub">
-                Seleccionada: <b>{selectedTarotist?.display_name || "—"}</b> · Equipo{" "}
-                <b>{selectedTarotist?.team_key || "—"}</b>
+                Seleccionada: <b>{selectedTarotist?.display_name || "—"}</b>{" "}
+                {selectedTarotist?.team_key ? (
+                  <>
+                    · Equipo <b>{selectedTarotist.team_key}</b>
+                  </>
+                ) : null}
               </div>
 
               <div className="tc-sub" style={{ marginTop: 8 }}>
-                Nota: para que se vea en Admin, luego generas facturas del mes otra vez.
+                Nota: para que se refleje en facturas, en Admin vuelves a generar facturas del mes.
               </div>
             </div>
           )}
@@ -296,15 +378,24 @@ export default function Central() {
             <div className="tc-card">
               <div className="tc-title">🏆 Top 3 del mes</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Captadas / Cliente / Repite
+                Captadas / %Cliente / %Repite {rankMsg ? `· ${rankMsg}` : ""}
               </div>
 
               <div className="tc-hr" />
 
               <div className="tc-grid-3">
-                <TopCard title="Captadas" items={topCaptadas.map((x: any) => `${x.display_name} (${x.captadas_total})`)} />
-                <TopCard title="Cliente" items={topCliente.map((x: any) => `${x.display_name} (${Number(x.pct_cliente).toFixed(2)}%)`)} />
-                <TopCard title="Repite" items={topRepite.map((x: any) => `${x.display_name} (${Number(x.pct_repite).toFixed(2)}%)`)} />
+                <TopCard
+                  title="Captadas"
+                  items={topCaptadas.map((x: any) => `${x.display_name} (${Number(x.captadas_total || 0)})`)}
+                />
+                <TopCard
+                  title="Cliente"
+                  items={topCliente.map((x: any) => `${x.display_name} (${pctAny(x.pct_cliente).toFixed(2)}%)`)}
+                />
+                <TopCard
+                  title="Repite"
+                  items={topRepite.map((x: any) => `${x.display_name} (${pctAny(x.pct_repite).toFixed(2)}%)`)}
+                />
               </div>
             </div>
           )}
@@ -325,8 +416,8 @@ function TeamBar({
   title: string;
   score: number;
   pct: number;
-  aCliente: any;
-  aRepite: any;
+  aCliente: number;
+  aRepite: number;
   isWinner: boolean;
 }) {
   return (
