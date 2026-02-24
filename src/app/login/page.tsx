@@ -30,6 +30,12 @@ export default function LoginPage() {
       const token = data.session?.access_token;
       if (!token) throw new Error("No token");
 
+      // ✅ Login manual (NO presencia): crea work_session y pone state=online
+      await fetch("/api/work/login", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       const me = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${token}` },
       }).then((r) => r.json());
@@ -48,7 +54,15 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 420, border: "1px solid rgba(255,255,255,0.15)", borderRadius: 16, padding: 16 }}>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          border: "1px solid rgba(255,255,255,0.15)",
+          borderRadius: 16,
+          padding: 16,
+        }}
+      >
         <div style={{ display: "grid", placeItems: "center", gap: 10 }}>
           <Image
             src="/tarot-celestial-logo.png"
@@ -69,14 +83,26 @@ export default function LoginPage() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.25)", color: "white" }}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: "rgba(0,0,0,0.25)",
+              color: "white",
+            }}
           />
           <input
             placeholder="Contraseña"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(0,0,0,0.25)", color: "white" }}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: "rgba(0,0,0,0.25)",
+              color: "white",
+            }}
           />
 
           {err ? <div style={{ color: "#ff5a7a", fontSize: 12 }}>{err}</div> : null}
@@ -84,7 +110,14 @@ export default function LoginPage() {
           <button
             onClick={login}
             disabled={loading || !email.trim() || !password.trim()}
-            style={{ padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(215,181,109,0.45)", background: "rgba(215,181,109,0.18)", color: "white", cursor: "pointer" }}
+            style={{
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(215,181,109,0.45)",
+              background: "rgba(215,181,109,0.18)",
+              color: "white",
+              cursor: "pointer",
+            }}
           >
             {loading ? "Entrando..." : "Entrar"}
           </button>
