@@ -23,7 +23,15 @@ function normCode(raw: any) {
 function toBoolCaptada(raw: any) {
   const s = String(raw ?? "").trim().toLowerCase();
   // según sheets: puede venir como TRUE / true / 1 / x / ✅
-  return s === "true" || s === "1" || s === "x" || s === "yes" || s === "si" || s === "sí" || s.includes("✅");
+  return (
+    s === "true" ||
+    s === "1" ||
+    s === "x" ||
+    s === "yes" ||
+    s === "si" ||
+    s === "sí" ||
+    s.includes("✅")
+  );
 }
 
 function parseDateDDMMYYYY(raw: any): string | null {
@@ -78,7 +86,7 @@ export async function POST(req: Request) {
 
     // 2) Parse manual (simple) para no depender de libs
     const lines = text.split(/\r?\n/).filter(Boolean);
-    if (lines.length < 2) return NextResponse.json({ ok: true, inserted: 0, updated: 0 });
+    if (lines.length < 2) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0 });
 
     // headers
     const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
@@ -89,7 +97,7 @@ export async function POST(req: Request) {
     }
 
     // 3) Convertir filas
-    const rows = [];
+    const rows: any[] = [];
     for (let i = 1; i < lines.length; i++) {
       const raw = lines[i];
 
@@ -123,18 +131,29 @@ export async function POST(req: Request) {
       rows.push({ ...obj, source_row_hash: rowHash(obj) });
     }
 
-    if (!rows.length) return NextResponse.json({ ok: true, inserted: 0, updated: 0 });
+    if (!rows.length) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0 });
+
+    // ✅ DEDUPE: evita duplicados dentro del mismo lote (mismo source_row_hash)
+    const byHash = new Map<string, any>();
+    for (const r of rows) {
+      byHash.set(r.source_row_hash, r); // si viene repetida, nos quedamos con la última
+    }
+    const uniqueRows = Array.from(byHash.values());
 
     // 4) Upsert por hash (evita duplicar)
-    // Necesita que calls.source_row_hash exista (lo creamos en SQL master)
-    const { error } = await admin.from("calls").upsert(rows, {
+    // Necesita que calls.source_row_hash exista + índice unique
+    const { error } = await admin.from("calls").upsert(uniqueRows, {
       onConflict: "source_row_hash",
       ignoreDuplicates: false,
     });
 
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, upserted: rows.length });
+    return NextResponse.json({
+      ok: true,
+      upserted: uniqueRows.length,
+      dropped_duplicates: rows.length - uniqueRows.length,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
