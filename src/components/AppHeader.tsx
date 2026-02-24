@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 
 const sb = createClient(
@@ -9,92 +10,145 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+type PresenceState = "online" | "offline" | "pause" | "bathroom";
+
+function monthLabelEs(monthKey: string) {
+  // monthKey: YYYY-MM
+  const [y, m] = (monthKey || "").split("-").map((x) => Number(x));
+  if (!y || !m) return monthKey;
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+}
+
 function monthKeyNow() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function teamLabel(t: string | null) {
-  if (t === "fuego") return "Equipo Fuego (Yami)";
-  if (t === "agua") return "Equipo Agua (Maria)";
-  return "—";
-}
-
 export default function AppHeader() {
-  const [me, setMe] = useState<any>(null);
+  const [name, setName] = useState<string>("Cargando…");
+  const [role, setRole] = useState<string>("");
+  const [team, setTeam] = useState<string>("");
+  const [state, setState] = useState<PresenceState>("online");
   const [month, setMonth] = useState<string>(monthKeyNow());
 
-  async function loadMe() {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    const j = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-    setMe(j);
-  }
+  const pathname = usePathname();
 
   useEffect(() => {
-    loadMe();
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const me = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => r.json());
+
+      if (me?.ok) {
+        setName(me.display_name || "Usuario");
+        setRole(me.role || "");
+        setTeam(me.team || "");
+        if (me.presence_state) setState(me.presence_state);
+        if (me.month_key) setMonth(me.month_key);
+      }
+    })();
   }, []);
 
-  async function setState(state: string) {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    await fetch("/api/work/state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ state }),
-    });
-    await loadMe();
-  }
-
   async function logout() {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (token) await fetch("/api/work/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
     await sb.auth.signOut();
     window.location.href = "/login";
   }
 
-  const w = me?.worker;
+  function roleLabel(r: string) {
+    if (r === "admin") return "admin";
+    if (r === "central") return "central";
+    if (r === "tarotista") return "tarotista";
+    return r || "usuario";
+  }
+
+  function teamLabel(t: string) {
+    if (!t) return "";
+    if (t.toLowerCase().includes("fuego")) return "🔥 Equipo Fuego";
+    if (t.toLowerCase().includes("agua")) return "💧 Equipo Agua";
+    return t;
+  }
+
+  function stateDot(s: PresenceState) {
+    if (s === "online") return "🟢 online";
+    if (s === "pause") return "🟡 descanso";
+    if (s === "bathroom") return "🟣 baño";
+    return "⚫ offline";
+  }
+
+  // Esto por ahora solo cambia el select visual.
+  // Luego lo conectamos al endpoint de estado manual que ya tenías pensado.
+  async function onChangeState(v: PresenceState) {
+    setState(v);
+  }
 
   return (
-    <div style={{ padding: 16, borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Image src="/tarot-celestial-logo.png" alt="Tarot Celestial" width={42} height={42} style={{ borderRadius: 12 }} />
-          <div>
-            <div style={{ fontWeight: 800 }}>Tarot Celestial</div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              {w?.display_name || "—"} · {w?.role || "—"} · {teamLabel(w?.team || null)}
+    <div
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 50,
+        backdropFilter: "blur(10px)",
+        background: "rgba(11,7,20,0.55)",
+        borderBottom: "1px solid rgba(255,255,255,0.10)",
+      }}
+    >
+      <div className="tc-container" style={{ padding: "12px 16px" }}>
+        <div className="tc-row" style={{ justifyContent: "space-between" }}>
+          <div className="tc-row" style={{ gap: 12 }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                display: "grid",
+                placeItems: "center",
+                overflow: "hidden",
+              }}
+            >
+              {/* Ajusta el path si tu logo está en /public/logo.png */}
+              <Image src="/logo.png" alt="Tarot Celestial" width={36} height={36} />
+            </div>
+
+            <div style={{ lineHeight: 1.2 }}>
+              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>Tarot Celestial</div>
+              <div className="tc-sub">
+                <b>{name}</b> · {roleLabel(role)}
+                {team ? ` · ${teamLabel(team)}` : ""}
+                {pathname ? ` · ${pathname}` : ""}
+              </div>
             </div>
           </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={w?.state || "offline"} onChange={(e) => setState(e.target.value)} style={{ padding: "8px 10px", borderRadius: 10 }}>
-            <option value="online">online</option>
-            <option value="offline">offline</option>
-            <option value="pause">descanso</option>
-            <option value="bathroom">baño</option>
-          </select>
+          <div className="tc-row" style={{ gap: 10 }}>
+            <select className="tc-select" value={state} onChange={(e) => onChangeState(e.target.value as PresenceState)}>
+              <option value="online">🟢 online</option>
+              <option value="offline">⚫ offline</option>
+              <option value="pause">🟡 descanso</option>
+              <option value="bathroom">🟣 baño</option>
+            </select>
 
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => {
-              setMonth(e.target.value);
-              // guardamos month en querystring para que luego stats/facturas lo lean
-              const url = new URL(window.location.href);
-              url.searchParams.set("month", e.target.value);
-              window.history.replaceState({}, "", url.toString());
-            }}
-            style={{ padding: "8px 10px", borderRadius: 10 }}
-          />
+            <div className="tc-chip">{stateDot(state)}</div>
 
-          <button onClick={logout} style={{ padding: "8px 12px", borderRadius: 10, cursor: "pointer" }}>
-            Salir
-          </button>
+            {/* Mes: por ahora visual. Luego lo conectamos a tu selector global */}
+            <input
+              className="tc-input"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              style={{ width: 140 }}
+              title={monthLabelEs(month)}
+            />
+
+            <button className="tc-btn tc-btn-gold" onClick={logout}>
+              Salir
+            </button>
+          </div>
         </div>
       </div>
     </div>
