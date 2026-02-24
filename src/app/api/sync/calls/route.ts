@@ -12,8 +12,18 @@ function getEnv(name: string) {
 const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
+function cleanCell(v: any) {
+  const s = String(v ?? "").trim();
+  // quita comillas si viene "TRUE"
+  return s.replace(/^"(.*)"$/s, "$1").trim();
+}
+
+function normHeader(h: string) {
+  return cleanCell(h).toLowerCase();
+}
+
 function normCode(raw: any) {
-  const s = String(raw || "").trim().toLowerCase();
+  const s = cleanCell(raw).toLowerCase();
   if (s.includes("repite")) return "repite";
   if (s.includes("cliente")) return "cliente";
   if (s.includes("rueda")) return "rueda";
@@ -21,22 +31,27 @@ function normCode(raw: any) {
 }
 
 function toBoolCaptada(raw: any) {
-  const s = String(raw ?? "").trim().toLowerCase();
-  // Google Sheets checkbox suele exportar TRUE/FALSE
-  return (
-    s === "true" ||
-    s === "1" ||
-    s === "x" ||
-    s === "yes" ||
-    s === "si" ||
-    s === "sí" ||
-    s.includes("✅")
-  );
+  const s = cleanCell(raw).toLowerCase();
+  // Google Sheets checkbox: TRUE/FALSE
+  if (s === "true") return true;
+  if (s === "false") return false;
+
+  // variantes
+  if (s === "1" || s === "x" || s === "yes" || s === "si" || s === "sí") return true;
+  if (s === "0" || s === "no") return false;
+
+  // español
+  if (s === "verdadero") return true;
+  if (s === "falso") return false;
+
+  // emoji / check
+  if (s.includes("✅") || s.includes("✔")) return true;
+
+  return false;
 }
 
 function parseDateDDMMYYYY(raw: any): string | null {
-  // raw ejemplo: 01/02/2026
-  const s = String(raw || "").trim();
+  const s = cleanCell(raw);
   if (!s) return null;
   const parts = s.split("/");
   if (parts.length !== 3) return null;
@@ -44,12 +59,72 @@ function parseDateDDMMYYYY(raw: any): string | null {
   const mm = Number(parts[1]);
   const yy = Number(parts[2]);
   if (!dd || !mm || !yy) return null;
-  const d = String(dd).padStart(2, "0");
-  const m = String(mm).padStart(2, "0");
-  return `${yy}-${m}-${d}`; // YYYY-MM-DD
+  return `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 
-// hash simple (estable) -> OJO: incluye captada (lo mantenemos para no romper lo ya importado)
+/**
+ * CSV parser básico pero correcto para comillas.
+ * Devuelve array de filas (cada fila array de celdas).
+ */
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        // "" -> comilla escapada
+        if (text[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+      continue;
+    }
+
+    if (ch === ",") {
+      row.push(cur);
+      cur = "";
+      continue;
+    }
+
+    if (ch === "\n") {
+      row.push(cur);
+      rows.push(row);
+      row = [];
+      cur = "";
+      continue;
+    }
+
+    if (ch === "\r") {
+      continue;
+    }
+
+    cur += ch;
+  }
+
+  // última celda/fila
+  row.push(cur);
+  // evita fila final vacía
+  if (row.length > 1 || cleanCell(row[0]) !== "") rows.push(row);
+
+  return rows;
+}
+
+// hash simple para deduplicar (estable)
 function rowHash(o: any) {
   const base = [
     o.call_date,
@@ -68,11 +143,11 @@ function rowHash(o: any) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    hint: "Use POST to sync. (GET is only informational.)",
+    hint: "Use POST to sync.",
   });
 }
 
-export async function POST(req: Request) {
+export async function POST() {
   try {
     const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -83,48 +158,65 @@ export async function POST(req: Request) {
     if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
     const text = await res.text();
 
-    // 2) Parse manual (simple)
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    if (lines.length < 2) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_fixed: 0 });
+    // 2) Parse CSV real (con comillas)
+    const table = parseCSV(text);
+    if (table.length < 2) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0 });
 
-    // headers
-    const headers = lines[0]
-      .split(",")
-      .map((h) => String(h || "").trim().toLowerCase().replace(/^"|"$/g, ""));
+    const headers = table[0].map(normHeader);
 
-    function get1(row: string[], name: string) {
-      const idx = headers.indexOf(name);
-      return idx >= 0 ? row[idx] : "";
+    // 3) índices por nombre (flexibles)
+    function idxExact(name: string) {
+      const i = headers.indexOf(name);
+      return i >= 0 ? i : -1;
+    }
+    function idxIncludes(substr: string) {
+      const s = substr.toLowerCase();
+      const i = headers.findIndex((h) => h.includes(s));
+      return i >= 0 ? i : -1;
     }
 
-    function getAny(row: string[], names: string[]) {
-      for (const n of names) {
-        const v = get1(row, n);
-        if (String(v ?? "").trim() !== "") return v;
-      }
-      // aunque esté vacío, devolvemos el primero (por si el checkbox es vacío)
-      return get1(row, names[0] || "");
+    const idxFecha = idxExact("fecha") >= 0 ? idxExact("fecha") : idxIncludes("fecha");
+    const idxTelefonista = idxExact("telefonista") >= 0 ? idxExact("telefonista") : idxIncludes("telefon");
+    const idxTarotista = idxExact("tarotista") >= 0 ? idxExact("tarotista") : idxIncludes("tarot");
+    const idxTiempo = idxExact("tiempo") >= 0 ? idxExact("tiempo") : idxIncludes("tiemp");
+    const idxCodigo = idxExact("codigo") >= 0 ? idxExact("codigo") : idxIncludes("cod");
+    const idxImporte = idxExact("importe") >= 0 ? idxExact("importe") : idxIncludes("import");
+    // ✅ captadas: buscamos exacto y si no, cualquier header que contenga "captad"
+    const idxCaptadas =
+      idxExact("captadas") >= 0
+        ? idxExact("captadas")
+        : idxExact("captada") >= 0
+          ? idxExact("captada")
+          : idxIncludes("captad");
+
+    if (idxFecha < 0 || idxTarotista < 0 || idxTiempo < 0 || idxCodigo < 0) {
+      return NextResponse.json({
+        ok: false,
+        error: `CSV headers missing. Found headers: ${headers.join(" | ")}`,
+      }, { status: 500 });
     }
 
-    // 3) Convertir filas
+    // 4) Convertir filas
     const rows: any[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const raw = lines[i];
-      const cols = raw.split(",");
+    let captadasTrueSeen = 0;
 
-      const dateISO = parseDateDDMMYYYY(getAny(cols, ["fecha", "date"]));
+    for (let r = 1; r < table.length; r++) {
+      const cols = table[r];
+
+      const dateISO = parseDateDDMMYYYY(cols[idxFecha]);
       if (!dateISO) continue;
 
-      const tarotista = String(getAny(cols, ["tarotista", "tarotist"]) || "").trim();
-      const telefonista = String(getAny(cols, ["telefonista", "central", "operador"]) || "").trim();
+      const tarotista = cleanCell(cols[idxTarotista] ?? "");
+      const telefonista = idxTelefonista >= 0 ? cleanCell(cols[idxTelefonista] ?? "") : "";
 
-      const minutos = Number(String(getAny(cols, ["tiempo", "minutos", "minutes"]) || "0").replace(",", "."));
-      const importe = Number(String(getAny(cols, ["importe", "amount"]) || "0").replace(",", "."));
-      const codigo = normCode(getAny(cols, ["codigo", "code"]));
+      const minutos = Number(String(cleanCell(cols[idxTiempo] ?? "0")).replace(",", "."));
+      const importe = idxImporte >= 0 ? Number(String(cleanCell(cols[idxImporte] ?? "0")).replace(",", ".")) : NaN;
+      const codigo = normCode(cols[idxCodigo]);
 
-      // ✅ captadas: soporta "captadas" y "captada"
-      const captadaRaw = getAny(cols, ["captadas", "captada"]);
+      const captadaRaw = idxCaptadas >= 0 ? cols[idxCaptadas] : "";
       const captada = toBoolCaptada(captadaRaw);
+
+      if (captada) captadasTrueSeen++;
 
       // ignoramos call11
       if (tarotista.trim().toLowerCase() === "call11") continue;
@@ -142,55 +234,34 @@ export async function POST(req: Request) {
       rows.push({ ...obj, source_row_hash: rowHash(obj) });
     }
 
-    if (!rows.length) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_fixed: 0 });
-
-    // ✅ DEDUPE dentro del mismo lote
-    const byHash = new Map<string, any>();
-    for (const r of rows) byHash.set(r.source_row_hash, r);
-    const uniqueRows = Array.from(byHash.values());
-
-    // ✅ Paso extra: arreglar captadas ya existentes SIN duplicar filas
-    // Si antes se importaron como captada=false, ahora (si es true) hacemos UPDATE por campos “naturales”
-    let captadas_fixed = 0;
-
-    const finalRows: any[] = [];
-    for (const r of uniqueRows) {
-      if (r.captada === true) {
-        const { data: updated, error: eu } = await admin
-          .from("calls")
-          .update({ captada: true })
-          .eq("call_date", r.call_date)
-          .eq("codigo", r.codigo)
-          .eq("tarotista", r.tarotista)
-          .eq("telefonista", r.telefonista)
-          .eq("minutos", r.minutos)
-          .select("source_row_hash")
-          .limit(1);
-
-        if (eu) throw eu;
-
-        if (updated && updated.length > 0) {
-          captadas_fixed += 1;
-          // ya existía esa fila; NO la metemos al upsert para no duplicar
-          continue;
-        }
-      }
-      finalRows.push(r);
+    if (!rows.length) {
+      return NextResponse.json({
+        ok: true,
+        upserted: 0,
+        dropped_duplicates: 0,
+        captadas_true_seen: captadasTrueSeen,
+      });
     }
 
-    // 4) Upsert por hash (evita duplicar)
-    const { error } = await admin.from("calls").upsert(finalRows, {
+    // ✅ DEDUPE dentro del lote
+    const byHash = new Map<string, any>();
+    for (const rr of rows) byHash.set(rr.source_row_hash, rr);
+    const uniqueRows = Array.from(byHash.values());
+
+    // 5) Upsert
+    const { error } = await admin.from("calls").upsert(uniqueRows, {
       onConflict: "source_row_hash",
       ignoreDuplicates: false,
     });
-
     if (error) throw error;
 
     return NextResponse.json({
       ok: true,
-      upserted: finalRows.length,
+      upserted: uniqueRows.length,
       dropped_duplicates: rows.length - uniqueRows.length,
-      captadas_fixed,
+      captadas_true_seen: captadasTrueSeen,
+      captadas_col_found: idxCaptadas >= 0,
+      captadas_col_name: idxCaptadas >= 0 ? headers[idxCaptadas] : null,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
