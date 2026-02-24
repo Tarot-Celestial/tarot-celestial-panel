@@ -1,0 +1,77 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+export const runtime = "nodejs";
+
+function getEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+async function getWorkerFromToken(req: Request) {
+  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return { ok: false as const, error: "NO_TOKEN" as const };
+
+  const userClient = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+
+  const { data: u } = await userClient.auth.getUser();
+  const uid = u?.user?.id || null;
+  const email = u?.user?.email || null;
+  if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };
+
+  const admin = createClient(url, service, { auth: { persistSession: false } });
+
+  // por user_id
+  let { data: w } = await admin
+    .from("workers")
+    .select("id, role, display_name, user_id, email")
+    .eq("user_id", uid)
+    .maybeSingle();
+
+  // fallback por email
+  if (!w && email) {
+    const r2 = await admin
+      .from("workers")
+      .select("id, role, display_name, user_id, email")
+      .eq("email", email)
+      .maybeSingle();
+    w = r2.data as any;
+  }
+
+  if (!w) return { ok: false as const, error: "NO_WORKER" as const };
+  return { ok: true as const, worker: w, admin };
+}
+
+export async function GET(req: Request) {
+  try {
+    const me = await getWorkerFromToken(req);
+    if (!me.ok) return NextResponse.json(me, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const month = searchParams.get("month") || "";
+
+    if (!month) return NextResponse.json({ ok: false, error: "month required" }, { status: 400 });
+
+    const { data, error } = await me.admin
+      .from("incidents")
+      .select("id, month_key, amount, title, reason, created_at, created_by")
+      .eq("worker_id", me.worker.id)
+      .eq("month_key", month)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, incidents: data || [] });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
+}
