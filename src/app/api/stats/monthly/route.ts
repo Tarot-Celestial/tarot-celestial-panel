@@ -47,17 +47,19 @@ export async function GET(req: Request) {
       .select("id, role, display_name, team")
       .eq("user_id", uid)
       .maybeSingle();
+
     if (em) throw em;
     if (!me) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
 
-    // tarotista: stats propios
+    // tarotista: stats propios (por worker_id)
     if (me.role === "tarotista") {
       const { data: s, error: es } = await admin
         .from("v_monthly_tarotist_stats")
         .select("*")
         .eq("month_key", month)
-        .eq("tarotista_key", String(me.display_name || "").trim().toLowerCase())
+        .eq("worker_id", me.id)
         .maybeSingle();
+
       if (es) throw es;
 
       return NextResponse.json({
@@ -65,27 +67,29 @@ export async function GET(req: Request) {
         scope: "self",
         month,
         worker: { id: me.id, display_name: me.display_name, team: me.team },
-        stats: s || {
-          month_key: month,
-          minutes_total: 0,
-          calls_total: 0,
-          captadas_total: 0,
-          calls_free: 0,
-          calls_rueda: 0,
-          calls_cliente: 0,
-          calls_repite: 0,
-          pay_minutes: 0,
-          pct_cliente: 0,
-          pct_repite: 0,
-          bonus_captadas: 0,
-        },
+        stats:
+          s ||
+          ({
+            month_key: month,
+            minutes_total: 0,
+            calls_total: 0,
+            captadas_total: 0,
+            calls_free: 0,
+            calls_rueda: 0,
+            calls_cliente: 0,
+            calls_repite: 0,
+            pay_minutes: 0,
+            pct_cliente: 0,
+            pct_repite: 0,
+            bonus_captadas: 0,
+          } as any),
       });
     }
 
-    // central/admin: resumen global (agregado)
+    // central/admin: totales globales
     const { data: rows, error: eg } = await admin
       .from("v_monthly_tarotist_stats")
-      .select("minutes_total,calls_total,captadas_total,pay_minutes,bonus_captadas,pct_cliente,pct_repite,month_key")
+      .select("minutes_total,calls_total,captadas_total,pay_minutes,bonus_captadas")
       .eq("month_key", month);
 
     if (eg) throw eg;
