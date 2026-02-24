@@ -42,7 +42,8 @@ async function getMe(req: Request) {
     .eq("user_id", uid)
     .maybeSingle();
 
-  if (werr || !w) return { ok: false as const, error: "NO_WORKER" as const };
+  if (werr) return { ok: false as const, error: `WORKER_QUERY_ERROR:${werr.message}` as const };
+  if (!w) return { ok: false as const, error: "NO_WORKER" as const };
 
   return { ok: true as const, worker: w, admin };
 }
@@ -52,7 +53,7 @@ export async function POST(req: Request) {
     const me = await getMe(req);
     if (!me.ok) return NextResponse.json(me, { status: 401 });
 
-    const worker = me.worker; // ✅ TS ya sabe que existe
+    const worker = me.worker;
 
     if (worker.role !== "central" && worker.role !== "admin") {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
@@ -66,8 +67,9 @@ export async function POST(req: Request) {
 
     if (!worker_id) return NextResponse.json({ ok: false, error: "worker_id required" }, { status: 400 });
     if (!reason) return NextResponse.json({ ok: false, error: "reason required" }, { status: 400 });
-    if (!isFinite(amount) || amount <= 0)
+    if (!isFinite(amount) || amount <= 0) {
       return NextResponse.json({ ok: false, error: "amount must be > 0" }, { status: 400 });
+    }
 
     const { error } = await me.admin.from("incidents").insert({
       worker_id,
