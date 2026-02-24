@@ -14,6 +14,19 @@ function monthKeyNow() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+async function safeJson(res: Response) {
+  const txt = await res.text();
+  if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
+
+  try {
+    const j = JSON.parse(txt);
+    return { ...j, _raw: txt, _status: res.status, _ok: res.ok };
+  } catch {
+    // no era JSON (404 HTML, etc.)
+    return { _raw: txt.slice(0, 800), _status: res.status, _ok: res.ok };
+  }
+}
+
 export default function Admin() {
   const [ok, setOk] = useState(false);
 
@@ -39,10 +52,11 @@ export default function Admin() {
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const me = await fetch("/api/me", {
+      const meRes = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${token}` },
-      }).then((r) => r.json());
+      });
 
+      const me = await safeJson(meRes);
       if (!me?.ok) return (window.location.href = "/login");
 
       if (me.role !== "admin") {
@@ -63,18 +77,21 @@ export default function Admin() {
     try {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) {
-        window.location.href = "/login";
-        return;
-      }
+      if (!token) return (window.location.href = "/login");
 
       const r = await fetch("/api/sync/calls", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      const j = await r.json();
-      if (!j?.ok) throw new Error(j?.error || "Sync failed");
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(
+          j?.error ||
+            `HTTP ${j?._status}. Respuesta: ${j?._raw || "(vacía)"}`
+        );
+      }
 
       setSyncMsg(`✅ Sincronización OK. Upserted: ${j.upserted ?? 0}`);
     } catch (e: any) {
@@ -103,13 +120,18 @@ export default function Admin() {
         body: JSON.stringify({ month }),
       });
 
-      const j = await r.json();
-      if (!j?.ok) throw new Error(j?.error || "Generate failed");
+      const j = await safeJson(r);
 
-      const count = j?.result?.invoices ?? j?.result?.count ?? "?";
+      if (!j?._ok || !j?.ok) {
+        throw new Error(
+          j?.error ||
+            `HTTP ${j?._status}. Respuesta: ${j?._raw || "(vacía)"}`
+        );
+      }
+
+      const count = j?.result?.invoices ?? "?";
       setGenMsg(`✅ Facturas generadas para ${month}. Total facturas: ${count}`);
 
-      // refresca lista
       await listInvoices();
     } catch (e: any) {
       setGenMsg(`❌ ${e?.message || "Error"}`);
@@ -129,12 +151,19 @@ export default function Admin() {
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const r = await fetch(
+        `/api/admin/invoices/list?month=${encodeURIComponent(month)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-      const j = await r.json();
-      if (!j?.ok) throw new Error(j?.error || "List failed");
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(
+          j?.error ||
+            `HTTP ${j?._status}. Respuesta: ${j?._raw || "(vacía)"}`
+        );
+      }
 
       setInvoices(j.invoices || []);
       setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
@@ -159,7 +188,6 @@ export default function Admin() {
           </div>
         </div>
 
-        {/* BLOQUE MES */}
         <div
           style={{
             border: "1px solid rgba(255,255,255,0.12)",
@@ -192,7 +220,6 @@ export default function Admin() {
           </div>
         </div>
 
-        {/* SYNC */}
         <div
           style={{
             display: "flex",
@@ -226,7 +253,6 @@ export default function Admin() {
           </div>
         </div>
 
-        {/* FACTURAS */}
         <div
           style={{
             border: "1px solid rgba(255,255,255,0.12)",
