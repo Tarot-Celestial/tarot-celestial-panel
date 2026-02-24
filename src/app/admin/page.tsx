@@ -25,8 +25,12 @@ async function safeJson(res: Response) {
   }
 }
 
+type TabKey = "facturas" | "editor" | "sync";
+
 export default function Admin() {
   const [ok, setOk] = useState(false);
+
+  const [tab, setTab] = useState<TabKey>("facturas");
 
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
@@ -74,14 +78,23 @@ export default function Admin() {
     })();
   }, []);
 
+  async function getTokenOrLogin() {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      window.location.href = "/login";
+      return "";
+    }
+    return token;
+  }
+
   async function syncNow() {
     if (syncLoading) return;
     setSyncLoading(true);
     setSyncMsg("");
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
       const r = await fetch("/api/sync/calls", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(r);
@@ -100,9 +113,8 @@ export default function Admin() {
     setGenLoading(true);
     setGenMsg("");
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
       const r = await fetch("/api/invoices/generate", {
         method: "POST",
@@ -116,6 +128,7 @@ export default function Admin() {
       const count = j?.result?.invoices ?? "?";
       setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
       await listInvoices();
+      setTab("facturas");
     } catch (e: any) {
       setGenMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -132,9 +145,8 @@ export default function Admin() {
     setSelInvoice(null);
     setSelLines([]);
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
       const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -158,9 +170,8 @@ export default function Admin() {
     setSelMsg("");
     setSelId(invoice_id);
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
       const r = await fetch(`/api/admin/invoices/edit?invoice_id=${encodeURIComponent(invoice_id)}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -172,6 +183,8 @@ export default function Admin() {
       setSelInvoice(j.invoice);
       setSelWorker(j.worker);
       setSelLines(j.lines || []);
+
+      setTab("editor");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -180,9 +193,8 @@ export default function Admin() {
   }
 
   async function postEdit(payload: any) {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return (window.location.href = "/login");
+    const token = await getTokenOrLogin();
+    if (!token) return null;
 
     const r = await fetch("/api/admin/invoices/edit", {
       method: "POST",
@@ -221,6 +233,7 @@ export default function Admin() {
       await postEdit({ action: "update_line", invoice_id: selId, line_id, label, amount });
       await loadInvoice(selId);
       await listInvoices();
+      setSelMsg("✅ Guardado.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -257,231 +270,167 @@ export default function Admin() {
     <>
       <AppHeader />
 
-      <div style={{ padding: 24, display: "grid", gap: 14 }}>
-        <div>
-          <h2 style={{ margin: "0 0 8px" }}>Panel Admin</h2>
-          <div style={{ opacity: 0.75, fontSize: 12 }}>
-            Sincronización, generación de facturas y edición manual de líneas.
-          </div>
-        </div>
+      <div className="tc-wrap">
+        <div className="tc-container">
+          {/* TOP CARD */}
+          <div className="tc-card">
+            <div className="tc-row" style={{ justifyContent: "space-between" }}>
+              <div>
+                <div className="tc-title" style={{ fontSize: 18 }}>
+                  👑 Admin — Tarot Celestial
+                </div>
+                <div className="tc-sub">Sincronización · Facturas · Edición manual</div>
+              </div>
 
-        {/* MES */}
-        <div
-          style={{
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 14,
-            padding: 14,
-            maxWidth: 720,
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ fontSize: 12, opacity: 0.8 }}>Mes (YYYY-MM):</div>
-          <input
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            placeholder="2026-02"
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: "rgba(255,255,255,0.06)",
-              color: "white",
-              width: 140,
-              outline: "none",
-            }}
-          />
-        </div>
+              <div className="tc-row">
+                <span className="tc-chip">Mes</span>
+                <input
+                  className="tc-input"
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  placeholder="2026-02"
+                  style={{ width: 120 }}
+                />
+                <button className="tc-btn tc-btn-purple" onClick={listInvoices} disabled={listLoading}>
+                  {listLoading ? "Cargando…" : "Cargar"}
+                </button>
+              </div>
+            </div>
 
-        {/* SYNC */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 14,
-            padding: 14,
-            maxWidth: 720,
-          }}
-        >
-          <button
-            onClick={syncNow}
-            disabled={syncLoading}
-            style={{
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: "1px solid rgba(215,181,109,0.45)",
-              background: "rgba(215,181,109,0.18)",
-              color: "white",
-              cursor: "pointer",
-              minWidth: 170,
-            }}
-          >
-            {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
-          </button>
-
-          <div style={{ fontSize: 12, opacity: 0.85 }}>
-            {syncMsg || "Pulsa para importar/actualizar llamadas del CSV."}
-          </div>
-        </div>
-
-        {/* FACTURAS */}
-        <div
-          style={{
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: 14,
-            padding: 14,
-            maxWidth: 980,
-            display: "grid",
-            gap: 10,
-          }}
-        >
-          <div style={{ fontWeight: 800 }}>🧾 Facturas</div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <button
-              onClick={generateInvoices}
-              disabled={genLoading}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(120,255,190,0.30)",
-                background: "rgba(120,255,190,0.10)",
-                color: "white",
-                cursor: "pointer",
-                minWidth: 180,
-              }}
-            >
-              {genLoading ? "Generando…" : "Generar facturas del mes"}
-            </button>
-
-            <button
-              onClick={listInvoices}
-              disabled={listLoading}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.15)",
-                background: "rgba(255,255,255,0.06)",
-                color: "white",
-                cursor: "pointer",
-                minWidth: 150,
-              }}
-            >
-              {listLoading ? "Cargando…" : "Ver resumen"}
-            </button>
-
-            <div style={{ fontSize: 12, opacity: 0.85 }}>{genMsg || listMsg || " "}</div>
+            <div style={{ marginTop: 12 }} className="tc-tabs">
+              <button
+                className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`}
+                onClick={() => setTab("facturas")}
+              >
+                🧾 Facturas
+              </button>
+              <button
+                className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`}
+                onClick={() => setTab("editor")}
+              >
+                ✏️ Editor
+              </button>
+              <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
+                🔄 Sync
+              </button>
+            </div>
           </div>
 
-          {invoices?.length > 0 && (
-            <div style={{ fontSize: 12, opacity: 0.85 }}>
-              Total sumado: <b>{totalSum.toFixed(2)}€</b> · Click en una fila para editar.
+          {/* TAB: FACTURAS */}
+          {tab === "facturas" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">🧾 Facturas del mes</div>
+                  <div className="tc-sub">Genera y revisa. Click para entrar al editor.</div>
+                </div>
+
+                <div className="tc-row">
+                  <button className="tc-btn tc-btn-ok" onClick={generateInvoices} disabled={genLoading}>
+                    {genLoading ? "Generando…" : "Generar facturas"}
+                  </button>
+                  <button className="tc-btn tc-btn-gold" onClick={listInvoices} disabled={listLoading}>
+                    {listLoading ? "Cargando…" : "Ver resumen"}
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginTop: 10 }} className="tc-sub">
+                {genMsg || listMsg || "Tip: sincroniza antes de generar."}
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div className="tc-sub">
+                  Total sumado: <b>{totalSum.toFixed(2)}€</b>
+                </div>
+                {selId ? <div className="tc-chip">Seleccionada</div> : <div className="tc-chip">Sin selección</div>}
+              </div>
+
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table className="tc-table">
+                  <thead>
+                    <tr>
+                      <th>Trabajador</th>
+                      <th>Rol</th>
+                      <th>Estado</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(invoices || []).map((x: any) => (
+                      <tr
+                        key={x.invoice_id}
+                        onClick={() => loadInvoice(x.invoice_id)}
+                        className="tc-click"
+                        style={{
+                          background: selId === x.invoice_id ? "rgba(181,156,255,0.10)" : "transparent",
+                        }}
+                      >
+                        <td>
+                          <b>{x.display_name}</b>
+                        </td>
+                        <td className="tc-muted">{x.role}</td>
+                        <td className="tc-muted">{x.status}</td>
+                        <td>
+                          <b>{Number(x.total || 0).toFixed(2)}€</b>
+                        </td>
+                      </tr>
+                    ))}
+                    {(!invoices || invoices.length === 0) && (
+                      <tr>
+                        <td colSpan={4} className="tc-muted">
+                          No hay facturas cargadas. Pulsa “Ver resumen”.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
-          {/* tabla + editor */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 14 }}>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                <thead>
-                  <tr style={{ textAlign: "left", opacity: 0.8 }}>
-                    <th style={{ padding: "8px 6px" }}>Trabajador</th>
-                    <th style={{ padding: "8px 6px" }}>Rol</th>
-                    <th style={{ padding: "8px 6px" }}>Estado</th>
-                    <th style={{ padding: "8px 6px" }}>Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(invoices || []).map((x: any) => (
-                    <tr
-                      key={x.invoice_id}
-                      onClick={() => loadInvoice(x.invoice_id)}
-                      style={{
-                        borderTop: "1px solid rgba(255,255,255,0.08)",
-                        cursor: "pointer",
-                        background: selId === x.invoice_id ? "rgba(255,255,255,0.06)" : "transparent",
-                      }}
-                    >
-                      <td style={{ padding: "8px 6px" }}>
-                        <b>{x.display_name}</b>
-                      </td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{x.role}</td>
-                      <td style={{ padding: "8px 6px", opacity: 0.9 }}>{x.status}</td>
-                      <td style={{ padding: "8px 6px" }}>
-                        <b>{Number(x.total || 0).toFixed(2)}€</b>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              {invoices?.length === 0 && (
-                <div style={{ fontSize: 13, opacity: 0.75, marginTop: 8 }}>
-                  Pulsa <b>Ver resumen</b>.
+          {/* TAB: EDITOR */}
+          {tab === "editor" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">✏️ Editor de factura</div>
+                  <div className="tc-sub">Edita líneas y recalcula total automáticamente</div>
                 </div>
-              )}
-            </div>
 
-            <div
-              style={{
-                border: "1px solid rgba(255,255,255,0.12)",
-                borderRadius: 14,
-                padding: 12,
-                minHeight: 200,
-              }}
-            >
-              <div style={{ fontWeight: 800, marginBottom: 8 }}>✏️ Editor</div>
-
-              {!selId ? (
-                <div style={{ fontSize: 13, opacity: 0.75 }}>Selecciona una factura de la lista.</div>
-              ) : selLoading ? (
-                <div style={{ fontSize: 13, opacity: 0.75 }}>Cargando factura…</div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 13, marginBottom: 8 }}>
-                    <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
-                    <br />
-                    Total: <b>{Number(selInvoice?.total || 0).toFixed(2)}€</b> · Estado:{" "}
-                    <b>{selInvoice?.status}</b>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                    <button
-                      onClick={() => setStatus("draft")}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 10,
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        background: "rgba(255,255,255,0.06)",
-                        color: "white",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      Poner Draft
+                {selId && (
+                  <div className="tc-row">
+                    <button className="tc-btn" onClick={() => setStatus("draft")}>
+                      Draft
                     </button>
-                    <button
-                      onClick={() => setStatus("final")}
-                      style={{
-                        padding: "8px 10px",
-                        borderRadius: 10,
-                        border: "1px solid rgba(120,255,190,0.30)",
-                        background: "rgba(120,255,190,0.10)",
-                        color: "white",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
+                    <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>
                       Finalizar
                     </button>
                   </div>
+                )}
+              </div>
 
-                  <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+              {!selId ? (
+                <div className="tc-sub" style={{ marginTop: 10 }}>
+                  Selecciona una factura desde <b>Facturas</b>.
+                </div>
+              ) : selLoading ? (
+                <div className="tc-sub" style={{ marginTop: 10 }}>
+                  Cargando factura…
+                </div>
+              ) : (
+                <>
+                  <div style={{ marginTop: 10 }} className="tc-sub">
+                    <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
+                    <br />
+                    Total: <b>{Number(selInvoice?.total || 0).toFixed(2)}€</b> · Estado: <b>{selInvoice?.status}</b>
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div style={{ display: "grid", gap: 8 }}>
                     {(selLines || []).map((l: any) => (
                       <LineEditor
                         key={l.id}
@@ -492,83 +441,57 @@ export default function Admin() {
                     ))}
                   </div>
 
-                  <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,0.10)", paddingTop: 10 }}>
-                    <div style={{ fontWeight: 700, marginBottom: 6 }}>➕ Añadir línea</div>
+                  <div className="tc-hr" />
 
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <select
-                        value={newKind}
-                        onChange={(e) => setNewKind(e.target.value)}
-                        style={{
-                          padding: "9px 10px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(255,255,255,0.15)",
-                          background: "rgba(255,255,255,0.06)",
-                          color: "white",
-                        }}
-                      >
-                        <option value="adjustment">adjustment</option>
-                        <option value="incident">incident</option>
-                        <option value="bonus_ranking">bonus_ranking</option>
-                        <option value="bonus_captadas">bonus_captadas</option>
-                        <option value="minutes">minutes</option>
-                        <option value="salary_base">salary_base</option>
-                      </select>
+                  <div className="tc-title" style={{ fontSize: 14 }}>
+                    ➕ Añadir línea
+                  </div>
 
-                      <input
-                        value={newLabel}
-                        onChange={(e) => setNewLabel(e.target.value)}
-                        placeholder="Concepto"
-                        style={{
-                          padding: "9px 10px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(255,255,255,0.15)",
-                          background: "rgba(255,255,255,0.06)",
-                          color: "white",
-                          width: 170,
-                          outline: "none",
-                        }}
-                      />
+                  <div className="tc-row" style={{ marginTop: 8 }}>
+                    <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+                      <option value="adjustment">adjustment</option>
+                      <option value="incident">incident</option>
+                      <option value="bonus_ranking">bonus_ranking</option>
+                      <option value="bonus_captadas">bonus_captadas</option>
+                      <option value="minutes">minutes</option>
+                      <option value="salary_base">salary_base</option>
+                    </select>
 
-                      <input
-                        value={newAmount}
-                        onChange={(e) => setNewAmount(e.target.value)}
-                        placeholder="0"
-                        style={{
-                          padding: "9px 10px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(255,255,255,0.15)",
-                          background: "rgba(255,255,255,0.06)",
-                          color: "white",
-                          width: 90,
-                          outline: "none",
-                        }}
-                      />
+                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 220 }} />
+                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 120 }} />
 
-                      <button
-                        onClick={addLine}
-                        style={{
-                          padding: "9px 10px",
-                          borderRadius: 10,
-                          border: "1px solid rgba(215,181,109,0.45)",
-                          background: "rgba(215,181,109,0.18)",
-                          color: "white",
-                          cursor: "pointer",
-                          fontSize: 12,
-                        }}
-                      >
-                        Añadir
-                      </button>
-                    </div>
+                    <button className="tc-btn tc-btn-gold" onClick={addLine}>
+                      Añadir
+                    </button>
+                  </div>
 
-                    <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-                      {selMsg || "Edita importes y guarda. El total se recalcula solo."}
-                    </div>
+                  <div style={{ marginTop: 10 }} className="tc-sub">
+                    {selMsg || "Consejo: usa ajustes para sumar/restar manualmente."}
                   </div>
                 </>
               )}
             </div>
-          </div>
+          )}
+
+          {/* TAB: SYNC */}
+          {tab === "sync" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">🔄 Sincronización</div>
+                  <div className="tc-sub">Importa/actualiza llamadas desde Google Sheets</div>
+                </div>
+
+                <button className="tc-btn tc-btn-gold" onClick={syncNow} disabled={syncLoading}>
+                  {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
+                </button>
+              </div>
+
+              <div style={{ marginTop: 10 }} className="tc-sub">
+                {syncMsg || "Haz sync antes de generar facturas para que cuadren los minutos y captadas."}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </>
@@ -588,66 +511,16 @@ function LineEditor({
   const [amount, setAmount] = useState<string>(String(line.amount ?? "0"));
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 90px 90px",
-        gap: 8,
-        alignItems: "center",
-      }}
-    >
-      <input
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
-        style={{
-          padding: "9px 10px",
-          borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.15)",
-          background: "rgba(255,255,255,0.06)",
-          color: "white",
-          outline: "none",
-        }}
-      />
-      <input
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        style={{
-          padding: "9px 10px",
-          borderRadius: 10,
-          border: "1px solid rgba(255,255,255,0.15)",
-          background: "rgba(255,255,255,0.06)",
-          color: "white",
-          outline: "none",
-        }}
-      />
-      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-        <button
-          onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(120,255,190,0.30)",
-            background: "rgba(120,255,190,0.10)",
-            color: "white",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
+    <div className="tc-row" style={{ justifyContent: "space-between" }}>
+      <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+      <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 130 }} />
+
+      <div className="tc-row">
+        <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
           Guardar
         </button>
-        <button
-          onClick={onDelete}
-          style={{
-            padding: "8px 10px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,80,80,0.30)",
-            background: "rgba(255,80,80,0.10)",
-            color: "white",
-            cursor: "pointer",
-            fontSize: 12,
-          }}
-        >
-          X
+        <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+          Borrar
         </button>
       </div>
     </div>
