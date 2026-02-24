@@ -14,6 +14,16 @@ function monthKeyNow() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function eur(n: any) {
+  const x = Number(n) || 0;
+  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+}
+
+function numES(n: any, digits = 2) {
+  const x = Number(n) || 0;
+  return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -272,14 +282,11 @@ export default function Admin() {
 
       <div className="tc-wrap">
         <div className="tc-container">
-          {/* TOP CARD */}
           <div className="tc-card">
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
-                <div className="tc-title" style={{ fontSize: 18 }}>
-                  👑 Admin — Tarot Celestial
-                </div>
-                <div className="tc-sub">Sincronización · Facturas · Edición manual</div>
+                <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
+                <div className="tc-sub">Sincronización · Facturas · Edición</div>
               </div>
 
               <div className="tc-row">
@@ -298,16 +305,10 @@ export default function Admin() {
             </div>
 
             <div style={{ marginTop: 12 }} className="tc-tabs">
-              <button
-                className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`}
-                onClick={() => setTab("facturas")}
-              >
+              <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
                 🧾 Facturas
               </button>
-              <button
-                className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`}
-                onClick={() => setTab("editor")}
-              >
+              <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
                 ✏️ Editor
               </button>
               <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
@@ -316,13 +317,12 @@ export default function Admin() {
             </div>
           </div>
 
-          {/* TAB: FACTURAS */}
           {tab === "facturas" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🧾 Facturas del mes</div>
-                  <div className="tc-sub">Genera y revisa. Click para entrar al editor.</div>
+                  <div className="tc-sub">Genera y revisa. Click para editar.</div>
                 </div>
 
                 <div className="tc-row">
@@ -335,17 +335,12 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div style={{ marginTop: 10 }} className="tc-sub">
-                {genMsg || listMsg || "Tip: sincroniza antes de generar."}
-              </div>
+              <div style={{ marginTop: 10 }} className="tc-sub">{genMsg || listMsg || " "}</div>
 
               <div className="tc-hr" />
 
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                <div className="tc-sub">
-                  Total sumado: <b>{totalSum.toFixed(2)}€</b>
-                </div>
-                {selId ? <div className="tc-chip">Seleccionada</div> : <div className="tc-chip">Sin selección</div>}
+              <div className="tc-sub">
+                Total sumado: <b>{eur(totalSum)}</b> · Click en una fila para editar
               </div>
 
               <div style={{ overflowX: "auto", marginTop: 8 }}>
@@ -362,27 +357,19 @@ export default function Admin() {
                     {(invoices || []).map((x: any) => (
                       <tr
                         key={x.invoice_id}
-                        onClick={() => loadInvoice(x.invoice_id)}
                         className="tc-click"
-                        style={{
-                          background: selId === x.invoice_id ? "rgba(181,156,255,0.10)" : "transparent",
-                        }}
+                        onClick={() => loadInvoice(x.invoice_id)}
+                        style={{ background: selId === x.invoice_id ? "rgba(181,156,255,0.10)" : "transparent" }}
                       >
-                        <td>
-                          <b>{x.display_name}</b>
-                        </td>
+                        <td><b>{x.display_name}</b></td>
                         <td className="tc-muted">{x.role}</td>
                         <td className="tc-muted">{x.status}</td>
-                        <td>
-                          <b>{Number(x.total || 0).toFixed(2)}€</b>
-                        </td>
+                        <td><b>{eur(x.total || 0)}</b></td>
                       </tr>
                     ))}
                     {(!invoices || invoices.length === 0) && (
                       <tr>
-                        <td colSpan={4} className="tc-muted">
-                          No hay facturas cargadas. Pulsa “Ver resumen”.
-                        </td>
+                        <td colSpan={4} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
                       </tr>
                     )}
                   </tbody>
@@ -391,41 +378,32 @@ export default function Admin() {
             </div>
           )}
 
-          {/* TAB: EDITOR */}
           {tab === "editor" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">✏️ Editor de factura</div>
-                  <div className="tc-sub">Edita líneas y recalcula total automáticamente</div>
+                  <div className="tc-sub">Líneas con desglose automático (minutos x tarifa)</div>
                 </div>
 
                 {selId && (
                   <div className="tc-row">
-                    <button className="tc-btn" onClick={() => setStatus("draft")}>
-                      Draft
-                    </button>
-                    <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>
-                      Finalizar
-                    </button>
+                    <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
+                    <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
                   </div>
                 )}
               </div>
 
               {!selId ? (
-                <div className="tc-sub" style={{ marginTop: 10 }}>
-                  Selecciona una factura desde <b>Facturas</b>.
-                </div>
+                <div className="tc-sub" style={{ marginTop: 10 }}>Selecciona una factura desde <b>Facturas</b>.</div>
               ) : selLoading ? (
-                <div className="tc-sub" style={{ marginTop: 10 }}>
-                  Cargando factura…
-                </div>
+                <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
               ) : (
                 <>
                   <div style={{ marginTop: 10 }} className="tc-sub">
                     <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
                     <br />
-                    Total: <b>{Number(selInvoice?.total || 0).toFixed(2)}€</b> · Estado: <b>{selInvoice?.status}</b>
+                    Total: <b>{eur(selInvoice?.total || 0)}</b> · Estado: <b>{selInvoice?.status}</b>
                   </div>
 
                   <div className="tc-hr" />
@@ -443,9 +421,7 @@ export default function Admin() {
 
                   <div className="tc-hr" />
 
-                  <div className="tc-title" style={{ fontSize: 14 }}>
-                    ➕ Añadir línea
-                  </div>
+                  <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
 
                   <div className="tc-row" style={{ marginTop: 8 }}>
                     <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
@@ -453,27 +429,25 @@ export default function Admin() {
                       <option value="incident">incident</option>
                       <option value="bonus_ranking">bonus_ranking</option>
                       <option value="bonus_captadas">bonus_captadas</option>
-                      <option value="minutes">minutes</option>
+                      <option value="minutes_free">minutes_free</option>
+                      <option value="minutes_rueda">minutes_rueda</option>
+                      <option value="minutes_cliente">minutes_cliente</option>
+                      <option value="minutes_repite">minutes_repite</option>
                       <option value="salary_base">salary_base</option>
                     </select>
 
                     <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 220 }} />
                     <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 120 }} />
 
-                    <button className="tc-btn tc-btn-gold" onClick={addLine}>
-                      Añadir
-                    </button>
+                    <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
                   </div>
 
-                  <div style={{ marginTop: 10 }} className="tc-sub">
-                    {selMsg || "Consejo: usa ajustes para sumar/restar manualmente."}
-                  </div>
+                  <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
                 </>
               )}
             </div>
           )}
 
-          {/* TAB: SYNC */}
           {tab === "sync" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
@@ -488,7 +462,7 @@ export default function Admin() {
               </div>
 
               <div style={{ marginTop: 10 }} className="tc-sub">
-                {syncMsg || "Haz sync antes de generar facturas para que cuadren los minutos y captadas."}
+                {syncMsg || "Haz sync antes de generar facturas para que cuadren minutos/captadas."}
               </div>
             </div>
           )}
@@ -510,19 +484,64 @@ function LineEditor({
   const [label, setLabel] = useState<string>(line.label || "");
   const [amount, setAmount] = useState<string>(String(line.amount ?? "0"));
 
-  return (
-    <div className="tc-row" style={{ justifyContent: "space-between" }}>
-      <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
-      <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 130 }} />
+  const meta = line?.meta || {};
+  const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
 
-      <div className="tc-row">
-        <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
-          Guardar
-        </button>
-        <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-          Borrar
-        </button>
+  const minutes = Number(meta.minutes || 0);
+  const rate = Number(meta.rate || 0);
+  const calc = minutes * rate;
+
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 10,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ fontWeight: 800 }}>
+          {label}
+          {hasBreakdown && (
+            <span className="tc-sub" style={{ marginLeft: 10 }}>
+              — {numES(rate, 2)}€ x {numES(minutes, 0)} min = <b>{eur(calc)}</b>
+            </span>
+          )}
+        </div>
+
+        <div style={{ fontWeight: 800 }}>{eur(amount)}</div>
       </div>
+
+      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+        <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
+        <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 140 }} />
+
+        <div className="tc-row">
+          <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
+            Guardar
+          </button>
+          <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+            Borrar
+          </button>
+        </div>
+      </div>
+
+      {hasBreakdown && (
+        <div className="tc-sub" style={{ marginTop: 8 }}>
+          Código: <b>{String(meta.code || "").toUpperCase()}</b> · Mes: <b>{meta.month}</b>
+        </div>
+      )}
     </div>
   );
+}
+
+function eur(n: any) {
+  const x = Number(n) || 0;
+  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+}
+
+function numES(n: any, digits = 2) {
+  const x = Number(n) || 0;
+  return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
