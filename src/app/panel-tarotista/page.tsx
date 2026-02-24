@@ -19,16 +19,26 @@ export default function Tarotista() {
         window.location.href = "/login";
         return;
       }
-      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json());
-      if (!me?.ok) return (window.location.href = "/login");
+
+      const me = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => r.json());
+
+      if (!me?.ok) {
+        window.location.href = "/login";
+        return;
+      }
+
       if (me.role !== "tarotista") {
         window.location.href = me.role === "admin" ? "/admin" : "/panel-central";
         return;
       }
+
       setOk(true);
     })();
   }, []);
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
+
   return <div style={{ padding: 40 }}>Panel Tarotista (OK)</div>;
 }
