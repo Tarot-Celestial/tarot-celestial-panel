@@ -15,19 +15,14 @@ const CSV_URL =
 function cleanCell(v: any) {
   let s = String(v ?? "").trim();
   if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
+  // normaliza invisibles típicos
+  s = s.replace(/\u00A0/g, " "); // NBSP
+  s = s.replace(/[\u200B\uFEFF]/g, ""); // zero-width + BOM
   return s.trim();
 }
+
 function normHeader(h: string) {
   return cleanCell(h).toLowerCase();
-}
-
-function normNameKey(s: any) {
-  // normalización simple (sin unaccent en JS para no depender de libs):
-  // lower + trim + quitar dobles espacios
-  return cleanCell(s)
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function normCode(raw: any) {
@@ -114,21 +109,6 @@ function parseCSV(text: string): string[][] {
   return rows;
 }
 
-function rowHash(o: any) {
-  const base = [
-    o.call_date,
-    o.telefonista || "",
-    o.tarotista || "",
-    String(o.minutos ?? ""),
-    o.codigo || "",
-    String(o.importe ?? ""),
-    o.captada ? "1" : "0",
-  ].join("|");
-  let h = 0;
-  for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
-  return String(h);
-}
-
 export async function GET() {
   return NextResponse.json({ ok: true, hint: "Use POST to sync." });
 }
@@ -139,42 +119,41 @@ export async function POST() {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    // ✅ 0) Cargar mapa de tarotistas (call_key/display_name -> worker_id)
+    // mapa tarotista -> worker_id (para stats sólidas)
     const { data: ws, error: ew } = await admin
       .from("workers")
-      .select("id, display_name, call_key, role, is_active")
+      .select("id, display_name, call_key, role")
       .eq("role", "tarotista");
     if (ew) throw ew;
 
     const map = new Map<string, string>();
+    const key = (x: any) => cleanCell(x).toLowerCase().replace(/\s+/g, " ").trim();
     for (const w of ws || []) {
-      const k1 = normNameKey(w.call_key || "");
-      const k2 = normNameKey(w.display_name || "");
+      const k1 = key(w.call_key || "");
+      const k2 = key(w.display_name || "");
       if (k1) map.set(k1, w.id);
       if (k2) map.set(k2, w.id);
     }
 
-    // 1) Descargar CSV
+    // descargar csv
     const res = await fetch(CSV_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
     const text = await res.text();
 
-    // 2) Parse CSV
     const table = parseCSV(text);
-    if (table.length < 2)
-      return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_true_seen: 0 });
+    if (table.length < 2) return NextResponse.json({ ok: true, upserted: 0, rows: 0 });
 
     const headers = table[0].map(normHeader);
 
-    function idxExact(name: string) {
-      const i = headers.indexOf(name);
-      return i >= 0 ? i : -1;
-    }
-    function idxIncludes(substr: string) {
-      const s = substr.toLowerCase();
-      const i = headers.findIndex((h) => h.includes(s));
-      return i >= 0 ? i : -1;
-    }
+    const idxExact = (name: string) => headers.indexOf(name);
+    const idxIncludes = (sub: string) => headers.findIndex((h) => h.includes(sub));
+
+    const idxId =
+      idxExact("id_unico") >= 0
+        ? idxExact("id_unico")
+        : idxIncludes("id_unico") >= 0
+          ? idxIncludes("id_unico")
+          : idxIncludes("id");
 
     const idxFecha = idxExact("fecha") >= 0 ? idxExact("fecha") : idxIncludes("fecha");
     const idxTelefonista = idxExact("telefonista") >= 0 ? idxExact("telefonista") : idxIncludes("telefon");
@@ -183,88 +162,70 @@ export async function POST() {
     const idxCodigo = idxExact("codigo") >= 0 ? idxExact("codigo") : idxIncludes("cod");
     const idxImporte = idxExact("importe") >= 0 ? idxExact("importe") : idxIncludes("import");
     const idxCaptadas =
-      idxExact("captadas") >= 0
-        ? idxExact("captadas")
-        : idxExact("captada") >= 0
-          ? idxExact("captada")
-          : idxIncludes("captad");
+      idxExact("captadas") >= 0 ? idxExact("captadas") : idxExact("captada") >= 0 ? idxExact("captada") : idxIncludes("captad");
 
+    if (idxId < 0) {
+      return NextResponse.json(
+        { ok: false, error: `No encuentro la columna ID_Unico. Headers: ${headers.join(" | ")}` },
+        { status: 500 }
+      );
+    }
     if (idxFecha < 0 || idxTarotista < 0 || idxTiempo < 0 || idxCodigo < 0) {
       return NextResponse.json(
-        { ok: false, error: `CSV headers missing. Found headers: ${headers.join(" | ")}` },
+        { ok: false, error: `Faltan headers base. Headers: ${headers.join(" | ")}` },
         { status: 500 }
       );
     }
 
     const rows: any[] = [];
-    let captadasTrueSeen = 0;
-    let matchedWorkers = 0;
-
     for (let r = 1; r < table.length; r++) {
       const cols = table[r];
+
+      const sheet_id = cleanCell(cols[idxId]);
+      if (!sheet_id) continue;
 
       const dateISO = parseDateDDMMYYYY(cols[idxFecha]);
       if (!dateISO) continue;
 
       const tarotistaRaw = cleanCell(cols[idxTarotista] ?? "");
-      const tarotistaKey = normNameKey(tarotistaRaw);
-
-      const telefonista = idxTelefonista >= 0 ? cleanCell(cols[idxTelefonista] ?? "") : "";
-
-      const minutos = Number(String(cleanCell(cols[idxTiempo] ?? "0")).replace(",", "."));
-      const importe = idxImporte >= 0 ? Number(String(cleanCell(cols[idxImporte] ?? "0")).replace(",", ".")) : NaN;
-      const codigo = normCode(cols[idxCodigo]);
-
-      const captadaRaw = idxCaptadas >= 0 ? cols[idxCaptadas] : "";
-      const captada = toBoolCaptada(captadaRaw);
-      if (captada) captadasTrueSeen++;
-
+      const tarotistaKey = key(tarotistaRaw);
       if (tarotistaKey === "call11") continue;
 
       const worker_id = map.get(tarotistaKey) || null;
-      if (worker_id) matchedWorkers++;
 
-      const obj = {
+      const telefonista = idxTelefonista >= 0 ? cleanCell(cols[idxTelefonista] ?? "") : "";
+      const minutos = Number(String(cleanCell(cols[idxTiempo] ?? "0")).replace(",", "."));
+      const importe = idxImporte >= 0 ? Number(String(cleanCell(cols[idxImporte] ?? "0")).replace(",", ".")) : NaN;
+      const codigo = normCode(cols[idxCodigo]);
+      const captada = idxCaptadas >= 0 ? toBoolCaptada(cols[idxCaptadas]) : false;
+
+      rows.push({
+        sheet_id,
         call_date: dateISO,
         telefonista: telefonista || null,
         tarotista: tarotistaRaw || null,
-        worker_id, // ✅ clave definitiva
+        worker_id,
         minutos: isFinite(minutos) ? minutos : 0,
         codigo,
         importe: isFinite(importe) ? importe : null,
         captada: !!captada,
-      };
-
-      rows.push({ ...obj, source_row_hash: rowHash(obj) });
-    }
-
-    if (!rows.length) {
-      return NextResponse.json({
-        ok: true,
-        upserted: 0,
-        dropped_duplicates: 0,
-        captadas_true_seen: captadasTrueSeen,
-        matched_workers: matchedWorkers,
       });
     }
 
-    const byHash = new Map<string, any>();
-    for (const rr of rows) byHash.set(rr.source_row_hash, rr);
-    const uniqueRows = Array.from(byHash.values());
+    if (!rows.length) return NextResponse.json({ ok: true, upserted: 0, rows: 0 });
+
+    // dedupe por sheet_id (si viene repetido en el csv)
+    const byId = new Map<string, any>();
+    for (const rr of rows) byId.set(rr.sheet_id, rr);
+    const uniqueRows = Array.from(byId.values());
 
     const { error } = await admin.from("calls").upsert(uniqueRows, {
-      onConflict: "source_row_hash",
+      onConflict: "sheet_id",
       ignoreDuplicates: false,
     });
     if (error) throw error;
 
-    return NextResponse.json({
-      ok: true,
-      upserted: uniqueRows.length,
-      dropped_duplicates: rows.length - uniqueRows.length,
-      captadas_true_seen: captadasTrueSeen,
-      matched_workers: matchedWorkers,
-    });
+    return NextResponse.json({ ok: true, upserted: uniqueRows.length, rows: rows.length });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
