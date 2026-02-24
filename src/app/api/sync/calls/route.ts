@@ -14,15 +14,20 @@ const CSV_URL =
 
 function cleanCell(v: any) {
   let s = String(v ?? "").trim();
-  // quita comillas si viene "TRUE"
-  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
-    s = s.slice(1, -1);
-  }
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) s = s.slice(1, -1);
   return s.trim();
 }
-
 function normHeader(h: string) {
   return cleanCell(h).toLowerCase();
+}
+
+function normNameKey(s: any) {
+  // normalización simple (sin unaccent en JS para no depender de libs):
+  // lower + trim + quitar dobles espacios
+  return cleanCell(s)
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normCode(raw: any) {
@@ -35,22 +40,13 @@ function normCode(raw: any) {
 
 function toBoolCaptada(raw: any) {
   const s = cleanCell(raw).toLowerCase();
-
-  // Google Sheets checkbox: TRUE/FALSE
   if (s === "true") return true;
   if (s === "false") return false;
-
-  // variantes
   if (s === "1" || s === "x" || s === "yes" || s === "si" || s === "sí") return true;
   if (s === "0" || s === "no") return false;
-
-  // español
   if (s === "verdadero") return true;
   if (s === "falso") return false;
-
-  // emoji / check
   if (s.includes("✅") || s.includes("✔")) return true;
-
   return false;
 }
 
@@ -66,9 +62,6 @@ function parseDateDDMMYYYY(raw: any): string | null {
   return `${yy}-${String(mm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`;
 }
 
-/**
- * CSV parser básico pero correcto para comillas.
- */
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -80,7 +73,6 @@ function parseCSV(text: string): string[][] {
 
     if (inQuotes) {
       if (ch === '"') {
-        // "" -> comilla escapada
         if (text[i + 1] === '"') {
           cur += '"';
           i++;
@@ -119,11 +111,9 @@ function parseCSV(text: string): string[][] {
 
   row.push(cur);
   if (row.length > 1 || cleanCell(row[0]) !== "") rows.push(row);
-
   return rows;
 }
 
-// hash simple para deduplicar (estable)
 function rowHash(o: any) {
   const base = [
     o.call_date,
@@ -149,19 +139,33 @@ export async function POST() {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
+    // ✅ 0) Cargar mapa de tarotistas (call_key/display_name -> worker_id)
+    const { data: ws, error: ew } = await admin
+      .from("workers")
+      .select("id, display_name, call_key, role, is_active")
+      .eq("role", "tarotista");
+    if (ew) throw ew;
+
+    const map = new Map<string, string>();
+    for (const w of ws || []) {
+      const k1 = normNameKey(w.call_key || "");
+      const k2 = normNameKey(w.display_name || "");
+      if (k1) map.set(k1, w.id);
+      if (k2) map.set(k2, w.id);
+    }
+
     // 1) Descargar CSV
     const res = await fetch(CSV_URL, { cache: "no-store" });
     if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
     const text = await res.text();
 
-    // 2) Parse CSV real (con comillas)
+    // 2) Parse CSV
     const table = parseCSV(text);
     if (table.length < 2)
       return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_true_seen: 0 });
 
     const headers = table[0].map(normHeader);
 
-    // 3) índices por nombre (flexibles)
     function idxExact(name: string) {
       const i = headers.indexOf(name);
       return i >= 0 ? i : -1;
@@ -192,9 +196,9 @@ export async function POST() {
       );
     }
 
-    // 4) Convertir filas
     const rows: any[] = [];
     let captadasTrueSeen = 0;
+    let matchedWorkers = 0;
 
     for (let r = 1; r < table.length; r++) {
       const cols = table[r];
@@ -202,7 +206,9 @@ export async function POST() {
       const dateISO = parseDateDDMMYYYY(cols[idxFecha]);
       if (!dateISO) continue;
 
-      const tarotista = cleanCell(cols[idxTarotista] ?? "");
+      const tarotistaRaw = cleanCell(cols[idxTarotista] ?? "");
+      const tarotistaKey = normNameKey(tarotistaRaw);
+
       const telefonista = idxTelefonista >= 0 ? cleanCell(cols[idxTelefonista] ?? "") : "";
 
       const minutos = Number(String(cleanCell(cols[idxTiempo] ?? "0")).replace(",", "."));
@@ -211,15 +217,18 @@ export async function POST() {
 
       const captadaRaw = idxCaptadas >= 0 ? cols[idxCaptadas] : "";
       const captada = toBoolCaptada(captadaRaw);
-
       if (captada) captadasTrueSeen++;
 
-      if (tarotista.trim().toLowerCase() === "call11") continue;
+      if (tarotistaKey === "call11") continue;
+
+      const worker_id = map.get(tarotistaKey) || null;
+      if (worker_id) matchedWorkers++;
 
       const obj = {
         call_date: dateISO,
         telefonista: telefonista || null,
-        tarotista: tarotista || null,
+        tarotista: tarotistaRaw || null,
+        worker_id, // ✅ clave definitiva
         minutos: isFinite(minutos) ? minutos : 0,
         codigo,
         importe: isFinite(importe) ? importe : null,
@@ -235,17 +244,14 @@ export async function POST() {
         upserted: 0,
         dropped_duplicates: 0,
         captadas_true_seen: captadasTrueSeen,
-        captadas_col_found: idxCaptadas >= 0,
-        captadas_col_name: idxCaptadas >= 0 ? headers[idxCaptadas] : null,
+        matched_workers: matchedWorkers,
       });
     }
 
-    // Dedupe dentro del lote
     const byHash = new Map<string, any>();
     for (const rr of rows) byHash.set(rr.source_row_hash, rr);
     const uniqueRows = Array.from(byHash.values());
 
-    // Upsert
     const { error } = await admin.from("calls").upsert(uniqueRows, {
       onConflict: "source_row_hash",
       ignoreDuplicates: false,
@@ -257,8 +263,7 @@ export async function POST() {
       upserted: uniqueRows.length,
       dropped_duplicates: rows.length - uniqueRows.length,
       captadas_true_seen: captadasTrueSeen,
-      captadas_col_found: idxCaptadas >= 0,
-      captadas_col_name: idxCaptadas >= 0 ? headers[idxCaptadas] : null,
+      matched_workers: matchedWorkers,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
