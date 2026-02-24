@@ -62,7 +62,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const worker_id = String(body.worker_id || "");
     const amount = Number(String(body.amount ?? "0").replace(",", "."));
-    const reason = String(body.reason || "").trim();
+    const title = String(body.reason || "").trim(); // usamos el campo actual como title
+    const reason = title;
     const month_key = String(body.month_key || monthKeyNow());
 
     if (!worker_id) return NextResponse.json({ ok: false, error: "worker_id required" }, { status: 400 });
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
       worker_id,
       month_key,
       amount,
+      title,
       reason,
       created_by: worker.id,
     });
