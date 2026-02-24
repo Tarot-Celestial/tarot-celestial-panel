@@ -31,13 +31,15 @@ async function getMeFromBearer(req: Request) {
   const service = getEnvAny(["SUPABASE_SERVICE_ROLE_KEY"]);
   const admin = createClient(url, service, { auth: { persistSession: false } });
 
+  // ✅ OJO: NO pedimos team_key porque NO existe en workers
   const { data: w, error: werr } = await admin
     .from("workers")
-    .select("id, role, display_name, team_key")
+    .select("id, role, display_name")
     .eq("user_id", uid)
     .maybeSingle();
 
-  if (werr || !w) return { ok: false as const, error: "NO_WORKER" as const };
+  if (werr) return { ok: false as const, error: `WORKER_QUERY_ERROR:${werr.message}` as const };
+  if (!w) return { ok: false as const, error: "NO_WORKER" as const };
 
   return { ok: true as const, worker: w };
 }
@@ -47,9 +49,8 @@ export async function GET(req: Request) {
     const me = await getMeFromBearer(req);
     if (!me.ok) return NextResponse.json(me, { status: 401 });
 
-    const worker = me.worker; // ✅ TS ya sabe que existe
+    const worker = me.worker;
 
-    // centrales y admin pueden usar esto
     if (worker.role !== "central" && worker.role !== "admin") {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
@@ -58,9 +59,10 @@ export async function GET(req: Request) {
     const service = getEnvAny(["SUPABASE_SERVICE_ROLE_KEY"]);
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
+    // ✅ Tampoco pedimos team_key aquí (no existe en workers)
     const { data, error } = await admin
       .from("workers")
-      .select("id, display_name, role, team_key, is_active")
+      .select("id, display_name, role, is_active")
       .eq("role", "tarotista")
       .order("display_name", { ascending: true });
 
