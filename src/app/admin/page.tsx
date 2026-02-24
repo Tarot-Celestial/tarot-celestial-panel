@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import AppHeader from "@/components/AppHeader";
 
@@ -37,6 +37,20 @@ async function safeJson(res: Response) {
 
 type TabKey = "facturas" | "editor" | "sync";
 
+function ackLabel(v: any) {
+  const s = String(v || "pending");
+  if (s === "accepted") return "✅ Aceptada";
+  if (s === "rejected") return "❌ Rechazada";
+  return "⏳ Pendiente";
+}
+
+function ackStyle(v: any) {
+  const s = String(v || "pending");
+  if (s === "accepted") return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
+  if (s === "rejected") return { background: "rgba(255,80,80,0.10)", border: "1px solid rgba(255,80,80,0.25)" };
+  return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
+}
+
 export default function Admin() {
   const [ok, setOk] = useState(false);
 
@@ -65,9 +79,28 @@ export default function Admin() {
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
 
+  // ✅ para polling “en directo”
+  const pollRef = useRef<any>(null);
+  const lastMonthRef = useRef<string>("");
+
   const totalSum = useMemo(() => {
     return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
+
+  // ✅ restaurar mes guardado
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("tc_month_admin");
+      if (saved) setMonth(saved);
+    } catch {}
+  }, []);
+
+  // ✅ guardar mes
+  useEffect(() => {
+    try {
+      localStorage.setItem("tc_month_admin", month);
+    } catch {}
+  }, [month]);
 
   useEffect(() => {
     (async () => {
@@ -146,14 +179,13 @@ export default function Admin() {
     }
   }
 
-  async function listInvoices() {
-    if (listLoading) return;
-    setListLoading(true);
-    setListMsg("");
-    setInvoices([]);
-    setSelId("");
-    setSelInvoice(null);
-    setSelLines([]);
+  async function listInvoices(silent = false) {
+    if (listLoading && !silent) return;
+    if (!silent) {
+      setListLoading(true);
+      setListMsg("");
+    }
+
     try {
       const token = await getTokenOrLogin();
       if (!token) return;
@@ -166,11 +198,11 @@ export default function Admin() {
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
 
       setInvoices(j.invoices || []);
-      setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
+      if (!silent) setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
     } catch (e: any) {
-      setListMsg(`❌ ${e?.message || "Error"}`);
+      if (!silent) setListMsg(`❌ ${e?.message || "Error"}`);
     } finally {
-      setListLoading(false);
+      if (!silent) setListLoading(false);
     }
   }
 
@@ -230,7 +262,7 @@ export default function Admin() {
         meta: {},
       });
       await loadInvoice(selId);
-      await listInvoices();
+      await listInvoices(true);
       setSelMsg("✅ Línea añadida.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
@@ -242,7 +274,7 @@ export default function Admin() {
     try {
       await postEdit({ action: "update_line", invoice_id: selId, line_id, label, amount });
       await loadInvoice(selId);
-      await listInvoices();
+      await listInvoices(true);
       setSelMsg("✅ Guardado.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
@@ -255,7 +287,7 @@ export default function Admin() {
     try {
       await postEdit({ action: "delete_line", invoice_id: selId, line_id });
       await loadInvoice(selId);
-      await listInvoices();
+      await listInvoices(true);
       setSelMsg("✅ Línea borrada.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
@@ -267,12 +299,45 @@ export default function Admin() {
     try {
       await postEdit({ action: "set_status", invoice_id: selId, status });
       await loadInvoice(selId);
-      await listInvoices();
+      await listInvoices(true);
       setSelMsg("✅ Estado actualizado.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
     }
   }
+
+  // ✅ AUTO-CARGA al entrar y cuando cambie el mes
+  useEffect(() => {
+    if (!ok) return;
+    listInvoices(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, month]);
+
+  // ✅ Polling suave para ver aceptación “en directo”
+  useEffect(() => {
+    if (!ok) return;
+
+    // si cambias de mes, limpia
+    if (lastMonthRef.current !== month) {
+      lastMonthRef.current = month;
+    }
+
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    pollRef.current = setInterval(() => {
+      // refresco silencioso cada 8s cuando estás en facturas/editor
+      if (tab === "facturas" || tab === "editor") {
+        listInvoices(true);
+        if (tab === "editor" && selId) loadInvoice(selId);
+      }
+    }, 8000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month, selId]);
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
@@ -286,7 +351,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Edición</div>
+                <div className="tc-sub">Sincronización · Facturas · Edición · Aceptación</div>
               </div>
 
               <div className="tc-row">
@@ -298,7 +363,7 @@ export default function Admin() {
                   placeholder="2026-02"
                   style={{ width: 120 }}
                 />
-                <button className="tc-btn tc-btn-purple" onClick={listInvoices} disabled={listLoading}>
+                <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
                   {listLoading ? "Cargando…" : "Cargar"}
                 </button>
               </div>
@@ -322,14 +387,14 @@ export default function Admin() {
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🧾 Facturas del mes</div>
-                  <div className="tc-sub">Genera y revisa. Click para editar.</div>
+                  <div className="tc-sub">Genera y revisa. Click para editar. (Se actualiza “en directo”)</div>
                 </div>
 
                 <div className="tc-row">
                   <button className="tc-btn tc-btn-ok" onClick={generateInvoices} disabled={genLoading}>
                     {genLoading ? "Generando…" : "Generar facturas"}
                   </button>
-                  <button className="tc-btn tc-btn-gold" onClick={listInvoices} disabled={listLoading}>
+                  <button className="tc-btn tc-btn-gold" onClick={() => listInvoices()} disabled={listLoading}>
                     {listLoading ? "Cargando…" : "Ver resumen"}
                   </button>
                 </div>
@@ -350,6 +415,7 @@ export default function Admin() {
                       <th>Trabajador</th>
                       <th>Rol</th>
                       <th>Estado</th>
+                      <th>Aceptación</th>
                       <th>Total</th>
                     </tr>
                   </thead>
@@ -364,16 +430,34 @@ export default function Admin() {
                         <td><b>{x.display_name}</b></td>
                         <td className="tc-muted">{x.role}</td>
                         <td className="tc-muted">{x.status}</td>
+                        <td>
+                          <span
+                            className="tc-chip"
+                            style={{
+                              ...ackStyle(x.worker_ack),
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                            }}
+                            title={x.worker_ack_note || ""}
+                          >
+                            {ackLabel(x.worker_ack)}
+                          </span>
+                        </td>
                         <td><b>{eur(x.total || 0)}</b></td>
                       </tr>
                     ))}
                     {(!invoices || invoices.length === 0) && (
                       <tr>
-                        <td colSpan={4} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
+                        <td colSpan={5} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.8 }}>
+                Tip: si una tarotista rechaza, verás el motivo al pasar el ratón por “Aceptación”.
               </div>
             </div>
           )}
@@ -404,6 +488,16 @@ export default function Admin() {
                     <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
                     <br />
                     Total: <b>{eur(selInvoice?.total || 0)}</b> · Estado: <b>{selInvoice?.status}</b>
+                    <br />
+                    Aceptación:{" "}
+                    <span className="tc-chip" style={{ ...ackStyle(selInvoice?.worker_ack), padding: "4px 10px" }}>
+                      {ackLabel(selInvoice?.worker_ack)}
+                    </span>
+                    {selInvoice?.worker_ack_note ? (
+                      <>
+                        {" "}· Nota: <b>{selInvoice.worker_ack_note}</b>
+                      </>
+                    ) : null}
                   </div>
 
                   <div className="tc-hr" />
