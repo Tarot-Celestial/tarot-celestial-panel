@@ -19,9 +19,10 @@ function monthKeyNow() {
 async function getMe(req: Request) {
   const supabaseUrl = getEnvAny(["NEXT_PUBLIC_SUPABASE_URL"]);
   const anonKey = getEnvAny(["NEXT_PUBLIC_SUPABASE_ANON_KEY"]);
+
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return { ok: false, error: "NO_TOKEN" as const };
+  if (!token) return { ok: false as const, error: "NO_TOKEN" as const };
 
   const userClient = createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -29,7 +30,7 @@ async function getMe(req: Request) {
 
   const { data } = await userClient.auth.getUser();
   const uid = data?.user?.id || null;
-  if (!uid) return { ok: false, error: "BAD_TOKEN" as const };
+  if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };
 
   const url = getEnvAny(["NEXT_PUBLIC_SUPABASE_URL"]);
   const service = getEnvAny(["SUPABASE_SERVICE_ROLE_KEY"]);
@@ -41,8 +42,9 @@ async function getMe(req: Request) {
     .eq("user_id", uid)
     .maybeSingle();
 
-  if (werr || !w) return { ok: false, error: "NO_WORKER" as const };
-  return { ok: true, worker: w, admin };
+  if (werr || !w) return { ok: false as const, error: "NO_WORKER" as const };
+
+  return { ok: true as const, worker: w, admin };
 }
 
 export async function POST(req: Request) {
@@ -50,7 +52,9 @@ export async function POST(req: Request) {
     const me = await getMe(req);
     if (!me.ok) return NextResponse.json(me, { status: 401 });
 
-    if (me.worker.role !== "central" && me.worker.role !== "admin") {
+    const worker = me.worker; // ✅ TS ya sabe que existe
+
+    if (worker.role !== "central" && worker.role !== "admin") {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -62,14 +66,15 @@ export async function POST(req: Request) {
 
     if (!worker_id) return NextResponse.json({ ok: false, error: "worker_id required" }, { status: 400 });
     if (!reason) return NextResponse.json({ ok: false, error: "reason required" }, { status: 400 });
-    if (!isFinite(amount) || amount <= 0) return NextResponse.json({ ok: false, error: "amount must be > 0" }, { status: 400 });
+    if (!isFinite(amount) || amount <= 0)
+      return NextResponse.json({ ok: false, error: "amount must be > 0" }, { status: 400 });
 
     const { error } = await me.admin.from("incidents").insert({
       worker_id,
       month_key,
       amount,
       reason,
-      created_by: me.worker.id,
+      created_by: worker.id,
     });
 
     if (error) throw error;
