@@ -13,9 +13,12 @@ const CSV_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
 function cleanCell(v: any) {
-  const s = String(v ?? "").trim();
+  let s = String(v ?? "").trim();
   // quita comillas si viene "TRUE"
-  return s.replace(/^"(.*)"$/s, "$1").trim();
+  if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
+    s = s.slice(1, -1);
+  }
+  return s.trim();
 }
 
 function normHeader(h: string) {
@@ -32,6 +35,7 @@ function normCode(raw: any) {
 
 function toBoolCaptada(raw: any) {
   const s = cleanCell(raw).toLowerCase();
+
   // Google Sheets checkbox: TRUE/FALSE
   if (s === "true") return true;
   if (s === "false") return false;
@@ -64,7 +68,6 @@ function parseDateDDMMYYYY(raw: any): string | null {
 
 /**
  * CSV parser básico pero correcto para comillas.
- * Devuelve array de filas (cada fila array de celdas).
  */
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
@@ -109,16 +112,12 @@ function parseCSV(text: string): string[][] {
       continue;
     }
 
-    if (ch === "\r") {
-      continue;
-    }
+    if (ch === "\r") continue;
 
     cur += ch;
   }
 
-  // última celda/fila
   row.push(cur);
-  // evita fila final vacía
   if (row.length > 1 || cleanCell(row[0]) !== "") rows.push(row);
 
   return rows;
@@ -141,10 +140,7 @@ function rowHash(o: any) {
 }
 
 export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    hint: "Use POST to sync.",
-  });
+  return NextResponse.json({ ok: true, hint: "Use POST to sync." });
 }
 
 export async function POST() {
@@ -160,7 +156,8 @@ export async function POST() {
 
     // 2) Parse CSV real (con comillas)
     const table = parseCSV(text);
-    if (table.length < 2) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0 });
+    if (table.length < 2)
+      return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_true_seen: 0 });
 
     const headers = table[0].map(normHeader);
 
@@ -181,7 +178,6 @@ export async function POST() {
     const idxTiempo = idxExact("tiempo") >= 0 ? idxExact("tiempo") : idxIncludes("tiemp");
     const idxCodigo = idxExact("codigo") >= 0 ? idxExact("codigo") : idxIncludes("cod");
     const idxImporte = idxExact("importe") >= 0 ? idxExact("importe") : idxIncludes("import");
-    // ✅ captadas: buscamos exacto y si no, cualquier header que contenga "captad"
     const idxCaptadas =
       idxExact("captadas") >= 0
         ? idxExact("captadas")
@@ -190,10 +186,10 @@ export async function POST() {
           : idxIncludes("captad");
 
     if (idxFecha < 0 || idxTarotista < 0 || idxTiempo < 0 || idxCodigo < 0) {
-      return NextResponse.json({
-        ok: false,
-        error: `CSV headers missing. Found headers: ${headers.join(" | ")}`,
-      }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: `CSV headers missing. Found headers: ${headers.join(" | ")}` },
+        { status: 500 }
+      );
     }
 
     // 4) Convertir filas
@@ -218,7 +214,6 @@ export async function POST() {
 
       if (captada) captadasTrueSeen++;
 
-      // ignoramos call11
       if (tarotista.trim().toLowerCase() === "call11") continue;
 
       const obj = {
@@ -240,15 +235,17 @@ export async function POST() {
         upserted: 0,
         dropped_duplicates: 0,
         captadas_true_seen: captadasTrueSeen,
+        captadas_col_found: idxCaptadas >= 0,
+        captadas_col_name: idxCaptadas >= 0 ? headers[idxCaptadas] : null,
       });
     }
 
-    // ✅ DEDUPE dentro del lote
+    // Dedupe dentro del lote
     const byHash = new Map<string, any>();
     for (const rr of rows) byHash.set(rr.source_row_hash, rr);
     const uniqueRows = Array.from(byHash.values());
 
-    // 5) Upsert
+    // Upsert
     const { error } = await admin.from("calls").upsert(uniqueRows, {
       onConflict: "source_row_hash",
       ignoreDuplicates: false,
