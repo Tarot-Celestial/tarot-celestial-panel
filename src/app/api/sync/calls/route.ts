@@ -22,7 +22,7 @@ function normCode(raw: any) {
 
 function toBoolCaptada(raw: any) {
   const s = String(raw ?? "").trim().toLowerCase();
-  // según sheets: puede venir como TRUE / true / 1 / x / ✅
+  // Google Sheets checkbox suele exportar TRUE/FALSE
   return (
     s === "true" ||
     s === "1" ||
@@ -44,13 +44,12 @@ function parseDateDDMMYYYY(raw: any): string | null {
   const mm = Number(parts[1]);
   const yy = Number(parts[2]);
   if (!dd || !mm || !yy) return null;
-  // guardamos como YYYY-MM-DD
   const d = String(dd).padStart(2, "0");
   const m = String(mm).padStart(2, "0");
-  return `${yy}-${m}-${d}`;
+  return `${yy}-${m}-${d}`; // YYYY-MM-DD
 }
 
-// hash simple para deduplicar (no cripto, solo estable)
+// hash simple (estable) -> OJO: incluye captada (lo mantenemos para no romper lo ya importado)
 function rowHash(o: any) {
   const base = [
     o.call_date,
@@ -69,7 +68,7 @@ function rowHash(o: any) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    hint: "Use POST to sync. (We keep GET to avoid accidental crawlers writing.)",
+    hint: "Use POST to sync. (GET is only informational.)",
   });
 }
 
@@ -84,42 +83,54 @@ export async function POST(req: Request) {
     if (!res.ok) throw new Error(`CSV fetch failed: ${res.status}`);
     const text = await res.text();
 
-    // 2) Parse manual (simple) para no depender de libs
+    // 2) Parse manual (simple)
     const lines = text.split(/\r?\n/).filter(Boolean);
-    if (lines.length < 2) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0 });
+    if (lines.length < 2) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_fixed: 0 });
 
     // headers
-    const headers = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const headers = lines[0]
+      .split(",")
+      .map((h) => String(h || "").trim().toLowerCase().replace(/^"|"$/g, ""));
 
-    function get(row: string[], name: string) {
+    function get1(row: string[], name: string) {
       const idx = headers.indexOf(name);
       return idx >= 0 ? row[idx] : "";
+    }
+
+    function getAny(row: string[], names: string[]) {
+      for (const n of names) {
+        const v = get1(row, n);
+        if (String(v ?? "").trim() !== "") return v;
+      }
+      // aunque esté vacío, devolvemos el primero (por si el checkbox es vacío)
+      return get1(row, names[0] || "");
     }
 
     // 3) Convertir filas
     const rows: any[] = [];
     for (let i = 1; i < lines.length; i++) {
       const raw = lines[i];
-
-      // split csv básico (si tu sheet tiene comas en campos con comillas, lo ajustamos luego)
       const cols = raw.split(",");
 
-      const dateISO = parseDateDDMMYYYY(get(cols, "fecha"));
+      const dateISO = parseDateDDMMYYYY(getAny(cols, ["fecha", "date"]));
       if (!dateISO) continue;
 
-      const tarotista = String(get(cols, "tarotista") || "").trim();
-      const telefonista = String(get(cols, "telefonista") || "").trim();
+      const tarotista = String(getAny(cols, ["tarotista", "tarotist"]) || "").trim();
+      const telefonista = String(getAny(cols, ["telefonista", "central", "operador"]) || "").trim();
 
-      const minutos = Number(String(get(cols, "tiempo") || "0").replace(",", "."));
-      const importe = Number(String(get(cols, "importe") || "0").replace(",", "."));
-      const codigo = normCode(get(cols, "codigo"));
-      const captada = toBoolCaptada(get(cols, "captadas"));
+      const minutos = Number(String(getAny(cols, ["tiempo", "minutos", "minutes"]) || "0").replace(",", "."));
+      const importe = Number(String(getAny(cols, ["importe", "amount"]) || "0").replace(",", "."));
+      const codigo = normCode(getAny(cols, ["codigo", "code"]));
+
+      // ✅ captadas: soporta "captadas" y "captada"
+      const captadaRaw = getAny(cols, ["captadas", "captada"]);
+      const captada = toBoolCaptada(captadaRaw);
 
       // ignoramos call11
       if (tarotista.trim().toLowerCase() === "call11") continue;
 
       const obj = {
-        call_date: dateISO, // date column
+        call_date: dateISO,
         telefonista: telefonista || null,
         tarotista: tarotista || null,
         minutos: isFinite(minutos) ? minutos : 0,
@@ -131,18 +142,44 @@ export async function POST(req: Request) {
       rows.push({ ...obj, source_row_hash: rowHash(obj) });
     }
 
-    if (!rows.length) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0 });
+    if (!rows.length) return NextResponse.json({ ok: true, upserted: 0, dropped_duplicates: 0, captadas_fixed: 0 });
 
-    // ✅ DEDUPE: evita duplicados dentro del mismo lote (mismo source_row_hash)
+    // ✅ DEDUPE dentro del mismo lote
     const byHash = new Map<string, any>();
-    for (const r of rows) {
-      byHash.set(r.source_row_hash, r); // si viene repetida, nos quedamos con la última
-    }
+    for (const r of rows) byHash.set(r.source_row_hash, r);
     const uniqueRows = Array.from(byHash.values());
 
+    // ✅ Paso extra: arreglar captadas ya existentes SIN duplicar filas
+    // Si antes se importaron como captada=false, ahora (si es true) hacemos UPDATE por campos “naturales”
+    let captadas_fixed = 0;
+
+    const finalRows: any[] = [];
+    for (const r of uniqueRows) {
+      if (r.captada === true) {
+        const { data: updated, error: eu } = await admin
+          .from("calls")
+          .update({ captada: true })
+          .eq("call_date", r.call_date)
+          .eq("codigo", r.codigo)
+          .eq("tarotista", r.tarotista)
+          .eq("telefonista", r.telefonista)
+          .eq("minutos", r.minutos)
+          .select("source_row_hash")
+          .limit(1);
+
+        if (eu) throw eu;
+
+        if (updated && updated.length > 0) {
+          captadas_fixed += 1;
+          // ya existía esa fila; NO la metemos al upsert para no duplicar
+          continue;
+        }
+      }
+      finalRows.push(r);
+    }
+
     // 4) Upsert por hash (evita duplicar)
-    // Necesita que calls.source_row_hash exista + índice unique
-    const { error } = await admin.from("calls").upsert(uniqueRows, {
+    const { error } = await admin.from("calls").upsert(finalRows, {
       onConflict: "source_row_hash",
       ignoreDuplicates: false,
     });
@@ -151,8 +188,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      upserted: uniqueRows.length,
+      upserted: finalRows.length,
       dropped_duplicates: rows.length - uniqueRows.length,
+      captadas_fixed,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
