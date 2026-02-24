@@ -35,11 +35,8 @@ export default function Central() {
 
   const [meName, setMeName] = useState<string>("Central");
 
-  const [workers, setWorkers] = useState<any[]>([]);
-  const tarotists = useMemo(
-    () => (workers || []).filter((w) => String(w.role || "") === "tarotista"),
-    [workers]
-  );
+  const [tarotistsRaw, setTarotistsRaw] = useState<any[]>([]);
+  const tarotists = useMemo(() => tarotistsRaw || [], [tarotistsRaw]);
 
   // incidencias
   const [incWorkerId, setIncWorkerId] = useState<string>("");
@@ -65,20 +62,17 @@ export default function Central() {
 
       setMeName(me.display_name || "Central");
 
-      // carga lista de trabajadores (tarotistas para incidencias)
-      // aquí usamos el anon client con RLS: si no te deja, lo cambiamos por endpoint admin/central.
-      const { data: ws, error } = await sb
-        .from("workers")
-        .select("id, display_name, role, team")
-        .eq("role", "tarotista")
-        .order("display_name", { ascending: true });
-
-      if (!error) {
-        setWorkers(ws || []);
-        if (!incWorkerId && (ws || []).length) setIncWorkerId(ws![0].id);
+      // ✅ Cargar tarotistas desde endpoint server (evita RLS)
+      const r = await fetch("/api/central/tarotists", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) {
+        setIncMsg(`❌ No puedo cargar tarotistas: ${j?.error || "ERR"}`);
       } else {
-        // si RLS bloquea, dejamos mensaje
-        setIncMsg("⚠️ No puedo cargar la lista de tarotistas (RLS). Si pasa, lo arreglamos con un endpoint central.");
+        const ts = j.tarotists || [];
+        setTarotistsRaw(ts);
+        if (!incWorkerId && ts.length) setIncWorkerId(ts[0].id);
       }
 
       setOk(true);
@@ -128,7 +122,7 @@ export default function Central() {
 
       setIncTitle("");
       setIncAmount("0");
-      setIncMsg("✅ Incidencia creada. (Al regenerar facturas del mes, se aplicará en la factura)");
+      setIncMsg("✅ Incidencia creada. (Se aplicará al regenerar facturas del mes)");
     } catch (e: any) {
       setIncMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -144,7 +138,6 @@ export default function Central() {
 
       <div className="tc-wrap">
         <div className="tc-container">
-          {/* CABECERA DEL PANEL */}
           <div className="tc-card">
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
@@ -194,36 +187,15 @@ export default function Central() {
             </div>
           </div>
 
-          {/* TAB: RESUMEN */}
           {tab === "resumen" && (
             <div className="tc-card">
               <div className="tc-title">🏆 Competición por equipos</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Aquí mostraremos: media de % repite y % cliente por equipo (Fuego vs Agua), ganadores del mes y bonus
-                (central ganador +40€). Próximo paso.
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-row">
-                <div className="tc-chip">Equipo Fuego (Yami)</div>
-                <div className="tc-sub">Tarotistas tarde (1pm–9pm)</div>
-              </div>
-              <div className="tc-row" style={{ marginTop: 8 }}>
-                <div className="tc-chip">Equipo Agua (María)</div>
-                <div className="tc-sub">Tarotistas noche (9pm–5am)</div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-sub">
-                En el siguiente paso conectamos la view de stats por mes y pintamos:
-                <b> % repite, % cliente, captadas, minutos</b> + top 3.
+                Próximo paso: pintar medias de % repite y % cliente por equipo, top 3 y bonus central +40€.
               </div>
             </div>
           )}
 
-          {/* TAB: INCIDENCIAS */}
           {tab === "incidencias" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
@@ -231,7 +203,7 @@ export default function Central() {
                   <div className="tc-title">⚠️ Crear incidencia</div>
                   <div className="tc-sub">Ej: “No contesta”, “Se va la luz”, “Desconecta sin avisar”…</div>
                 </div>
-                <div className="tc-chip">Se aplica al mes: {month}</div>
+                <div className="tc-chip">Mes: {month}</div>
               </div>
 
               <div className="tc-hr" />
@@ -253,9 +225,7 @@ export default function Central() {
                         {w.display_name}
                       </option>
                     ))}
-                    {(!tarotists || tarotists.length === 0) && (
-                      <option value="">(No hay tarotistas cargadas)</option>
-                    )}
+                    {(!tarotists || tarotists.length === 0) && <option value="">(No hay tarotistas cargadas)</option>}
                   </select>
 
                   <div className="tc-sub" style={{ marginTop: 12, marginBottom: 6 }}>
@@ -286,82 +256,44 @@ export default function Central() {
                     </button>
                     <div className="tc-sub">{incMsg || " "}</div>
                   </div>
-
-                  <div className="tc-sub" style={{ marginTop: 12 }}>
-                    Nota: la incidencia queda registrada y al generar/regenerar facturas del mes se reflejará en la factura.
-                  </div>
                 </div>
 
                 <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
                   <div className="tc-title" style={{ fontSize: 14 }}>
-                    💡 Guía rápida de uso
+                    💡 Nota
                   </div>
                   <div className="tc-sub" style={{ marginTop: 8 }}>
-                    1) Elige tarotista <br />
-                    2) Escribe motivo claro <br />
-                    3) Pon importe (0 si solo es registro) <br />
-                    4) Crear incidencia <br />
-                    5) Admin regenerará facturas del mes si hace falta
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-title" style={{ fontSize: 14 }}>
-                    🎯 Consejo motivacional
-                  </div>
-                  <div className="tc-sub" style={{ marginTop: 8 }}>
-                    Las incidencias deben ser consistentes y justificadas. El objetivo es que el equipo mejore y la
-                    competición sea justa.
+                    La incidencia se guarda para el mes seleccionado y se reflejará como línea negativa en factura al
+                    regenerar.
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* TAB: CHECKLIST */}
           {tab === "checklist" && (
             <div className="tc-card">
               <div className="tc-title">✅ Checklist de Central</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Próximo paso: checklist por turno (se reinicia al empezar turno) + notificación al Admin cuando se completa.
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-sub">
-                Lo montamos con: <b>checklists</b> + <b>checklist_items</b> + <b>checklist_ticks</b> y una vista por turno.
+                Próximo paso: checklist por turno + notificación a Admin al completarse.
               </div>
             </div>
           )}
 
-          {/* TAB: CHAT */}
           {tab === "chat" && (
             <div className="tc-card">
               <div className="tc-title">💬 Chat con tarotistas</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Próximo paso: chat interno central ↔ tarotistas para enviar lista de clientes al inicio del turno.
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-sub">
-                Lo haremos simple: tabla <b>messages</b> (from_worker_id, to_role/team, body, created_at) + realtime.
+                Próximo paso: mensajes diarios (lista de clientes) con realtime.
               </div>
             </div>
           )}
 
-          {/* TAB: FACTURAS */}
           {tab === "facturas" && (
             <div className="tc-card">
               <div className="tc-title">🧾 Facturas (Central)</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Próximo paso: ver tu factura del mes (sueldo base + bonos) y el resumen por equipos.
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-sub">
-                Ya tienes la generación por mes en Admin. Aquí solo mostraremos tu factura y tus bonos.
+                Próximo paso: ver tu factura del mes (base + bonos) y resumen por equipos.
               </div>
             </div>
           )}
