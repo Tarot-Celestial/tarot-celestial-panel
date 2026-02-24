@@ -44,69 +44,89 @@ const USERS: SeedUser[] = [
   { email: "aguadoruizkaren@gmail.com", password: "Celestial1.", display_name: "Valeria", role: "tarotista", team: "agua", shift_start_hour: 21, shift_length_hours: 8, salary_base: 0 },
 ];
 
-export async function POST(req: Request) {
-  try {
-    const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const admin = createClient(url, service, { auth: { persistSession: false } });
+async function doSeed(req: Request) {
+  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    // Seguridad mínima: requiere header X-SEED-KEY igual a SEED_KEY (opcional pero recomendado)
-    const seedKey = process.env.SEED_KEY || "";
-    if (seedKey) {
-      const got = req.headers.get("x-seed-key") || "";
-      if (got !== seedKey) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-    }
+  // Seguridad: requiere SEED_KEY (en Vercel env). Si no existe, bloqueamos.
+  const seedKey = process.env.SEED_KEY || "";
+  if (!seedKey) {
+    return NextResponse.json(
+      { ok: false, error: "Missing SEED_KEY env var in Vercel (add it first)." },
+      { status: 500 }
+    );
+  }
 
-    const results: any[] = [];
+  // Aceptamos key por header o querystring
+  const u = new URL(req.url);
+  const gotHeader = req.headers.get("x-seed-key") || "";
+  const gotQuery = u.searchParams.get("key") || "";
+  const got = gotHeader || gotQuery;
 
-    for (const u of USERS) {
-      // 1) Crear usuario Auth (si ya existe, lo buscamos)
-      let userId: string | null = null;
+  if (got !== seedKey) {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN (bad key)" }, { status: 403 });
+  }
 
-      // Intento: crear
+  const results: any[] = [];
+  const list = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
+  if (list.error) throw list.error;
+
+  for (const u of USERS) {
+    // 1) Crear usuario Auth si no existe
+    const existing = list.data.users.find((x) => (x.email || "").toLowerCase() === u.email.toLowerCase());
+
+    let userId: string | null = existing?.id || null;
+
+    if (!userId) {
       const created = await admin.auth.admin.createUser({
         email: u.email,
         password: u.password,
         email_confirm: true,
       });
-
-      if (created.error) {
-        // Si ya existe, lo resolvemos por email listando (fallback)
-        // Nota: listUsers requiere paginación; para seed pequeño vale.
-        const list = await admin.auth.admin.listUsers({ page: 1, perPage: 200 });
-        if (list.error) throw list.error;
-        const found = list.data.users.find((x) => (x.email || "").toLowerCase() === u.email.toLowerCase());
-        if (!found?.id) throw created.error;
-        userId = found.id;
-      } else {
-        userId = created.data.user?.id || null;
-      }
-
-      if (!userId) throw new Error(`No userId for ${u.email}`);
-
-      // 2) Upsert en workers
-      const { error: ew } = await admin.from("workers").upsert(
-        {
-          user_id: userId,
-          email: u.email,
-          display_name: u.display_name,
-          role: u.role,
-          team: u.team,
-          shift_start_hour: u.shift_start_hour,
-          shift_length_hours: u.shift_length_hours,
-          salary_base: u.salary_base,
-          is_active: true,
-        },
-        { onConflict: "email" }
-      );
-
-      if (ew) throw ew;
-
-      results.push({ email: u.email, ok: true });
+      if (created.error) throw created.error;
+      userId = created.data.user?.id || null;
     }
 
-    return NextResponse.json({ ok: true, seeded: results.length, results });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    if (!userId) throw new Error(`No userId for ${u.email}`);
+
+    // 2) Upsert workers
+    const { error: ew } = await admin.from("workers").upsert(
+      {
+        user_id: userId,
+        email: u.email,
+        display_name: u.display_name,
+        role: u.role,
+        team: u.team,
+        shift_start_hour: u.shift_start_hour,
+        shift_length_hours: u.shift_length_hours,
+        salary_base: u.salary_base,
+        is_active: true,
+      },
+      { onConflict: "email" }
+    );
+    if (ew) throw ew;
+
+    results.push({ email: u.email, ok: true });
   }
+
+  return NextResponse.json({ ok: true, seeded: results.length, results });
+}
+
+export async function GET(req: Request) {
+  // Si no pasas key, solo muestra instrucciones (para que no dé 405)
+  const u = new URL(req.url);
+  const key = u.searchParams.get("key") || "";
+  if (!key) {
+    return NextResponse.json({
+      ok: true,
+      hint:
+        "To seed users, call this endpoint with ?key=YOUR_SEED_KEY (or POST with header x-seed-key). Example: /api/admin/seed-users?key=....",
+    });
+  }
+  return doSeed(req);
+}
+
+export async function POST(req: Request) {
+  return doSeed(req);
 }
