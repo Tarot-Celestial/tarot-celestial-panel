@@ -41,11 +41,6 @@ function n2(n: any) {
 }
 
 function capTier(captadas: number) {
-  // Tramos:
-  // 0-9 => 0.50€/captada
-  // 10-19 => 1.00€/captada
-  // 20-29 => 1.50€/captada
-  // 30+ => 2.00€/captada
   if (captadas >= 30) return { rate: 2.0, label: "2,00€ / captada (30+)", nextAt: null as any };
   if (captadas >= 20) return { rate: 1.5, label: "1,50€ / captada (20+)", nextAt: 30 };
   if (captadas >= 10) return { rate: 1.0, label: "1,00€ / captada (10+)", nextAt: 20 };
@@ -85,6 +80,12 @@ export default function Tarotista() {
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
 
+  // ✅ NUEVO: incidencias “en vivo” + factura real + aceptación
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [invoice, setInvoice] = useState<any>(null);
+  const [invoiceLines, setInvoiceLines] = useState<any[]>([]);
+  const [ackNote, setAckNote] = useState<string>("");
+
   useEffect(() => {
     (async () => {
       const { data } = await sb.auth.getSession();
@@ -121,14 +122,41 @@ export default function Tarotista() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
+      // ✅ NUEVO
+      const incRes = await fetch(`/api/incidents/my?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const invRes = await fetch(`/api/invoices/my?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       const s = await safeJson(sRes);
       const rnk = await safeJson(rRes);
+      const incJ = await safeJson(incRes);
+      const invJ = await safeJson(invRes);
 
       setStats(s);
       setRank(rnk);
 
+      if (incJ?._ok && incJ?.ok) setIncidents(incJ.incidents || []);
+      else setIncidents([]);
+
+      if (invJ?._ok && invJ?.ok) {
+        setInvoice(invJ.invoice || null);
+        setInvoiceLines(invJ.lines || []);
+      } else {
+        setInvoice(null);
+        setInvoiceLines([]);
+      }
+
       if ((s && s.ok === false) || (rnk && rnk.ok === false)) {
         setMsg("⚠️ Hay un error cargando datos (mira consola / endpoint).");
+      }
+      if (incJ && incJ.ok === false) {
+        setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
+      }
+      if (invJ && invJ.ok === false) {
+        setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
       }
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
@@ -141,6 +169,34 @@ export default function Tarotista() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
+  // ✅ sumatorio incidencias desde tabla incidents (no depende de regenerar factura)
+  const incidenciasLive = useMemo(() => {
+    return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+  }, [incidents]);
+
+  async function respondInvoice(action: "accepted" | "rejected") {
+    try {
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const r = await fetch("/api/invoices/respond", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ month, action, note: ackNote }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setMsg(action === "accepted" ? "✅ Factura aceptada" : "✅ Factura rechazada");
+      await refresh();
+    } catch (e: any) {
+      setMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   const s = stats?.stats || {};
@@ -150,8 +206,9 @@ export default function Tarotista() {
 
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
-  const incidencias = Number(s?.incidencias_total || 0); // si tu endpoint lo trae, si no quedará 0
-  const totalPreview = payMinutes + bonusCaptadas - incidencias;
+
+  // ✅ preview motivacional usando incidenciasLive (en vivo)
+  const totalPreview = payMinutes + bonusCaptadas - incidenciasLive;
 
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
@@ -225,9 +282,44 @@ export default function Tarotista() {
                 <div className="tc-kpis">
                   <Kpi label="Pago por minutos" value={eur(payMinutes)} />
                   <Kpi label="Bono captadas" value={eur(bonusCaptadas)} />
-                  <Kpi label="Incidencias" value={`- ${eur(incidencias)}`} />
+                  <Kpi label="Incidencias (en vivo)" value={`- ${eur(incidenciasLive)}`} />
                   <Kpi label="Total estimado" value={eur(totalPreview)} highlight />
                 </div>
+              </div>
+
+              {/* ✅ NUEVO: incidencias visibles en resumen (sin regenerar factura) */}
+              <div className="tc-card" style={{ gridColumn: "1 / -1" }}>
+                <div className="tc-title">⚠️ Incidencias del mes (en vivo)</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Te aparecen aquí en cuanto la central las crea (no depende de regenerar factura).
+                </div>
+                <div className="tc-hr" />
+                {(!incidents || incidents.length === 0) ? (
+                  <div className="tc-sub">No tienes incidencias este mes.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(incidents || []).slice(0, 8).map((i: any) => (
+                      <div
+                        key={i.id}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: "rgba(255,80,80,0.06)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                          <div style={{ fontWeight: 900 }}>{i.title || i.reason || "Incidencia"}</div>
+                          <div style={{ fontWeight: 900 }}>-{eur(i.amount)}</div>
+                        </div>
+                        {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
+                      </div>
+                    ))}
+                    {incidents.length > 8 && (
+                      <div className="tc-sub">Hay más incidencias. Ve a “Factura” para ver el detalle completo.</div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -380,17 +472,139 @@ export default function Tarotista() {
           {/* TAB: FACTURA */}
           {tab === "facturas" && (
             <div className="tc-card">
-              <div className="tc-title">🧾 Mi factura</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Próximo paso: aquí cargamos tu factura real (líneas Free/Rueda/Cliente/Repite + bonos + incidencias) desde
-                invoices + invoice_lines.
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">🧾 Mi factura</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
+                  </div>
+                </div>
+                <button className="tc-btn tc-btn-gold" onClick={refresh}>Recargar</button>
               </div>
 
               <div className="tc-hr" />
 
-              <div className="tc-sub">
-                Ya está calculado en base de datos. Solo falta el endpoint “/api/my/invoice?month=YYYY-MM” y pintarlo bonito.
-              </div>
+              {!invoice ? (
+                <div className="tc-sub">
+                  Aún no hay factura generada para este mes. (La genera Admin)
+                </div>
+              ) : (
+                <>
+                  <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                    <div>
+                      <div className="tc-sub">
+                        Estado: <b>{invoice.status}</b> · Aceptación:{" "}
+                        <b>{invoice.worker_ack || "pending"}</b>
+                      </div>
+                      <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>
+                        {eur(invoice.total || 0)}
+                      </div>
+                      {invoice.worker_ack_note ? (
+                        <div className="tc-sub" style={{ marginTop: 6 }}>
+                          Nota enviada: <b>{invoice.worker_ack_note}</b>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div style={{ minWidth: 320, maxWidth: "100%" }}>
+                      <div className="tc-sub">Nota (opcional, sobre todo si rechazas)</div>
+                      <input
+                        className="tc-input"
+                        value={ackNote}
+                        onChange={(e) => setAckNote(e.target.value)}
+                        placeholder="Ej: Falta revisar una incidencia…"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+
+                      <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
+                        <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>
+                          Aceptar
+                        </button>
+                        <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>
+                          Rechazar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div className="tc-title" style={{ fontSize: 14 }}>📌 Líneas</div>
+
+                  <div style={{ overflowX: "auto", marginTop: 8 }}>
+                    <table className="tc-table">
+                      <thead>
+                        <tr>
+                          <th>Concepto</th>
+                          <th>Importe</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(invoiceLines || []).map((l: any) => {
+                          const meta = l?.meta || {};
+                          const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
+                          const minutes = Number(meta.minutes || 0);
+                          const rate = Number(meta.rate || 0);
+                          const calc = minutes * rate;
+
+                          return (
+                            <tr key={l.id}>
+                              <td>
+                                <b>{l.label}</b>
+                                {hasBreakdown ? (
+                                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                                    {String(meta.code || "").toUpperCase()} · {minutes} min × {eur(rate)} ={" "}
+                                    <b>{eur(calc)}</b>
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(l.amount)}</td>
+                            </tr>
+                          );
+                        })}
+                        {(!invoiceLines || invoiceLines.length === 0) && (
+                          <tr>
+                            <td colSpan={2} className="tc-muted">
+                              No hay líneas (aún). Si esto pasa, regeneramos factura del mes en Admin.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias del mes</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Esto se actualiza en vivo (aunque la factura no se regenere).
+                  </div>
+
+                  <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                    {(!incidents || incidents.length === 0) ? (
+                      <div className="tc-sub">No tienes incidencias este mes.</div>
+                    ) : (
+                      (incidents || []).map((i: any) => (
+                        <div
+                          key={i.id}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: "rgba(255,80,80,0.06)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                            <div style={{ fontWeight: 900 }}>{i.title || i.reason || "Incidencia"}</div>
+                            <div style={{ fontWeight: 900 }}>-{eur(i.amount)}</div>
+                          </div>
+                          {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
