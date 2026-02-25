@@ -409,17 +409,27 @@ export default function Admin() {
   }
 
   async function deleteChecklistItem(id: string) {
-    if (!confirm("¿Borrar este item del checklist?")) return;
-    try {
-      setCkMsg("");
-      const token = await getTokenOrLogin();
-      if (!token) return;
+  if (!confirm("¿Borrar este item del checklist?")) return;
+  try {
+    setCkMsg("");
+    const token = await getTokenOrLogin();
+    if (!token) return;
 
-      const r = await fetch("/api/admin/checklists/items/delete", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
+    const r = await fetch("/api/admin/checklists/items", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete_item", id }),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+    setCkMsg("✅ Item borrado.");
+    await loadChecklistAdmin();
+  } catch (e: any) {
+    setCkMsg(`❌ ${e?.message || "Error"}`);
+  }
+}
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
