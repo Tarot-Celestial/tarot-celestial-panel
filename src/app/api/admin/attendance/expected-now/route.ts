@@ -30,17 +30,24 @@ function tzParts(tz: string, d = new Date()) {
   const hh = get("hour");
   const mm = get("minute");
   const ss = get("second");
-  const wd = get("weekday"); // Sun Mon...
+  const wd = get("weekday"); // Sun Mon Tue...
   const off = get("timeZoneName"); // GMT+1, GMT+2
   return { y, m, da, hh, mm, ss, wd, off };
 }
 
+function ymdInTz(tz: string, d = new Date()) {
+  const p = tzParts(tz, d);
+  return `${p.y}-${p.m}-${p.da}`;
+}
+
 function dowFromShort(wd: string) {
+  // en-CA short: Sun Mon Tue Wed Thu Fri Sat
   const map: any = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return map[wd] ?? null;
 }
 
 function offsetToIso(off: string) {
+  // "GMT+1" "GMT+02:00" etc.
   const s = String(off || "");
   const m = s.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i);
   if (!m) return "+00:00";
@@ -50,30 +57,15 @@ function offsetToIso(off: string) {
   return `${sign}${hh}:${mm}`;
 }
 
+/**
+ * Convierte "fecha local + hora local" a Date UTC aproximando bien el offset del día (DST incluido)
+ * usando Intl para sacar el offset en un "approx" cercano.
+ */
 function buildUtcFromLocal(dateYMD: string, timeHHMM: string, tz: string) {
-  // aproximación buena la mayoría de días: usa el offset ACTUAL del TZ
-  const off = offsetToIso(tzParts(tz).off);
+  // Usamos un "approx" en UTC para pedir a Intl el offset correcto del TZ en ese momento
+  const approx = new Date(`${dateYMD}T${timeHHMM}:00Z`);
+  const off = offsetToIso(tzParts(tz, approx).off);
   return new Date(`${dateYMD}T${timeHHMM}:00${off}`);
-}
-
-function ymdAddDays(ymd: string, addDays: number) {
-  // ymd: YYYY-MM-DD (lo tratamos como UTC para sumar días sin liarla)
-  const [y, m, d] = ymd.split("-").map((x) => parseInt(x, 10));
-  const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
-  dt.setUTCDate(dt.getUTCDate() + addDays);
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
-
-function timeToHHMM(t: any) {
-  return String(t || "").slice(0, 5); // "21:00"
-}
-
-function isOvernight(startHHMM: string, endHHMM: string) {
-  // si end <= start => cruza medianoche
-  return String(endHHMM) <= String(startHHMM);
 }
 
 async function uidFromBearer(req: Request) {
@@ -111,53 +103,42 @@ export async function GET(req: Request) {
     if (!me || me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const TZ = "Europe/Madrid";
-
-    // “hoy” en Madrid
-    const p = tzParts(TZ);
-    const dowToday = dowFromShort(p.wd);
-    if (dowToday == null) return NextResponse.json({ ok: false, error: "BAD_DOW" }, { status: 500 });
-
-    const todayYMD = `${p.y}-${p.m}-${p.da}`;
-    const yesterdayYMD = ymdAddDays(todayYMD, -1);
-    const dowYesterday = (dowToday + 6) % 7; // (today-1 mod 7)
-
     const nowUtc = new Date();
 
-    // IMPORTANTÍSIMO:
-    // Para que “ahora” funcione en turnos nocturnos, necesitamos:
-    // - horarios del día de hoy (dowToday)
-    // - horarios del día de ayer (dowYesterday), porque pueden seguir activos de madrugada
+    const p = tzParts(TZ, nowUtc);
+    const dowNow = dowFromShort(p.wd);
+    if (dowNow == null) return NextResponse.json({ ok: false, error: "BAD_DOW" }, { status: 500 });
+
+    const dowYesterday = (dowNow + 6) % 7; // día anterior (0..6)
+    const todayYMD = ymdInTz(TZ, nowUtc);
+    const yesterdayYMD = ymdInTz(TZ, new Date(nowUtc.getTime() - 24 * 60 * 60 * 1000));
+
+    // Traemos horarios del día actual y del día anterior (para cubrir turnos que cruzan medianoche)
     const { data: sch, error: es } = await admin
       .from("shift_schedules")
       .select("id, worker_id, day_of_week, start_time, end_time, timezone, active")
       .eq("active", true)
-      .in("day_of_week", [dowToday, dowYesterday]);
+      .in("day_of_week", [dowNow, dowYesterday]);
     if (es) throw es;
 
     const activeNow: any[] = [];
 
     for (const s of sch || []) {
       const tz = String(s.timezone || TZ);
-      const startHHMM = timeToHHMM(s.start_time);
-      const endHHMM = timeToHHMM(s.end_time);
+      const startHHMM = String(s.start_time || "").slice(0, 5);
+      const endHHMM = String(s.end_time || "").slice(0, 5);
 
-      const dow = Number(s.day_of_week);
+      // base date depende de si el schedule es de hoy o de ayer
+      const baseDate = Number(s.day_of_week) === dowNow ? todayYMD : yesterdayYMD;
 
-      // ¿Qué fecha local usar para calcular el inicio?
-      // - si el schedule es de hoy => startDate=today
-      // - si es de ayer => startDate=yesterday
-      const startDate = dow === dowToday ? todayYMD : yesterdayYMD;
+      let startUtc = buildUtcFromLocal(baseDate, startHHMM, tz);
+      let endUtc = buildUtcFromLocal(baseDate, endHHMM, tz);
 
-      const startUtc = buildUtcFromLocal(startDate, startHHMM, tz);
+      // ✅ si el turno cruza medianoche (ej 21:00 -> 05:00), el end real es al día siguiente
+      if (endUtc.getTime() <= startUtc.getTime()) {
+        endUtc = new Date(endUtc.getTime() + 24 * 60 * 60 * 1000);
+      }
 
-      // fin:
-      // - si NO cruza medianoche => endDate = startDate
-      // - si cruza => endDate = startDate + 1 día
-      const endDate = isOvernight(startHHMM, endHHMM) ? ymdAddDays(startDate, 1) : startDate;
-      const endUtc = buildUtcFromLocal(endDate, endHHMM, tz);
-
-      // ¿Activo ahora?
-      // Ojo: incluimos si now está entre start y end
       if (nowUtc >= startUtc && nowUtc <= endUtc) {
         activeNow.push({
           schedule_id: s.id,
@@ -167,7 +148,7 @@ export async function GET(req: Request) {
           start_time: startHHMM,
           end_time: endHHMM,
           timezone: tz,
-          schedule_day_of_week: dow,
+          day_of_week: s.day_of_week,
         });
       }
     }
@@ -178,14 +159,7 @@ export async function GET(req: Request) {
         ok: true,
         expected: [],
         now_utc: nowUtc.toISOString(),
-        debug: {
-          tz: TZ,
-          today: todayYMD,
-          dow_today: dowToday,
-          yesterday: yesterdayYMD,
-          dow_yesterday: dowYesterday,
-          schedules_checked: (sch || []).length,
-        },
+        debug: { tz: TZ, todayYMD, yesterdayYMD, dowNow, dowYesterday },
       });
     }
 
@@ -198,33 +172,24 @@ export async function GET(req: Request) {
     const byW: Record<string, any> = {};
     for (const w of workers || []) byW[String(w.id)] = w;
 
-    const expected = activeNow
-      .map((x) => ({
-        ...x,
-        worker: byW[String(x.worker_id)] || null,
-      }))
-      .filter((x) => !!x.worker);
+    const expected = activeNow.map((x) => ({
+      ...x,
+      worker: byW[String(x.worker_id)] || null,
+    }));
 
-    // orden bonito por rol y nombre
+    // orden bonito: role + nombre
     expected.sort((a: any, b: any) => {
-      const ra = String(a.worker?.role || "");
-      const rb = String(b.worker?.role || "");
+      const ra = String(a?.worker?.role || "");
+      const rb = String(b?.worker?.role || "");
       if (ra !== rb) return ra.localeCompare(rb);
-      return String(a.worker?.display_name || "").localeCompare(String(b.worker?.display_name || ""));
+      return String(a?.worker?.display_name || "").localeCompare(String(b?.worker?.display_name || ""));
     });
 
     return NextResponse.json({
       ok: true,
       expected,
       now_utc: nowUtc.toISOString(),
-      debug: {
-        tz: TZ,
-        today: todayYMD,
-        dow_today: dowToday,
-        yesterday: yesterdayYMD,
-        dow_yesterday: dowYesterday,
-        schedules_checked: (sch || []).length,
-      },
+      debug: { tz: TZ, todayYMD, yesterdayYMD, dowNow, dowYesterday },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
