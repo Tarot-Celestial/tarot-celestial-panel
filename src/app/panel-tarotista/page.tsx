@@ -80,7 +80,7 @@ export default function Tarotista() {
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
 
-  // ✅ NUEVO: incidencias “en vivo” + factura real + aceptación
+  // ✅ incidencias “en vivo” + factura real + aceptación
   const [incidents, setIncidents] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any>(null);
   const [invoiceLines, setInvoiceLines] = useState<any[]>([]);
@@ -122,7 +122,6 @@ export default function Tarotista() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      // ✅ NUEVO
       const incRes = await fetch(`/api/incidents/my?month=${encodeURIComponent(m)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -207,8 +206,17 @@ export default function Tarotista() {
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
 
+  // ✅ BONUS RANKING (nuevo)
+  const bonusRanking = Number(s?.bonus_ranking || 0);
+  const br = s?.bonus_ranking_breakdown || {};
+  const brCaptadas = Number(br?.captadas || 0);
+  const brCliente = Number(br?.cliente || 0);
+  const brRepite = Number(br?.repite || 0);
+
+  const bonusTotal = bonusCaptadas + bonusRanking;
+
   // ✅ preview motivacional usando incidenciasLive (en vivo)
-  const totalPreview = payMinutes + bonusCaptadas - incidenciasLive;
+  const totalPreview = payMinutes + bonusTotal - incidenciasLive;
 
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
@@ -282,19 +290,24 @@ export default function Tarotista() {
                 <div className="tc-kpis">
                   <Kpi label="Pago por minutos" value={eur(payMinutes)} />
                   <Kpi label="Bono captadas" value={eur(bonusCaptadas)} />
+                  <Kpi label="Bono ranking" value={eur(bonusRanking)} />
                   <Kpi label="Incidencias (en vivo)" value={`- ${eur(incidenciasLive)}`} />
                   <Kpi label="Total estimado" value={eur(totalPreview)} highlight />
                 </div>
+
+                <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
+                  Bonos totales del mes: <b>{eur(bonusTotal)}</b>
+                </div>
               </div>
 
-              {/* ✅ NUEVO: incidencias visibles en resumen (sin regenerar factura) */}
+              {/* incidencias visibles en resumen (sin regenerar factura) */}
               <div className="tc-card" style={{ gridColumn: "1 / -1" }}>
                 <div className="tc-title">⚠️ Incidencias del mes (en vivo)</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
                   Te aparecen aquí en cuanto la central las crea (no depende de regenerar factura).
                 </div>
                 <div className="tc-hr" />
-                {(!incidents || incidents.length === 0) ? (
+                {!incidents || incidents.length === 0 ? (
                   <div className="tc-sub">No tienes incidencias este mes.</div>
                 ) : (
                   <div style={{ display: "grid", gap: 10 }}>
@@ -371,38 +384,91 @@ export default function Tarotista() {
                   Tramos:
                   <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>0–9 captadas</span><b>0,50€</b>
+                      <span>0–9 captadas</span>
+                      <b>0,50€</b>
                     </div>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>10–19 captadas</span><b>1,00€</b>
+                      <span>10–19 captadas</span>
+                      <b>1,00€</b>
                     </div>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>20–29 captadas</span><b>1,50€</b>
+                      <span>20–29 captadas</span>
+                      <b>1,50€</b>
                     </div>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>30+ captadas</span><b>2,00€</b>
+                      <span>30+ captadas</span>
+                      <b>2,00€</b>
                     </div>
                   </div>
                 </div>
               </div>
 
               <div className="tc-card">
-                <div className="tc-title">🏆 Bonos por ranking</div>
+                <div className="tc-title">🏆 Bono ranking (Top 3)</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
-                  En <b>Captadas</b>, <b>Cliente</b> y <b>Repite</b>:
+                  Aquí se ve clarísimo lo que has ganado este mes por ranking (Captadas / Cliente / Repite).
                 </div>
 
                 <div className="tc-hr" />
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                    <span>🥇 1º puesto</span><b>6€</b>
+                {/* ✅ BLOQUE VISUAL (como captadas) */}
+                <div
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    borderRadius: 14,
+                    padding: 12,
+                    background: "rgba(181,156,255,0.08)",
+                  }}
+                >
+                  <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+                    <div>
+                      <div className="tc-sub">Bono ranking ganado este mes</div>
+                      <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{eur(bonusRanking)}</div>
+                    </div>
+
+                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                      <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
+                        Captadas: <b>{eur(brCaptadas)}</b>
+                      </span>
+                      <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
+                        Cliente: <b>{eur(brCliente)}</b>
+                      </span>
+                      <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
+                        Repite: <b>{eur(brRepite)}</b>
+                      </span>
+                    </div>
                   </div>
-                  <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                    <span>🥈 2º puesto</span><b>4€</b>
+
+                  <div className="tc-hr" style={{ margin: "12px 0" }} />
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <RankRow label="🏆 Captadas" value={brCaptadas} />
+                    <RankRow label="👑 Cliente" value={brCliente} />
+                    <RankRow label="🔁 Repite" value={brRepite} />
                   </div>
-                  <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                    <span>🥉 3º puesto</span><b>2€</b>
+
+                  <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
+                    Tip: el ranking se calcula por tu posición del mes en cada categoría (🥇 6€ · 🥈 4€ · 🥉 2€).
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-sub">
+                  Tabla de premios:
+                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                    <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                      <span>🥇 1º puesto</span>
+                      <b>6€</b>
+                    </div>
+                    <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                      <span>🥈 2º puesto</span>
+                      <b>4€</b>
+                    </div>
+                    <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                      <span>🥉 3º puesto</span>
+                      <b>2€</b>
+                    </div>
                   </div>
                 </div>
 
@@ -479,26 +545,23 @@ export default function Tarotista() {
                     Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
                   </div>
                 </div>
-                <button className="tc-btn tc-btn-gold" onClick={refresh}>Recargar</button>
+                <button className="tc-btn tc-btn-gold" onClick={refresh}>
+                  Recargar
+                </button>
               </div>
 
               <div className="tc-hr" />
 
               {!invoice ? (
-                <div className="tc-sub">
-                  Aún no hay factura generada para este mes. (La genera Admin)
-                </div>
+                <div className="tc-sub">Aún no hay factura generada para este mes. (La genera Admin)</div>
               ) : (
                 <>
                   <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
                     <div>
                       <div className="tc-sub">
-                        Estado: <b>{invoice.status}</b> · Aceptación:{" "}
-                        <b>{invoice.worker_ack || "pending"}</b>
+                        Estado: <b>{invoice.status}</b> · Aceptación: <b>{invoice.worker_ack || "pending"}</b>
                       </div>
-                      <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>
-                        {eur(invoice.total || 0)}
-                      </div>
+                      <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{eur(invoice.total || 0)}</div>
                       {invoice.worker_ack_note ? (
                         <div className="tc-sub" style={{ marginTop: 6 }}>
                           Nota enviada: <b>{invoice.worker_ack_note}</b>
@@ -553,8 +616,7 @@ export default function Tarotista() {
                                 <b>{l.label}</b>
                                 {hasBreakdown ? (
                                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                                    {String(meta.code || "").toUpperCase()} · {minutes} min × {eur(rate)} ={" "}
-                                    <b>{eur(calc)}</b>
+                                    {String(meta.code || "").toUpperCase()} · {minutes} min × {eur(rate)} = <b>{eur(calc)}</b>
                                   </div>
                                 ) : null}
                               </td>
@@ -581,7 +643,7 @@ export default function Tarotista() {
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                    {(!incidents || incidents.length === 0) ? (
+                    {!incidents || incidents.length === 0 ? (
                       <div className="tc-sub">No tienes incidencias este mes.</div>
                     ) : (
                       (incidents || []).map((i: any) => (
@@ -637,7 +699,9 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
       <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
           <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
+            <span>
+              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
+            </span>
           </div>
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
@@ -676,6 +740,37 @@ function TeamCard({
           <b>{Number(avgRepite || 0).toFixed(2)}%</b>
         </div>
       </div>
+    </div>
+  );
+}
+
+function RankRow({ label, value }: { label: string; value: number }) {
+  const v = Number(value || 0);
+  const medal = v >= 6 ? "🥇" : v >= 4 ? "🥈" : v >= 2 ? "🥉" : "—";
+  const note = v >= 6 ? "1º puesto" : v >= 4 ? "2º puesto" : v >= 2 ? "3º puesto" : "Sin bono";
+
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
+      <div>
+        <div style={{ fontWeight: 900 }}>{label}</div>
+        <div className="tc-sub" style={{ marginTop: 4 }}>
+          {medal} {note}
+        </div>
+      </div>
+
+      <div style={{ fontWeight: 900, fontSize: 18 }}>{eur(v)}</div>
     </div>
   );
 }
