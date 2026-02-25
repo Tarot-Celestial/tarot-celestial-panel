@@ -9,7 +9,7 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type TabKey = "resumen" | "bonos" | "ranking" | "equipos" | "facturas";
+type TabKey = "resumen" | "bonos" | "ranking" | "equipos" | "facturas" | "checklist";
 
 function monthKeyNow() {
   const d = new Date();
@@ -83,6 +83,11 @@ function medalForPos(pos: number | null) {
   return "—";
 }
 
+function clampPct(n: number) {
+  const x = Number(n) || 0;
+  return Math.max(0, Math.min(100, x));
+}
+
 export default function Tarotista() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("resumen");
@@ -98,8 +103,15 @@ export default function Tarotista() {
   const [invoiceLines, setInvoiceLines] = useState<any[]>([]);
   const [ackNote, setAckNote] = useState<string>("");
 
-  // ✅ para saber mi worker_id y calcular posición en top3
+  // para saber mi worker_id y calcular posición en top3
   const [myWorkerId, setMyWorkerId] = useState<string>("");
+
+  // ✅ NUEVO: checklist (turno)
+  const [clLoading, setClLoading] = useState(false);
+  const [clMsg, setClMsg] = useState("");
+  const [clShiftKey, setClShiftKey] = useState<string>("");
+  const [clRows, setClRows] = useState<any[]>([]);
+  const [clQ, setClQ] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -119,6 +131,64 @@ export default function Tarotista() {
       setOk(true);
     })();
   }, []);
+
+  async function loadChecklist() {
+    if (clLoading) return;
+    setClLoading(true);
+    setClMsg("");
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/checklists/my", { headers: { Authorization: `Bearer ${token}` } });
+      const j = await safeJson(res);
+
+      if (!j?._ok || !j?.ok) {
+        setClShiftKey("");
+        setClRows([]);
+        setClMsg(`❌ Checklist: ${j?.error || `HTTP ${j?._status}`}`);
+        return;
+      }
+
+      setClShiftKey(String(j.shift_key || ""));
+      setClRows(j.items || j.rows || []);
+      setClMsg(`✅ Checklist cargado (${(j.items || j.rows || []).length} items)`);
+    } catch (e: any) {
+      setClShiftKey("");
+      setClRows([]);
+      setClMsg(`❌ Checklist: ${e?.message || "Error"}`);
+    } finally {
+      setClLoading(false);
+    }
+  }
+
+  async function toggleChecklistItem(item: any) {
+    // item puede venir como { item_key } o { key } o { id }
+    const item_key = String(item?.item_key || item?.key || item?.id || "");
+    if (!item_key) return;
+
+    try {
+      setClMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/checklists/toggle", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ item_key }),
+      });
+
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      // Recarga para mantenerlo siempre “verdad DB”
+      await loadChecklist();
+    } catch (e: any) {
+      setClMsg(`❌ No se pudo marcar: ${e?.message || "Error"}`);
+    }
+  }
 
   async function refresh() {
     try {
@@ -151,7 +221,7 @@ export default function Tarotista() {
       setStats(s);
       setRank(rnk);
 
-      // ✅ guardamos mi worker_id (sale del propio stats/monthly)
+      // guardamos mi worker_id (sale del propio stats/monthly)
       const wid = s?.worker?.id ? String(s.worker.id) : "";
       if (wid) setMyWorkerId(wid);
 
@@ -183,8 +253,16 @@ export default function Tarotista() {
   useEffect(() => {
     if (!ok) return;
     refresh();
+    loadChecklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
+
+  // Cuando el usuario entra en checklist, refrescamos (por si cambió el turno)
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "checklist") loadChecklist();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const incidenciasLive = useMemo(() => {
     return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
@@ -223,7 +301,7 @@ export default function Tarotista() {
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
 
-  // ✅ BONUS RANKING “en vivo” (cambia si sube/baja en el mes)
+  // BONUS RANKING “en vivo”
   const bonusRanking = Number(s?.bonus_ranking || 0);
   const br = s?.bonus_ranking_breakdown || {};
   const brCaptadas = Number(br?.captadas || 0);
@@ -231,14 +309,13 @@ export default function Tarotista() {
   const brRepite = Number(br?.repite || 0);
 
   const bonusTotal = bonusCaptadas + bonusRanking;
-
   const totalPreview = payMinutes + bonusTotal - incidenciasLive;
 
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
   const topRepite = rank?.top?.repite || [];
 
-  // ✅ posiciones actuales (solo top3) usando rank + myWorkerId
+  // posiciones actuales (solo top3)
   const posCaptadas: number | null = (() => {
     const i = (topCaptadas || []).findIndex((x: any) => String(x.worker_id) === String(myWorkerId));
     return i >= 0 ? i + 1 : null;
@@ -251,6 +328,21 @@ export default function Tarotista() {
     const i = (topRepite || []).findIndex((x: any) => String(x.worker_id) === String(myWorkerId));
     return i >= 0 ? i + 1 : null;
   })();
+
+  // ✅ checklist: progreso + filtrado
+  const clFiltered = useMemo(() => {
+    const qq = clQ.trim().toLowerCase();
+    if (!qq) return clRows || [];
+    return (clRows || []).filter((it: any) => String(it.title || it.label || it.item_key || "").toLowerCase().includes(qq));
+  }, [clRows, clQ]);
+
+  const clProgress = useMemo(() => {
+    const rows = clRows || [];
+    const total = rows.length;
+    const completed = rows.filter((r: any) => !!r.done || r.status === "completed" || r.completed === true).length;
+    const pct = total ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, pct };
+  }, [clRows]);
 
   return (
     <>
@@ -284,6 +376,9 @@ export default function Tarotista() {
               </button>
               <button className={`tc-tab ${tab === "equipos" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipos")}>
                 🔥💧 Equipos
+              </button>
+              <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
+                ✅ Checklist
               </button>
               <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
                 🧾 Factura
@@ -528,6 +623,129 @@ export default function Tarotista() {
                 <div className="tc-sub">Ganador actual:</div>
                 <div className="tc-chip">
                   <b>{rank?.teams?.winner || "—"}</b>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ TAB: CHECKLIST */}
+          {tab === "checklist" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">✅ Checklist del turno</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Turno: <b>{clShiftKey || "—"}</b> · Completadas:{" "}
+                    <b>{clProgress.completed}/{clProgress.total}</b>
+                    {clMsg ? ` · ${clMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ flexWrap: "wrap" }}>
+                  <button className="tc-btn tc-btn-gold" onClick={loadChecklist} disabled={clLoading}>
+                    {clLoading ? "Cargando…" : "Actualizar checklist"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <input
+                    className="tc-input"
+                    value={clQ}
+                    onChange={(e) => setClQ(e.target.value)}
+                    placeholder="Buscar en checklist…"
+                    style={{ width: 320, maxWidth: "100%" }}
+                  />
+
+                  <div style={{ minWidth: 240, flex: 1 }}>
+                    <div
+                      style={{
+                        height: 12,
+                        borderRadius: 999,
+                        background: "rgba(255,255,255,0.10)",
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${clampPct(clProgress.pct)}%`,
+                          background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))",
+                        }}
+                      />
+                    </div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Progreso: <b>{clProgress.pct}%</b>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lista */}
+                <div style={{ display: "grid", gap: 10, marginTop: 2 }}>
+                  {(clFiltered || []).map((it: any) => {
+                    const title = String(it.title || it.label || it.item_key || "Checklist item");
+                    const done = !!it.done || it.status === "completed" || it.completed === true;
+                    const desc = String(it.description || it.desc || "");
+                    const doneAt = it.completed_at || it.done_at || it.updated_at || null;
+
+                    return (
+                      <div
+                        key={String(it.item_key || it.key || it.id || title)}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: done ? "rgba(120,255,190,0.10)" : "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                          <div style={{ minWidth: 240 }}>
+                            <div style={{ fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ opacity: done ? 1 : 0.9 }}>{done ? "✅" : "⬜"}</span>
+                              <span>{title}</span>
+                            </div>
+                            {desc ? <div className="tc-sub" style={{ marginTop: 6 }}>{desc}</div> : null}
+                            {done && doneAt ? (
+                              <div className="tc-sub" style={{ marginTop: 6, opacity: 0.85 }}>
+                                Completado: <b>{new Date(doneAt).toLocaleString("es-ES")}</b>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                            <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
+                              {done ? "Completado" : "Pendiente"}
+                            </span>
+
+                            <button
+                              className="tc-btn tc-btn-purple"
+                              onClick={() => toggleChecklistItem(it)}
+                              disabled={clLoading}
+                              style={{ minWidth: 160 }}
+                            >
+                              {done ? "Marcar como pendiente" : "Marcar como hecho"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {(!clFiltered || clFiltered.length === 0) && (
+                    <div className="tc-sub">
+                      No hay items en tu checklist (o no coinciden con la búsqueda).
+                    </div>
+                  )}
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-sub">
+                  Nota: el checklist se reinicia automáticamente con el <b>turno</b> (shift_key). Si cambia el turno, recarga.
                 </div>
               </div>
             </div>
