@@ -24,13 +24,6 @@ function numES(n: any, digits = 2) {
   return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
-function parseNumES(v: any) {
-  // soporta "12,34" o "12.34"
-  const s = String(v ?? "").trim().replace(",", ".");
-  const n = Number(s);
-  return isFinite(n) ? n : 0;
-}
-
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -42,7 +35,7 @@ async function safeJson(res: Response) {
   }
 }
 
-type TabKey = "facturas" | "editor" | "sync" | "checklists";
+type TabKey = "facturas" | "editor" | "asistencia" | "checklists" | "sync";
 
 function ackLabel(v: any) {
   const s = String(v || "pending");
@@ -94,7 +87,17 @@ export default function Admin() {
   }, [invoices]);
 
   // ---------------------------
-  // CHECKLIST ADMIN UI
+  // ✅ ASISTENCIA (online/expected/incidencias)
+  // ---------------------------
+  const [attLoading, setAttLoading] = useState(false);
+  const [attMsg, setAttMsg] = useState("");
+  const [attOnline, setAttOnline] = useState<any[]>([]);
+  const [attExpected, setAttExpected] = useState<any[]>([]);
+  const [attIncidents, setAttIncidents] = useState<any[]>([]);
+  const [attNote, setAttNote] = useState<string>("");
+
+  // ---------------------------
+  // ✅ CHECKLIST ADMIN UI
   // ---------------------------
   const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
   const [ckLoading, setCkLoading] = useState(false);
@@ -150,35 +153,19 @@ export default function Admin() {
     return token;
   }
 
-  async function apiGet(url: string) {
-    const token = await getTokenOrLogin();
-    if (!token) return null;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    const j = await safeJson(r);
-    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-    return j;
-  }
-
-  async function apiPost(url: string, body: any) {
-    const token = await getTokenOrLogin();
-    if (!token) return null;
-    const r = await fetch(url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const j = await safeJson(r);
-    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-    return j;
-  }
-
   async function syncNow() {
     if (syncLoading) return;
     setSyncLoading(true);
     setSyncMsg("");
     try {
-      await apiPost("/api/sync/calls", {});
-      setSyncMsg("✅ Sincronización OK.");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/sync/calls", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+      setSyncMsg(`✅ Sincronización OK. Upserted: ${j.upserted ?? 0}`);
     } catch (e: any) {
       setSyncMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -191,7 +178,18 @@ export default function Admin() {
     setGenLoading(true);
     setGenMsg("");
     try {
-      const j = await apiPost("/api/invoices/generate", { month });
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/invoices/generate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ month }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
       const count = j?.result?.invoices ?? "?";
       setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
       await listInvoices();
@@ -209,10 +207,20 @@ export default function Admin() {
       setListLoading(true);
       setListMsg("");
     }
+
     try {
-      const j = await apiGet(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`);
-      setInvoices(j?.invoices || []);
-      if (!silent) setListMsg(`✅ Cargadas ${j?.invoices?.length ?? 0} facturas (${month}).`);
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
+      setInvoices(j.invoices || []);
+      if (!silent) setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
     } catch (e: any) {
       if (!silent) setListMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -226,7 +234,16 @@ export default function Admin() {
     setSelMsg("");
     setSelId(invoice_id);
     try {
-      const j = await apiGet(`/api/admin/invoices/edit?invoice_id=${encodeURIComponent(invoice_id)}`);
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/invoices/edit?invoice_id=${encodeURIComponent(invoice_id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
       setSelInvoice(j.invoice);
       setSelWorker(j.worker);
       setSelLines(j.lines || []);
@@ -239,19 +256,30 @@ export default function Admin() {
   }
 
   async function postEdit(payload: any) {
-    return await apiPost("/api/admin/invoices/edit", payload);
+    const token = await getTokenOrLogin();
+    if (!token) return null;
+
+    const r = await fetch("/api/admin/invoices/edit", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+    return j;
   }
 
   async function addLine() {
     if (!selId) return;
     try {
-      const amt = parseNumES(newAmount);
+      const amt = Number(String(newAmount).replace(",", "."));
       await postEdit({
         action: "add_line",
         invoice_id: selId,
         kind: newKind,
         label: newLabel,
-        amount: amt,
+        amount: isFinite(amt) ? amt : 0,
         meta: {},
       });
       await loadInvoice(selId);
@@ -331,14 +359,117 @@ export default function Admin() {
   }, [ok, tab, month, selId]);
 
   // ---------------------------
-  // CHECKLIST: API calls
+  // ✅ ASISTENCIA: API calls
+  // ---------------------------
+  async function loadAttendance() {
+    if (attLoading) return;
+    setAttLoading(true);
+    setAttMsg("");
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const [r1, r2] = await Promise.all([
+        fetch("/api/admin/attendance/now", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/admin/attendance/expected-now", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+
+      const j1 = await safeJson(r1);
+      const j2 = await safeJson(r2);
+
+      if (!j1?._ok || !j1?.ok) throw new Error(j1?.error || `HTTP ${j1?._status}`);
+      if (!j2?._ok || !j2?.ok) throw new Error(j2?.error || `HTTP ${j2?._status}`);
+
+      setAttOnline(j1.online || []);
+      setAttExpected(j2.expected || []);
+
+      // incidencias del mes (attendance) => usamos month actual del admin para verlas
+      const incRes = await fetch(`/api/admin/incidents/list?month=${encodeURIComponent(month)}&kind=attendance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null);
+
+      if (incRes) {
+        const incJ = await safeJson(incRes);
+        if (incJ?._ok && incJ?.ok) setAttIncidents(incJ.incidents || []);
+        else setAttIncidents([]);
+      } else {
+        setAttIncidents([]);
+      }
+
+      setAttMsg("✅ Asistencia actualizada.");
+    } catch (e: any) {
+      setAttMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setAttLoading(false);
+    }
+  }
+
+  async function runAttendanceEngine() {
+    try {
+      setAttMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/attendance/run", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setAttMsg(`✅ Motor ejecutado. Retrasos: ${j.created?.late ?? 0} · Faltas: ${j.created?.absence ?? 0}`);
+      await loadAttendance();
+    } catch (e: any) {
+      setAttMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function decideIncident(incident_id: string, status: "justified" | "unjustified") {
+    try {
+      setAttMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/incidents/decide", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ incident_id, status, note: attNote }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setAttMsg(status === "justified" ? "✅ Marcada como JUSTIFICADA." : "✅ Marcada como NO justificada.");
+      setAttNote("");
+      await loadAttendance();
+    } catch (e: any) {
+      setAttMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "asistencia") loadAttendance();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month]);
+
+  // ---------------------------
+  // ✅ CHECKLIST: API calls (igual que tenías)
   // ---------------------------
   async function loadChecklistAdmin() {
     if (ckLoading) return;
     setCkLoading(true);
     setCkMsg("");
     try {
-      const j = await apiGet(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`);
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
       setCkTemplate(j.template || null);
       setCkItems(j.items || []);
       setCkMsg(`✅ Cargados ${(j.items || []).length} items (${ckTemplateKey})`);
@@ -354,24 +485,24 @@ export default function Admin() {
   async function saveChecklistItem(item: any) {
     try {
       setCkMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
-      const label = String(item?.label || "").trim();
-      const sort = Number(item?.sort ?? 0);
-
-      if (!label) throw new Error("Falta texto");
-      if (!isFinite(sort)) throw new Error("Sort inválido");
-
-      // ✅ IMPORTANTE:
-      // - crear => NO mandar id
-      // - editar => mandar id
-      const payload: any = {
+      const payload = {
         template_key: ckTemplateKey,
-        label,
-        sort,
+        id: item?.id || "",
+        label: String(item?.label || "").trim(),
+        sort: Number(item?.sort ?? 0),
       };
-      if (item?.id) payload.id = item.id;
 
-      await apiPost("/api/admin/checklists/items", payload);
+      const r = await fetch("/api/admin/checklists/items", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setCkMsg(payload.id ? "✅ Item guardado." : "✅ Item creado.");
       await loadChecklistAdmin();
@@ -384,13 +515,17 @@ export default function Admin() {
     if (!confirm("¿Borrar este item del checklist?")) return;
     try {
       setCkMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
-      // ✅ Mandamos template_key + action + id (más compatible)
-      await apiPost("/api/admin/checklists/items", {
-        action: "delete_item",
-        template_key: ckTemplateKey,
-        id,
+      const r = await fetch("/api/admin/checklists/items", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete_item", id }),
       });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setCkMsg("✅ Item borrado.");
       await loadChecklistAdmin();
@@ -401,11 +536,11 @@ export default function Admin() {
 
   async function addChecklistItem() {
     const label = ckNewLabel.trim();
-    const sort = parseNumES(ckNewSort);
+    const sort = Number(String(ckNewSort).replace(",", "."));
     if (!label) return setCkMsg("⚠️ Escribe un texto para el item.");
     if (!isFinite(sort)) return setCkMsg("⚠️ Sort inválido.");
 
-    await saveChecklistItem({ label, sort });
+    await saveChecklistItem({ id: "", label, sort });
     setCkNewLabel("");
     setCkNewSort(String(sort + 10));
   }
@@ -422,6 +557,25 @@ export default function Admin() {
     return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
   }, [ckItems, ckQ]);
 
+  // ---------------------------
+  // helpers UI asistencia
+  // ---------------------------
+  const onlineSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const o of attOnline || []) s.add(String(o.worker_id));
+    return s;
+  }, [attOnline]);
+
+  const expectedNow = useMemo(() => {
+    return (attExpected || []).map((x: any) => {
+      const wid = String(x.worker_id);
+      return {
+        ...x,
+        is_online: onlineSet.has(wid),
+      };
+    });
+  }, [attExpected, onlineSet]);
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
@@ -434,7 +588,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Edición · Aceptación · Checklists</div>
+                <div className="tc-sub">Sincronización · Facturas · Edición · Asistencia · Checklists</div>
               </div>
 
               <div className="tc-row">
@@ -458,6 +612,9 @@ export default function Admin() {
               </button>
               <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
                 ✏️ Editor
+              </button>
+              <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
+                🟢 Asistencia
               </button>
               <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
                 ✅ Checklists
@@ -628,6 +785,159 @@ export default function Admin() {
             </div>
           )}
 
+          {/* ✅ ASISTENCIA */}
+          {tab === "asistencia" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">🟢 Asistencia (en vivo)</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Retraso: <b>1€</b> si entra ≥ <b>5 min</b> tarde · Falta: <b>12€</b> si no conecta en todo el turno.
+                    {attMsg ? ` · ${attMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <button className="tc-btn tc-btn-gold" onClick={loadAttendance} disabled={attLoading}>
+                    {attLoading ? "Cargando…" : "Actualizar"}
+                  </button>
+                  <button className="tc-btn tc-btn-danger" onClick={runAttendanceEngine}>
+                    Ejecutar motor (crear incidencias)
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-grid-2">
+                <div className="tc-card" style={{ boxShadow: "none" }}>
+                  <div className="tc-title" style={{ fontSize: 14 }}>🟢 Conectados ahora</div>
+                  <div className="tc-hr" />
+                  {(attOnline || []).length === 0 ? (
+                    <div className="tc-sub">Nadie conectado (o aún no hay heartbeats).</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {(attOnline || []).map((o: any) => (
+                        <div key={o.worker_id} className="tc-row" style={{ justifyContent: "space-between" }}>
+                          <div>
+                            <b>{o.display_name}</b>{" "}
+                            <span className="tc-muted">({o.role}{o.team ? ` · ${o.team}` : ""})</span>
+                            {o.path ? <div className="tc-sub">Ruta: {o.path}</div> : null}
+                          </div>
+                          <div className="tc-sub">
+                            {o.last_seen_at ? new Date(o.last_seen_at).toLocaleTimeString("es-ES") : "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="tc-card" style={{ boxShadow: "none" }}>
+                  <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados ahora</div>
+                  <div className="tc-hr" />
+                  {(expectedNow || []).length === 0 ? (
+                    <div className="tc-sub">No hay horarios activos ahora mismo.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {(expectedNow || []).map((x: any) => (
+                        <div
+                          key={`${x.schedule_id}-${x.worker_id}`}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 10,
+                            background: x.is_online ? "rgba(120,255,190,0.08)" : "rgba(255,80,80,0.06)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                            <div>
+                              <b>{x.worker?.display_name || x.worker_id}</b>{" "}
+                              <span className="tc-muted">({x.worker?.role || "—"})</span>
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                {x.start_time}–{x.end_time} · {x.timezone}
+                              </div>
+                            </div>
+                            <div style={{ fontWeight: 900 }}>
+                              {x.is_online ? "🟢 OK" : "🔴 NO"}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias de asistencia (mes {month})</div>
+              <div className="tc-sub" style={{ marginTop: 6 }}>
+                Nota para justificar/no justificar:
+              </div>
+              <input
+                className="tc-input"
+                value={attNote}
+                onChange={(e) => setAttNote(e.target.value)}
+                placeholder="Ej: justificó con captura / aviso previo…"
+                style={{ width: "100%", marginTop: 6 }}
+              />
+
+              <div className="tc-hr" />
+
+              {(attIncidents || []).length === 0 ? (
+                <div className="tc-sub">No hay incidencias de asistencia en este mes.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {(attIncidents || []).map((i: any) => (
+                    <div
+                      key={i.id}
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        borderRadius: 14,
+                        padding: 12,
+                        background: "rgba(255,255,255,0.03)",
+                      }}
+                    >
+                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ fontWeight: 900 }}>
+                            {i.display_name ? `${i.display_name} · ` : ""}{i.reason || "Incidencia"}
+                          </div>
+                          <div className="tc-sub" style={{ marginTop: 4 }}>
+                            {i.meta?.type ? `Tipo: ${i.meta.type}` : ""}{" "}
+                            {i.meta?.date ? `· Fecha: ${i.meta.date}` : ""}{" "}
+                            {i.created_at ? `· Creada: ${new Date(i.created_at).toLocaleString("es-ES")}` : ""}
+                          </div>
+                          {i.evidence_note ? (
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              Nota: <b>{i.evidence_note}</b>
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontWeight: 900, fontSize: 18 }}>-{eur(i.amount)}</div>
+                          <div className="tc-sub">Estado: <b>{String(i.status || "unjustified")}</b></div>
+                        </div>
+                      </div>
+
+                      <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        <button className="tc-btn tc-btn-ok" onClick={() => decideIncident(i.id, "justified")}>
+                          Marcar JUSTIFICADA
+                        </button>
+                        <button className="tc-btn tc-btn-danger" onClick={() => decideIncident(i.id, "unjustified")}>
+                          Marcar NO justificada
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ✅ CHECKLISTS (igual que lo tenías) */}
           {tab === "checklists" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -782,7 +1092,7 @@ function LineEditor({
           )}
         </div>
 
-        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(parseNumES(amount))}</div>
+        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(amount)}</div>
       </div>
 
       <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 10, flexWrap: "wrap" }}>
@@ -790,7 +1100,7 @@ function LineEditor({
         <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
 
         <div className="tc-row">
-          <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, parseNumES(amount))}>
+          <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
             Guardar
           </button>
           <button className="tc-btn tc-btn-danger" onClick={onDelete}>
