@@ -62,10 +62,11 @@ export async function GET(req: Request) {
     if (!tpl) return NextResponse.json({ ok: false, error: "NO_TEMPLATE" }, { status: 500 });
 
     const { data: items, error: ei } = await admin
-      .from("checklist_template_items")
-      .select("id, sort, label")
-      .eq("template_id", tpl.id)
-      .order("sort", { ascending: true });
+  .from("checklist_template_items")
+  .select("id, sort, label, description, is_active")
+  .eq("template_id", tpl.id)
+  .eq("is_active", true)
+  .order("sort", { ascending: true });
     if (ei) throw ei;
 
     // response (crear si no existe)
@@ -94,6 +95,7 @@ export async function GET(req: Request) {
       id: it.id,
       sort: it.sort,
       label: it.label,
+      description: it.description || null,
       checked: Boolean(byItem[String(it.id)]?.checked),
       checked_at: byItem[String(it.id)]?.checked_at || null,
     }));
