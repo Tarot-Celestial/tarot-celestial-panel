@@ -23,7 +23,6 @@ function eur(n: any) {
 
 function pctAny(v: any) {
   let x = Number(v) || 0;
-  // si viene como 0..1 lo pasamos a 0..100
   if (x > 0 && x <= 1) x = x * 100;
   return x;
 }
@@ -59,20 +58,22 @@ export default function Central() {
 
   const [q, setQ] = useState(""); // buscador incidencias
 
-  // ✅ NUEVO: checklist tarotistas (turno actual)
+  // ✅ checklist tarotistas (turno actual)
   const [clLoading, setClLoading] = useState(false);
   const [clMsg, setClMsg] = useState("");
   const [clShiftKey, setClShiftKey] = useState<string>("");
   const [clRows, setClRows] = useState<any[]>([]);
   const [clQ, setClQ] = useState(""); // buscador checklist
 
+  // ✅ Auth gate
   useEffect(() => {
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
+      const me = await safeJson(meRes);
       if (!me?.ok) return (window.location.href = "/login");
 
       if (me.role !== "central") {
@@ -83,6 +84,37 @@ export default function Central() {
       setOk(true);
     })();
   }, []);
+
+  // ✅ Asistencia: ping cada 30s (para que Admin vea online también a la central)
+  useEffect(() => {
+    if (!ok) return;
+    let t: any = null;
+    let stopped = false;
+
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || stopped) return;
+
+      const ping = async () => {
+        try {
+          await fetch("/api/attendance/ping", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ path: window.location.pathname }),
+          });
+        } catch {}
+      };
+
+      await ping();
+      t = setInterval(ping, 30000);
+    })();
+
+    return () => {
+      stopped = true;
+      if (t) clearInterval(t);
+    };
+  }, [ok]);
 
   async function refreshRanking() {
     setRankMsg("");
@@ -138,7 +170,6 @@ export default function Central() {
     }
   }
 
-  // ✅ NUEVO: cargar checklist del turno (tarotistas de tu equipo)
   async function loadChecklist() {
     if (clLoading) return;
     setClLoading(true);
@@ -183,14 +214,12 @@ export default function Central() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
-  // ✅ cuando entras a incidencias, recarga lista (evita “no carga nada” por un fallo anterior)
   useEffect(() => {
     if (!ok) return;
     if (tab === "incidencias") loadTarotists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  // ✅ cuando entras a checklist, carga checklist
   useEffect(() => {
     if (!ok) return;
     if (tab === "checklist") loadChecklist();
@@ -219,10 +248,7 @@ export default function Central() {
     return (tarotists || []).filter((t) => String(t.display_name || "").toLowerCase().includes(qq));
   }, [tarotists, q]);
 
-  const selectedTarotist = useMemo(
-    () => tarotists.find((t) => t.id === incWorkerId),
-    [tarotists, incWorkerId]
-  );
+  const selectedTarotist = useMemo(() => tarotists.find((t) => t.id === incWorkerId), [tarotists, incWorkerId]);
 
   const clRowsFiltered = useMemo(() => {
     const qq = clQ.trim().toLowerCase();
@@ -358,8 +384,7 @@ export default function Central() {
                 <div>
                   <div className="tc-title">✅ Checklist Tarotistas (turno actual)</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Turno: <b>{clShiftKey || "—"}</b> · Completadas:{" "}
-                    <b>{clProgress.completed}/{clProgress.total}</b> · En progreso:{" "}
+                    Turno: <b>{clShiftKey || "—"}</b> · Completadas: <b>{clProgress.completed}/{clProgress.total}</b> · En progreso:{" "}
                     <b>{clProgress.inProg}</b> · Sin empezar: <b>{clProgress.notStarted}</b>
                   </div>
                 </div>
@@ -371,9 +396,7 @@ export default function Central() {
                 </div>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>
-                {clMsg || " "}
-              </div>
+              <div className="tc-sub" style={{ marginTop: 10 }}>{clMsg || " "}</div>
 
               <div className="tc-hr" />
 
@@ -393,7 +416,6 @@ export default function Central() {
 
               <div className="tc-hr" />
 
-              {/* Lista grande */}
               <div style={{ display: "grid", gap: 10 }}>
                 {(clRowsFiltered || []).map((r: any) => (
                   <div
@@ -438,11 +460,7 @@ export default function Central() {
                                 : "rgba(255,255,255,0.14)",
                           }}
                         >
-                          {r.status === "completed"
-                            ? "OK"
-                            : r.status === "in_progress"
-                            ? "Casi"
-                            : "Pendiente"}
+                          {r.status === "completed" ? "OK" : r.status === "in_progress" ? "Casi" : "Pendiente"}
                         </span>
                       </div>
                     </div>
@@ -463,9 +481,7 @@ export default function Central() {
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">⚠️ Incidencias</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Descuenta en la factura del mes seleccionado.
-                  </div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>Descuenta en la factura del mes seleccionado.</div>
                 </div>
 
                 <div className="tc-row" style={{ flexWrap: "wrap" }}>
@@ -502,9 +518,7 @@ export default function Central() {
                       {t.display_name} {t.team_key ? `(${t.team_key})` : ""}
                     </option>
                   ))}
-                  {(!tarotistsFiltered || tarotistsFiltered.length === 0) && (
-                    <option value="">(Sin resultados)</option>
-                  )}
+                  {(!tarotistsFiltered || tarotistsFiltered.length === 0) && <option value="">(Sin resultados)</option>}
                 </select>
 
                 <input
@@ -555,18 +569,9 @@ export default function Central() {
               <div className="tc-hr" />
 
               <div className="tc-grid-3">
-                <TopCard
-                  title="Captadas"
-                  items={topCaptadas.map((x: any) => `${x.display_name} (${Number(x.captadas_total || 0)})`)}
-                />
-                <TopCard
-                  title="Cliente"
-                  items={topCliente.map((x: any) => `${x.display_name} (${pctAny(x.pct_cliente).toFixed(2)}%)`)}
-                />
-                <TopCard
-                  title="Repite"
-                  items={topRepite.map((x: any) => `${x.display_name} (${pctAny(x.pct_repite).toFixed(2)}%)`)}
-                />
+                <TopCard title="Captadas" items={topCaptadas.map((x: any) => `${x.display_name} (${Number(x.captadas_total || 0)})`)} />
+                <TopCard title="Cliente" items={topCliente.map((x: any) => `${x.display_name} (${pctAny(x.pct_cliente).toFixed(2)}%)`)} />
+                <TopCard title="Repite" items={topRepite.map((x: any) => `${x.display_name} (${pctAny(x.pct_repite).toFixed(2)}%)`)} />
               </div>
             </div>
           )}
