@@ -9,7 +9,7 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type TabKey = "equipo" | "incidencias" | "ranking";
+type TabKey = "equipo" | "incidencias" | "ranking" | "checklist";
 
 function monthKeyNow() {
   const d = new Date();
@@ -58,6 +58,13 @@ export default function Central() {
   const [incLoading, setIncLoading] = useState(false);
 
   const [q, setQ] = useState(""); // buscador incidencias
+
+  // ✅ NUEVO: checklist tarotistas (turno actual)
+  const [clLoading, setClLoading] = useState(false);
+  const [clMsg, setClMsg] = useState("");
+  const [clShiftKey, setClShiftKey] = useState<string>("");
+  const [clRows, setClRows] = useState<any[]>([]);
+  const [clQ, setClQ] = useState(""); // buscador checklist
 
   useEffect(() => {
     (async () => {
@@ -131,6 +138,38 @@ export default function Central() {
     }
   }
 
+  // ✅ NUEVO: cargar checklist del turno (tarotistas de tu equipo)
+  async function loadChecklist() {
+    if (clLoading) return;
+    setClLoading(true);
+    setClMsg("");
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/central/checklists", { headers: { Authorization: `Bearer ${token}` } });
+      const j = await safeJson(res);
+
+      if (!j?._ok || !j?.ok) {
+        setClRows([]);
+        setClShiftKey("");
+        setClMsg(`❌ No se pudo cargar checklist: ${j?.error || `HTTP ${j?._status}`}`);
+        return;
+      }
+
+      setClShiftKey(String(j.shift_key || ""));
+      setClRows(j.rows || []);
+      setClMsg(`✅ Checklist cargado (${(j.rows || []).length} tarotistas)`);
+    } catch (e: any) {
+      setClRows([]);
+      setClShiftKey("");
+      setClMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setClLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
     refreshRanking();
@@ -148,6 +187,13 @@ export default function Central() {
   useEffect(() => {
     if (!ok) return;
     if (tab === "incidencias") loadTarotists();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  // ✅ cuando entras a checklist, carga checklist
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "checklist") loadChecklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
@@ -177,6 +223,22 @@ export default function Central() {
     () => tarotists.find((t) => t.id === incWorkerId),
     [tarotists, incWorkerId]
   );
+
+  const clRowsFiltered = useMemo(() => {
+    const qq = clQ.trim().toLowerCase();
+    const rows = clRows || [];
+    if (!qq) return rows;
+    return rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
+  }, [clRows, clQ]);
+
+  const clProgress = useMemo(() => {
+    const rows = clRows || [];
+    const total = rows.length;
+    const completed = rows.filter((r) => r.status === "completed").length;
+    const inProg = rows.filter((r) => r.status === "in_progress").length;
+    const notStarted = rows.filter((r) => r.status === "not_started").length;
+    return { total, completed, inProg, notStarted };
+  }, [clRows]);
 
   async function crearIncidencia() {
     if (incLoading) return;
@@ -221,7 +283,7 @@ export default function Central() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>🎧 Panel Central</div>
-                <div className="tc-sub">Competición · Incidencias · Ranking</div>
+                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking</div>
               </div>
 
               <div className="tc-row" style={{ flexWrap: "wrap" }}>
@@ -240,6 +302,9 @@ export default function Central() {
             <div style={{ marginTop: 12 }} className="tc-tabs">
               <button className={`tc-tab ${tab === "equipo" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipo")}>
                 🔥💧 Equipo
+              </button>
+              <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
+                ✅ Checklist
               </button>
               <button className={`tc-tab ${tab === "incidencias" ? "tc-tab-active" : ""}`} onClick={() => setTab("incidencias")}>
                 ⚠️ Incidencias
@@ -287,6 +352,112 @@ export default function Central() {
             </div>
           )}
 
+          {tab === "checklist" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">✅ Checklist Tarotistas (turno actual)</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Turno: <b>{clShiftKey || "—"}</b> · Completadas:{" "}
+                    <b>{clProgress.completed}/{clProgress.total}</b> · En progreso:{" "}
+                    <b>{clProgress.inProg}</b> · Sin empezar: <b>{clProgress.notStarted}</b>
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ flexWrap: "wrap" }}>
+                  <button className="tc-btn tc-btn-gold" onClick={loadChecklist} disabled={clLoading}>
+                    {clLoading ? "Cargando…" : "Actualizar checklist"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {clMsg || " "}
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-row" style={{ flexWrap: "wrap", gap: 10 }}>
+                <input
+                  className="tc-input"
+                  value={clQ}
+                  onChange={(e) => setClQ(e.target.value)}
+                  placeholder="Buscar tarotista…"
+                  style={{ width: 280, maxWidth: "100%" }}
+                />
+
+                <div className="tc-chip">
+                  Nota: este checklist se <b>resetea solo</b> con el turno (shift_key).
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              {/* Lista grande */}
+              <div style={{ display: "grid", gap: 10 }}>
+                {(clRowsFiltered || []).map((r: any) => (
+                  <div
+                    key={r.worker_id}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background:
+                        r.status === "completed"
+                          ? "rgba(120,255,190,0.10)"
+                          : r.status === "in_progress"
+                          ? "rgba(215,181,109,0.08)"
+                          : "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontWeight: 900 }}>{r.display_name}</div>
+                        <div className="tc-sub" style={{ marginTop: 6 }}>
+                          Estado:{" "}
+                          <b>
+                            {r.status === "completed"
+                              ? "Completado ✅"
+                              : r.status === "in_progress"
+                              ? "En progreso ⏳"
+                              : "Sin empezar ⬜"}
+                          </b>
+                          {r.completed_at ? ` · ${new Date(r.completed_at).toLocaleString("es-ES")}` : ""}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span
+                          className="tc-chip"
+                          style={{
+                            borderColor:
+                              r.status === "completed"
+                                ? "rgba(120,255,190,0.35)"
+                                : r.status === "in_progress"
+                                ? "rgba(215,181,109,0.35)"
+                                : "rgba(255,255,255,0.14)",
+                          }}
+                        >
+                          {r.status === "completed"
+                            ? "OK"
+                            : r.status === "in_progress"
+                            ? "Casi"
+                            : "Pendiente"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {(!clRowsFiltered || clRowsFiltered.length === 0) && (
+                  <div className="tc-sub">
+                    No hay tarotistas para este checklist. (Si eres central, solo verás tu equipo.)
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {tab === "incidencias" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -324,7 +495,7 @@ export default function Central() {
                   className="tc-select"
                   value={incWorkerId}
                   onChange={(e) => setIncWorkerId(e.target.value)}
-                  style={{ minWidth: 320, width: 360, maxWidth: "100%" }}
+                  style={{ minWidth: 360, width: 520, maxWidth: "100%" }}
                 >
                   {(tarotistsFiltered || []).map((t) => (
                     <option key={t.id} value={t.id}>
