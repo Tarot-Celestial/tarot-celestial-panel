@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import AppHeader from "@/components/AppHeader";
 
@@ -264,9 +264,7 @@ export default function Tarotista() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  const incidenciasLive = useMemo(() => {
-    return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
-  }, [incidents]);
+  const incidenciasLive = (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
 
   async function respondInvoice(action: "accepted" | "rejected") {
     try {
