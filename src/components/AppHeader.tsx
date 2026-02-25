@@ -95,7 +95,7 @@ export default function AppHeader() {
                 overflow: "hidden",
               }}
             >
-              <Image src="/logo.png" alt="Tarot Celestial" width={36} height={36} />
+              <Image src="/tarot-celestial-logo.png" alt="Tarot Celestial" width={36} height={36} />
             </div>
 
             <div style={{ lineHeight: 1.2 }}>
