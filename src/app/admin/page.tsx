@@ -35,7 +35,7 @@ async function safeJson(res: Response) {
   }
 }
 
-type TabKey = "facturas" | "editor" | "sync";
+type TabKey = "facturas" | "editor" | "sync" | "checklists";
 
 function ackLabel(v: any) {
   const s = String(v || "pending");
@@ -86,6 +86,19 @@ export default function Admin() {
   const totalSum = useMemo(() => {
     return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
+
+  // ---------------------------
+  // ✅ NUEVO: CHECKLIST ADMIN UI
+  // ---------------------------
+  const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
+  const [ckLoading, setCkLoading] = useState(false);
+  const [ckMsg, setCkMsg] = useState("");
+  const [ckTemplate, setCkTemplate] = useState<any>(null);
+  const [ckItems, setCkItems] = useState<any[]>([]);
+  const [ckQ, setCkQ] = useState("");
+
+  const [ckNewLabel, setCkNewLabel] = useState("");
+  const [ckNewSort, setCkNewSort] = useState<string>("10");
 
   // ✅ restaurar mes guardado
   useEffect(() => {
@@ -317,7 +330,6 @@ export default function Admin() {
   useEffect(() => {
     if (!ok) return;
 
-    // si cambias de mes, limpia
     if (lastMonthRef.current !== month) {
       lastMonthRef.current = month;
     }
@@ -325,7 +337,6 @@ export default function Admin() {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(() => {
-      // refresco silencioso cada 8s cuando estás en facturas/editor
       if (tab === "facturas" || tab === "editor") {
         listInvoices(true);
         if (tab === "editor" && selId) loadInvoice(selId);
@@ -339,6 +350,110 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month, selId]);
 
+  // ---------------------------
+  // ✅ CHECKLIST: API calls
+  // ---------------------------
+  async function loadChecklistAdmin() {
+    if (ckLoading) return;
+    setCkLoading(true);
+    setCkMsg("");
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
+      setCkTemplate(j.template || null);
+      setCkItems(j.items || []);
+      setCkMsg(`✅ Cargados ${(j.items || []).length} items (${ckTemplateKey})`);
+    } catch (e: any) {
+      setCkTemplate(null);
+      setCkItems([]);
+      setCkMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setCkLoading(false);
+    }
+  }
+
+  async function saveChecklistItem(item: any) {
+    try {
+      setCkMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const payload = {
+        template_key: ckTemplateKey,
+        id: item?.id || undefined,
+        label: String(item?.label || "").trim(),
+        sort: Number(item?.sort ?? 0),
+      };
+
+      const r = await fetch("/api/admin/checklists/items", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCkMsg(payload.id ? "✅ Item guardado." : "✅ Item creado.");
+      await loadChecklistAdmin();
+    } catch (e: any) {
+      setCkMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function deleteChecklistItem(id: string) {
+    if (!confirm("¿Borrar este item del checklist?")) return;
+    try {
+      setCkMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/checklists/items/delete", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCkMsg("✅ Item borrado.");
+      await loadChecklistAdmin();
+    } catch (e: any) {
+      setCkMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function addChecklistItem() {
+    const label = ckNewLabel.trim();
+    const sort = Number(String(ckNewSort).replace(",", "."));
+    if (!label) return setCkMsg("⚠️ Escribe un texto para el item.");
+    if (!isFinite(sort)) return setCkMsg("⚠️ Sort inválido.");
+
+    await saveChecklistItem({ id: "", label, sort });
+    setCkNewLabel("");
+    setCkNewSort(String(sort + 10));
+  }
+
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "checklists") loadChecklistAdmin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, ckTemplateKey]);
+
+  const ckFiltered = useMemo(() => {
+    const qq = ckQ.trim().toLowerCase();
+    if (!qq) return ckItems || [];
+    return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
+  }, [ckItems, ckQ]);
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
@@ -351,7 +466,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Edición · Aceptación</div>
+                <div className="tc-sub">Sincronización · Facturas · Edición · Aceptación · Checklists</div>
               </div>
 
               <div className="tc-row">
@@ -375,6 +490,9 @@ export default function Admin() {
               </button>
               <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
                 ✏️ Editor
+              </button>
+              <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
+                ✅ Checklists
               </button>
               <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
                 🔄 Sync
@@ -542,6 +660,99 @@ export default function Admin() {
             </div>
           )}
 
+          {/* ✅ NUEVO TAB: CHECKLISTS */}
+          {tab === "checklists" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">✅ Checklists (plantillas)</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Aquí defines qué items aparecen en el checklist de <b>tarotista</b> o <b>central</b>.
+                    {ckMsg ? ` · ${ckMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
+                  <select
+                    className="tc-select"
+                    value={ckTemplateKey}
+                    onChange={(e) => setCkTemplateKey(e.target.value as any)}
+                    style={{ minWidth: 220 }}
+                  >
+                    <option value="tarotista">tarotista</option>
+                    <option value="central">central</option>
+                  </select>
+
+                  <button className="tc-btn tc-btn-gold" onClick={loadChecklistAdmin} disabled={ckLoading}>
+                    {ckLoading ? "Cargando…" : "Recargar"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  className="tc-input"
+                  value={ckQ}
+                  onChange={(e) => setCkQ(e.target.value)}
+                  placeholder="Buscar item…"
+                  style={{ width: 320, maxWidth: "100%" }}
+                />
+
+                <div className="tc-sub" style={{ opacity: 0.9 }}>
+                  Plantilla: <b>{ckTemplate?.title || "—"}</b> · Items: <b>{(ckItems || []).length}</b>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir item</div>
+              <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
+                <input
+                  className="tc-input"
+                  value={ckNewLabel}
+                  onChange={(e) => setCkNewLabel(e.target.value)}
+                  placeholder="Texto del item…"
+                  style={{ width: 420, maxWidth: "100%" }}
+                />
+                <input
+                  className="tc-input"
+                  value={ckNewSort}
+                  onChange={(e) => setCkNewSort(e.target.value)}
+                  placeholder="Sort"
+                  style={{ width: 120 }}
+                />
+                <button className="tc-btn tc-btn-ok" onClick={addChecklistItem} disabled={ckLoading}>
+                  Añadir
+                </button>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div style={{ display: "grid", gap: 10 }}>
+                {(ckFiltered || []).map((it: any) => (
+                  <ChecklistRow
+                    key={it.id}
+                    item={it}
+                    onSave={(next) => saveChecklistItem(next)}
+                    onDelete={() => deleteChecklistItem(String(it.id))}
+                  />
+                ))}
+
+                {(!ckFiltered || ckFiltered.length === 0) && (
+                  <div className="tc-sub">No hay items (o no coinciden con la búsqueda).</div>
+                )}
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-sub" style={{ opacity: 0.85 }}>
+                Nota: al borrar un item, también se eliminan los “checks” ya marcados en turnos anteriores para ese item.
+              </div>
+            </div>
+          )}
+
           {tab === "sync" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
@@ -620,6 +831,66 @@ function LineEditor({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChecklistRow({
+  item,
+  onSave,
+  onDelete,
+}: {
+  item: any;
+  onSave: (next: any) => void;
+  onDelete: () => void;
+}) {
+  const [label, setLabel] = useState<string>(String(item.label || ""));
+  const [sort, setSort] = useState<string>(String(item.sort ?? 0));
+  const [msg, setMsg] = useState<string>("");
+
+  useEffect(() => {
+    setLabel(String(item.label || ""));
+    setSort(String(item.sort ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item?.id]);
+
+  function save() {
+    setMsg("");
+    const s = Number(String(sort).replace(",", "."));
+    if (!String(label).trim()) return setMsg("⚠️ Falta texto");
+    if (!isFinite(s)) return setMsg("⚠️ Sort inválido");
+    onSave({ ...item, label: String(label).trim(), sort: s });
+    setMsg("✅ Guardando…");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="tc-sub">Texto</div>
+          <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+        </div>
+
+        <div style={{ width: 140 }}>
+          <div className="tc-sub">Sort</div>
+          <input className="tc-input" value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+        </div>
+
+        <div className="tc-row" style={{ gap: 8, alignItems: "flex-end" }}>
+          <button className="tc-btn tc-btn-ok" onClick={save}>Guardar</button>
+          <button className="tc-btn tc-btn-danger" onClick={onDelete}>Borrar</button>
+        </div>
+      </div>
+
+      {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
   );
 }
