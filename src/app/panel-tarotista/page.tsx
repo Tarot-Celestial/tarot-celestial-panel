@@ -49,9 +49,7 @@ function capTier(captadas: number) {
 
 function progressToNext(captadas: number) {
   const t = capTier(captadas);
-  if (!t.nextAt) {
-    return { pct: 100, text: "Tramo máximo alcanzado 🔥" };
-  }
+  if (!t.nextAt) return { pct: 100, text: "Tramo máximo alcanzado 🔥" };
   const prev = t.nextAt === 10 ? 0 : t.nextAt === 20 ? 10 : 20;
   const span = t.nextAt - prev;
   const cur = Math.min(Math.max(captadas - prev, 0), span);
@@ -71,6 +69,20 @@ async function safeJson(res: Response) {
   }
 }
 
+function bonusForPos(pos: number | null) {
+  if (pos === 1) return 6;
+  if (pos === 2) return 4;
+  if (pos === 3) return 2;
+  return 0;
+}
+
+function medalForPos(pos: number | null) {
+  if (pos === 1) return "🥇";
+  if (pos === 2) return "🥈";
+  if (pos === 3) return "🥉";
+  return "—";
+}
+
 export default function Tarotista() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("resumen");
@@ -80,11 +92,14 @@ export default function Tarotista() {
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
 
-  // ✅ incidencias “en vivo” + factura real + aceptación
+  // incidencias en vivo + factura real + aceptación
   const [incidents, setIncidents] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any>(null);
   const [invoiceLines, setInvoiceLines] = useState<any[]>([]);
   const [ackNote, setAckNote] = useState<string>("");
+
+  // ✅ para saber mi worker_id y calcular posición en top3
+  const [myWorkerId, setMyWorkerId] = useState<string>("");
 
   useEffect(() => {
     (async () => {
@@ -121,7 +136,6 @@ export default function Tarotista() {
       const rRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-
       const incRes = await fetch(`/api/incidents/my?month=${encodeURIComponent(m)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -136,6 +150,10 @@ export default function Tarotista() {
 
       setStats(s);
       setRank(rnk);
+
+      // ✅ guardamos mi worker_id (sale del propio stats/monthly)
+      const wid = s?.worker?.id ? String(s.worker.id) : "";
+      if (wid) setMyWorkerId(wid);
 
       if (incJ?._ok && incJ?.ok) setIncidents(incJ.incidents || []);
       else setIncidents([]);
@@ -168,7 +186,6 @@ export default function Tarotista() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
-  // ✅ sumatorio incidencias desde tabla incidents (no depende de regenerar factura)
   const incidenciasLive = useMemo(() => {
     return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
   }, [incidents]);
@@ -206,7 +223,7 @@ export default function Tarotista() {
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
 
-  // ✅ BONUS RANKING (nuevo)
+  // ✅ BONUS RANKING “en vivo” (cambia si sube/baja en el mes)
   const bonusRanking = Number(s?.bonus_ranking || 0);
   const br = s?.bonus_ranking_breakdown || {};
   const brCaptadas = Number(br?.captadas || 0);
@@ -215,12 +232,25 @@ export default function Tarotista() {
 
   const bonusTotal = bonusCaptadas + bonusRanking;
 
-  // ✅ preview motivacional usando incidenciasLive (en vivo)
   const totalPreview = payMinutes + bonusTotal - incidenciasLive;
 
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
   const topRepite = rank?.top?.repite || [];
+
+  // ✅ posiciones actuales (solo top3) usando rank + myWorkerId
+  const posCaptadas: number | null = (() => {
+    const i = (topCaptadas || []).findIndex((x: any) => String(x.worker_id) === String(myWorkerId));
+    return i >= 0 ? i + 1 : null;
+  })();
+  const posCliente: number | null = (() => {
+    const i = (topCliente || []).findIndex((x: any) => String(x.worker_id) === String(myWorkerId));
+    return i >= 0 ? i + 1 : null;
+  })();
+  const posRepite: number | null = (() => {
+    const i = (topRepite || []).findIndex((x: any) => String(x.worker_id) === String(myWorkerId));
+    return i >= 0 ? i + 1 : null;
+  })();
 
   return (
     <>
@@ -228,22 +258,17 @@ export default function Tarotista() {
 
       <div className="tc-wrap">
         <div className="tc-container">
-          {/* CABECERA DEL PANEL */}
           <div className="tc-card">
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
-                <div className="tc-title" style={{ fontSize: 18 }}>
-                  🔮 Panel Tarotista
-                </div>
+                <div className="tc-title" style={{ fontSize: 18 }}>🔮 Panel Tarotista</div>
                 <div className="tc-sub">
                   Mes: <b>{month}</b> {msg ? `· ${msg}` : ""}
                 </div>
               </div>
 
               <div className="tc-row">
-                <button className="tc-btn tc-btn-gold" onClick={refresh}>
-                  Actualizar
-                </button>
+                <button className="tc-btn tc-btn-gold" onClick={refresh}>Actualizar</button>
               </div>
             </div>
 
@@ -290,7 +315,7 @@ export default function Tarotista() {
                 <div className="tc-kpis">
                   <Kpi label="Pago por minutos" value={eur(payMinutes)} />
                   <Kpi label="Bono captadas" value={eur(bonusCaptadas)} />
-                  <Kpi label="Bono ranking" value={eur(bonusRanking)} />
+                  <Kpi label="Bono ranking (hoy)" value={eur(bonusRanking)} />
                   <Kpi label="Incidencias (en vivo)" value={`- ${eur(incidenciasLive)}`} />
                   <Kpi label="Total estimado" value={eur(totalPreview)} highlight />
                 </div>
@@ -300,7 +325,6 @@ export default function Tarotista() {
                 </div>
               </div>
 
-              {/* incidencias visibles en resumen (sin regenerar factura) */}
               <div className="tc-card" style={{ gridColumn: "1 / -1" }}>
                 <div className="tc-title">⚠️ Incidencias del mes (en vivo)</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
@@ -328,9 +352,6 @@ export default function Tarotista() {
                         {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
                       </div>
                     ))}
-                    {incidents.length > 8 && (
-                      <div className="tc-sub">Hay más incidencias. Ve a “Factura” para ver el detalle completo.</div>
-                    )}
                   </div>
                 )}
               </div>
@@ -340,6 +361,7 @@ export default function Tarotista() {
           {/* TAB: BONOS */}
           {tab === "bonos" && (
             <div className="tc-grid-2">
+              {/* Captadas */}
               <div className="tc-card">
                 <div className="tc-title">💰 Bono captadas</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
@@ -384,34 +406,30 @@ export default function Tarotista() {
                   Tramos:
                   <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>0–9 captadas</span>
-                      <b>0,50€</b>
+                      <span>0–9 captadas</span><b>0,50€</b>
                     </div>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>10–19 captadas</span>
-                      <b>1,00€</b>
+                      <span>10–19 captadas</span><b>1,00€</b>
                     </div>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>20–29 captadas</span>
-                      <b>1,50€</b>
+                      <span>20–29 captadas</span><b>1,50€</b>
                     </div>
                     <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>30+ captadas</span>
-                      <b>2,00€</b>
+                      <span>30+ captadas</span><b>2,00€</b>
                     </div>
                   </div>
                 </div>
               </div>
 
+              {/* Ranking */}
               <div className="tc-card">
-                <div className="tc-title">🏆 Bono ranking (Top 3)</div>
+                <div className="tc-title">🏆 Bono ranking (en vivo)</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Aquí se ve clarísimo lo que has ganado este mes por ranking (Captadas / Cliente / Repite).
+                  Esto es lo que llevas ganado <b>hoy</b> por tu posición del mes. Si mañana bajas, también baja (y al revés).
                 </div>
 
                 <div className="tc-hr" />
 
-                {/* ✅ BLOQUE VISUAL (como captadas) */}
                 <div
                   style={{
                     border: "1px solid rgba(255,255,255,0.10)",
@@ -422,8 +440,8 @@ export default function Tarotista() {
                 >
                   <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
                     <div>
-                      <div className="tc-sub">Bono ranking ganado este mes</div>
-                      <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{eur(bonusRanking)}</div>
+                      <div className="tc-sub">Bono ranking acumulado (según posición actual)</div>
+                      <div style={{ fontWeight: 900, fontSize: 26, marginTop: 6 }}>{eur(bonusRanking)}</div>
                     </div>
 
                     <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
@@ -442,33 +460,13 @@ export default function Tarotista() {
                   <div className="tc-hr" style={{ margin: "12px 0" }} />
 
                   <div style={{ display: "grid", gap: 8 }}>
-                    <RankRow label="🏆 Captadas" value={brCaptadas} />
-                    <RankRow label="👑 Cliente" value={brCliente} />
-                    <RankRow label="🔁 Repite" value={brRepite} />
+                    <RankLiveRow label="🏆 Captadas" pos={posCaptadas} amount={brCaptadas} />
+                    <RankLiveRow label="👑 Cliente" pos={posCliente} amount={brCliente} />
+                    <RankLiveRow label="🔁 Repite" pos={posRepite} amount={brRepite} />
                   </div>
 
                   <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
-                    Tip: el ranking se calcula por tu posición del mes en cada categoría (🥇 6€ · 🥈 4€ · 🥉 2€).
-                  </div>
-                </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-sub">
-                  Tabla de premios:
-                  <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                    <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>🥇 1º puesto</span>
-                      <b>6€</b>
-                    </div>
-                    <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>🥈 2º puesto</span>
-                      <b>4€</b>
-                    </div>
-                    <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                      <span>🥉 3º puesto</span>
-                      <b>2€</b>
-                    </div>
+                    Premio: 🥇 6€ · 🥈 4€ · 🥉 2€ · fuera del top 3 = 0€
                   </div>
                 </div>
 
@@ -545,9 +543,7 @@ export default function Tarotista() {
                     Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
                   </div>
                 </div>
-                <button className="tc-btn tc-btn-gold" onClick={refresh}>
-                  Recargar
-                </button>
+                <button className="tc-btn tc-btn-gold" onClick={refresh}>Recargar</button>
               </div>
 
               <div className="tc-hr" />
@@ -580,12 +576,8 @@ export default function Tarotista() {
                       />
 
                       <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
-                        <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>
-                          Aceptar
-                        </button>
-                        <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>
-                          Rechazar
-                        </button>
+                        <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>Aceptar</button>
+                        <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>Rechazar</button>
                       </div>
                     </div>
                   </div>
@@ -699,9 +691,7 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
       <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
           <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>
-              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
-            </span>
+            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
           </div>
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
@@ -744,10 +734,11 @@ function TeamCard({
   );
 }
 
-function RankRow({ label, value }: { label: string; value: number }) {
-  const v = Number(value || 0);
-  const medal = v >= 6 ? "🥇" : v >= 4 ? "🥈" : v >= 2 ? "🥉" : "—";
-  const note = v >= 6 ? "1º puesto" : v >= 4 ? "2º puesto" : v >= 2 ? "3º puesto" : "Sin bono";
+function RankLiveRow({ label, pos, amount }: { label: string; pos: number | null; amount: number }) {
+  const p = pos ?? null;
+  const medal = medalForPos(p);
+  const note = p ? `Posición actual: ${p}º` : "Fuera del Top 3";
+  const expected = bonusForPos(p);
 
   return (
     <div
@@ -766,11 +757,10 @@ function RankRow({ label, value }: { label: string; value: number }) {
       <div>
         <div style={{ fontWeight: 900 }}>{label}</div>
         <div className="tc-sub" style={{ marginTop: 4 }}>
-          {medal} {note}
+          {medal} {note} · Premio: <b>{eur(expected)}</b>
         </div>
       </div>
-
-      <div style={{ fontWeight: 900, fontSize: 18 }}>{eur(v)}</div>
+      <div style={{ fontWeight: 900, fontSize: 18 }}>{eur(amount)}</div>
     </div>
   );
 }
