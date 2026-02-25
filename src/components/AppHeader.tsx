@@ -10,10 +10,7 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-type PresenceState = "online" | "offline" | "pause" | "bathroom";
-
 function monthLabelEs(monthKey: string) {
-  // monthKey: YYYY-MM
   const [y, m] = (monthKey || "").split("-").map((x) => Number(x));
   if (!y || !m) return monthKey;
   const d = new Date(y, m - 1, 1);
@@ -29,7 +26,6 @@ export default function AppHeader() {
   const [name, setName] = useState<string>("Cargando…");
   const [role, setRole] = useState<string>("");
   const [team, setTeam] = useState<string>("");
-  const [state, setState] = useState<PresenceState>("online");
   const [month, setMonth] = useState<string>(monthKeyNow());
 
   const pathname = usePathname();
@@ -48,7 +44,6 @@ export default function AppHeader() {
         setName(me.display_name || "Usuario");
         setRole(me.role || "");
         setTeam(me.team || "");
-        if (me.presence_state) setState(me.presence_state);
         if (me.month_key) setMonth(me.month_key);
       }
     })();
@@ -73,19 +68,6 @@ export default function AppHeader() {
     return t;
   }
 
-  function stateDot(s: PresenceState) {
-    if (s === "online") return "🟢 online";
-    if (s === "pause") return "🟡 descanso";
-    if (s === "bathroom") return "🟣 baño";
-    return "⚫ offline";
-  }
-
-  // Esto por ahora solo cambia el select visual.
-  // Luego lo conectamos al endpoint de estado manual que ya tenías pensado.
-  async function onChangeState(v: PresenceState) {
-    setState(v);
-  }
-
   return (
     <div
       style={{
@@ -99,6 +81,7 @@ export default function AppHeader() {
     >
       <div className="tc-container" style={{ padding: "12px 16px" }}>
         <div className="tc-row" style={{ justifyContent: "space-between" }}>
+          {/* IZQUIERDA */}
           <div className="tc-row" style={{ gap: 12 }}>
             <div
               style={{
@@ -112,12 +95,13 @@ export default function AppHeader() {
                 overflow: "hidden",
               }}
             >
-              {/* Ajusta el path si tu logo está en /public/logo.png */}
               <Image src="/logo.png" alt="Tarot Celestial" width={36} height={36} />
             </div>
 
             <div style={{ lineHeight: 1.2 }}>
-              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>Tarot Celestial</div>
+              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>
+                Tarot Celestial
+              </div>
               <div className="tc-sub">
                 <b>{name}</b> · {roleLabel(role)}
                 {team ? ` · ${teamLabel(team)}` : ""}
@@ -126,17 +110,9 @@ export default function AppHeader() {
             </div>
           </div>
 
+          {/* DERECHA */}
           <div className="tc-row" style={{ gap: 10 }}>
-            <select className="tc-select" value={state} onChange={(e) => onChangeState(e.target.value as PresenceState)}>
-              <option value="online">🟢 online</option>
-              <option value="offline">⚫ offline</option>
-              <option value="pause">🟡 descanso</option>
-              <option value="bathroom">🟣 baño</option>
-            </select>
-
-            <div className="tc-chip">{stateDot(state)}</div>
-
-            {/* Mes: por ahora visual. Luego lo conectamos a tu selector global */}
+            {/* Selector mes */}
             <input
               className="tc-input"
               value={month}
@@ -145,6 +121,7 @@ export default function AppHeader() {
               title={monthLabelEs(month)}
             />
 
+            {/* Logout */}
             <button className="tc-btn tc-btn-gold" onClick={logout}>
               Salir
             </button>
