@@ -30,24 +30,17 @@ function tzParts(tz: string, d = new Date()) {
   const hh = get("hour");
   const mm = get("minute");
   const ss = get("second");
-  const wd = get("weekday"); // Sun Mon Tue...
+  const wd = get("weekday"); // Sun Mon...
   const off = get("timeZoneName"); // GMT+1, GMT+2
   return { y, m, da, hh, mm, ss, wd, off };
 }
 
-function ymdInTz(tz: string, d = new Date()) {
-  const p = tzParts(tz, d);
-  return `${p.y}-${p.m}-${p.da}`;
-}
-
 function dowFromShort(wd: string) {
-  // en-CA short: Sun Mon Tue Wed Thu Fri Sat
   const map: any = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
   return map[wd] ?? null;
 }
 
 function offsetToIso(off: string) {
-  // "GMT+1" "GMT+02:00" etc.
   const s = String(off || "");
   const m = s.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i);
   if (!m) return "+00:00";
@@ -57,14 +50,19 @@ function offsetToIso(off: string) {
   return `${sign}${hh}:${mm}`;
 }
 
-/**
- * Convierte "fecha local + hora local" a Date UTC aproximando bien el offset del día (DST incluido)
- * usando Intl para sacar el offset en un "approx" cercano.
- */
+function addDaysYMD(ymd: string, deltaDays: number) {
+  const [y, m, d] = ymd.split("-").map((x) => Number(x));
+  const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
 function buildUtcFromLocal(dateYMD: string, timeHHMM: string, tz: string) {
-  // Usamos un "approx" en UTC para pedir a Intl el offset correcto del TZ en ese momento
-  const approx = new Date(`${dateYMD}T${timeHHMM}:00Z`);
-  const off = offsetToIso(tzParts(tz, approx).off);
+  // aproximación buena para casi todos los casos: usa offset actual del TZ
+  const off = offsetToIso(tzParts(tz).off);
   return new Date(`${dateYMD}T${timeHHMM}:00${off}`);
 }
 
@@ -103,42 +101,42 @@ export async function GET(req: Request) {
     if (!me || me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const TZ = "Europe/Madrid";
+    const p = tzParts(TZ);
+    const dowToday = dowFromShort(p.wd);
+    if (dowToday == null) return NextResponse.json({ ok: false, error: "BAD_DOW" }, { status: 500 });
+
+    const dowYesterday = (dowToday + 6) % 7; // -1 mod 7
+    const todayYMD = `${p.y}-${p.m}-${p.da}`;
+    const yesterdayYMD = addDaysYMD(todayYMD, -1);
     const nowUtc = new Date();
 
-    const p = tzParts(TZ, nowUtc);
-    const dowNow = dowFromShort(p.wd);
-    if (dowNow == null) return NextResponse.json({ ok: false, error: "BAD_DOW" }, { status: 500 });
-
-    const dowYesterday = (dowNow + 6) % 7; // día anterior (0..6)
-    const todayYMD = ymdInTz(TZ, nowUtc);
-    const yesterdayYMD = ymdInTz(TZ, new Date(nowUtc.getTime() - 24 * 60 * 60 * 1000));
-
-    // Traemos horarios del día actual y del día anterior (para cubrir turnos que cruzan medianoche)
+    // ✅ IMPORTANT: traemos horarios de HOY y AYER (para cubrir turnos 21:00->05:00)
     const { data: sch, error: es } = await admin
       .from("shift_schedules")
       .select("id, worker_id, day_of_week, start_time, end_time, timezone, active")
       .eq("active", true)
-      .in("day_of_week", [dowNow, dowYesterday]);
+      .in("day_of_week", [dowToday, dowYesterday]);
     if (es) throw es;
 
     const activeNow: any[] = [];
 
     for (const s of sch || []) {
       const tz = String(s.timezone || TZ);
-      const startHHMM = String(s.start_time || "").slice(0, 5);
-      const endHHMM = String(s.end_time || "").slice(0, 5);
+      const startHHMM = String(s.start_time).slice(0, 5);
+      const endHHMM = String(s.end_time).slice(0, 5);
 
-      // base date depende de si el schedule es de hoy o de ayer
-      const baseDate = Number(s.day_of_week) === dowNow ? todayYMD : yesterdayYMD;
+      // La fecha base depende de si el schedule es de hoy o de ayer
+      const baseYMD = Number(s.day_of_week) === dowYesterday ? yesterdayYMD : todayYMD;
 
-      let startUtc = buildUtcFromLocal(baseDate, startHHMM, tz);
-      let endUtc = buildUtcFromLocal(baseDate, endHHMM, tz);
+      const startUtc = buildUtcFromLocal(baseYMD, startHHMM, tz);
+      let endUtc = buildUtcFromLocal(baseYMD, endHHMM, tz);
 
-      // ✅ si el turno cruza medianoche (ej 21:00 -> 05:00), el end real es al día siguiente
-      if (endUtc.getTime() <= startUtc.getTime()) {
+      // ✅ Si el turno cruza medianoche (ej 21:00 -> 05:00), sumamos 1 día al end
+      if (endUtc <= startUtc) {
         endUtc = new Date(endUtc.getTime() + 24 * 60 * 60 * 1000);
       }
 
+      // ✅ ahora sí: si estamos dentro del rango, está “activo ahora”
       if (nowUtc >= startUtc && nowUtc <= endUtc) {
         activeNow.push({
           schedule_id: s.id,
@@ -159,7 +157,7 @@ export async function GET(req: Request) {
         ok: true,
         expected: [],
         now_utc: nowUtc.toISOString(),
-        debug: { tz: TZ, todayYMD, yesterdayYMD, dowNow, dowYesterday },
+        debug: { dowToday, dowYesterday, todayYMD, yesterdayYMD },
       });
     }
 
@@ -172,24 +170,25 @@ export async function GET(req: Request) {
     const byW: Record<string, any> = {};
     for (const w of workers || []) byW[String(w.id)] = w;
 
-    const expected = activeNow.map((x) => ({
-      ...x,
-      worker: byW[String(x.worker_id)] || null,
-    }));
+    const expected = activeNow
+      .map((x) => ({
+        ...x,
+        worker: byW[String(x.worker_id)] || null,
+      }))
+      .filter((x) => x.worker); // por si hay schedule huérfano
 
-    // orden bonito: role + nombre
     expected.sort((a: any, b: any) => {
-      const ra = String(a?.worker?.role || "");
-      const rb = String(b?.worker?.role || "");
-      if (ra !== rb) return ra.localeCompare(rb);
-      return String(a?.worker?.display_name || "").localeCompare(String(b?.worker?.display_name || ""));
+      const ar = String(a.worker?.role || "");
+      const br = String(b.worker?.role || "");
+      if (ar !== br) return ar.localeCompare(br);
+      return String(a.worker?.display_name || "").localeCompare(String(b.worker?.display_name || ""));
     });
 
     return NextResponse.json({
       ok: true,
       expected,
       now_utc: nowUtc.toISOString(),
-      debug: { tz: TZ, todayYMD, yesterdayYMD, dowNow, dowYesterday },
+      debug: { dowToday, dowYesterday, todayYMD, yesterdayYMD },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
