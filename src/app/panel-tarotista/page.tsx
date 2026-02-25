@@ -173,13 +173,15 @@ export default function Tarotista() {
     return { total, completed, pct };
   }, [clRows]);
 
+  // ✅ Auth gate
   useEffect(() => {
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
+      const me = await safeJson(meRes);
       if (!me?.ok) return (window.location.href = "/login");
 
       if (me.role !== "tarotista") {
@@ -191,6 +193,37 @@ export default function Tarotista() {
       setOk(true);
     })();
   }, []);
+
+  // ✅ Asistencia: ping cada 30s (para que Admin vea online)
+  useEffect(() => {
+    if (!ok) return;
+    let t: any = null;
+    let stopped = false;
+
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || stopped) return;
+
+      const ping = async () => {
+        try {
+          await fetch("/api/attendance/ping", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ path: window.location.pathname }),
+          });
+        } catch {}
+      };
+
+      await ping();
+      t = setInterval(ping, 30000);
+    })();
+
+    return () => {
+      stopped = true;
+      if (t) clearInterval(t);
+    };
+  }, [ok]);
 
   async function loadChecklist() {
     if (clLoading) return;
@@ -344,8 +377,6 @@ export default function Tarotista() {
     }
   }
 
-  // ✅ CLAVE: ya NO hacemos "if (!ok) return ..." antes de los hooks.
-  // Renderizamos el loading dentro del JSX, manteniendo el orden de hooks estable.
   return (
     <>
       <AppHeader />
@@ -358,18 +389,14 @@ export default function Tarotista() {
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
-                  <div className="tc-title" style={{ fontSize: 18 }}>
-                    🔮 Panel Tarotista
-                  </div>
+                  <div className="tc-title" style={{ fontSize: 18 }}>🔮 Panel Tarotista</div>
                   <div className="tc-sub">
                     Mes: <b>{month}</b> {msg ? `· ${msg}` : ""}
                   </div>
                 </div>
 
                 <div className="tc-row">
-                  <button className="tc-btn tc-btn-gold" onClick={refresh}>
-                    Actualizar
-                  </button>
+                  <button className="tc-btn tc-btn-gold" onClick={refresh}>Actualizar</button>
                 </div>
               </div>
 
@@ -465,7 +492,6 @@ export default function Tarotista() {
             {/* TAB: BONOS */}
             {tab === "bonos" && (
               <div className="tc-grid-2">
-                {/* Captadas */}
                 <div className="tc-card">
                   <div className="tc-title">💰 Bono captadas</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
@@ -509,27 +535,14 @@ export default function Tarotista() {
                   <div className="tc-sub">
                     Tramos:
                     <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>0–9 captadas</span>
-                        <b>0,50€</b>
-                      </div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>10–19 captadas</span>
-                        <b>1,00€</b>
-                      </div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>20–29 captadas</span>
-                        <b>1,50€</b>
-                      </div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>30+ captadas</span>
-                        <b>2,00€</b>
-                      </div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>0–9 captadas</span><b>0,50€</b></div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>10–19 captadas</span><b>1,00€</b></div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>20–29 captadas</span><b>1,50€</b></div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>30+ captadas</span><b>2,00€</b></div>
                     </div>
                   </div>
                 </div>
 
-                {/* Ranking */}
                 <div className="tc-card">
                   <div className="tc-title">🏆 Bono ranking (en vivo)</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
@@ -770,9 +783,7 @@ export default function Tarotista() {
                       Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
                     </div>
                   </div>
-                  <button className="tc-btn tc-btn-gold" onClick={refresh}>
-                    Recargar
-                  </button>
+                  <button className="tc-btn tc-btn-gold" onClick={refresh}>Recargar</button>
                 </div>
 
                 <div className="tc-hr" />
@@ -805,21 +816,15 @@ export default function Tarotista() {
                         />
 
                         <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
-                          <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>
-                            Aceptar
-                          </button>
-                          <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>
-                            Rechazar
-                          </button>
+                          <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>Aceptar</button>
+                          <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>Rechazar</button>
                         </div>
                       </div>
                     </div>
 
                     <div className="tc-hr" />
 
-                    <div className="tc-title" style={{ fontSize: 14 }}>
-                      📌 Líneas
-                    </div>
+                    <div className="tc-title" style={{ fontSize: 14 }}>📌 Líneas</div>
 
                     <div style={{ overflowX: "auto", marginTop: 8 }}>
                       <table className="tc-table">
@@ -864,9 +869,7 @@ export default function Tarotista() {
 
                     <div className="tc-hr" />
 
-                    <div className="tc-title" style={{ fontSize: 14 }}>
-                      ⚠️ Incidencias del mes
-                    </div>
+                    <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias del mes</div>
                     <div className="tc-sub" style={{ marginTop: 6 }}>
                       Esto se actualiza en vivo (aunque la factura no se regenere).
                     </div>
@@ -929,9 +932,7 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
       <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
           <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>
-              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
-            </span>
+            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
           </div>
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
