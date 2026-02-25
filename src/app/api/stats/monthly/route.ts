@@ -30,6 +30,40 @@ function monthKeyNow() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function bonusForPos(pos: number | null) {
+  if (pos === 1) return 6;
+  if (pos === 2) return 4;
+  if (pos === 3) return 2;
+  return 0;
+}
+
+function stableKey(x: any) {
+  // desempate estable
+  return String(x?.worker_id || "");
+}
+
+function top3ByMetric(rows: any[], metric: string) {
+  const arr = [...(rows || [])].sort((a, b) => {
+    const va = Number(a?.[metric] || 0);
+    const vb = Number(b?.[metric] || 0);
+    if (vb !== va) return vb - va;
+
+    // desempate: minutos_total desc (si existe)
+    const ma = Number(a?.minutes_total || 0);
+    const mb = Number(b?.minutes_total || 0);
+    if (mb !== ma) return mb - ma;
+
+    // desempate final estable
+    return stableKey(a).localeCompare(stableKey(b));
+  });
+  return arr.slice(0, 3);
+}
+
+function posInTop3(top: any[], workerId: string) {
+  const i = (top || []).findIndex((x: any) => String(x.worker_id) === String(workerId));
+  return i >= 0 ? i + 1 : null;
+}
+
 export async function GET(req: Request) {
   try {
     const { uid } = await uidFromBearer(req);
@@ -51,7 +85,7 @@ export async function GET(req: Request) {
     if (em) throw em;
     if (!me) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
 
-    // tarotista: stats propios (por worker_id)
+    // tarotista: stats propios + bono ranking EN VIVO
     if (me.role === "tarotista") {
       const { data: s, error: es } = await admin
         .from("v_monthly_tarotist_stats")
@@ -59,30 +93,68 @@ export async function GET(req: Request) {
         .eq("month_key", month)
         .eq("worker_id", me.id)
         .maybeSingle();
-
       if (es) throw es;
+
+      // 👇 Cogemos todos los tarotistas del mes y calculamos top3 y posición
+      const { data: allRows, error: ea } = await admin
+        .from("v_monthly_tarotist_stats")
+        .select("worker_id, minutes_total, captadas_total, pct_cliente, pct_repite")
+        .eq("month_key", month);
+      if (ea) throw ea;
+
+      const topCaptadas = top3ByMetric(allRows || [], "captadas_total");
+      const topCliente = top3ByMetric(allRows || [], "pct_cliente");
+      const topRepite = top3ByMetric(allRows || [], "pct_repite");
+
+      const posCaptadas = posInTop3(topCaptadas, me.id);
+      const posCliente = posInTop3(topCliente, me.id);
+      const posRepite = posInTop3(topRepite, me.id);
+
+      const brCaptadas = bonusForPos(posCaptadas);
+      const brCliente = bonusForPos(posCliente);
+      const brRepite = bonusForPos(posRepite);
+
+      const bonusRanking = brCaptadas + brCliente + brRepite;
+
+      const baseStats =
+        s ||
+        ({
+          month_key: month,
+          minutes_total: 0,
+          calls_total: 0,
+          captadas_total: 0,
+          calls_free: 0,
+          calls_rueda: 0,
+          calls_cliente: 0,
+          calls_repite: 0,
+          pay_minutes: 0,
+          pct_cliente: 0,
+          pct_repite: 0,
+          bonus_captadas: 0,
+        } as any);
+
+      // devolvemos bonus_ranking “en vivo” aunque el view SQL no lo tenga
+      const statsOut = {
+        ...baseStats,
+        bonus_ranking: bonusRanking,
+        bonus_ranking_breakdown: {
+          captadas: brCaptadas,
+          cliente: brCliente,
+          repite: brRepite,
+        },
+        rank_positions: {
+          captadas: posCaptadas,
+          cliente: posCliente,
+          repite: posRepite,
+        },
+      };
 
       return NextResponse.json({
         ok: true,
         scope: "self",
         month,
         worker: { id: me.id, display_name: me.display_name, team: me.team },
-        stats:
-          s ||
-          ({
-            month_key: month,
-            minutes_total: 0,
-            calls_total: 0,
-            captadas_total: 0,
-            calls_free: 0,
-            calls_rueda: 0,
-            calls_cliente: 0,
-            calls_repite: 0,
-            pay_minutes: 0,
-            pct_cliente: 0,
-            pct_repite: 0,
-            bonus_captadas: 0,
-          } as any),
+        stats: statsOut,
       });
     }
 
