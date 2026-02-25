@@ -24,6 +24,13 @@ function numES(n: any, digits = 2) {
   return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+function parseNumES(v: any) {
+  // soporta "12,34" o "12.34"
+  const s = String(v ?? "").trim().replace(",", ".");
+  const n = Number(s);
+  return isFinite(n) ? n : 0;
+}
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -53,7 +60,6 @@ function ackStyle(v: any) {
 
 export default function Admin() {
   const [ok, setOk] = useState(false);
-
   const [tab, setTab] = useState<TabKey>("facturas");
 
   const [syncLoading, setSyncLoading] = useState(false);
@@ -79,7 +85,7 @@ export default function Admin() {
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
 
-  // ✅ para polling “en directo”
+  // polling
   const pollRef = useRef<any>(null);
   const lastMonthRef = useRef<string>("");
 
@@ -88,7 +94,7 @@ export default function Admin() {
   }, [invoices]);
 
   // ---------------------------
-  // ✅ NUEVO: CHECKLIST ADMIN UI
+  // CHECKLIST ADMIN UI
   // ---------------------------
   const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
   const [ckLoading, setCkLoading] = useState(false);
@@ -100,7 +106,7 @@ export default function Admin() {
   const [ckNewLabel, setCkNewLabel] = useState("");
   const [ckNewSort, setCkNewSort] = useState<string>("10");
 
-  // ✅ restaurar mes guardado
+  // restore month
   useEffect(() => {
     try {
       const saved = localStorage.getItem("tc_month_admin");
@@ -108,7 +114,7 @@ export default function Admin() {
     } catch {}
   }, []);
 
-  // ✅ guardar mes
+  // save month
   useEffect(() => {
     try {
       localStorage.setItem("tc_month_admin", month);
@@ -144,19 +150,35 @@ export default function Admin() {
     return token;
   }
 
+  async function apiGet(url: string) {
+    const token = await getTokenOrLogin();
+    if (!token) return null;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+    return j;
+  }
+
+  async function apiPost(url: string, body: any) {
+    const token = await getTokenOrLogin();
+    if (!token) return null;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+    return j;
+  }
+
   async function syncNow() {
     if (syncLoading) return;
     setSyncLoading(true);
     setSyncMsg("");
     try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch("/api/sync/calls", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(r);
-
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-      setSyncMsg(`✅ Sincronización OK. Upserted: ${j.upserted ?? 0}`);
+      await apiPost("/api/sync/calls", {});
+      setSyncMsg("✅ Sincronización OK.");
     } catch (e: any) {
       setSyncMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -169,18 +191,7 @@ export default function Admin() {
     setGenLoading(true);
     setGenMsg("");
     try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch("/api/invoices/generate", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ month }),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-
+      const j = await apiPost("/api/invoices/generate", { month });
       const count = j?.result?.invoices ?? "?";
       setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
       await listInvoices();
@@ -198,20 +209,10 @@ export default function Admin() {
       setListLoading(true);
       setListMsg("");
     }
-
     try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-
-      setInvoices(j.invoices || []);
-      if (!silent) setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
+      const j = await apiGet(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`);
+      setInvoices(j?.invoices || []);
+      if (!silent) setListMsg(`✅ Cargadas ${j?.invoices?.length ?? 0} facturas (${month}).`);
     } catch (e: any) {
       if (!silent) setListMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -225,20 +226,10 @@ export default function Admin() {
     setSelMsg("");
     setSelId(invoice_id);
     try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/admin/invoices/edit?invoice_id=${encodeURIComponent(invoice_id)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-
+      const j = await apiGet(`/api/admin/invoices/edit?invoice_id=${encodeURIComponent(invoice_id)}`);
       setSelInvoice(j.invoice);
       setSelWorker(j.worker);
       setSelLines(j.lines || []);
-
       setTab("editor");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
@@ -248,30 +239,19 @@ export default function Admin() {
   }
 
   async function postEdit(payload: any) {
-    const token = await getTokenOrLogin();
-    if (!token) return null;
-
-    const r = await fetch("/api/admin/invoices/edit", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const j = await safeJson(r);
-    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-    return j;
+    return await apiPost("/api/admin/invoices/edit", payload);
   }
 
   async function addLine() {
     if (!selId) return;
     try {
-      const amt = Number(String(newAmount).replace(",", "."));
+      const amt = parseNumES(newAmount);
       await postEdit({
         action: "add_line",
         invoice_id: selId,
         kind: newKind,
         label: newLabel,
-        amount: isFinite(amt) ? amt : 0,
+        amount: amt,
         meta: {},
       });
       await loadInvoice(selId);
@@ -319,14 +299,14 @@ export default function Admin() {
     }
   }
 
-  // ✅ AUTO-CARGA al entrar y cuando cambie el mes
+  // auto load invoices
   useEffect(() => {
     if (!ok) return;
     listInvoices(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, month]);
 
-  // ✅ Polling suave para ver aceptación “en directo”
+  // polling
   useEffect(() => {
     if (!ok) return;
 
@@ -351,22 +331,14 @@ export default function Admin() {
   }, [ok, tab, month, selId]);
 
   // ---------------------------
-  // ✅ CHECKLIST: API calls
+  // CHECKLIST: API calls
   // ---------------------------
   async function loadChecklistAdmin() {
     if (ckLoading) return;
     setCkLoading(true);
     setCkMsg("");
     try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-
+      const j = await apiGet(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`);
       setCkTemplate(j.template || null);
       setCkItems(j.items || []);
       setCkMsg(`✅ Cargados ${(j.items || []).length} items (${ckTemplateKey})`);
@@ -382,24 +354,24 @@ export default function Admin() {
   async function saveChecklistItem(item: any) {
     try {
       setCkMsg("");
-      const token = await getTokenOrLogin();
-      if (!token) return;
 
-      const payload = {
+      const label = String(item?.label || "").trim();
+      const sort = Number(item?.sort ?? 0);
+
+      if (!label) throw new Error("Falta texto");
+      if (!isFinite(sort)) throw new Error("Sort inválido");
+
+      // ✅ IMPORTANTE:
+      // - crear => NO mandar id
+      // - editar => mandar id
+      const payload: any = {
         template_key: ckTemplateKey,
-        id: item?.id || undefined,
-        label: String(item?.label || "").trim(),
-        sort: Number(item?.sort ?? 0),
+        label,
+        sort,
       };
+      if (item?.id) payload.id = item.id;
 
-      const r = await fetch("/api/admin/checklists/items", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+      await apiPost("/api/admin/checklists/items", payload);
 
       setCkMsg(payload.id ? "✅ Item guardado." : "✅ Item creado.");
       await loadChecklistAdmin();
@@ -409,30 +381,16 @@ export default function Admin() {
   }
 
   async function deleteChecklistItem(id: string) {
-  if (!confirm("¿Borrar este item del checklist?")) return;
-  try {
-    setCkMsg("");
-    const token = await getTokenOrLogin();
-    if (!token) return;
+    if (!confirm("¿Borrar este item del checklist?")) return;
+    try {
+      setCkMsg("");
 
-    const r = await fetch("/api/admin/checklists/items", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete_item", id }),
-    });
-
-    const j = await safeJson(r);
-    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-    setCkMsg("✅ Item borrado.");
-    await loadChecklistAdmin();
-  } catch (e: any) {
-    setCkMsg(`❌ ${e?.message || "Error"}`);
-  }
-}
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+      // ✅ Mandamos template_key + action + id (más compatible)
+      await apiPost("/api/admin/checklists/items", {
+        action: "delete_item",
+        template_key: ckTemplateKey,
+        id,
+      });
 
       setCkMsg("✅ Item borrado.");
       await loadChecklistAdmin();
@@ -443,11 +401,11 @@ export default function Admin() {
 
   async function addChecklistItem() {
     const label = ckNewLabel.trim();
-    const sort = Number(String(ckNewSort).replace(",", "."));
+    const sort = parseNumES(ckNewSort);
     if (!label) return setCkMsg("⚠️ Escribe un texto para el item.");
     if (!isFinite(sort)) return setCkMsg("⚠️ Sort inválido.");
 
-    await saveChecklistItem({ id: "", label, sort });
+    await saveChecklistItem({ label, sort });
     setCkNewLabel("");
     setCkNewSort(String(sort + 10));
   }
@@ -670,7 +628,6 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ✅ NUEVO TAB: CHECKLISTS */}
           {tab === "checklists" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -825,7 +782,7 @@ function LineEditor({
           )}
         </div>
 
-        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(amount)}</div>
+        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(parseNumES(amount))}</div>
       </div>
 
       <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 10, flexWrap: "wrap" }}>
@@ -833,7 +790,7 @@ function LineEditor({
         <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
 
         <div className="tc-row">
-          <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
+          <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, parseNumES(amount))}>
             Guardar
           </button>
           <button className="tc-btn tc-btn-danger" onClick={onDelete}>
