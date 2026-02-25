@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import AppHeader from "@/components/AppHeader";
 
@@ -88,6 +88,20 @@ function clampPct(n: number) {
   return Math.max(0, Math.min(100, x));
 }
 
+// --- Attendance UI helpers ---
+function attLabel(online: boolean, status: string) {
+  if (!online) return "⚪ Offline";
+  if (status === "break") return "🟡 Descanso";
+  if (status === "bathroom") return "🟣 Baño";
+  return "🟢 Online";
+}
+function attStyle(online: boolean, status: string) {
+  if (!online) return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
+  if (status === "break") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
+  if (status === "bathroom") return { background: "rgba(181,156,255,0.10)", border: "1px solid rgba(181,156,255,0.25)" };
+  return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
+}
+
 export default function Tarotista() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("resumen");
@@ -112,6 +126,13 @@ export default function Tarotista() {
   const [clShiftKey, setClShiftKey] = useState<string>("");
   const [clRows, setClRows] = useState<any[]>([]);
   const [clQ, setClQ] = useState("");
+
+  // ✅ attendance (online real)
+  const [attLoading, setAttLoading] = useState(false);
+  const [attMsg, setAttMsg] = useState("");
+  const [attOnline, setAttOnline] = useState(false);
+  const [attStatus, setAttStatus] = useState<string>("offline");
+  const attBeatRef = useRef<any>(null);
 
   // ✅ IMPORTANTÍSIMO: hooks SIEMPRE antes de cualquier return condicional
   const incidenciasLive = useMemo(() => {
@@ -173,15 +194,13 @@ export default function Tarotista() {
     return { total, completed, pct };
   }, [clRows]);
 
-  // ✅ Auth gate
   useEffect(() => {
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
-      const me = await safeJson(meRes);
+      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
       if (!me?.ok) return (window.location.href = "/login");
 
       if (me.role !== "tarotista") {
@@ -194,36 +213,72 @@ export default function Tarotista() {
     })();
   }, []);
 
-  // ✅ Asistencia: ping cada 30s (para que Admin vea online)
-  useEffect(() => {
-    if (!ok) return;
-    let t: any = null;
-    let stopped = false;
-
-    (async () => {
+  async function loadAttendanceMe(silent = false) {
+    if (attLoading && !silent) return;
+    if (!silent) {
+      setAttLoading(true);
+      setAttMsg("");
+    }
+    try {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token || stopped) return;
+      if (!token) return;
 
-      const ping = async () => {
-        try {
-          await fetch("/api/attendance/ping", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ path: window.location.pathname }),
-          });
-        } catch {}
-      };
+      const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      await ping();
-      t = setInterval(ping, 30000);
-    })();
+      setAttOnline(!!j.online);
+      setAttStatus(String(j.status || (j.online ? "working" : "offline")));
+      if (!silent) setAttMsg("");
+    } catch (e: any) {
+      if (!silent) setAttMsg(`❌ Estado: ${e?.message || "Error"}`);
+      setAttOnline(false);
+      setAttStatus("offline");
+    } finally {
+      if (!silent) setAttLoading(false);
+    }
+  }
 
-    return () => {
-      stopped = true;
-      if (t) clearInterval(t);
-    };
-  }, [ok]);
+  async function postAttendanceEvent(event_type: string) {
+    try {
+      setAttMsg("");
+      setAttLoading(true);
+
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/attendance/event", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ event_type, meta: { path: window.location.pathname } }),
+      });
+
+      const j = await safeJson(res);
+
+      // OUTSIDE_SHIFT: lo mostramos bonito
+      if (!j?._ok || !j?.ok) {
+        const err = String(j?.error || `HTTP ${j?._status}`);
+        if (err === "OUTSIDE_SHIFT") {
+          setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
+        } else {
+          setAttMsg(`❌ ${err}`);
+        }
+        await loadAttendanceMe(true);
+        return;
+      }
+
+      // evento ok -> refrescamos estado
+      await loadAttendanceMe(true);
+      setAttMsg("✅ Listo");
+      setTimeout(() => setAttMsg(""), 1000);
+    } catch (e: any) {
+      setAttMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setAttLoading(false);
+    }
+  }
 
   async function loadChecklist() {
     if (clLoading) return;
@@ -340,10 +395,12 @@ export default function Tarotista() {
     }
   }
 
+  // init load
   useEffect(() => {
     if (!ok) return;
     refresh();
     loadChecklist();
+    loadAttendanceMe(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
@@ -353,6 +410,54 @@ export default function Tarotista() {
     if (tab === "checklist") loadChecklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, ok]);
+
+  // ✅ Heartbeat SOLO si está online real
+  useEffect(() => {
+    if (!ok) return;
+
+    if (attBeatRef.current) {
+      clearInterval(attBeatRef.current);
+      attBeatRef.current = null;
+    }
+
+    if (!attOnline) return;
+
+    let stopped = false;
+
+    const start = async () => {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const ping = async () => {
+        if (stopped) return;
+        await fetch("/api/attendance/event", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ event_type: "heartbeat", meta: { path: window.location.pathname } }),
+        }).catch(() => {});
+      };
+
+      await ping();
+      attBeatRef.current = setInterval(ping, 45_000);
+    };
+
+    start();
+
+    return () => {
+      stopped = true;
+      if (attBeatRef.current) clearInterval(attBeatRef.current);
+      attBeatRef.current = null;
+    };
+  }, [ok, attOnline]);
+
+  // poll suave del estado (si no estás online, por si te desconectaron, etc.)
+  useEffect(() => {
+    if (!ok) return;
+    const t = setInterval(() => loadAttendanceMe(true), 60_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok]);
 
   async function respondInvoice(action: "accepted" | "rejected") {
     try {
@@ -387,7 +492,7 @@ export default function Tarotista() {
         <div className="tc-wrap">
           <div className="tc-container">
             <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title" style={{ fontSize: 18 }}>🔮 Panel Tarotista</div>
                   <div className="tc-sub">
@@ -395,10 +500,74 @@ export default function Tarotista() {
                   </div>
                 </div>
 
-                <div className="tc-row">
-                  <button className="tc-btn tc-btn-gold" onClick={refresh}>Actualizar</button>
+                <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
+                  <span
+                    className="tc-chip"
+                    style={{
+                      ...attStyle(attOnline, attStatus),
+                      padding: "6px 10px",
+                      borderRadius: 999,
+                      fontSize: 12,
+                    }}
+                    title={attStatus}
+                  >
+                    {attLabel(attOnline, attStatus)}
+                  </span>
+
+                  <button className="tc-btn tc-btn-gold" onClick={refresh}>
+                    Actualizar
+                  </button>
+
+                  <button
+                    className="tc-btn tc-btn-ok"
+                    onClick={() => postAttendanceEvent("check_in")}
+                    disabled={attLoading || attOnline}
+                    title="Solo te conecta si estás en turno"
+                  >
+                    {attLoading && !attOnline ? "…" : "🟢 Conectarme"}
+                  </button>
+
+                  <button
+                    className="tc-btn tc-btn-danger"
+                    onClick={() => postAttendanceEvent("check_out")}
+                    disabled={attLoading || !attOnline}
+                  >
+                    🔴 Desconectarme
+                  </button>
+
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("break_start")}
+                    disabled={attLoading || !attOnline || attStatus === "break"}
+                  >
+                    ⏸️ Descanso
+                  </button>
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("break_end")}
+                    disabled={attLoading || !attOnline || attStatus !== "break"}
+                  >
+                    ▶️ Volver
+                  </button>
+
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("bathroom_start")}
+                    disabled={attLoading || !attOnline || attStatus === "bathroom"}
+                  >
+                    🚻 Baño
+                  </button>
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("bathroom_end")}
+                    disabled={attLoading || !attOnline || attStatus !== "bathroom"}
+                  >
+                    ✅ Salí
+                  </button>
                 </div>
               </div>
+
+              {attMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{attMsg}</div> : null}
 
               <div style={{ marginTop: 12 }} className="tc-tabs">
                 <button className={`tc-tab ${tab === "resumen" ? "tc-tab-active" : ""}`} onClick={() => setTab("resumen")}>
@@ -535,10 +704,22 @@ export default function Tarotista() {
                   <div className="tc-sub">
                     Tramos:
                     <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>0–9 captadas</span><b>0,50€</b></div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>10–19 captadas</span><b>1,00€</b></div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>20–29 captadas</span><b>1,50€</b></div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}><span>30+ captadas</span><b>2,00€</b></div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                        <span>0–9 captadas</span>
+                        <b>0,50€</b>
+                      </div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                        <span>10–19 captadas</span>
+                        <b>1,00€</b>
+                      </div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                        <span>20–29 captadas</span>
+                        <b>1,50€</b>
+                      </div>
+                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                        <span>30+ captadas</span>
+                        <b>2,00€</b>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -783,7 +964,9 @@ export default function Tarotista() {
                       Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
                     </div>
                   </div>
-                  <button className="tc-btn tc-btn-gold" onClick={refresh}>Recargar</button>
+                  <button className="tc-btn tc-btn-gold" onClick={refresh}>
+                    Recargar
+                  </button>
                 </div>
 
                 <div className="tc-hr" />
@@ -816,8 +999,12 @@ export default function Tarotista() {
                         />
 
                         <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
-                          <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>Aceptar</button>
-                          <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>Rechazar</button>
+                          <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>
+                            Aceptar
+                          </button>
+                          <button className="tc-btn tc-btn-danger" onClick={() => respondInvoice("rejected")}>
+                            Rechazar
+                          </button>
                         </div>
                       </div>
                     </div>
