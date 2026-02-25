@@ -52,7 +52,7 @@ export async function GET(req: Request) {
     if (esk) throw esk;
     const shift_key = String(sk || "");
 
-    // template + items
+    // template
     const { data: tpl, error: et } = await admin
       .from("checklist_templates")
       .select("id, template_key, title")
@@ -61,31 +61,50 @@ export async function GET(req: Request) {
     if (et) throw et;
     if (!tpl) return NextResponse.json({ ok: false, error: "NO_TEMPLATE" }, { status: 500 });
 
+    // items
     const { data: items, error: ei } = await admin
-  .from("checklist_template_items")
-  .select("id, sort, label, description, is_active")
-  .eq("template_id", tpl.id)
-  .eq("is_active", true)
-  .order("sort", { ascending: true });
+      .from("checklist_template_items")
+      .select("id, sort, label")
+      .eq("template_id", tpl.id)
+      .order("sort", { ascending: true });
     if (ei) throw ei;
 
-    // response (crear si no existe)
+    // ✅ FIX: upsert sin ignoreDuplicates para que SIEMPRE devuelva la fila (id)
     const { data: resp, error: er1 } = await admin
       .from("checklist_responses")
       .upsert(
         { worker_id: me.id, template_key, shift_key },
-        { onConflict: "worker_id,template_key,shift_key", ignoreDuplicates: true }
+        { onConflict: "worker_id,template_key,shift_key" }
       )
       .select("id, completed_at, created_at")
       .maybeSingle();
 
     if (er1) throw er1;
+    if (!resp?.id) {
+      // fallback ultra seguro (por si supabase devuelve null por cualquier motivo raro)
+      const { data: r2, error: er2 } = await admin
+        .from("checklist_responses")
+        .select("id, completed_at, created_at")
+        .eq("worker_id", me.id)
+        .eq("template_key", template_key)
+        .eq("shift_key", shift_key)
+        .maybeSingle();
+      if (er2) throw er2;
+      if (!r2?.id) return NextResponse.json({ ok: false, error: "NO_RESPONSE" }, { status: 500 });
+
+      // asignamos resp desde el fallback
+      (resp as any).id = r2.id;
+      (resp as any).completed_at = r2.completed_at;
+      (resp as any).created_at = r2.created_at;
+    }
+
+    const response_id = resp!.id;
 
     // marks
     const { data: marks, error: emk } = await admin
       .from("checklist_response_items")
       .select("item_id, checked, checked_at")
-      .eq("response_id", resp!.id);
+      .eq("response_id", response_id);
     if (emk) throw emk;
 
     const byItem: Record<string, any> = {};
@@ -95,7 +114,6 @@ export async function GET(req: Request) {
       id: it.id,
       sort: it.sort,
       label: it.label,
-      description: it.description || null,
       checked: Boolean(byItem[String(it.id)]?.checked),
       checked_at: byItem[String(it.id)]?.checked_at || null,
     }));
@@ -108,7 +126,7 @@ export async function GET(req: Request) {
       worker: { id: me.id, role: me.role, display_name: me.display_name, team: me.team },
       template: { template_key: tpl.template_key, title: tpl.title },
       shift_key,
-      response: { id: resp!.id, completed_at: resp!.completed_at || null },
+      response: { id: response_id, completed_at: resp!.completed_at || null },
       items: out,
       progress: { done: doneCount, total },
     });
