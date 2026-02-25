@@ -25,12 +25,9 @@ async function uidFromBearer(req: Request) {
   return { uid: data.user?.id || null };
 }
 
-// ---------- TZ helpers ----------
-const TZ = "Europe/Madrid";
-
-function partsInTz(d: Date, timeZone = TZ) {
-  const fmt = new Intl.DateTimeFormat("en-GB", {
-    timeZone,
+function tzParts(tz: string, d = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -38,127 +35,51 @@ function partsInTz(d: Date, timeZone = TZ) {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
+    timeZoneName: "shortOffset",
   });
-
-  const p: any = {};
-  for (const x of fmt.formatToParts(d)) {
-    if (x.type !== "literal") p[x.type] = x.value;
-  }
-
-  const weekdayMap: Record<string, number> = {
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-    Sun: 7,
-  };
-
-  return {
-    year: Number(p.year),
-    month: Number(p.month),
-    day: Number(p.day),
-    hour: Number(p.hour),
-    minute: Number(p.minute),
-    second: Number(p.second),
-    dow: weekdayMap[p.weekday] || 0, // 1..7 (Mon..Sun)
-  };
+  const parts = fmt.formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value || "";
+  return { y: get("year"), m: get("month"), d: get("day"), wd: get("weekday"), off: get("timeZoneName") };
 }
 
-function isoWeekNumberInTz(d: Date) {
-  const t = partsInTz(d);
-  const utc = new Date(Date.UTC(t.year, t.month - 1, t.day));
-  const dayNum = utc.getUTCDay() || 7;
-  utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((utc.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
-  return weekNo;
+function dowFromShort(wd: string) {
+  const map: any = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return map[wd] ?? null;
 }
 
-function minsSinceMidnightInTz(d: Date) {
-  const t = partsInTz(d);
-  return t.hour * 60 + t.minute;
+function offsetToIso(off: string) {
+  const s = String(off || "");
+  const m = s.match(/GMT([+-])(\d{1,2})(?::?(\d{2}))?/i);
+  if (!m) return "+00:00";
+  const sign = m[1];
+  const hh = String(m[2]).padStart(2, "0");
+  const mm = String(m[3] || "00").padStart(2, "0");
+  return `${sign}${hh}:${mm}`;
 }
 
-function hmToMin(hm: string) {
-  const [h, m] = hm.split(":").map((x) => Number(x));
-  return (h || 0) * 60 + (m || 0);
+function addDaysYMD(ymd: string, add: number) {
+  const [Y, M, D] = ymd.split("-").map((x) => Number(x));
+  const dt = new Date(Date.UTC(Y, M - 1, D));
+  dt.setUTCDate(dt.getUTCDate() + add);
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(dt.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-function isNowInShift(nowMin: number, startMin: number, endMin: number) {
-  if (startMin === endMin) return false;
-
-  if (startMin < endMin) {
-    return nowMin >= startMin && nowMin < endMin;
-  }
-  // cruza medianoche
-  return nowMin >= startMin || nowMin < endMin;
+function buildUtcFromLocal(dateYMD: string, timeHHMM: string, tz: string) {
+  const off = offsetToIso(tzParts(tz).off);
+  return new Date(`${dateYMD}T${timeHHMM}:00${off}`);
 }
 
-function isWeekend(dow: number) {
-  return dow === 6 || dow === 7;
+function hhmm(s: any) {
+  return String(s || "").slice(0, 5);
 }
 
-// alternos: semanas ISO
-function yamiWeekendActive(weekNo: number) {
-  return weekNo % 2 === 0;
-}
-function mariaWeekendActive(weekNo: number) {
-  return weekNo % 2 === 1;
-}
-
-type ShiftSpec = { start: string; end: string };
-
-function expectedShiftForName(displayName: string, now: Date): ShiftSpec | null {
-  const nm = String(displayName || "").trim().toLowerCase();
-  const t = partsInTz(now);
-  const weekend = isWeekend(t.dow);
-  const weekNo = isoWeekNumberInTz(now);
-
-  // Centrales
-  // Yami: L-V 13-21, finde alterno 13-21
-  if (nm.includes("yami")) {
-    if (!weekend) return { start: "13:00", end: "21:00" };
-    return yamiWeekendActive(weekNo) ? { start: "13:00", end: "21:00" } : null;
-  }
-
-  // Maria: L-V 21-05, finde alterno 13-21
-  if (nm.includes("maria")) {
-    if (!weekend) return { start: "21:00", end: "05:00" };
-    return mariaWeekendActive(weekNo) ? { start: "13:00", end: "21:00" } : null;
-  }
-
-  // Michael: S-D 21-05
-  if (nm.includes("michael")) {
-    return weekend ? { start: "21:00", end: "05:00" } : null;
-  }
-
-  // Tarotistas
-  // 13-21: Azul, Estefania, Jesus, Carmenlina
-  if (
-    nm.includes("azul") ||
-    nm.includes("estefania") ||
-    nm.includes("jesus") ||
-    nm.includes("carmenlina") ||
-    nm.includes("carmelina")
-  ) {
-    return { start: "13:00", end: "21:00" };
-  }
-
-  // 21-05: Luna, Adriana, Nela, Sol, Valeria
-  if (
-    nm.includes("luna") ||
-    nm.includes("adriana") ||
-    nm.includes("nela") ||
-    nm.includes("sol") ||
-    nm.includes("valeria")
-  ) {
-    return { start: "21:00", end: "05:00" };
-  }
-
-  return null;
+function minutesOf(hhmmStr: string) {
+  const [h, m] = hhmmStr.split(":").map((x) => Number(x));
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
 }
 
 export async function GET(req: Request) {
@@ -179,39 +100,76 @@ export async function GET(req: Request) {
     if (em) throw em;
     if (!me || me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-    const now = new Date();
-    const nowUtc = now.toISOString();
+    const TZ = "Europe/Madrid";
+    const nowUtc = new Date();
+    const p = tzParts(TZ, nowUtc);
+    const dow = dowFromShort(p.wd);
+    if (dow == null) return NextResponse.json({ ok: false, error: "BAD_DOW" }, { status: 500 });
 
-    // sacamos workers centrales + tarotistas
+    const today = `${p.y}-${p.m}-${p.d}`;
+    const yesterday = addDaysYMD(today, -1);
+
+    // buscamos schedules de HOY y AYER (para capturar nocturnos 21-05)
+    const dowsToCheck = [dow, (dow + 6) % 7];
+
+    const { data: sch, error: es } = await admin
+      .from("shift_schedules")
+      .select("id, worker_id, day_of_week, start_time, end_time, timezone, active")
+      .eq("active", true)
+      .in("day_of_week", dowsToCheck);
+
+    if (es) throw es;
+
+    const activeNow: any[] = [];
+    for (const s of sch || []) {
+      const tz = String(s.timezone || TZ);
+
+      const baseDate = Number(s.day_of_week) === dow ? today : yesterday;
+
+      const st = hhmm(s.start_time);
+      const en = hhmm(s.end_time);
+
+      const stMin = minutesOf(st);
+      const enMin = minutesOf(en);
+      const overnight = enMin <= stMin;
+
+      const startUtc = buildUtcFromLocal(baseDate, st, tz);
+      const endUtc = buildUtcFromLocal(overnight ? addDaysYMD(baseDate, 1) : baseDate, en, tz);
+
+      if (nowUtc >= startUtc && nowUtc <= endUtc) {
+        activeNow.push({
+          schedule_id: s.id,
+          worker_id: s.worker_id,
+          start_utc: startUtc.toISOString(),
+          end_utc: endUtc.toISOString(),
+          start_time: st,
+          end_time: en,
+          timezone: tz,
+          schedule_day_of_week: s.day_of_week,
+        });
+      }
+    }
+
+    const ids = [...new Set(activeNow.map((x) => String(x.worker_id)))];
+    if (ids.length === 0) {
+      return NextResponse.json({ ok: true, expected: [], now_utc: nowUtc.toISOString(), tz: TZ });
+    }
+
     const { data: workers, error: ew } = await admin
       .from("workers")
       .select("id, display_name, role, team, shift_type")
-      .in("role", ["central", "tarotista"]);
+      .in("id", ids);
     if (ew) throw ew;
 
-    const nowMin = minsSinceMidnightInTz(now);
+    const byW: Record<string, any> = {};
+    for (const w of workers || []) byW[String(w.id)] = w;
 
-    const expected = (workers || [])
-      .map((w: any) => {
-        const sh = expectedShiftForName(w.display_name, now);
-        if (!sh) return null;
+    const expected = activeNow.map((x) => ({
+      ...x,
+      worker: byW[String(x.worker_id)] || null,
+    }));
 
-        const startMin = hmToMin(sh.start);
-        const endMin = hmToMin(sh.end);
-
-        if (!isNowInShift(nowMin, startMin, endMin)) return null;
-
-        return {
-          worker_id: w.id,
-          start_time: sh.start,
-          end_time: sh.end,
-          timezone: TZ,
-          worker: w,
-        };
-      })
-      .filter(Boolean);
-
-    return NextResponse.json({ ok: true, expected, now_utc: nowUtc });
+    return NextResponse.json({ ok: true, expected, now_utc: nowUtc.toISOString(), tz: TZ });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
