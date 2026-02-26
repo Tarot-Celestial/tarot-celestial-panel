@@ -262,21 +262,10 @@ export async function POST(req: Request) {
 
     const worker_id = String(me.id);
 
+    // ✅ Seguimos calculando shift para adjuntar schedule_id (si aplica),
+    //    PERO YA NO BLOQUEAMOS FUERA DE TURNO.
     const shiftCheck = await isWithinActiveShiftForWorker(admin, worker_id, "Europe/Madrid");
     if (!shiftCheck.ok) return NextResponse.json({ ok: false, error: "SHIFT_CHECK_FAIL" }, { status: 500 });
-
-    const mustBeInShift = event_type_db !== "offline";
-    if (mustBeInShift && !shiftCheck.within) {
-      if (event_type_db === "heartbeat") {
-        return NextResponse.json({
-          ok: true,
-          ignored: true,
-          reason: "OUTSIDE_SHIFT",
-          now_utc: shiftCheck.nowUtc?.toISOString?.() || new Date().toISOString(),
-        });
-      }
-      return NextResponse.json({ ok: false, error: "OUTSIDE_SHIFT" }, { status: 403 });
-    }
 
     const at = new Date().toISOString();
 
@@ -330,7 +319,6 @@ export async function POST(req: Request) {
       if (isMissingTableError(err, "attendance_state")) {
         stateSkippedReason = "ATTENDANCE_STATE_TABLE_MISSING";
       } else {
-        // Si es otro error, lo devolvemos para que lo veas
         throw err;
       }
     }
