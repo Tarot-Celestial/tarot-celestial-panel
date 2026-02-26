@@ -52,10 +52,10 @@ export async function GET(req: Request) {
     if (!me?.id) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
     if (String(me.role) !== "central") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-    // Traer tarotistas
+    // Traer tarotistas (OJO: tu tabla workers NO tiene team_key)
     const { data: ws, error: ew } = await admin
       .from("workers")
-      .select("id, display_name, team_key, role")
+      .select("id, display_name, role")
       .eq("role", "tarotista");
 
     if (ew) throw ew;
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
     const byId = new Map<string, any>();
     for (const r of st || []) byId.set(String(r.worker_id), r);
 
-    // Online real: si tiene actividad/heartbeat reciente
+    // Online real: heartbeat/actividad reciente
     const ONLINE_WINDOW_SECONDS = 90;
 
     const rows = (ws || []).map((w: any) => {
@@ -85,13 +85,12 @@ export async function GET(req: Request) {
       const last = s?.last_event_at ? String(s.last_event_at) : null;
 
       const onlineReal = !!s?.is_online && isRecent(last, ONLINE_WINDOW_SECONDS);
-
       const status = onlineReal ? String(s?.status || "working") : "offline";
 
       return {
         worker_id: sid,
         display_name: w.display_name || "—",
-        team_key: w.team_key || null,
+        team_key: null, // compat: tu tabla no tiene team_key
         online: onlineReal,
         status,
         last_event_at: last,
