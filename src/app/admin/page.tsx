@@ -21,6 +21,13 @@ function numES(n: any, digits = 2) {
   return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+function minsToHhmm(mins: any) {
+  const m = Math.max(0, Math.round(Number(mins) || 0));
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -84,7 +91,7 @@ export default function Admin() {
   }, [invoices]);
 
   // ---------------------------
-  // ✅ ASISTENCIA (online/expected/incidencias)
+  // ✅ ASISTENCIA (online/expected/incidencias + stats)
   // ---------------------------
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
@@ -92,6 +99,15 @@ export default function Admin() {
   const [attExpected, setAttExpected] = useState<any[]>([]);
   const [attIncidents, setAttIncidents] = useState<any[]>([]);
   const [attNote, setAttNote] = useState<string>("");
+
+  // ✅ Stats horarias (admin)
+  const [stLoading, setStLoading] = useState(false);
+  const [stMsg, setStMsg] = useState("");
+  const [stRows, setStRows] = useState<any[]>([]);
+  const [stWorkerId, setStWorkerId] = useState<string>("");
+  const [stGroup, setStGroup] = useState<"day" | "week" | "month">("day");
+  const [stFrom, setStFrom] = useState<string>("");
+  const [stTo, setStTo] = useState<string>("");
 
   // ---------------------------
   // ✅ CHECKLIST ADMIN UI
@@ -366,8 +382,11 @@ export default function Admin() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
+      // ✅ CAMBIO:
+      // - Conectados ahora: /api/admin/attendance/online-now (NO filtra por rol, usa control horario)
+      // - Deberían: /api/admin/attendance/expected-now (ya trae online/status ligado a control horario)
       const [r1, r2] = await Promise.all([
-        fetch("/api/admin/attendance/now", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/admin/attendance/online-now", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/api/admin/attendance/expected-now", { headers: { Authorization: `Bearer ${token}` } }),
       ]);
 
@@ -377,8 +396,8 @@ export default function Admin() {
       if (!j1?._ok || !j1?.ok) throw new Error(j1?.error || `HTTP ${j1?._status}`);
       if (!j2?._ok || !j2?.ok) throw new Error(j2?.error || `HTTP ${j2?._status}`);
 
-      setAttOnline(j1.online || []);
-      setAttExpected(j2.expected || []);
+      setAttOnline(j1.rows || j1.online || []); // compat si el endpoint devolviera online
+      setAttExpected(j2.expected || j2.rows || []);
 
       // incidencias del mes (attendance) => usamos month actual del admin para verlas
       const incRes = await fetch(`/api/admin/incidents/list?month=${encodeURIComponent(month)}&kind=attendance`, {
@@ -444,9 +463,54 @@ export default function Admin() {
     }
   }
 
+  // ✅ Stats: carga
+  async function loadStats(silent = false) {
+    if (stLoading && !silent) return;
+    if (!silent) {
+      setStLoading(true);
+      setStMsg("");
+    }
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const qp = new URLSearchParams();
+      if (stWorkerId.trim()) qp.set("worker_id", stWorkerId.trim());
+      qp.set("group", stGroup);
+      if (stFrom.trim()) qp.set("from", stFrom.trim());
+      if (stTo.trim()) qp.set("to", stTo.trim());
+
+      const r = await fetch(`/api/admin/attendance/stats?${qp.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setStRows(j.rows || []);
+      if (!silent) setStMsg(`✅ Stats cargadas: ${(j.rows || []).length}`);
+      if (!silent) setTimeout(() => setStMsg(""), 1200);
+    } catch (e: any) {
+      setStRows([]);
+      if (!silent) setStMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setStLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
-    if (tab === "asistencia") loadAttendance();
+    if (tab === "asistencia") {
+      loadAttendance();
+      // defaults de stats la primera vez
+      if (!stFrom && !stTo) {
+        const d = new Date();
+        const to = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const d2 = new Date(d.getTime() - 6 * 86400000);
+        const from = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, "0")}-${String(d2.getDate()).padStart(2, "0")}`;
+        setStFrom(from);
+        setStTo(to);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
@@ -557,21 +621,34 @@ export default function Admin() {
   // ---------------------------
   // helpers UI asistencia
   // ---------------------------
-  const onlineSet = useMemo(() => {
-    const s = new Set<string>();
-    for (const o of attOnline || []) s.add(String(o.worker_id));
-    return s;
-  }, [attOnline]);
-
   const expectedNow = useMemo(() => {
-    return (attExpected || []).map((x: any) => {
-      const wid = String(x.worker_id);
-      return {
-        ...x,
-        is_online: onlineSet.has(wid),
-      };
-    });
-  }, [attExpected, onlineSet]);
+    // ✅ Ahora el endpoint expected trae online/status ligado a control horario.
+    // Aún así mantenemos compat por si viniera sin online.
+    return (attExpected || []).map((x: any) => ({
+      ...x,
+      is_online: typeof x.online === "boolean" ? !!x.online : !!x.is_online,
+      status: String(x.status || "working"),
+    }));
+  }, [attExpected]);
+
+  // Para selector rápido de stats (si no tienes endpoint de workers):
+  // usamos los workers que existen en facturas del mes como “lista rápida”.
+  const workersFromInvoices = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const inv of invoices || []) {
+      const wid = String(inv.worker_id || inv.id || inv.worker?.id || "");
+      // Si no viene worker_id en list, intentamos de invoice_id no sirve; por eso solo si existe.
+      if (!wid) continue;
+      if (!map.has(wid)) {
+        map.set(wid, {
+          worker_id: wid,
+          display_name: inv.display_name || "—",
+          role: inv.role || "",
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
+  }, [invoices]);
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
@@ -809,20 +886,25 @@ export default function Admin() {
               <div className="tc-grid-2">
                 <div className="tc-card" style={{ boxShadow: "none" }}>
                   <div className="tc-title" style={{ fontSize: 14 }}>🟢 Conectados ahora</div>
+                  <div className="tc-sub" style={{ marginTop: 6, opacity: 0.9 }}>
+                    (Basado en <b>control horario</b>: attendance_state.is_online)
+                  </div>
                   <div className="tc-hr" />
                   {(attOnline || []).length === 0 ? (
-                    <div className="tc-sub">Nadie conectado (o aún no hay heartbeats).</div>
+                    <div className="tc-sub">Nadie conectado ahora mismo.</div>
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
                       {(attOnline || []).map((o: any) => (
                         <div key={o.worker_id} className="tc-row" style={{ justifyContent: "space-between" }}>
                           <div>
                             <b>{o.display_name}</b>{" "}
-                            <span className="tc-muted">({o.role}{o.team ? ` · ${o.team}` : ""})</span>
-                            {o.path ? <div className="tc-sub">Ruta: {o.path}</div> : null}
+                            <span className="tc-muted">
+                              ({o.role}{o.team ? ` · ${o.team}` : ""})
+                            </span>
+                            {o.status ? <div className="tc-sub">Estado: <b>{o.status}</b></div> : null}
                           </div>
                           <div className="tc-sub">
-                            {o.last_seen_at ? new Date(o.last_seen_at).toLocaleTimeString("es-ES") : "—"}
+                            {o.last_event_at ? new Date(o.last_event_at).toLocaleTimeString("es-ES") : "—"}
                           </div>
                         </div>
                       ))}
@@ -832,6 +914,9 @@ export default function Admin() {
 
                 <div className="tc-card" style={{ boxShadow: "none" }}>
                   <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados ahora</div>
+                  <div className="tc-sub" style={{ marginTop: 6, opacity: 0.9 }}>
+                    (En turno según horarios; el “OK/NO” también va por <b>control horario</b>)
+                  </div>
                   <div className="tc-hr" />
                   {(expectedNow || []).length === 0 ? (
                     <div className="tc-sub">No hay horarios activos ahora mismo.</div>
@@ -849,10 +934,15 @@ export default function Admin() {
                         >
                           <div className="tc-row" style={{ justifyContent: "space-between" }}>
                             <div>
-                              <b>{x.worker?.display_name || x.worker_id}</b>{" "}
-                              <span className="tc-muted">({x.worker?.role || "—"})</span>
+                              <b>{x.worker?.display_name || x.display_name || x.worker_id}</b>{" "}
+                              <span className="tc-muted">({x.worker?.role || x.role || "—"})</span>
                               <div className="tc-sub" style={{ marginTop: 4 }}>
                                 {x.start_time}–{x.end_time} · {x.timezone}
+                                {x.status ? (
+                                  <>
+                                    {" "}· Estado: <b>{x.status}</b>
+                                  </>
+                                ) : null}
                               </div>
                             </div>
                             <div style={{ fontWeight: 900 }}>
@@ -931,6 +1021,123 @@ export default function Admin() {
                   ))}
                 </div>
               )}
+
+              {/* ✅ NUEVO: STATS HORARIAS */}
+              <div className="tc-hr" />
+
+              <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
+              <div className="tc-sub" style={{ marginTop: 6, opacity: 0.9 }}>
+                Worked = “working” · Break/Baño separados · Expected = según horarios · Diff = worked - expected
+                {stMsg ? ` · ${stMsg}` : ""}
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ minWidth: 260 }}>
+                  <div className="tc-sub">Worker</div>
+                  <input
+                    className="tc-input"
+                    value={stWorkerId}
+                    onChange={(e) => setStWorkerId(e.target.value)}
+                    placeholder="worker_id (opcional)"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                  {workersFromInvoices.length ? (
+                    <div className="tc-sub" style={{ marginTop: 6, opacity: 0.85 }}>
+                      Tip: pega el worker_id. (Si quieres un desplegable global, hacemos endpoint /api/admin/workers/list)
+                    </div>
+                  ) : null}
+                </div>
+
+                <div style={{ width: 160 }}>
+                  <div className="tc-sub">Agrupar</div>
+                  <select
+                    className="tc-select"
+                    value={stGroup}
+                    onChange={(e) => setStGroup(e.target.value as any)}
+                    style={{ width: "100%", marginTop: 6 }}
+                  >
+                    <option value="day">día</option>
+                    <option value="week">semana</option>
+                    <option value="month">mes</option>
+                  </select>
+                </div>
+
+                <div style={{ width: 170 }}>
+                  <div className="tc-sub">Desde</div>
+                  <input
+                    className="tc-input"
+                    value={stFrom}
+                    onChange={(e) => setStFrom(e.target.value)}
+                    placeholder="YYYY-MM-DD"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+
+                <div style={{ width: 170 }}>
+                  <div className="tc-sub">Hasta</div>
+                  <input
+                    className="tc-input"
+                    value={stTo}
+                    onChange={(e) => setStTo(e.target.value)}
+                    placeholder="YYYY-MM-DD"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+
+                <button className="tc-btn tc-btn-gold" onClick={() => loadStats(false)} disabled={stLoading}>
+                  {stLoading ? "Cargando…" : "Cargar stats"}
+                </button>
+              </div>
+
+              <div style={{ overflowX: "auto", marginTop: 12 }}>
+                <table className="tc-table">
+                  <thead>
+                    <tr>
+                      <th>Periodo</th>
+                      <th>Trabajador</th>
+                      <th>Rol</th>
+                      <th>Worked</th>
+                      <th>Break</th>
+                      <th>Baño</th>
+                      <th>Expected</th>
+                      <th>Diff</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(stRows || []).map((r: any, idx: number) => {
+                      const diff = Number(r.diff_minutes || 0);
+                      const diffLabel = minsToHhmm(Math.abs(diff));
+                      return (
+                        <tr key={`${r.worker_id}-${r.group_key}-${idx}`}>
+                          <td><b>{r.group_key}</b></td>
+                          <td>{r.display_name || r.worker_id}</td>
+                          <td className="tc-muted">{r.role || "—"}</td>
+                          <td><b>{minsToHhmm(r.worked_minutes)}</b></td>
+                          <td>{minsToHhmm(r.break_minutes)}</td>
+                          <td>{minsToHhmm(r.bathroom_minutes)}</td>
+                          <td>{minsToHhmm(r.expected_minutes)}</td>
+                          <td style={{ fontWeight: 900 }}>
+                            {diff >= 0 ? `+${diffLabel}` : `-${diffLabel}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {(!stRows || stRows.length === 0) && (
+                      <tr>
+                        <td colSpan={8} className="tc-muted">
+                          Sin datos. (Asegúrate de tener el endpoint /api/admin/attendance/stats y de poner bien el rango.)
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                Nota: si quieres “Horas hechas” incluyendo descanso y baño, suma worked + break + baño.
+              </div>
             </div>
           )}
 
