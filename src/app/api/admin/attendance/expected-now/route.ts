@@ -216,12 +216,35 @@ export async function GET(req: Request) {
     const byW: Record<string, any> = {};
     for (const w of workers || []) byW[String(w.id)] = w;
 
-    const expected = activeNow
-      .map((x) => ({
-        ...x,
-        worker: byW[String(x.worker_id)] || null,
-      }))
-      .filter((x) => x.worker);
+    // 👇 Traer estado actual para pintar online/status basado en CONTROL HORARIO (no heartbeat)
+const expectedIds = [...new Set(activeNow.map((x) => String(x.worker_id)))];
+
+const { data: st, error: es2 } = await admin
+  .from("attendance_state")
+  .select("worker_id, is_online, status, last_event_at")
+  .in("worker_id", expectedIds);
+if (es2) throw es2;
+
+const stBy = new Map<string, any>();
+for (const r of st || []) stBy.set(String(r.worker_id), r);
+
+const expected = activeNow
+  .map((x) => {
+    const w = byW[String(x.worker_id)] || null;
+    if (!w) return null;
+
+    const s = stBy.get(String(x.worker_id)) || null;
+
+    return {
+      ...x,
+      worker: w,
+      // ✅ online ligado al control horario
+      online: !!s?.is_online,
+      status: String(s?.status || (s?.is_online ? "working" : "offline")),
+      last_event_at: s?.last_event_at ? String(s.last_event_at) : null,
+    };
+  })
+  .filter(Boolean);
 
     expected.sort((a: any, b: any) => {
       const ar = String(a.worker?.role || "");
