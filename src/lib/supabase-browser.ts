@@ -13,7 +13,6 @@ export function supabaseBrowser() {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      // opcional pero recomendable para evitar colisiones si tienes varios proyectos
       storageKey: "tc-supabase-auth",
     },
   });
