@@ -63,7 +63,7 @@ export async function GET(req: Request) {
     if (eo) throw eo;
     if (!owns?.id) return NextResponse.json({ ok: false, error: "ITEM_NOT_FOUND" }, { status: 404 });
 
-    const createdBy = owns.batch?.created_by_worker_id;
+    const createdBy = owns.batch?.[0]?.created_by_worker_id;
     if (String(createdBy) !== String(me.id)) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
