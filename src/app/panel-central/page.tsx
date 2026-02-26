@@ -52,6 +52,24 @@ function attStyle(online: boolean, status: string) {
   return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
 }
 
+function secondsAgo(ts: string | null) {
+  if (!ts) return null;
+  const t = new Date(ts).getTime();
+  if (!Number.isFinite(t)) return null;
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  return s;
+}
+
+type PresenceRow = {
+  worker_id: string;
+  display_name: string;
+  team_key: string | null;
+  online: boolean;
+  status: string;
+  last_event_at: string | null;
+  last_seen_seconds: number | null;
+};
+
 export default function Central() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
@@ -79,12 +97,18 @@ export default function Central() {
   const [clRows, setClRows] = useState<any[]>([]);
   const [clQ, setClQ] = useState("");
 
-  // ✅ attendance (online real)
+  // ✅ attendance (online real) - Central (self)
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
   const [attOnline, setAttOnline] = useState(false);
   const [attStatus, setAttStatus] = useState<string>("offline");
   const attBeatRef = useRef<any>(null);
+
+  // ✅ presencias tarotistas
+  const [presLoading, setPresLoading] = useState(false);
+  const [presMsg, setPresMsg] = useState("");
+  const [presences, setPresences] = useState<PresenceRow[]>([]);
+  const [presQ, setPresQ] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -131,7 +155,9 @@ export default function Central() {
     }
   }
 
-  async function postAttendanceEvent(event_type: string) {
+  // ✅ En BD el constraint es: online/offline/heartbeat
+  //    Break/Baño los mandamos como online con meta.action/meta.phase
+  async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
     try {
       setAttMsg("");
       setAttLoading(true);
@@ -143,7 +169,10 @@ export default function Central() {
       const res = await fetch("/api/attendance/event", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ event_type, meta: { path: window.location.pathname } }),
+        body: JSON.stringify({
+          event_type,
+          meta: { path: window.location.pathname, ...metaExtra },
+        }),
       });
 
       const j = await safeJson(res);
@@ -157,6 +186,18 @@ export default function Central() {
         }
         await loadAttendanceMe(true);
         return;
+      }
+
+      // ✅ si hago online, mando heartbeat inmediato
+      if (event_type === "online") {
+        await fetch("/api/attendance/event", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_type: "heartbeat",
+            meta: { path: window.location.pathname, immediate: true },
+          }),
+        }).catch(() => {});
       }
 
       await loadAttendanceMe(true);
@@ -197,7 +238,7 @@ export default function Central() {
       };
 
       await ping();
-      attBeatRef.current = setInterval(ping, 45_000);
+      attBeatRef.current = setInterval(ping, 30_000);
     };
 
     start();
@@ -302,11 +343,59 @@ export default function Central() {
     }
   }
 
+  async function loadPresences(silent = false) {
+    if (presLoading && !silent) return;
+    if (!silent) {
+      setPresLoading(true);
+      setPresMsg("");
+    }
+
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/central/attendance/online", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(res);
+
+      if (!j?._ok || !j?.ok) {
+        setPresences([]);
+        setPresMsg(`❌ No se pudo cargar presencias: ${j?.error || `HTTP ${j?._status}`}`);
+        return;
+      }
+
+      const rows: PresenceRow[] = (j.rows || []).map((r: any) => {
+        const last = r.last_event_at ? String(r.last_event_at) : null;
+        return {
+          worker_id: String(r.worker_id),
+          display_name: String(r.display_name || "—"),
+          team_key: r.team_key ? String(r.team_key) : null,
+          online: !!r.online,
+          status: String(r.status || (r.online ? "working" : "offline")),
+          last_event_at: last,
+          last_seen_seconds: secondsAgo(last),
+        };
+      });
+
+      setPresences(rows);
+      if (!silent) setPresMsg(`✅ Presencias actualizadas (${rows.length})`);
+      if (!silent) setTimeout(() => setPresMsg(""), 1200);
+    } catch (e: any) {
+      setPresences([]);
+      setPresMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setPresLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
     refreshRanking();
     loadTarotists();
     loadAttendanceMe(true);
+    loadPresences(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
@@ -327,6 +416,14 @@ export default function Central() {
     if (tab === "checklist") loadChecklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  // Auto-refresh presencias (siempre, porque Central suele tenerlo abierto)
+  useEffect(() => {
+    if (!ok) return;
+    const t = setInterval(() => loadPresences(true), 20_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok]);
 
   const team = rank?.teams || {};
   const fuego = team?.fuego || {};
@@ -371,6 +468,25 @@ export default function Central() {
     return { total, completed, inProg, notStarted };
   }, [clRows]);
 
+  const presencesFiltered = useMemo(() => {
+    const qq = presQ.trim().toLowerCase();
+    let rows = presences || [];
+    if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
+
+    // Orden: online primero, luego por last_seen_seconds, luego nombre
+    return rows.slice().sort((a, b) => {
+      const ao = a.online ? 1 : 0;
+      const bo = b.online ? 1 : 0;
+      if (ao !== bo) return bo - ao;
+
+      const as = a.last_seen_seconds ?? 999999;
+      const bs = b.last_seen_seconds ?? 999999;
+      if (as !== bs) return as - bs;
+
+      return String(a.display_name).localeCompare(String(b.display_name));
+    });
+  }, [presences, presQ]);
+
   async function crearIncidencia() {
     if (incLoading) return;
     setIncLoading(true);
@@ -414,7 +530,7 @@ export default function Central() {
             <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>🎧 Panel Central</div>
-                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking</div>
+                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking · Presencias</div>
               </div>
 
               <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
@@ -433,7 +549,7 @@ export default function Central() {
 
                 <button
                   className="tc-btn tc-btn-ok"
-                  onClick={() => postAttendanceEvent("check_in")}
+                  onClick={() => postAttendanceEvent("online", { action: "check_in" })}
                   disabled={attLoading || attOnline}
                   title="Solo te conecta si estás en turno"
                 >
@@ -441,7 +557,7 @@ export default function Central() {
                 </button>
                 <button
                   className="tc-btn tc-btn-danger"
-                  onClick={() => postAttendanceEvent("check_out")}
+                  onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
                   disabled={attLoading || !attOnline}
                 >
                   🔴 Desconectarme
@@ -449,14 +565,14 @@ export default function Central() {
 
                 <button
                   className="tc-btn"
-                  onClick={() => postAttendanceEvent("break_start")}
+                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
                   disabled={attLoading || !attOnline || attStatus === "break"}
                 >
                   ⏸️ Descanso
                 </button>
                 <button
                   className="tc-btn"
-                  onClick={() => postAttendanceEvent("break_end")}
+                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
                   disabled={attLoading || !attOnline || attStatus !== "break"}
                 >
                   ▶️ Volver
@@ -464,14 +580,14 @@ export default function Central() {
 
                 <button
                   className="tc-btn"
-                  onClick={() => postAttendanceEvent("bathroom_start")}
+                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
                   disabled={attLoading || !attOnline || attStatus === "bathroom"}
                 >
                   🚻 Baño
                 </button>
                 <button
                   className="tc-btn"
-                  onClick={() => postAttendanceEvent("bathroom_end")}
+                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
                   disabled={attLoading || !attOnline || attStatus !== "bathroom"}
                 >
                   ✅ Salí
@@ -506,6 +622,91 @@ export default function Central() {
               </button>
             </div>
           </div>
+
+          {/* ✅ PRESENCIAS (se muestra en equipo, arriba, porque es lo más útil para Central) */}
+          {tab === "equipo" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">🟢 Presencias Tarotistas</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Online real = actividad/heartbeat reciente · Auto-refresh cada 20s
+                    {presMsg ? ` · ${presMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    className="tc-input"
+                    value={presQ}
+                    onChange={(e) => setPresQ(e.target.value)}
+                    placeholder="Buscar tarotista…"
+                    style={{ width: 240, maxWidth: "100%" }}
+                  />
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadPresences(false)} disabled={presLoading}>
+                    {presLoading ? "Cargando…" : "Actualizar presencias"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div style={{ display: "grid", gap: 10 }}>
+                {(presencesFiltered || []).map((r) => (
+                  <div
+                    key={r.worker_id}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ minWidth: 240 }}>
+                      <div style={{ fontWeight: 900 }}>
+                        {r.display_name}{" "}
+                        {r.team_key ? <span className="tc-chip" style={{ marginLeft: 8 }}>{r.team_key}</span> : null}
+                      </div>
+                      <div className="tc-sub" style={{ marginTop: 6 }}>
+                        Última señal:{" "}
+                        <b>
+                          {r.last_seen_seconds == null
+                            ? "—"
+                            : r.last_seen_seconds < 60
+                            ? `hace ${r.last_seen_seconds}s`
+                            : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
+                        </b>
+                      </div>
+                    </div>
+
+                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                      <span
+                        className="tc-chip"
+                        style={{
+                          ...attStyle(r.online, r.status),
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          fontSize: 12,
+                        }}
+                        title={r.status}
+                      >
+                        {attLabel(r.online, r.status)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {(!presencesFiltered || presencesFiltered.length === 0) && (
+                  <div className="tc-sub">No hay presencias para mostrar (o no coinciden con la búsqueda).</div>
+                )}
+              </div>
+            </div>
+          )}
 
           {tab === "equipo" && (
             <div className="tc-card">
