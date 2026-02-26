@@ -1,3 +1,4 @@
+// src/app/panel-tarotista/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,7 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
 
-type TabKey = "resumen" | "bonos" | "ranking" | "equipos" | "facturas" | "checklist";
+type TabKey = "resumen" | "clientes" | "bonos" | "ranking" | "equipos" | "facturas" | "checklist";
 
 function monthKeyNow() {
   const d = new Date();
@@ -151,6 +152,16 @@ export default function Tarotista() {
   const [attOnline, setAttOnline] = useState(false);
   const [attStatus, setAttStatus] = useState<string>("offline");
   const attBeatRef = useRef<any>(null);
+
+  // ✅ outbound (tarotista)
+  const [obDate, setObDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [obLoading, setObLoading] = useState(false);
+  const [obMsg, setObMsg] = useState("");
+  const [obBatch, setObBatch] = useState<any>(null);
+  const [obItems, setObItems] = useState<any[]>([]);
+  const obChannelRef = useRef<any>(null);
+  const [obDraft, setObDraft] = useState<string>("");
+  const [obSending, setObSending] = useState(false);
 
   // ✅ IMPORTANTÍSIMO: hooks SIEMPRE antes de cualquier return condicional
   const incidenciasLive = useMemo(() => {
@@ -433,6 +444,92 @@ export default function Tarotista() {
     }
   }
 
+  async function loadMyOutbound(silent = false) {
+    if (obLoading && !silent) return;
+    if (!silent) {
+      setObLoading(true);
+      setObMsg("");
+    }
+
+    try {
+      const token = await getTokenSafe();
+      if (!token) return;
+
+      const res = await fetch(`/api/me/outbound?date=${encodeURIComponent(obDate)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setObBatch(j.batch || null);
+      const items = (j.batch?.outbound_batch_items || [])
+        .slice()
+        .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
+      setObItems(items);
+
+      if (!silent) {
+        setObMsg(j.batch ? `✅ Lista cargada (${items.length})` : "ℹ️ Hoy no has enviado lista.");
+        setTimeout(() => setObMsg(""), 1200);
+      }
+    } catch (e: any) {
+      if (!silent) setObMsg(`❌ ${e?.message || "Error"}`);
+      setObBatch(null);
+      setObItems([]);
+    } finally {
+      if (!silent) setObLoading(false);
+    }
+  }
+
+  async function submitOutboundDraft() {
+    if (obSending) return;
+    setObSending(true);
+    setObMsg("");
+    try {
+      const token = await getTokenSafe();
+      if (!token) return;
+
+      const names = obDraft
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      if (!names.length) {
+        setObMsg("⚠️ Escribe al menos un nombre (1 por línea).");
+        return;
+      }
+
+      const items = names.map((customer_name, idx) => ({
+        customer_name,
+        position: idx + 1,
+        priority: 0,
+      }));
+
+      const res = await fetch("/api/tarot/outbound/submit", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_date: obDate, items }),
+      });
+      const j = await safeJson(res);
+
+      if (!j?._ok || !j?.ok) {
+        if (j?.error === "BATCH_ALREADY_EXISTS") {
+          setObMsg("⚠️ Ya enviaste lista hoy. Recargando…");
+          await loadMyOutbound(true);
+          return;
+        }
+        throw new Error(j?.error || `HTTP ${j?._status}`);
+      }
+
+      setObDraft("");
+      setObMsg("✅ Lista enviada");
+      await loadMyOutbound(true);
+    } catch (e: any) {
+      setObMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setObSending(false);
+    }
+  }
+
   // init load
   useEffect(() => {
     if (!ok) return;
@@ -448,6 +545,48 @@ export default function Tarotista() {
     if (tab === "checklist") loadChecklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, ok]);
+
+  // cargar outbound al entrar en pestaña y cuando cambie fecha
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "clientes") loadMyOutbound(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, ok, obDate]);
+
+  // ✅ realtime tarotista (UPDATE outbound_batch_items por batch_id)
+  useEffect(() => {
+    if (!ok) return;
+
+    if (obChannelRef.current) {
+      sb.removeChannel(obChannelRef.current);
+      obChannelRef.current = null;
+    }
+
+    const bid = obBatch?.id ? String(obBatch.id) : "";
+    if (!bid) return;
+
+    const ch = sb
+      .channel(`tarot-outbound-${bid}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` },
+        (payload) => {
+          const updated: any = payload.new;
+          setObItems((prev) =>
+            (prev || []).map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it))
+          );
+        }
+      )
+      .subscribe();
+
+    obChannelRef.current = ch;
+
+    return () => {
+      sb.removeChannel(ch);
+      obChannelRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, obBatch?.id]);
 
   // ✅ Heartbeat SOLO si está online real
   useEffect(() => {
@@ -613,6 +752,9 @@ export default function Tarotista() {
                 <button className={`tc-tab ${tab === "resumen" ? "tc-tab-active" : ""}`} onClick={() => setTab("resumen")}>
                   📊 Resumen
                 </button>
+                <button className={`tc-tab ${tab === "clientes" ? "tc-tab-active" : ""}`} onClick={() => setTab("clientes")}>
+                  📤 Clientes
+                </button>
                 <button className={`tc-tab ${tab === "bonos" ? "tc-tab-active" : ""}`} onClick={() => setTab("bonos")}>
                   💰 Bonos
                 </button>
@@ -695,6 +837,105 @@ export default function Tarotista() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* TAB: CLIENTES (OUTBOUND) */}
+            {tab === "clientes" && (
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title">📤 Clientes enviados</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Aquí ves el estado y el apunte del central en tiempo real
+                      {obMsg ? ` · ${obMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <span className="tc-chip">Día</span>
+                    <input
+                      className="tc-input"
+                      value={obDate}
+                      onChange={(e) => setObDate(e.target.value)}
+                      style={{ width: 140 }}
+                      placeholder="YYYY-MM-DD"
+                    />
+                    <button className="tc-btn tc-btn-gold" onClick={() => loadMyOutbound(false)} disabled={obLoading}>
+                      {obLoading ? "Cargando…" : "Actualizar"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                {!obBatch ? (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div className="tc-sub">
+                      No hay lista enviada para este día. Escribe nombres (1 por línea) y envía.
+                    </div>
+                    <textarea
+                      className="tc-input"
+                      value={obDraft}
+                      onChange={(e) => setObDraft(e.target.value)}
+                      placeholder={"Ej:\nAna Pérez\nLuis Gómez\nMaría…"}
+                      style={{ width: "100%", minHeight: 160, resize: "vertical" }}
+                    />
+                    <div className="tc-row" style={{ gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      <button className="tc-btn tc-btn-ok" onClick={submitOutboundDraft} disabled={obSending}>
+                        {obSending ? "Enviando…" : "📤 Enviar lista"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div className="tc-chip">Estado: <b>{String(obBatch.status || "submitted")}</b></div>
+                      {obBatch.note ? <div className="tc-sub">Nota: <b>{obBatch.note}</b></div> : null}
+                    </div>
+
+                    {(obItems || []).length === 0 ? (
+                      <div className="tc-sub">La lista está vacía.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {(obItems || []).map((it: any) => (
+                          <div
+                            key={it.id}
+                            style={{
+                              border: "1px solid rgba(255,255,255,0.10)",
+                              borderRadius: 14,
+                              padding: 12,
+                              background: "rgba(255,255,255,0.03)",
+                            }}
+                          >
+                            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                              <div style={{ minWidth: 240 }}>
+                                <div style={{ fontWeight: 900 }}>{it.customer_name || "—"}</div>
+                                {it.phone ? <div className="tc-sub" style={{ marginTop: 6 }}>📱 {it.phone}</div> : null}
+                              </div>
+
+                              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
+                                  {String(it.current_status || "pending")}
+                                </span>
+                              </div>
+                            </div>
+
+                            {it.last_note ? (
+                              <div className="tc-sub" style={{ marginTop: 10 }}>
+                                📝 <b>Apunte central:</b> {it.last_note}
+                              </div>
+                            ) : (
+                              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                                Aún sin apunte del central.
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
