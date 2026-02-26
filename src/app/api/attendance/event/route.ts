@@ -76,7 +76,6 @@ function addDaysYMD(ymd: string, add: number) {
 }
 
 function buildUtcFromLocal(dateYMD: string, timeHHMM: string, tz: string) {
-  // Offset actual del TZ (suficiente para Madrid en la práctica diaria)
   const off = offsetToIso(tzParts(tz).off);
   return new Date(`${dateYMD}T${timeHHMM}:00${off}`);
 }
@@ -102,7 +101,6 @@ async function isWithinActiveShiftForWorker(admin: any, worker_id: string, tzDef
   const GRACE_BEFORE_MIN = 15;
   const GRACE_AFTER_MIN = 10;
 
-  // revisar hoy y ayer (turnos nocturnos)
   const dowsToCheck = [dow, (dow + 6) % 7];
 
   const { data: sch, error: es } = await admin
@@ -150,18 +148,14 @@ async function isWithinActiveShiftForWorker(admin: any, worker_id: string, tzDef
 
 /**
  * BD constraint: event_type IN ('online','offline','heartbeat')
- * - Convertimos cualquier evento del frontend a uno de esos 3.
- * - break/bathroom/start/end se guardan en meta.action/meta.phase
  */
 function normalizeToDbEventType(incomingRaw: any, metaRaw: any) {
   const incoming = String(incomingRaw || "").trim();
 
-  // Si el frontend ya manda los 3 oficiales, pasamos tal cual
   if (incoming === "online" || incoming === "offline" || incoming === "heartbeat") {
     return { ok: true as const, incoming, event_type_db: incoming as "online" | "offline" | "heartbeat", meta_patch: {} };
   }
 
-  // Compat: eventos “humanos” que usabas antes
   switch (incoming) {
     case "check_in":
     case "login":
@@ -172,35 +166,32 @@ function normalizeToDbEventType(incomingRaw: any, metaRaw: any) {
       return { ok: true as const, incoming, event_type_db: "offline" as const, meta_patch: { action: "check_out" } };
 
     case "break_start":
-      return {
-        ok: true as const,
-        incoming,
-        event_type_db: "online" as const,
-        meta_patch: { action: "break", phase: "start" },
-      };
+      return { ok: true as const, incoming, event_type_db: "online" as const, meta_patch: { action: "break", phase: "start" } };
 
     case "break_end":
-      return {
-        ok: true as const,
-        incoming,
-        event_type_db: "online" as const,
-        meta_patch: { action: "break", phase: "end" },
-      };
+      return { ok: true as const, incoming, event_type_db: "online" as const, meta_patch: { action: "break", phase: "end" } };
 
     case "bathroom_start":
-      return {
-        ok: true as const,
-        incoming,
-        event_type_db: "online" as const,
-        meta_patch: { action: "bathroom", phase: "start" },
-      };
+      return { ok: true as const, incoming, event_type_db: "online" as const, meta_patch: { action: "bathroom", phase: "start" } };
 
     case "bathroom_end":
+      return { ok: true as const, incoming, event_type_db: "online" as const, meta_patch: { action: "bathroom", phase: "end" } };
+
+    // compat: pause/bathroom con phase en meta
+    case "pause":
       return {
         ok: true as const,
         incoming,
         event_type_db: "online" as const,
-        meta_patch: { action: "bathroom", phase: "end" },
+        meta_patch: { action: "break", phase: String(metaRaw?.phase || "start") },
+      };
+
+    case "bathroom":
+      return {
+        ok: true as const,
+        incoming,
+        event_type_db: "online" as const,
+        meta_patch: { action: "bathroom", phase: String(metaRaw?.phase || "start") },
       };
 
     default:
@@ -210,15 +201,15 @@ function normalizeToDbEventType(incomingRaw: any, metaRaw: any) {
 
 function nextStatusFromMeta(event_type_db: "online" | "offline" | "heartbeat", meta: any, currentStatus: string) {
   if (event_type_db === "offline") return { is_online: false, status: "offline" };
+
   if (event_type_db === "heartbeat") {
-    // No forzamos salir de break/baño
     if (currentStatus === "break" || currentStatus === "bathroom") {
       return { is_online: true, status: currentStatus };
     }
     return { is_online: true, status: "working" };
   }
 
-  // event_type_db === "online"
+  // online
   const action = String(meta?.action || "");
   const phase = String(meta?.phase || "");
 
@@ -232,8 +223,13 @@ function nextStatusFromMeta(event_type_db: "online" | "offline" | "heartbeat", m
     return { is_online: true, status: "bathroom" };
   }
 
-  // check_in o cualquier otro => working
   return { is_online: true, status: "working" };
+}
+
+// Detecta el error típico de Supabase cuando falta la tabla en el schema cache
+function isMissingTableError(err: any, tableName: string) {
+  const msg = String(err?.message || "");
+  return msg.includes(`Could not find the table 'public.${tableName}'`) || msg.includes(`Could not find the table "${tableName}"`);
 }
 
 export async function POST(req: Request) {
@@ -246,9 +242,7 @@ export async function POST(req: Request) {
     const metaIn = body?.meta && typeof body.meta === "object" ? body.meta : {};
 
     const norm = normalizeToDbEventType(incoming_event_type, metaIn);
-    if (!norm.ok) {
-      return NextResponse.json({ ok: false, error: "BAD_EVENT" }, { status: 400 });
-    }
+    if (!norm.ok) return NextResponse.json({ ok: false, error: "BAD_EVENT" }, { status: 400 });
 
     const event_type_db = norm.event_type_db;
     const meta = { ...metaIn, ...(norm.meta_patch || {}), event_type_in: incoming_event_type };
@@ -268,15 +262,8 @@ export async function POST(req: Request) {
 
     const worker_id = String(me.id);
 
-    // GATING:
-    // - offline siempre permitido
-    // - heartbeat fuera de turno se ignora
-    // - online fuera de turno se bloquea (salvo que tú quieras permitirlo)
     const shiftCheck = await isWithinActiveShiftForWorker(admin, worker_id, "Europe/Madrid");
-
-    if (!shiftCheck.ok) {
-      return NextResponse.json({ ok: false, error: "SHIFT_CHECK_FAIL" }, { status: 500 });
-    }
+    if (!shiftCheck.ok) return NextResponse.json({ ok: false, error: "SHIFT_CHECK_FAIL" }, { status: 500 });
 
     const mustBeInShift = event_type_db !== "offline";
     if (mustBeInShift && !shiftCheck.within) {
@@ -293,6 +280,7 @@ export async function POST(req: Request) {
 
     const at = new Date().toISOString();
 
+    // 1) insert event (SIEMPRE)
     const { data: ins, error: ei } = await admin
       .from("attendance_events")
       .insert({
@@ -306,31 +294,46 @@ export async function POST(req: Request) {
 
     if (ei) throw ei;
 
-    const { data: st0, error: es0 } = await admin
-      .from("attendance_state")
-      .select("worker_id, is_online, status")
-      .eq("worker_id", worker_id)
-      .maybeSingle();
+    // 2) update state (SI EXISTE la tabla)
+    let stateUpdated = false;
+    let stateSkippedReason: string | null = null;
 
-    if (es0) throw es0;
+    try {
+      const { data: st0, error: es0 } = await admin
+        .from("attendance_state")
+        .select("worker_id, is_online, status")
+        .eq("worker_id", worker_id)
+        .maybeSingle();
 
-    const curStatus = String(st0?.status || "");
-    const next = nextStatusFromMeta(event_type_db, meta, curStatus);
+      if (es0) throw es0;
 
-    const { error: eus } = await admin
-      .from("attendance_state")
-      .upsert(
-        {
-          worker_id,
-          is_online: next.is_online,
-          status: next.status,
-          last_event_at: at,
-          updated_at: at,
-        },
-        { onConflict: "worker_id" }
-      );
+      const curStatus = String(st0?.status || "");
+      const next = nextStatusFromMeta(event_type_db, meta, curStatus);
 
-    if (eus) throw eus;
+      const { error: eus } = await admin
+        .from("attendance_state")
+        .upsert(
+          {
+            worker_id,
+            is_online: next.is_online,
+            status: next.status,
+            last_event_at: at,
+            updated_at: at,
+          },
+          { onConflict: "worker_id" }
+        );
+
+      if (eus) throw eus;
+
+      stateUpdated = true;
+    } catch (err: any) {
+      if (isMissingTableError(err, "attendance_state")) {
+        stateSkippedReason = "ATTENDANCE_STATE_TABLE_MISSING";
+      } else {
+        // Si es otro error, lo devolvemos para que lo veas
+        throw err;
+      }
+    }
 
     return NextResponse.json({
       ok: true,
@@ -342,6 +345,8 @@ export async function POST(req: Request) {
       within_shift: !!shiftCheck.within,
       schedule_id: shiftCheck.within ? shiftCheck.schedule_id : null,
       meta,
+      state_updated: stateUpdated,
+      state_skipped_reason: stateSkippedReason,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
