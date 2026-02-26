@@ -82,10 +82,9 @@ function parseDowAny(v: any): number | null {
   // caso 0..6: lo usamos tal cual
   if (n >= 0 && n <= 6) return n;
 
-  // caso 1..7 (muy típico): convertimos a 0..6
-  // Convención común: Mon=1..Sun=7 -> queremos Sun=0..Sat=6
+  // caso 1..7: convertimos a 0..6
+  // Mon(1)->1 ... Sat(6)->6, Sun(7)->0
   if (n >= 1 && n <= 7) {
-    // Mon(1)->1, Tue(2)->2, ... Sat(6)->6, Sun(7)->0
     return n === 7 ? 0 : n;
   }
 
@@ -117,14 +116,18 @@ export async function GET(req: Request) {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    // asegurar admin
+    // ✅ permitir admin y central
     const { data: me, error: em } = await admin
       .from("workers")
       .select("id, role")
       .eq("user_id", uid)
       .maybeSingle();
     if (em) throw em;
-    if (!me || me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
+    const role = String(me?.role || "");
+    if (!me || (role !== "admin" && role !== "central")) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
 
     const TZ = "Europe/Madrid";
     const p = tzNowParts(TZ);
@@ -140,7 +143,7 @@ export async function GET(req: Request) {
 
     const nowUtc = new Date();
 
-    // ✅ NO filtramos por day_of_week aquí: traemos todos los horarios activos
+    // ✅ traemos todos los horarios activos
     const { data: sch, error: es } = await admin
       .from("shift_schedules")
       .select("id, worker_id, day_of_week, start_time, end_time, timezone, active")
@@ -148,7 +151,6 @@ export async function GET(req: Request) {
     if (es) throw es;
 
     const schedules = sch || [];
-
     const activeNow: any[] = [];
 
     for (const s of schedules) {
