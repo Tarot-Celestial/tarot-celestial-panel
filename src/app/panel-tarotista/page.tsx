@@ -99,6 +99,27 @@ function attStyle(online: boolean, status: string) {
   return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
 }
 
+// ✅ helper: conseguir token SIN redirigir (evita falsos logout)
+async function getTokenSafe(): Promise<string | null> {
+  try {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token || null;
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+// ✅ helper: esperar un poco y reintentar sesión (por refresh token / race)
+async function getTokenWithRetry(ms = 350, tries = 3): Promise<string | null> {
+  for (let i = 0; i < tries; i++) {
+    const t = await getTokenSafe();
+    if (t) return t;
+    await new Promise((r) => setTimeout(r, ms));
+  }
+  return null;
+}
+
 export default function Tarotista() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("resumen");
@@ -191,10 +212,18 @@ export default function Tarotista() {
     return { total, completed, pct };
   }, [clRows]);
 
+  // ✅ 1) Listener real de auth: SOLO aquí redirigimos si se pierde la sesión de verdad
+  useEffect(() => {
+    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
+      if (!session) window.location.href = "/login";
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // ✅ 2) Init: validar rol, pero con retry para no expulsar por un falso "token null"
   useEffect(() => {
     (async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
+      const token = await getTokenWithRetry(350, 3);
       if (!token) return (window.location.href = "/login");
 
       const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
@@ -217,9 +246,8 @@ export default function Tarotista() {
       setAttMsg("");
     }
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
@@ -230,6 +258,7 @@ export default function Tarotista() {
       if (!silent) setAttMsg("");
     } catch (e: any) {
       if (!silent) setAttMsg(`❌ Estado: ${e?.message || "Error"}`);
+      // si falla una vez, NO expulsamos; solo marcamos offline en UI
       setAttOnline(false);
       setAttStatus("offline");
     } finally {
@@ -244,9 +273,8 @@ export default function Tarotista() {
       setAttMsg("");
       setAttLoading(true);
 
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const res = await fetch("/api/attendance/event", {
         method: "POST",
@@ -271,7 +299,7 @@ export default function Tarotista() {
         return;
       }
 
-      // ✅ Si acabo de hacer "online", mando un heartbeat inmediato para que el sistema lo marque como “online real”
+      // ✅ Si acabo de hacer "online", mando un heartbeat inmediato
       if (event_type === "online") {
         await fetch("/api/attendance/event", {
           method: "POST",
@@ -283,7 +311,6 @@ export default function Tarotista() {
         }).catch(() => {});
       }
 
-      // evento ok -> refrescamos estado
       await loadAttendanceMe(true);
       setAttMsg("✅ Listo");
       setTimeout(() => setAttMsg(""), 1000);
@@ -299,9 +326,8 @@ export default function Tarotista() {
     setClLoading(true);
     setClMsg("");
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const res = await fetch("/api/checklists/my", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
@@ -331,9 +357,8 @@ export default function Tarotista() {
 
     try {
       setClMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const res = await fetch("/api/checklists/toggle", {
         method: "POST",
@@ -353,9 +378,8 @@ export default function Tarotista() {
   async function refresh() {
     try {
       setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const m = getMonthFromUrl();
       setMonth(m);
@@ -439,15 +463,18 @@ export default function Tarotista() {
     let stopped = false;
 
     const start = async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const ping = async () => {
         if (stopped) return;
+
+        const token2 = await getTokenSafe();
+        if (!token2) return; // ✅ si no hay token momentáneo, NO hacemos nada
+
         await fetch("/api/attendance/event", {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${token2}`, "Content-Type": "application/json" },
           body: JSON.stringify({ event_type: "heartbeat", meta: { path: window.location.pathname } }),
         }).catch(() => {});
       };
@@ -465,7 +492,7 @@ export default function Tarotista() {
     };
   }, [ok, attOnline]);
 
-  // poll suave del estado (si no estás online, por si te desconectaron, etc.)
+  // poll suave del estado
   useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadAttendanceMe(true), 60_000);
@@ -476,9 +503,8 @@ export default function Tarotista() {
   async function respondInvoice(action: "accepted" | "rejected") {
     try {
       setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
+      const token = await getTokenSafe();
+      if (!token) return; // ✅ NO redirect
 
       const r = await fetch("/api/invoices/respond", {
         method: "POST",
