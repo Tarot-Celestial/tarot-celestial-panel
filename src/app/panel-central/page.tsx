@@ -112,7 +112,6 @@ type ExpectedRow = {
   end_time?: string | null;
   timezone?: string | null;
   schedule_id?: string | null;
-  // algunos endpoints devuelven esto:
   online?: boolean;
   status?: string | null;
 };
@@ -170,6 +169,10 @@ export default function Central() {
   const [obBatches, setObBatches] = useState<any[]>([]);
   const obChannelsRef = useRef<any[]>([]);
 
+  const batchIdsKey = useMemo(() => {
+    return (obBatches || []).map((b: any) => String(b?.id || "")).filter(Boolean).join(",");
+  }, [obBatches]);
+
   useEffect(() => {
     (async () => {
       const { data } = await sb.auth.getSession();
@@ -215,8 +218,6 @@ export default function Central() {
     }
   }
 
-  // ✅ En BD el constraint es: online/offline/heartbeat
-  //    Break/Baño los mandamos como online con meta.action/meta.phase
   async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
     try {
       setAttMsg("");
@@ -239,16 +240,12 @@ export default function Central() {
 
       if (!j?._ok || !j?.ok) {
         const err = String(j?.error || `HTTP ${j?._status}`);
-        if (err === "OUTSIDE_SHIFT") {
-          setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
-        } else {
-          setAttMsg(`❌ ${err}`);
-        }
+        if (err === "OUTSIDE_SHIFT") setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
+        else setAttMsg(`❌ ${err}`);
         await loadAttendanceMe(true);
         return;
       }
 
-      // ✅ si hago online, mando heartbeat inmediato
       if (event_type === "online") {
         await fetch("/api/attendance/event", {
           method: "POST",
@@ -310,7 +307,6 @@ export default function Central() {
     };
   }, [ok, attOnline]);
 
-  // poll suave del estado
   useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadAttendanceMe(true), 60_000);
@@ -415,9 +411,7 @@ export default function Central() {
       const token = data.session?.access_token;
       if (!token) return;
 
-      const res = await fetch("/api/central/attendance/online", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("/api/central/attendance/online", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
 
       if (!j?._ok || !j?.ok) {
@@ -450,7 +444,6 @@ export default function Central() {
     }
   }
 
-  // ✅ NUEVO: cargar "deberían estar conectadas" reutilizando admin expected
   async function loadExpected(silent = false) {
     if (expLoading && !silent) return;
     if (!silent) {
@@ -463,9 +456,7 @@ export default function Central() {
       const token = data.session?.access_token;
       if (!token) return;
 
-      const res = await fetch("/api/central/attendance/expected", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("/api/central/attendance/expected", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
 
       if (!j?._ok || !j?.ok) {
@@ -528,41 +519,53 @@ export default function Central() {
   }
 
   async function outboundLog(item_id: string, status: string) {
-    try {
-      const note = window.prompt("Observación (opcional):", "") || null;
+    // Cancelar prompt = no hacemos nada
+    const noteInput = window.prompt("Observación (opcional). Cancelar = no guardar:", "");
+    if (noteInput === null) return;
+    const note = noteInput.trim() ? noteInput.trim() : null;
 
+    // Optimistic UI
+    const optimisticAt = new Date().toISOString();
+    if (status === "done") {
+      setObBatches((prev) =>
+        (prev || []).map((b: any) => ({
+          ...b,
+          outbound_batch_items: (b.outbound_batch_items || []).filter((it: any) => String(it.id) !== String(item_id)),
+        }))
+      );
+    } else {
+      setObBatches((prev) =>
+        (prev || []).map((b: any) => ({
+          ...b,
+          outbound_batch_items: (b.outbound_batch_items || []).map((it: any) =>
+            String(it.id) === String(item_id)
+              ? { ...it, current_status: status, last_note: note ?? it.last_note, last_call_at: optimisticAt }
+              : it
+          ),
+        }))
+      );
+    }
+
+    try {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return;
+      if (!token) throw new Error("NO_AUTH");
 
-      // ✅ Optimistic UI
-      if (status === "done") {
-        setObBatches((prev) =>
-          (prev || []).map((b: any) => ({
-            ...b,
-            outbound_batch_items: (b.outbound_batch_items || []).filter((it: any) => String(it.id) !== String(item_id)),
-          }))
-        );
-      } else {
-        setObBatches((prev) =>
-          (prev || []).map((b: any) => ({
-            ...b,
-            outbound_batch_items: (b.outbound_batch_items || []).map((it: any) =>
-              String(it.id) === String(item_id)
-                ? { ...it, current_status: status, last_note: note ?? it.last_note, last_call_at: new Date().toISOString() }
-                : it
-            ),
-          }))
-        );
-      }
+      const url = "/api/central/outbound/log";
+      const payload = { item_id, status, note };
 
-      const res = await fetch("/api/central/outbound/log", {
+      const res = await fetch(url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ item_id, status, note }),
+        body: JSON.stringify(payload),
       });
+
       const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      if (!j?._ok || !j?.ok) {
+        // 🔥 Debug útil para cazar 405 o rutas mal puestas
+        throw new Error(`${j?.error || `HTTP ${j?._status}`} · POST ${url} · body=${JSON.stringify(payload)}`);
+      }
 
       const updated = j.item;
       if (updated?.id) {
@@ -577,6 +580,7 @@ export default function Central() {
       }
     } catch (e: any) {
       alert(`Error: ${e?.message || "ERR"}`);
+      // revert seguro
       loadOutboundPending(true);
     }
   }
@@ -609,7 +613,6 @@ export default function Central() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  // Auto-refresh presencias (siempre, porque Central suele tenerlo abierto)
   useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadPresences(true), 20_000);
@@ -617,7 +620,6 @@ export default function Central() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
-  // Auto-refresh expected (cada 30s)
   useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadExpected(true), 30_000);
@@ -625,7 +627,6 @@ export default function Central() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
-  // cargar outbound al entrar en pestaña y al cambiar fecha
   useEffect(() => {
     if (!ok) return;
     if (tab === "llamadas") loadOutboundPending(false);
@@ -673,7 +674,7 @@ export default function Central() {
       obChannelsRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, JSON.stringify((obBatches || []).map((b: any) => b.id))]);
+  }, [ok, batchIdsKey]);
 
   const team = rank?.teams || {};
   const fuego = team?.fuego || {};
@@ -697,10 +698,7 @@ export default function Central() {
     return (tarotists || []).filter((t) => String(t.display_name || "").toLowerCase().includes(qq));
   }, [tarotists, q]);
 
-  const selectedTarotist = useMemo(
-    () => tarotists.find((t) => t.id === incWorkerId),
-    [tarotists, incWorkerId]
-  );
+  const selectedTarotist = useMemo(() => tarotists.find((t) => t.id === incWorkerId), [tarotists, incWorkerId]);
 
   const clRowsFiltered = useMemo(() => {
     const qq = clQ.trim().toLowerCase();
@@ -718,17 +716,11 @@ export default function Central() {
     return { total, completed, inProg, notStarted };
   }, [clRows]);
 
-  // ✅ MOD: filtrar para NO mostrar offline (solo online/break/bathroom)
   const presencesFiltered = useMemo(() => {
     const qq = presQ.trim().toLowerCase();
     let rows = presences || [];
-
-    // SOLO online
     rows = rows.filter((r) => !!r.online);
-
     if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-
-    // Orden por last_seen_seconds, luego nombre
     return rows.slice().sort((a, b) => {
       const as = a.last_seen_seconds ?? 999999;
       const bs = b.last_seen_seconds ?? 999999;
@@ -786,7 +778,9 @@ export default function Central() {
           <div className="tc-card">
             <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <div>
-                <div className="tc-title" style={{ fontSize: 18 }}>🎧 Panel Central</div>
+                <div className="tc-title" style={{ fontSize: 18 }}>
+                  🎧 Panel Central
+                </div>
                 <div className="tc-sub">Competición · Checklist · Incidencias · Ranking · Presencias</div>
               </div>
 
@@ -858,11 +852,17 @@ export default function Central() {
                   placeholder="2026-02"
                   style={{ width: 120 }}
                 />
-                <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>Actualizar</button>
+                <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>
+                  Actualizar
+                </button>
               </div>
             </div>
 
-            {attMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{attMsg}</div> : null}
+            {attMsg ? (
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {attMsg}
+              </div>
+            ) : null}
 
             <div style={{ marginTop: 12 }} className="tc-tabs">
               <button className={`tc-tab ${tab === "equipo" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipo")}>
@@ -993,7 +993,7 @@ export default function Central() {
             </div>
           )}
 
-          {/* ✅ PRESENCIAS (solo online/break/bathroom) */}
+          {/* ✅ PRESENCIAS */}
           {tab === "equipo" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1048,8 +1048,8 @@ export default function Central() {
                           {r.last_seen_seconds == null
                             ? "—"
                             : r.last_seen_seconds < 60
-                              ? `hace ${r.last_seen_seconds}s`
-                              : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
+                            ? `hace ${r.last_seen_seconds}s`
+                            : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
                         </b>
                       </div>
                     </div>
@@ -1071,14 +1071,12 @@ export default function Central() {
                   </div>
                 ))}
 
-                {(!presencesFiltered || presencesFiltered.length === 0) && (
-                  <div className="tc-sub">No hay tarotistas conectadas ahora mismo.</div>
-                )}
+                {(!presencesFiltered || presencesFiltered.length === 0) && <div className="tc-sub">No hay tarotistas conectadas ahora mismo.</div>}
               </div>
             </div>
           )}
 
-          {/* ✅ NUEVO: DEBERÍAN ESTAR CONECTADAS */}
+          {/* ✅ DEBERÍAN */}
           {tab === "equipo" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1147,13 +1145,12 @@ export default function Central() {
                   </div>
                 ))}
 
-                {(!expectedFiltered || expectedFiltered.length === 0) && (
-                  <div className="tc-sub">No hay nadie en turno ahora mismo.</div>
-                )}
+                {(!expectedFiltered || expectedFiltered.length === 0) && <div className="tc-sub">No hay nadie en turno ahora mismo.</div>}
               </div>
             </div>
           )}
 
+          {/* Competición */}
           {tab === "equipo" && (
             <div className="tc-card">
               <div className="tc-title">🔥💧 Competición por equipos</div>
@@ -1167,16 +1164,16 @@ export default function Central() {
               <div className="tc-grid-2">
                 <TeamBar
                   title="🔥 Fuego (Yami)"
-                  score={fuegoScore}
-                  pct={fuegoPct}
+                  score={Number(fuego?.score || 0)}
+                  pct={Math.round((Number(fuego?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
                   aCliente={pctAny(fuego?.avg_cliente ?? 0)}
                   aRepite={pctAny(fuego?.avg_repite ?? 0)}
                   isWinner={winner === "fuego"}
                 />
                 <TeamBar
                   title="💧 Agua (Maria)"
-                  score={aguaScore}
-                  pct={aguaPct}
+                  score={Number(agua?.score || 0)}
+                  pct={Math.round((Number(agua?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
                   aCliente={pctAny(agua?.avg_cliente ?? 0)}
                   aRepite={pctAny(agua?.avg_repite ?? 0)}
                   isWinner={winner === "agua"}
@@ -1184,21 +1181,18 @@ export default function Central() {
               </div>
 
               <div className="tc-hr" />
-
-              <div className="tc-sub">
-                Siguiente: “Mejoras de equipo” automático (consejos según %cliente y %repite).
-              </div>
+              <div className="tc-sub">Siguiente: “Mejoras de equipo” automático (consejos según %cliente y %repite).</div>
             </div>
           )}
 
+          {/* Checklist */}
           {tab === "checklist" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">✅ Checklist Tarotistas (turno actual)</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Turno: <b>{clShiftKey || "—"}</b> · Completadas:{" "}
-                    <b>{clProgress.completed}/{clProgress.total}</b> · En progreso:{" "}
+                    Turno: <b>{clShiftKey || "—"}</b> · Completadas: <b>{clProgress.completed}/{clProgress.total}</b> · En progreso:{" "}
                     <b>{clProgress.inProg}</b> · Sin empezar: <b>{clProgress.notStarted}</b>
                   </div>
                 </div>
@@ -1210,9 +1204,7 @@ export default function Central() {
                 </div>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>
-                {clMsg || " "}
-              </div>
+              <div className="tc-sub" style={{ marginTop: 10 }}>{clMsg || " "}</div>
 
               <div className="tc-hr" />
 
@@ -1224,7 +1216,6 @@ export default function Central() {
                   placeholder="Buscar tarotista…"
                   style={{ width: 280, maxWidth: "100%" }}
                 />
-
                 <div className="tc-chip">
                   Nota: este checklist se <b>resetea solo</b> con el turno (shift_key).
                 </div>
@@ -1244,8 +1235,8 @@ export default function Central() {
                         r.status === "completed"
                           ? "rgba(120,255,190,0.10)"
                           : r.status === "in_progress"
-                            ? "rgba(215,181,109,0.08)"
-                            : "rgba(255,255,255,0.03)",
+                          ? "rgba(215,181,109,0.08)"
+                          : "rgba(255,255,255,0.03)",
                     }}
                   >
                     <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1254,11 +1245,7 @@ export default function Central() {
                         <div className="tc-sub" style={{ marginTop: 6 }}>
                           Estado:{" "}
                           <b>
-                            {r.status === "completed"
-                              ? "Completado ✅"
-                              : r.status === "in_progress"
-                                ? "En progreso ⏳"
-                                : "Sin empezar ⬜"}
+                            {r.status === "completed" ? "Completado ✅" : r.status === "in_progress" ? "En progreso ⏳" : "Sin empezar ⬜"}
                           </b>
                           {r.completed_at ? ` · ${new Date(r.completed_at).toLocaleString("es-ES")}` : ""}
                         </div>
@@ -1272,8 +1259,8 @@ export default function Central() {
                               r.status === "completed"
                                 ? "rgba(120,255,190,0.35)"
                                 : r.status === "in_progress"
-                                  ? "rgba(215,181,109,0.35)"
-                                  : "rgba(255,255,255,0.14)",
+                                ? "rgba(215,181,109,0.35)"
+                                : "rgba(255,255,255,0.14)",
                           }}
                         >
                           {r.status === "completed" ? "OK" : r.status === "in_progress" ? "Casi" : "Pendiente"}
@@ -1284,22 +1271,19 @@ export default function Central() {
                 ))}
 
                 {(!clRowsFiltered || clRowsFiltered.length === 0) && (
-                  <div className="tc-sub">
-                    No hay tarotistas para este checklist. (Si eres central, solo verás tu equipo.)
-                  </div>
+                  <div className="tc-sub">No hay tarotistas para este checklist. (Si eres central, solo verás tu equipo.)</div>
                 )}
               </div>
             </div>
           )}
 
+          {/* Incidencias */}
           {tab === "incidencias" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">⚠️ Incidencias</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Descuenta en la factura del mes seleccionado.
-                  </div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>Descuenta en la factura del mes seleccionado.</div>
                 </div>
 
                 <div className="tc-row" style={{ flexWrap: "wrap" }}>
@@ -1377,6 +1361,7 @@ export default function Central() {
             </div>
           )}
 
+          {/* Ranking */}
           {tab === "ranking" && (
             <div className="tc-card">
               <div className="tc-title">🏆 Top 3 del mes</div>
