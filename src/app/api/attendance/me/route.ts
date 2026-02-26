@@ -44,36 +44,46 @@ export async function GET(req: Request) {
 
     const worker_id = String(me.id);
 
-    // estado actual
-    const { data: st } = await admin
+    // estado manual (NO depende de heartbeat)
+    const { data: st, error: es } = await admin
       .from("attendance_state")
       .select("worker_id, is_online, status, last_event_at, updated_at")
       .eq("worker_id", worker_id)
       .maybeSingle();
+    if (es) throw es;
 
-    // online REAL: heartbeat reciente
+    // señal/heartbeat (solo informativo)
     const since = new Date(Date.now() - 90_000).toISOString();
-    const { data: hb } = await admin
+    const { data: hb, error: eh } = await admin
       .from("attendance_events")
       .select("at")
       .eq("worker_id", worker_id)
       .eq("event_type", "heartbeat")
-      .gte("at", since)
       .order("at", { ascending: false })
       .limit(1);
+    if (eh) throw eh;
 
-    const hasRecentHeartbeat = !!(hb && hb[0]?.at);
+    const lastHeartbeatAt = hb && hb[0]?.at ? String(hb[0].at) : null;
+    const heartbeatOk = lastHeartbeatAt ? new Date(lastHeartbeatAt).getTime() >= new Date(since).getTime() : false;
 
-    const realOnline = hasRecentHeartbeat && (st?.is_online !== false);
-    const status = realOnline ? (st?.status || "working") : "offline";
+    // ✅ ONLINE MANUAL: solo depende del estado
+    const manualOnline = st?.is_online === true;
+    const status = manualOnline ? String(st?.status || "working") : "offline";
 
     return NextResponse.json({
       ok: true,
       worker: { id: worker_id, display_name: me.display_name, role: me.role },
-      online: realOnline,
+
+      // ✅ lo que manda para el sistema
+      online: manualOnline,
       status,
+
+      // ✅ informativo (para “señal”)
+      heartbeat_ok: heartbeatOk,
+      last_heartbeat_at: lastHeartbeatAt,
+
       last_event_at: st?.last_event_at || null,
-      last_heartbeat_at: hb?.[0]?.at || null,
+      updated_at: st?.updated_at || null,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
