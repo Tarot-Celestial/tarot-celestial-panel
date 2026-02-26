@@ -47,9 +47,6 @@ function tzParts(tz: string, d = new Date()) {
     d: get("day"),
     wd: get("weekday"),
     off: get("timeZoneName"), // GMT+1 / GMT+2
-    hh: get("hour"),
-    mm: get("minute"),
-    ss: get("second"),
   };
 }
 
@@ -69,7 +66,6 @@ function offsetToIso(off: string) {
 }
 
 function addDaysYMD(ymd: string, add: number) {
-  // ymd: YYYY-MM-DD
   const [Y, M, D] = ymd.split("-").map((x) => Number(x));
   const dt = new Date(Date.UTC(Y, M - 1, D));
   dt.setUTCDate(dt.getUTCDate() + add);
@@ -80,13 +76,13 @@ function addDaysYMD(ymd: string, add: number) {
 }
 
 function buildUtcFromLocal(dateYMD: string, timeHHMM: string, tz: string) {
-  // Usamos offset ACTUAL del TZ (vale para Madrid la inmensa mayoría de casos)
+  // Offset actual del TZ (suficiente para Madrid en la práctica diaria)
   const off = offsetToIso(tzParts(tz).off);
   return new Date(`${dateYMD}T${timeHHMM}:00${off}`);
 }
 
 function hhmm(s: any) {
-  return String(s || "").slice(0, 5); // "21:00"
+  return String(s || "").slice(0, 5);
 }
 
 function parseMinutes(hhmmStr: string) {
@@ -103,11 +99,10 @@ async function isWithinActiveShiftForWorker(admin: any, worker_id: string, tzDef
 
   const today = `${p.y}-${p.m}-${p.d}`;
 
-  // margen para permitir check-in un poco antes / después
   const GRACE_BEFORE_MIN = 15;
   const GRACE_AFTER_MIN = 10;
 
-  // Para turnos nocturnos (21:00-05:00) hay que mirar hoy y ayer
+  // revisar hoy y ayer (turnos nocturnos)
   const dowsToCheck = [dow, (dow + 6) % 7];
 
   const { data: sch, error: es } = await admin
@@ -154,89 +149,67 @@ async function isWithinActiveShiftForWorker(admin: any, worker_id: string, tzDef
 }
 
 /**
- * Normaliza event_type entrante (frontend) a los tipos que la BD permite.
- * BD (según tu descripción / constraint típico): login, logout, heartbeat, pause, bathroom
- * Los detalles start/end se guardan en meta.phase
+ * BD constraint: event_type IN ('online','offline','heartbeat')
+ * - Convertimos cualquier evento del frontend a uno de esos 3.
+ * - break/bathroom/start/end se guardan en meta.action/meta.phase
  */
-type Normalized = {
-  ok: boolean;
-  incoming: string;
-  event_type_db?: "login" | "logout" | "heartbeat" | "pause" | "bathroom";
-  meta_patch?: Record<string, any>;
-  error?: string;
-};
-
-function normalizeEvent(incomingRaw: any, metaRaw: any): Normalized {
+function normalizeToDbEventType(incomingRaw: any, metaRaw: any) {
   const incoming = String(incomingRaw || "").trim();
 
-  // Permitimos tanto los nuevos como los antiguos
-  // Antiguos: check_in/check_out/break_start/break_end/bathroom_start/bathroom_end
-  // Nuevos: login/logout/heartbeat/pause/bathroom (+ meta.phase start/end opcional)
+  // Si el frontend ya manda los 3 oficiales, pasamos tal cual
+  if (incoming === "online" || incoming === "offline" || incoming === "heartbeat") {
+    return { ok: true as const, incoming, event_type_db: incoming as "online" | "offline" | "heartbeat", meta_patch: {} };
+  }
+
+  // Compat: eventos “humanos” que usabas antes
   switch (incoming) {
     case "check_in":
     case "login":
-      return { ok: true, incoming, event_type_db: "login", meta_patch: {} };
+      return { ok: true as const, incoming, event_type_db: "online" as const, meta_patch: { action: "check_in" } };
 
     case "check_out":
     case "logout":
-      return { ok: true, incoming, event_type_db: "logout", meta_patch: {} };
-
-    case "heartbeat":
-      return { ok: true, incoming, event_type_db: "heartbeat", meta_patch: {} };
+      return { ok: true as const, incoming, event_type_db: "offline" as const, meta_patch: { action: "check_out" } };
 
     case "break_start":
-      return { ok: true, incoming, event_type_db: "pause", meta_patch: { phase: "start", kind: "break" } };
-
-    case "break_end":
-      return { ok: true, incoming, event_type_db: "pause", meta_patch: { phase: "end", kind: "break" } };
-
-    case "bathroom_start":
-      return { ok: true, incoming, event_type_db: "bathroom", meta_patch: { phase: "start" } };
-
-    case "bathroom_end":
-      return { ok: true, incoming, event_type_db: "bathroom", meta_patch: { phase: "end" } };
-
-    case "pause":
-      // Si mandan pause sin phase, asumimos start (pero se puede mandar meta.phase)
       return {
-        ok: true,
+        ok: true as const,
         incoming,
-        event_type_db: "pause",
-        meta_patch: {
-          phase: String(metaRaw?.phase || "start"),
-          kind: String(metaRaw?.kind || "break"),
-        },
+        event_type_db: "online" as const,
+        meta_patch: { action: "break", phase: "start" },
       };
 
-    case "bathroom":
+    case "break_end":
       return {
-        ok: true,
+        ok: true as const,
         incoming,
-        event_type_db: "bathroom",
-        meta_patch: { phase: String(metaRaw?.phase || "start") },
+        event_type_db: "online" as const,
+        meta_patch: { action: "break", phase: "end" },
+      };
+
+    case "bathroom_start":
+      return {
+        ok: true as const,
+        incoming,
+        event_type_db: "online" as const,
+        meta_patch: { action: "bathroom", phase: "start" },
+      };
+
+    case "bathroom_end":
+      return {
+        ok: true as const,
+        incoming,
+        event_type_db: "online" as const,
+        meta_patch: { action: "bathroom", phase: "end" },
       };
 
     default:
-      return { ok: false, incoming, error: "BAD_EVENT" };
+      return { ok: false as const, incoming, error: "BAD_EVENT" as const };
   }
 }
 
-function nextStateFromEvent(event_type_db: string, meta: any, currentStatus: string) {
-  if (event_type_db === "logout") return { is_online: false, status: "offline" };
-  if (event_type_db === "login") return { is_online: true, status: "working" };
-
-  if (event_type_db === "pause") {
-    const phase = String(meta?.phase || "start");
-    if (phase === "end") return { is_online: true, status: "working" };
-    return { is_online: true, status: "break" };
-  }
-
-  if (event_type_db === "bathroom") {
-    const phase = String(meta?.phase || "start");
-    if (phase === "end") return { is_online: true, status: "working" };
-    return { is_online: true, status: "bathroom" };
-  }
-
+function nextStatusFromMeta(event_type_db: "online" | "offline" | "heartbeat", meta: any, currentStatus: string) {
+  if (event_type_db === "offline") return { is_online: false, status: "offline" };
   if (event_type_db === "heartbeat") {
     // No forzamos salir de break/baño
     if (currentStatus === "break" || currentStatus === "bathroom") {
@@ -245,6 +218,21 @@ function nextStateFromEvent(event_type_db: string, meta: any, currentStatus: str
     return { is_online: true, status: "working" };
   }
 
+  // event_type_db === "online"
+  const action = String(meta?.action || "");
+  const phase = String(meta?.phase || "");
+
+  if (action === "break") {
+    if (phase === "end") return { is_online: true, status: "working" };
+    return { is_online: true, status: "break" };
+  }
+
+  if (action === "bathroom") {
+    if (phase === "end") return { is_online: true, status: "working" };
+    return { is_online: true, status: "bathroom" };
+  }
+
+  // check_in o cualquier otro => working
   return { is_online: true, status: "working" };
 }
 
@@ -257,9 +245,9 @@ export async function POST(req: Request) {
     const incoming_event_type = String(body?.event_type || "");
     const metaIn = body?.meta && typeof body.meta === "object" ? body.meta : {};
 
-    const norm = normalizeEvent(incoming_event_type, metaIn);
-    if (!norm.ok || !norm.event_type_db) {
-      return NextResponse.json({ ok: false, error: norm.error || "BAD_EVENT" }, { status: 400 });
+    const norm = normalizeToDbEventType(incoming_event_type, metaIn);
+    if (!norm.ok) {
+      return NextResponse.json({ ok: false, error: "BAD_EVENT" }, { status: 400 });
     }
 
     const event_type_db = norm.event_type_db;
@@ -280,16 +268,17 @@ export async function POST(req: Request) {
 
     const worker_id = String(me.id);
 
-    // ✅ GATING: solo se permite marcar “online real” si está en turno.
-    // - logout siempre permitido
+    // GATING:
+    // - offline siempre permitido
     // - heartbeat fuera de turno se ignora
+    // - online fuera de turno se bloquea (salvo que tú quieras permitirlo)
     const shiftCheck = await isWithinActiveShiftForWorker(admin, worker_id, "Europe/Madrid");
 
     if (!shiftCheck.ok) {
       return NextResponse.json({ ok: false, error: "SHIFT_CHECK_FAIL" }, { status: 500 });
     }
 
-    const mustBeInShift = event_type_db !== "logout";
+    const mustBeInShift = event_type_db !== "offline";
     if (mustBeInShift && !shiftCheck.within) {
       if (event_type_db === "heartbeat") {
         return NextResponse.json({
@@ -299,11 +288,9 @@ export async function POST(req: Request) {
           now_utc: shiftCheck.nowUtc?.toISOString?.() || new Date().toISOString(),
         });
       }
-
       return NextResponse.json({ ok: false, error: "OUTSIDE_SHIFT" }, { status: 403 });
     }
 
-    // Insert event
     const at = new Date().toISOString();
 
     const { data: ins, error: ei } = await admin
@@ -319,7 +306,6 @@ export async function POST(req: Request) {
 
     if (ei) throw ei;
 
-    // Update attendance_state
     const { data: st0, error: es0 } = await admin
       .from("attendance_state")
       .select("worker_id, is_online, status")
@@ -329,7 +315,7 @@ export async function POST(req: Request) {
     if (es0) throw es0;
 
     const curStatus = String(st0?.status || "");
-    const next = nextStateFromEvent(event_type_db, meta, curStatus);
+    const next = nextStatusFromMeta(event_type_db, meta, curStatus);
 
     const { error: eus } = await admin
       .from("attendance_state")
