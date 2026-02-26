@@ -240,7 +240,9 @@ export default function Tarotista() {
     }
   }
 
-  async function postAttendanceEvent(event_type: string) {
+  // ✅ En BD el constraint es: online/offline/heartbeat
+  //    Break/Baño los mandamos como online con meta.action/meta.phase
+  async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
     try {
       setAttMsg("");
       setAttLoading(true);
@@ -252,7 +254,10 @@ export default function Tarotista() {
       const res = await fetch("/api/attendance/event", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ event_type, meta: { path: window.location.pathname } }),
+        body: JSON.stringify({
+          event_type,
+          meta: { path: window.location.pathname, ...metaExtra },
+        }),
       });
 
       const j = await safeJson(res);
@@ -267,6 +272,18 @@ export default function Tarotista() {
         }
         await loadAttendanceMe(true);
         return;
+      }
+
+      // ✅ Si acabo de hacer "online", mando un heartbeat inmediato para que el sistema lo marque como “online real”
+      if (event_type === "online") {
+        await fetch("/api/attendance/event", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_type: "heartbeat",
+            meta: { path: window.location.pathname, immediate: true },
+          }),
+        }).catch(() => {});
       }
 
       // evento ok -> refrescamos estado
@@ -439,7 +456,7 @@ export default function Tarotista() {
       };
 
       await ping();
-      attBeatRef.current = setInterval(ping, 45_000);
+      attBeatRef.current = setInterval(ping, 30_000);
     };
 
     start();
@@ -520,7 +537,7 @@ export default function Tarotista() {
 
                   <button
                     className="tc-btn tc-btn-ok"
-                    onClick={() => postAttendanceEvent("check_in")}
+                    onClick={() => postAttendanceEvent("online", { action: "check_in" })}
                     disabled={attLoading || attOnline}
                     title="Solo te conecta si estás en turno"
                   >
@@ -529,7 +546,7 @@ export default function Tarotista() {
 
                   <button
                     className="tc-btn tc-btn-danger"
-                    onClick={() => postAttendanceEvent("check_out")}
+                    onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
                     disabled={attLoading || !attOnline}
                   >
                     🔴 Desconectarme
@@ -537,14 +554,14 @@ export default function Tarotista() {
 
                   <button
                     className="tc-btn"
-                    onClick={() => postAttendanceEvent("break_start")}
+                    onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
                     disabled={attLoading || !attOnline || attStatus === "break"}
                   >
                     ⏸️ Descanso
                   </button>
                   <button
                     className="tc-btn"
-                    onClick={() => postAttendanceEvent("break_end")}
+                    onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
                     disabled={attLoading || !attOnline || attStatus !== "break"}
                   >
                     ▶️ Volver
@@ -552,14 +569,14 @@ export default function Tarotista() {
 
                   <button
                     className="tc-btn"
-                    onClick={() => postAttendanceEvent("bathroom_start")}
+                    onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
                     disabled={attLoading || !attOnline || attStatus === "bathroom"}
                   >
                     🚻 Baño
                   </button>
                   <button
                     className="tc-btn"
-                    onClick={() => postAttendanceEvent("bathroom_end")}
+                    onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
                     disabled={attLoading || !attOnline || attStatus !== "bathroom"}
                   >
                     ✅ Salí
