@@ -418,7 +418,7 @@ export default function Central() {
       const token = data.session?.access_token;
       if (!token) return;
 
-      const res = await fetch("/api/admin/attendance/expected", {
+      const res = await fetch("/api/central/attendance/expected", {
         headers: { Authorization: `Bearer ${token}` },
       });
       const j = await safeJson(res);
