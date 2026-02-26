@@ -52,7 +52,7 @@ export async function GET(req: Request) {
     if (!me?.id) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
     if (String(me.role) !== "central") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
-    // Traer tarotistas (OJO: tu tabla workers NO tiene team_key)
+    // 1) Traer tarotistas
     const { data: ws, error: ew } = await admin
       .from("workers")
       .select("id, display_name, role")
@@ -61,14 +61,12 @@ export async function GET(req: Request) {
     if (ew) throw ew;
 
     const workerIds = (ws || []).map((w: any) => String(w.id));
-    if (!workerIds.length) {
-      return NextResponse.json({ ok: true, rows: [] });
-    }
+    if (!workerIds.length) return NextResponse.json({ ok: true, rows: [] });
 
-    // Traer estados actuales
+    // 2) Traer estados actuales
     const { data: st, error: es } = await admin
       .from("attendance_state")
-      .select("worker_id, is_online, status, last_event_at, updated_at")
+      .select("worker_id, is_online, status, last_event_at")
       .in("worker_id", workerIds);
 
     if (es) throw es;
@@ -76,26 +74,29 @@ export async function GET(req: Request) {
     const byId = new Map<string, any>();
     for (const r of st || []) byId.set(String(r.worker_id), r);
 
-    // Online real: heartbeat/actividad reciente
+    // Online real: actividad/heartbeat reciente
     const ONLINE_WINDOW_SECONDS = 90;
 
-    const rows = (ws || []).map((w: any) => {
-      const sid = String(w.id);
-      const s = byId.get(sid) || null;
-      const last = s?.last_event_at ? String(s.last_event_at) : null;
+    // 3) Construir SOLO online real (incluye break/bathroom)
+    const rows = (ws || [])
+      .map((w: any) => {
+        const sid = String(w.id);
+        const s = byId.get(sid) || null;
+        const last = s?.last_event_at ? String(s.last_event_at) : null;
 
-      const onlineReal = !!s?.is_online && isRecent(last, ONLINE_WINDOW_SECONDS);
-      const status = onlineReal ? String(s?.status || "working") : "offline";
+        const onlineReal = !!s?.is_online && isRecent(last, ONLINE_WINDOW_SECONDS);
+        if (!onlineReal) return null;
 
-      return {
-        worker_id: sid,
-        display_name: w.display_name || "—",
-        team_key: null, // compat: tu tabla no tiene team_key
-        online: onlineReal,
-        status,
-        last_event_at: last,
-      };
-    });
+        return {
+          worker_id: sid,
+          display_name: w.display_name || "—",
+          team_key: null, // tu tabla workers no tiene team_key
+          online: true,
+          status: String(s?.status || "working"), // working | break | bathroom
+          last_event_at: last,
+        };
+      })
+      .filter(Boolean);
 
     return NextResponse.json({ ok: true, rows });
   } catch (e: any) {
