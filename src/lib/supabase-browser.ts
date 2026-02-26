@@ -10,10 +10,11 @@ export function supabaseBrowser() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       auth: {
+        // ✅ Mantén refresh y persistencia
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
-        storageKey: "tc-supabase-auth",
+        // ❌ NO storageKey personalizado
       },
     }
   );
