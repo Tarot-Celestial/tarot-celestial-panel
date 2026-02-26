@@ -70,6 +70,18 @@ type PresenceRow = {
   last_seen_seconds: number | null;
 };
 
+type ExpectedRow = {
+  worker_id: string;
+  display_name: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  timezone?: string | null;
+  schedule_id?: string | null;
+  // algunos endpoints devuelven esto:
+  online?: boolean;
+  status?: string | null;
+};
+
 export default function Central() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
@@ -109,6 +121,12 @@ export default function Central() {
   const [presMsg, setPresMsg] = useState("");
   const [presences, setPresences] = useState<PresenceRow[]>([]);
   const [presQ, setPresQ] = useState("");
+
+  // ✅ deberían estar conectadas
+  const [expLoading, setExpLoading] = useState(false);
+  const [expMsg, setExpMsg] = useState("");
+  const [expected, setExpected] = useState<ExpectedRow[]>([]);
+  const [expQ, setExpQ] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -390,12 +408,59 @@ export default function Central() {
     }
   }
 
+  // ✅ NUEVO: cargar "deberían estar conectadas" reutilizando admin expected
+  async function loadExpected(silent = false) {
+    if (expLoading && !silent) return;
+    if (!silent) {
+      setExpLoading(true);
+      setExpMsg("");
+    }
+
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch("/api/admin/attendance/expected", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(res);
+
+      if (!j?._ok || !j?.ok) {
+        setExpected([]);
+        setExpMsg(`❌ No se pudo cargar “deberían”: ${j?.error || `HTTP ${j?._status}`}`);
+        return;
+      }
+
+      const rows: ExpectedRow[] = (j.rows || j.expected || []).map((r: any) => ({
+        worker_id: String(r.worker_id || r.id || ""),
+        display_name: String(r.display_name || r.name || "—"),
+        start_time: r.start_time ? String(r.start_time) : null,
+        end_time: r.end_time ? String(r.end_time) : null,
+        timezone: r.timezone ? String(r.timezone) : null,
+        schedule_id: r.schedule_id ? String(r.schedule_id) : null,
+        online: r.online != null ? !!r.online : undefined,
+        status: r.status != null ? String(r.status) : null,
+      }));
+
+      setExpected(rows);
+      if (!silent) setExpMsg(`✅ Deberían: ${rows.length}`);
+      if (!silent) setTimeout(() => setExpMsg(""), 1200);
+    } catch (e: any) {
+      setExpected([]);
+      setExpMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setExpLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
     refreshRanking();
     loadTarotists();
     loadAttendanceMe(true);
     loadPresences(true);
+    loadExpected(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
@@ -421,6 +486,14 @@ export default function Central() {
   useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadPresences(true), 20_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok]);
+
+  // Auto-refresh expected (cada 30s)
+  useEffect(() => {
+    if (!ok) return;
+    const t = setInterval(() => loadExpected(true), 30_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
@@ -468,24 +541,31 @@ export default function Central() {
     return { total, completed, inProg, notStarted };
   }, [clRows]);
 
+  // ✅ MOD: filtrar para NO mostrar offline (solo online/break/bathroom)
   const presencesFiltered = useMemo(() => {
     const qq = presQ.trim().toLowerCase();
     let rows = presences || [];
+
+    // SOLO online
+    rows = rows.filter((r) => !!r.online);
+
     if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
 
-    // Orden: online primero, luego por last_seen_seconds, luego nombre
+    // Orden por last_seen_seconds, luego nombre
     return rows.slice().sort((a, b) => {
-      const ao = a.online ? 1 : 0;
-      const bo = b.online ? 1 : 0;
-      if (ao !== bo) return bo - ao;
-
       const as = a.last_seen_seconds ?? 999999;
       const bs = b.last_seen_seconds ?? 999999;
       if (as !== bs) return as - bs;
-
       return String(a.display_name).localeCompare(String(b.display_name));
     });
   }, [presences, presQ]);
+
+  const expectedFiltered = useMemo(() => {
+    const qq = expQ.trim().toLowerCase();
+    let rows = expected || [];
+    if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
+    return rows.slice().sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
+  }, [expected, expQ]);
 
   async function crearIncidencia() {
     if (incLoading) return;
@@ -623,14 +703,14 @@ export default function Central() {
             </div>
           </div>
 
-          {/* ✅ PRESENCIAS (se muestra en equipo, arriba, porque es lo más útil para Central) */}
+          {/* ✅ PRESENCIAS (solo online/break/bathroom) */}
           {tab === "equipo" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">🟢 Presencias Tarotistas</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Online real = actividad/heartbeat reciente · Auto-refresh cada 20s
+                    Solo se muestran conectadas / descanso / baño · Auto-refresh cada 20s
                     {presMsg ? ` · ${presMsg}` : ""}
                   </div>
                 </div>
@@ -702,7 +782,84 @@ export default function Central() {
                 ))}
 
                 {(!presencesFiltered || presencesFiltered.length === 0) && (
-                  <div className="tc-sub">No hay presencias para mostrar (o no coinciden con la búsqueda).</div>
+                  <div className="tc-sub">No hay tarotistas conectadas ahora mismo.</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ✅ NUEVO: DEBERÍAN ESTAR CONECTADAS */}
+          {tab === "equipo" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">⏰ Deberían estar conectadas ahora</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Según horarios activos (incluye turnos nocturnos)
+                    {expMsg ? ` · ${expMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    className="tc-input"
+                    value={expQ}
+                    onChange={(e) => setExpQ(e.target.value)}
+                    placeholder="Buscar…"
+                    style={{ width: 240, maxWidth: "100%" }}
+                  />
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadExpected(false)} disabled={expLoading}>
+                    {expLoading ? "Cargando…" : "Actualizar"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div style={{ display: "grid", gap: 10 }}>
+                {(expectedFiltered || []).map((r) => (
+                  <div
+                    key={`${r.worker_id}-${r.schedule_id || "x"}`}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ minWidth: 240 }}>
+                      <div style={{ fontWeight: 900 }}>{r.display_name}</div>
+                      <div className="tc-sub" style={{ marginTop: 6 }}>
+                        Turno: <b>{r.start_time || "—"}</b> → <b>{r.end_time || "—"}</b>
+                      </div>
+                    </div>
+
+                    {/* Si el endpoint ya trae online/status, lo mostramos; si no, solo el turno */}
+                    {typeof r.online === "boolean" ? (
+                      <span
+                        className="tc-chip"
+                        style={{
+                          ...attStyle(!!r.online, String(r.status || (r.online ? "working" : "offline"))),
+                          padding: "6px 10px",
+                          borderRadius: 999,
+                          fontSize: 12,
+                        }}
+                      >
+                        {attLabel(!!r.online, String(r.status || (r.online ? "working" : "offline")))}
+                      </span>
+                    ) : (
+                      <span className="tc-chip">En turno</span>
+                    )}
+                  </div>
+                ))}
+
+                {(!expectedFiltered || expectedFiltered.length === 0) && (
+                  <div className="tc-sub">No hay nadie en turno ahora mismo.</div>
                 )}
               </div>
             </div>
