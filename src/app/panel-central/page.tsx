@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
 import AppHeader from "@/components/AppHeader";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const sb = supabaseBrowser();
 
 type TabKey = "equipo" | "incidencias" | "ranking" | "checklist";
 
