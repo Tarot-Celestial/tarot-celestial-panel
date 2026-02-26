@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -24,24 +24,23 @@ export default function AppHeader() {
   const [role, setRole] = useState<string>("");
   const [team, setTeam] = useState<string>("");
   const [month, setMonth] = useState<string>(monthKeyNow());
-  const [loggingOut, setLoggingOut] = useState(false);
 
   const pathname = usePathname();
-  const router = useRouter();
 
   useEffect(() => {
-    let alive = true;
+    // Si realmente se pierde la sesión, ahí sí mandamos a login
+    const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
+      if (!session) window.location.href = "/login";
+    });
 
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return;
+      if (!token) return; // IMPORTANT: no redirects aquí
 
       const me = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${token}` },
       }).then((r) => r.json());
-
-      if (!alive) return;
 
       if (me?.ok) {
         setName(me.display_name || "Usuario");
@@ -51,50 +50,12 @@ export default function AppHeader() {
       }
     })();
 
-    // ✅ Si cambia la sesión (refresh/login/logout) actualizamos datos
-    // ❌ Importante: NUNCA hacemos signOut aquí.
-    const { data: sub } = sb.auth.onAuthStateChange(async (_event, session) => {
-      if (!alive) return;
-
-      if (!session?.access_token) {
-        // si no hay sesión, solo limpiamos el header visual
-        setName("Usuario");
-        setRole("");
-        setTeam("");
-        return;
-      }
-
-      const me = await fetch("/api/me", {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      }).then((r) => r.json());
-
-      if (!alive) return;
-
-      if (me?.ok) {
-        setName(me.display_name || "Usuario");
-        setRole(me.role || "");
-        setTeam(me.team || "");
-        if (me.month_key) setMonth(me.month_key);
-      }
-    });
-
-    return () => {
-      alive = false;
-      sub?.subscription?.unsubscribe();
-    };
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   async function logout() {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      await sb.auth.signOut();
-    } finally {
-      setLoggingOut(false);
-      // ✅ Mejor que window.location.href con App Router
-      router.replace("/login");
-      router.refresh();
-    }
+    await sb.auth.signOut();
+    window.location.href = "/login";
   }
 
   function roleLabel(r: string) {
@@ -153,7 +114,6 @@ export default function AppHeader() {
 
           {/* DERECHA */}
           <div className="tc-row" style={{ gap: 10 }}>
-            {/* Selector mes */}
             <input
               className="tc-input"
               value={month}
@@ -162,15 +122,8 @@ export default function AppHeader() {
               title={monthLabelEs(month)}
             />
 
-            {/* Logout */}
-            <button
-              type="button"
-              className="tc-btn tc-btn-gold"
-              onClick={logout}
-              disabled={loggingOut}
-              title="Cerrar sesión"
-            >
-              {loggingOut ? "Saliendo…" : "Salir"}
+            <button className="tc-btn tc-btn-gold" onClick={logout}>
+              Salir
             </button>
           </div>
         </div>
