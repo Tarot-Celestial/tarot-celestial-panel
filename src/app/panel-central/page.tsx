@@ -7,7 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
 
-type TabKey = "equipo" | "llamadas" | "incidencias" | "ranking" | "checklist";
+type TabKey = "equipo" | "llamadas" | "incidencias" | "ranking" | "checklist" | "chat";
 
 function monthKeyNow() {
   const d = new Date();
@@ -116,6 +116,26 @@ type ExpectedRow = {
   status?: string | null;
 };
 
+// --- CHAT TYPES (flexibles para tu backend) ---
+type ChatThread = {
+  id: string;
+  title?: string | null;
+  tarotist_display_name?: string | null;
+  tarotist_worker_id?: string | null;
+  last_message_text?: string | null;
+  last_message_at?: string | null;
+  unread_count?: number | null;
+};
+
+type ChatMessage = {
+  id: string;
+  thread_id: string;
+  sender_worker_id?: string | null;
+  sender_display_name?: string | null;
+  text?: string | null;
+  created_at?: string | null;
+};
+
 export default function Central() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
@@ -172,6 +192,17 @@ export default function Central() {
   const batchIdsKey = useMemo(() => {
     return (obBatches || []).map((b: any) => String(b?.id || "")).filter(Boolean).join(",");
   }, [obBatches]);
+
+  // ✅ CHAT (central/admin ve todos)
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatMsg, setChatMsg] = useState("");
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [threadQ, setThreadQ] = useState("");
+  const [selectedThreadId, setSelectedThreadId] = useState<string>("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [msgText, setMsgText] = useState("");
+  const msgEndRef = useRef<HTMLDivElement | null>(null);
+  const chatChannelRef = useRef<any>(null);
 
   useEffect(() => {
     (async () => {
@@ -563,7 +594,6 @@ export default function Central() {
       const j = await safeJson(res);
 
       if (!j?._ok || !j?.ok) {
-        // 🔥 Debug útil para cazar 405 o rutas mal puestas
         throw new Error(`${j?.error || `HTTP ${j?._status}`} · POST ${url} · body=${JSON.stringify(payload)}`);
       }
 
@@ -580,11 +610,216 @@ export default function Central() {
       }
     } catch (e: any) {
       alert(`Error: ${e?.message || "ERR"}`);
-      // revert seguro
       loadOutboundPending(true);
     }
   }
 
+  // ---------------- CHAT helpers ----------------
+  async function loadChatThreads(silent = false) {
+    if (!silent) {
+      setChatLoading(true);
+      setChatMsg("");
+    }
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("NO_AUTH");
+
+      // 👇 Respeta arquitectura: API en tu app (ajusta ruta si la llamaste distinto)
+      const res = await fetch("/api/central/chat/threads", { headers: { Authorization: `Bearer ${token}` } });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      const list: ChatThread[] = (j.threads || j.rows || []).map((t: any) => ({
+        id: String(t.id),
+        title: t.title != null ? String(t.title) : null,
+        tarotist_display_name: t.tarotist_display_name != null ? String(t.tarotist_display_name) : null,
+        tarotist_worker_id: t.tarotist_worker_id != null ? String(t.tarotist_worker_id) : null,
+        last_message_text: t.last_message_text != null ? String(t.last_message_text) : null,
+        last_message_at: t.last_message_at != null ? String(t.last_message_at) : null,
+        unread_count: t.unread_count != null ? Number(t.unread_count) : null,
+      }));
+
+      // orden: últimos activos arriba
+      list.sort((a, b) => {
+        const at = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+        const bt = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+        return bt - at;
+      });
+
+      setThreads(list);
+      if (!selectedThreadId && list.length) setSelectedThreadId(list[0].id);
+
+      if (!silent) {
+        setChatMsg(list.length ? `✅ Chats cargados (${list.length})` : "⚠️ No hay chats todavía");
+        setTimeout(() => setChatMsg(""), 1200);
+      }
+    } catch (e: any) {
+      setThreads([]);
+      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setChatLoading(false);
+    }
+  }
+
+  async function loadChatMessages(threadId: string, silent = false) {
+    if (!threadId) return;
+    if (!silent) {
+      setChatLoading(true);
+      setChatMsg("");
+    }
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("NO_AUTH");
+
+      const res = await fetch(`/api/central/chat/messages?thread_id=${encodeURIComponent(threadId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      const list: ChatMessage[] = (j.messages || j.rows || []).map((m: any) => ({
+        id: String(m.id),
+        thread_id: String(m.thread_id || threadId),
+        sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
+        sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
+        text: m.text != null ? String(m.text) : "",
+        created_at: m.created_at != null ? String(m.created_at) : null,
+      }));
+
+      // por si viene desordenado
+      list.sort((a, b) => {
+        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return at - bt;
+      });
+
+      setMessages(list);
+      if (!silent) setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    } catch (e: any) {
+      setMessages([]);
+      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setChatLoading(false);
+    }
+  }
+
+  async function sendChatMessage() {
+    const text = msgText.trim();
+    if (!text) return;
+    if (!selectedThreadId) return;
+
+    // optimistic
+    const tmpId = `tmp-${Date.now()}`;
+    const optimistic: ChatMessage = {
+      id: tmpId,
+      thread_id: selectedThreadId,
+      text,
+      created_at: new Date().toISOString(),
+      sender_worker_id: "me",
+      sender_display_name: "Yo",
+    };
+    setMessages((prev) => [...(prev || []), optimistic]);
+    setMsgText("");
+    setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("NO_AUTH");
+
+      const res = await fetch("/api/central/chat/send", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: selectedThreadId, text }),
+      });
+
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      // si el backend devuelve message, reemplazamos el tmp
+      const saved = j.message || j.item || null;
+      if (saved?.id) {
+        const normalized: ChatMessage = {
+          id: String(saved.id),
+          thread_id: String(saved.thread_id || selectedThreadId),
+          sender_worker_id: saved.sender_worker_id != null ? String(saved.sender_worker_id) : null,
+          sender_display_name: saved.sender_display_name != null ? String(saved.sender_display_name) : null,
+          text: saved.text != null ? String(saved.text) : text,
+          created_at: saved.created_at != null ? String(saved.created_at) : new Date().toISOString(),
+        };
+        setMessages((prev) => (prev || []).map((m) => (m.id === tmpId ? normalized : m)));
+      } else {
+        // si no devuelve nada, recargamos para “sanear”
+        loadChatMessages(selectedThreadId, true);
+      }
+
+      // refresca lista (último msg / orden / unread)
+      loadChatThreads(true);
+    } catch (e: any) {
+      // quitamos optimistic si falla
+      setMessages((prev) => (prev || []).filter((m) => m.id !== tmpId));
+      alert(`Error: ${e?.message || "ERR"}`);
+    }
+  }
+
+  // realtime chat_messages (INSERT) para el thread seleccionado
+  useEffect(() => {
+    if (!ok) return;
+
+    if (chatChannelRef.current) {
+      sb.removeChannel(chatChannelRef.current);
+      chatChannelRef.current = null;
+    }
+
+    if (!selectedThreadId) return;
+
+    const ch = sb
+      .channel(`central-chat-${selectedThreadId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages", filter: `thread_id=eq.${selectedThreadId}` },
+        (payload) => {
+          const m: any = payload.new;
+
+          // añade sin duplicar (si el optimistic se guardó y llegó por realtime)
+          setMessages((prev) => {
+            const exists = (prev || []).some((x: any) => String(x.id) === String(m.id));
+            if (exists) return prev;
+
+            const msg: ChatMessage = {
+              id: String(m.id),
+              thread_id: String(m.thread_id),
+              sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
+              sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
+              text: m.text != null ? String(m.text) : "",
+              created_at: m.created_at != null ? String(m.created_at) : null,
+            };
+
+            return [...(prev || []), msg];
+          });
+
+          // refresca threads (último mensaje arriba / badge)
+          loadChatThreads(true);
+
+          setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+        }
+      )
+      .subscribe();
+
+    chatChannelRef.current = ch;
+
+    return () => {
+      if (chatChannelRef.current) {
+        sb.removeChannel(chatChannelRef.current);
+        chatChannelRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, selectedThreadId]);
+
+  // ---------------- INIT LOADS ----------------
   useEffect(() => {
     if (!ok) return;
     refreshRanking();
@@ -632,6 +867,22 @@ export default function Central() {
     if (tab === "llamadas") loadOutboundPending(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, ok, obDate]);
+
+  // al entrar a chat, carga threads; al seleccionar thread, carga mensajes
+  useEffect(() => {
+    if (!ok) return;
+    if (tab !== "chat") return;
+    loadChatThreads(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab]);
+
+  useEffect(() => {
+    if (!ok) return;
+    if (tab !== "chat") return;
+    if (!selectedThreadId) return;
+    loadChatMessages(selectedThreadId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, selectedThreadId]);
 
   // ✅ realtime central (UPDATE outbound_batch_items por batch_id)
   useEffect(() => {
@@ -681,13 +932,6 @@ export default function Central() {
   const agua = team?.agua || {};
   const winner = team?.winner || "—";
 
-  const fuegoScore = Number(fuego?.score || 0);
-  const aguaScore = Number(agua?.score || 0);
-
-  const maxScore = Math.max(fuegoScore, aguaScore, 1);
-  const fuegoPct = Math.round((fuegoScore / maxScore) * 100);
-  const aguaPct = Math.round((aguaScore / maxScore) * 100);
-
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
   const topRepite = rank?.top?.repite || [];
@@ -736,6 +980,16 @@ export default function Central() {
     return rows.slice().sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
   }, [expected, expQ]);
 
+  const threadsFiltered = useMemo(() => {
+    const qq = threadQ.trim().toLowerCase();
+    let rows = threads || [];
+    if (!qq) return rows;
+    return rows.filter((t) => {
+      const name = String(t.tarotist_display_name || t.title || "");
+      return name.toLowerCase().includes(qq);
+    });
+  }, [threads, threadQ]);
+
   async function crearIncidencia() {
     if (incLoading) return;
     setIncLoading(true);
@@ -781,7 +1035,7 @@ export default function Central() {
                 <div className="tc-title" style={{ fontSize: 18 }}>
                   🎧 Panel Central
                 </div>
-                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking · Presencias</div>
+                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking · Presencias · Chat</div>
               </div>
 
               <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
@@ -871,6 +1125,9 @@ export default function Central() {
               <button className={`tc-tab ${tab === "llamadas" ? "tc-tab-active" : ""}`} onClick={() => setTab("llamadas")}>
                 📞 Llamadas
               </button>
+              <button className={`tc-tab ${tab === "chat" ? "tc-tab-active" : ""}`} onClick={() => setTab("chat")}>
+                💬 Chat
+              </button>
               <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
                 ✅ Checklist
               </button>
@@ -882,6 +1139,184 @@ export default function Central() {
               </button>
             </div>
           </div>
+
+          {/* ✅ CHAT */}
+          {tab === "chat" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">💬 Chat (Tarotistas ↔ Centrales)</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Centrales ven todos los chats · Realtime: nuevos mensajes al instante
+                    {chatMsg ? ` · ${chatMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadChatThreads(false)} disabled={chatLoading}>
+                    {chatLoading ? "Cargando…" : "Recargar chats"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "320px 1fr",
+                  gap: 12,
+                  alignItems: "stretch",
+                }}
+              >
+                {/* Left: threads */}
+                <div
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,0.03)",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 520,
+                  }}
+                >
+                  <div style={{ padding: 12 }}>
+                    <input
+                      className="tc-input"
+                      value={threadQ}
+                      onChange={(e) => setThreadQ(e.target.value)}
+                      placeholder="Buscar chat…"
+                      style={{ width: "100%" }}
+                    />
+                  </div>
+                  <div className="tc-hr" style={{ margin: 0 }} />
+
+                  <div style={{ padding: 8, display: "grid", gap: 8, overflow: "auto" }}>
+                    {(threadsFiltered || []).map((t) => {
+                      const active = String(t.id) === String(selectedThreadId);
+                      const title = t.tarotist_display_name || t.title || `Chat ${t.id.slice(0, 6)}`;
+                      const sub = t.last_message_text ? t.last_message_text : "—";
+                      return (
+                        <button
+                          key={t.id}
+                          onClick={() => setSelectedThreadId(t.id)}
+                          className="tc-btn"
+                          style={{
+                            textAlign: "left",
+                            padding: 10,
+                            borderRadius: 12,
+                            border: active ? "1px solid rgba(215,181,109,0.35)" : "1px solid rgba(255,255,255,0.10)",
+                            background: active ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.02)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+                            <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
+                            {t.unread_count ? <span className="tc-chip">{t.unread_count}</span> : null}
+                          </div>
+                          <div
+                            className="tc-sub"
+                            style={{
+                              marginTop: 6,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {sub}
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {(!threadsFiltered || threadsFiltered.length === 0) && (
+                      <div className="tc-sub" style={{ padding: 10 }}>
+                        No hay chats todavía.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right: messages */}
+                <div
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,0.03)",
+                    overflow: "hidden",
+                    display: "flex",
+                    flexDirection: "column",
+                    minHeight: 520,
+                  }}
+                >
+                  <div style={{ padding: 12 }}>
+                    <div style={{ fontWeight: 900 }}>
+                      {selectedThreadId
+                        ? threads.find((x) => String(x.id) === String(selectedThreadId))?.tarotist_display_name ||
+                          threads.find((x) => String(x.id) === String(selectedThreadId))?.title ||
+                          `Chat ${selectedThreadId.slice(0, 6)}`
+                        : "Selecciona un chat"}
+                    </div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      {selectedThreadId ? `Thread: ${selectedThreadId}` : "—"}
+                    </div>
+                  </div>
+
+                  <div className="tc-hr" style={{ margin: 0 }} />
+
+                  <div style={{ padding: 12, overflow: "auto", flex: 1, display: "grid", gap: 10 }}>
+                    {(messages || []).map((m) => {
+                      const who = m.sender_display_name || m.sender_worker_id || "—";
+                      const when = m.created_at ? new Date(m.created_at).toLocaleString("es-ES") : "";
+                      return (
+                        <div
+                          key={m.id}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 10,
+                            background: "rgba(255,255,255,0.02)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            <div style={{ fontWeight: 900 }}>{who}</div>
+                            <div className="tc-sub">{when}</div>
+                          </div>
+                          <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{m.text || ""}</div>
+                        </div>
+                      );
+                    })}
+                    {(!messages || messages.length === 0) && (
+                      <div className="tc-sub">No hay mensajes todavía en este chat.</div>
+                    )}
+                    <div ref={msgEndRef} />
+                  </div>
+
+                  <div className="tc-hr" style={{ margin: 0 }} />
+
+                  <div style={{ padding: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <input
+                      className="tc-input"
+                      value={msgText}
+                      onChange={(e) => setMsgText(e.target.value)}
+                      placeholder={selectedThreadId ? "Escribe un mensaje…" : "Selecciona un chat…"}
+                      style={{ flex: 1, minWidth: 240 }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          sendChatMessage();
+                        }
+                      }}
+                      disabled={!selectedThreadId}
+                    />
+                    <button className="tc-btn tc-btn-gold" onClick={sendChatMessage} disabled={!selectedThreadId || !msgText.trim()}>
+                      Enviar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ✅ OUTBOUND LLAMADAS */}
           {tab === "llamadas" && (
@@ -1165,7 +1600,9 @@ export default function Central() {
                 <TeamBar
                   title="🔥 Fuego (Yami)"
                   score={Number(fuego?.score || 0)}
-                  pct={Math.round((Number(fuego?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
+                  pct={Math.round(
+                    (Number(fuego?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100
+                  )}
                   aCliente={pctAny(fuego?.avg_cliente ?? 0)}
                   aRepite={pctAny(fuego?.avg_repite ?? 0)}
                   isWinner={winner === "fuego"}
@@ -1173,7 +1610,9 @@ export default function Central() {
                 <TeamBar
                   title="💧 Agua (Maria)"
                   score={Number(agua?.score || 0)}
-                  pct={Math.round((Number(agua?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
+                  pct={Math.round(
+                    (Number(agua?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100
+                  )}
                   aCliente={pctAny(agua?.avg_cliente ?? 0)}
                   aRepite={pctAny(agua?.avg_repite ?? 0)}
                   isWinner={winner === "agua"}
@@ -1192,8 +1631,11 @@ export default function Central() {
                 <div>
                   <div className="tc-title">✅ Checklist Tarotistas (turno actual)</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Turno: <b>{clShiftKey || "—"}</b> · Completadas: <b>{clProgress.completed}/{clProgress.total}</b> · En progreso:{" "}
-                    <b>{clProgress.inProg}</b> · Sin empezar: <b>{clProgress.notStarted}</b>
+                    Turno: <b>{clShiftKey || "—"}</b> · Completadas:{" "}
+                    <b>
+                      {clProgress.completed}/{clProgress.total}
+                    </b>{" "}
+                    · En progreso: <b>{clProgress.inProg}</b> · Sin empezar: <b>{clProgress.notStarted}</b>
                   </div>
                 </div>
 
@@ -1204,7 +1646,9 @@ export default function Central() {
                 </div>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>{clMsg || " "}</div>
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {clMsg || " "}
+              </div>
 
               <div className="tc-hr" />
 
@@ -1283,7 +1727,9 @@ export default function Central() {
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">⚠️ Incidencias</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>Descuenta en la factura del mes seleccionado.</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Descuenta en la factura del mes seleccionado.
+                  </div>
                 </div>
 
                 <div className="tc-row" style={{ flexWrap: "wrap" }}>
@@ -1430,12 +1876,16 @@ function TeamBar({
 function TopCard({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>🏆 {title}</div>
+      <div className="tc-title" style={{ fontSize: 14 }}>
+        🏆 {title}
+      </div>
       <div className="tc-hr" />
       <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
           <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
+            <span>
+              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
+            </span>
           </div>
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
