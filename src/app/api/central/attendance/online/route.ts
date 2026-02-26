@@ -63,10 +63,10 @@ export async function GET(req: Request) {
     const workerIds = (ws || []).map((w: any) => String(w.id));
     if (!workerIds.length) return NextResponse.json({ ok: true, rows: [] });
 
-    // 2) Traer estados actuales
+    // 2) Traer estados actuales (estado MANUAL)
     const { data: st, error: es } = await admin
       .from("attendance_state")
-      .select("worker_id, is_online, status, last_event_at")
+      .select("worker_id, is_online, status, last_event_at, updated_at")
       .in("worker_id", workerIds);
 
     if (es) throw es;
@@ -74,26 +74,34 @@ export async function GET(req: Request) {
     const byId = new Map<string, any>();
     for (const r of st || []) byId.set(String(r.worker_id), r);
 
-    // Online real: actividad/heartbeat reciente
+    // 3) Heartbeat OK (solo señal / informativo)
     const ONLINE_WINDOW_SECONDS = 90;
 
-    // 3) Construir SOLO online real (incluye break/bathroom)
+    // 4) Construir SOLO las que están ONLINE MANUAL (working/break/bathroom)
     const rows = (ws || [])
       .map((w: any) => {
         const sid = String(w.id);
         const s = byId.get(sid) || null;
+
+        const manualOnline = s?.is_online === true;
+        if (!manualOnline) return null; // ✅ Central NO ve offline
+
+        const status = String(s?.status || "working"); // working | break | bathroom
         const last = s?.last_event_at ? String(s.last_event_at) : null;
 
-        const onlineReal = !!s?.is_online && isRecent(last, ONLINE_WINDOW_SECONDS);
-        if (!onlineReal) return null;
+        const heartbeatOk = isRecent(last, ONLINE_WINDOW_SECONDS);
 
         return {
           worker_id: sid,
           display_name: w.display_name || "—",
           team_key: null, // tu tabla workers no tiene team_key
-          online: true,
-          status: String(s?.status || "working"), // working | break | bathroom
+          online: true, // ✅ online manual => true
+          status,
           last_event_at: last,
+
+          // ✅ extra informativo (no decide el online)
+          heartbeat_ok: heartbeatOk,
+          updated_at: s?.updated_at ? String(s.updated_at) : null,
         };
       })
       .filter(Boolean);
