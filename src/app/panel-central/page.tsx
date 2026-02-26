@@ -1,3 +1,4 @@
+// src/app/panel-central/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,11 +7,16 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
 
-type TabKey = "equipo" | "incidencias" | "ranking" | "checklist";
+type TabKey = "equipo" | "llamadas" | "incidencias" | "ranking" | "checklist";
 
 function monthKeyNow() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function dayKeyNow() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
 }
 
 function eur(n: any) {
@@ -56,6 +62,38 @@ function secondsAgo(ts: string | null) {
   const s = Math.max(0, Math.round((Date.now() - t) / 1000));
   return s;
 }
+
+function statusLabel(s: string) {
+  switch (s) {
+    case "pending":
+      return "⏳ Pendiente";
+    case "calling":
+      return "📞 Llamando";
+    case "answered":
+      return "✅ Contestó";
+    case "no_answer":
+      return "🚫 No contesta";
+    case "busy":
+      return "📵 Ocupado";
+    case "wrong_number":
+      return "❌ Número mal";
+    case "callback":
+      return "🔁 Llamar luego";
+    case "done":
+      return "✅ Hecho";
+    default:
+      return s || "—";
+  }
+}
+
+const OUTBOUND_ACTIONS: { key: string; label: string }[] = [
+  { key: "no_answer", label: "🚫 No contesta" },
+  { key: "busy", label: "📵 Ocupado" },
+  { key: "callback", label: "🔁 Llamar luego" },
+  { key: "answered", label: "✅ Contestó" },
+  { key: "wrong_number", label: "❌ Número mal" },
+  { key: "done", label: "✅ Done" },
+];
 
 type PresenceRow = {
   worker_id: string;
@@ -124,6 +162,13 @@ export default function Central() {
   const [expMsg, setExpMsg] = useState("");
   const [expected, setExpected] = useState<ExpectedRow[]>([]);
   const [expQ, setExpQ] = useState("");
+
+  // ✅ outbound calls (central)
+  const [obDate, setObDate] = useState(dayKeyNow());
+  const [obLoading, setObLoading] = useState(false);
+  const [obMsg, setObMsg] = useState("");
+  const [obBatches, setObBatches] = useState<any[]>([]);
+  const obChannelsRef = useRef<any[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -451,6 +496,91 @@ export default function Central() {
     }
   }
 
+  async function loadOutboundPending(silent = false) {
+    if (obLoading && !silent) return;
+    if (!silent) {
+      setObLoading(true);
+      setObMsg("");
+    }
+
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const res = await fetch(`/api/central/outbound/pending?date=${encodeURIComponent(obDate)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setObBatches(j.batches || []);
+      if (!silent) {
+        setObMsg(`✅ Pendientes cargados (${(j.batches || []).length} envíos)`);
+        setTimeout(() => setObMsg(""), 1200);
+      }
+    } catch (e: any) {
+      if (!silent) setObMsg(`❌ ${e?.message || "Error"}`);
+      setObBatches([]);
+    } finally {
+      if (!silent) setObLoading(false);
+    }
+  }
+
+  async function outboundLog(item_id: string, status: string) {
+    try {
+      const note = window.prompt("Observación (opcional):", "") || null;
+
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      // ✅ Optimistic UI
+      if (status === "done") {
+        setObBatches((prev) =>
+          (prev || []).map((b: any) => ({
+            ...b,
+            outbound_batch_items: (b.outbound_batch_items || []).filter((it: any) => String(it.id) !== String(item_id)),
+          }))
+        );
+      } else {
+        setObBatches((prev) =>
+          (prev || []).map((b: any) => ({
+            ...b,
+            outbound_batch_items: (b.outbound_batch_items || []).map((it: any) =>
+              String(it.id) === String(item_id)
+                ? { ...it, current_status: status, last_note: note ?? it.last_note, last_call_at: new Date().toISOString() }
+                : it
+            ),
+          }))
+        );
+      }
+
+      const res = await fetch("/api/central/outbound/log", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id, status, note }),
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      const updated = j.item;
+      if (updated?.id) {
+        setObBatches((prev) =>
+          (prev || []).map((b: any) => {
+            let items = b.outbound_batch_items || [];
+            items = items.map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it));
+            items = items.filter((it: any) => String(it.current_status) !== "done");
+            return { ...b, outbound_batch_items: items };
+          })
+        );
+      }
+    } catch (e: any) {
+      alert(`Error: ${e?.message || "ERR"}`);
+      loadOutboundPending(true);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
     refreshRanking();
@@ -494,6 +624,56 @@ export default function Central() {
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
+
+  // cargar outbound al entrar en pestaña y al cambiar fecha
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "llamadas") loadOutboundPending(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, ok, obDate]);
+
+  // ✅ realtime central (UPDATE outbound_batch_items por batch_id)
+  useEffect(() => {
+    if (!ok) return;
+
+    if (obChannelsRef.current?.length) {
+      obChannelsRef.current.forEach((ch) => sb.removeChannel(ch));
+      obChannelsRef.current = [];
+    }
+
+    const batchIds = (obBatches || []).map((b: any) => String(b.id)).filter(Boolean);
+    if (!batchIds.length) return;
+
+    const channels = batchIds.map((bid) =>
+      sb
+        .channel(`central-outbound-${bid}`)
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` },
+          (payload) => {
+            const updated: any = payload.new;
+            setObBatches((prev) =>
+              (prev || []).map((b: any) => {
+                if (String(b.id) !== bid) return b;
+                let items = b.outbound_batch_items || [];
+                items = items.map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it));
+                items = items.filter((it: any) => String(it.current_status) !== "done");
+                return { ...b, outbound_batch_items: items };
+              })
+            );
+          }
+        )
+        .subscribe()
+    );
+
+    obChannelsRef.current = channels;
+
+    return () => {
+      channels.forEach((ch) => sb.removeChannel(ch));
+      obChannelsRef.current = [];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, JSON.stringify((obBatches || []).map((b: any) => b.id))]);
 
   const team = rank?.teams || {};
   const fuego = team?.fuego || {};
@@ -688,6 +868,9 @@ export default function Central() {
               <button className={`tc-tab ${tab === "equipo" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipo")}>
                 🔥💧 Equipo
               </button>
+              <button className={`tc-tab ${tab === "llamadas" ? "tc-tab-active" : ""}`} onClick={() => setTab("llamadas")}>
+                📞 Llamadas
+              </button>
               <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
                 ✅ Checklist
               </button>
@@ -699,6 +882,116 @@ export default function Central() {
               </button>
             </div>
           </div>
+
+          {/* ✅ OUTBOUND LLAMADAS */}
+          {tab === "llamadas" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">📞 Llamadas del día</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Al marcar <b>Done</b> desaparece al instante · Realtime activado
+                    {obMsg ? ` · ${obMsg}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <span className="tc-chip">Día</span>
+                  <input
+                    className="tc-input"
+                    value={obDate}
+                    onChange={(e) => setObDate(e.target.value)}
+                    style={{ width: 140 }}
+                    placeholder="YYYY-MM-DD"
+                  />
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadOutboundPending(false)} disabled={obLoading}>
+                    {obLoading ? "Cargando…" : "Actualizar"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div style={{ display: "grid", gap: 12 }}>
+                {(obBatches || []).map((b: any) => {
+                  const sender = b.sender || {};
+                  const items = (b.outbound_batch_items || [])
+                    .slice()
+                    .sort((a: any, c: any) => (a.position ?? 0) - (c.position ?? 0));
+
+                  if (!items.length) return null;
+
+                  return (
+                    <div
+                      key={b.id}
+                      style={{
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        borderRadius: 14,
+                        padding: 12,
+                        background: "rgba(255,255,255,0.03)",
+                      }}
+                    >
+                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ fontWeight: 900 }}>
+                            {sender.display_name || "Tarotista"}{" "}
+                            <span className="tc-chip" style={{ marginLeft: 8 }}>
+                              {sender.team || sender.team_key || "—"}
+                            </span>
+                          </div>
+                          {b.note ? <div className="tc-sub" style={{ marginTop: 6 }}>{b.note}</div> : null}
+                        </div>
+                        <div className="tc-chip">{items.length} pendientes</div>
+                      </div>
+
+                      <div className="tc-hr" style={{ margin: "12px 0" }} />
+
+                      <div style={{ display: "grid", gap: 10 }}>
+                        {items.map((it: any) => (
+                          <div
+                            key={it.id}
+                            style={{
+                              border: "1px solid rgba(255,255,255,0.10)",
+                              borderRadius: 14,
+                              padding: 12,
+                              background: "rgba(255,255,255,0.02)",
+                            }}
+                          >
+                            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                              <div style={{ minWidth: 260 }}>
+                                <div style={{ fontWeight: 900 }}>
+                                  {it.customer_name || "—"}{" "}
+                                  <span className="tc-chip" style={{ marginLeft: 8 }}>
+                                    {statusLabel(String(it.current_status || "pending"))}
+                                  </span>
+                                </div>
+                                {it.phone ? <div className="tc-sub" style={{ marginTop: 6 }}>📱 {it.phone}</div> : null}
+                                {it.last_note ? <div className="tc-sub" style={{ marginTop: 6 }}>📝 {it.last_note}</div> : null}
+                              </div>
+
+                              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                {OUTBOUND_ACTIONS.map((a) => (
+                                  <button
+                                    key={a.key}
+                                    className={`tc-btn ${a.key === "done" ? "tc-btn-ok" : ""}`}
+                                    onClick={() => outboundLog(String(it.id), a.key)}
+                                  >
+                                    {a.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {(!obBatches || obBatches.length === 0) && <div className="tc-sub">No hay listas para este día.</div>}
+              </div>
+            </div>
+          )}
 
           {/* ✅ PRESENCIAS (solo online/break/bathroom) */}
           {tab === "equipo" && (
@@ -755,8 +1048,8 @@ export default function Central() {
                           {r.last_seen_seconds == null
                             ? "—"
                             : r.last_seen_seconds < 60
-                            ? `hace ${r.last_seen_seconds}s`
-                            : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
+                              ? `hace ${r.last_seen_seconds}s`
+                              : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
                         </b>
                       </div>
                     </div>
@@ -836,7 +1129,6 @@ export default function Central() {
                       </div>
                     </div>
 
-                    {/* Si el endpoint ya trae online/status, lo mostramos; si no, solo el turno */}
                     {typeof r.online === "boolean" ? (
                       <span
                         className="tc-chip"
@@ -952,8 +1244,8 @@ export default function Central() {
                         r.status === "completed"
                           ? "rgba(120,255,190,0.10)"
                           : r.status === "in_progress"
-                          ? "rgba(215,181,109,0.08)"
-                          : "rgba(255,255,255,0.03)",
+                            ? "rgba(215,181,109,0.08)"
+                            : "rgba(255,255,255,0.03)",
                     }}
                   >
                     <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -965,8 +1257,8 @@ export default function Central() {
                             {r.status === "completed"
                               ? "Completado ✅"
                               : r.status === "in_progress"
-                              ? "En progreso ⏳"
-                              : "Sin empezar ⬜"}
+                                ? "En progreso ⏳"
+                                : "Sin empezar ⬜"}
                           </b>
                           {r.completed_at ? ` · ${new Date(r.completed_at).toLocaleString("es-ES")}` : ""}
                         </div>
@@ -980,8 +1272,8 @@ export default function Central() {
                               r.status === "completed"
                                 ? "rgba(120,255,190,0.35)"
                                 : r.status === "in_progress"
-                                ? "rgba(215,181,109,0.35)"
-                                : "rgba(255,255,255,0.14)",
+                                  ? "rgba(215,181,109,0.35)"
+                                  : "rgba(255,255,255,0.14)",
                           }}
                         >
                           {r.status === "completed" ? "OK" : r.status === "in_progress" ? "Casi" : "Pendiente"}
