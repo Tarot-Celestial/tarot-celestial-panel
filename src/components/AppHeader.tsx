@@ -2,13 +2,10 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { usePathname, useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const sb = supabaseBrowser();
 
 function monthLabelEs(monthKey: string) {
   const [y, m] = (monthKey || "").split("-").map((x) => Number(x));
@@ -27,10 +24,14 @@ export default function AppHeader() {
   const [role, setRole] = useState<string>("");
   const [team, setTeam] = useState<string>("");
   const [month, setMonth] = useState<string>(monthKeyNow());
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const pathname = usePathname();
+  const router = useRouter();
 
   useEffect(() => {
+    let alive = true;
+
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
@@ -40,6 +41,8 @@ export default function AppHeader() {
         headers: { Authorization: `Bearer ${token}` },
       }).then((r) => r.json());
 
+      if (!alive) return;
+
       if (me?.ok) {
         setName(me.display_name || "Usuario");
         setRole(me.role || "");
@@ -47,11 +50,51 @@ export default function AppHeader() {
         if (me.month_key) setMonth(me.month_key);
       }
     })();
+
+    // ✅ Si cambia la sesión (refresh/login/logout) actualizamos datos
+    // ❌ Importante: NUNCA hacemos signOut aquí.
+    const { data: sub } = sb.auth.onAuthStateChange(async (_event, session) => {
+      if (!alive) return;
+
+      if (!session?.access_token) {
+        // si no hay sesión, solo limpiamos el header visual
+        setName("Usuario");
+        setRole("");
+        setTeam("");
+        return;
+      }
+
+      const me = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }).then((r) => r.json());
+
+      if (!alive) return;
+
+      if (me?.ok) {
+        setName(me.display_name || "Usuario");
+        setRole(me.role || "");
+        setTeam(me.team || "");
+        if (me.month_key) setMonth(me.month_key);
+      }
+    });
+
+    return () => {
+      alive = false;
+      sub?.subscription?.unsubscribe();
+    };
   }, []);
 
   async function logout() {
-    await sb.auth.signOut();
-    window.location.href = "/login";
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await sb.auth.signOut();
+    } finally {
+      setLoggingOut(false);
+      // ✅ Mejor que window.location.href con App Router
+      router.replace("/login");
+      router.refresh();
+    }
   }
 
   function roleLabel(r: string) {
@@ -99,9 +142,7 @@ export default function AppHeader() {
             </div>
 
             <div style={{ lineHeight: 1.2 }}>
-              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>
-                Tarot Celestial
-              </div>
+              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>Tarot Celestial</div>
               <div className="tc-sub">
                 <b>{name}</b> · {roleLabel(role)}
                 {team ? ` · ${teamLabel(team)}` : ""}
@@ -122,8 +163,14 @@ export default function AppHeader() {
             />
 
             {/* Logout */}
-            <button className="tc-btn tc-btn-gold" onClick={logout}>
-              Salir
+            <button
+              type="button"
+              className="tc-btn tc-btn-gold"
+              onClick={logout}
+              disabled={loggingOut}
+              title="Cerrar sesión"
+            >
+              {loggingOut ? "Saliendo…" : "Salir"}
             </button>
           </div>
         </div>
