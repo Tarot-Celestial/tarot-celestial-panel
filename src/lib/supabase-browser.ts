@@ -1,21 +1,22 @@
 import { createClient } from "@supabase/supabase-js";
 
-let browserClient: ReturnType<typeof createClient> | null = null;
+let client: ReturnType<typeof createClient> | null = null;
 
 export function supabaseBrowser() {
-  if (browserClient) return browserClient;
+  if (client) return client;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  client = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storageKey: "tc-supabase-auth",
+      },
+    }
+  );
 
-  browserClient = createClient(url, anon, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      storageKey: "tc-supabase-auth",
-    },
-  });
-
-  return browserClient;
+  return client;
 }
