@@ -5,8 +5,10 @@ import { gateCentralOrAdmin } from "@/lib/gate";
 
 export async function GET(req: Request) {
   try {
-    const gate = await gateCentralOrAdmin();
-    if (!gate.ok) return NextResponse.json({ ok: false, error: "UNAUTH" }, { status: 401 });
+    const gate = await gateCentralOrAdmin(req);
+    if (!gate.ok) {
+      return NextResponse.json({ ok: false, error: gate.error || "UNAUTH" }, { status: 401 });
+    }
 
     const url = new URL(req.url);
     const thread_id = url.searchParams.get("thread_id");
