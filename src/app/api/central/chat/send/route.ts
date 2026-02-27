@@ -19,17 +19,18 @@ export async function POST(req: Request) {
 
     const admin = supabaseAdmin();
 
-    // ✅ quién envía (central/admin)
-    const me = gate.me || {};
-    const sender_worker_id =
-      (me.worker?.id ? String(me.worker.id) : me.worker_id ? String((me as any).worker_id) : null) || null;
+    // ✅ Gate devuelve `me` (forma variable). Tipamos como any para evitar error TS.
+    const me: any = (gate as any).me || null;
 
-    const sender_display_name =
-      (me.worker?.display_name
-        ? String((me.worker as any).display_name)
-        : me.display_name
-        ? String((me as any).display_name)
-        : me.role === "admin"
+    const sender_worker_id: string | null =
+      (me?.worker?.id ? String(me.worker.id) : me?.worker_id ? String(me.worker_id) : null) || null;
+
+    const sender_display_name: string =
+      (me?.worker?.display_name
+        ? String(me.worker.display_name)
+        : me?.display_name
+        ? String(me.display_name)
+        : me?.role === "admin"
         ? "Admin"
         : "Central") || "Central";
 
@@ -46,7 +47,6 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-    // devuelve message con text=body
     const message = {
       id: String(data.id),
       thread_id: String(data.thread_id),
