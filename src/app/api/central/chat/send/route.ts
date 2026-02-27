@@ -1,67 +1,47 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+// src/app/api/central/chat/send/route.ts
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { gateCentralOrAdmin } from "@/lib/gate";
 
-type GateOk = {
-  ok: true;
-  admin: SupabaseClient;
-  worker: { id: string; role: string; display_name: string | null };
-};
-type GateErr = { ok: false; status: number; error: string };
-type Gate = GateOk | GateErr;
+export async function POST(req: Request) {
+  try {
+    const gate = await gateCentralOrAdmin();
+    if (!gate.ok) return NextResponse.json({ ok: false, error: "UNAUTH" }, { status: 401 });
 
-function supabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, service, { auth: { persistSession: false } });
-}
-function deny(status: number, error: string): GateErr {
-  return { ok: false, status, error };
-}
+    const body = await req.json().catch(() => ({}));
+    const thread_id = String(body?.thread_id || "");
+    const text = String(body?.text || "").trim();
 
-async function requireCentral(req: NextRequest): Promise<Gate> {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return deny(401, "NO_AUTH");
+    if (!thread_id) return NextResponse.json({ ok: false, error: "MISSING_THREAD" }, { status: 400 });
+    if (!text) return NextResponse.json({ ok: false, error: "EMPTY_TEXT" }, { status: 400 });
 
-  const admin = supabaseAdmin();
-  const { data: u, error: uErr } = await admin.auth.getUser(token);
-  if (uErr || !u?.user) return deny(401, "BAD_TOKEN");
+    const admin = supabaseAdmin();
 
-  const { data: w, error: wErr } = await admin
-    .from("workers")
-    .select("id, role, display_name")
-    .eq("user_id", u.user.id)
-    .maybeSingle();
+    const { data, error } = await admin
+      .from("chat_messages")
+      .insert({
+        thread_id,
+        sender_worker_id: gate.worker_id, // ajusta según tu gate
+        sender_display_name: gate.display_name || "Central",
+        body: text, // ✅ aquí va body
+      })
+      .select("id, thread_id, sender_worker_id, sender_display_name, body, created_at")
+      .single();
 
-  if (wErr || !w) return deny(401, "NO_WORKER");
-  if (w.role !== "central" && w.role !== "admin") return deny(403, "FORBIDDEN");
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  return { ok: true, admin, worker: { id: String(w.id), role: String(w.role), display_name: w.display_name ?? null } };
-}
+    // devuelve message con text=body
+    const message = {
+      id: String(data.id),
+      thread_id: String(data.thread_id),
+      sender_worker_id: data.sender_worker_id != null ? String(data.sender_worker_id) : null,
+      sender_display_name: data.sender_display_name != null ? String(data.sender_display_name) : null,
+      text: data.body != null ? String(data.body) : "",
+      created_at: data.created_at != null ? String(data.created_at) : null,
+    };
 
-export async function POST(req: NextRequest) {
-  const gate = await requireCentral(req);
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
-
-  const body = await req.json().catch(() => ({}));
-  const thread_id = String(body.thread_id || "");
-  const text = String(body.text || "").trim();
-
-  if (!thread_id) return NextResponse.json({ ok: false, error: "MISSING_THREAD_ID" }, { status: 400 });
-  if (!text) return NextResponse.json({ ok: false, error: "EMPTY_TEXT" }, { status: 400 });
-
-  const { data, error } = await gate.admin
-    .from("chat_messages")
-    .insert({
-      thread_id,
-      sender_worker_id: gate.worker.id,
-      sender_display_name: gate.worker.display_name || "Central",
-      text,
-    })
-    .select("id, thread_id, sender_worker_id, sender_display_name, text, created_at")
-    .single();
-
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-
-  return NextResponse.json({ ok: true, message: data });
+    return NextResponse.json({ ok: true, message });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
 }
