@@ -1,58 +1,39 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+// src/app/api/central/chat/messages/route.ts
+import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { gateCentralOrAdmin } from "@/lib/gate";
 
-type GateOk = {
-  ok: true;
-  admin: SupabaseClient;
-  worker: { id: string; role: string; display_name: string | null };
-};
-type GateErr = { ok: false; status: number; error: string };
-type Gate = GateOk | GateErr;
+export async function GET(req: Request) {
+  try {
+    const gate = await gateCentralOrAdmin();
+    if (!gate.ok) return NextResponse.json({ ok: false, error: "UNAUTH" }, { status: 401 });
 
-function supabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, service, { auth: { persistSession: false } });
-}
-function deny(status: number, error: string): GateErr {
-  return { ok: false, status, error };
-}
+    const url = new URL(req.url);
+    const thread_id = url.searchParams.get("thread_id");
+    if (!thread_id) return NextResponse.json({ ok: false, error: "MISSING_THREAD" }, { status: 400 });
 
-async function requireCentral(req: NextRequest): Promise<Gate> {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return deny(401, "NO_AUTH");
+    const admin = supabaseAdmin();
 
-  const admin = supabaseAdmin();
-  const { data: u, error: uErr } = await admin.auth.getUser(token);
-  if (uErr || !u?.user) return deny(401, "BAD_TOKEN");
+    const { data, error } = await admin
+      .from("chat_messages")
+      .select("id, thread_id, sender_worker_id, sender_display_name, body, created_at")
+      .eq("thread_id", thread_id)
+      .order("created_at", { ascending: true });
 
-  const { data: w, error: wErr } = await admin
-    .from("workers")
-    .select("id, role, display_name")
-    .eq("user_id", u.user.id)
-    .maybeSingle();
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  if (wErr || !w) return deny(401, "NO_WORKER");
-  if (w.role !== "central" && w.role !== "admin") return deny(403, "FORBIDDEN");
+    // ✅ tu UI espera text, devolvemos text=body
+    const messages = (data || []).map((m: any) => ({
+      id: String(m.id),
+      thread_id: String(m.thread_id),
+      sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
+      sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
+      text: m.body != null ? String(m.body) : "",
+      created_at: m.created_at != null ? String(m.created_at) : null,
+    }));
 
-  return { ok: true, admin, worker: { id: String(w.id), role: String(w.role), display_name: w.display_name ?? null } };
-}
-
-export async function GET(req: NextRequest) {
-  const gate = await requireCentral(req);
-  if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
-
-  const thread_id = req.nextUrl.searchParams.get("thread_id") || "";
-  if (!thread_id) return NextResponse.json({ ok: false, error: "MISSING_THREAD_ID" }, { status: 400 });
-
-  const { data, error } = await gate.admin
-    .from("chat_messages")
-    .select("id, thread_id, sender_worker_id, sender_display_name, text, created_at")
-    .eq("thread_id", thread_id)
-    .order("created_at", { ascending: true });
-
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-
-  return NextResponse.json({ ok: true, messages: data || [] });
+    return NextResponse.json({ ok: true, messages });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
 }
