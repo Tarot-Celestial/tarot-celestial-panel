@@ -5,8 +5,10 @@ import { gateCentralOrAdmin } from "@/lib/gate";
 
 export async function POST(req: Request) {
   try {
-    const gate = await gateCentralOrAdmin();
-    if (!gate.ok) return NextResponse.json({ ok: false, error: "UNAUTH" }, { status: 401 });
+    const gate = await gateCentralOrAdmin(req);
+    if (!gate.ok) {
+      return NextResponse.json({ ok: false, error: gate.error || "UNAUTH" }, { status: 401 });
+    }
 
     const body = await req.json().catch(() => ({}));
     const thread_id = String(body?.thread_id || "");
@@ -17,13 +19,27 @@ export async function POST(req: Request) {
 
     const admin = supabaseAdmin();
 
+    // ✅ quién envía (central/admin)
+    const me = gate.me || {};
+    const sender_worker_id =
+      (me.worker?.id ? String(me.worker.id) : me.worker_id ? String((me as any).worker_id) : null) || null;
+
+    const sender_display_name =
+      (me.worker?.display_name
+        ? String((me.worker as any).display_name)
+        : me.display_name
+        ? String((me as any).display_name)
+        : me.role === "admin"
+        ? "Admin"
+        : "Central") || "Central";
+
     const { data, error } = await admin
       .from("chat_messages")
       .insert({
         thread_id,
-        sender_worker_id: gate.worker_id, // ajusta según tu gate
-        sender_display_name: gate.display_name || "Central",
-        body: text, // ✅ aquí va body
+        sender_worker_id,
+        sender_display_name,
+        body: text, // ✅ en BD es body
       })
       .select("id, thread_id, sender_worker_id, sender_display_name, body, created_at")
       .single();
