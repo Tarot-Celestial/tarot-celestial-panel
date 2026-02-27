@@ -668,10 +668,10 @@ export default function Tarotista() {
       if (!token) throw new Error("NO_AUTH");
 
       const res = await fetch("/api/tarot/chat/send", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ thread_id: thread.id, text }),
-      });
+  method: "POST",
+  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+  body: JSON.stringify({ thread_id: selectedThreadId, text }),
+});
 
       const j = await safeJson(res);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
