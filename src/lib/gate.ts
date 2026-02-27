@@ -19,7 +19,6 @@ export async function requireMe(req: Request): Promise<MePayload> {
   const token = bearerFromReq(req);
   if (!token) throw new Error("NO_AUTH");
 
-  // Llama a tu endpoint /api/me (ya lo usas en el frontend)
   const res = await fetch(new URL("/api/me", req.url), {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
@@ -35,4 +34,26 @@ export async function requireRole(req: Request, roles: string[]) {
   const role = String(me.role || "");
   if (!roles.includes(role)) throw new Error("FORBIDDEN");
   return me;
+}
+
+/**
+ * ✅ Backward-compatible:
+ * tus routes importan gateCentralOrAdmin desde "@/lib/gate"
+ * Esto devuelve { token, me } para que puedas usar token si lo necesitas.
+ */
+export async function gateCentralOrAdmin(req: Request): Promise<{ token: string; me: MePayload }> {
+  const token = bearerFromReq(req);
+  if (!token) throw new Error("NO_AUTH");
+  const me = await requireRole(req, ["central", "admin"]);
+  return { token, me };
+}
+
+/**
+ * (Opcional) por si luego lo necesitas
+ */
+export async function gateTarotista(req: Request): Promise<{ token: string; me: MePayload }> {
+  const token = bearerFromReq(req);
+  if (!token) throw new Error("NO_AUTH");
+  const me = await requireRole(req, ["tarotista"]);
+  return { token, me };
 }
