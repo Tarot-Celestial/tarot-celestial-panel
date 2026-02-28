@@ -6,19 +6,32 @@ import { gateTarotista } from "@/lib/gate";
 export async function POST(req: Request) {
   try {
     const gate = await gateTarotista(req);
-    if (!gate.ok) return NextResponse.json({ ok: false, error: "UNAUTH" }, { status: 401 });
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error || "UNAUTH" }, { status: 401 });
 
     const body = await req.json().catch(() => ({}));
-    const thread_id = String(body?.thread_id || "");
-    const text = String(body?.text || "").trim();
+    const thread_id = String((body as any)?.thread_id || "");
+    const text = String((body as any)?.text || "").trim();
 
     if (!thread_id) return NextResponse.json({ ok: false, error: "MISSING_THREAD" }, { status: 400 });
     if (!text) return NextResponse.json({ ok: false, error: "EMPTY_TEXT" }, { status: 400 });
 
     const admin = supabaseAdmin();
 
-    const sender_worker_id = gate.worker_id ? String(gate.worker_id) : null;
-    const sender_display_name = gate.display_name ? String(gate.display_name) : "Tarotista";
+    // ✅ Tu gate devuelve gate.me (MePayload). Sacamos el worker desde ahí.
+    const me: any = (gate as any).me || {};
+    const w: any = me.worker || me.profile || {}; // por si lo llamas distinto
+
+    const sender_worker_id =
+      (w?.id ? String(w.id) : me?.worker_id ? String(me.worker_id) : me?.id ? String(me.id) : null) || null;
+
+    const sender_display_name =
+      (w?.display_name
+        ? String(w.display_name)
+        : me?.display_name
+          ? String(me.display_name)
+          : me?.name
+            ? String(me.name)
+            : "Tarotista") || "Tarotista";
 
     const { data, error } = await admin
       .from("chat_messages")
