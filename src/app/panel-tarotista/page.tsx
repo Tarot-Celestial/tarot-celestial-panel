@@ -196,6 +196,10 @@ export default function Tarotista() {
   const msgEndRef = useRef<HTMLDivElement | null>(null);
   const chatChannelRef = useRef<any>(null);
 
+  // ✅ FIX: antes usabas selectedThreadId pero no existía.
+  //    Aquí lo definimos y lo mantenemos siempre sincronizado con thread.id
+  const [selectedThreadId, setSelectedThreadId] = useState<string>("");
+
   // ✅ IMPORTANTÍSIMO: hooks SIEMPRE antes de cualquier return condicional
   const incidenciasLive = useMemo(() => {
     return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
@@ -243,7 +247,9 @@ export default function Tarotista() {
   const clFiltered = useMemo(() => {
     const qq = clQ.trim().toLowerCase();
     if (!qq) return clRows || [];
-    return (clRows || []).filter((it: any) => String(it.title || it.label || it.item_key || "").toLowerCase().includes(qq));
+    return (clRows || []).filter((it: any) =>
+      String(it.title || it.label || it.item_key || "").toLowerCase().includes(qq)
+    );
   }, [clRows, clQ]);
 
   const clProgress = useMemo(() => {
@@ -419,10 +425,18 @@ export default function Tarotista() {
       const m = getMonthFromUrl();
       setMonth(m);
 
-      const sRes = await fetch(`/api/stats/monthly?month=${encodeURIComponent(m)}`, { headers: { Authorization: `Bearer ${token}` } });
-      const rRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, { headers: { Authorization: `Bearer ${token}` } });
-      const incRes = await fetch(`/api/incidents/my?month=${encodeURIComponent(m)}`, { headers: { Authorization: `Bearer ${token}` } });
-      const invRes = await fetch(`/api/invoices/my?month=${encodeURIComponent(m)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const sRes = await fetch(`/api/stats/monthly?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const rRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const incRes = await fetch(`/api/incidents/my?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const invRes = await fetch(`/api/invoices/my?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const sJ = await safeJson(sRes);
       const rnkJ = await safeJson(rRes);
@@ -446,9 +460,12 @@ export default function Tarotista() {
         setInvoiceLines([]);
       }
 
-      if ((sJ && sJ.ok === false) || (rnkJ && rnkJ.ok === false)) setMsg("⚠️ Hay un error cargando datos (mira consola / endpoint).");
-      if (incJ && incJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
-      if (invJ && invJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
+      if ((sJ && sJ.ok === false) || (rnkJ && rnkJ.ok === false))
+        setMsg("⚠️ Hay un error cargando datos (mira consola / endpoint).");
+      if (incJ && incJ.ok === false)
+        setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
+      if (invJ && invJ.ok === false)
+        setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -465,12 +482,16 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) return;
 
-      const res = await fetch(`/api/me/outbound?date=${encodeURIComponent(obDate)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`/api/me/outbound?date=${encodeURIComponent(obDate)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const j = await safeJson(res);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setObBatch(j.batch || null);
-      const items = (j.batch?.outbound_batch_items || []).slice().sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
+      const items = (j.batch?.outbound_batch_items || [])
+        .slice()
+        .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0));
       setObItems(items);
 
       if (!silent) {
@@ -494,7 +515,10 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) return;
 
-      const names = obDraft.split("\n").map((s) => s.trim()).filter(Boolean);
+      const names = obDraft
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
       if (!names.length) {
         setObMsg("⚠️ Escribe al menos un nombre (1 por línea).");
         return;
@@ -538,14 +562,13 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) return;
 
-      // ✅ Ajusta estas rutas si en tu backend usas otras.
-      // La idea: tarotista solo recibe/crea SU thread (1 thread).
+      // ✅ tarotista solo recibe/crea SU thread (1 thread).
       const res = await fetch("/api/tarot/chat/thread", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
 
       if (!j?._ok || !j?.ok) {
-        // Si tu backend devuelve 404 cuando no existe, aquí lo dejamos como “sin chat”
         setThread(null);
+        setSelectedThreadId("");
         if (!silent) setChatMsg(`⚠️ Chat no disponible: ${j?.error || `HTTP ${j?._status}`}`);
         return;
       }
@@ -553,6 +576,7 @@ export default function Tarotista() {
       const t = j.thread || j.row || j.data || null;
       if (!t?.id) {
         setThread(null);
+        setSelectedThreadId("");
         if (!silent) setChatMsg("ℹ️ Aún no tienes chat abierto. Pulsa “Abrir chat”.");
         return;
       }
@@ -565,10 +589,12 @@ export default function Tarotista() {
       };
 
       setThread(normalized);
+      setSelectedThreadId(String(t.id)); // ✅ sync
       if (!silent) setChatMsg("✅ Chat cargado");
       if (!silent) setTimeout(() => setChatMsg(""), 900);
     } catch (e: any) {
       setThread(null);
+      setSelectedThreadId("");
       if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
     } finally {
       if (!silent) setChatLoading(false);
@@ -595,6 +621,7 @@ export default function Tarotista() {
       if (!t?.id) throw new Error("NO_THREAD");
 
       setThread({ id: String(t.id), title: t.title != null ? String(t.title) : null });
+      setSelectedThreadId(String(t.id)); // ✅ sync
       setChatMsg("✅ Chat abierto");
       setTimeout(() => setChatMsg(""), 900);
     } catch (e: any) {
@@ -625,7 +652,8 @@ export default function Tarotista() {
         thread_id: String(m.thread_id || threadId),
         sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
         sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-        text: m.text != null ? String(m.text) : "",
+        // ✅ backend puede devolver text o body; priorizamos text, fallback a body
+        text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
         created_at: m.created_at != null ? String(m.created_at) : null,
       }));
 
@@ -648,12 +676,15 @@ export default function Tarotista() {
   async function sendChatMessage() {
     const text = msgText.trim();
     if (!text) return;
-    if (!thread?.id) return;
+
+    // ✅ usamos selectedThreadId (siempre sync con thread.id)
+    const tid = selectedThreadId || thread?.id || "";
+    if (!tid) return;
 
     const tmpId = `tmp-${Date.now()}`;
     const optimistic: ChatMessage = {
       id: tmpId,
-      thread_id: thread.id,
+      thread_id: tid,
       text,
       created_at: new Date().toISOString(),
       sender_worker_id: "me",
@@ -667,11 +698,13 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) throw new Error("NO_AUTH");
 
+      // ✅ OJO: el 405 te salía porque estabas pegando thread_id undefined o ruta/verb mal.
+      // Aquí siempre mandamos thread_id válido (tid).
       const res = await fetch("/api/tarot/chat/send", {
-  method: "POST",
-  headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-  body: JSON.stringify({ thread_id: selectedThreadId, text }),
-});
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: tid, text }),
+      });
 
       const j = await safeJson(res);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
@@ -680,15 +713,15 @@ export default function Tarotista() {
       if (saved?.id) {
         const normalized: ChatMessage = {
           id: String(saved.id),
-          thread_id: String(saved.thread_id || thread.id),
+          thread_id: String(saved.thread_id || tid),
           sender_worker_id: saved.sender_worker_id != null ? String(saved.sender_worker_id) : null,
           sender_display_name: saved.sender_display_name != null ? String(saved.sender_display_name) : null,
-          text: saved.text != null ? String(saved.text) : text,
+          text: saved.text != null ? String(saved.text) : saved.body != null ? String(saved.body) : text,
           created_at: saved.created_at != null ? String(saved.created_at) : new Date().toISOString(),
         };
         setMessages((prev) => (prev || []).map((m) => (m.id === tmpId ? normalized : m)));
       } else {
-        loadChatMessages(thread.id, true);
+        loadChatMessages(tid, true);
       }
     } catch (e: any) {
       setMessages((prev) => (prev || []).filter((m) => m.id !== tmpId));
@@ -705,7 +738,7 @@ export default function Tarotista() {
       chatChannelRef.current = null;
     }
 
-    const threadId = thread?.id ? String(thread.id) : "";
+    const threadId = (selectedThreadId || thread?.id) ? String(selectedThreadId || thread?.id) : "";
     if (!threadId) return;
 
     const ch = sb
@@ -724,7 +757,8 @@ export default function Tarotista() {
               thread_id: String(m.thread_id),
               sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
               sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-              text: m.text != null ? String(m.text) : "",
+              // ✅ en BD suele ser body; si existiera text también
+              text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
               created_at: m.created_at != null ? String(m.created_at) : null,
             };
             return [...(prev || []), msg];
@@ -742,7 +776,7 @@ export default function Tarotista() {
       chatChannelRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, thread?.id]);
+  }, [ok, thread?.id, selectedThreadId]);
 
   // init load
   useEffect(() => {
@@ -778,10 +812,11 @@ export default function Tarotista() {
   useEffect(() => {
     if (!ok) return;
     if (tab !== "chat") return;
-    if (!thread?.id) return;
-    loadChatMessages(thread.id, false);
+    const tid = selectedThreadId || thread?.id || "";
+    if (!tid) return;
+    loadChatMessages(tid, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, tab, thread?.id]);
+  }, [ok, tab, thread?.id, selectedThreadId]);
 
   // ✅ realtime tarotista (UPDATE outbound_batch_items por batch_id)
   useEffect(() => {
@@ -797,10 +832,16 @@ export default function Tarotista() {
 
     const ch = sb
       .channel(`tarot-outbound-${bid}`)
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` }, (payload) => {
-        const updated: any = payload.new;
-        setObItems((prev) => (prev || []).map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it)));
-      })
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` },
+        (payload) => {
+          const updated: any = payload.new;
+          setObItems((prev) =>
+            (prev || []).map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it))
+          );
+        }
+      )
       .subscribe();
 
     obChannelRef.current = ch;
@@ -927,21 +968,41 @@ export default function Tarotista() {
                     {attLoading && !attOnline ? "…" : "🟢 Conectarme"}
                   </button>
 
-                  <button className="tc-btn tc-btn-danger" onClick={() => postAttendanceEvent("offline", { action: "check_out" })} disabled={attLoading || !attOnline}>
+                  <button
+                    className="tc-btn tc-btn-danger"
+                    onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
+                    disabled={attLoading || !attOnline}
+                  >
                     🔴 Desconectarme
                   </button>
 
-                  <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })} disabled={attLoading || !attOnline || attStatus === "break"}>
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
+                    disabled={attLoading || !attOnline || attStatus === "break"}
+                  >
                     ⏸️ Descanso
                   </button>
-                  <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })} disabled={attLoading || !attOnline || attStatus !== "break"}>
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
+                    disabled={attLoading || !attOnline || attStatus !== "break"}
+                  >
                     ▶️ Volver
                   </button>
 
-                  <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })} disabled={attLoading || !attOnline || attStatus === "bathroom"}>
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
+                    disabled={attLoading || !attOnline || attStatus === "bathroom"}
+                  >
                     🚻 Baño
                   </button>
-                  <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })} disabled={attLoading || !attOnline || attStatus !== "bathroom"}>
+                  <button
+                    className="tc-btn"
+                    onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
+                    disabled={attLoading || !attOnline || attStatus !== "bathroom"}
+                  >
                     ✅ Salí
                   </button>
                 </div>
@@ -1006,7 +1067,8 @@ export default function Tarotista() {
                   <div className="tc-sub">
                     Aún no tienes chat abierto. Pulsa <b>“Abrir chat”</b>.
                     <div style={{ marginTop: 6, opacity: 0.85 }}>
-                      (Si ya tienes endpoints con otro nombre, cambia estas rutas: <b>/api/tarot/chat/thread</b>, <b>/api/tarot/chat/open</b>, <b>/api/tarot/chat/messages</b>, <b>/api/tarot/chat/send</b>)
+                      (Si ya tienes endpoints con otro nombre, cambia estas rutas: <b>/api/tarot/chat/thread</b>,{" "}
+                      <b>/api/tarot/chat/open</b>, <b>/api/tarot/chat/messages</b>, <b>/api/tarot/chat/send</b>)
                     </div>
                   </div>
                 ) : (
@@ -1024,7 +1086,7 @@ export default function Tarotista() {
                     <div style={{ padding: 12 }}>
                       <div style={{ fontWeight: 900 }}>{thread.title || "Chat con Central"}</div>
                       <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Thread: {thread.id}
+                        Thread: {selectedThreadId || thread.id}
                       </div>
                     </div>
 
@@ -1162,7 +1224,13 @@ export default function Tarotista() {
 
                   <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                     <span className="tc-chip">Día</span>
-                    <input className="tc-input" value={obDate} onChange={(e) => setObDate(e.target.value)} style={{ width: 140 }} placeholder="YYYY-MM-DD" />
+                    <input
+                      className="tc-input"
+                      value={obDate}
+                      onChange={(e) => setObDate(e.target.value)}
+                      style={{ width: 140 }}
+                      placeholder="YYYY-MM-DD"
+                    />
                     <button className="tc-btn tc-btn-gold" onClick={() => loadMyOutbound(false)} disabled={obLoading}>
                       {obLoading ? "Cargando…" : "Actualizar"}
                     </button>
@@ -1193,7 +1261,11 @@ export default function Tarotista() {
                       <div className="tc-chip">
                         Estado: <b>{String(obBatch.status || "submitted")}</b>
                       </div>
-                      {obBatch.note ? <div className="tc-sub">Nota: <b>{obBatch.note}</b></div> : null}
+                      {obBatch.note ? (
+                        <div className="tc-sub">
+                          Nota: <b>{obBatch.note}</b>
+                        </div>
+                      ) : null}
                     </div>
 
                     {(obItems || []).length === 0 ? (
@@ -1228,7 +1300,9 @@ export default function Tarotista() {
                                 📝 <b>Apunte central:</b> {it.last_note}
                               </div>
                             ) : (
-                              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>Aún sin apunte del central.</div>
+                              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                                Aún sin apunte del central.
+                              </div>
                             )}
                           </div>
                         ))}
@@ -1258,8 +1332,22 @@ export default function Tarotista() {
                   </div>
 
                   <div style={{ marginTop: 10 }}>
-                    <div style={{ height: 12, borderRadius: 999, background: "rgba(255,255,255,0.10)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-                      <div style={{ height: "100%", width: `${prog.pct}%`, background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))" }} />
+                    <div
+                      style={{
+                        height: 12,
+                        borderRadius: 999,
+                        background: "rgba(255,255,255,0.10)",
+                        overflow: "hidden",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${prog.pct}%`,
+                          background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))",
+                        }}
+                      />
                     </div>
                     <div className="tc-sub" style={{ marginTop: 8 }}>
                       Bono actual del mes: <b>{eur(bonusCaptadas)}</b>
@@ -1299,7 +1387,14 @@ export default function Tarotista() {
 
                   <div className="tc-hr" />
 
-                  <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(181,156,255,0.08)" }}>
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(181,156,255,0.08)",
+                    }}
+                  >
                     <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
                       <div>
                         <div className="tc-sub">Bono ranking acumulado (según posición actual)</div>
@@ -1334,7 +1429,9 @@ export default function Tarotista() {
 
                   <div className="tc-hr" />
 
-                  <div className="tc-sub">Consejo: céntrate en <b>% Repite</b> y <b>% Cliente</b> para ganar los 6€ y además ayudar a tu equipo.</div>
+                  <div className="tc-sub">
+                    Consejo: céntrate en <b>% Repite</b> y <b>% Cliente</b> para ganar los 6€ y además ayudar a tu equipo.
+                  </div>
                 </div>
               </div>
             )}
@@ -1343,7 +1440,9 @@ export default function Tarotista() {
             {tab === "ranking" && (
               <div className="tc-card">
                 <div className="tc-title">🏆 Top 3 del mes</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>(Si falta algo, revisamos el endpoint /api/rankings/monthly)</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  (Si falta algo, revisamos el endpoint /api/rankings/monthly)
+                </div>
 
                 <div className="tc-hr" />
 
@@ -1366,8 +1465,18 @@ export default function Tarotista() {
                 <div className="tc-hr" />
 
                 <div className="tc-grid-2">
-                  <TeamCard title="🔥 Fuego" score={rank?.teams?.fuego?.score ?? 0} avgCliente={rank?.teams?.fuego?.avg_cliente ?? 0} avgRepite={rank?.teams?.fuego?.avg_repite ?? 0} />
-                  <TeamCard title="💧 Agua" score={rank?.teams?.agua?.score ?? 0} avgCliente={rank?.teams?.agua?.avg_cliente ?? 0} avgRepite={rank?.teams?.agua?.avg_repite ?? 0} />
+                  <TeamCard
+                    title="🔥 Fuego"
+                    score={rank?.teams?.fuego?.score ?? 0}
+                    avgCliente={rank?.teams?.fuego?.avg_cliente ?? 0}
+                    avgRepite={rank?.teams?.fuego?.avg_repite ?? 0}
+                  />
+                  <TeamCard
+                    title="💧 Agua"
+                    score={rank?.teams?.agua?.score ?? 0}
+                    avgCliente={rank?.teams?.agua?.avg_cliente ?? 0}
+                    avgRepite={rank?.teams?.agua?.avg_repite ?? 0}
+                  />
                 </div>
 
                 <div className="tc-hr" />
@@ -1404,11 +1513,31 @@ export default function Tarotista() {
 
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <input className="tc-input" value={clQ} onChange={(e) => setClQ(e.target.value)} placeholder="Buscar en checklist…" style={{ width: 320, maxWidth: "100%" }} />
+                    <input
+                      className="tc-input"
+                      value={clQ}
+                      onChange={(e) => setClQ(e.target.value)}
+                      placeholder="Buscar en checklist…"
+                      style={{ width: 320, maxWidth: "100%" }}
+                    />
 
                     <div style={{ minWidth: 240, flex: 1 }}>
-                      <div style={{ height: 12, borderRadius: 999, background: "rgba(255,255,255,0.10)", overflow: "hidden", border: "1px solid rgba(255,255,255,0.10)" }}>
-                        <div style={{ height: "100%", width: `${clampPct(clProgress.pct)}%`, background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))" }} />
+                      <div
+                        style={{
+                          height: 12,
+                          borderRadius: 999,
+                          background: "rgba(255,255,255,0.10)",
+                          overflow: "hidden",
+                          border: "1px solid rgba(255,255,255,0.10)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${clampPct(clProgress.pct)}%`,
+                            background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))",
+                          }}
+                        />
                       </div>
                       <div className="tc-sub" style={{ marginTop: 6 }}>
                         Progreso: <b>{clProgress.pct}%</b>
@@ -1424,7 +1553,15 @@ export default function Tarotista() {
                       const doneAt = it.completed_at || it.done_at || it.updated_at || null;
 
                       return (
-                        <div key={String(it.item_key || it.key || it.id || title)} style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: done ? "rgba(120,255,190,0.10)" : "rgba(255,255,255,0.03)" }}>
+                        <div
+                          key={String(it.item_key || it.key || it.id || title)}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: done ? "rgba(120,255,190,0.10)" : "rgba(255,255,255,0.03)",
+                          }}
+                        >
                           <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                             <div style={{ minWidth: 240 }}>
                               <div style={{ fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1444,7 +1581,12 @@ export default function Tarotista() {
                                 {done ? "Completado" : "Pendiente"}
                               </span>
 
-                              <button className="tc-btn tc-btn-purple" onClick={() => toggleChecklistItem(it)} disabled={clLoading} style={{ minWidth: 160 }}>
+                              <button
+                                className="tc-btn tc-btn-purple"
+                                onClick={() => toggleChecklistItem(it)}
+                                disabled={clLoading}
+                                style={{ minWidth: 160 }}
+                              >
                                 {done ? "Marcar como pendiente" : "Marcar como hecho"}
                               </button>
                             </div>
@@ -1453,7 +1595,9 @@ export default function Tarotista() {
                       );
                     })}
 
-                    {(!clFiltered || clFiltered.length === 0) && <div className="tc-sub">No hay items en tu checklist (o no coinciden con la búsqueda).</div>}
+                    {(!clFiltered || clFiltered.length === 0) && (
+                      <div className="tc-sub">No hay items en tu checklist (o no coinciden con la búsqueda).</div>
+                    )}
                   </div>
 
                   <div className="tc-hr" />
@@ -1501,7 +1645,13 @@ export default function Tarotista() {
 
                       <div style={{ minWidth: 320, maxWidth: "100%" }}>
                         <div className="tc-sub">Nota (opcional, sobre todo si rechazas)</div>
-                        <input className="tc-input" value={ackNote} onChange={(e) => setAckNote(e.target.value)} placeholder="Ej: Falta revisar una incidencia…" style={{ width: "100%", marginTop: 6 }} />
+                        <input
+                          className="tc-input"
+                          value={ackNote}
+                          onChange={(e) => setAckNote(e.target.value)}
+                          placeholder="Ej: Falta revisar una incidencia…"
+                          style={{ width: "100%", marginTop: 6 }}
+                        />
 
                         <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end" }}>
                           <button className="tc-btn tc-btn-ok" onClick={() => respondInvoice("accepted")}>
@@ -1606,7 +1756,14 @@ export default function Tarotista() {
 
 function Kpi({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)" }}>
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
+      }}
+    >
       <div className="tc-sub">{label}</div>
       <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
     </div>
@@ -1616,12 +1773,16 @@ function Kpi({ label, value, highlight }: { label: string; value: string; highli
 function TopCard({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>🏆 {title}</div>
+      <div className="tc-title" style={{ fontSize: 14 }}>
+        🏆 {title}
+      </div>
       <div className="tc-hr" />
       <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
           <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
+            <span>
+              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
+            </span>
           </div>
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
@@ -1630,11 +1791,23 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function TeamCard({ title, score, avgCliente, avgRepite }: { title: string; score: any; avgCliente: any; avgRepite: any }) {
+function TeamCard({
+  title,
+  score,
+  avgCliente,
+  avgRepite,
+}: {
+  title: string;
+  score: any;
+  avgCliente: any;
+  avgRepite: any;
+}) {
   const s = Number(score || 0);
   return (
     <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
+      <div className="tc-title" style={{ fontSize: 14 }}>
+        {title}
+      </div>
       <div className="tc-hr" />
       <div className="tc-kpis">
         <div className="tc-row" style={{ justifyContent: "space-between" }}>
@@ -1661,7 +1834,19 @@ function RankLiveRow({ label, pos, amount }: { label: string; pos: number | null
   const expected = bonusForPos(p);
 
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.10)", borderRadius: 14, padding: 12, background: "rgba(255,255,255,0.03)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
       <div>
         <div style={{ fontWeight: 900 }}>{label}</div>
         <div className="tc-sub" style={{ marginTop: 4 }}>
