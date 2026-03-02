@@ -1,3 +1,4 @@
+// src/app/api/chat/messages/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -40,15 +41,18 @@ async function getMe(uid: string) {
     .select("id, role, display_name, team")
     .eq("user_id", uid)
     .maybeSingle();
+
   if (error) throw error;
   if (!me) throw new Error("NO_WORKER");
 
   return { db, me };
 }
 
-function previewOf(text: string, max = 140) {
-  const t = (text || "").trim().replace(/\s+/g, " ");
-  return t.length > max ? t.slice(0, max - 1) + "…" : t;
+function senderDisplayFromJoin(senderRel: any): string | null {
+  // Supabase puede devolver objeto o array según el join / tipado
+  if (!senderRel) return null;
+  if (Array.isArray(senderRel)) return senderRel?.[0]?.display_name ? String(senderRel[0].display_name) : null;
+  return senderRel?.display_name ? String(senderRel.display_name) : null;
 }
 
 export async function GET(req: Request) {
@@ -65,11 +69,7 @@ export async function GET(req: Request) {
 
     if (me.role === "tarotista") {
       // tarotista siempre su hilo (ignora thread_id si lo pasan)
-      const { data: t, error: et } = await db
-        .from("chat_threads")
-        .select("id")
-        .eq("tarotist_worker_id", me.id)
-        .maybeSingle();
+      const { data: t, error: et } = await db.from("chat_threads").select("id").eq("tarotist_worker_id", me.id).maybeSingle();
       if (et) throw et;
 
       if (!t?.id) {
@@ -93,23 +93,28 @@ export async function GET(req: Request) {
 
     const { data: msgs, error: em } = await db
       .from("chat_messages")
-      .select(`
+      .select(
+        `
         id, thread_id, sender_worker_id, sender_display_name, body, created_at,
         sender:workers!chat_messages_sender_worker_id_fkey (id, display_name, role, team)
-      `)
+      `
+      )
       .eq("thread_id", threadId)
       .order("created_at", { ascending: true })
       .limit(200);
 
     if (em) throw em;
 
-    // ✅ normalizamos para que el frontend tenga sender_display_name siempre
-    const normalized = (msgs ?? []).map((m: any) => ({
-      ...m,
+    const normalized = (msgs || []).map((m: any) => ({
+      id: String(m.id),
+      thread_id: String(m.thread_id),
+      sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
       sender_display_name:
-        m?.sender_display_name ??
-        m?.sender?.display_name ??
-        (m?.sender_worker_id ? String(m.sender_worker_id).slice(0, 6) : "—"),
+        m.sender_display_name != null
+          ? String(m.sender_display_name)
+          : senderDisplayFromJoin(m.sender) || null,
+      text: m.body != null ? String(m.body) : "",
+      created_at: m.created_at != null ? String(m.created_at) : null,
     }));
 
     return NextResponse.json({ ok: true, thread_id: threadId, messages: normalized });
@@ -137,11 +142,7 @@ export async function POST(req: Request) {
 
     if (me.role === "tarotista") {
       // tarotista siempre su hilo
-      const { data: t, error: et } = await db
-        .from("chat_threads")
-        .select("id")
-        .eq("tarotist_worker_id", me.id)
-        .maybeSingle();
+      const { data: t, error: et } = await db.from("chat_threads").select("id").eq("tarotist_worker_id", me.id).maybeSingle();
       if (et) throw et;
 
       if (!t?.id) {
@@ -163,7 +164,7 @@ export async function POST(req: Request) {
       if (!threadId) return NextResponse.json({ ok: false, error: "MISSING_THREAD_ID" }, { status: 400 });
     }
 
-    const sender_display_name = me.display_name || (me.role === "central" ? "Central" : "Staff");
+    const sender_display_name = me.display_name ? String(me.display_name) : me.role === "tarotista" ? "Tarotista" : "Central";
 
     const { data: msgRow, error: ei } = await db
       .from("chat_messages")
@@ -173,31 +174,31 @@ export async function POST(req: Request) {
         sender_display_name,
         body: text,
       })
-      .select(`
+      .select(
+        `
         id, thread_id, sender_worker_id, sender_display_name, body, created_at,
         sender:workers!chat_messages_sender_worker_id_fkey (id, display_name, role, team)
-      `)
+      `
+      )
       .single();
 
     if (ei) throw ei;
 
-    // ✅ IMPORTANTE: actualizar thread para que “sincronice bien” en listado staff
-    await db
-      .from("chat_threads")
-      .update({
-        last_message_at: msgRow?.created_at ?? new Date().toISOString(),
-        last_message_preview: previewOf(text),
-      })
-      .eq("id", threadId);
+    const senderNameFromJoin = senderDisplayFromJoin((msgRow as any)?.sender);
 
     return NextResponse.json({
       ok: true,
-      thread_id: threadId,
+      thread_id: String(msgRow.thread_id),
       message: {
-        ...msgRow,
+        id: String(msgRow.id),
+        thread_id: String(msgRow.thread_id),
+        sender_worker_id: msgRow.sender_worker_id != null ? String(msgRow.sender_worker_id) : null,
         sender_display_name:
-          msgRow?.sender_display_name ?? msgRow?.sender?.display_name ?? sender_display_name,
-        text: msgRow?.body ?? "",
+          msgRow.sender_display_name != null
+            ? String(msgRow.sender_display_name)
+            : senderNameFromJoin || sender_display_name,
+        text: msgRow.body != null ? String(msgRow.body) : "",
+        created_at: msgRow.created_at != null ? String(msgRow.created_at) : null,
       },
     });
   } catch (e: any) {
