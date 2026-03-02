@@ -136,32 +136,10 @@ type ChatMessage = {
   created_at?: string | null;
 };
 
-// --- Toast alert type ---
-type ChatToast = {
-  thread_id: string;
-  title: string;
-  sender: string;
-  text: string;
-  created_at: string;
-};
-
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-
-function shortPreview(s: string, max = 90) {
-  const t = (s || "").trim().replace(/\s+/g, " ");
-  if (!t) return "—";
-  return t.length > max ? t.slice(0, max - 1) + "…" : t;
-}
-
 export default function Central() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
   const [month, setMonth] = useState(monthKeyNow());
-
-  // ✅ mi worker_id (para detectar si el mensaje es mío)
-  const [myWorkerId, setMyWorkerId] = useState<string>("");
 
   const [rank, setRank] = useState<any>(null);
   const [rankMsg, setRankMsg] = useState("");
@@ -212,10 +190,7 @@ export default function Central() {
   const obChannelsRef = useRef<any[]>([]);
 
   const batchIdsKey = useMemo(() => {
-    return (obBatches || [])
-      .map((b: any) => String(b?.id || ""))
-      .filter(Boolean)
-      .join(",");
+    return (obBatches || []).map((b: any) => String(b?.id || "")).filter(Boolean).join(",");
   }, [obBatches]);
 
   // ✅ CHAT (central/admin ve todos)
@@ -229,31 +204,14 @@ export default function Central() {
   const msgEndRef = useRef<HTMLDivElement | null>(null);
   const chatChannelRef = useRef<any>(null);
 
-  // ✅ Toast + “unread” (solo visual, no persiste)
-  const [chatToast, setChatToast] = useState<ChatToast | null>(null);
-  const toastTimerRef = useRef<any>(null);
-  const [unreadByThread, setUnreadByThread] = useState<Record<string, number>>({});
-  const globalChatRef = useRef<any>(null);
-
-  const totalUnread = useMemo(() => {
-    const vals = Object.values(unreadByThread || {});
-    return vals.reduce((a, b) => a + (Number(b) || 0), 0);
-  }, [unreadByThread]);
-
-  function showToast(t: ChatToast) {
-    setChatToast(t);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setChatToast(null), 4500);
-  }
-
-  async function getToken() {
-    const { data } = await sb.auth.getSession();
-    return data.session?.access_token || null;
-  }
+  // ✅ NUEVO: abrir chat directamente con tarotista
+  const [newChatWorkerId, setNewChatWorkerId] = useState<string>("");
+  const [newChatMsg, setNewChatMsg] = useState<string>("");
 
   useEffect(() => {
     (async () => {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
       const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
@@ -264,17 +222,8 @@ export default function Central() {
         return;
       }
 
-      // ✅ intenta sacar worker_id de /api/me (según tu backend)
-      const wid =
-        (me?.worker?.id ? String(me.worker.id) : null) ||
-        (me?.worker_id ? String(me.worker_id) : null) ||
-        (me?.profile?.id ? String(me.profile.id) : null) ||
-        "";
-      if (wid) setMyWorkerId(wid);
-
       setOk(true);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadAttendanceMe(silent = false) {
@@ -284,7 +233,8 @@ export default function Central() {
       setAttMsg("");
     }
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
@@ -308,7 +258,8 @@ export default function Central() {
       setAttMsg("");
       setAttLoading(true);
 
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch("/api/attendance/event", {
@@ -365,7 +316,8 @@ export default function Central() {
     let stopped = false;
 
     const start = async () => {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const ping = async () => {
@@ -388,7 +340,6 @@ export default function Central() {
       if (attBeatRef.current) clearInterval(attBeatRef.current);
       attBeatRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, attOnline]);
 
   useEffect(() => {
@@ -401,7 +352,8 @@ export default function Central() {
   async function refreshRanking() {
     setRankMsg("");
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const rnkRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(month)}`, {
@@ -425,7 +377,8 @@ export default function Central() {
     setTarotistsLoading(true);
     setTarotistsMsg("");
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch("/api/central/tarotists", { headers: { Authorization: `Bearer ${token}` } });
@@ -442,6 +395,9 @@ export default function Central() {
       setTarotistsMsg(list.length ? `✅ Cargadas ${list.length} tarotistas` : "⚠️ No hay tarotistas (¿workers.role='tarotista'?)");
 
       if (!incWorkerId && list.length) setIncWorkerId(list[0].id);
+
+      // ✅ default selector "nuevo chat"
+      if (!newChatWorkerId && list.length) setNewChatWorkerId(String(list[0].id));
     } catch (e: any) {
       setTarotists([]);
       setTarotistsMsg(`❌ ${e?.message || "Error"}`);
@@ -455,7 +411,8 @@ export default function Central() {
     setClLoading(true);
     setClMsg("");
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch("/api/central/checklists", { headers: { Authorization: `Bearer ${token}` } });
@@ -488,7 +445,8 @@ export default function Central() {
     }
 
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch("/api/central/attendance/online", { headers: { Authorization: `Bearer ${token}` } });
@@ -532,7 +490,8 @@ export default function Central() {
     }
 
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch("/api/central/attendance/expected", { headers: { Authorization: `Bearer ${token}` } });
@@ -574,7 +533,8 @@ export default function Central() {
     }
 
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return;
 
       const res = await fetch(`/api/central/outbound/pending?date=${encodeURIComponent(obDate)}`, {
@@ -623,7 +583,8 @@ export default function Central() {
     }
 
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) throw new Error("NO_AUTH");
 
       const url = "/api/central/outbound/log";
@@ -665,10 +626,10 @@ export default function Central() {
       setChatMsg("");
     }
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) throw new Error("NO_AUTH");
 
-      // 👇 Ajusta rutas si usas otras. Aquí asumo tus endpoints de central.
       const res = await fetch("/api/central/chat/threads", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
@@ -690,7 +651,14 @@ export default function Central() {
       });
 
       setThreads(list);
-      if (!selectedThreadId && list.length) setSelectedThreadId(list[0].id);
+
+      // si el seleccionado ya no existe, pillamos el primero
+      if (selectedThreadId) {
+        const stillExists = list.some((t) => String(t.id) === String(selectedThreadId));
+        if (!stillExists) setSelectedThreadId(list[0]?.id || "");
+      } else {
+        if (list.length) setSelectedThreadId(list[0].id);
+      }
 
       if (!silent) {
         setChatMsg(list.length ? `✅ Chats cargados (${list.length})` : "⚠️ No hay chats todavía");
@@ -711,7 +679,8 @@ export default function Central() {
       setChatMsg("");
     }
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) throw new Error("NO_AUTH");
 
       const res = await fetch(`/api/central/chat/messages?thread_id=${encodeURIComponent(threadId)}`, {
@@ -725,8 +694,7 @@ export default function Central() {
         thread_id: String(m.thread_id || threadId),
         sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
         sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-        // ✅ backend a veces devuelve body
-        text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
+        text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : ""),
         created_at: m.created_at != null ? String(m.created_at) : null,
       }));
 
@@ -737,14 +705,6 @@ export default function Central() {
       });
 
       setMessages(list);
-
-      // ✅ al abrir un chat, reseteamos “unread” visual de ese hilo
-      setUnreadByThread((prev) => {
-        const n = { ...(prev || {}) };
-        delete n[String(threadId)];
-        return n;
-      });
-
       if (!silent) setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e: any) {
       setMessages([]);
@@ -765,7 +725,7 @@ export default function Central() {
       thread_id: selectedThreadId,
       text,
       created_at: new Date().toISOString(),
-      sender_worker_id: myWorkerId || "me",
+      sender_worker_id: "me",
       sender_display_name: "Yo",
     };
     setMessages((prev) => [...(prev || []), optimistic]);
@@ -773,7 +733,8 @@ export default function Central() {
     setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) throw new Error("NO_AUTH");
 
       const res = await fetch("/api/central/chat/send", {
@@ -792,7 +753,7 @@ export default function Central() {
           thread_id: String(saved.thread_id || selectedThreadId),
           sender_worker_id: saved.sender_worker_id != null ? String(saved.sender_worker_id) : null,
           sender_display_name: saved.sender_display_name != null ? String(saved.sender_display_name) : null,
-          text: saved.text != null ? String(saved.text) : saved.body != null ? String(saved.body) : text,
+          text: saved.text != null ? String(saved.text) : (saved.body != null ? String(saved.body) : text),
           created_at: saved.created_at != null ? String(saved.created_at) : new Date().toISOString(),
         };
         setMessages((prev) => (prev || []).map((m) => (m.id === tmpId ? normalized : m)));
@@ -807,7 +768,43 @@ export default function Central() {
     }
   }
 
-  // ✅ Realtime SOLO del hilo seleccionado (para pintar chat abierto)
+  // ✅ NUEVO: abrir chat con una tarotista (crea thread si no existe)
+  async function openChatWithTarotist() {
+    setNewChatMsg("");
+    try {
+      if (!newChatWorkerId) {
+        setNewChatMsg("⚠️ Selecciona una tarotista.");
+        return;
+      }
+
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("NO_AUTH");
+
+      const res = await fetch("/api/central/chat/open", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ tarotist_worker_id: newChatWorkerId }),
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      const tid = String(j.thread?.id || j.thread_id || "");
+      if (!tid) throw new Error("NO_THREAD_ID");
+
+      // refresca threads y selecciona el creado
+      await loadChatThreads(true);
+      setSelectedThreadId(tid);
+      await loadChatMessages(tid, true);
+
+      setNewChatMsg("✅ Chat abierto");
+      setTimeout(() => setNewChatMsg(""), 1200);
+    } catch (e: any) {
+      setNewChatMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  // realtime chat_messages (INSERT) para el thread seleccionado
   useEffect(() => {
     if (!ok) return;
 
@@ -819,7 +816,7 @@ export default function Central() {
     if (!selectedThreadId) return;
 
     const ch = sb
-      .channel(`central-chat-active-${selectedThreadId}`)
+      .channel(`central-chat-${selectedThreadId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "chat_messages", filter: `thread_id=eq.${selectedThreadId}` },
@@ -835,8 +832,7 @@ export default function Central() {
               thread_id: String(m.thread_id),
               sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
               sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-              // ✅ en BD suele ser body
-              text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
+              text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : ""),
               created_at: m.created_at != null ? String(m.created_at) : null,
             };
 
@@ -859,71 +855,6 @@ export default function Central() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, selectedThreadId]);
-
-  // ✅ Realtime GLOBAL para alertas (todos los mensajes, cualquier thread)
-  //    Esto es lo que te permite “alerta bonita” aunque estés en otra pestaña o en otro chat.
-  useEffect(() => {
-    if (!ok) return;
-
-    if (globalChatRef.current) {
-      sb.removeChannel(globalChatRef.current);
-      globalChatRef.current = null;
-    }
-
-    const ch = sb
-      .channel("central-chat-global")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
-        const m: any = payload.new;
-        const threadId = String(m.thread_id || "");
-        if (!threadId) return;
-
-        const senderId = m.sender_worker_id != null ? String(m.sender_worker_id) : "";
-        const isMine = myWorkerId ? String(senderId) === String(myWorkerId) : false;
-
-        // Refrescamos threads para ordenar por último mensaje (y previews)
-        loadChatThreads(true);
-
-        // Si es mío, no alertamos
-        if (isMine) return;
-
-        // Si estoy viendo ese thread en chat abierto, no sumo unread, solo dejo que pinte el chat
-        const viewingThatThread = tab === "chat" && String(selectedThreadId) === String(threadId);
-        if (!viewingThatThread) {
-          setUnreadByThread((prev) => {
-            const next = { ...(prev || {}) };
-            next[threadId] = (Number(next[threadId]) || 0) + 1;
-            return next;
-          });
-
-          // Toast bonito
-          const title =
-            threads.find((t) => String(t.id) === String(threadId))?.tarotist_display_name ||
-            threads.find((t) => String(t.id) === String(threadId))?.title ||
-            `Chat ${threadId.slice(0, 6)}`;
-
-          const sender = m.sender_display_name ? String(m.sender_display_name) : senderId ? senderId.slice(0, 6) : "Nuevo mensaje";
-          const body = m.body != null ? String(m.body) : m.text != null ? String(m.text) : "";
-          const createdAt = m.created_at != null ? String(m.created_at) : new Date().toISOString();
-
-          showToast({
-            thread_id: threadId,
-            title,
-            sender,
-            text: body,
-            created_at: createdAt,
-          });
-        }
-      })
-      .subscribe();
-
-    globalChatRef.current = ch;
-
-    return () => {
-      sb.removeChannel(ch);
-      globalChatRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, myWorkerId, tab, selectedThreadId, threads]);
 
   // ---------------- INIT LOADS ----------------
   useEffect(() => {
@@ -979,6 +910,8 @@ export default function Central() {
     if (!ok) return;
     if (tab !== "chat") return;
     loadChatThreads(false);
+    // ✅ por si no están cargadas tarotistas (para selector "nuevo chat")
+    if (!tarotists?.length) loadTarotists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab]);
 
@@ -1005,18 +938,22 @@ export default function Central() {
     const channels = batchIds.map((bid) =>
       sb
         .channel(`central-outbound-${bid}`)
-        .on("postgres_changes", { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` }, (payload) => {
-          const updated: any = payload.new;
-          setObBatches((prev) =>
-            (prev || []).map((b: any) => {
-              if (String(b.id) !== bid) return b;
-              let items = b.outbound_batch_items || [];
-              items = items.map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it));
-              items = items.filter((it: any) => String(it.current_status) !== "done");
-              return { ...b, outbound_batch_items: items };
-            })
-          );
-        })
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` },
+          (payload) => {
+            const updated: any = payload.new;
+            setObBatches((prev) =>
+              (prev || []).map((b: any) => {
+                if (String(b.id) !== bid) return b;
+                let items = b.outbound_batch_items || [];
+                items = items.map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it));
+                items = items.filter((it: any) => String(it.current_status) !== "done");
+                return { ...b, outbound_batch_items: items };
+              })
+            );
+          }
+        )
         .subscribe()
     );
 
@@ -1067,14 +1004,12 @@ export default function Central() {
     let rows = presences || [];
     rows = rows.filter((r) => !!r.online);
     if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-    return rows
-      .slice()
-      .sort((a, b) => {
-        const as = a.last_seen_seconds ?? 999999;
-        const bs = b.last_seen_seconds ?? 999999;
-        if (as !== bs) return as - bs;
-        return String(a.display_name).localeCompare(String(b.display_name));
-      });
+    return rows.slice().sort((a, b) => {
+      const as = a.last_seen_seconds ?? 999999;
+      const bs = b.last_seen_seconds ?? 999999;
+      if (as !== bs) return as - bs;
+      return String(a.display_name).localeCompare(String(b.display_name));
+    });
   }, [presences, presQ]);
 
   const expectedFiltered = useMemo(() => {
@@ -1099,7 +1034,8 @@ export default function Central() {
     setIncLoading(true);
     setIncMsg("");
     try {
-      const token = await getToken();
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
       const res = await fetch("/api/central/incidents", {
@@ -1124,81 +1060,11 @@ export default function Central() {
     }
   }
 
-  // ✅ Si tocas toast, abre ese chat
-  function openToastThread() {
-    if (!chatToast?.thread_id) return;
-    setTab("chat");
-    setSelectedThreadId(chatToast.thread_id);
-    setChatToast(null);
-  }
-
-  // ✅ limpia unread del chat actual cuando cambias a tab chat
-  useEffect(() => {
-    if (tab !== "chat") return;
-    if (!selectedThreadId) return;
-    setUnreadByThread((prev) => {
-      const n = { ...(prev || {}) };
-      delete n[String(selectedThreadId)];
-      return n;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, selectedThreadId]);
-
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <>
       <AppHeader />
-
-      {/* ✅ TOAST bonito de chat */}
-      {chatToast ? (
-        <div
-          onClick={openToastThread}
-          title="Abrir chat"
-          style={{
-            position: "fixed",
-            top: 18,
-            right: 18,
-            zIndex: 9999,
-            cursor: "pointer",
-            width: 360,
-            maxWidth: "calc(100vw - 36px)",
-            borderRadius: 18,
-            padding: 12,
-            border: "1px solid rgba(255,255,255,0.14)",
-            background: "linear-gradient(135deg, rgba(181,156,255,0.95), rgba(215,181,109,0.92))",
-            color: "#1b1b1b",
-            boxShadow: "0 18px 50px rgba(0,0,0,0.45)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-            <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              💬 {chatToast.title}
-            </div>
-            <button
-              className="tc-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setChatToast(null);
-              }}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 999,
-                border: "1px solid rgba(0,0,0,0.18)",
-                background: "rgba(255,255,255,0.35)",
-                fontWeight: 900,
-              }}
-            >
-              ✕
-            </button>
-          </div>
-          <div style={{ marginTop: 6, fontSize: 13, opacity: 0.85 }}>
-            <b>{chatToast.sender}</b> · {new Date(chatToast.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
-          </div>
-          <div style={{ marginTop: 8, fontWeight: 700 }}>{shortPreview(chatToast.text, 120)}</div>
-          <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>Toca para abrir el chat</div>
-        </div>
-      ) : null}
 
       <div className="tc-wrap">
         <div className="tc-container">
@@ -1225,29 +1091,60 @@ export default function Central() {
                   {attLabel(attOnline, attStatus)}
                 </span>
 
-                <button className="tc-btn tc-btn-ok" onClick={() => postAttendanceEvent("online", { action: "check_in" })} disabled={attLoading || attOnline} title="Solo te conecta si estás en turno">
+                <button
+                  className="tc-btn tc-btn-ok"
+                  onClick={() => postAttendanceEvent("online", { action: "check_in" })}
+                  disabled={attLoading || attOnline}
+                  title="Solo te conecta si estás en turno"
+                >
                   🟢 Conectarme
                 </button>
-                <button className="tc-btn tc-btn-danger" onClick={() => postAttendanceEvent("offline", { action: "check_out" })} disabled={attLoading || !attOnline}>
+                <button
+                  className="tc-btn tc-btn-danger"
+                  onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
+                  disabled={attLoading || !attOnline}
+                >
                   🔴 Desconectarme
                 </button>
 
-                <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })} disabled={attLoading || !attOnline || attStatus === "break"}>
+                <button
+                  className="tc-btn"
+                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
+                  disabled={attLoading || !attOnline || attStatus === "break"}
+                >
                   ⏸️ Descanso
                 </button>
-                <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })} disabled={attLoading || !attOnline || attStatus !== "break"}>
+                <button
+                  className="tc-btn"
+                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
+                  disabled={attLoading || !attOnline || attStatus !== "break"}
+                >
                   ▶️ Volver
                 </button>
 
-                <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })} disabled={attLoading || !attOnline || attStatus === "bathroom"}>
+                <button
+                  className="tc-btn"
+                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
+                  disabled={attLoading || !attOnline || attStatus === "bathroom"}
+                >
                   🚻 Baño
                 </button>
-                <button className="tc-btn" onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })} disabled={attLoading || !attOnline || attStatus !== "bathroom"}>
+                <button
+                  className="tc-btn"
+                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
+                  disabled={attLoading || !attOnline || attStatus !== "bathroom"}
+                >
                   ✅ Salí
                 </button>
 
                 <span className="tc-chip">Mes</span>
-                <input className="tc-input" value={month} onChange={(e) => setMonth(e.target.value)} placeholder="2026-02" style={{ width: 120 }} />
+                <input
+                  className="tc-input"
+                  value={month}
+                  onChange={(e) => setMonth(e.target.value)}
+                  placeholder="2026-02"
+                  style={{ width: 120 }}
+                />
                 <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>
                   Actualizar
                 </button>
@@ -1267,31 +1164,8 @@ export default function Central() {
               <button className={`tc-tab ${tab === "llamadas" ? "tc-tab-active" : ""}`} onClick={() => setTab("llamadas")}>
                 📞 Llamadas
               </button>
-              <button className={`tc-tab ${tab === "chat" ? "tc-tab-active" : ""}`} onClick={() => setTab("chat")} style={{ position: "relative" }}>
+              <button className={`tc-tab ${tab === "chat" ? "tc-tab-active" : ""}`} onClick={() => setTab("chat")}>
                 💬 Chat
-                {totalUnread > 0 ? (
-                  <span
-                    style={{
-                      position: "absolute",
-                      top: -6,
-                      right: -8,
-                      minWidth: 20,
-                      height: 20,
-                      padding: "0 6px",
-                      borderRadius: 999,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 12,
-                      fontWeight: 900,
-                      background: "rgba(215,181,109,0.95)",
-                      color: "#111",
-                      border: "1px solid rgba(0,0,0,0.18)",
-                    }}
-                  >
-                    {clamp(totalUnread, 0, 99)}
-                  </span>
-                ) : null}
               </button>
               <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
                 ✅ Checklist
@@ -1312,7 +1186,7 @@ export default function Central() {
                 <div>
                   <div className="tc-title">💬 Chat (Tarotistas ↔ Centrales)</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Centrales ven todos los chats · Realtime + alerta bonita
+                    Centrales ven todos los chats · Realtime: nuevos mensajes al instante
                     {chatMsg ? ` · ${chatMsg}` : ""}
                   </div>
                 </div>
@@ -1324,9 +1198,63 @@ export default function Central() {
                 </div>
               </div>
 
+              {/* ✅ NUEVO: abrir chat con tarotista aunque no exista */}
+              <div className="tc-hr" />
+              <div
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  borderRadius: 14,
+                  padding: 12,
+                  background: "rgba(255,255,255,0.02)",
+                  display: "grid",
+                  gap: 10,
+                }}
+              >
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 900 }}>🟢 Iniciar conversación</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Elige una tarotista y pulsa “Abrir chat”. (Crea el hilo si no existe.)
+                      {newChatMsg ? ` · ${newChatMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <select
+                      className="tc-select"
+                      value={newChatWorkerId}
+                      onChange={(e) => setNewChatWorkerId(e.target.value)}
+                      style={{ minWidth: 320, maxWidth: "100%" }}
+                    >
+                      {(tarotists || []).map((t: any) => (
+                        <option key={t.id} value={t.id}>
+                          {t.display_name} {t.team_key ? `(${t.team_key})` : ""}
+                        </option>
+                      ))}
+                      {(!tarotists || tarotists.length === 0) && <option value="">(Cargando tarotistas…)</option>}
+                    </select>
+
+                    <button className="tc-btn tc-btn-ok" onClick={openChatWithTarotist} disabled={!newChatWorkerId}>
+                      🟢 Abrir chat
+                    </button>
+
+                    <button className="tc-btn" onClick={loadTarotists} disabled={tarotistsLoading}>
+                      {tarotistsLoading ? "…" : "Recargar lista"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="tc-hr" />
 
-              <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 12, alignItems: "stretch" }}>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "320px 1fr",
+                  gap: 12,
+                  alignItems: "stretch",
+                }}
+              >
                 {/* Left: threads */}
                 <div
                   style={{
@@ -1340,7 +1268,13 @@ export default function Central() {
                   }}
                 >
                   <div style={{ padding: 12 }}>
-                    <input className="tc-input" value={threadQ} onChange={(e) => setThreadQ(e.target.value)} placeholder="Buscar chat…" style={{ width: "100%" }} />
+                    <input
+                      className="tc-input"
+                      value={threadQ}
+                      onChange={(e) => setThreadQ(e.target.value)}
+                      placeholder="Buscar chat…"
+                      style={{ width: "100%" }}
+                    />
                   </div>
                   <div className="tc-hr" style={{ margin: 0 }} />
 
@@ -1349,8 +1283,6 @@ export default function Central() {
                       const active = String(t.id) === String(selectedThreadId);
                       const title = t.tarotist_display_name || t.title || `Chat ${t.id.slice(0, 6)}`;
                       const sub = t.last_message_text ? t.last_message_text : "—";
-                      const localUnread = Number(unreadByThread?.[String(t.id)] || 0);
-
                       return (
                         <button
                           key={t.id}
@@ -1365,10 +1297,20 @@ export default function Central() {
                           }}
                         >
                           <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
-                            <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</div>
-                            {localUnread > 0 ? <span className="tc-chip">{clamp(localUnread, 0, 99)}</span> : null}
+                            <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {title}
+                            </div>
+                            {t.unread_count ? <span className="tc-chip">{t.unread_count}</span> : null}
                           </div>
-                          <div className="tc-sub" style={{ marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div
+                            className="tc-sub"
+                            style={{
+                              marginTop: 6,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
                             {sub}
                           </div>
                         </button>
@@ -1476,7 +1418,13 @@ export default function Central() {
 
                 <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                   <span className="tc-chip">Día</span>
-                  <input className="tc-input" value={obDate} onChange={(e) => setObDate(e.target.value)} style={{ width: 140 }} placeholder="YYYY-MM-DD" />
+                  <input
+                    className="tc-input"
+                    value={obDate}
+                    onChange={(e) => setObDate(e.target.value)}
+                    style={{ width: 140 }}
+                    placeholder="YYYY-MM-DD"
+                  />
                   <button className="tc-btn tc-btn-gold" onClick={() => loadOutboundPending(false)} disabled={obLoading}>
                     {obLoading ? "Cargando…" : "Actualizar"}
                   </button>
@@ -1489,7 +1437,6 @@ export default function Central() {
                 {(obBatches || []).map((b: any) => {
                   const sender = b.sender || {};
                   const items = (b.outbound_batch_items || []).slice().sort((a: any, c: any) => (a.position ?? 0) - (c.position ?? 0));
-
                   if (!items.length) return null;
 
                   return (
@@ -1542,7 +1489,11 @@ export default function Central() {
 
                               <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                                 {OUTBOUND_ACTIONS.map((a) => (
-                                  <button key={a.key} className={`tc-btn ${a.key === "done" ? "tc-btn-ok" : ""}`} onClick={() => outboundLog(String(it.id), a.key)}>
+                                  <button
+                                    key={a.key}
+                                    className={`tc-btn ${a.key === "done" ? "tc-btn-ok" : ""}`}
+                                    onClick={() => outboundLog(String(it.id), a.key)}
+                                  >
                                     {a.label}
                                   </button>
                                 ))}
@@ -1573,7 +1524,13 @@ export default function Central() {
                 </div>
 
                 <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input className="tc-input" value={presQ} onChange={(e) => setPresQ(e.target.value)} placeholder="Buscar tarotista…" style={{ width: 240, maxWidth: "100%" }} />
+                  <input
+                    className="tc-input"
+                    value={presQ}
+                    onChange={(e) => setPresQ(e.target.value)}
+                    placeholder="Buscar tarotista…"
+                    style={{ width: 240, maxWidth: "100%" }}
+                  />
                   <button className="tc-btn tc-btn-gold" onClick={() => loadPresences(false)} disabled={presLoading}>
                     {presLoading ? "Cargando…" : "Actualizar presencias"}
                   </button>
@@ -1600,12 +1557,17 @@ export default function Central() {
                   >
                     <div style={{ minWidth: 240 }}>
                       <div style={{ fontWeight: 900 }}>
-                        {r.display_name} {r.team_key ? <span className="tc-chip" style={{ marginLeft: 8 }}>{r.team_key}</span> : null}
+                        {r.display_name}{" "}
+                        {r.team_key ? <span className="tc-chip" style={{ marginLeft: 8 }}>{r.team_key}</span> : null}
                       </div>
                       <div className="tc-sub" style={{ marginTop: 6 }}>
                         Última señal:{" "}
                         <b>
-                          {r.last_seen_seconds == null ? "—" : r.last_seen_seconds < 60 ? `hace ${r.last_seen_seconds}s` : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
+                          {r.last_seen_seconds == null
+                            ? "—"
+                            : r.last_seen_seconds < 60
+                            ? `hace ${r.last_seen_seconds}s`
+                            : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
                         </b>
                       </div>
                     </div>
@@ -1645,7 +1607,13 @@ export default function Central() {
                 </div>
 
                 <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input className="tc-input" value={expQ} onChange={(e) => setExpQ(e.target.value)} placeholder="Buscar…" style={{ width: 240, maxWidth: "100%" }} />
+                  <input
+                    className="tc-input"
+                    value={expQ}
+                    onChange={(e) => setExpQ(e.target.value)}
+                    placeholder="Buscar…"
+                    style={{ width: 240, maxWidth: "100%" }}
+                  />
                   <button className="tc-btn tc-btn-gold" onClick={() => loadExpected(false)} disabled={expLoading}>
                     {expLoading ? "Cargando…" : "Actualizar"}
                   </button>
@@ -1764,7 +1732,13 @@ export default function Central() {
               <div className="tc-hr" />
 
               <div className="tc-row" style={{ flexWrap: "wrap", gap: 10 }}>
-                <input className="tc-input" value={clQ} onChange={(e) => setClQ(e.target.value)} placeholder="Buscar tarotista…" style={{ width: 280, maxWidth: "100%" }} />
+                <input
+                  className="tc-input"
+                  value={clQ}
+                  onChange={(e) => setClQ(e.target.value)}
+                  placeholder="Buscar tarotista…"
+                  style={{ width: 280, maxWidth: "100%" }}
+                />
                 <div className="tc-chip">
                   Nota: este checklist se <b>resetea solo</b> con el turno (shift_key).
                 </div>
@@ -1780,7 +1754,12 @@ export default function Central() {
                       border: "1px solid rgba(255,255,255,0.10)",
                       borderRadius: 14,
                       padding: 12,
-                      background: r.status === "completed" ? "rgba(120,255,190,0.10)" : r.status === "in_progress" ? "rgba(215,181,109,0.08)" : "rgba(255,255,255,0.03)",
+                      background:
+                        r.status === "completed"
+                          ? "rgba(120,255,190,0.10)"
+                          : r.status === "in_progress"
+                          ? "rgba(215,181,109,0.08)"
+                          : "rgba(255,255,255,0.03)",
                     }}
                   >
                     <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1788,7 +1767,9 @@ export default function Central() {
                         <div style={{ fontWeight: 900 }}>{r.display_name}</div>
                         <div className="tc-sub" style={{ marginTop: 6 }}>
                           Estado:{" "}
-                          <b>{r.status === "completed" ? "Completado ✅" : r.status === "in_progress" ? "En progreso ⏳" : "Sin empezar ⬜"}</b>
+                          <b>
+                            {r.status === "completed" ? "Completado ✅" : r.status === "in_progress" ? "En progreso ⏳" : "Sin empezar ⬜"}
+                          </b>
                           {r.completed_at ? ` · ${new Date(r.completed_at).toLocaleString("es-ES")}` : ""}
                         </div>
                       </div>
@@ -1797,7 +1778,12 @@ export default function Central() {
                         <span
                           className="tc-chip"
                           style={{
-                            borderColor: r.status === "completed" ? "rgba(120,255,190,0.35)" : r.status === "in_progress" ? "rgba(215,181,109,0.35)" : "rgba(255,255,255,0.14)",
+                            borderColor:
+                              r.status === "completed"
+                                ? "rgba(120,255,190,0.35)"
+                                : r.status === "in_progress"
+                                ? "rgba(215,181,109,0.35)"
+                                : "rgba(255,255,255,0.14)",
                           }}
                         >
                           {r.status === "completed" ? "OK" : r.status === "in_progress" ? "Casi" : "Pendiente"}
@@ -1807,7 +1793,9 @@ export default function Central() {
                   </div>
                 ))}
 
-                {(!clRowsFiltered || clRowsFiltered.length === 0) && <div className="tc-sub">No hay tarotistas para este checklist. (Si eres central, solo verás tu equipo.)</div>}
+                {(!clRowsFiltered || clRowsFiltered.length === 0) && (
+                  <div className="tc-sub">No hay tarotistas para este checklist. (Si eres central, solo verás tu equipo.)</div>
+                )}
               </div>
             </div>
           )}
@@ -1838,9 +1826,20 @@ export default function Central() {
               <div className="tc-hr" />
 
               <div className="tc-row" style={{ flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-                <input className="tc-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar tarotista…" style={{ width: 260, maxWidth: "100%" }} />
+                <input
+                  className="tc-input"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Buscar tarotista…"
+                  style={{ width: 260, maxWidth: "100%" }}
+                />
 
-                <select className="tc-select" value={incWorkerId} onChange={(e) => setIncWorkerId(e.target.value)} style={{ minWidth: 360, width: 520, maxWidth: "100%" }}>
+                <select
+                  className="tc-select"
+                  value={incWorkerId}
+                  onChange={(e) => setIncWorkerId(e.target.value)}
+                  style={{ minWidth: 360, width: 520, maxWidth: "100%" }}
+                >
                   {(tarotistsFiltered || []).map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.display_name} {t.team_key ? `(${t.team_key})` : ""}
@@ -1849,9 +1848,21 @@ export default function Central() {
                   {(!tarotistsFiltered || tarotistsFiltered.length === 0) && <option value="">(Sin resultados)</option>}
                 </select>
 
-                <input className="tc-input" value={incAmount} onChange={(e) => setIncAmount(e.target.value)} style={{ width: 140 }} placeholder="Importe" />
+                <input
+                  className="tc-input"
+                  value={incAmount}
+                  onChange={(e) => setIncAmount(e.target.value)}
+                  style={{ width: 140 }}
+                  placeholder="Importe"
+                />
 
-                <input className="tc-input" value={incReason} onChange={(e) => setIncReason(e.target.value)} style={{ width: 360, maxWidth: "100%" }} placeholder="Motivo" />
+                <input
+                  className="tc-input"
+                  value={incReason}
+                  onChange={(e) => setIncReason(e.target.value)}
+                  style={{ width: 360, maxWidth: "100%" }}
+                  placeholder="Motivo"
+                />
 
                 <button className="tc-btn tc-btn-danger" onClick={crearIncidencia} disabled={incLoading || !incWorkerId}>
                   {incLoading ? "Guardando…" : "Guardar incidencia"}
@@ -1927,7 +1938,9 @@ function TeamBar({
           style={{
             width: `${pct}%`,
             height: "100%",
-            background: isWinner ? "linear-gradient(90deg, rgba(120,255,190,0.85), rgba(215,181,109,0.95))" : "linear-gradient(90deg, rgba(181,156,255,0.85), rgba(215,181,109,0.65))",
+            background: isWinner
+              ? "linear-gradient(90deg, rgba(120,255,190,0.85), rgba(215,181,109,0.95))"
+              : "linear-gradient(90deg, rgba(181,156,255,0.85), rgba(215,181,109,0.65))",
           }}
         />
       </div>
