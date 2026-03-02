@@ -31,6 +31,15 @@ function getMonthFromUrl() {
   }
 }
 
+// ✅ NEW: set month in URL
+function setMonthInUrl(m: string) {
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.set("month", m);
+    window.history.pushState({}, "", u.toString());
+  } catch {}
+}
+
 function eur(n: any) {
   const x = Number(n) || 0;
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
@@ -268,6 +277,13 @@ export default function Tarotista() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // ✅ NEW: si navega atrás/adelante, sincroniza el mes con la URL
+  useEffect(() => {
+    const onPop = () => setMonth(getMonthFromUrl());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   // ✅ 2) Init: validar rol, pero con retry para no expulsar por un falso "token null"
   useEffect(() => {
     (async () => {
@@ -282,7 +298,8 @@ export default function Tarotista() {
         return;
       }
 
-      setMonth(getMonthFromUrl());
+      const m = getMonthFromUrl();
+      setMonth(m);
       setOk(true);
     })();
   }, []);
@@ -416,13 +433,14 @@ export default function Tarotista() {
     }
   }
 
-  async function refresh() {
+  // ✅ CHANGED: refresh ahora usa el estado month (o un month explícito)
+  async function refresh(forMonth?: string) {
     try {
       setMsg("");
       const token = await getTokenSafe();
       if (!token) return; // ✅ NO redirect
 
-      const m = getMonthFromUrl();
+      const m = forMonth || month;
       setMonth(m);
 
       const sRes = await fetch(`/api/stats/monthly?month=${encodeURIComponent(m)}`, {
@@ -462,10 +480,8 @@ export default function Tarotista() {
 
       if ((sJ && sJ.ok === false) || (rnkJ && rnkJ.ok === false))
         setMsg("⚠️ Hay un error cargando datos (mira consola / endpoint).");
-      if (incJ && incJ.ok === false)
-        setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
-      if (invJ && invJ.ok === false)
-        setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
+      if (incJ && incJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Incidencias: ${incJ.error || "error"}`);
+      if (invJ && invJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -698,8 +714,6 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) throw new Error("NO_AUTH");
 
-      // ✅ OJO: el 405 te salía porque estabas pegando thread_id undefined o ruta/verb mal.
-      // Aquí siempre mandamos thread_id válido (tid).
       const res = await fetch("/api/tarot/chat/send", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -757,7 +771,6 @@ export default function Tarotista() {
               thread_id: String(m.thread_id),
               sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
               sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-              // ✅ en BD suele ser body; si existiera text también
               text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
               created_at: m.created_at != null ? String(m.created_at) : null,
             };
@@ -941,8 +954,34 @@ export default function Tarotista() {
                   <div className="tc-title" style={{ fontSize: 18 }}>
                     🔮 Panel Tarotista
                   </div>
-                  <div className="tc-sub">
-                    Mes: <b>{month}</b> {msg ? `· ${msg}` : ""}
+
+                  {/* ✅ NEW: selector de mes */}
+                  <div
+                    className="tc-sub"
+                    style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
+                  >
+                    <span>
+                      Mes: <b>{month}</b> {msg ? `· ${msg}` : ""}
+                    </span>
+
+                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                      <span className="tc-chip" style={{ padding: "4px 10px" }}>
+                        Cambiar mes
+                      </span>
+                      <input
+                        className="tc-input"
+                        type="month"
+                        value={month}
+                        onChange={(e) => {
+                          const m = e.target.value || monthKeyNow();
+                          setMonth(m);
+                          setMonthInUrl(m);
+                          refresh(m);
+                        }}
+                        style={{ width: 160 }}
+                        aria-label="Seleccionar mes"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -955,7 +994,7 @@ export default function Tarotista() {
                     {attLabel(attOnline, attStatus)}
                   </span>
 
-                  <button className="tc-btn tc-btn-gold" onClick={refresh}>
+                  <button className="tc-btn tc-btn-gold" onClick={() => refresh()}>
                     Actualizar
                   </button>
 
@@ -1619,7 +1658,7 @@ export default function Tarotista() {
                       Aquí está la factura oficial (líneas por códigos + bonos + incidencias).
                     </div>
                   </div>
-                  <button className="tc-btn tc-btn-gold" onClick={refresh}>
+                  <button className="tc-btn tc-btn-gold" onClick={() => refresh()}>
                     Recargar
                   </button>
                 </div>
