@@ -53,13 +53,17 @@ export async function GET(req: Request) {
 
     const u = new URL(req.url);
     const invoice_id = u.searchParams.get("invoice_id");
-    if (!invoice_id) return NextResponse.json({ ok: false, error: "MISSING_INVOICE_ID" }, { status: 400 });
+    if (!invoice_id) {
+      return NextResponse.json({ ok: false, error: "MISSING_INVOICE_ID" }, { status: 400 });
+    }
 
     const { admin } = gate;
 
     const { data: inv, error: ei } = await admin
       .from("invoices")
-      .select("id, worker_id, month_key, status, total, notes, updated_at")
+      .select(
+        "id, worker_id, month_key, status, total, notes, updated_at, worker_ack, worker_ack_at, worker_ack_note"
+      )
       .eq("id", invoice_id)
       .maybeSingle();
 
@@ -71,6 +75,7 @@ export async function GET(req: Request) {
       .select("id, display_name, role")
       .eq("id", inv.worker_id)
       .maybeSingle();
+
     if (ew) throw ew;
 
     const { data: lines, error: el } = await admin
@@ -99,7 +104,10 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");
     const invoice_id = String(body?.invoice_id || "");
-    if (!invoice_id) return NextResponse.json({ ok: false, error: "MISSING_INVOICE_ID" }, { status: 400 });
+
+    if (!invoice_id) {
+      return NextResponse.json({ ok: false, error: "MISSING_INVOICE_ID" }, { status: 400 });
+    }
 
     if (action === "add_line") {
       const kind = String(body?.kind || "adjustment");
@@ -114,6 +122,7 @@ export async function POST(req: Request) {
         amount,
         meta,
       });
+
       if (error) throw error;
 
       const { data: total, error: er } = await admin.rpc("recalc_invoice_total", { p_invoice_id: invoice_id });
@@ -124,12 +133,15 @@ export async function POST(req: Request) {
 
     if (action === "update_line") {
       const line_id = String(body?.line_id || "");
-      if (!line_id) return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
+      if (!line_id) {
+        return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
+      }
 
       const patch: any = {};
       if (body?.label !== undefined) patch.label = String(body.label);
       if (body?.amount !== undefined) patch.amount = Number(body.amount);
       if (body?.kind !== undefined) patch.kind = String(body.kind);
+      if (body?.meta !== undefined) patch.meta = body.meta ?? {};
 
       const { error } = await admin.from("invoice_lines").update(patch).eq("id", line_id);
       if (error) throw error;
@@ -142,7 +154,9 @@ export async function POST(req: Request) {
 
     if (action === "delete_line") {
       const line_id = String(body?.line_id || "");
-      if (!line_id) return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
+      if (!line_id) {
+        return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
+      }
 
       const { error } = await admin.from("invoice_lines").delete().eq("id", line_id);
       if (error) throw error;
