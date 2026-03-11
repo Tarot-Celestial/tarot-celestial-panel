@@ -42,7 +42,6 @@ export async function GET(req: Request) {
     const u = new URL(req.url);
     const month = u.searchParams.get("month") || monthKeyNow();
 
-    // rol (solo para asegurar que existe)
     const { data: me, error: em } = await admin
       .from("workers")
       .select("id, role")
@@ -53,7 +52,9 @@ export async function GET(req: Request) {
 
     const { data: r, error: er } = await admin
       .from("v_monthly_rankings")
-      .select("worker_id,display_name,team,minutes_total,captadas_total,pct_cliente,pct_repite,rank_captadas,rank_cliente,rank_repite")
+      .select(
+        "worker_id,display_name,team,minutes_total,captadas_total,pct_cliente,pct_repite,rank_captadas,rank_cliente,rank_repite"
+      )
       .eq("month_key", month);
 
     if (er) throw er;
@@ -64,9 +65,11 @@ export async function GET(req: Request) {
       captadas_total: Number(x.captadas_total || 0),
       pct_cliente: Number(x.pct_cliente || 0),
       pct_repite: Number(x.pct_repite || 0),
+      rank_captadas: Number(x.rank_captadas || 9999),
+      rank_cliente: Number(x.rank_cliente || 9999),
+      rank_repite: Number(x.rank_repite || 9999),
     }));
 
-    // top3 por categorías (por rank 1..3)
     function topByRank(key: "rank_captadas" | "rank_cliente" | "rank_repite") {
       return rows
         .filter((x: any) => Number(x[key]) <= 3)
@@ -78,12 +81,11 @@ export async function GET(req: Request) {
     const topCliente = topByRank("rank_cliente");
     const topRepite = topByRank("rank_repite");
 
-    // equipos (media de pct_cliente + pct_repite)
     const fuego = rows.filter((x: any) => x.team === "fuego");
     const agua = rows.filter((x: any) => x.team === "agua");
 
     function avgTeam(arr: any[]) {
-      if (!arr.length) return { avg_cliente: 0, avg_repite: 0, score: 0 };
+      if (!arr.length) return { avg_cliente: 0, avg_repite: 0, score: 0, members: 0 };
       const avg_cliente = arr.reduce((a, x) => a + Number(x.pct_cliente || 0), 0) / arr.length;
       const avg_repite = arr.reduce((a, x) => a + Number(x.pct_repite || 0), 0) / arr.length;
       const score = (avg_cliente + avg_repite) / 2;
@@ -91,6 +93,7 @@ export async function GET(req: Request) {
         avg_cliente: Math.round(avg_cliente * 100) / 100,
         avg_repite: Math.round(avg_repite * 100) / 100,
         score: Math.round(score * 100) / 100,
+        members: arr.length,
       };
     }
 
@@ -103,6 +106,7 @@ export async function GET(req: Request) {
       month,
       top: { captadas: topCaptadas, cliente: topCliente, repite: topRepite },
       teams: { fuego: fuegoAvg, agua: aguaAvg, winner },
+      rows,
       rows_count: rows.length,
     });
   } catch (e: any) {
