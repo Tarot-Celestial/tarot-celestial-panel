@@ -28,6 +28,10 @@ function minsToHhmm(mins: any) {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
 }
 
+function roundMoney(n: any) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -303,10 +307,17 @@ export default function Admin() {
     }
   }
 
-  async function updateLine(line_id: string, label: string, amount: number) {
+  async function updateLine(line_id: string, payload: { label: string; amount?: number; meta?: any }) {
     if (!selId) return;
     try {
-      await postEdit({ action: "update_line", invoice_id: selId, line_id, label, amount });
+      await postEdit({
+        action: "update_line",
+        invoice_id: selId,
+        line_id,
+        label: payload.label,
+        amount: payload.amount,
+        meta: payload.meta,
+      });
       await loadInvoice(selId);
       await listInvoices(true);
       setSelMsg("✅ Guardado.");
@@ -382,9 +393,6 @@ export default function Admin() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      // ✅ CAMBIO:
-      // - Conectados ahora: /api/admin/attendance/online-now (NO filtra por rol, usa control horario)
-      // - Deberían: /api/admin/attendance/expected-now (ya trae online/status ligado a control horario)
       const [r1, r2] = await Promise.all([
         fetch("/api/admin/attendance/online-now", { headers: { Authorization: `Bearer ${token}` } }),
         fetch("/api/admin/attendance/expected-now", { headers: { Authorization: `Bearer ${token}` } }),
@@ -396,10 +404,9 @@ export default function Admin() {
       if (!j1?._ok || !j1?.ok) throw new Error(j1?.error || `HTTP ${j1?._status}`);
       if (!j2?._ok || !j2?.ok) throw new Error(j2?.error || `HTTP ${j2?._status}`);
 
-      setAttOnline(j1.rows || j1.online || []); // compat si el endpoint devolviera online
+      setAttOnline(j1.rows || j1.online || []);
       setAttExpected(j2.expected || j2.rows || []);
 
-      // incidencias del mes (attendance) => usamos month actual del admin para verlas
       const incRes = await fetch(`/api/admin/incidents/list?month=${encodeURIComponent(month)}&kind=attendance`, {
         headers: { Authorization: `Bearer ${token}` },
       }).catch(() => null);
@@ -463,7 +470,6 @@ export default function Admin() {
     }
   }
 
-  // ✅ Stats: carga
   async function loadStats(silent = false) {
     if (stLoading && !silent) return;
     if (!silent) {
@@ -501,7 +507,6 @@ export default function Admin() {
     if (!ok) return;
     if (tab === "asistencia") {
       loadAttendance();
-      // defaults de stats la primera vez
       if (!stFrom && !stTo) {
         const d = new Date();
         const to = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -514,9 +519,6 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
-  // ---------------------------
-  // ✅ CHECKLIST: API calls (igual que tenías)
-  // ---------------------------
   async function loadChecklistAdmin() {
     if (ckLoading) return;
     setCkLoading(true);
@@ -618,12 +620,7 @@ export default function Admin() {
     return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
   }, [ckItems, ckQ]);
 
-  // ---------------------------
-  // helpers UI asistencia
-  // ---------------------------
   const expectedNow = useMemo(() => {
-    // ✅ Ahora el endpoint expected trae online/status ligado a control horario.
-    // Aún así mantenemos compat por si viniera sin online.
     return (attExpected || []).map((x: any) => ({
       ...x,
       is_online: typeof x.online === "boolean" ? !!x.online : !!x.is_online,
@@ -631,13 +628,10 @@ export default function Admin() {
     }));
   }, [attExpected]);
 
-  // Para selector rápido de stats (si no tienes endpoint de workers):
-  // usamos los workers que existen en facturas del mes como “lista rápida”.
   const workersFromInvoices = useMemo(() => {
     const map = new Map<string, any>();
     for (const inv of invoices || []) {
       const wid = String(inv.worker_id || inv.id || inv.worker?.id || "");
-      // Si no viene worker_id en list, intentamos de invoice_id no sirve; por eso solo si existe.
       if (!wid) continue;
       if (!map.has(wid)) {
         map.set(wid, {
@@ -824,7 +818,7 @@ export default function Admin() {
                       <LineEditor
                         key={l.id}
                         line={l}
-                        onSave={(label, amount) => updateLine(l.id, label, amount)}
+                        onSave={(payload) => updateLine(l.id, payload)}
                         onDelete={() => deleteLine(l.id)}
                       />
                     ))}
@@ -859,7 +853,6 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ✅ ASISTENCIA */}
           {tab === "asistencia" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1022,7 +1015,6 @@ export default function Admin() {
                 </div>
               )}
 
-              {/* ✅ NUEVO: STATS HORARIAS */}
               <div className="tc-hr" />
 
               <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
@@ -1141,7 +1133,6 @@ export default function Admin() {
             </div>
           )}
 
-          {/* ✅ CHECKLISTS (igual que lo tenías) */}
           {tab === "checklists" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1264,7 +1255,7 @@ function LineEditor({
   onDelete,
 }: {
   line: any;
-  onSave: (label: string, amount: number) => void;
+  onSave: (payload: { label: string; amount?: number; meta?: any }) => void;
   onDelete: () => void;
 }) {
   const [label, setLabel] = useState<string>(line.label || "");
@@ -1273,9 +1264,44 @@ function LineEditor({
   const meta = line?.meta || {};
   const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
 
-  const minutes = Number(meta.minutes || 0);
-  const rate = Number(meta.rate || 0);
-  const calc = minutes * rate;
+  const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
+  const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
+
+  useEffect(() => {
+    setLabel(String(line.label || ""));
+    setAmount(String(line.amount ?? "0"));
+    setMinutes(String(line?.meta?.minutes ?? ""));
+    setRate(String(line?.meta?.rate ?? ""));
+  }, [line]);
+
+  const parsedMinutes = Number(String(minutes).replace(",", "."));
+  const parsedRate = Number(String(rate).replace(",", "."));
+  const calcAmount = roundMoney((isFinite(parsedMinutes) ? parsedMinutes : 0) * (isFinite(parsedRate) ? parsedRate : 0));
+
+  const displayAmount = hasBreakdown ? calcAmount : Number(String(amount).replace(",", ".")) || 0;
+  const code = String(meta.code || "").toUpperCase();
+
+  function saveLine() {
+    if (hasBreakdown) {
+      const nextMeta = {
+        ...meta,
+        minutes: isFinite(parsedMinutes) ? parsedMinutes : 0,
+        rate: isFinite(parsedRate) ? parsedRate : 0,
+      };
+
+      onSave({
+        label,
+        meta: nextMeta,
+      });
+      return;
+    }
+
+    onSave({
+      label,
+      amount: Number(String(amount).replace(",", ".")) || 0,
+      meta,
+    });
+  }
 
   return (
     <div
@@ -1291,26 +1317,70 @@ function LineEditor({
           <div style={{ fontWeight: 900 }}>{label}</div>
           {hasBreakdown && (
             <div className="tc-sub" style={{ marginTop: 6 }}>
-              {numES(rate, 2)}€ x {numES(minutes, 0)} min = <b>{eur(calc)}</b> · Código <b>{String(meta.code || "").toUpperCase()}</b>
+              {numES(isFinite(parsedRate) ? parsedRate : 0, 2)}€ x {numES(isFinite(parsedMinutes) ? parsedMinutes : 0, 0)} min = <b>{eur(calcAmount)}</b>
+              {code ? <> · Código <b>{code}</b></> : null}
             </div>
           )}
         </div>
 
-        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(amount)}</div>
+        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(displayAmount)}</div>
       </div>
 
-      <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 10, flexWrap: "wrap" }}>
-        <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ flex: 1, minWidth: 220 }} />
-        <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
+      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+        <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%" }} />
 
-        <div className="tc-row">
-          <button className="tc-btn tc-btn-ok" onClick={() => onSave(label, Number(String(amount).replace(",", ".")) || 0)}>
-            Guardar
-          </button>
-          <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-            Borrar
-          </button>
-        </div>
+        {hasBreakdown ? (
+          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 160 }}>
+              <div className="tc-sub">Minutos</div>
+              <input
+                className="tc-input"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+                style={{ width: 160, marginTop: 6 }}
+              />
+            </div>
+
+            <div style={{ minWidth: 160 }}>
+              <div className="tc-sub">Tarifa €/min</div>
+              <input
+                className="tc-input"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                style={{ width: 160, marginTop: 6 }}
+              />
+            </div>
+
+            <div style={{ minWidth: 180 }}>
+              <div className="tc-sub">Importe recalculado</div>
+              <div className="tc-chip" style={{ marginTop: 6 }}>
+                <b>{eur(calcAmount)}</b>
+              </div>
+            </div>
+
+            <div className="tc-row" style={{ alignItems: "flex-end" }}>
+              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                Guardar
+              </button>
+              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                Borrar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
+            <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
+
+            <div className="tc-row">
+              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                Guardar
+              </button>
+              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                Borrar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
