@@ -19,7 +19,10 @@ function eur(n: any) {
 
 function numES(n: any, digits = 2) {
   const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return x.toLocaleString("es-ES", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
 }
 
 function minsToHhmm(mins: any) {
@@ -63,10 +66,28 @@ function ackLabel(v: any) {
 
 function ackStyle(v: any) {
   const s = String(v || "pending");
-  if (s === "accepted") return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
-  if (s === "rejected") return { background: "rgba(255,80,80,0.10)", border: "1px solid rgba(255,80,80,0.25)" };
-  if (s === "review") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
-  return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
+  if (s === "accepted") {
+    return {
+      background: "rgba(120,255,190,0.10)",
+      border: "1px solid rgba(120,255,190,0.25)",
+    };
+  }
+  if (s === "rejected") {
+    return {
+      background: "rgba(255,80,80,0.10)",
+      border: "1px solid rgba(255,80,80,0.25)",
+    };
+  }
+  if (s === "review") {
+    return {
+      background: "rgba(215,181,109,0.10)",
+      border: "1px solid rgba(215,181,109,0.25)",
+    };
+  }
+  return {
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)",
+  };
 }
 
 export default function Admin() {
@@ -824,6 +845,33 @@ export default function Admin() {
     };
   }, [invoices, statsRows, statsTotals]);
 
+  const attSummary = useMemo(() => {
+    const online = (attOnline || []).length;
+    const expected = (expectedNow || []).length;
+    const missing = (expectedNow || []).filter((x: any) => !x.is_online).length;
+    const breakCount = (attOnline || []).filter((x: any) => String(x.status || "") === "break").length;
+    const bathroomCount = (attOnline || []).filter((x: any) => String(x.status || "") === "bathroom").length;
+    return {
+      online,
+      expected,
+      missing,
+      breakCount,
+      bathroomCount,
+      incidents: (attIncidents || []).length,
+    };
+  }, [attOnline, expectedNow, attIncidents]);
+
+  const topWorkersByMinutes = useMemo(() => {
+    return [...(statsMergedRows || [])]
+      .sort((a: any, b: any) => {
+        const bm = Number(b.minutes_total || 0);
+        const am = Number(a.minutes_total || 0);
+        if (bm !== am) return bm - am;
+        return String(a.display_name || "").localeCompare(String(b.display_name || ""));
+      })
+      .slice(0, 5);
+  }, [statsMergedRows]);
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
@@ -1046,7 +1094,7 @@ export default function Admin() {
                   <div>
                     <div className="tc-title">📈 Estadísticas del mes</div>
                     <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Resumen global del rendimiento y la facturación
+                      Vista global clara de producción, facturación y estado de facturas
                       {statsMsg ? ` · ${statsMsg}` : ""}
                     </div>
                   </div>
@@ -1058,45 +1106,36 @@ export default function Admin() {
 
                 <div className="tc-hr" />
 
-                <div className="tc-grid-3">
+                <div className="tc-title" style={{ fontSize: 14 }}>Resumen general</div>
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
                   <KpiBox label="Tarotistas con datos" value={String(statsComputed.workers)} />
                   <KpiBox label="Minutos totales" value={numES(statsTotals?.minutes_total || 0, 0)} />
                   <KpiBox label="Llamadas totales" value={numES(statsTotals?.calls_total || 0, 0)} />
                   <KpiBox label="Captadas totales" value={numES(statsTotals?.captadas_total || 0, 0)} />
-                  <KpiBox label="Pago por minutos" value={eur(statsTotals?.pay_minutes || 0)} />
-                  <KpiBox label="Bonus captadas" value={eur(statsTotals?.bonus_captadas || 0)} />
-                  <KpiBox label="Facturación total" value={eur(statsComputed.invoice_total || 0)} highlight />
-                  <KpiBox label="Factura media" value={eur(statsComputed.factura_media || 0)} />
-                  <KpiBox label="Captadas / 100 min" value={numES(statsComputed.captadas_per_100_min || 0, 2)} />
-                  <KpiBox label="% Cliente medio" value={`${numES(statsTotals?.avg_pct_cliente || 0, 2)}%`} />
-                  <KpiBox label="% Repite medio" value={`${numES(statsTotals?.avg_pct_repite || 0, 2)}%`} />
-                  <KpiBox label="Minutos por tarotista" value={numES(statsComputed.minutes_per_worker || 0, 0)} />
                 </div>
 
                 <div className="tc-hr" />
 
-                <div className="tc-grid-2">
-                  <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-                    <div className="tc-title" style={{ fontSize: 14 }}>🧾 Estado de aceptación de facturas</div>
-                    <div className="tc-hr" />
-                    <div className="tc-kpis">
-                      <KpiMini label="Aceptadas" value={String(statsComputed.accepted)} />
-                      <KpiMini label="Rechazadas" value={String(statsComputed.rejected)} />
-                      <KpiMini label="Revisión" value={String(statsComputed.review)} />
-                      <KpiMini label="Pendientes" value={String(statsComputed.pending)} />
-                    </div>
-                  </div>
+                <div className="tc-title" style={{ fontSize: 14 }}>Dinero y productividad</div>
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
+                  <KpiBox label="Pago por minutos" value={eur(statsTotals?.pay_minutes || 0)} />
+                  <KpiBox label="Bonus captadas" value={eur(statsTotals?.bonus_captadas || 0)} />
+                  <KpiBox label="Facturación total" value={eur(statsComputed.invoice_total || 0)} highlight />
+                  <KpiBox label="Factura media" value={eur(statsComputed.factura_media || 0)} />
+                  <KpiBox label="Minutos por tarotista" value={numES(statsComputed.minutes_per_worker || 0, 0)} />
+                  <KpiBox label="Llamadas por tarotista" value={numES(statsComputed.calls_per_worker || 0, 2)} />
+                  <KpiBox label="Captadas por tarotista" value={numES(statsComputed.captadas_per_worker || 0, 2)} />
+                  <KpiBox label="Captadas / 100 min" value={numES(statsComputed.captadas_per_100_min || 0, 2)} />
+                </div>
 
-                  <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-                    <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
-                    <div className="tc-hr" />
-                    <div className="tc-kpis">
-                      <KpiMini label="Fuego score" value={numES(statsTeams?.fuego?.score || 0, 2)} />
-                      <KpiMini label="Agua score" value={numES(statsTeams?.agua?.score || 0, 2)} />
-                      <KpiMini label="Ganador" value={String(statsTeams?.winner || "empate")} />
-                      <KpiMini label="Miembros" value={`${statsTeams?.fuego?.members || 0} / ${statsTeams?.agua?.members || 0}`} />
-                    </div>
-                  </div>
+                <div className="tc-hr" />
+
+                <div className="tc-title" style={{ fontSize: 14 }}>Calidad y facturas</div>
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
+                  <KpiBox label="% Cliente medio" value={`${numES(statsTotals?.avg_pct_cliente || 0, 2)}%`} />
+                  <KpiBox label="% Repite medio" value={`${numES(statsTotals?.avg_pct_repite || 0, 2)}%`} />
+                  <KpiBox label="Facturas aceptadas" value={String(statsComputed.accepted)} />
+                  <KpiBox label="Facturas pendientes" value={String(statsComputed.pending)} />
                 </div>
               </div>
 
@@ -1115,10 +1154,67 @@ export default function Admin() {
                 />
               </div>
 
+              <div className="tc-grid-2">
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Comparativa clara entre fuego y agua
+                  </div>
+                  <div className="tc-hr" />
+                  <div className="tc-kpis">
+                    <KpiMini label="Fuego score" value={numES(statsTeams?.fuego?.score || 0, 2)} />
+                    <KpiMini label="Fuego miembros" value={String(statsTeams?.fuego?.members || 0)} />
+                    <KpiMini label="Agua score" value={numES(statsTeams?.agua?.score || 0, 2)} />
+                    <KpiMini label="Agua miembros" value={String(statsTeams?.agua?.members || 0)} />
+                    <KpiMini label="Ganador" value={String(statsTeams?.winner || "empate")} />
+                    <KpiMini label="Revisión" value={String(statsComputed.review)} />
+                  </div>
+                </div>
+
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>⏱️ Top por minutos</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Las 5 tarotistas con más producción del mes
+                  </div>
+                  <div className="tc-hr" />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(topWorkersByMinutes || []).map((r: any, i: number) => (
+                      <div
+                        key={r.worker_id}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 10,
+                          background: "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+                          <div>
+                            <div style={{ fontWeight: 900 }}>
+                              {i + 1}. {r.display_name}
+                            </div>
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              Equipo: <b>{r.team || "—"}</b> · Captadas: <b>{numES(r.captadas_total || 0, 0)}</b>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontWeight: 900 }}>{numES(r.minutes_total || 0, 0)} min</div>
+                            <div className="tc-sub">{eur(r.invoice_total || 0)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(!topWorkersByMinutes || topWorkersByMinutes.length === 0) && (
+                      <div className="tc-sub">Sin datos.</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="tc-card">
                 <div className="tc-title">📋 Rendimiento por tarotista</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Cruce entre estadísticas mensuales y estado de factura
+                  Tabla completa con producción, calidad, dinero y aceptación de factura
                 </div>
 
                 <div className="tc-hr" />
@@ -1197,50 +1293,76 @@ export default function Admin() {
           )}
 
           {tab === "asistencia" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">🟢 Asistencia (en vivo)</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Retraso: <b>1€</b> si entra ≥ <b>5 min</b> tarde · Falta: <b>12€</b> si no conecta en todo el turno.
-                    {attMsg ? ` · ${attMsg}` : ""}
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title">🟢 Asistencia (en vivo)</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Vista operativa del turno actual y del control horario
+                      {attMsg ? ` · ${attMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <button className="tc-btn tc-btn-gold" onClick={loadAttendance} disabled={attLoading}>
+                      {attLoading ? "Cargando…" : "Actualizar"}
+                    </button>
+                    <button className="tc-btn tc-btn-danger" onClick={runAttendanceEngine}>
+                      Ejecutar motor
+                    </button>
                   </div>
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <button className="tc-btn tc-btn-gold" onClick={loadAttendance} disabled={attLoading}>
-                    {attLoading ? "Cargando…" : "Actualizar"}
-                  </button>
-                  <button className="tc-btn tc-btn-danger" onClick={runAttendanceEngine}>
-                    Ejecutar motor (crear incidencias)
-                  </button>
+                <div className="tc-hr" />
+
+                <div className="tc-grid-4">
+                  <KpiBox label="Conectados ahora" value={String(attSummary.online)} />
+                  <KpiBox label="Deberían estar" value={String(attSummary.expected)} />
+                  <KpiBox label="Faltando ahora" value={String(attSummary.missing)} />
+                  <KpiBox label="Incidencias del mes" value={String(attSummary.incidents)} />
+                  <KpiBox label="En descanso" value={String(attSummary.breakCount)} />
+                  <KpiBox label="En baño" value={String(attSummary.bathroomCount)} />
+                  <KpiBox label="Penalización retraso" value="1,00 €" />
+                  <KpiBox label="Penalización falta" value="12,00 €" />
                 </div>
               </div>
 
-              <div className="tc-hr" />
-
               <div className="tc-grid-2">
-                <div className="tc-card" style={{ boxShadow: "none" }}>
+                <div className="tc-card">
                   <div className="tc-title" style={{ fontSize: 14 }}>🟢 Conectados ahora</div>
-                  <div className="tc-sub" style={{ marginTop: 6, opacity: 0.9 }}>
-                    (Basado en <b>control horario</b>: attendance_state.is_online)
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Estado real según control horario
                   </div>
                   <div className="tc-hr" />
+
                   {(attOnline || []).length === 0 ? (
                     <div className="tc-sub">Nadie conectado ahora mismo.</div>
                   ) : (
-                    <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "grid", gap: 10 }}>
                       {(attOnline || []).map((o: any) => (
-                        <div key={o.worker_id} className="tc-row" style={{ justifyContent: "space-between" }}>
-                          <div>
-                            <b>{o.display_name}</b>{" "}
-                            <span className="tc-muted">
-                              ({o.role}{o.team ? ` · ${o.team}` : ""})
-                            </span>
-                            {o.status ? <div className="tc-sub">Estado: <b>{o.status}</b></div> : null}
-                          </div>
-                          <div className="tc-sub">
-                            {o.last_event_at ? new Date(o.last_event_at).toLocaleTimeString("es-ES") : "—"}
+                        <div
+                          key={o.worker_id}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: "rgba(120,255,190,0.06)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            <div>
+                              <div style={{ fontWeight: 900 }}>{o.display_name}</div>
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                {o.role}
+                                {o.team ? ` · ${o.team}` : ""}
+                                {o.status ? <> · Estado: <b>{o.status}</b></> : null}
+                              </div>
+                            </div>
+                            <div className="tc-sub">
+                              Último evento:{" "}
+                              <b>{o.last_event_at ? new Date(o.last_event_at).toLocaleTimeString("es-ES") : "—"}</b>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1248,40 +1370,55 @@ export default function Admin() {
                   )}
                 </div>
 
-                <div className="tc-card" style={{ boxShadow: "none" }}>
-                  <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados ahora</div>
-                  <div className="tc-sub" style={{ marginTop: 6, opacity: 0.9 }}>
-                    (En turno según horarios; el “OK/NO” también va por <b>control horario</b>)
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Comparativa entre horario activo y presencia real
                   </div>
                   <div className="tc-hr" />
+
                   {(expectedNow || []).length === 0 ? (
                     <div className="tc-sub">No hay horarios activos ahora mismo.</div>
                   ) : (
-                    <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "grid", gap: 10 }}>
                       {(expectedNow || []).map((x: any) => (
                         <div
                           key={`${x.schedule_id}-${x.worker_id}`}
                           style={{
                             border: "1px solid rgba(255,255,255,0.10)",
                             borderRadius: 14,
-                            padding: 10,
+                            padding: 12,
                             background: x.is_online ? "rgba(120,255,190,0.08)" : "rgba(255,80,80,0.06)",
                           }}
                         >
-                          <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                             <div>
-                              <b>{x.worker?.display_name || x.display_name || x.worker_id}</b>{" "}
-                              <span className="tc-muted">({x.worker?.role || x.role || "—"})</span>
+                              <div style={{ fontWeight: 900 }}>
+                                {x.worker?.display_name || x.display_name || x.worker_id}
+                              </div>
                               <div className="tc-sub" style={{ marginTop: 4 }}>
-                                {x.start_time}–{x.end_time} · {x.timezone}
-                                {x.status ? (
-                                  <>
-                                    {" "}· Estado: <b>{x.status}</b>
-                                  </>
-                                ) : null}
+                                {x.worker?.role || x.role || "—"} · {x.start_time}–{x.end_time} · {x.timezone}
+                              </div>
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                Estado actual: <b>{x.status || "working"}</b>
                               </div>
                             </div>
-                            <div style={{ fontWeight: 900 }}>
+                            <div
+                              className="tc-chip"
+                              style={{
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                ...(x.is_online
+                                  ? {
+                                      background: "rgba(120,255,190,0.10)",
+                                      border: "1px solid rgba(120,255,190,0.25)",
+                                    }
+                                  : {
+                                      background: "rgba(255,80,80,0.10)",
+                                      border: "1px solid rgba(255,80,80,0.25)",
+                                    }),
+                              }}
+                            >
                               {x.is_online ? "🟢 OK" : "🔴 NO"}
                             </div>
                           </div>
@@ -1292,186 +1429,214 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="tc-hr" />
-
-              <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias de asistencia (mes {month})</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Nota para justificar/no justificar:
-              </div>
-              <input
-                className="tc-input"
-                value={attNote}
-                onChange={(e) => setAttNote(e.target.value)}
-                placeholder="Ej: justificó con captura / aviso previo…"
-                style={{ width: "100%", marginTop: 6 }}
-              />
-
-              <div className="tc-hr" />
-
-              {(attIncidents || []).length === 0 ? (
-                <div className="tc-sub">No hay incidencias de asistencia en este mes.</div>
-              ) : (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {(attIncidents || []).map((i: any) => (
-                    <div
-                      key={i.id}
-                      style={{
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        borderRadius: 14,
-                        padding: 12,
-                        background: "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                        <div>
-                          <div style={{ fontWeight: 900 }}>
-                            {i.display_name ? `${i.display_name} · ` : ""}{i.reason || "Incidencia"}
-                          </div>
-                          <div className="tc-sub" style={{ marginTop: 4 }}>
-                            {i.meta?.type ? `Tipo: ${i.meta.type}` : ""}{" "}
-                            {i.meta?.date ? `· Fecha: ${i.meta.date}` : ""}{" "}
-                            {i.created_at ? `· Creada: ${new Date(i.created_at).toLocaleString("es-ES")}` : ""}
-                          </div>
-                          {i.evidence_note ? (
-                            <div className="tc-sub" style={{ marginTop: 4 }}>
-                              Nota: <b>{i.evidence_note}</b>
-                            </div>
-                          ) : null}
-                        </div>
-
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontWeight: 900, fontSize: 18 }}>-{eur(i.amount)}</div>
-                          <div className="tc-sub">Estado: <b>{String(i.status || "unjustified")}</b></div>
-                        </div>
-                      </div>
-
-                      <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                        <button className="tc-btn tc-btn-ok" onClick={() => decideIncident(i.id, "justified")}>
-                          Marcar JUSTIFICADA
-                        </button>
-                        <button className="tc-btn tc-btn-danger" onClick={() => decideIncident(i.id, "unjustified")}>
-                          Marcar NO justificada
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="tc-hr" />
-
-              <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
-              <div className="tc-sub" style={{ marginTop: 6, opacity: 0.9 }}>
-                Worked = “working” · Break/Baño separados · Expected = según horarios · Diff = worked - expected
-                {stMsg ? ` · ${stMsg}` : ""}
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-                <div style={{ minWidth: 260 }}>
-                  <div className="tc-sub">Worker</div>
-                  <input
-                    className="tc-input"
-                    value={stWorkerId}
-                    onChange={(e) => setStWorkerId(e.target.value)}
-                    placeholder="worker_id (opcional)"
-                    style={{ width: "100%", marginTop: 6 }}
-                  />
-                  {workersFromInvoices.length ? (
-                    <div className="tc-sub" style={{ marginTop: 6, opacity: 0.85 }}>
-                      Tip: pega el worker_id. (Si quieres un desplegable global, hacemos endpoint /api/admin/workers/list)
-                    </div>
-                  ) : null}
+              <div className="tc-card">
+                <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias de asistencia</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Mes {month}. Aquí justificas o marcas como no justificadas.
                 </div>
 
-                <div style={{ width: 160 }}>
-                  <div className="tc-sub">Agrupar</div>
-                  <select
-                    className="tc-select"
-                    value={stGroup}
-                    onChange={(e) => setStGroup(e.target.value as any)}
-                    style={{ width: "100%", marginTop: 6 }}
+                <div className="tc-hr" />
+
+                <div className="tc-grid-2" style={{ marginBottom: 14 }}>
+                  <div>
+                    <div className="tc-sub">Nota para la decisión</div>
+                    <input
+                      className="tc-input"
+                      value={attNote}
+                      onChange={(e) => setAttNote(e.target.value)}
+                      placeholder="Ej: justificó con captura / aviso previo…"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                      alignSelf: "end",
+                    }}
                   >
-                    <option value="day">día</option>
-                    <option value="week">semana</option>
-                    <option value="month">mes</option>
-                  </select>
+                    <div className="tc-sub">Resumen rápido</div>
+                    <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>
+                      {(attIncidents || []).length} incidencia(s)
+                    </div>
+                  </div>
                 </div>
 
-                <div style={{ width: 170 }}>
-                  <div className="tc-sub">Desde</div>
-                  <input
-                    className="tc-input"
-                    value={stFrom}
-                    onChange={(e) => setStFrom(e.target.value)}
-                    placeholder="YYYY-MM-DD"
-                    style={{ width: "100%", marginTop: 6 }}
-                  />
-                </div>
+                {(attIncidents || []).length === 0 ? (
+                  <div className="tc-sub">No hay incidencias de asistencia en este mes.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(attIncidents || []).map((i: any) => (
+                      <div
+                        key={i.id}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ fontWeight: 900 }}>
+                              {i.display_name ? `${i.display_name} · ` : ""}
+                              {i.reason || "Incidencia"}
+                            </div>
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              {i.meta?.type ? `Tipo: ${i.meta.type}` : ""}
+                              {i.meta?.date ? ` · Fecha: ${i.meta.date}` : ""}
+                              {i.created_at ? ` · Creada: ${new Date(i.created_at).toLocaleString("es-ES")}` : ""}
+                            </div>
+                            {i.evidence_note ? (
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                Nota actual: <b>{i.evidence_note}</b>
+                              </div>
+                            ) : null}
+                          </div>
 
-                <div style={{ width: 170 }}>
-                  <div className="tc-sub">Hasta</div>
-                  <input
-                    className="tc-input"
-                    value={stTo}
-                    onChange={(e) => setStTo(e.target.value)}
-                    placeholder="YYYY-MM-DD"
-                    style={{ width: "100%", marginTop: 6 }}
-                  />
-                </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontWeight: 900, fontSize: 18 }}>-{eur(i.amount)}</div>
+                            <div className="tc-sub">
+                              Estado: <b>{String(i.status || "unjustified")}</b>
+                            </div>
+                          </div>
+                        </div>
 
-                <button className="tc-btn tc-btn-gold" onClick={() => loadStats(false)} disabled={stLoading}>
-                  {stLoading ? "Cargando…" : "Cargar stats"}
-                </button>
+                        <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                          <button className="tc-btn tc-btn-ok" onClick={() => decideIncident(i.id, "justified")}>
+                            Marcar JUSTIFICADA
+                          </button>
+                          <button className="tc-btn tc-btn-danger" onClick={() => decideIncident(i.id, "unjustified")}>
+                            Marcar NO justificada
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <div style={{ overflowX: "auto", marginTop: 12 }}>
-                <table className="tc-table">
-                  <thead>
-                    <tr>
-                      <th>Periodo</th>
-                      <th>Trabajador</th>
-                      <th>Rol</th>
-                      <th>Worked</th>
-                      <th>Break</th>
-                      <th>Baño</th>
-                      <th>Expected</th>
-                      <th>Diff</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(stRows || []).map((r: any, idx: number) => {
-                      const diff = Number(r.diff_minutes || 0);
-                      const diffLabel = minsToHhmm(Math.abs(diff));
-                      return (
-                        <tr key={`${r.worker_id}-${r.group_key}-${idx}`}>
-                          <td><b>{r.group_key}</b></td>
-                          <td>{r.display_name || r.worker_id}</td>
-                          <td className="tc-muted">{r.role || "—"}</td>
-                          <td><b>{minsToHhmm(r.worked_minutes)}</b></td>
-                          <td>{minsToHhmm(r.break_minutes)}</td>
-                          <td>{minsToHhmm(r.bathroom_minutes)}</td>
-                          <td>{minsToHhmm(r.expected_minutes)}</td>
-                          <td style={{ fontWeight: 900 }}>
-                            {diff >= 0 ? `+${diffLabel}` : `-${diffLabel}`}
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Worked = trabajo real · Break y baño separados · Expected = horario planificado
+                      {stMsg ? ` · ${stMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadStats(false)} disabled={stLoading}>
+                    {stLoading ? "Cargando…" : "Cargar stats"}
+                  </button>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-4">
+                  <div>
+                    <div className="tc-sub">Worker</div>
+                    <input
+                      className="tc-input"
+                      value={stWorkerId}
+                      onChange={(e) => setStWorkerId(e.target.value)}
+                      placeholder="worker_id (opcional)"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Agrupar</div>
+                    <select
+                      className="tc-select"
+                      value={stGroup}
+                      onChange={(e) => setStGroup(e.target.value as any)}
+                      style={{ width: "100%", marginTop: 6 }}
+                    >
+                      <option value="day">día</option>
+                      <option value="week">semana</option>
+                      <option value="month">mes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Desde</div>
+                    <input
+                      className="tc-input"
+                      value={stFrom}
+                      onChange={(e) => setStFrom(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Hasta</div>
+                    <input
+                      className="tc-input"
+                      value={stTo}
+                      onChange={(e) => setStTo(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                  Tip: si quieres un desplegable global de workers, hacemos luego endpoint `/api/admin/workers/list`.
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead>
+                      <tr>
+                        <th>Periodo</th>
+                        <th>Trabajador</th>
+                        <th>Rol</th>
+                        <th>Worked</th>
+                        <th>Break</th>
+                        <th>Baño</th>
+                        <th>Expected</th>
+                        <th>Diff</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(stRows || []).map((r: any, idx: number) => {
+                        const diff = Number(r.diff_minutes || 0);
+                        const diffLabel = minsToHhmm(Math.abs(diff));
+                        return (
+                          <tr key={`${r.worker_id}-${r.group_key}-${idx}`}>
+                            <td><b>{r.group_key}</b></td>
+                            <td>{r.display_name || r.worker_id}</td>
+                            <td className="tc-muted">{r.role || "—"}</td>
+                            <td><b>{minsToHhmm(r.worked_minutes)}</b></td>
+                            <td>{minsToHhmm(r.break_minutes)}</td>
+                            <td>{minsToHhmm(r.bathroom_minutes)}</td>
+                            <td>{minsToHhmm(r.expected_minutes)}</td>
+                            <td style={{ fontWeight: 900 }}>
+                              {diff >= 0 ? `+${diffLabel}` : `-${diffLabel}`}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(!stRows || stRows.length === 0) && (
+                        <tr>
+                          <td colSpan={8} className="tc-muted">
+                            Sin datos. Revisa el rango y el endpoint `/api/admin/attendance/stats`.
                           </td>
                         </tr>
-                      );
-                    })}
-                    {(!stRows || stRows.length === 0) && (
-                      <tr>
-                        <td colSpan={8} className="tc-muted">
-                          Sin datos. (Asegúrate de tener el endpoint /api/admin/attendance/stats y de poner bien el rango.)
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
-                Nota: si quieres “Horas hechas” incluyendo descanso y baño, suma worked + break + baño.
+                <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                  Nota: si quieres “Horas hechas” incluyendo descanso y baño, suma worked + break + baño.
+                </div>
               </div>
             </div>
           )}
