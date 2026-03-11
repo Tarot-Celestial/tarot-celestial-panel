@@ -1,4 +1,3 @@
-// src/app/panel-tarotista/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -15,7 +14,7 @@ type TabKey =
   | "equipos"
   | "facturas"
   | "checklist"
-  | "chat"; // ✅ AÑADIDO
+  | "chat";
 
 function monthKeyNow() {
   const d = new Date();
@@ -31,7 +30,6 @@ function getMonthFromUrl() {
   }
 }
 
-// ✅ NEW: set month in URL
 function setMonthInUrl(m: string) {
   try {
     const u = new URL(window.location.href);
@@ -103,13 +101,13 @@ function clampPct(n: number) {
   return Math.max(0, Math.min(100, x));
 }
 
-// --- Attendance UI helpers ---
 function attLabel(online: boolean, status: string) {
   if (!online) return "⚪ Offline";
   if (status === "break") return "🟡 Descanso";
   if (status === "bathroom") return "🟣 Baño";
   return "🟢 Online";
 }
+
 function attStyle(online: boolean, status: string) {
   if (!online) return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
   if (status === "break") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
@@ -117,7 +115,12 @@ function attStyle(online: boolean, status: string) {
   return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
 }
 
-// ✅ helper: conseguir token SIN redirigir (evita falsos logout)
+function getInvoiceVisibleStatus(invoice: any) {
+  const ack = String(invoice?.worker_ack || "").trim().toLowerCase();
+  if (ack === "accepted" || ack === "rejected" || ack === "review") return ack;
+  return String(invoice?.status || "pending");
+}
+
 async function getTokenSafe(): Promise<string | null> {
   try {
     const { data } = await sb.auth.getSession();
@@ -128,7 +131,6 @@ async function getTokenSafe(): Promise<string | null> {
   }
 }
 
-// ✅ helper: esperar un poco y reintentar sesión (por refresh token / race)
 async function getTokenWithRetry(ms = 350, tries = 3): Promise<string | null> {
   for (let i = 0; i < tries; i++) {
     const t = await getTokenSafe();
@@ -138,13 +140,13 @@ async function getTokenWithRetry(ms = 350, tries = 3): Promise<string | null> {
   return null;
 }
 
-// ---------------- CHAT TYPES (tarotista) ----------------
 type ChatThread = {
   id: string;
   title?: string | null;
   last_message_text?: string | null;
   last_message_at?: string | null;
 };
+
 type ChatMessage = {
   id: string;
   thread_id: string;
@@ -163,30 +165,25 @@ export default function Tarotista() {
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
 
-  // incidencias en vivo + factura real + aceptación
   const [incidents, setIncidents] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any>(null);
   const [invoiceLines, setInvoiceLines] = useState<any[]>([]);
   const [ackNote, setAckNote] = useState<string>("");
 
-  // para saber mi worker_id y calcular posición en top3
   const [myWorkerId, setMyWorkerId] = useState<string>("");
 
-  // ✅ checklist (turno)
   const [clLoading, setClLoading] = useState(false);
   const [clMsg, setClMsg] = useState("");
   const [clShiftKey, setClShiftKey] = useState<string>("");
   const [clRows, setClRows] = useState<any[]>([]);
   const [clQ, setClQ] = useState("");
 
-  // ✅ attendance (online real)
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
   const [attOnline, setAttOnline] = useState(false);
   const [attStatus, setAttStatus] = useState<string>("offline");
   const attBeatRef = useRef<any>(null);
 
-  // ✅ outbound (tarotista)
   const [obDate, setObDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [obLoading, setObLoading] = useState(false);
   const [obMsg, setObMsg] = useState("");
@@ -196,7 +193,6 @@ export default function Tarotista() {
   const [obDraft, setObDraft] = useState<string>("");
   const [obSending, setObSending] = useState(false);
 
-  // ✅ CHAT (tarotista: solo su chat con central)
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMsg, setChatMsg] = useState("");
   const [thread, setThread] = useState<ChatThread | null>(null);
@@ -205,11 +201,8 @@ export default function Tarotista() {
   const msgEndRef = useRef<HTMLDivElement | null>(null);
   const chatChannelRef = useRef<any>(null);
 
-  // ✅ FIX: antes usabas selectedThreadId pero no existía.
-  //    Aquí lo definimos y lo mantenemos siempre sincronizado con thread.id
   const [selectedThreadId, setSelectedThreadId] = useState<string>("");
 
-  // ✅ IMPORTANTÍSIMO: hooks SIEMPRE antes de cualquier return condicional
   const incidenciasLive = useMemo(() => {
     return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
   }, [incidents]);
@@ -222,7 +215,6 @@ export default function Tarotista() {
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
 
-  // BONUS RANKING “en vivo”
   const bonusRanking = Number(s?.bonus_ranking || 0);
   const br = s?.bonus_ranking_breakdown || {};
   const brCaptadas = Number(br?.captadas || 0);
@@ -236,7 +228,6 @@ export default function Tarotista() {
   const topCliente = rank?.top?.cliente || [];
   const topRepite = rank?.top?.repite || [];
 
-  // posiciones actuales (solo top3)
   const posCaptadas: number | null = useMemo(() => {
     const i = (topCaptadas || []).findIndex((x: any) => String(x.worker_id) === String(myWorkerId));
     return i >= 0 ? i + 1 : null;
@@ -252,7 +243,6 @@ export default function Tarotista() {
     return i >= 0 ? i + 1 : null;
   }, [topRepite, myWorkerId]);
 
-  // checklist: progreso + filtrado
   const clFiltered = useMemo(() => {
     const qq = clQ.trim().toLowerCase();
     if (!qq) return clRows || [];
@@ -269,7 +259,6 @@ export default function Tarotista() {
     return { total, completed, pct };
   }, [clRows]);
 
-  // ✅ 1) Listener real de auth: SOLO aquí redirigimos si se pierde la sesión de verdad
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
       if (!session) window.location.href = "/login";
@@ -277,14 +266,12 @@ export default function Tarotista() {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // ✅ NEW: si navega atrás/adelante, sincroniza el mes con la URL
   useEffect(() => {
     const onPop = () => setMonth(getMonthFromUrl());
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // ✅ 2) Init: validar rol, pero con retry para no expulsar por un falso "token null"
   useEffect(() => {
     (async () => {
       const token = await getTokenWithRetry(350, 3);
@@ -312,7 +299,7 @@ export default function Tarotista() {
     }
     try {
       const token = await getTokenSafe();
-      if (!token) return; // ✅ NO redirect
+      if (!token) return;
 
       const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
@@ -330,14 +317,13 @@ export default function Tarotista() {
     }
   }
 
-  // ✅ En BD el constraint es: online/offline/heartbeat
   async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
     try {
       setAttMsg("");
       setAttLoading(true);
 
       const token = await getTokenSafe();
-      if (!token) return; // ✅ NO redirect
+      if (!token) return;
 
       const res = await fetch("/api/attendance/event", {
         method: "POST",
@@ -385,7 +371,7 @@ export default function Tarotista() {
     setClMsg("");
     try {
       const token = await getTokenSafe();
-      if (!token) return; // ✅ NO redirect
+      if (!token) return;
 
       const res = await fetch("/api/checklists/my", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
@@ -416,7 +402,7 @@ export default function Tarotista() {
     try {
       setClMsg("");
       const token = await getTokenSafe();
-      if (!token) return; // ✅ NO redirect
+      if (!token) return;
 
       const res = await fetch("/api/checklists/toggle", {
         method: "POST",
@@ -433,12 +419,11 @@ export default function Tarotista() {
     }
   }
 
-  // ✅ CHANGED: refresh ahora usa el estado month (o un month explícito)
   async function refresh(forMonth?: string) {
     try {
       setMsg("");
       const token = await getTokenSafe();
-      if (!token) return; // ✅ NO redirect
+      if (!token) return;
 
       const m = forMonth || month;
       setMonth(m);
@@ -568,7 +553,6 @@ export default function Tarotista() {
     }
   }
 
-  // ---------------- CHAT helpers (tarotista) ----------------
   async function loadMyChatThread(silent = false) {
     if (!silent) {
       setChatLoading(true);
@@ -578,7 +562,6 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) return;
 
-      // ✅ tarotista solo recibe/crea SU thread (1 thread).
       const res = await fetch("/api/tarot/chat/thread", { headers: { Authorization: `Bearer ${token}` } });
       const j = await safeJson(res);
 
@@ -605,7 +588,7 @@ export default function Tarotista() {
       };
 
       setThread(normalized);
-      setSelectedThreadId(String(t.id)); // ✅ sync
+      setSelectedThreadId(String(t.id));
       if (!silent) setChatMsg("✅ Chat cargado");
       if (!silent) setTimeout(() => setChatMsg(""), 900);
     } catch (e: any) {
@@ -624,7 +607,6 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) return;
 
-      // ✅ Endpoint para crear thread si no existe (o devolverlo si ya existe)
       const res = await fetch("/api/tarot/chat/open", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -637,7 +619,7 @@ export default function Tarotista() {
       if (!t?.id) throw new Error("NO_THREAD");
 
       setThread({ id: String(t.id), title: t.title != null ? String(t.title) : null });
-      setSelectedThreadId(String(t.id)); // ✅ sync
+      setSelectedThreadId(String(t.id));
       setChatMsg("✅ Chat abierto");
       setTimeout(() => setChatMsg(""), 900);
     } catch (e: any) {
@@ -668,7 +650,6 @@ export default function Tarotista() {
         thread_id: String(m.thread_id || threadId),
         sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
         sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-        // ✅ backend puede devolver text o body; priorizamos text, fallback a body
         text: m.text != null ? String(m.text) : m.body != null ? String(m.body) : "",
         created_at: m.created_at != null ? String(m.created_at) : null,
       }));
@@ -693,7 +674,6 @@ export default function Tarotista() {
     const text = msgText.trim();
     if (!text) return;
 
-    // ✅ usamos selectedThreadId (siempre sync con thread.id)
     const tid = selectedThreadId || thread?.id || "";
     if (!tid) return;
 
@@ -743,7 +723,6 @@ export default function Tarotista() {
     }
   }
 
-  // realtime chat_messages (INSERT) para mi thread
   useEffect(() => {
     if (!ok) return;
 
@@ -788,38 +767,29 @@ export default function Tarotista() {
       sb.removeChannel(ch);
       chatChannelRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, thread?.id, selectedThreadId]);
 
-  // init load
   useEffect(() => {
     if (!ok) return;
     refresh();
     loadChecklist();
     loadAttendanceMe(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
-  // Cuando entra en checklist, refrescamos
   useEffect(() => {
     if (!ok) return;
     if (tab === "checklist") loadChecklist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, ok]);
 
-  // cargar outbound al entrar en pestaña y cuando cambie fecha
   useEffect(() => {
     if (!ok) return;
     if (tab === "clientes") loadMyOutbound(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, ok, obDate]);
 
-  // ✅ al entrar en chat, carga thread; cuando haya thread, carga mensajes
   useEffect(() => {
     if (!ok) return;
     if (tab !== "chat") return;
     loadMyChatThread(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab]);
 
   useEffect(() => {
@@ -828,10 +798,8 @@ export default function Tarotista() {
     const tid = selectedThreadId || thread?.id || "";
     if (!tid) return;
     loadChatMessages(tid, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, thread?.id, selectedThreadId]);
 
-  // ✅ realtime tarotista (UPDATE outbound_batch_items por batch_id)
   useEffect(() => {
     if (!ok) return;
 
@@ -863,10 +831,8 @@ export default function Tarotista() {
       sb.removeChannel(ch);
       obChannelRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, obBatch?.id]);
 
-  // ✅ Heartbeat SOLO si está online real
   useEffect(() => {
     if (!ok) return;
 
@@ -909,12 +875,10 @@ export default function Tarotista() {
     };
   }, [ok, attOnline]);
 
-  // poll suave del estado
   useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadAttendanceMe(true), 60_000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
   async function respondInvoice(action: "accepted" | "rejected") {
@@ -926,7 +890,12 @@ export default function Tarotista() {
       const r = await fetch("/api/invoices/respond", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ month, action, note: ackNote }),
+        body: JSON.stringify({
+          invoiceId: invoice?.id || "",
+          month,
+          status: action,
+          workerNote: ackNote,
+        }),
       });
 
       const j = await safeJson(r);
@@ -955,7 +924,6 @@ export default function Tarotista() {
                     🔮 Panel Tarotista
                   </div>
 
-                  {/* ✅ NEW: selector de mes */}
                   <div
                     className="tc-sub"
                     style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
@@ -1077,7 +1045,6 @@ export default function Tarotista() {
               </div>
             </div>
 
-            {/* ✅ TAB: CHAT */}
             {tab === "chat" && (
               <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1182,7 +1149,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: RESUMEN */}
             {tab === "resumen" && (
               <div className="tc-grid-2">
                 <div className="tc-card">
@@ -1249,7 +1215,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: CLIENTES (OUTBOUND) */}
             {tab === "clientes" && (
               <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1352,7 +1317,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: BONOS */}
             {tab === "bonos" && (
               <div className="tc-grid-2">
                 <div className="tc-card">
@@ -1475,7 +1439,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: RANKING */}
             {tab === "ranking" && (
               <div className="tc-card">
                 <div className="tc-title">🏆 Top 3 del mes</div>
@@ -1493,7 +1456,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: EQUIPOS */}
             {tab === "equipos" && (
               <div className="tc-card">
                 <div className="tc-title">🔥💧 Competición por equipos</div>
@@ -1529,7 +1491,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: CHECKLIST */}
             {tab === "checklist" && (
               <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1648,7 +1609,6 @@ export default function Tarotista() {
               </div>
             )}
 
-            {/* TAB: FACTURA */}
             {tab === "facturas" && (
               <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between" }}>
@@ -1672,7 +1632,7 @@ export default function Tarotista() {
                     <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
                       <div>
                         <div className="tc-sub">
-                          Estado: <b>{invoice.status}</b> · Aceptación: <b>{invoice.worker_ack || "pending"}</b>
+                          Estado: <b>{getInvoiceVisibleStatus(invoice)}</b> · Aceptación: <b>{invoice.worker_ack || "pending"}</b>
                         </div>
                         <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{eur(invoice.total || 0)}</div>
                         {invoice.worker_ack_note ? (
