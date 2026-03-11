@@ -38,7 +38,6 @@ function bonusForPos(pos: number | null) {
 }
 
 function stableKey(x: any) {
-  // desempate estable
   return String(x?.worker_id || "");
 }
 
@@ -48,12 +47,10 @@ function top3ByMetric(rows: any[], metric: string) {
     const vb = Number(b?.[metric] || 0);
     if (vb !== va) return vb - va;
 
-    // desempate: minutos_total desc (si existe)
     const ma = Number(a?.minutes_total || 0);
     const mb = Number(b?.minutes_total || 0);
     if (mb !== ma) return mb - ma;
 
-    // desempate final estable
     return stableKey(a).localeCompare(stableKey(b));
   });
   return arr.slice(0, 3);
@@ -85,7 +82,6 @@ export async function GET(req: Request) {
     if (em) throw em;
     if (!me) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
 
-    // tarotista: stats propios + bono ranking EN VIVO
     if (me.role === "tarotista") {
       const { data: s, error: es } = await admin
         .from("v_monthly_tarotist_stats")
@@ -95,7 +91,6 @@ export async function GET(req: Request) {
         .maybeSingle();
       if (es) throw es;
 
-      // 👇 Cogemos todos los tarotistas del mes y calculamos top3 y posición
       const { data: allRows, error: ea } = await admin
         .from("v_monthly_tarotist_stats")
         .select("worker_id, minutes_total, captadas_total, pct_cliente, pct_repite")
@@ -133,7 +128,6 @@ export async function GET(req: Request) {
           bonus_captadas: 0,
         } as any);
 
-      // devolvemos bonus_ranking “en vivo” aunque el view SQL no lo tenga
       const statsOut = {
         ...baseStats,
         bonus_ranking: bonusRanking,
@@ -158,32 +152,68 @@ export async function GET(req: Request) {
       });
     }
 
-    // central/admin: totales globales
-    const { data: rows, error: eg } = await admin
+    const { data: rowsRaw, error: eg } = await admin
       .from("v_monthly_tarotist_stats")
-      .select("minutes_total,calls_total,captadas_total,pay_minutes,bonus_captadas")
+      .select(
+        "worker_id,display_name,team,minutes_total,calls_total,captadas_total,pay_minutes,bonus_captadas,pct_cliente,pct_repite"
+      )
       .eq("month_key", month);
 
     if (eg) throw eg;
 
-    const total = (rows || []).reduce(
+    const rows = (rowsRaw || [])
+      .map((r: any) => ({
+        worker_id: r.worker_id,
+        display_name: r.display_name || "—",
+        team: r.team || "",
+        minutes_total: Number(r.minutes_total || 0),
+        calls_total: Number(r.calls_total || 0),
+        captadas_total: Number(r.captadas_total || 0),
+        pay_minutes: Number(r.pay_minutes || 0),
+        bonus_captadas: Number(r.bonus_captadas || 0),
+        pct_cliente: Number(r.pct_cliente || 0),
+        pct_repite: Number(r.pct_repite || 0),
+      }))
+      .sort((a: any, b: any) => {
+        if (b.minutes_total !== a.minutes_total) return b.minutes_total - a.minutes_total;
+        return String(a.display_name).localeCompare(String(b.display_name));
+      });
+
+    const totals = rows.reduce(
       (acc: any, r: any) => {
-        acc.minutes_total += Number(r.minutes_total || 0);
-        acc.calls_total += Number(r.calls_total || 0);
-        acc.captadas_total += Number(r.captadas_total || 0);
-        acc.pay_minutes += Number(r.pay_minutes || 0);
-        acc.bonus_captadas += Number(r.bonus_captadas || 0);
+        acc.minutes_total += r.minutes_total;
+        acc.calls_total += r.calls_total;
+        acc.captadas_total += r.captadas_total;
+        acc.pay_minutes += r.pay_minutes;
+        acc.bonus_captadas += r.bonus_captadas;
+        acc.avg_pct_cliente += r.pct_cliente;
+        acc.avg_pct_repite += r.pct_repite;
         return acc;
       },
-      { minutes_total: 0, calls_total: 0, captadas_total: 0, pay_minutes: 0, bonus_captadas: 0 }
+      {
+        minutes_total: 0,
+        calls_total: 0,
+        captadas_total: 0,
+        pay_minutes: 0,
+        bonus_captadas: 0,
+        avg_pct_cliente: 0,
+        avg_pct_repite: 0,
+      }
     );
+
+    const count = rows.length || 0;
+    if (count > 0) {
+      totals.avg_pct_cliente = Math.round((totals.avg_pct_cliente / count) * 100) / 100;
+      totals.avg_pct_repite = Math.round((totals.avg_pct_repite / count) * 100) / 100;
+    }
 
     return NextResponse.json({
       ok: true,
       scope: "global",
       month,
-      totals: total,
-      rows_count: rows?.length || 0,
+      totals,
+      rows,
+      rows_count: count,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
