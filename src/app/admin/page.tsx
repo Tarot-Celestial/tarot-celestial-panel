@@ -43,12 +43,13 @@ async function safeJson(res: Response) {
   }
 }
 
-type TabKey = "facturas" | "editor" | "asistencia" | "checklists" | "sync";
+type TabKey = "facturas" | "editor" | "estadisticas" | "asistencia" | "checklists" | "sync";
 
 function ackLabel(v: any) {
   const s = String(v || "pending");
   if (s === "accepted") return "✅ Aceptada";
   if (s === "rejected") return "❌ Rechazada";
+  if (s === "review") return "🟡 Revisión";
   return "⏳ Pendiente";
 }
 
@@ -56,6 +57,7 @@ function ackStyle(v: any) {
   const s = String(v || "pending");
   if (s === "accepted") return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
   if (s === "rejected") return { background: "rgba(255,80,80,0.10)", border: "1px solid rgba(255,80,80,0.25)" };
+  if (s === "review") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
   return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
 }
 
@@ -75,7 +77,6 @@ export default function Admin() {
   const [listMsg, setListMsg] = useState<string>("");
   const [invoices, setInvoices] = useState<any[]>([]);
 
-  // editor
   const [selId, setSelId] = useState<string>("");
   const [selLoading, setSelLoading] = useState(false);
   const [selMsg, setSelMsg] = useState<string>("");
@@ -86,7 +87,13 @@ export default function Admin() {
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
 
-  // polling
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsMsg, setStatsMsg] = useState("");
+  const [statsTotals, setStatsTotals] = useState<any>(null);
+  const [statsRows, setStatsRows] = useState<any[]>([]);
+  const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
+  const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
+
   const pollRef = useRef<any>(null);
   const lastMonthRef = useRef<string>("");
 
@@ -94,9 +101,6 @@ export default function Admin() {
     return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
-  // ---------------------------
-  // ✅ ASISTENCIA (online/expected/incidencias + stats)
-  // ---------------------------
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
   const [attOnline, setAttOnline] = useState<any[]>([]);
@@ -104,7 +108,6 @@ export default function Admin() {
   const [attIncidents, setAttIncidents] = useState<any[]>([]);
   const [attNote, setAttNote] = useState<string>("");
 
-  // ✅ Stats horarias (admin)
   const [stLoading, setStLoading] = useState(false);
   const [stMsg, setStMsg] = useState("");
   const [stRows, setStRows] = useState<any[]>([]);
@@ -113,9 +116,6 @@ export default function Admin() {
   const [stFrom, setStFrom] = useState<string>("");
   const [stTo, setStTo] = useState<string>("");
 
-  // ---------------------------
-  // ✅ CHECKLIST ADMIN UI
-  // ---------------------------
   const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
   const [ckLoading, setCkLoading] = useState(false);
   const [ckMsg, setCkMsg] = useState("");
@@ -126,7 +126,6 @@ export default function Admin() {
   const [ckNewLabel, setCkNewLabel] = useState("");
   const [ckNewSort, setCkNewSort] = useState<string>("10");
 
-  // restore month
   useEffect(() => {
     try {
       const saved = localStorage.getItem("tc_month_admin");
@@ -134,7 +133,6 @@ export default function Admin() {
     } catch {}
   }, []);
 
-  // save month
   useEffect(() => {
     try {
       localStorage.setItem("tc_month_admin", month);
@@ -351,14 +349,57 @@ export default function Admin() {
     }
   }
 
-  // auto load invoices
+  async function loadAdminStats(silent = false) {
+    if (statsLoading && !silent) return;
+    if (!silent) {
+      setStatsLoading(true);
+      setStatsMsg("");
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const [statsRes, rankRes, invRes] = await Promise.all([
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/rankings/monthly?month=${encodeURIComponent(month)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const statsJ = await safeJson(statsRes);
+      const rankJ = await safeJson(rankRes);
+      const invJ = await safeJson(invRes);
+
+      if (!statsJ?._ok || !statsJ?.ok) throw new Error(statsJ?.error || `HTTP ${statsJ?._status}`);
+      if (!rankJ?._ok || !rankJ?.ok) throw new Error(rankJ?.error || `HTTP ${rankJ?._status}`);
+      if (!invJ?._ok || !invJ?.ok) throw new Error(invJ?.error || `HTTP ${invJ?._status}`);
+
+      setStatsTotals(statsJ.totals || null);
+      setStatsRows(statsJ.rows || []);
+      setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
+      setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
+      setInvoices(invJ.invoices || []);
+
+      if (!silent) setStatsMsg("✅ Estadísticas cargadas.");
+    } catch (e: any) {
+      if (!silent) setStatsMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setStatsLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
     listInvoices(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, month]);
 
-  // polling
   useEffect(() => {
     if (!ok) return;
 
@@ -373,6 +414,9 @@ export default function Admin() {
         listInvoices(true);
         if (tab === "editor" && selId) loadInvoice(selId);
       }
+      if (tab === "estadisticas") {
+        loadAdminStats(true);
+      }
     }, 8000);
 
     return () => {
@@ -382,9 +426,6 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month, selId]);
 
-  // ---------------------------
-  // ✅ ASISTENCIA: API calls
-  // ---------------------------
   async function loadAttendance() {
     if (attLoading) return;
     setAttLoading(true);
@@ -516,6 +557,9 @@ export default function Admin() {
         setStTo(to);
       }
     }
+    if (tab === "estadisticas") {
+      loadAdminStats(false);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
@@ -644,6 +688,54 @@ export default function Admin() {
     return Array.from(map.values()).sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
   }, [invoices]);
 
+  const statsInvoiceMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const inv of invoices || []) {
+      map.set(String(inv.worker_id), inv);
+    }
+    return map;
+  }, [invoices]);
+
+  const statsMergedRows = useMemo(() => {
+    return (statsRows || []).map((r: any) => {
+      const inv = statsInvoiceMap.get(String(r.worker_id));
+      return {
+        ...r,
+        invoice_total: Number(inv?.total || 0),
+        invoice_status: inv?.status || "",
+        worker_ack: inv?.worker_ack || null,
+        worker_ack_note: inv?.worker_ack_note || null,
+      };
+    });
+  }, [statsRows, statsInvoiceMap]);
+
+  const statsComputed = useMemo(() => {
+    const invoiceTotal = (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    const accepted = (invoices || []).filter((x: any) => String(x.worker_ack || "") === "accepted").length;
+    const rejected = (invoices || []).filter((x: any) => String(x.worker_ack || "") === "rejected").length;
+    const review = (invoices || []).filter((x: any) => String(x.worker_ack || "") === "review").length;
+    const pending = (invoices || []).filter((x: any) => !x.worker_ack || String(x.worker_ack) === "pending").length;
+
+    const workers = statsRows.length || 0;
+    const minutes = Number(statsTotals?.minutes_total || 0);
+    const calls = Number(statsTotals?.calls_total || 0);
+    const captadas = Number(statsTotals?.captadas_total || 0);
+
+    return {
+      invoice_total: invoiceTotal,
+      accepted,
+      rejected,
+      review,
+      pending,
+      workers,
+      captadas_per_worker: workers ? captadas / workers : 0,
+      calls_per_worker: workers ? calls / workers : 0,
+      minutes_per_worker: workers ? minutes / workers : 0,
+      captadas_per_100_min: minutes ? (captadas / minutes) * 100 : 0,
+      factura_media: workers ? invoiceTotal / workers : 0,
+    };
+  }, [invoices, statsRows, statsTotals]);
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
@@ -656,7 +748,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Edición · Asistencia · Checklists</div>
+                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Edición · Asistencia · Checklists</div>
               </div>
 
               <div className="tc-row">
@@ -680,6 +772,9 @@ export default function Admin() {
               </button>
               <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
                 ✏️ Editor
+              </button>
+              <button className={`tc-tab ${tab === "estadisticas" ? "tc-tab-active" : ""}`} onClick={() => setTab("estadisticas")}>
+                📈 Estadísticas
               </button>
               <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
                 🟢 Asistencia
@@ -850,6 +945,148 @@ export default function Admin() {
                   <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
                 </>
               )}
+            </div>
+          )}
+
+          {tab === "estadisticas" && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title">📈 Estadísticas del mes</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Resumen global del rendimiento y la facturación
+                      {statsMsg ? ` · ${statsMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadAdminStats(false)} disabled={statsLoading}>
+                    {statsLoading ? "Cargando…" : "Actualizar estadísticas"}
+                  </button>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-3">
+                  <KpiBox label="Tarotistas con datos" value={String(statsComputed.workers)} />
+                  <KpiBox label="Minutos totales" value={numES(statsTotals?.minutes_total || 0, 0)} />
+                  <KpiBox label="Llamadas totales" value={numES(statsTotals?.calls_total || 0, 0)} />
+                  <KpiBox label="Captadas totales" value={numES(statsTotals?.captadas_total || 0, 0)} />
+                  <KpiBox label="Pago por minutos" value={eur(statsTotals?.pay_minutes || 0)} />
+                  <KpiBox label="Bonus captadas" value={eur(statsTotals?.bonus_captadas || 0)} />
+                  <KpiBox label="Facturación total" value={eur(statsComputed.invoice_total || 0)} highlight />
+                  <KpiBox label="Factura media" value={eur(statsComputed.factura_media || 0)} />
+                  <KpiBox label="Captadas / 100 min" value={numES(statsComputed.captadas_per_100_min || 0, 2)} />
+                  <KpiBox label="% Cliente medio" value={`${numES(statsTotals?.avg_pct_cliente || 0, 2)}%`} />
+                  <KpiBox label="% Repite medio" value={`${numES(statsTotals?.avg_pct_repite || 0, 2)}%`} />
+                  <KpiBox label="Minutos por tarotista" value={numES(statsComputed.minutes_per_worker || 0, 0)} />
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-2">
+                  <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
+                    <div className="tc-title" style={{ fontSize: 14 }}>🧾 Estado de aceptación de facturas</div>
+                    <div className="tc-hr" />
+                    <div className="tc-kpis">
+                      <KpiMini label="Aceptadas" value={String(statsComputed.accepted)} />
+                      <KpiMini label="Rechazadas" value={String(statsComputed.rejected)} />
+                      <KpiMini label="Revisión" value={String(statsComputed.review)} />
+                      <KpiMini label="Pendientes" value={String(statsComputed.pending)} />
+                    </div>
+                  </div>
+
+                  <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
+                    <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
+                    <div className="tc-hr" />
+                    <div className="tc-kpis">
+                      <KpiMini label="Fuego score" value={numES(statsTeams?.fuego?.score || 0, 2)} />
+                      <KpiMini label="Agua score" value={numES(statsTeams?.agua?.score || 0, 2)} />
+                      <KpiMini label="Ganador" value={String(statsTeams?.winner || "empate")} />
+                      <KpiMini label="Miembros" value={`${statsTeams?.fuego?.members || 0} / ${statsTeams?.agua?.members || 0}`} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="tc-grid-3">
+                <TopStatsCard
+                  title="🏆 Top captadas"
+                  items={(statsTop?.captadas || []).map((x: any) => `${x.display_name} (${x.captadas_total})`)}
+                />
+                <TopStatsCard
+                  title="👑 Top % cliente"
+                  items={(statsTop?.cliente || []).map((x: any) => `${x.display_name} (${numES(x.pct_cliente || 0, 2)}%)`)}
+                />
+                <TopStatsCard
+                  title="🔁 Top % repite"
+                  items={(statsTop?.repite || []).map((x: any) => `${x.display_name} (${numES(x.pct_repite || 0, 2)}%)`)}
+                />
+              </div>
+
+              <div className="tc-card">
+                <div className="tc-title">📋 Rendimiento por tarotista</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Cruce entre estadísticas mensuales y estado de factura
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead>
+                      <tr>
+                        <th>Tarotista</th>
+                        <th>Equipo</th>
+                        <th>Minutos</th>
+                        <th>Llamadas</th>
+                        <th>Captadas</th>
+                        <th>% Cliente</th>
+                        <th>% Repite</th>
+                        <th>Pago minutos</th>
+                        <th>Bonus captadas</th>
+                        <th>Factura</th>
+                        <th>Aceptación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(statsMergedRows || []).map((r: any) => (
+                        <tr key={r.worker_id}>
+                          <td><b>{r.display_name}</b></td>
+                          <td className="tc-muted">{r.team || "—"}</td>
+                          <td>{numES(r.minutes_total || 0, 0)}</td>
+                          <td>{numES(r.calls_total || 0, 0)}</td>
+                          <td><b>{numES(r.captadas_total || 0, 0)}</b></td>
+                          <td>{numES(r.pct_cliente || 0, 2)}%</td>
+                          <td>{numES(r.pct_repite || 0, 2)}%</td>
+                          <td>{eur(r.pay_minutes || 0)}</td>
+                          <td>{eur(r.bonus_captadas || 0)}</td>
+                          <td><b>{eur(r.invoice_total || 0)}</b></td>
+                          <td>
+                            <span
+                              className="tc-chip"
+                              style={{
+                                ...ackStyle(r.worker_ack),
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                              }}
+                              title={r.worker_ack_note || ""}
+                            >
+                              {ackLabel(r.worker_ack)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!statsMergedRows || statsMergedRows.length === 0) && (
+                        <tr>
+                          <td colSpan={11} className="tc-muted">No hay estadísticas para este mes.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1246,6 +1483,55 @@ export default function Admin() {
         </div>
       </div>
     </>
+  );
+}
+
+function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-sub">{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
+    </div>
+  );
+}
+
+function KpiMini({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 12,
+        padding: 10,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-sub">{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
+    </div>
+  );
+}
+
+function TopStatsCard({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
+      <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
+      <div className="tc-hr" />
+      <div style={{ display: "grid", gap: 8 }}>
+        {(items || []).slice(0, 3).map((t, i) => (
+          <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
+            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
+          </div>
+        ))}
+        {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
+      </div>
+    </div>
   );
 }
 
