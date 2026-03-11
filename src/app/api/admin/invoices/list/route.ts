@@ -39,8 +39,15 @@ export async function GET(req: Request) {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    const { data: me } = await admin.from("workers").select("role").eq("user_id", uid).maybeSingle();
-    if (me?.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const { data: me } = await admin
+      .from("workers")
+      .select("role")
+      .eq("user_id", uid)
+      .maybeSingle();
+
+    if (me?.role !== "admin") {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
 
     const u = new URL(req.url);
     const month = u.searchParams.get("month") || monthKeyNow();
@@ -48,7 +55,9 @@ export async function GET(req: Request) {
     // usamos la view v_invoice_full si existe; si no, leemos join directo
     const { data, error } = await admin
       .from("v_invoice_full")
-      .select("invoice_id,worker_id,display_name,role,month_key,status,total,updated_at,created_at")
+      .select(
+        "invoice_id,worker_id,display_name,role,month_key,status,total,updated_at,created_at,worker_ack,worker_ack_at,worker_ack_note"
+      )
       .eq("month_key", month)
       .order("role", { ascending: true })
       .order("display_name", { ascending: true });
@@ -57,32 +66,42 @@ export async function GET(req: Request) {
       // fallback sin la view
       const { data: i2, error: e2 } = await admin
         .from("invoices")
-        .select("id, worker_id, month_key, status, total, updated_at, created_at")
+        .select(
+          "id, worker_id, month_key, status, total, updated_at, created_at, worker_ack, worker_ack_at, worker_ack_note"
+        )
         .eq("month_key", month);
 
       if (e2) throw e2;
 
-      const workerIds = Array.from(new Set((i2 || []).map((x: any) => x.worker_id)));
-      const { data: ws, error: ew } = await admin
-        .from("workers")
-        .select("id, display_name, role")
-        .in("id", workerIds);
+      const workerIds = Array.from(new Set((i2 || []).map((x: any) => x.worker_id).filter(Boolean)));
 
-      if (ew) throw ew;
+      let ws: any[] = [];
+      if (workerIds.length) {
+        const { data: workersData, error: ew } = await admin
+          .from("workers")
+          .select("id, display_name, role")
+          .in("id", workerIds);
+
+        if (ew) throw ew;
+        ws = workersData || [];
+      }
 
       const wm = new Map<string, any>();
-      for (const w of ws || []) wm.set(w.id, w);
+      for (const w of ws || []) wm.set(String(w.id), w);
 
       const merged = (i2 || []).map((x: any) => ({
         invoice_id: x.id,
         worker_id: x.worker_id,
-        display_name: wm.get(x.worker_id)?.display_name || "—",
-        role: wm.get(x.worker_id)?.role || "—",
+        display_name: wm.get(String(x.worker_id))?.display_name || "—",
+        role: wm.get(String(x.worker_id))?.role || "—",
         month_key: x.month_key,
         status: x.status,
         total: x.total,
         updated_at: x.updated_at,
         created_at: x.created_at,
+        worker_ack: x.worker_ack || null,
+        worker_ack_at: x.worker_ack_at || null,
+        worker_ack_note: x.worker_ack_note || null,
       }));
 
       return NextResponse.json({ ok: true, month, invoices: merged });
