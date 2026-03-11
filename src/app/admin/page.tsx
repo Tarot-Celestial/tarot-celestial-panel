@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
 
 const sb = supabaseBrowser();
 
@@ -43,7 +44,14 @@ async function safeJson(res: Response) {
   }
 }
 
-type TabKey = "facturas" | "editor" | "estadisticas" | "asistencia" | "checklists" | "sync";
+type TabKey =
+  | "facturas"
+  | "editor"
+  | "estadisticas"
+  | "contabilidad"
+  | "asistencia"
+  | "checklists"
+  | "sync";
 
 function ackLabel(v: any) {
   const s = String(v || "pending");
@@ -126,6 +134,13 @@ export default function Admin() {
   const [ckNewLabel, setCkNewLabel] = useState("");
   const [ckNewSort, setCkNewSort] = useState<string>("10");
 
+  const [accLoading, setAccLoading] = useState(false);
+  const [accMsg, setAccMsg] = useState("");
+  const [accTotals, setAccTotals] = useState<any>({ income: 0, expense: 0, net: 0 });
+  const [accEntries, setAccEntries] = useState<any[]>([]);
+  const [accMonths, setAccMonths] = useState<any[]>([]);
+  const [accBreakdown, setAccBreakdown] = useState<any>({ income: [], expense: [] });
+
   useEffect(() => {
     try {
       const saved = localStorage.getItem("tc_month_admin");
@@ -166,6 +181,73 @@ export default function Admin() {
       return "";
     }
     return token;
+  }
+
+  async function loadAccounting(silent = false) {
+    if (accLoading && !silent) return;
+    if (!silent) {
+      setAccLoading(true);
+      setAccMsg("");
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/accounting?month=${encodeURIComponent(month)}&months_back=12`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setAccTotals(j.totals || { income: 0, expense: 0, net: 0 });
+      setAccEntries(j.entries || []);
+      setAccMonths(j.months || []);
+      setAccBreakdown(j.breakdown || { income: [], expense: [] });
+
+      if (!silent) setAccMsg("✅ Contabilidad cargada.");
+    } catch (e: any) {
+      if (!silent) setAccMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setAccLoading(false);
+    }
+  }
+
+  async function createAccountingEntry(payload: any) {
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch("/api/admin/accounting", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+    await loadAccounting(true);
+    setAccMsg("✅ Movimiento guardado.");
+  }
+
+  async function deleteAccountingEntry(id: string) {
+    if (!confirm("¿Borrar este movimiento?")) return;
+
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch("/api/admin/accounting/delete", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+    await loadAccounting(true);
+    setAccMsg("✅ Movimiento borrado.");
   }
 
   async function syncNow() {
@@ -417,6 +499,9 @@ export default function Admin() {
       if (tab === "estadisticas") {
         loadAdminStats(true);
       }
+      if (tab === "contabilidad") {
+        loadAccounting(true);
+      }
     }, 8000);
 
     return () => {
@@ -559,6 +644,9 @@ export default function Admin() {
     }
     if (tab === "estadisticas") {
       loadAdminStats(false);
+    }
+    if (tab === "contabilidad") {
+      loadAccounting(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
@@ -748,7 +836,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Edición · Asistencia · Checklists</div>
+                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists</div>
               </div>
 
               <div className="tc-row">
@@ -775,6 +863,9 @@ export default function Admin() {
               </button>
               <button className={`tc-tab ${tab === "estadisticas" ? "tc-tab-active" : ""}`} onClick={() => setTab("estadisticas")}>
                 📈 Estadísticas
+              </button>
+              <button className={`tc-tab ${tab === "contabilidad" ? "tc-tab-active" : ""}`} onClick={() => setTab("contabilidad")}>
+                💼 Contabilidad
               </button>
               <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
                 🟢 Asistencia
@@ -1088,6 +1179,21 @@ export default function Admin() {
                 </div>
               </div>
             </div>
+          )}
+
+          {tab === "contabilidad" && (
+            <AdminAccountingTab
+              month={month}
+              loading={accLoading}
+              msg={accMsg}
+              totals={accTotals}
+              entries={accEntries}
+              months={accMonths}
+              breakdown={accBreakdown}
+              onRefresh={() => loadAccounting(false)}
+              onCreate={createAccountingEntry}
+              onDelete={deleteAccountingEntry}
+            />
           )}
 
           {tab === "asistencia" && (
