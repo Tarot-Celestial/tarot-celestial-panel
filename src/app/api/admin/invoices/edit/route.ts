@@ -45,6 +45,10 @@ async function requireAdmin(req: Request) {
   return { ok: true as const, admin };
 }
 
+function roundMoney(n: any) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
 // GET: devuelve factura + líneas para editar (admin)
 export async function GET(req: Request) {
   try {
@@ -112,7 +116,7 @@ export async function POST(req: Request) {
     if (action === "add_line") {
       const kind = String(body?.kind || "adjustment");
       const label = String(body?.label || "Ajuste");
-      const amount = Number(body?.amount || 0);
+      const amount = roundMoney(body?.amount || 0);
       const meta = body?.meta ?? {};
 
       const { error } = await admin.from("invoice_lines").insert({
@@ -137,11 +141,41 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
       }
 
+      const { data: currentLine, error: currentErr } = await admin
+        .from("invoice_lines")
+        .select("id, meta, amount")
+        .eq("id", line_id)
+        .maybeSingle();
+
+      if (currentErr) throw currentErr;
+      if (!currentLine) {
+        return NextResponse.json({ ok: false, error: "LINE_NOT_FOUND" }, { status: 404 });
+      }
+
       const patch: any = {};
+
       if (body?.label !== undefined) patch.label = String(body.label);
-      if (body?.amount !== undefined) patch.amount = Number(body.amount);
       if (body?.kind !== undefined) patch.kind = String(body.kind);
-      if (body?.meta !== undefined) patch.meta = body.meta ?? {};
+
+      let nextMeta: any = currentLine.meta ?? {};
+
+      if (body?.meta !== undefined) {
+        nextMeta = body.meta ?? {};
+        patch.meta = nextMeta;
+      }
+
+      const hasMinutesRate =
+        nextMeta &&
+        nextMeta.minutes !== undefined &&
+        nextMeta.rate !== undefined &&
+        !Number.isNaN(Number(nextMeta.minutes)) &&
+        !Number.isNaN(Number(nextMeta.rate));
+
+      if (hasMinutesRate) {
+        patch.amount = roundMoney(Number(nextMeta.minutes || 0) * Number(nextMeta.rate || 0));
+      } else if (body?.amount !== undefined) {
+        patch.amount = roundMoney(body.amount);
+      }
 
       const { error } = await admin.from("invoice_lines").update(patch).eq("id", line_id);
       if (error) throw error;
