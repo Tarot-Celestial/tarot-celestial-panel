@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       const start_time = String(body?.start_time || "");
       const end_time = String(body?.end_time || "");
       const timezone = String(body?.timezone || "Europe/Madrid");
-      const is_active = body?.is_active === undefined ? true : !!body.is_active;
+      const active = body?.active === undefined ? true : !!body.active;
 
       if (!worker_id) {
         return NextResponse.json({ ok: false, error: "WORKER_ID_REQUIRED" }, { status: 400 });
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
           start_time,
           end_time,
           timezone,
-          is_active,
+          active,
         })
         .select("*")
         .maybeSingle();
@@ -112,7 +112,7 @@ export async function POST(req: Request) {
       if (body?.start_time !== undefined) patch.start_time = String(body.start_time || "");
       if (body?.end_time !== undefined) patch.end_time = String(body.end_time || "");
       if (body?.timezone !== undefined) patch.timezone = String(body.timezone || "Europe/Madrid");
-      if (body?.is_active !== undefined) patch.is_active = !!body.is_active;
+      if (body?.active !== undefined) patch.active = !!body.active;
 
       const { error } = await admin
         .from("shift_schedules")
