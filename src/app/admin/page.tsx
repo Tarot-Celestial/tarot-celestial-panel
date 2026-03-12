@@ -36,6 +36,18 @@ function roundMoney(n: any) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+function dayNameES(d: any) {
+  const n = Number(d);
+  if (n === 0) return "Domingo";
+  if (n === 1) return "Lunes";
+  if (n === 2) return "Martes";
+  if (n === 3) return "Miércoles";
+  if (n === 4) return "Jueves";
+  if (n === 5) return "Viernes";
+  if (n === 6) return "Sábado";
+  return "—";
+}
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -161,6 +173,22 @@ export default function Admin() {
   const [accEntries, setAccEntries] = useState<any[]>([]);
   const [accMonths, setAccMonths] = useState<any[]>([]);
   const [accBreakdown, setAccBreakdown] = useState<any>({ income: [], expense: [] });
+
+  // staff / horarios
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffMsg, setStaffMsg] = useState("");
+  const [staffWorkers, setStaffWorkers] = useState<any[]>([]);
+  const [staffSchedules, setStaffSchedules] = useState<any[]>([]);
+  const [staffQ, setStaffQ] = useState("");
+  const [newWorkerName, setNewWorkerName] = useState("");
+  const [newWorkerRole, setNewWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
+  const [newWorkerTeam, setNewWorkerTeam] = useState("");
+  const [newWorkerEmail, setNewWorkerEmail] = useState("");
+  const [scheduleWorkerId, setScheduleWorkerId] = useState("");
+  const [scheduleDay, setScheduleDay] = useState<string>("1");
+  const [scheduleStart, setScheduleStart] = useState("09:00");
+  const [scheduleEnd, setScheduleEnd] = useState("17:00");
+  const [scheduleTimezone, setScheduleTimezone] = useState("Europe/Madrid");
 
   useEffect(() => {
     try {
@@ -497,6 +525,171 @@ export default function Admin() {
     }
   }
 
+  async function loadStaff(silent = false) {
+    if (staffLoading && !silent) return;
+    if (!silent) {
+      setStaffLoading(true);
+      setStaffMsg("");
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setStaffWorkers(j.workers || []);
+      setStaffSchedules(j.schedules || []);
+      if (!silent) setStaffMsg("✅ Plantilla y horarios cargados.");
+    } catch (e: any) {
+      if (!silent) setStaffMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setStaffLoading(false);
+    }
+  }
+
+  async function postStaffManage(payload: any) {
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch("/api/admin/staff/manage", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+    return j;
+  }
+
+  async function postStaffSchedule(payload: any) {
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch("/api/admin/staff/schedules", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+    return j;
+  }
+
+  async function createWorker() {
+    try {
+      setStaffMsg("");
+      if (!newWorkerName.trim()) {
+        setStaffMsg("⚠️ Escribe el nombre del trabajador.");
+        return;
+      }
+
+      await postStaffManage({
+        action: "create_worker",
+        display_name: newWorkerName,
+        role: newWorkerRole,
+        team: newWorkerTeam,
+        email: newWorkerEmail,
+      });
+
+      setNewWorkerName("");
+      setNewWorkerRole("tarotista");
+      setNewWorkerTeam("");
+      setNewWorkerEmail("");
+      await loadStaff(true);
+      setStaffMsg("✅ Trabajador creado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function disableWorker(worker_id: string) {
+    if (!confirm("¿Desactivar trabajador y sus horarios?")) return;
+    try {
+      setStaffMsg("");
+      await postStaffManage({ action: "disable_worker", worker_id });
+      await loadStaff(true);
+      setStaffMsg("✅ Trabajador desactivado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function enableWorker(worker_id: string) {
+    try {
+      setStaffMsg("");
+      await postStaffManage({ action: "enable_worker", worker_id });
+      await loadStaff(true);
+      setStaffMsg("✅ Trabajador reactivado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function saveWorkerQuick(worker_id: string, patch: any) {
+    try {
+      setStaffMsg("");
+      await postStaffManage({ action: "update_worker", worker_id, ...patch });
+      await loadStaff(true);
+      setStaffMsg("✅ Trabajador actualizado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function createSchedule() {
+    try {
+      setStaffMsg("");
+      if (!scheduleWorkerId) {
+        setStaffMsg("⚠️ Selecciona un trabajador.");
+        return;
+      }
+      await postStaffSchedule({
+        action: "create_schedule",
+        worker_id: scheduleWorkerId,
+        day_of_week: Number(scheduleDay),
+        start_time: scheduleStart,
+        end_time: scheduleEnd,
+        timezone: scheduleTimezone,
+        is_active: true,
+      });
+      await loadStaff(true);
+      setStaffMsg("✅ Horario creado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function updateSchedule(schedule_id: string, patch: any) {
+    try {
+      setStaffMsg("");
+      await postStaffSchedule({ action: "update_schedule", schedule_id, ...patch });
+      await loadStaff(true);
+      setStaffMsg("✅ Horario actualizado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function deleteSchedule(schedule_id: string) {
+    if (!confirm("¿Borrar este horario?")) return;
+    try {
+      setStaffMsg("");
+      await postStaffSchedule({ action: "delete_schedule", schedule_id });
+      await loadStaff(true);
+      setStaffMsg("✅ Horario borrado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
   useEffect(() => {
     if (!ok) return;
     listInvoices(true);
@@ -513,7 +706,7 @@ export default function Admin() {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(() => {
-     if (tab === "facturas") {
+      if (tab === "facturas") {
         listInvoices(true);
       }
       if (tab === "estadisticas") {
@@ -521,6 +714,10 @@ export default function Admin() {
       }
       if (tab === "contabilidad") {
         loadAccounting(true);
+      }
+      if (tab === "asistencia") {
+        loadAttendance();
+        loadStaff(true);
       }
     }, 8000);
 
@@ -653,6 +850,7 @@ export default function Admin() {
     if (!ok) return;
     if (tab === "asistencia") {
       loadAttendance();
+      loadStaff(false);
       if (!stFrom && !stTo) {
         const d = new Date();
         const to = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -871,6 +1069,41 @@ export default function Admin() {
       .slice(0, 5);
   }, [statsMergedRows]);
 
+  const filteredStaffWorkers = useMemo(() => {
+    const q = staffQ.trim().toLowerCase();
+    if (!q) return staffWorkers || [];
+    return (staffWorkers || []).filter((w: any) => {
+      const hay =
+        String(w.display_name || "").toLowerCase().includes(q) ||
+        String(w.role || "").toLowerCase().includes(q) ||
+        String(w.team || "").toLowerCase().includes(q) ||
+        String(w.email || "").toLowerCase().includes(q);
+      return hay;
+    });
+  }, [staffWorkers, staffQ]);
+
+  const scheduleMapByWorker = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const s of staffSchedules || []) {
+      const key = String(s.worker_id || "");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    }
+    for (const [, arr] of map) {
+      arr.sort((a: any, b: any) => {
+        const da = Number(a.day_of_week || 0);
+        const db = Number(b.day_of_week || 0);
+        if (da !== db) return da - db;
+        return String(a.start_time || "").localeCompare(String(b.start_time || ""));
+      });
+    }
+    return map;
+  }, [staffSchedules]);
+
+  const quickJesus = useMemo(() => {
+    return (staffWorkers || []).find((w: any) => String(w.display_name || "").toLowerCase().includes("jesus"));
+  }, [staffWorkers]);
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
@@ -1016,6 +1249,7 @@ export default function Admin() {
 
                 {selId && (
                   <div className="tc-row">
+                    <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
                     <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
                     <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
                   </div>
@@ -1307,6 +1541,9 @@ export default function Admin() {
                     <button className="tc-btn tc-btn-gold" onClick={loadAttendance} disabled={attLoading}>
                       {attLoading ? "Cargando…" : "Actualizar"}
                     </button>
+                    <button className="tc-btn tc-btn-gold" onClick={() => loadStaff(false)} disabled={staffLoading}>
+                      {staffLoading ? "Cargando plantilla…" : "Actualizar plantilla"}
+                    </button>
                     <button className="tc-btn tc-btn-danger" onClick={runAttendanceEngine}>
                       Ejecutar motor
                     </button>
@@ -1324,6 +1561,259 @@ export default function Admin() {
                   <KpiBox label="En baño" value={String(attSummary.bathroomCount)} />
                   <KpiBox label="Penalización retraso" value="1,00 €" />
                   <KpiBox label="Penalización falta" value="12,00 €" />
+                </div>
+              </div>
+
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title" style={{ fontSize: 14 }}>🛠️ Gestión de plantilla y horarios</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Aquí puedes cambiar el horario de Jesús, desactivar tarotistas, añadir nuevas o editar su operativa
+                      {staffMsg ? ` · ${staffMsg}` : ""}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-2">
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-title" style={{ fontSize: 14 }}>⚡ Cambio rápido: Jesús</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Usa este bloque si el cambio urgente es solo el suyo.
+                    </div>
+                    <div className="tc-hr" />
+                    {!quickJesus ? (
+                      <div className="tc-sub">No he encontrado ningún trabajador con nombre “Jesús”.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 10 }}>
+                        <div className="tc-sub">
+                          Trabajador: <b>{quickJesus.display_name}</b> · Rol: <b>{quickJesus.role}</b> · Activo:{" "}
+                          <b>{quickJesus.is_active ? "sí" : "no"}</b>
+                        </div>
+
+                        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                          <button className="tc-btn tc-btn-ok" onClick={() => enableWorker(quickJesus.id)}>
+                            Activar
+                          </button>
+                          <button className="tc-btn tc-btn-danger" onClick={() => disableWorker(quickJesus.id)}>
+                            Desactivar
+                          </button>
+                        </div>
+
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {(scheduleMapByWorker.get(String(quickJesus.id)) || []).map((s: any) => (
+                            <ScheduleRow
+                              key={s.id}
+                              schedule={s}
+                              onSave={(patch) => updateSchedule(s.id, patch)}
+                              onDelete={() => deleteSchedule(s.id)}
+                            />
+                          ))}
+                          {(scheduleMapByWorker.get(String(quickJesus.id)) || []).length === 0 && (
+                            <div className="tc-sub">Jesús no tiene horarios cargados.</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-title" style={{ fontSize: 14 }}>➕ Alta rápida de trabajador</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Crea un trabajador nuevo para meterlo en operativa
+                    </div>
+                    <div className="tc-hr" />
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <input
+                        className="tc-input"
+                        value={newWorkerName}
+                        onChange={(e) => setNewWorkerName(e.target.value)}
+                        placeholder="Nombre"
+                        style={{ width: "100%" }}
+                      />
+
+                      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                        <select
+                          className="tc-select"
+                          value={newWorkerRole}
+                          onChange={(e) => setNewWorkerRole(e.target.value as any)}
+                          style={{ minWidth: 180 }}
+                        >
+                          <option value="tarotista">tarotista</option>
+                          <option value="central">central</option>
+                          <option value="admin">admin</option>
+                        </select>
+
+                        <input
+                          className="tc-input"
+                          value={newWorkerTeam}
+                          onChange={(e) => setNewWorkerTeam(e.target.value)}
+                          placeholder="Equipo (opcional)"
+                          style={{ minWidth: 180 }}
+                        />
+                      </div>
+
+                      <input
+                        className="tc-input"
+                        value={newWorkerEmail}
+                        onChange={(e) => setNewWorkerEmail(e.target.value)}
+                        placeholder="Email (opcional)"
+                        style={{ width: "100%" }}
+                      />
+
+                      <div className="tc-row" style={{ justifyContent: "flex-end" }}>
+                        <button className="tc-btn tc-btn-ok" onClick={createWorker}>
+                          Crear trabajador
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-2">
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-title" style={{ fontSize: 14 }}>➕ Crear horario</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Añade un horario nuevo a cualquier trabajador
+                    </div>
+                    <div className="tc-hr" />
+
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <select
+                        className="tc-select"
+                        value={scheduleWorkerId}
+                        onChange={(e) => setScheduleWorkerId(e.target.value)}
+                        style={{ width: "100%" }}
+                      >
+                        <option value="">Selecciona trabajador…</option>
+                        {(staffWorkers || []).map((w: any) => (
+                          <option key={w.id} value={w.id}>
+                            {w.display_name} · {w.role}
+                          </option>
+                        ))}
+                      </select>
+
+                      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                        <select
+                          className="tc-select"
+                          value={scheduleDay}
+                          onChange={(e) => setScheduleDay(e.target.value)}
+                          style={{ minWidth: 160 }}
+                        >
+                          <option value="0">Domingo</option>
+                          <option value="1">Lunes</option>
+                          <option value="2">Martes</option>
+                          <option value="3">Miércoles</option>
+                          <option value="4">Jueves</option>
+                          <option value="5">Viernes</option>
+                          <option value="6">Sábado</option>
+                        </select>
+
+                        <input
+                          className="tc-input"
+                          value={scheduleStart}
+                          onChange={(e) => setScheduleStart(e.target.value)}
+                          type="time"
+                          style={{ minWidth: 130 }}
+                        />
+                        <input
+                          className="tc-input"
+                          value={scheduleEnd}
+                          onChange={(e) => setScheduleEnd(e.target.value)}
+                          type="time"
+                          style={{ minWidth: 130 }}
+                        />
+                      </div>
+
+                      <input
+                        className="tc-input"
+                        value={scheduleTimezone}
+                        onChange={(e) => setScheduleTimezone(e.target.value)}
+                        placeholder="Timezone"
+                        style={{ width: "100%" }}
+                      />
+
+                      <div className="tc-row" style={{ justifyContent: "flex-end" }}>
+                        <button className="tc-btn tc-btn-ok" onClick={createSchedule}>
+                          Crear horario
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-title" style={{ fontSize: 14 }}>🔎 Buscar trabajador</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Filtra por nombre, rol, equipo o email
+                    </div>
+                    <div className="tc-hr" />
+
+                    <input
+                      className="tc-input"
+                      value={staffQ}
+                      onChange={(e) => setStaffQ(e.target.value)}
+                      placeholder="Buscar…"
+                      style={{ width: "100%" }}
+                    />
+
+                    <div className="tc-sub" style={{ marginTop: 10 }}>
+                      Mostrando <b>{filteredStaffWorkers.length}</b> trabajador(es)
+                    </div>
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ display: "grid", gap: 14 }}>
+                  {(filteredStaffWorkers || []).map((w: any) => (
+                    <WorkerAdminCard
+                      key={w.id}
+                      worker={w}
+                      schedules={scheduleMapByWorker.get(String(w.id)) || []}
+                      onDisable={() => disableWorker(w.id)}
+                      onEnable={() => enableWorker(w.id)}
+                      onQuickSave={(patch) => saveWorkerQuick(w.id, patch)}
+                      onSaveSchedule={(scheduleId, patch) => updateSchedule(scheduleId, patch)}
+                      onDeleteSchedule={(scheduleId) => deleteSchedule(scheduleId)}
+                    />
+                  ))}
+
+                  {(!filteredStaffWorkers || filteredStaffWorkers.length === 0) && (
+                    <div className="tc-sub">No hay trabajadores que coincidan con la búsqueda.</div>
+                  )}
                 </div>
               </div>
 
@@ -1700,304 +2190,4 @@ export default function Admin() {
                   value={ckNewSort}
                   onChange={(e) => setCkNewSort(e.target.value)}
                   placeholder="Sort"
-                  style={{ width: 120 }}
-                />
-                <button className="tc-btn tc-btn-ok" onClick={addChecklistItem} disabled={ckLoading}>
-                  Añadir
-                </button>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(ckFiltered || []).map((it: any) => (
-                  <ChecklistRow
-                    key={it.id}
-                    item={it}
-                    onSave={(next) => saveChecklistItem(next)}
-                    onDelete={() => deleteChecklistItem(String(it.id))}
-                  />
-                ))}
-
-                {(!ckFiltered || ckFiltered.length === 0) && (
-                  <div className="tc-sub">No hay items (o no coinciden con la búsqueda).</div>
-                )}
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-sub" style={{ opacity: 0.85 }}>
-                Nota: al borrar un item, también se eliminan los “checks” ya marcados en turnos anteriores para ese item.
-              </div>
-            </div>
-          )}
-
-          {tab === "sync" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <div className="tc-title">🔄 Sincronización</div>
-                  <div className="tc-sub">Importa/actualiza llamadas desde Google Sheets</div>
-                </div>
-
-                <button className="tc-btn tc-btn-gold" onClick={syncNow} disabled={syncLoading}>
-                  {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
-                </button>
-              </div>
-
-              <div style={{ marginTop: 10 }} className="tc-sub">
-                {syncMsg || "Haz sync antes de generar facturas para que cuadren minutos/captadas."}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
-    </div>
-  );
-}
-
-function KpiMini({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 12,
-        padding: 10,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
-    </div>
-  );
-}
-
-function TopStatsCard({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
-      <div className="tc-hr" />
-      <div style={{ display: "grid", gap: 8 }}>
-        {(items || []).slice(0, 3).map((t, i) => (
-          <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
-          </div>
-        ))}
-        {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
-      </div>
-    </div>
-  );
-}
-
-function LineEditor({
-  line,
-  onSave,
-  onDelete,
-}: {
-  line: any;
-  onSave: (payload: { label: string; amount?: number; meta?: any }) => void;
-  onDelete: () => void;
-}) {
-  const [label, setLabel] = useState<string>(line.label || "");
-  const [amount, setAmount] = useState<string>(String(line.amount ?? "0"));
-
-  const meta = line?.meta || {};
-  const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
-
-  const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
-  const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
-
-  useEffect(() => {
-    setLabel(String(line.label || ""));
-    setAmount(String(line.amount ?? "0"));
-    setMinutes(String(line?.meta?.minutes ?? ""));
-    setRate(String(line?.meta?.rate ?? ""));
-  }, [line]);
-
-  const parsedMinutes = Number(String(minutes).replace(",", "."));
-  const parsedRate = Number(String(rate).replace(",", "."));
-  const calcAmount = roundMoney((isFinite(parsedMinutes) ? parsedMinutes : 0) * (isFinite(parsedRate) ? parsedRate : 0));
-
-  const displayAmount = hasBreakdown ? calcAmount : Number(String(amount).replace(",", ".")) || 0;
-  const code = String(meta.code || "").toUpperCase();
-
-  function saveLine() {
-    if (hasBreakdown) {
-      const nextMeta = {
-        ...meta,
-        minutes: isFinite(parsedMinutes) ? parsedMinutes : 0,
-        rate: isFinite(parsedRate) ? parsedRate : 0,
-      };
-
-      onSave({
-        label,
-        meta: nextMeta,
-      });
-      return;
-    }
-
-    onSave({
-      label,
-      amount: Number(String(amount).replace(",", ".")) || 0,
-      meta,
-    });
-  }
-
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
-        <div style={{ minWidth: 220 }}>
-          <div style={{ fontWeight: 900 }}>{label}</div>
-          {hasBreakdown && (
-            <div className="tc-sub" style={{ marginTop: 6 }}>
-              {numES(isFinite(parsedRate) ? parsedRate : 0, 2)}€ x {numES(isFinite(parsedMinutes) ? parsedMinutes : 0, 0)} min = <b>{eur(calcAmount)}</b>
-              {code ? <> · Código <b>{code}</b></> : null}
-            </div>
-          )}
-        </div>
-
-        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(displayAmount)}</div>
-      </div>
-
-      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-        <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%" }} />
-
-        {hasBreakdown ? (
-          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 160 }}>
-              <div className="tc-sub">Minutos</div>
-              <input
-                className="tc-input"
-                value={minutes}
-                onChange={(e) => setMinutes(e.target.value)}
-                style={{ width: 160, marginTop: 6 }}
-              />
-            </div>
-
-            <div style={{ minWidth: 160 }}>
-              <div className="tc-sub">Tarifa €/min</div>
-              <input
-                className="tc-input"
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                style={{ width: 160, marginTop: 6 }}
-              />
-            </div>
-
-            <div style={{ minWidth: 180 }}>
-              <div className="tc-sub">Importe recalculado</div>
-              <div className="tc-chip" style={{ marginTop: 6 }}>
-                <b>{eur(calcAmount)}</b>
-              </div>
-            </div>
-
-            <div className="tc-row" style={{ alignItems: "flex-end" }}>
-              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
-                Guardar
-              </button>
-              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-                Borrar
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
-            <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
-
-            <div className="tc-row">
-              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
-                Guardar
-              </button>
-              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-                Borrar
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ChecklistRow({
-  item,
-  onSave,
-  onDelete,
-}: {
-  item: any;
-  onSave: (next: any) => void;
-  onDelete: () => void;
-}) {
-  const [label, setLabel] = useState<string>(String(item.label || ""));
-  const [sort, setSort] = useState<string>(String(item.sort ?? 0));
-  const [msg, setMsg] = useState<string>("");
-
-  useEffect(() => {
-    setLabel(String(item.label || ""));
-    setSort(String(item.sort ?? 0));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item?.id]);
-
-  function save() {
-    setMsg("");
-    const s = Number(String(sort).replace(",", "."));
-    if (!String(label).trim()) return setMsg("⚠️ Falta texto");
-    if (!isFinite(s)) return setMsg("⚠️ Sort inválido");
-    onSave({ ...item, label: String(label).trim(), sort: s });
-    setMsg("✅ Guardando…");
-    setTimeout(() => setMsg(""), 1200);
-  }
-
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <div className="tc-sub">Texto</div>
-          <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
-        </div>
-
-        <div style={{ width: 140 }}>
-          <div className="tc-sub">Sort</div>
-          <input className="tc-input" value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
-        </div>
-
-        <div className="tc-row" style={{ gap: 8, alignItems: "flex-end" }}>
-          <button className="tc-btn tc-btn-ok" onClick={save}>Guardar</button>
-          <button className="tc-btn tc-btn-danger" onClick={onDelete}>Borrar</button>
-        </div>
-      </div>
-
-      {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
-    </div>
-  );
-}
+                  style={{ width
