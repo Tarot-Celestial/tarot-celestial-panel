@@ -9,45 +9,52 @@ function getEnv(name: string) {
   return v;
 }
 
-async function uidFromBearer(req: Request) {
-  const supabaseUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anonKey = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+async function getAdminFromToken(req: Request) {
+  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
 
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return { uid: null as string | null };
+  if (!token) return { ok: false as const, error: "NO_TOKEN" as const };
 
-  const userClient = createClient(supabaseUrl, anonKey, {
+  const userClient = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
   });
 
-  const { data } = await userClient.auth.getUser();
-  return { uid: data.user?.id || null };
-}
+  const { data: u } = await userClient.auth.getUser();
+  const uid = u?.user?.id || null;
+  const email = u?.user?.email || null;
 
-async function requireAdmin(req: Request) {
-  const { uid } = await uidFromBearer(req);
-  if (!uid) return { ok: false as const, error: "NO_AUTH" as const };
+  if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };
 
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
   const admin = createClient(url, service, { auth: { persistSession: false } });
 
-  const { data: me, error } = await admin
+  let { data: me } = await admin
     .from("workers")
-    .select("id, role")
+    .select("id, role, email, user_id")
     .eq("user_id", uid)
     .maybeSingle();
 
-  if (error) throw error;
-  if (!me || me.role !== "admin") return { ok: false as const, error: "FORBIDDEN" as const };
+  if (!me && email) {
+    const r2 = await admin
+      .from("workers")
+      .select("id, role, email, user_id")
+      .eq("email", email)
+      .maybeSingle();
+    me = r2.data as any;
+  }
 
-  return { ok: true as const, admin };
+  if (!me) return { ok: false as const, error: "NO_WORKER" as const };
+  if (me.role !== "admin") return { ok: false as const, error: "FORBIDDEN" as const };
+
+  return { ok: true as const, admin, me };
 }
 
 export async function POST(req: Request) {
   try {
-    const gate = await requireAdmin(req);
+    const gate = await getAdminFromToken(req);
     if (!gate.ok) {
       return NextResponse.json({ ok: false, error: gate.error }, { status: 403 });
     }
@@ -135,6 +142,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "ERR" },
+      { status: 500 }
+    );
   }
 }
