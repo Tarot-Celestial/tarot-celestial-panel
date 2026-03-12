@@ -70,13 +70,17 @@ export async function GET(req: Request) {
     if (workerIds.length > 0) {
       const { data: sch, error: schErr } = await admin
         .from("shift_schedules")
-        .select("id, worker_id, day_of_week, start_time, end_time, timezone, is_active, created_at")
+        .select("id, worker_id, day_of_week, start_time, end_time, timezone, active, created_at")
         .in("worker_id", workerIds)
         .order("day_of_week", { ascending: true })
         .order("start_time", { ascending: true });
 
       if (schErr) throw schErr;
-      schedules = sch || [];
+
+      schedules = (sch || []).map((s: any) => ({
+        ...s,
+        is_active: !!s.active, // compat con tu frontend actual
+      }));
     }
 
     return NextResponse.json({
