@@ -513,9 +513,8 @@ export default function Admin() {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(() => {
-      if (tab === "facturas" || tab === "editor") {
+     if (tab === "facturas") {
         listInvoices(true);
-        if (tab === "editor" && selId) loadInvoice(selId);
       }
       if (tab === "estadisticas") {
         loadAdminStats(true);
