@@ -58,6 +58,69 @@ function normalizePhoneDigits(v: any) {
   return String(v || "").replace(/\D/g, "").trim();
 }
 
+function mapEtiquetasFromRelations(cliente: any) {
+  const rels = Array.isArray(cliente?.crm_cliente_etiquetas)
+    ? cliente.crm_cliente_etiquetas
+    : [];
+
+  const etiquetas = rels
+    .map((rel: any) => {
+      const et = rel?.crm_etiquetas;
+      if (!et) return null;
+      if (typeof et === "string") return et;
+      return et.nombre || null;
+    })
+    .filter(Boolean);
+
+  return Array.from(new Set(etiquetas));
+}
+
+async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
+  if (!clientesBase?.length) return [];
+
+  const ids = clientesBase
+    .map((c: any) => c?.id)
+    .filter((x: any) => x !== null && x !== undefined);
+
+  if (!ids.length) {
+    return clientesBase.map((c: any) => ({ ...c, etiquetas: [] }));
+  }
+
+  const { data: rels, error } = await admin
+    .from("crm_cliente_etiquetas")
+    .select(`
+      cliente_id,
+      crm_etiquetas (
+        id,
+        nombre
+      )
+    `)
+    .in("cliente_id", ids);
+
+  if (error) throw error;
+
+  const byClienteId = new Map<number | string, string[]>();
+
+  for (const rel of rels || []) {
+    const clienteId = rel?.cliente_id;
+    const nombre = rel?.crm_etiquetas?.nombre;
+
+    if (!clienteId || !nombre) continue;
+
+    const prev = byClienteId.get(clienteId) || [];
+    prev.push(nombre);
+    byClienteId.set(clienteId, prev);
+  }
+
+  return clientesBase.map((c: any) => {
+    const etiquetas = Array.from(new Set(byClienteId.get(c.id) || []));
+    return {
+      ...c,
+      etiquetas,
+    };
+  });
+}
+
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -89,26 +152,37 @@ export async function GET(req: Request) {
       const { data, error } = await admin.rpc("crm_buscar_clientes_fuzzy", { q });
 
       if (error) throw error;
-      clientes = data || [];
+
+      const base = Array.isArray(data) ? data : [];
+      clientes = await attachEtiquetas(admin, base);
     } else {
       const { data, error } = await admin
         .from("crm_clientes")
-        .select("*")
+        .select(`
+          *,
+          crm_cliente_etiquetas (
+            crm_etiquetas (
+              id,
+              nombre
+            )
+          )
+        `)
         .order("nombre", { ascending: true })
         .limit(200);
 
       if (error) throw error;
-      clientes = data || [];
+
+      clientes = (data || []).map((c: any) => ({
+        ...c,
+        etiquetas: mapEtiquetasFromRelations(c),
+      }));
     }
 
     if (telefonoNorm || telefonoDigits) {
       clientes = clientes.filter((c: any) => {
         const tel = String(c.telefono || "");
         const telNorm = String(c.telefono_normalizado || "").replace(/\D/g, "");
-        return (
-          tel.includes(telefonoNorm) ||
-          telNorm.includes(telefonoDigits)
-        );
+        return tel.includes(telefonoNorm) || telNorm.includes(telefonoDigits);
       });
     }
 
