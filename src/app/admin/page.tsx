@@ -175,6 +175,11 @@ export default function Admin() {
   const [accMonths, setAccMonths] = useState<any[]>([]);
   const [accBreakdown, setAccBreakdown] = useState<any>({ income: [], expense: [] });
 
+  const [crmQuery, setCrmQuery] = useState("");
+  const [crmLoading, setCrmLoading] = useState(false);
+  const [crmRows, setCrmRows] = useState<any[]>([]);
+  const [crmMsg, setCrmMsg] = useState("");
+
   // Staff / horarios
   const [staffLoading, setStaffLoading] = useState(false);
   const [staffMsg, setStaffMsg] = useState("");
@@ -1019,6 +1024,39 @@ export default function Admin() {
     setCkNewLabel("");
     setCkNewSort(String(sort + 10));
   }
+
+  async function searchCRM() {
+  const q = crmQuery.trim();
+  if (!q) {
+    setCrmMsg("⚠️ Escribe teléfono o nombre");
+    return;
+  }
+
+  try {
+    setCrmLoading(true);
+    setCrmMsg("");
+
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch(`/api/admin/crm/search?q=${encodeURIComponent(q)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const j = await safeJson(r);
+
+    if (!j?._ok || !j?.ok) {
+      throw new Error(j?.error || `HTTP ${j?._status}`);
+    }
+
+    setCrmRows(j.rows || []);
+    setCrmMsg(`Resultados: ${(j.rows || []).length}`);
+  } catch (e: any) {
+    setCrmMsg(`❌ ${e?.message || "Error"}`);
+  } finally {
+    setCrmLoading(false);
+  }
+}
 
   useEffect(() => {
     if (!ok) return;
@@ -2384,57 +2422,75 @@ export default function Admin() {
           )}
 
           {tab === "crm" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">👥 CRM</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Buscador y ficha de clientes del call center
-                  </div>
-                </div>
-              </div>
+  <div className="tc-card">
 
-              <div className="tc-hr" />
-
-              <div
-                style={{
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: 14,
-                  padding: 16,
-                  background: "rgba(255,255,255,0.03)",
-                }}
-              >
-                <div style={{ fontWeight: 900 }}>Módulo CRM listo para conectar</div>
-                <div className="tc-sub" style={{ marginTop: 8 }}>
-                  En el siguiente paso pondremos aquí el buscador de cliente por teléfono o nombre.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === "sync" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <div className="tc-title">🔄 Sincronización</div>
-                  <div className="tc-sub">Importa/actualiza llamadas desde Google Sheets</div>
-                </div>
-
-                <button className="tc-btn tc-btn-gold" onClick={syncNow} disabled={syncLoading}>
-                  {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
-                </button>
-              </div>
-
-              <div style={{ marginTop: 10 }} className="tc-sub">
-                {syncMsg || "Haz sync antes de generar facturas para que cuadren minutos/captadas."}
-              </div>
-            </div>
-          )}
+    <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+      <div>
+        <div className="tc-title">👥 CRM</div>
+        <div className="tc-sub">
+          Busca clientes por teléfono o nombre
         </div>
       </div>
-    </>
-  );
-}
+
+      <div className="tc-row" style={{ gap: 8 }}>
+        <input
+          className="tc-input"
+          value={crmQuery}
+          onChange={(e) => setCrmQuery(e.target.value)}
+          placeholder="Teléfono o nombre..."
+          style={{ width: 260 }}
+        />
+
+        <button
+          className="tc-btn tc-btn-gold"
+          onClick={searchCRM}
+          disabled={crmLoading}
+        >
+          {crmLoading ? "Buscando…" : "Buscar"}
+        </button>
+      </div>
+    </div>
+
+    <div className="tc-hr" />
+
+    <div className="tc-sub">{crmMsg || " "}</div>
+
+    <div style={{ overflowX: "auto", marginTop: 10 }}>
+      <table className="tc-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Teléfono</th>
+            <th>Llamadas</th>
+            <th>Minutos</th>
+            <th>Última llamada</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {(crmRows || []).map((r: any) => (
+            <tr key={r.phone}>
+              <td><b>{r.client_name || "—"}</b></td>
+              <td>{r.phone}</td>
+              <td>{r.calls_total}</td>
+              <td>{r.minutes_total}</td>
+              <td>{r.last_call ? new Date(r.last_call).toLocaleString("es-ES") : "—"}</td>
+            </tr>
+          ))}
+
+          {crmRows.length === 0 && (
+            <tr>
+              <td colSpan={5} className="tc-muted">
+                Sin resultados.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+)}
 
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
