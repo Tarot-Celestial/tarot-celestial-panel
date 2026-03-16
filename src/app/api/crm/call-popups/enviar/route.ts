@@ -192,28 +192,73 @@ export async function POST(req: Request) {
     }
 
     let cliente_id = pickNumericId(
-      body?.cliente_id,
-      body?.crmClienteFicha?.id,
-      body?.crmClienteSelId
-    );
+  body?.cliente_id,
+  body?.id,
+  body?.cliente?.id,
+  body?.crmClienteFicha?.id,
+  body?.crmClienteSelId
+);
 
-    if (!cliente_id && telefonoDigits) {
-      const { data } = await admin
-        .from("crm_clientes")
-        .select("id")
-        .ilike("telefono", `%${telefonoDigits}%`)
-        .limit(1)
-        .maybeSingle();
+if (!cliente_id && telefonoDigits) {
+  const { data: clienteByPhone, error: clienteByPhoneError } = await admin
+    .from("crm_clientes")
+    .select("id, telefono, telefono_normalizado, nombre, apellido")
+    .or(
+      `telefono.ilike.%${telefonoDigits}%,telefono_normalizado.ilike.%${telefonoDigits}%`
+    )
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-      if (data?.id) cliente_id = Number(data.id);
-    }
+  if (clienteByPhoneError) throw clienteByPhoneError;
+  if (clienteByPhone?.id) cliente_id = Number(clienteByPhone.id);
+}
 
-    if (!cliente_id) {
-      return NextResponse.json(
-        { ok: false, error: "CLIENTE_ID_INVALIDO" },
-        { status: 400 }
-      );
-    }
+if (!cliente_id) {
+  const nombre = String(body?.nombre || "").trim();
+  const apellido = String(body?.apellido || "").trim();
+
+  if (nombre) {
+    let q = admin
+      .from("crm_clientes")
+      .select("id, nombre, apellido")
+      .ilike("nombre", `%${nombre}%`)
+      .limit(10);
+
+    const { data: byName, error: byNameError } = await q;
+    if (byNameError) throw byNameError;
+
+    const match =
+      (byName || []).find(
+        (x: any) =>
+          String(x.nombre || "").toLowerCase() === nombre.toLowerCase() &&
+          String(x.apellido || "").toLowerCase() === apellido.toLowerCase()
+      ) ||
+      (byName || [])[0];
+
+    if (match?.id) cliente_id = Number(match.id);
+  }
+}
+
+if (!cliente_id || !Number.isFinite(cliente_id) || cliente_id <= 0) {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "CLIENTE_ID_INVALIDO",
+      debug: {
+        body_cliente_id: body?.cliente_id ?? null,
+        body_id: body?.id ?? null,
+        body_cliente_obj_id: body?.cliente?.id ?? null,
+        body_crmClienteSelId: body?.crmClienteSelId ?? null,
+        body_crmClienteFicha_id: body?.crmClienteFicha?.id ?? null,
+        telefono: body?.telefono ?? null,
+        nombre: body?.nombre ?? null,
+        apellido: body?.apellido ?? null,
+      },
+    },
+    { status: 400 }
+  );
+}
 
     const { data, error } = await admin
       .from("crm_call_popups")
