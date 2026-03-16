@@ -65,8 +65,11 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const popup_id = Number(body?.popup_id || 0);
 
-    if (!popup_id) {
-      return NextResponse.json({ ok: false, error: "FALTA_POPUP_ID" }, { status: 400 });
+    if (!popup_id || !Number.isFinite(popup_id)) {
+      return NextResponse.json(
+        { ok: false, error: "FALTA_POPUP_ID" },
+        { status: 400 }
+      );
     }
 
     const admin = adminClient();
@@ -80,11 +83,24 @@ export async function POST(req: Request) {
     if (popupError) throw popupError;
 
     if (!popup) {
-      return NextResponse.json({ ok: false, error: "POPUP_NO_ENCONTRADO" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: "POPUP_NO_ENCONTRADO" },
+        { status: 404 }
+      );
     }
 
     if (String(popup.tarotista_worker_id || "") !== String(worker.id || "")) {
-      return NextResponse.json({ ok: false, error: "POPUP_NO_PERTENECE_A_TAROTISTA" }, { status: 403 });
+      return NextResponse.json(
+        { ok: false, error: "POPUP_NO_PERTENECE_A_TAROTISTA" },
+        { status: 403 }
+      );
+    }
+
+    if (popup.closed === true) {
+      return NextResponse.json(
+        { ok: false, error: "LLAMADA_YA_CERRADA" },
+        { status: 400 }
+      );
     }
 
     const { data, error } = await admin
