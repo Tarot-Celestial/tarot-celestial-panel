@@ -422,7 +422,7 @@ export default function CRMClientesPanel({
   }
 
   async function sendCallPopup() {
-    if (!crmClienteSelId) {
+    if (!crmClienteSelId && !crmClienteFicha?.id) {
       setCrmSendMsg("⚠️ Primero abre una ficha de cliente");
       return;
     }
@@ -439,34 +439,52 @@ export default function CRMClientesPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
+      const tarotistaSel =
+        crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId)) || null;
+
+      console.log("SEND CALL POPUP", {
+        crmTarotistaSendId,
+        tarotistaSel,
+        crmTarotistasOpts,
+        clienteSelId: crmClienteSelId,
+        clienteFichaId: crmClienteFicha?.id,
+      });
+
+      const payload = {
+        tarotista_worker_id: String(tarotistaSel?.id || crmTarotistaSendId || "").trim(),
+        display_name: String(tarotistaSel?.display_name || "").trim(),
+        cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
+        telefono: crmEditTelefono.trim(),
+        nombre: crmEditNombre.trim(),
+        apellido: crmEditApellido.trim(),
+        minutos_free_pendientes:
+          Number(String(crmSendMinFree).replace(",", ".")) || 0,
+        minutos_normales_pendientes:
+          Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+      };
+
       const r = await fetch("/api/crm/call-popups/enviar", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-  tarotista_worker_id: String(crmTarotistaSendId || "").trim(),
-  cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
-  telefono: crmEditTelefono.trim(),
-  nombre: crmEditNombre.trim(),
-  apellido: crmEditApellido.trim(),
-  minutos_free_pendientes:
-    Number(String(crmSendMinFree).replace(",", ".")) || 0,
-  minutos_normales_pendientes:
-    Number(String(crmSendMinNormales).replace(",", ".")) || 0,
-}),
+        body: JSON.stringify(payload),
       });
 
       const j = await safeJson(r);
 
       if (!j?._ok || !j?.ok) {
-        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+        const extra =
+          j?.tarotista_worker_raw ||
+          j?.cliente_id_raw ||
+          (j?.debug ? JSON.stringify(j.debug) : "") ||
+          (j?.workers_debug ? JSON.stringify(j.workers_debug) : "") ||
+          "";
+        throw new Error([j?.error || `HTTP ${j?._status || r.status}`, extra].filter(Boolean).join(" · "));
       }
 
-      const tarotistaNombre =
-        crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId))
-          ?.display_name || "la tarotista";
+      const tarotistaNombre = tarotistaSel?.display_name || "la tarotista";
 
       setCrmSendMsg(`✅ Llamada enviada a ${tarotistaNombre}`);
     } catch (e: any) {
