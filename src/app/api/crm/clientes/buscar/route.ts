@@ -139,17 +139,22 @@ export async function GET(req: Request) {
       .limit(500);
 
     if (q) {
-      const qEsc = q.replace(/,/g, " ");
-      query = query.or(
-        [
-          `nombre.ilike.%${qEsc}%`,
-          `apellido.ilike.%${qEsc}%`,
-          `telefono.ilike.%${qEsc}%`,
-          `telefono_normalizado.ilike.%${normalizePhoneDigits(qEsc)}%`,
-          `email.ilike.%${qEsc}%`,
-        ].join(",")
-      );
-    }
+  const qEsc = q.replace(/,/g, " ").trim();
+  const qDigits = normalizePhoneDigits(qEsc);
+
+  const orParts = [
+    `nombre.ilike.%${qEsc}%`,
+    `apellido.ilike.%${qEsc}%`,
+    `email.ilike.%${qEsc}%`,
+  ];
+
+  if (qDigits) {
+    orParts.push(`telefono.ilike.%${qDigits}%`);
+    orParts.push(`telefono_normalizado.ilike.%${qDigits}%`);
+  }
+
+  query = query.or(orParts.join(","));
+}
 
     if (telefono) {
       query = query.or(
