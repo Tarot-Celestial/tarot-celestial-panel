@@ -251,17 +251,15 @@ export default function CRMClientesPanel({
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          nombre: crmNewNombre.trim(),
-          apellido: crmNewApellido.trim(),
-          telefono: crmNewTelefono.trim(),
-          pais: crmNewPais.trim() || "España",
-          email: crmNewEmail.trim(),
-          notas: crmNewNotas.trim(),
-          origen: crmNewOrigen.trim() || "manual",
-          deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
-          minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
-          minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
-        }),
+  tarotista_worker_id: crmTarotistaSendId,
+  cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
+  nombre: crmEditNombre.trim(),
+  apellido: crmEditApellido.trim(),
+  minutos_free_pendientes:
+    Number(String(crmSendMinFree).replace(",", ".")) || 0,
+  minutos_normales_pendientes:
+    Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+}),
       });
 
       const j = await safeJson(r);
