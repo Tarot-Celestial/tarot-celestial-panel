@@ -132,11 +132,7 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
 
       if (!j?._ok || !j?.ok) {
-        const extra =
-          j?.tarotista_worker_raw ||
-          j?.cliente_id_raw ||
-          (j?.debug ? JSON.stringify(j.debug) : "");
-        throw new Error([j?.error || `HTTP ${j?._status || r.status}`, extra].filter(Boolean).join(" · "));
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
       }
 
       const tarotistas = Array.isArray(j.tarotistas) ? j.tarotistas : [];
@@ -255,17 +251,17 @@ export default function CRMClientesPanel({
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-  tarotista_worker_id: String(tarotistaSel?.id || crmTarotistaSendId || "").trim(),
-  display_name: String(tarotistaSel?.display_name || "").trim(),
-  cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
-  telefono: crmEditTelefono.trim(),
-  nombre: crmEditNombre.trim(),
-  apellido: crmEditApellido.trim(),
-  minutos_free_pendientes:
-    Number(String(crmSendMinFree).replace(",", ".")) || 0,
-  minutos_normales_pendientes:
-    Number(String(crmSendMinNormales).replace(",", ".")) || 0,
-}),
+          nombre: crmNewNombre.trim(),
+          apellido: crmNewApellido.trim(),
+          telefono: crmNewTelefono.trim(),
+          pais: crmNewPais.trim() || "España",
+          email: crmNewEmail.trim(),
+          notas: crmNewNotas.trim(),
+          origen: crmNewOrigen.trim() || "manual",
+          deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
+          minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
+          minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
+        }),
       });
 
       const j = await safeJson(r);
@@ -767,3 +763,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
