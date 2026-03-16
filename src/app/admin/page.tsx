@@ -246,6 +246,46 @@ export default function Admin() {
     return token;
   }
 
+  async function searchCRM() {
+    const q = crmQuery.trim();
+    if (!q) {
+      setCrmMsg("⚠️ Escribe teléfono o nombre");
+      setCrmRows([]);
+      return;
+    }
+
+    try {
+      setCrmLoading(true);
+      setCrmMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const isPhone = /\d/.test(q);
+      const url = isPhone
+        ? `/api/crm/clientes/buscar?telefono=${encodeURIComponent(q)}`
+        : `/api/crm/clientes/buscar?q=${encodeURIComponent(q)}`;
+
+      const r = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status}`);
+      }
+
+      setCrmRows(j.clientes || []);
+      setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
+    } catch (e: any) {
+      setCrmRows([]);
+      setCrmMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setCrmLoading(false);
+    }
+  }
+
   async function loadAccounting(silent = false) {
     if (accLoading && !silent) return;
     if (!silent) {
@@ -894,15 +934,9 @@ export default function Admin() {
     if (pollRef.current) clearInterval(pollRef.current);
 
     pollRef.current = setInterval(() => {
-      if (tab === "facturas") {
-        listInvoices(true);
-      }
-      if (tab === "estadisticas") {
-        loadAdminStats(true);
-      }
-      if (tab === "contabilidad") {
-        loadAccounting(true);
-      }
+      if (tab === "facturas") listInvoices(true);
+      if (tab === "estadisticas") loadAdminStats(true);
+      if (tab === "contabilidad") loadAccounting(true);
     }, 8000);
 
     return () => {
@@ -927,12 +961,8 @@ export default function Admin() {
         setStTo(to);
       }
     }
-    if (tab === "estadisticas") {
-      loadAdminStats(false);
-    }
-    if (tab === "contabilidad") {
-      loadAccounting(false);
-    }
+    if (tab === "estadisticas") loadAdminStats(false);
+    if (tab === "contabilidad") loadAccounting(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
@@ -1025,39 +1055,6 @@ export default function Admin() {
     setCkNewSort(String(sort + 10));
   }
 
-  async function searchCRM() {
-  const q = crmQuery.trim();
-  if (!q) {
-    setCrmMsg("⚠️ Escribe teléfono o nombre");
-    return;
-  }
-
-  try {
-    setCrmLoading(true);
-    setCrmMsg("");
-
-    const token = await getTokenOrLogin();
-    if (!token) return;
-
-    const r = await fetch(`/api/admin/crm/search?q=${encodeURIComponent(q)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const j = await safeJson(r);
-
-    if (!j?._ok || !j?.ok) {
-      throw new Error(j?.error || `HTTP ${j?._status}`);
-    }
-
-    setCrmRows(j.rows || []);
-    setCrmMsg(`Resultados: ${(j.rows || []).length}`);
-  } catch (e: any) {
-    setCrmMsg(`❌ ${e?.message || "Error"}`);
-  } finally {
-    setCrmLoading(false);
-  }
-}
-
   useEffect(() => {
     if (!ok) return;
     if (tab === "checklists") loadChecklistAdmin();
@@ -1077,22 +1074,6 @@ export default function Admin() {
       status: String(x.status || "working"),
     }));
   }, [attExpected]);
-
-  const workersFromInvoices = useMemo(() => {
-    const map = new Map<string, any>();
-    for (const inv of invoices || []) {
-      const wid = String(inv.worker_id || inv.id || inv.worker?.id || "");
-      if (!wid) continue;
-      if (!map.has(wid)) {
-        map.set(wid, {
-          worker_id: wid,
-          display_name: inv.display_name || "—",
-          role: inv.role || "",
-        });
-      }
-    }
-    return Array.from(map.values()).sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
-  }, [invoices]);
 
   const statsInvoiceMap = useMemo(() => {
     const map = new Map<string, any>();
@@ -1173,14 +1154,7 @@ export default function Admin() {
     const q = staffQ.trim().toLowerCase();
     if (!q) return staffWorkers || [];
     return (staffWorkers || []).filter((w: any) => {
-      const text = [
-        w.display_name || "",
-        w.role || "",
-        w.team || "",
-        w.email || "",
-      ]
-        .join(" ")
-        .toLowerCase();
+      const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
       return text.includes(q);
     });
   }, [staffWorkers, staffQ]);
@@ -1207,7 +1181,7 @@ export default function Admin() {
     return map;
   }, [staffSchedules]);
 
-    if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
+  if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <>
@@ -1845,16 +1819,10 @@ export default function Admin() {
                             </td>
                             <td>
                               <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                <button
-                                  className="tc-btn"
-                                  onClick={() => startEditWorker(w)}
-                                >
+                                <button className="tc-btn" onClick={() => startEditWorker(w)}>
                                   Editar
                                 </button>
-                                <button
-                                  className="tc-btn tc-btn-gold"
-                                  onClick={() => prepareScheduleForWorker(w)}
-                                >
+                                <button className="tc-btn tc-btn-gold" onClick={() => prepareScheduleForWorker(w)}>
                                   Cambiar horario
                                 </button>
                                 {w.is_active ? (
@@ -2422,75 +2390,102 @@ export default function Admin() {
           )}
 
           {tab === "crm" && (
-  <div className="tc-card">
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <div className="tc-title">👥 CRM</div>
+                  <div className="tc-sub">
+                    Busca clientes por teléfono o nombre
+                  </div>
+                </div>
 
-    <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-      <div>
-        <div className="tc-title">👥 CRM</div>
-        <div className="tc-sub">
-          Busca clientes por teléfono o nombre
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    className="tc-input"
+                    value={crmQuery}
+                    onChange={(e) => setCrmQuery(e.target.value)}
+                    placeholder="Teléfono o nombre..."
+                    style={{ width: 260 }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") searchCRM();
+                    }}
+                  />
+
+                  <button
+                    className="tc-btn tc-btn-gold"
+                    onClick={searchCRM}
+                    disabled={crmLoading}
+                  >
+                    {crmLoading ? "Buscando…" : "Buscar"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-sub">{crmMsg || " "}</div>
+
+              <div style={{ overflowX: "auto", marginTop: 10 }}>
+                <table className="tc-table">
+                  <thead>
+                    <tr>
+                      <th>Cliente</th>
+                      <th>Teléfono</th>
+                      <th>País</th>
+                      <th>Min free</th>
+                      <th>Min normales</th>
+                      <th>Deuda</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {(crmRows || []).map((r: any) => (
+                      <tr key={r.id}>
+                        <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
+                        <td>{r.telefono || "—"}</td>
+                        <td>{r.pais || "—"}</td>
+                        <td>{r.minutos_free_pendientes ?? 0}</td>
+                        <td>{r.minutos_normales_pendientes ?? 0}</td>
+                        <td>{eur(r.deuda_pendiente || 0)}</td>
+                      </tr>
+                    ))}
+
+                    {crmRows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="tc-muted">
+                          Sin resultados.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {tab === "sync" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">🔄 Sincronización</div>
+                  <div className="tc-sub">Importa/actualiza llamadas desde Google Sheets</div>
+                </div>
+
+                <button className="tc-btn tc-btn-gold" onClick={syncNow} disabled={syncLoading}>
+                  {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
+                </button>
+              </div>
+
+              <div style={{ marginTop: 10 }} className="tc-sub">
+                {syncMsg || "Haz sync antes de generar facturas para que cuadren minutos/captadas."}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      <div className="tc-row" style={{ gap: 8 }}>
-        <input
-          className="tc-input"
-          value={crmQuery}
-          onChange={(e) => setCrmQuery(e.target.value)}
-          placeholder="Teléfono o nombre..."
-          style={{ width: 260 }}
-        />
-
-        <button
-          className="tc-btn tc-btn-gold"
-          onClick={searchCRM}
-          disabled={crmLoading}
-        >
-          {crmLoading ? "Buscando…" : "Buscar"}
-        </button>
-      </div>
-    </div>
-
-    <div className="tc-hr" />
-
-    <div className="tc-sub">{crmMsg || " "}</div>
-
-    <div style={{ overflowX: "auto", marginTop: 10 }}>
-      <table className="tc-table">
-        <thead>
-          <tr>
-            <th>Cliente</th>
-            <th>Teléfono</th>
-            <th>Llamadas</th>
-            <th>Minutos</th>
-            <th>Última llamada</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {(crmRows || []).map((r: any) => (
-            <tr key={r.phone}>
-              <td><b>{r.client_name || "—"}</b></td>
-              <td>{r.phone}</td>
-              <td>{r.calls_total}</td>
-              <td>{r.minutes_total}</td>
-              <td>{r.last_call ? new Date(r.last_call).toLocaleString("es-ES") : "—"}</td>
-            </tr>
-          ))}
-
-          {crmRows.length === 0 && (
-            <tr>
-              <td colSpan={5} className="tc-muted">
-                Sin resultados.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-
-  </div>
-)}
+    </>
+  );
+}
 
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
