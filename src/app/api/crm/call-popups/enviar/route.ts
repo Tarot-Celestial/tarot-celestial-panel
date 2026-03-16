@@ -99,7 +99,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const tarotista_worker_id = String(body?.tarotista_worker_id || "").trim();
-    const cliente_id = Number(body?.cliente_id || 0);
+    const cliente_id_raw = String(body?.cliente_id || "").trim();
+    const cliente_id = Number(cliente_id_raw);
 
     const nombre = String(body?.nombre || "").trim();
     const apellido = String(body?.apellido || "").trim();
@@ -113,12 +114,12 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!cliente_id) {
-      return NextResponse.json(
-        { ok: false, error: "FALTA_CLIENTE_ID" },
-        { status: 400 }
-      );
-    }
+    if (!cliente_id_raw || Number.isNaN(cliente_id)) {
+    return NextResponse.json(
+    { ok: false, error: "FALTA_CLIENTE_ID" },
+    { status: 400 }
+  );
+}
 
     const admin = adminClient();
 
