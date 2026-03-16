@@ -89,15 +89,14 @@ export async function GET(req: Request) {
     const { data, error } = await admin
       .from("workers")
       .select("id, user_id, display_name, role, state")
+      .eq("role", "tarotista")
       .order("display_name", { ascending: true });
 
     if (error) throw error;
 
-    const tarotistas = (data || []).filter((w: any) => normalizeRole(w.role) === "tarotista");
-
     return NextResponse.json({
       ok: true,
-      tarotistas,
+      tarotistas: data || [],
     });
   } catch (e: any) {
     return NextResponse.json(
