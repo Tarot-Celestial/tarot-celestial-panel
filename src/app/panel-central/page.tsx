@@ -1,22 +1,16 @@
-// src/app/panel-central/page.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
+import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 
 const sb = supabaseBrowser();
-
-type TabKey = "equipo" | "llamadas" | "incidencias" | "ranking" | "checklist" | "chat";
 
 function monthKeyNow() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function dayKeyNow() {
-  const d = new Date();
-  return d.toISOString().slice(0, 10);
 }
 
 function eur(n: any) {
@@ -24,10 +18,35 @@ function eur(n: any) {
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
-function pctAny(v: any) {
-  let x = Number(v) || 0;
-  if (x > 0 && x <= 1) x = x * 100;
-  return x;
+function numES(n: any, digits = 2) {
+  const x = Number(n) || 0;
+  return x.toLocaleString("es-ES", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+}
+
+function minsToHhmm(mins: any) {
+  const m = Math.max(0, Math.round(Number(mins) || 0));
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function roundMoney(n: any) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+function dayName(day: any) {
+  const d = Number(day);
+  if (d === 0) return "Domingo";
+  if (d === 1) return "Lunes";
+  if (d === 2) return "Martes";
+  if (d === 3) return "Miércoles";
+  if (d === 4) return "Jueves";
+  if (d === 5) return "Viernes";
+  if (d === 6) return "Sábado";
+  return "—";
 }
 
 async function safeJson(res: Response) {
@@ -41,172 +60,158 @@ async function safeJson(res: Response) {
   }
 }
 
-// Attendance UI helpers
-function attLabel(online: boolean, status: string) {
-  if (!online) return "⚪ Offline";
-  if (status === "break") return "🟡 Descanso";
-  if (status === "bathroom") return "🟣 Baño";
-  return "🟢 Online";
-}
-function attStyle(online: boolean, status: string) {
-  if (!online) return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
-  if (status === "break") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
-  if (status === "bathroom") return { background: "rgba(181,156,255,0.10)", border: "1px solid rgba(181,156,255,0.25)" };
-  return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
+type TabKey =
+  | "facturas"
+  | "editor"
+  | "estadisticas"
+  | "contabilidad"
+  | "asistencia"
+  | "checklists"
+  | "crm"
+  | "sync";
+
+function ackLabel(v: any) {
+  const s = String(v || "pending");
+  if (s === "accepted") return "✅ Aceptada";
+  if (s === "rejected") return "❌ Rechazada";
+  if (s === "review") return "🟡 Revisión";
+  return "⏳ Pendiente";
 }
 
-function secondsAgo(ts: string | null) {
-  if (!ts) return null;
-  const t = new Date(ts).getTime();
-  if (!Number.isFinite(t)) return null;
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  return s;
-}
-
-function statusLabel(s: string) {
-  switch (s) {
-    case "pending":
-      return "⏳ Pendiente";
-    case "calling":
-      return "📞 Llamando";
-    case "answered":
-      return "✅ Contestó";
-    case "no_answer":
-      return "🚫 No contesta";
-    case "busy":
-      return "📵 Ocupado";
-    case "wrong_number":
-      return "❌ Número mal";
-    case "callback":
-      return "🔁 Llamar luego";
-    case "done":
-      return "✅ Hecho";
-    default:
-      return s || "—";
+function ackStyle(v: any) {
+  const s = String(v || "pending");
+  if (s === "accepted") {
+    return {
+      background: "rgba(120,255,190,0.10)",
+      border: "1px solid rgba(120,255,190,0.25)",
+    };
   }
+  if (s === "rejected") {
+    return {
+      background: "rgba(255,80,80,0.10)",
+      border: "1px solid rgba(255,80,80,0.25)",
+    };
+  }
+  if (s === "review") {
+    return {
+      background: "rgba(215,181,109,0.10)",
+      border: "1px solid rgba(215,181,109,0.25)",
+    };
+  }
+  return {
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)",
+  };
 }
 
-const OUTBOUND_ACTIONS: { key: string; label: string }[] = [
-  { key: "no_answer", label: "🚫 No contesta" },
-  { key: "busy", label: "📵 Ocupado" },
-  { key: "callback", label: "🔁 Llamar luego" },
-  { key: "answered", label: "✅ Contestó" },
-  { key: "wrong_number", label: "❌ Número mal" },
-  { key: "done", label: "✅ Done" },
-];
-
-type PresenceRow = {
-  worker_id: string;
-  display_name: string;
-  team_key: string | null;
-  online: boolean;
-  status: string;
-  last_event_at: string | null;
-  last_seen_seconds: number | null;
-};
-
-type ExpectedRow = {
-  worker_id: string;
-  display_name: string;
-  start_time?: string | null;
-  end_time?: string | null;
-  timezone?: string | null;
-  schedule_id?: string | null;
-  online?: boolean;
-  status?: string | null;
-};
-
-// --- CHAT TYPES (flexibles para tu backend) ---
-type ChatThread = {
-  id: string;
-  title?: string | null;
-  tarotist_display_name?: string | null;
-  tarotist_worker_id?: string | null;
-  last_message_text?: string | null;
-  last_message_at?: string | null;
-  unread_count?: number | null;
-};
-
-type ChatMessage = {
-  id: string;
-  thread_id: string;
-  sender_worker_id?: string | null;
-  sender_display_name?: string | null;
-  text?: string | null;
-  created_at?: string | null;
-};
-
-export default function Central() {
+export default function Admin() {
   const [ok, setOk] = useState(false);
-  const [tab, setTab] = useState<TabKey>("equipo");
-  const [month, setMonth] = useState(monthKeyNow());
+  const [tab, setTab] = useState<TabKey>("facturas");
 
-  const [rank, setRank] = useState<any>(null);
-  const [rankMsg, setRankMsg] = useState("");
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string>("");
 
-  const [tarotists, setTarotists] = useState<any[]>([]);
-  const [tarotistsLoading, setTarotistsLoading] = useState(false);
-  const [tarotistsMsg, setTarotistsMsg] = useState("");
+  const [month, setMonth] = useState<string>(monthKeyNow());
 
-  const [incWorkerId, setIncWorkerId] = useState("");
-  const [incAmount, setIncAmount] = useState("5");
-  const [incReason, setIncReason] = useState("No contesta llamada");
-  const [incMsg, setIncMsg] = useState("");
-  const [incLoading, setIncLoading] = useState(false);
+  const [genLoading, setGenLoading] = useState(false);
+  const [genMsg, setGenMsg] = useState<string>("");
 
-  const [q, setQ] = useState("");
+  const [listLoading, setListLoading] = useState(false);
+  const [listMsg, setListMsg] = useState<string>("");
+  const [invoices, setInvoices] = useState<any[]>([]);
 
-  // checklist tarotistas (turno actual)
-  const [clLoading, setClLoading] = useState(false);
-  const [clMsg, setClMsg] = useState("");
-  const [clShiftKey, setClShiftKey] = useState<string>("");
-  const [clRows, setClRows] = useState<any[]>([]);
-  const [clQ, setClQ] = useState("");
+  const [selId, setSelId] = useState<string>("");
+  const [selLoading, setSelLoading] = useState(false);
+  const [selMsg, setSelMsg] = useState<string>("");
+  const [selInvoice, setSelInvoice] = useState<any>(null);
+  const [selWorker, setSelWorker] = useState<any>(null);
+  const [selLines, setSelLines] = useState<any[]>([]);
+  const [newLabel, setNewLabel] = useState("Ajuste");
+  const [newAmount, setNewAmount] = useState<string>("0");
+  const [newKind, setNewKind] = useState("adjustment");
 
-  // ✅ attendance (online real) - Central (self)
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsMsg, setStatsMsg] = useState("");
+  const [statsTotals, setStatsTotals] = useState<any>(null);
+  const [statsRows, setStatsRows] = useState<any[]>([]);
+  const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
+  const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
+
+  const pollRef = useRef<any>(null);
+  const lastMonthRef = useRef<string>("");
+
+  const totalSum = useMemo(() => {
+    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+  }, [invoices]);
+
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
-  const [attOnline, setAttOnline] = useState(false);
-  const [attStatus, setAttStatus] = useState<string>("offline");
-  const attBeatRef = useRef<any>(null);
+  const [attOnline, setAttOnline] = useState<any[]>([]);
+  const [attExpected, setAttExpected] = useState<any[]>([]);
+  const [attIncidents, setAttIncidents] = useState<any[]>([]);
+  const [attNote, setAttNote] = useState<string>("");
 
-  // ✅ presencias tarotistas
-  const [presLoading, setPresLoading] = useState(false);
-  const [presMsg, setPresMsg] = useState("");
-  const [presences, setPresences] = useState<PresenceRow[]>([]);
-  const [presQ, setPresQ] = useState("");
+  const [stLoading, setStLoading] = useState(false);
+  const [stMsg, setStMsg] = useState("");
+  const [stRows, setStRows] = useState<any[]>([]);
+  const [stWorkerId, setStWorkerId] = useState<string>("");
+  const [stGroup, setStGroup] = useState<"day" | "week" | "month">("day");
+  const [stFrom, setStFrom] = useState<string>("");
+  const [stTo, setStTo] = useState<string>("");
 
-  // ✅ deberían estar conectadas
-  const [expLoading, setExpLoading] = useState(false);
-  const [expMsg, setExpMsg] = useState("");
-  const [expected, setExpected] = useState<ExpectedRow[]>([]);
-  const [expQ, setExpQ] = useState("");
+  const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
+  const [ckLoading, setCkLoading] = useState(false);
+  const [ckMsg, setCkMsg] = useState("");
+  const [ckTemplate, setCkTemplate] = useState<any>(null);
+  const [ckItems, setCkItems] = useState<any[]>([]);
+  const [ckQ, setCkQ] = useState("");
 
-  // ✅ outbound calls (central)
-  const [obDate, setObDate] = useState(dayKeyNow());
-  const [obLoading, setObLoading] = useState(false);
-  const [obMsg, setObMsg] = useState("");
-  const [obBatches, setObBatches] = useState<any[]>([]);
-  const obChannelsRef = useRef<any[]>([]);
+  const [ckNewLabel, setCkNewLabel] = useState("");
+  const [ckNewSort, setCkNewSort] = useState<string>("10");
 
-  const batchIdsKey = useMemo(() => {
-    return (obBatches || []).map((b: any) => String(b?.id || "")).filter(Boolean).join(",");
-  }, [obBatches]);
+  const [accLoading, setAccLoading] = useState(false);
+  const [accMsg, setAccMsg] = useState("");
+  const [accTotals, setAccTotals] = useState<any>({ income: 0, expense: 0, net: 0 });
+  const [accEntries, setAccEntries] = useState<any[]>([]);
+  const [accMonths, setAccMonths] = useState<any[]>([]);
+  const [accBreakdown, setAccBreakdown] = useState<any>({ income: [], expense: [] });
 
-  // ✅ CHAT (central/admin ve todos)
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatMsg, setChatMsg] = useState("");
-  const [threads, setThreads] = useState<ChatThread[]>([]);
-  const [threadQ, setThreadQ] = useState("");
-  const [selectedThreadId, setSelectedThreadId] = useState<string>("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [msgText, setMsgText] = useState("");
-  const msgEndRef = useRef<HTMLDivElement | null>(null);
-  const chatChannelRef = useRef<any>(null);
+  // Staff / horarios
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffMsg, setStaffMsg] = useState("");
+  const [staffWorkers, setStaffWorkers] = useState<any[]>([]);
+  const [staffSchedules, setStaffSchedules] = useState<any[]>([]);
+  const [staffQ, setStaffQ] = useState("");
 
-  // ✅ NUEVO: abrir chat directamente con tarotista
-  const [newChatWorkerId, setNewChatWorkerId] = useState<string>("");
-  const [newChatMsg, setNewChatMsg] = useState<string>("");
+  const [newWorkerName, setNewWorkerName] = useState("");
+  const [newWorkerRole, setNewWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
+  const [newWorkerTeam, setNewWorkerTeam] = useState("");
+  const [newWorkerEmail, setNewWorkerEmail] = useState("");
+
+  const [scheduleWorkerId, setScheduleWorkerId] = useState("");
+  const [scheduleDay, setScheduleDay] = useState("1");
+  const [scheduleStart, setScheduleStart] = useState("10:00:00");
+  const [scheduleEnd, setScheduleEnd] = useState("18:00:00");
+  const [scheduleTimezone, setScheduleTimezone] = useState("Europe/Madrid");
+
+  const [editingWorkerId, setEditingWorkerId] = useState("");
+  const [editingWorkerName, setEditingWorkerName] = useState("");
+  const [editingWorkerRole, setEditingWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
+  const [editingWorkerTeam, setEditingWorkerTeam] = useState("");
+  const [editingWorkerEmail, setEditingWorkerEmail] = useState("");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("tc_month_admin");
+      if (saved) setMonth(saved);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("tc_month_admin", month);
+    } catch {}
+  }, [month]);
 
   useEffect(() => {
     (async () => {
@@ -214,11 +219,12 @@ export default function Central() {
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
+      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
+      const me = await safeJson(meRes);
       if (!me?.ok) return (window.location.href = "/login");
 
-      if (me.role !== "central") {
-        window.location.href = me.role === "admin" ? "/admin" : "/panel-tarotista";
+      if (me.role !== "admin") {
+        window.location.href = me.role === "central" ? "/panel-central" : "/panel-tarotista";
         return;
       }
 
@@ -226,75 +232,344 @@ export default function Central() {
     })();
   }, []);
 
-  async function loadAttendanceMe(silent = false) {
-    if (attLoading && !silent) return;
-    if (!silent) {
-      setAttLoading(true);
-      setAttMsg("");
+  async function getTokenOrLogin() {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      window.location.href = "/login";
+      return "";
     }
+    return token;
+  }
+
+  async function loadAccounting(silent = false) {
+    if (accLoading && !silent) return;
+    if (!silent) {
+      setAccLoading(true);
+      setAccMsg("");
+    }
+
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
+      const token = await getTokenOrLogin();
       if (!token) return;
 
-      const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
+      const r = await fetch(`/api/admin/accounting?month=${encodeURIComponent(month)}&months_back=12`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      setAttOnline(!!j.online);
-      setAttStatus(String(j.status || (j.online ? "working" : "offline")));
-      if (!silent) setAttMsg("");
+      setAccTotals(j.totals || { income: 0, expense: 0, net: 0 });
+      setAccEntries(j.entries || []);
+      setAccMonths(j.months || []);
+      setAccBreakdown(j.breakdown || { income: [], expense: [] });
+
+      if (!silent) setAccMsg("✅ Contabilidad cargada.");
     } catch (e: any) {
-      if (!silent) setAttMsg(`❌ Estado: ${e?.message || "Error"}`);
-      setAttOnline(false);
-      setAttStatus("offline");
+      if (!silent) setAccMsg(`❌ ${e?.message || "Error"}`);
     } finally {
-      if (!silent) setAttLoading(false);
+      if (!silent) setAccLoading(false);
     }
   }
 
-  async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
-    try {
-      setAttMsg("");
-      setAttLoading(true);
+  async function createAccountingEntry(payload: any) {
+    const token = await getTokenOrLogin();
+    if (!token) return;
 
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
+    const r = await fetch("/api/admin/accounting", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+    await loadAccounting(true);
+    setAccMsg("✅ Movimiento guardado.");
+  }
+
+  async function deleteAccountingEntry(id: string) {
+    if (!confirm("¿Borrar este movimiento?")) return;
+
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch("/api/admin/accounting/delete", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+    await loadAccounting(true);
+    setAccMsg("✅ Movimiento borrado.");
+  }
+
+  async function syncNow() {
+    if (syncLoading) return;
+    setSyncLoading(true);
+    setSyncMsg("");
+    try {
+      const token = await getTokenOrLogin();
       if (!token) return;
 
-      const res = await fetch("/api/attendance/event", {
+      const r = await fetch("/api/sync/calls", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+      setSyncMsg(`✅ Sincronización OK. Upserted: ${j.upserted ?? 0}`);
+    } catch (e: any) {
+      setSyncMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setSyncLoading(false);
+    }
+  }
+
+  async function generateInvoices() {
+    if (genLoading) return;
+    setGenLoading(true);
+    setGenMsg("");
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/invoices/generate", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_type,
-          meta: { path: window.location.pathname, ...metaExtra },
-        }),
+        body: JSON.stringify({ month }),
       });
 
-      const j = await safeJson(res);
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
 
-      if (!j?._ok || !j?.ok) {
-        const err = String(j?.error || `HTTP ${j?._status}`);
-        if (err === "OUTSIDE_SHIFT") setAttMsg("⛔ Estás fuera de tu turno. No puedes conectarte ahora.");
-        else setAttMsg(`❌ ${err}`);
-        await loadAttendanceMe(true);
-        return;
+      const count = j?.result?.invoices ?? "?";
+      setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
+      await listInvoices();
+      setTab("facturas");
+    } catch (e: any) {
+      setGenMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setGenLoading(false);
+    }
+  }
+
+  async function listInvoices(silent = false) {
+    if (listLoading && !silent) return;
+    if (!silent) {
+      setListLoading(true);
+      setListMsg("");
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
+      setInvoices(j.invoices || []);
+      if (!silent) setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
+    } catch (e: any) {
+      if (!silent) setListMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setListLoading(false);
+    }
+  }
+
+  async function loadInvoice(invoice_id: string) {
+    if (!invoice_id) return;
+    setSelLoading(true);
+    setSelMsg("");
+    setSelId(invoice_id);
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/invoices/edit?invoice_id=${encodeURIComponent(invoice_id)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
+      setSelInvoice(j.invoice);
+      setSelWorker(j.worker);
+      setSelLines(j.lines || []);
+      setTab("editor");
+    } catch (e: any) {
+      setSelMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setSelLoading(false);
+    }
+  }
+
+  async function postEdit(payload: any) {
+    const token = await getTokenOrLogin();
+    if (!token) return null;
+
+    const r = await fetch("/api/admin/invoices/edit", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const j = await safeJson(r);
+    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+    return j;
+  }
+
+  async function addLine() {
+    if (!selId) return;
+    try {
+      const amt = Number(String(newAmount).replace(",", "."));
+      await postEdit({
+        action: "add_line",
+        invoice_id: selId,
+        kind: newKind,
+        label: newLabel,
+        amount: isFinite(amt) ? amt : 0,
+        meta: {},
+      });
+      await loadInvoice(selId);
+      await listInvoices(true);
+      setSelMsg("✅ Línea añadida.");
+    } catch (e: any) {
+      setSelMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function updateLine(line_id: string, payload: { label: string; amount?: number; meta?: any }) {
+    if (!selId) return;
+    try {
+      await postEdit({
+        action: "update_line",
+        invoice_id: selId,
+        line_id,
+        label: payload.label,
+        amount: payload.amount,
+        meta: payload.meta,
+      });
+      await loadInvoice(selId);
+      await listInvoices(true);
+      setSelMsg("✅ Guardado.");
+    } catch (e: any) {
+      setSelMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function deleteLine(line_id: string) {
+    if (!selId) return;
+    if (!confirm("¿Borrar esta línea?")) return;
+    try {
+      await postEdit({ action: "delete_line", invoice_id: selId, line_id });
+      await loadInvoice(selId);
+      await listInvoices(true);
+      setSelMsg("✅ Línea borrada.");
+    } catch (e: any) {
+      setSelMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function setStatus(status: string) {
+    if (!selId) return;
+    try {
+      await postEdit({ action: "set_status", invoice_id: selId, status });
+      await loadInvoice(selId);
+      await listInvoices(true);
+      setSelMsg("✅ Estado actualizado.");
+    } catch (e: any) {
+      setSelMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function loadAdminStats(silent = false) {
+    if (statsLoading && !silent) return;
+    if (!silent) {
+      setStatsLoading(true);
+      setStatsMsg("");
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const [statsRes, rankRes, invRes] = await Promise.all([
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/rankings/monthly?month=${encodeURIComponent(month)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const statsJ = await safeJson(statsRes);
+      const rankJ = await safeJson(rankRes);
+      const invJ = await safeJson(invRes);
+
+      if (!statsJ?._ok || !statsJ?.ok) throw new Error(statsJ?.error || `HTTP ${statsJ?._status}`);
+      if (!rankJ?._ok || !rankJ?.ok) throw new Error(rankJ?.error || `HTTP ${rankJ?._status}`);
+      if (!invJ?._ok || !invJ?.ok) throw new Error(invJ?.error || `HTTP ${invJ?._status}`);
+
+      setStatsTotals(statsJ.totals || null);
+      setStatsRows(statsJ.rows || []);
+      setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
+      setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
+      setInvoices(invJ.invoices || []);
+
+      if (!silent) setStatsMsg("✅ Estadísticas cargadas.");
+    } catch (e: any) {
+      if (!silent) setStatsMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setStatsLoading(false);
+    }
+  }
+
+  async function loadAttendance() {
+    if (attLoading) return;
+    setAttLoading(true);
+    setAttMsg("");
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const [r1, r2] = await Promise.all([
+        fetch("/api/admin/attendance/online-now", { headers: { Authorization: `Bearer ${token}` } }),
+        fetch("/api/admin/attendance/expected-now", { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+
+      const j1 = await safeJson(r1);
+      const j2 = await safeJson(r2);
+
+      if (!j1?._ok || !j1?.ok) throw new Error(j1?.error || `HTTP ${j1?._status}`);
+      if (!j2?._ok || !j2?.ok) throw new Error(j2?.error || `HTTP ${j2?._status}`);
+
+      setAttOnline(j1.rows || j1.online || []);
+      setAttExpected(j2.expected || j2.rows || []);
+
+      const incRes = await fetch(`/api/admin/incidents/list?month=${encodeURIComponent(month)}&kind=attendance`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => null);
+
+      if (incRes) {
+        const incJ = await safeJson(incRes);
+        if (incJ?._ok && incJ?.ok) setAttIncidents(incJ.incidents || []);
+        else setAttIncidents([]);
+      } else {
+        setAttIncidents([]);
       }
 
-      if (event_type === "online") {
-        await fetch("/api/attendance/event", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_type: "heartbeat",
-            meta: { path: window.location.pathname, immediate: true },
-          }),
-        }).catch(() => {});
-      }
-
-      await loadAttendanceMe(true);
-      setAttMsg("✅ Listo");
-      setTimeout(() => setAttMsg(""), 1000);
+      setAttMsg("✅ Asistencia actualizada.");
     } catch (e: any) {
       setAttMsg(`❌ ${e?.message || "Error"}`);
     } finally {
@@ -302,763 +577,565 @@ export default function Central() {
     }
   }
 
-  // ✅ Heartbeat SOLO si está online real
-  useEffect(() => {
-    if (!ok) return;
-
-    if (attBeatRef.current) {
-      clearInterval(attBeatRef.current);
-      attBeatRef.current = null;
-    }
-
-    if (!attOnline) return;
-
-    let stopped = false;
-
-    const start = async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const ping = async () => {
-        if (stopped) return;
-        await fetch("/api/attendance/event", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ event_type: "heartbeat", meta: { path: window.location.pathname } }),
-        }).catch(() => {});
-      };
-
-      await ping();
-      attBeatRef.current = setInterval(ping, 30_000);
-    };
-
-    start();
-
-    return () => {
-      stopped = true;
-      if (attBeatRef.current) clearInterval(attBeatRef.current);
-      attBeatRef.current = null;
-    };
-  }, [ok, attOnline]);
-
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadAttendanceMe(true), 60_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
-
-  async function refreshRanking() {
-    setRankMsg("");
+  async function runAttendanceEngine() {
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
+      setAttMsg("");
+      const token = await getTokenOrLogin();
       if (!token) return;
 
-      const rnkRes = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(month)}`, {
+      const r = await fetch("/api/admin/attendance/run", {
+        method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
-      const rnk = await safeJson(rnkRes);
-
-      if (!rnk?._ok || rnk?.ok === false) {
-        setRank(null);
-        setRankMsg(`⚠️ Error cargando ranking: ${rnk?.error || `HTTP ${rnk?._status}`}`);
-        return;
-      }
-
-      setRank(rnk);
-    } catch (e: any) {
-      setRankMsg(`❌ ${e?.message || "Error"}`);
-    }
-  }
-
-  async function loadTarotists() {
-    setTarotistsLoading(true);
-    setTarotistsMsg("");
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/central/tarotists", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setTarotists([]);
-        setTarotistsMsg(`❌ No se pudieron cargar tarotistas: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      const list = j.tarotists || [];
-      setTarotists(list);
-      setTarotistsMsg(list.length ? `✅ Cargadas ${list.length} tarotistas` : "⚠️ No hay tarotistas (¿workers.role='tarotista'?)");
-
-      if (!incWorkerId && list.length) setIncWorkerId(list[0].id);
-
-      // ✅ default selector "nuevo chat"
-      if (!newChatWorkerId && list.length) setNewChatWorkerId(String(list[0].id));
-    } catch (e: any) {
-      setTarotists([]);
-      setTarotistsMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setTarotistsLoading(false);
-    }
-  }
-
-  async function loadChecklist() {
-    if (clLoading) return;
-    setClLoading(true);
-    setClMsg("");
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/central/checklists", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setClRows([]);
-        setClShiftKey("");
-        setClMsg(`❌ No se pudo cargar checklist: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      setClShiftKey(String(j.shift_key || ""));
-      setClRows(j.rows || []);
-      setClMsg(`✅ Checklist cargado (${(j.rows || []).length} tarotistas)`);
-    } catch (e: any) {
-      setClRows([]);
-      setClShiftKey("");
-      setClMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setClLoading(false);
-    }
-  }
-
-  async function loadPresences(silent = false) {
-    if (presLoading && !silent) return;
-    if (!silent) {
-      setPresLoading(true);
-      setPresMsg("");
-    }
-
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/central/attendance/online", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setPresences([]);
-        setPresMsg(`❌ No se pudo cargar presencias: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      const rows: PresenceRow[] = (j.rows || []).map((r: any) => {
-        const last = r.last_event_at ? String(r.last_event_at) : null;
-        return {
-          worker_id: String(r.worker_id),
-          display_name: String(r.display_name || "—"),
-          team_key: r.team_key ? String(r.team_key) : null,
-          online: !!r.online,
-          status: String(r.status || (r.online ? "working" : "offline")),
-          last_event_at: last,
-          last_seen_seconds: secondsAgo(last),
-        };
-      });
-
-      setPresences(rows);
-      if (!silent) setPresMsg(`✅ Presencias actualizadas (${rows.length})`);
-      if (!silent) setTimeout(() => setPresMsg(""), 1200);
-    } catch (e: any) {
-      setPresences([]);
-      setPresMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setPresLoading(false);
-    }
-  }
-
-  async function loadExpected(silent = false) {
-    if (expLoading && !silent) return;
-    if (!silent) {
-      setExpLoading(true);
-      setExpMsg("");
-    }
-
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/central/attendance/expected", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setExpected([]);
-        setExpMsg(`❌ No se pudo cargar “deberían”: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      const rows: ExpectedRow[] = (j.rows || j.expected || []).map((r: any) => ({
-        worker_id: String(r.worker_id || r.id || ""),
-        display_name: String(r.display_name || r.name || "—"),
-        start_time: r.start_time ? String(r.start_time) : null,
-        end_time: r.end_time ? String(r.end_time) : null,
-        timezone: r.timezone ? String(r.timezone) : null,
-        schedule_id: r.schedule_id ? String(r.schedule_id) : null,
-        online: r.online != null ? !!r.online : undefined,
-        status: r.status != null ? String(r.status) : null,
-      }));
-
-      setExpected(rows);
-      if (!silent) setExpMsg(`✅ Deberían: ${rows.length}`);
-      if (!silent) setTimeout(() => setExpMsg(""), 1200);
-    } catch (e: any) {
-      setExpected([]);
-      setExpMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setExpLoading(false);
-    }
-  }
-
-  async function loadOutboundPending(silent = false) {
-    if (obLoading && !silent) return;
-    if (!silent) {
-      setObLoading(true);
-      setObMsg("");
-    }
-
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch(`/api/central/outbound/pending?date=${encodeURIComponent(obDate)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(res);
+      const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      setObBatches(j.batches || []);
-      if (!silent) {
-        setObMsg(`✅ Pendientes cargados (${(j.batches || []).length} envíos)`);
-        setTimeout(() => setObMsg(""), 1200);
-      }
+      setAttMsg(`✅ Motor ejecutado. Retrasos: ${j.created?.late ?? 0} · Faltas: ${j.created?.absence ?? 0}`);
+      await loadAttendance();
     } catch (e: any) {
-      if (!silent) setObMsg(`❌ ${e?.message || "Error"}`);
-      setObBatches([]);
-    } finally {
-      if (!silent) setObLoading(false);
+      setAttMsg(`❌ ${e?.message || "Error"}`);
     }
   }
 
-  async function outboundLog(item_id: string, status: string) {
-    const noteInput = window.prompt("Observación (opcional). Cancelar = no guardar:", "");
-    if (noteInput === null) return;
-    const note = noteInput.trim() ? noteInput.trim() : null;
+  async function decideIncident(incident_id: string, status: "justified" | "unjustified") {
+    try {
+      setAttMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
-    const optimisticAt = new Date().toISOString();
-    if (status === "done") {
-      setObBatches((prev) =>
-        (prev || []).map((b: any) => ({
-          ...b,
-          outbound_batch_items: (b.outbound_batch_items || []).filter((it: any) => String(it.id) !== String(item_id)),
-        }))
-      );
-    } else {
-      setObBatches((prev) =>
-        (prev || []).map((b: any) => ({
-          ...b,
-          outbound_batch_items: (b.outbound_batch_items || []).map((it: any) =>
-            String(it.id) === String(item_id)
-              ? { ...it, current_status: status, last_note: note ?? it.last_note, last_call_at: optimisticAt }
-              : it
-          ),
-        }))
-      );
+      const r = await fetch("/api/admin/incidents/decide", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ incident_id, status, note: attNote }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setAttMsg(status === "justified" ? "✅ Marcada como JUSTIFICADA." : "✅ Marcada como NO justificada.");
+      setAttNote("");
+      await loadAttendance();
+    } catch (e: any) {
+      setAttMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function loadStats(silent = false) {
+    if (stLoading && !silent) return;
+    if (!silent) {
+      setStLoading(true);
+      setStMsg("");
+    }
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const qp = new URLSearchParams();
+      if (stWorkerId.trim()) qp.set("worker_id", stWorkerId.trim());
+      qp.set("group", stGroup);
+      if (stFrom.trim()) qp.set("from", stFrom.trim());
+      if (stTo.trim()) qp.set("to", stTo.trim());
+
+      const r = await fetch(`/api/admin/attendance/stats?${qp.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setStRows(j.rows || []);
+      if (!silent) setStMsg(`✅ Stats cargadas: ${(j.rows || []).length}`);
+      if (!silent) setTimeout(() => setStMsg(""), 1200);
+    } catch (e: any) {
+      setStRows([]);
+      if (!silent) setStMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setStLoading(false);
+    }
+  }
+
+  async function loadStaff(silent = false) {
+    if (staffLoading && !silent) return;
+    if (!silent) {
+      setStaffLoading(true);
+      setStaffMsg("");
+    }
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setStaffWorkers(j.workers || []);
+      setStaffSchedules(j.schedules || []);
+      if (!silent) setStaffMsg("✅ Plantilla y horarios cargados.");
+    } catch (e: any) {
+      if (!silent) setStaffMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      if (!silent) setStaffLoading(false);
+    }
+  }
+
+  async function createWorker() {
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/manage", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_worker",
+          display_name: newWorkerName,
+          role: newWorkerRole,
+          team: newWorkerTeam,
+          email: newWorkerEmail,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setNewWorkerName("");
+      setNewWorkerRole("tarotista");
+      setNewWorkerTeam("");
+      setNewWorkerEmail("");
+      await loadStaff(true);
+      setStaffMsg("✅ Trabajador creado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function updateWorker() {
+    if (!editingWorkerId) return;
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/manage", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_worker",
+          worker_id: editingWorkerId,
+          display_name: editingWorkerName,
+          role: editingWorkerRole,
+          team: editingWorkerTeam,
+          email: editingWorkerEmail,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      await loadStaff(true);
+      setStaffMsg("✅ Trabajador actualizado.");
+      setEditingWorkerId("");
+      setEditingWorkerName("");
+      setEditingWorkerRole("tarotista");
+      setEditingWorkerTeam("");
+      setEditingWorkerEmail("");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  function startEditWorker(worker: any) {
+    setEditingWorkerId(String(worker.id || ""));
+    setEditingWorkerName(String(worker.display_name || ""));
+    setEditingWorkerRole((worker.role || "tarotista") as any);
+    setEditingWorkerTeam(String(worker.team || ""));
+    setEditingWorkerEmail(String(worker.email || ""));
+  }
+
+  function cancelEditWorker() {
+    setEditingWorkerId("");
+    setEditingWorkerName("");
+    setEditingWorkerRole("tarotista");
+    setEditingWorkerTeam("");
+    setEditingWorkerEmail("");
+  }
+
+  function prepareScheduleForWorker(worker: any) {
+    setScheduleWorkerId(String(worker.id || ""));
+  }
+
+  async function toggleWorker(worker: any, enable: boolean) {
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/manage", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: enable ? "enable_worker" : "disable_worker",
+          worker_id: worker.id,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      await loadStaff(true);
+      setStaffMsg(enable ? "✅ Trabajador activado." : "✅ Trabajador desactivado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function createSchedule() {
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/schedules", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create_schedule",
+          worker_id: scheduleWorkerId,
+          day_of_week: Number(scheduleDay),
+          start_time: scheduleStart,
+          end_time: scheduleEnd,
+          timezone: scheduleTimezone,
+          is_active: true,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      await loadStaff(true);
+      setStaffMsg("✅ Horario creado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function updateSchedule(schedule_id: string, patch: any) {
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/schedules", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_schedule",
+          schedule_id,
+          ...patch,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      await loadStaff(true);
+      setStaffMsg("✅ Horario actualizado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function deleteSchedule(schedule_id: string) {
+    if (!confirm("¿Borrar este horario?")) return;
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/schedules", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete_schedule",
+          schedule_id,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      await loadStaff(true);
+      setStaffMsg("✅ Horario borrado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  useEffect(() => {
+    if (!ok) return;
+    listInvoices(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, month]);
+
+  useEffect(() => {
+    if (!ok) return;
+
+    if (lastMonthRef.current !== month) {
+      lastMonthRef.current = month;
     }
 
+    if (pollRef.current) clearInterval(pollRef.current);
+
+    pollRef.current = setInterval(() => {
+      if (tab === "facturas") listInvoices(true);
+      if (tab === "estadisticas") loadAdminStats(true);
+      if (tab === "contabilidad") loadAccounting(true);
+    }, 8000);
+
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month, selId]);
+
+  useEffect(() => {
+    if (!ok) return;
+    if (tab === "asistencia") {
+      loadAttendance();
+      loadStaff();
+
+      if (!stFrom && !stTo) {
+        const d = new Date();
+        const to = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const d2 = new Date(d.getTime() - 6 * 86400000);
+        const from = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, "0")}-${String(d2.getDate()).padStart(2, "0")}`;
+        setStFrom(from);
+        setStTo(to);
+      }
+    }
+    if (tab === "estadisticas") loadAdminStats(false);
+    if (tab === "contabilidad") loadAccounting(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month]);
+
+  async function loadChecklistAdmin() {
+    if (ckLoading) return;
+    setCkLoading(true);
+    setCkMsg("");
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
-      const url = "/api/central/outbound/log";
-      const payload = { item_id, status, note };
+      const r = await fetch(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
 
-      const res = await fetch(url, {
+      setCkTemplate(j.template || null);
+      setCkItems(j.items || []);
+      setCkMsg(`✅ Cargados ${(j.items || []).length} items (${ckTemplateKey})`);
+    } catch (e: any) {
+      setCkTemplate(null);
+      setCkItems([]);
+      setCkMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setCkLoading(false);
+    }
+  }
+
+  async function saveChecklistItem(item: any) {
+    try {
+      setCkMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const payload = {
+        template_key: ckTemplateKey,
+        id: item?.id || "",
+        label: String(item?.label || "").trim(),
+        sort: Number(item?.sort ?? 0),
+      };
+
+      const r = await fetch("/api/admin/checklists/items", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        throw new Error(`${j?.error || `HTTP ${j?._status}`} · POST ${url} · body=${JSON.stringify(payload)}`);
-      }
-
-      const updated = j.item;
-      if (updated?.id) {
-        setObBatches((prev) =>
-          (prev || []).map((b: any) => {
-            let items = b.outbound_batch_items || [];
-            items = items.map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it));
-            items = items.filter((it: any) => String(it.current_status) !== "done");
-            return { ...b, outbound_batch_items: items };
-          })
-        );
-      }
-    } catch (e: any) {
-      alert(`Error: ${e?.message || "ERR"}`);
-      loadOutboundPending(true);
-    }
-  }
-
-  // ---------------- CHAT helpers ----------------
-  async function loadChatThreads(silent = false) {
-    if (!silent) {
-      setChatLoading(true);
-      setChatMsg("");
-    }
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/central/chat/threads", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
+      const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      const list: ChatThread[] = (j.threads || j.rows || []).map((t: any) => ({
-        id: String(t.id),
-        title: t.title != null ? String(t.title) : null,
-        tarotist_display_name: t.tarotist_display_name != null ? String(t.tarotist_display_name) : null,
-        tarotist_worker_id: t.tarotist_worker_id != null ? String(t.tarotist_worker_id) : null,
-        last_message_text: t.last_message_text != null ? String(t.last_message_text) : null,
-        last_message_at: t.last_message_at != null ? String(t.last_message_at) : null,
-        unread_count: t.unread_count != null ? Number(t.unread_count) : null,
-      }));
-
-      list.sort((a, b) => {
-        const at = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-        const bt = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-        return bt - at;
-      });
-
-      setThreads(list);
-
-      // si el seleccionado ya no existe, pillamos el primero
-      if (selectedThreadId) {
-        const stillExists = list.some((t) => String(t.id) === String(selectedThreadId));
-        if (!stillExists) setSelectedThreadId(list[0]?.id || "");
-      } else {
-        if (list.length) setSelectedThreadId(list[0].id);
-      }
-
-      if (!silent) {
-        setChatMsg(list.length ? `✅ Chats cargados (${list.length})` : "⚠️ No hay chats todavía");
-        setTimeout(() => setChatMsg(""), 1200);
-      }
+      setCkMsg(payload.id ? "✅ Item guardado." : "✅ Item creado.");
+      await loadChecklistAdmin();
     } catch (e: any) {
-      setThreads([]);
-      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setChatLoading(false);
+      setCkMsg(`❌ ${e?.message || "Error"}`);
     }
   }
 
-  async function loadChatMessages(threadId: string, silent = false) {
-    if (!threadId) return;
-    if (!silent) {
-      setChatLoading(true);
-      setChatMsg("");
-    }
+  async function deleteChecklistItem(id: string) {
+    if (!confirm("¿Borrar este item del checklist?")) return;
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
+      setCkMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
 
-      const res = await fetch(`/api/central/chat/messages?thread_id=${encodeURIComponent(threadId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const list: ChatMessage[] = (j.messages || j.rows || []).map((m: any) => ({
-        id: String(m.id),
-        thread_id: String(m.thread_id || threadId),
-        sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-        sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-        text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : ""),
-        created_at: m.created_at != null ? String(m.created_at) : null,
-      }));
-
-      list.sort((a, b) => {
-        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return at - bt;
-      });
-
-      setMessages(list);
-      if (!silent) setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-    } catch (e: any) {
-      setMessages([]);
-      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
-  }
-
-  async function sendChatMessage() {
-    const text = msgText.trim();
-    if (!text) return;
-    if (!selectedThreadId) return;
-
-    const tmpId = `tmp-${Date.now()}`;
-    const optimistic: ChatMessage = {
-      id: tmpId,
-      thread_id: selectedThreadId,
-      text,
-      created_at: new Date().toISOString(),
-      sender_worker_id: "me",
-      sender_display_name: "Yo",
-    };
-    setMessages((prev) => [...(prev || []), optimistic]);
-    setMsgText("");
-    setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/central/chat/send", {
+      const r = await fetch("/api/admin/checklists/items", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ thread_id: selectedThreadId, text }),
+        body: JSON.stringify({ action: "delete_item", id }),
       });
 
-      const j = await safeJson(res);
+      const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      const saved = j.message || j.item || null;
-      if (saved?.id) {
-        const normalized: ChatMessage = {
-          id: String(saved.id),
-          thread_id: String(saved.thread_id || selectedThreadId),
-          sender_worker_id: saved.sender_worker_id != null ? String(saved.sender_worker_id) : null,
-          sender_display_name: saved.sender_display_name != null ? String(saved.sender_display_name) : null,
-          text: saved.text != null ? String(saved.text) : (saved.body != null ? String(saved.body) : text),
-          created_at: saved.created_at != null ? String(saved.created_at) : new Date().toISOString(),
-        };
-        setMessages((prev) => (prev || []).map((m) => (m.id === tmpId ? normalized : m)));
-      } else {
-        loadChatMessages(selectedThreadId, true);
-      }
-
-      loadChatThreads(true);
+      setCkMsg("✅ Item borrado.");
+      await loadChecklistAdmin();
     } catch (e: any) {
-      setMessages((prev) => (prev || []).filter((m) => m.id !== tmpId));
-      alert(`Error: ${e?.message || "ERR"}`);
+      setCkMsg(`❌ ${e?.message || "Error"}`);
     }
   }
 
-  // ✅ NUEVO: abrir chat con una tarotista (crea thread si no existe)
-  async function openChatWithTarotist() {
-    setNewChatMsg("");
-    try {
-      if (!newChatWorkerId) {
-        setNewChatMsg("⚠️ Selecciona una tarotista.");
-        return;
-      }
+  async function addChecklistItem() {
+    const label = ckNewLabel.trim();
+    const sort = Number(String(ckNewSort).replace(",", "."));
+    if (!label) return setCkMsg("⚠️ Escribe un texto para el item.");
+    if (!isFinite(sort)) return setCkMsg("⚠️ Sort inválido.");
 
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/central/chat/open", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ tarotist_worker_id: newChatWorkerId }),
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const tid = String(j.thread?.id || j.thread_id || "");
-      if (!tid) throw new Error("NO_THREAD_ID");
-
-      // refresca threads y selecciona el creado
-      await loadChatThreads(true);
-      setSelectedThreadId(tid);
-      await loadChatMessages(tid, true);
-
-      setNewChatMsg("✅ Chat abierto");
-      setTimeout(() => setNewChatMsg(""), 1200);
-    } catch (e: any) {
-      setNewChatMsg(`❌ ${e?.message || "Error"}`);
-    }
+    await saveChecklistItem({ id: "", label, sort });
+    setCkNewLabel("");
+    setCkNewSort(String(sort + 10));
   }
 
-  // realtime chat_messages (INSERT) para el thread seleccionado
   useEffect(() => {
     if (!ok) return;
+    if (tab === "checklists") loadChecklistAdmin();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, ckTemplateKey]);
 
-    if (chatChannelRef.current) {
-      sb.removeChannel(chatChannelRef.current);
-      chatChannelRef.current = null;
+  const ckFiltered = useMemo(() => {
+    const qq = ckQ.trim().toLowerCase();
+    if (!qq) return ckItems || [];
+    return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
+  }, [ckItems, ckQ]);
+
+  const expectedNow = useMemo(() => {
+    return (attExpected || []).map((x: any) => ({
+      ...x,
+      is_online: typeof x.online === "boolean" ? !!x.online : !!x.is_online,
+      status: String(x.status || "working"),
+    }));
+  }, [attExpected]);
+
+  const statsInvoiceMap = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const inv of invoices || []) {
+      map.set(String(inv.worker_id), inv);
     }
+    return map;
+  }, [invoices]);
 
-    if (!selectedThreadId) return;
-
-    const ch = sb
-      .channel(`central-chat-${selectedThreadId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chat_messages", filter: `thread_id=eq.${selectedThreadId}` },
-        (payload) => {
-          const m: any = payload.new;
-
-          setMessages((prev) => {
-            const exists = (prev || []).some((x: any) => String(x.id) === String(m.id));
-            if (exists) return prev;
-
-            const msg: ChatMessage = {
-              id: String(m.id),
-              thread_id: String(m.thread_id),
-              sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-              sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-              text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : ""),
-              created_at: m.created_at != null ? String(m.created_at) : null,
-            };
-
-            return [...(prev || []), msg];
-          });
-
-          loadChatThreads(true);
-          setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-        }
-      )
-      .subscribe();
-
-    chatChannelRef.current = ch;
-
-    return () => {
-      if (chatChannelRef.current) {
-        sb.removeChannel(chatChannelRef.current);
-        chatChannelRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, selectedThreadId]);
-
-  // ---------------- INIT LOADS ----------------
-  useEffect(() => {
-    if (!ok) return;
-    refreshRanking();
-    loadTarotists();
-    loadAttendanceMe(true);
-    loadPresences(true);
-    loadExpected(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
-
-  useEffect(() => {
-    if (!ok) return;
-    refreshRanking();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab === "incidencias") loadTarotists();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab === "checklist") loadChecklist();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
-
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadPresences(true), 20_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
-
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadExpected(true), 30_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab === "llamadas") loadOutboundPending(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, ok, obDate]);
-
-  // al entrar a chat, carga threads; al seleccionar thread, carga mensajes
-  useEffect(() => {
-    if (!ok) return;
-    if (tab !== "chat") return;
-    loadChatThreads(false);
-    // ✅ por si no están cargadas tarotistas (para selector "nuevo chat")
-    if (!tarotists?.length) loadTarotists();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, tab]);
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab !== "chat") return;
-    if (!selectedThreadId) return;
-    loadChatMessages(selectedThreadId, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, tab, selectedThreadId]);
-
-  // ✅ realtime central (UPDATE outbound_batch_items por batch_id)
-  useEffect(() => {
-    if (!ok) return;
-
-    if (obChannelsRef.current?.length) {
-      obChannelsRef.current.forEach((ch) => sb.removeChannel(ch));
-      obChannelsRef.current = [];
-    }
-
-    const batchIds = (obBatches || []).map((b: any) => String(b.id)).filter(Boolean);
-    if (!batchIds.length) return;
-
-    const channels = batchIds.map((bid) =>
-      sb
-        .channel(`central-outbound-${bid}`)
-        .on(
-          "postgres_changes",
-          { event: "UPDATE", schema: "public", table: "outbound_batch_items", filter: `batch_id=eq.${bid}` },
-          (payload) => {
-            const updated: any = payload.new;
-            setObBatches((prev) =>
-              (prev || []).map((b: any) => {
-                if (String(b.id) !== bid) return b;
-                let items = b.outbound_batch_items || [];
-                items = items.map((it: any) => (String(it.id) === String(updated.id) ? { ...it, ...updated } : it));
-                items = items.filter((it: any) => String(it.current_status) !== "done");
-                return { ...b, outbound_batch_items: items };
-              })
-            );
-          }
-        )
-        .subscribe()
-    );
-
-    obChannelsRef.current = channels;
-
-    return () => {
-      channels.forEach((ch) => sb.removeChannel(ch));
-      obChannelsRef.current = [];
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, batchIdsKey]);
-
-  const team = rank?.teams || {};
-  const fuego = team?.fuego || {};
-  const agua = team?.agua || {};
-  const winner = team?.winner || "—";
-
-  const topCaptadas = rank?.top?.captadas || [];
-  const topCliente = rank?.top?.cliente || [];
-  const topRepite = rank?.top?.repite || [];
-
-  const tarotistsFiltered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    if (!qq) return tarotists;
-    return (tarotists || []).filter((t) => String(t.display_name || "").toLowerCase().includes(qq));
-  }, [tarotists, q]);
-
-  const selectedTarotist = useMemo(() => tarotists.find((t) => t.id === incWorkerId), [tarotists, incWorkerId]);
-
-  const clRowsFiltered = useMemo(() => {
-    const qq = clQ.trim().toLowerCase();
-    const rows = clRows || [];
-    if (!qq) return rows;
-    return rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-  }, [clRows, clQ]);
-
-  const clProgress = useMemo(() => {
-    const rows = clRows || [];
-    const total = rows.length;
-    const completed = rows.filter((r) => r.status === "completed").length;
-    const inProg = rows.filter((r) => r.status === "in_progress").length;
-    const notStarted = rows.filter((r) => r.status === "not_started").length;
-    return { total, completed, inProg, notStarted };
-  }, [clRows]);
-
-  const presencesFiltered = useMemo(() => {
-    const qq = presQ.trim().toLowerCase();
-    let rows = presences || [];
-    rows = rows.filter((r) => !!r.online);
-    if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-    return rows.slice().sort((a, b) => {
-      const as = a.last_seen_seconds ?? 999999;
-      const bs = b.last_seen_seconds ?? 999999;
-      if (as !== bs) return as - bs;
-      return String(a.display_name).localeCompare(String(b.display_name));
+  const statsMergedRows = useMemo(() => {
+    return (statsRows || []).map((r: any) => {
+      const inv = statsInvoiceMap.get(String(r.worker_id));
+      return {
+        ...r,
+        invoice_total: Number(inv?.total || 0),
+        invoice_status: inv?.status || "",
+        worker_ack: inv?.worker_ack || null,
+        worker_ack_note: inv?.worker_ack_note || null,
+      };
     });
-  }, [presences, presQ]);
+  }, [statsRows, statsInvoiceMap]);
 
-  const expectedFiltered = useMemo(() => {
-    const qq = expQ.trim().toLowerCase();
-    let rows = expected || [];
-    if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-    return rows.slice().sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
-  }, [expected, expQ]);
+  const statsComputed = useMemo(() => {
+    const invoiceTotal = (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    const accepted = (invoices || []).filter((x: any) => String(x.worker_ack || "") === "accepted").length;
+    const rejected = (invoices || []).filter((x: any) => String(x.worker_ack || "") === "rejected").length;
+    const review = (invoices || []).filter((x: any) => String(x.worker_ack || "") === "review").length;
+    const pending = (invoices || []).filter((x: any) => !x.worker_ack || String(x.worker_ack) === "pending").length;
 
-  const threadsFiltered = useMemo(() => {
-    const qq = threadQ.trim().toLowerCase();
-    let rows = threads || [];
-    if (!qq) return rows;
-    return rows.filter((t) => {
-      const name = String(t.tarotist_display_name || t.title || "");
-      return name.toLowerCase().includes(qq);
+    const workers = statsRows.length || 0;
+    const minutes = Number(statsTotals?.minutes_total || 0);
+    const calls = Number(statsTotals?.calls_total || 0);
+    const captadas = Number(statsTotals?.captadas_total || 0);
+
+    return {
+      invoice_total: invoiceTotal,
+      accepted,
+      rejected,
+      review,
+      pending,
+      workers,
+      captadas_per_worker: workers ? captadas / workers : 0,
+      calls_per_worker: workers ? calls / workers : 0,
+      minutes_per_worker: workers ? minutes / workers : 0,
+      captadas_per_100_min: minutes ? (captadas / minutes) * 100 : 0,
+      factura_media: workers ? invoiceTotal / workers : 0,
+    };
+  }, [invoices, statsRows, statsTotals]);
+
+  const attSummary = useMemo(() => {
+    const online = (attOnline || []).length;
+    const expected = (expectedNow || []).length;
+    const missing = (expectedNow || []).filter((x: any) => !x.is_online).length;
+    const breakCount = (attOnline || []).filter((x: any) => String(x.status || "") === "break").length;
+    const bathroomCount = (attOnline || []).filter((x: any) => String(x.status || "") === "bathroom").length;
+    return {
+      online,
+      expected,
+      missing,
+      breakCount,
+      bathroomCount,
+      incidents: (attIncidents || []).length,
+    };
+  }, [attOnline, expectedNow, attIncidents]);
+
+  const topWorkersByMinutes = useMemo(() => {
+    return [...(statsMergedRows || [])]
+      .sort((a: any, b: any) => {
+        const bm = Number(b.minutes_total || 0);
+        const am = Number(a.minutes_total || 0);
+        if (bm !== am) return bm - am;
+        return String(a.display_name || "").localeCompare(String(b.display_name || ""));
+      })
+      .slice(0, 5);
+  }, [statsMergedRows]);
+
+  const filteredWorkers = useMemo(() => {
+    const q = staffQ.trim().toLowerCase();
+    if (!q) return staffWorkers || [];
+    return (staffWorkers || []).filter((w: any) => {
+      const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
+      return text.includes(q);
     });
-  }, [threads, threadQ]);
+  }, [staffWorkers, staffQ]);
 
-  async function crearIncidencia() {
-    if (incLoading) return;
-    setIncLoading(true);
-    setIncMsg("");
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+  const staffOperationalWorkers = useMemo(() => {
+    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
+  }, [filteredWorkers]);
 
-      const res = await fetch("/api/central/incidents", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          worker_id: incWorkerId,
-          amount: Number(String(incAmount).replace(",", ".")),
-          reason: incReason,
-          month_key: month,
-        }),
-      });
-
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setIncMsg("✅ Incidencia creada. (Para reflejarlo en factura: generar facturas del mes.)");
-    } catch (e: any) {
-      setIncMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setIncLoading(false);
+  const schedulesByWorker = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const s of staffSchedules || []) {
+      const wid = String(s.worker_id || "");
+      if (!map.has(wid)) map.set(wid, []);
+      map.get(wid)!.push(s);
     }
-  }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => {
+        const da = Number(a.day_of_week || 0);
+        const db = Number(b.day_of_week || 0);
+        if (da !== db) return da - db;
+        return String(a.start_time || "").localeCompare(String(b.start_time || ""));
+      });
+    }
+    return map;
+  }, [staffSchedules]);
 
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
@@ -1069,74 +1146,13 @@ export default function Central() {
       <div className="tc-wrap">
         <div className="tc-container">
           <div className="tc-card">
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
-                <div className="tc-title" style={{ fontSize: 18 }}>
-                  🎧 Panel Central
-                </div>
-                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking · Presencias · Chat</div>
+                <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
+                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · CRM</div>
               </div>
 
-              <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                <span
-                  className="tc-chip"
-                  style={{
-                    ...attStyle(attOnline, attStatus),
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                  }}
-                  title={attStatus}
-                >
-                  {attLabel(attOnline, attStatus)}
-                </span>
-
-                <button
-                  className="tc-btn tc-btn-ok"
-                  onClick={() => postAttendanceEvent("online", { action: "check_in" })}
-                  disabled={attLoading || attOnline}
-                  title="Solo te conecta si estás en turno"
-                >
-                  🟢 Conectarme
-                </button>
-                <button
-                  className="tc-btn tc-btn-danger"
-                  onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
-                  disabled={attLoading || !attOnline}
-                >
-                  🔴 Desconectarme
-                </button>
-
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
-                  disabled={attLoading || !attOnline || attStatus === "break"}
-                >
-                  ⏸️ Descanso
-                </button>
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
-                  disabled={attLoading || !attOnline || attStatus !== "break"}
-                >
-                  ▶️ Volver
-                </button>
-
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
-                  disabled={attLoading || !attOnline || attStatus === "bathroom"}
-                >
-                  🚻 Baño
-                </button>
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
-                  disabled={attLoading || !attOnline || attStatus !== "bathroom"}
-                >
-                  ✅ Salí
-                </button>
-
+              <div className="tc-row">
                 <span className="tc-chip">Mes</span>
                 <input
                   className="tc-input"
@@ -1145,303 +1161,655 @@ export default function Central() {
                   placeholder="2026-02"
                   style={{ width: 120 }}
                 />
-                <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>
-                  Actualizar
+                <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
+                  {listLoading ? "Cargando…" : "Cargar"}
                 </button>
               </div>
             </div>
 
-            {attMsg ? (
-              <div className="tc-sub" style={{ marginTop: 10 }}>
-                {attMsg}
-              </div>
-            ) : null}
-
             <div style={{ marginTop: 12 }} className="tc-tabs">
-              <button className={`tc-tab ${tab === "equipo" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipo")}>
-                🔥💧 Equipo
+              <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
+                🧾 Facturas
               </button>
-              <button className={`tc-tab ${tab === "llamadas" ? "tc-tab-active" : ""}`} onClick={() => setTab("llamadas")}>
-                📞 Llamadas
+              <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
+                ✏️ Editor
               </button>
-              <button className={`tc-tab ${tab === "chat" ? "tc-tab-active" : ""}`} onClick={() => setTab("chat")}>
-                💬 Chat
+              <button className={`tc-tab ${tab === "estadisticas" ? "tc-tab-active" : ""}`} onClick={() => setTab("estadisticas")}>
+                📈 Estadísticas
               </button>
-              <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
-                ✅ Checklist
+              <button className={`tc-tab ${tab === "contabilidad" ? "tc-tab-active" : ""}`} onClick={() => setTab("contabilidad")}>
+                💼 Contabilidad
               </button>
-              <button className={`tc-tab ${tab === "incidencias" ? "tc-tab-active" : ""}`} onClick={() => setTab("incidencias")}>
-                ⚠️ Incidencias
+              <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
+                🟢 Asistencia
               </button>
-              <button className={`tc-tab ${tab === "ranking" ? "tc-tab-active" : ""}`} onClick={() => setTab("ranking")}>
-                🏆 Ranking
+              <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
+                ✅ Checklists
+              </button>
+              <button className={`tc-tab ${tab === "crm" ? "tc-tab-active" : ""}`} onClick={() => setTab("crm")}>
+                👥 CRM
+              </button>
+              <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
+                🔄 Sync
               </button>
             </div>
           </div>
 
-          {/* ✅ CHAT */}
-          {tab === "chat" && (
+          {tab === "facturas" && (
             <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
-                  <div className="tc-title">💬 Chat (Tarotistas ↔ Centrales)</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Centrales ven todos los chats · Realtime: nuevos mensajes al instante
-                    {chatMsg ? ` · ${chatMsg}` : ""}
-                  </div>
+                  <div className="tc-title">🧾 Facturas del mes</div>
+                  <div className="tc-sub">Genera y revisa. Click para editar. (Se actualiza “en directo”)</div>
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadChatThreads(false)} disabled={chatLoading}>
-                    {chatLoading ? "Cargando…" : "Recargar chats"}
+                <div className="tc-row">
+                  <button className="tc-btn tc-btn-ok" onClick={generateInvoices} disabled={genLoading}>
+                    {genLoading ? "Generando…" : "Generar facturas"}
+                  </button>
+                  <button className="tc-btn tc-btn-gold" onClick={() => listInvoices()} disabled={listLoading}>
+                    {listLoading ? "Cargando…" : "Ver resumen"}
                   </button>
                 </div>
               </div>
 
-              {/* ✅ NUEVO: abrir chat con tarotista aunque no exista */}
+              <div style={{ marginTop: 10 }} className="tc-sub">{genMsg || listMsg || " "}</div>
+
               <div className="tc-hr" />
-              <div
-                style={{
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  borderRadius: 14,
-                  padding: 12,
-                  background: "rgba(255,255,255,0.02)",
-                  display: "grid",
-                  gap: 10,
-                }}
-              >
+
+              <div className="tc-sub">
+                Total sumado: <b>{eur(totalSum)}</b> · Click en una fila para editar
+              </div>
+
+              <div style={{ overflowX: "auto", marginTop: 8 }}>
+                <table className="tc-table">
+                  <thead>
+                    <tr>
+                      <th>Trabajador</th>
+                      <th>Rol</th>
+                      <th>Estado</th>
+                      <th>Aceptación</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(invoices || []).map((x: any) => (
+                      <tr
+                        key={x.invoice_id}
+                        className="tc-click"
+                        onClick={() => loadInvoice(x.invoice_id)}
+                        style={{ background: selId === x.invoice_id ? "rgba(181,156,255,0.10)" : "transparent" }}
+                      >
+                        <td><b>{x.display_name}</b></td>
+                        <td className="tc-muted">{x.role}</td>
+                        <td className="tc-muted">{x.status}</td>
+                        <td>
+                          <span
+                            className="tc-chip"
+                            style={{
+                              ...ackStyle(x.worker_ack),
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              fontSize: 12,
+                            }}
+                            title={x.worker_ack_note || ""}
+                          >
+                            {ackLabel(x.worker_ack)}
+                          </span>
+                        </td>
+                        <td><b>{eur(x.total || 0)}</b></td>
+                      </tr>
+                    ))}
+                    {(!invoices || invoices.length === 0) && (
+                      <tr>
+                        <td colSpan={5} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.8 }}>
+                Tip: si una tarotista rechaza, verás el motivo al pasar el ratón por “Aceptación”.
+              </div>
+            </div>
+          )}
+
+          {tab === "editor" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">✏️ Editor de factura</div>
+                  <div className="tc-sub">Líneas con desglose automático (minutos x tarifa)</div>
+                </div>
+
+                {selId && (
+                  <div className="tc-row">
+                    <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
+                    <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
+                    <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
+                  </div>
+                )}
+              </div>
+
+              {!selId ? (
+                <div className="tc-sub" style={{ marginTop: 10 }}>Selecciona una factura desde <b>Facturas</b>.</div>
+              ) : selLoading ? (
+                <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
+              ) : (
+                <>
+                  <div style={{ marginTop: 10 }} className="tc-sub">
+                    <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
+                    <br />
+                    Total: <b>{eur(selInvoice?.total || 0)}</b> · Estado: <b>{selInvoice?.status}</b>
+                    <br />
+                    Aceptación:{" "}
+                    <span className="tc-chip" style={{ ...ackStyle(selInvoice?.worker_ack), padding: "4px 10px" }}>
+                      {ackLabel(selInvoice?.worker_ack)}
+                    </span>
+                    {selInvoice?.worker_ack_note ? (
+                      <>
+                        {" "}· Nota: <b>{selInvoice.worker_ack_note}</b>
+                      </>
+                    ) : null}
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(selLines || []).map((l: any) => (
+                      <LineEditor
+                        key={l.id}
+                        line={l}
+                        onSave={(payload) => updateLine(l.id, payload)}
+                        onDelete={() => deleteLine(l.id)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
+
+                  <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                    <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+                      <option value="adjustment">adjustment</option>
+                      <option value="incident">incident</option>
+                      <option value="bonus_ranking">bonus_ranking</option>
+                      <option value="bonus_captadas">bonus_captadas</option>
+                      <option value="minutes_free">minutes_free</option>
+                      <option value="minutes_rueda">minutes_rueda</option>
+                      <option value="minutes_cliente">minutes_cliente</option>
+                      <option value="minutes_repite">minutes_repite</option>
+                      <option value="salary_base">salary_base</option>
+                    </select>
+
+                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
+                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 140 }} />
+
+                    <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
+                  </div>
+
+                  <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
+                </>
+              )}
+            </div>
+          )}
+
+          {tab === "estadisticas" && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 900 }}>🟢 Iniciar conversación</div>
+                    <div className="tc-title">📈 Estadísticas del mes</div>
                     <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Elige una tarotista y pulsa “Abrir chat”. (Crea el hilo si no existe.)
-                      {newChatMsg ? ` · ${newChatMsg}` : ""}
+                      Vista global clara de producción, facturación y estado de facturas
+                      {statsMsg ? ` · ${statsMsg}` : ""}
                     </div>
                   </div>
 
-                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <select
-                      className="tc-select"
-                      value={newChatWorkerId}
-                      onChange={(e) => setNewChatWorkerId(e.target.value)}
-                      style={{ minWidth: 320, maxWidth: "100%" }}
-                    >
-                      {(tarotists || []).map((t: any) => (
-                        <option key={t.id} value={t.id}>
-                          {t.display_name} {t.team_key ? `(${t.team_key})` : ""}
-                        </option>
-                      ))}
-                      {(!tarotists || tarotists.length === 0) && <option value="">(Cargando tarotistas…)</option>}
-                    </select>
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadAdminStats(false)} disabled={statsLoading}>
+                    {statsLoading ? "Cargando…" : "Actualizar estadísticas"}
+                  </button>
+                </div>
 
-                    <button className="tc-btn tc-btn-ok" onClick={openChatWithTarotist} disabled={!newChatWorkerId}>
-                      🟢 Abrir chat
-                    </button>
+                <div className="tc-hr" />
 
-                    <button className="tc-btn" onClick={loadTarotists} disabled={tarotistsLoading}>
-                      {tarotistsLoading ? "…" : "Recargar lista"}
-                    </button>
+                <div className="tc-title" style={{ fontSize: 14 }}>Resumen general</div>
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
+                  <KpiBox label="Tarotistas con datos" value={String(statsComputed.workers)} />
+                  <KpiBox label="Minutos totales" value={numES(statsTotals?.minutes_total || 0, 0)} />
+                  <KpiBox label="Llamadas totales" value={numES(statsTotals?.calls_total || 0, 0)} />
+                  <KpiBox label="Captadas totales" value={numES(statsTotals?.captadas_total || 0, 0)} />
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-title" style={{ fontSize: 14 }}>Dinero y productividad</div>
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
+                  <KpiBox label="Pago por minutos" value={eur(statsTotals?.pay_minutes || 0)} />
+                  <KpiBox label="Bonus captadas" value={eur(statsTotals?.bonus_captadas || 0)} />
+                  <KpiBox label="Facturación total" value={eur(statsComputed.invoice_total || 0)} highlight />
+                  <KpiBox label="Factura media" value={eur(statsComputed.factura_media || 0)} />
+                  <KpiBox label="Minutos por tarotista" value={numES(statsComputed.minutes_per_worker || 0, 0)} />
+                  <KpiBox label="Llamadas por tarotista" value={numES(statsComputed.calls_per_worker || 0, 2)} />
+                  <KpiBox label="Captadas por tarotista" value={numES(statsComputed.captadas_per_worker || 0, 2)} />
+                  <KpiBox label="Captadas / 100 min" value={numES(statsComputed.captadas_per_100_min || 0, 2)} />
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-title" style={{ fontSize: 14 }}>Calidad y facturas</div>
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
+                  <KpiBox label="% Cliente medio" value={`${numES(statsTotals?.avg_pct_cliente || 0, 2)}%`} />
+                  <KpiBox label="% Repite medio" value={`${numES(statsTotals?.avg_pct_repite || 0, 2)}%`} />
+                  <KpiBox label="Facturas aceptadas" value={String(statsComputed.accepted)} />
+                  <KpiBox label="Facturas pendientes" value={String(statsComputed.pending)} />
+                </div>
+              </div>
+
+              <div className="tc-grid-3">
+                <TopStatsCard
+                  title="🏆 Top captadas"
+                  items={(statsTop?.captadas || []).map((x: any) => `${x.display_name} (${x.captadas_total})`)}
+                />
+                <TopStatsCard
+                  title="👑 Top % cliente"
+                  items={(statsTop?.cliente || []).map((x: any) => `${x.display_name} (${numES(x.pct_cliente || 0, 2)}%)`)}
+                />
+                <TopStatsCard
+                  title="🔁 Top % repite"
+                  items={(statsTop?.repite || []).map((x: any) => `${x.display_name} (${numES(x.pct_repite || 0, 2)}%)`)}
+                />
+              </div>
+
+              <div className="tc-grid-2">
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Comparativa clara entre fuego y agua
+                  </div>
+                  <div className="tc-hr" />
+                  <div className="tc-kpis">
+                    <KpiMini label="Fuego score" value={numES(statsTeams?.fuego?.score || 0, 2)} />
+                    <KpiMini label="Fuego miembros" value={String(statsTeams?.fuego?.members || 0)} />
+                    <KpiMini label="Agua score" value={numES(statsTeams?.agua?.score || 0, 2)} />
+                    <KpiMini label="Agua miembros" value={String(statsTeams?.agua?.members || 0)} />
+                    <KpiMini label="Ganador" value={String(statsTeams?.winner || "empate")} />
+                    <KpiMini label="Revisión" value={String(statsComputed.review)} />
+                  </div>
+                </div>
+
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>⏱️ Top por minutos</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Las 5 tarotistas con más producción del mes
+                  </div>
+                  <div className="tc-hr" />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(topWorkersByMinutes || []).map((r: any, i: number) => (
+                      <div
+                        key={r.worker_id}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 10,
+                          background: "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+                          <div>
+                            <div style={{ fontWeight: 900 }}>
+                              {i + 1}. {r.display_name}
+                            </div>
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              Equipo: <b>{r.team || "—"}</b> · Captadas: <b>{numES(r.captadas_total || 0, 0)}</b>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontWeight: 900 }}>{numES(r.minutes_total || 0, 0)} min</div>
+                            <div className="tc-sub">{eur(r.invoice_total || 0)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {(!topWorkersByMinutes || topWorkersByMinutes.length === 0) && (
+                      <div className="tc-sub">Sin datos.</div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="tc-hr" />
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "320px 1fr",
-                  gap: 12,
-                  alignItems: "stretch",
-                }}
-              >
-                {/* Left: threads */}
-                <div
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.03)",
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                    minHeight: 520,
-                  }}
-                >
-                  <div style={{ padding: 12 }}>
-                    <input
-                      className="tc-input"
-                      value={threadQ}
-                      onChange={(e) => setThreadQ(e.target.value)}
-                      placeholder="Buscar chat…"
-                      style={{ width: "100%" }}
-                    />
-                  </div>
-                  <div className="tc-hr" style={{ margin: 0 }} />
-
-                  <div style={{ padding: 8, display: "grid", gap: 8, overflow: "auto" }}>
-                    {(threadsFiltered || []).map((t) => {
-                      const active = String(t.id) === String(selectedThreadId);
-                      const title = t.tarotist_display_name || t.title || `Chat ${t.id.slice(0, 6)}`;
-                      const sub = t.last_message_text ? t.last_message_text : "—";
-                      return (
-                        <button
-                          key={t.id}
-                          onClick={() => setSelectedThreadId(t.id)}
-                          className="tc-btn"
-                          style={{
-                            textAlign: "left",
-                            padding: 10,
-                            borderRadius: 12,
-                            border: active ? "1px solid rgba(215,181,109,0.35)" : "1px solid rgba(255,255,255,0.10)",
-                            background: active ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.02)",
-                          }}
-                        >
-                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
-                            <div style={{ fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {title}
-                            </div>
-                            {t.unread_count ? <span className="tc-chip">{t.unread_count}</span> : null}
-                          </div>
-                          <div
-                            className="tc-sub"
-                            style={{
-                              marginTop: 6,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {sub}
-                          </div>
-                        </button>
-                      );
-                    })}
-
-                    {(!threadsFiltered || threadsFiltered.length === 0) && (
-                      <div className="tc-sub" style={{ padding: 10 }}>
-                        No hay chats todavía.
-                      </div>
-                    )}
-                  </div>
+              <div className="tc-card">
+                <div className="tc-title">📋 Rendimiento por tarotista</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Tabla completa con producción, calidad, dinero y aceptación de factura
                 </div>
 
-                {/* Right: messages */}
-                <div
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,0.03)",
-                    overflow: "hidden",
-                    display: "flex",
-                    flexDirection: "column",
-                    minHeight: 520,
-                  }}
-                >
-                  <div style={{ padding: 12 }}>
-                    <div style={{ fontWeight: 900 }}>
-                      {selectedThreadId
-                        ? threads.find((x) => String(x.id) === String(selectedThreadId))?.tarotist_display_name ||
-                          threads.find((x) => String(x.id) === String(selectedThreadId))?.title ||
-                          `Chat ${selectedThreadId.slice(0, 6)}`
-                        : "Selecciona un chat"}
-                    </div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      {selectedThreadId ? `Thread: ${selectedThreadId}` : "—"}
-                    </div>
-                  </div>
+                <div className="tc-hr" />
 
-                  <div className="tc-hr" style={{ margin: 0 }} />
-
-                  <div style={{ padding: 12, overflow: "auto", flex: 1, display: "grid", gap: 10 }}>
-                    {(messages || []).map((m) => {
-                      const who = m.sender_display_name || m.sender_worker_id || "—";
-                      const when = m.created_at ? new Date(m.created_at).toLocaleString("es-ES") : "";
-                      return (
-                        <div
-                          key={m.id}
-                          style={{
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            borderRadius: 14,
-                            padding: 10,
-                            background: "rgba(255,255,255,0.02)",
-                          }}
-                        >
-                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                            <div style={{ fontWeight: 900 }}>{who}</div>
-                            <div className="tc-sub">{when}</div>
-                          </div>
-                          <div style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>{m.text || ""}</div>
-                        </div>
-                      );
-                    })}
-                    {(!messages || messages.length === 0) && <div className="tc-sub">No hay mensajes todavía en este chat.</div>}
-                    <div ref={msgEndRef} />
-                  </div>
-
-                  <div className="tc-hr" style={{ margin: 0 }} />
-
-                  <div style={{ padding: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <input
-                      className="tc-input"
-                      value={msgText}
-                      onChange={(e) => setMsgText(e.target.value)}
-                      placeholder={selectedThreadId ? "Escribe un mensaje…" : "Selecciona un chat…"}
-                      style={{ flex: 1, minWidth: 240 }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          sendChatMessage();
-                        }
-                      }}
-                      disabled={!selectedThreadId}
-                    />
-                    <button className="tc-btn tc-btn-gold" onClick={sendChatMessage} disabled={!selectedThreadId || !msgText.trim()}>
-                      Enviar
-                    </button>
-                  </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead>
+                      <tr>
+                        <th>Tarotista</th>
+                        <th>Equipo</th>
+                        <th>Minutos</th>
+                        <th>Llamadas</th>
+                        <th>Captadas</th>
+                        <th>% Cliente</th>
+                        <th>% Repite</th>
+                        <th>Pago minutos</th>
+                        <th>Bonus captadas</th>
+                        <th>Factura</th>
+                        <th>Aceptación</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(statsMergedRows || []).map((r: any) => (
+                        <tr key={r.worker_id}>
+                          <td><b>{r.display_name}</b></td>
+                          <td className="tc-muted">{r.team || "—"}</td>
+                          <td>{numES(r.minutes_total || 0, 0)}</td>
+                          <td>{numES(r.calls_total || 0, 0)}</td>
+                          <td><b>{numES(r.captadas_total || 0, 0)}</b></td>
+                          <td>{numES(r.pct_cliente || 0, 2)}%</td>
+                          <td>{numES(r.pct_repite || 0, 2)}%</td>
+                          <td>{eur(r.pay_minutes || 0)}</td>
+                          <td>{eur(r.bonus_captadas || 0)}</td>
+                          <td><b>{eur(r.invoice_total || 0)}</b></td>
+                          <td>
+                            <span
+                              className="tc-chip"
+                              style={{
+                                ...ackStyle(r.worker_ack),
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                fontSize: 12,
+                              }}
+                              title={r.worker_ack_note || ""}
+                            >
+                              {ackLabel(r.worker_ack)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!statsMergedRows || statsMergedRows.length === 0) && (
+                        <tr>
+                          <td colSpan={11} className="tc-muted">No hay estadísticas para este mes.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ✅ OUTBOUND LLAMADAS */}
-          {tab === "llamadas" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">📞 Llamadas del día</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Al marcar <b>Done</b> desaparece al instante · Realtime activado
-                    {obMsg ? ` · ${obMsg}` : ""}
+          {tab === "contabilidad" && (
+            <AdminAccountingTab
+              month={month}
+              loading={accLoading}
+              msg={accMsg}
+              totals={accTotals}
+              entries={accEntries}
+              months={accMonths}
+              breakdown={accBreakdown}
+              onRefresh={() => loadAccounting(false)}
+              onCreate={createAccountingEntry}
+              onDelete={deleteAccountingEntry}
+            />
+          )}
+
+          {tab === "asistencia" && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title">🟢 Asistencia (en vivo)</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Vista operativa del turno actual y del control horario
+                      {attMsg ? ` · ${attMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <button className="tc-btn tc-btn-gold" onClick={loadAttendance} disabled={attLoading}>
+                      {attLoading ? "Cargando…" : "Actualizar"}
+                    </button>
+                    <button className="tc-btn tc-btn-danger" onClick={runAttendanceEngine}>
+                      Ejecutar motor
+                    </button>
                   </div>
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <span className="tc-chip">Día</span>
-                  <input
-                    className="tc-input"
-                    value={obDate}
-                    onChange={(e) => setObDate(e.target.value)}
-                    style={{ width: 140 }}
-                    placeholder="YYYY-MM-DD"
-                  />
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadOutboundPending(false)} disabled={obLoading}>
-                    {obLoading ? "Cargando…" : "Actualizar"}
-                  </button>
+                <div className="tc-hr" />
+
+                <div className="tc-grid-4">
+                  <KpiBox label="Conectados ahora" value={String(attSummary.online)} />
+                  <KpiBox label="Deberían estar" value={String(attSummary.expected)} />
+                  <KpiBox label="Faltando ahora" value={String(attSummary.missing)} />
+                  <KpiBox label="Incidencias del mes" value={String(attSummary.incidents)} />
+                  <KpiBox label="En descanso" value={String(attSummary.breakCount)} />
+                  <KpiBox label="En baño" value={String(attSummary.bathroomCount)} />
+                  <KpiBox label="Penalización retraso" value="1,00 €" />
+                  <KpiBox label="Penalización falta" value="12,00 €" />
                 </div>
               </div>
 
-              <div className="tc-hr" />
+              <div className="tc-grid-2">
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>🟢 Conectados ahora</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Estado real según control horario
+                  </div>
+                  <div className="tc-hr" />
 
-              <div style={{ display: "grid", gap: 12 }}>
-                {(obBatches || []).map((b: any) => {
-                  const sender = b.sender || {};
-                  const items = (b.outbound_batch_items || []).slice().sort((a: any, c: any) => (a.position ?? 0) - (c.position ?? 0));
-                  if (!items.length) return null;
+                  {(attOnline || []).length === 0 ? (
+                    <div className="tc-sub">Nadie conectado ahora mismo.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {(attOnline || []).map((o: any) => (
+                        <div
+                          key={o.worker_id}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: "rgba(120,255,190,0.06)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            <div>
+                              <div style={{ fontWeight: 900 }}>{o.display_name}</div>
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                {o.role}
+                                {o.team ? ` · ${o.team}` : ""}
+                                {o.status ? <> · Estado: <b>{o.status}</b></> : null}
+                              </div>
+                            </div>
+                            <div className="tc-sub">
+                              Último evento: <b>{o.last_event_at ? new Date(o.last_event_at).toLocaleTimeString("es-ES") : "—"}</b>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-                  return (
+                <div className="tc-card">
+                  <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Comparativa entre horario activo y presencia real
+                  </div>
+                  <div className="tc-hr" />
+
+                  {(expectedNow || []).length === 0 ? (
+                    <div className="tc-sub">No hay horarios activos ahora mismo.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {(expectedNow || []).map((x: any) => (
+                        <div
+                          key={`${x.schedule_id}-${x.worker_id}`}
+                          style={{
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: x.is_online ? "rgba(120,255,190,0.08)" : "rgba(255,80,80,0.06)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            <div>
+                              <div style={{ fontWeight: 900 }}>
+                                {x.worker?.display_name || x.display_name || x.worker_id}
+                              </div>
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                {x.worker?.role || x.role || "—"} · {x.start_time}–{x.end_time} · {x.timezone}
+                              </div>
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                Estado actual: <b>{x.status || "working"}</b>
+                              </div>
+                            </div>
+                            <div
+                              className="tc-chip"
+                              style={{
+                                padding: "6px 10px",
+                                borderRadius: 999,
+                                ...(x.is_online
+                                  ? {
+                                      background: "rgba(120,255,190,0.10)",
+                                      border: "1px solid rgba(120,255,190,0.25)",
+                                    }
+                                  : {
+                                      background: "rgba(255,80,80,0.10)",
+                                      border: "1px solid rgba(255,80,80,0.25)",
+                                    }),
+                              }}
+                            >
+                              {x.is_online ? "🟢 OK" : "🔴 NO"}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title" style={{ fontSize: 14 }}>👥 Gestión de plantilla y horarios</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Tabla operativa para editar tarotistas, dar de baja y tocar horarios.
+                      {staffMsg ? ` · ${staffMsg}` : ""}
+                    </div>
+                  </div>
+
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadStaff(false)} disabled={staffLoading}>
+                    {staffLoading ? "Cargando…" : "Recargar plantilla"}
+                  </button>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <input
+                    className="tc-input"
+                    value={staffQ}
+                    onChange={(e) => setStaffQ(e.target.value)}
+                    placeholder="Buscar tarotista o central…"
+                    style={{ width: 320, maxWidth: "100%" }}
+                  />
+
+                  <div className="tc-sub">
+                    Total visibles: <b>{staffOperationalWorkers.length}</b>
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead>
+                      <tr>
+                        <th>Nombre</th>
+                        <th>Rol</th>
+                        <th>Equipo</th>
+                        <th>Email</th>
+                        <th>Estado</th>
+                        <th>Horarios</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(staffOperationalWorkers || []).map((w: any) => {
+                        const schedules = schedulesByWorker.get(String(w.id)) || [];
+                        return (
+                          <tr key={w.id}>
+                            <td><b>{w.display_name || "—"}</b></td>
+                            <td>{w.role || "—"}</td>
+                            <td>{w.team || "—"}</td>
+                            <td>{w.email || "—"}</td>
+                            <td>
+                              <span className="tc-chip" style={{ padding: "4px 10px" }}>
+                                {w.is_active ? "Activo" : "Inactivo"}
+                              </span>
+                            </td>
+                            <td>
+                              {schedules.length === 0 ? (
+                                <span className="tc-muted">Sin horarios</span>
+                              ) : (
+                                <div style={{ display: "grid", gap: 4 }}>
+                                  {schedules.slice(0, 3).map((s: any) => (
+                                    <span key={s.id} className="tc-sub">
+                                      {dayName(s.day_of_week)} · {s.start_time}–{s.end_time}
+                                    </span>
+                                  ))}
+                                  {schedules.length > 3 ? (
+                                    <span className="tc-sub">+ {schedules.length - 3} más</span>
+                                  ) : null}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                                <button className="tc-btn" onClick={() => startEditWorker(w)}>
+                                  Editar
+                                </button>
+                                <button className="tc-btn tc-btn-gold" onClick={() => prepareScheduleForWorker(w)}>
+                                  Cambiar horario
+                                </button>
+                                {w.is_active ? (
+                                  <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>
+                                    Dar de baja
+                                  </button>
+                                ) : (
+                                  <button className="tc-btn tc-btn-ok" onClick={() => toggleWorker(w, true)}>
+                                    Activar
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(!staffOperationalWorkers || staffOperationalWorkers.length === 0) && (
+                        <tr>
+                          <td colSpan={7} className="tc-muted">
+                            No hay trabajadores que coincidan.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {editingWorkerId ? (
+                  <>
+                    <div className="tc-hr" />
                     <div
-                      key={b.id}
                       style={{
                         border: "1px solid rgba(255,255,255,0.10)",
                         borderRadius: 14,
@@ -1449,457 +1817,553 @@ export default function Central() {
                         background: "rgba(255,255,255,0.03)",
                       }}
                     >
-                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div className="tc-title" style={{ fontSize: 14 }}>✏️ Editar trabajador</div>
+                      <div className="tc-hr" />
+                      <div className="tc-grid-4">
                         <div>
-                          <div style={{ fontWeight: 900 }}>
-                            {sender.display_name || "Tarotista"}{" "}
-                            <span className="tc-chip" style={{ marginLeft: 8 }}>
-                              {sender.team || sender.team_key || "—"}
-                            </span>
-                          </div>
-                          {b.note ? <div className="tc-sub" style={{ marginTop: 6 }}>{b.note}</div> : null}
+                          <div className="tc-sub">Nombre</div>
+                          <input
+                            className="tc-input"
+                            value={editingWorkerName}
+                            onChange={(e) => setEditingWorkerName(e.target.value)}
+                            style={{ width: "100%", marginTop: 6 }}
+                          />
                         </div>
-                        <div className="tc-chip">{items.length} pendientes</div>
+                        <div>
+                          <div className="tc-sub">Rol</div>
+                          <select
+                            className="tc-select"
+                            value={editingWorkerRole}
+                            onChange={(e) => setEditingWorkerRole(e.target.value as any)}
+                            style={{ width: "100%", marginTop: 6 }}
+                          >
+                            <option value="tarotista">tarotista</option>
+                            <option value="central">central</option>
+                            <option value="admin">admin</option>
+                          </select>
+                        </div>
+                        <div>
+                          <div className="tc-sub">Equipo</div>
+                          <input
+                            className="tc-input"
+                            value={editingWorkerTeam}
+                            onChange={(e) => setEditingWorkerTeam(e.target.value)}
+                            style={{ width: "100%", marginTop: 6 }}
+                          />
+                        </div>
+                        <div>
+                          <div className="tc-sub">Email</div>
+                          <input
+                            className="tc-input"
+                            value={editingWorkerEmail}
+                            onChange={(e) => setEditingWorkerEmail(e.target.value)}
+                            style={{ width: "100%", marginTop: 6 }}
+                          />
+                        </div>
                       </div>
 
-                      <div className="tc-hr" style={{ margin: "12px 0" }} />
+                      <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
+                        <button className="tc-btn" onClick={cancelEditWorker}>
+                          Cancelar
+                        </button>
+                        <button className="tc-btn tc-btn-ok" onClick={updateWorker}>
+                          Guardar cambios
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
 
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {items.map((it: any) => (
-                          <div
-                            key={it.id}
-                            style={{
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              borderRadius: 14,
-                              padding: 12,
-                              background: "rgba(255,255,255,0.02)",
-                            }}
-                          >
-                            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                              <div style={{ minWidth: 260 }}>
-                                <div style={{ fontWeight: 900 }}>
-                                  {it.customer_name || "—"}{" "}
-                                  <span className="tc-chip" style={{ marginLeft: 8 }}>
-                                    {statusLabel(String(it.current_status || "pending"))}
-                                  </span>
-                                </div>
-                                {it.phone ? <div className="tc-sub" style={{ marginTop: 6 }}>📱 {it.phone}</div> : null}
-                                {it.last_note ? <div className="tc-sub" style={{ marginTop: 6 }}>📝 {it.last_note}</div> : null}
-                              </div>
+                <div className="tc-hr" />
 
-                              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                {OUTBOUND_ACTIONS.map((a) => (
-                                  <button
-                                    key={a.key}
-                                    className={`tc-btn ${a.key === "done" ? "tc-btn-ok" : ""}`}
-                                    onClick={() => outboundLog(String(it.id), a.key)}
-                                  >
-                                    {a.label}
-                                  </button>
-                                ))}
-                              </div>
+                <div className="tc-grid-2">
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir trabajador</div>
+                    <div className="tc-hr" />
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <input
+                        className="tc-input"
+                        value={newWorkerName}
+                        onChange={(e) => setNewWorkerName(e.target.value)}
+                        placeholder="Nombre"
+                      />
+                      <select className="tc-select" value={newWorkerRole} onChange={(e) => setNewWorkerRole(e.target.value as any)}>
+                        <option value="tarotista">tarotista</option>
+                        <option value="central">central</option>
+                        <option value="admin">admin</option>
+                      </select>
+                      <input
+                        className="tc-input"
+                        value={newWorkerTeam}
+                        onChange={(e) => setNewWorkerTeam(e.target.value)}
+                        placeholder="Equipo (opcional)"
+                      />
+                      <input
+                        className="tc-input"
+                        value={newWorkerEmail}
+                        onChange={(e) => setNewWorkerEmail(e.target.value)}
+                        placeholder="Email (opcional)"
+                      />
+                      <div className="tc-row" style={{ justifyContent: "flex-end" }}>
+                        <button className="tc-btn tc-btn-ok" onClick={createWorker}>
+                          Crear trabajador
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 14,
+                      padding: 12,
+                      background: "rgba(255,255,255,0.03)",
+                    }}
+                  >
+                    <div className="tc-title" style={{ fontSize: 14 }}>🕒 Añadir o cambiar horario</div>
+                    <div className="tc-hr" />
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <select className="tc-select" value={scheduleWorkerId} onChange={(e) => setScheduleWorkerId(e.target.value)}>
+                        <option value="">Selecciona trabajador</option>
+                        {(staffOperationalWorkers || []).map((w: any) => (
+                          <option key={w.id} value={w.id}>
+                            {w.display_name} ({w.role})
+                          </option>
+                        ))}
+                      </select>
+
+                      <select className="tc-select" value={scheduleDay} onChange={(e) => setScheduleDay(e.target.value)}>
+                        <option value="0">Domingo</option>
+                        <option value="1">Lunes</option>
+                        <option value="2">Martes</option>
+                        <option value="3">Miércoles</option>
+                        <option value="4">Jueves</option>
+                        <option value="5">Viernes</option>
+                        <option value="6">Sábado</option>
+                      </select>
+
+                      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                        <input className="tc-input" value={scheduleStart} onChange={(e) => setScheduleStart(e.target.value)} placeholder="10:00:00" style={{ width: 160 }} />
+                        <input className="tc-input" value={scheduleEnd} onChange={(e) => setScheduleEnd(e.target.value)} placeholder="18:00:00" style={{ width: 160 }} />
+                      </div>
+
+                      <input
+                        className="tc-input"
+                        value={scheduleTimezone}
+                        onChange={(e) => setScheduleTimezone(e.target.value)}
+                        placeholder="Europe/Madrid"
+                      />
+
+                      <div className="tc-row" style={{ justifyContent: "flex-end" }}>
+                        <button className="tc-btn tc-btn-ok" onClick={createSchedule}>
+                          Crear horario
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  {(staffOperationalWorkers || []).map((w: any) => {
+                    const schedules = schedulesByWorker.get(String(w.id)) || [];
+                    return (
+                      <div
+                        key={w.id}
+                        style={{
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: scheduleWorkerId === String(w.id) ? "rgba(181,156,255,0.07)" : "rgba(255,255,255,0.03)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ fontWeight: 900 }}>{w.display_name}</div>
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              {w.role} · {w.team || "sin equipo"} · {w.email || "sin email"}
+                            </div>
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              Estado: <b>{w.is_active ? "Activo" : "Inactivo"}</b>
                             </div>
                           </div>
-                        ))}
+
+                          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                            <button className="tc-btn" onClick={() => startEditWorker(w)}>
+                              Editar ficha
+                            </button>
+                            <button className="tc-btn tc-btn-gold" onClick={() => prepareScheduleForWorker(w)}>
+                              {scheduleWorkerId === String(w.id) ? "Horario seleccionado" : "Cambiar horario"}
+                            </button>
+                            {w.is_active ? (
+                              <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>
+                                Dar de baja
+                              </button>
+                            ) : (
+                              <button className="tc-btn tc-btn-ok" onClick={() => toggleWorker(w, true)}>
+                                Activar
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="tc-hr" />
+
+                        {schedules.length === 0 ? (
+                          <div className="tc-sub">Sin horarios asignados.</div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {schedules.map((s: any) => (
+                              <ScheduleRow
+                                key={s.id}
+                                schedule={s}
+                                onSave={(patch) => updateSchedule(s.id, patch)}
+                                onDelete={() => deleteSchedule(s.id)}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
 
-                {(!obBatches || obBatches.length === 0) && <div className="tc-sub">No hay listas para este día.</div>}
+                  {(!staffOperationalWorkers || staffOperationalWorkers.length === 0) && (
+                    <div className="tc-sub">No hay trabajadores que coincidan.</div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* ✅ PRESENCIAS */}
-          {tab === "equipo" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">🟢 Presencias Tarotistas</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Solo se muestran conectadas / descanso / baño · Auto-refresh cada 20s
-                    {presMsg ? ` · ${presMsg}` : ""}
+              <div className="tc-card">
+                <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias de asistencia</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Mes {month}. Aquí justificas o marcas como no justificadas.
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-2" style={{ marginBottom: 14 }}>
+                  <div>
+                    <div className="tc-sub">Nota para la decisión</div>
+                    <input
+                      className="tc-input"
+                      value={attNote}
+                      onChange={(e) => setAttNote(e.target.value)}
+                      placeholder="Ej: justificó con captura / aviso previo…"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
                   </div>
-                </div>
-
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    className="tc-input"
-                    value={presQ}
-                    onChange={(e) => setPresQ(e.target.value)}
-                    placeholder="Buscar tarotista…"
-                    style={{ width: 240, maxWidth: "100%" }}
-                  />
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadPresences(false)} disabled={presLoading}>
-                    {presLoading ? "Cargando…" : "Actualizar presencias"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(presencesFiltered || []).map((r) => (
                   <div
-                    key={r.worker_id}
                     style={{
                       border: "1px solid rgba(255,255,255,0.10)",
                       borderRadius: 14,
                       padding: 12,
                       background: "rgba(255,255,255,0.03)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
+                      alignSelf: "end",
                     }}
                   >
-                    <div style={{ minWidth: 240 }}>
-                      <div style={{ fontWeight: 900 }}>
-                        {r.display_name}{" "}
-                        {r.team_key ? <span className="tc-chip" style={{ marginLeft: 8 }}>{r.team_key}</span> : null}
-                      </div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Última señal:{" "}
-                        <b>
-                          {r.last_seen_seconds == null
-                            ? "—"
-                            : r.last_seen_seconds < 60
-                            ? `hace ${r.last_seen_seconds}s`
-                            : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
-                        </b>
-                      </div>
+                    <div className="tc-sub">Resumen rápido</div>
+                    <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>
+                      {(attIncidents || []).length} incidencia(s)
                     </div>
-
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                      <span
-                        className="tc-chip"
-                        style={{
-                          ...attStyle(r.online, r.status),
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          fontSize: 12,
-                        }}
-                        title={r.status}
-                      >
-                        {attLabel(r.online, r.status)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-
-                {(!presencesFiltered || presencesFiltered.length === 0) && <div className="tc-sub">No hay tarotistas conectadas ahora mismo.</div>}
-              </div>
-            </div>
-          )}
-
-          {/* ✅ DEBERÍAN */}
-          {tab === "equipo" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">⏰ Deberían estar conectadas ahora</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Según horarios activos (incluye turnos nocturnos)
-                    {expMsg ? ` · ${expMsg}` : ""}
                   </div>
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    className="tc-input"
-                    value={expQ}
-                    onChange={(e) => setExpQ(e.target.value)}
-                    placeholder="Buscar…"
-                    style={{ width: 240, maxWidth: "100%" }}
-                  />
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadExpected(false)} disabled={expLoading}>
-                    {expLoading ? "Cargando…" : "Actualizar"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(expectedFiltered || []).map((r) => (
-                  <div
-                    key={`${r.worker_id}-${r.schedule_id || "x"}`}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(255,255,255,0.03)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ minWidth: 240 }}>
-                      <div style={{ fontWeight: 900 }}>{r.display_name}</div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Turno: <b>{r.start_time || "—"}</b> → <b>{r.end_time || "—"}</b>
-                      </div>
-                    </div>
-
-                    {typeof r.online === "boolean" ? (
-                      <span
-                        className="tc-chip"
+                {(attIncidents || []).length === 0 ? (
+                  <div className="tc-sub">No hay incidencias de asistencia en este mes.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(attIncidents || []).map((i: any) => (
+                      <div
+                        key={i.id}
                         style={{
-                          ...attStyle(!!r.online, String(r.status || (r.online ? "working" : "offline"))),
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          fontSize: 12,
+                          border: "1px solid rgba(255,255,255,0.10)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: "rgba(255,255,255,0.03)",
                         }}
                       >
-                        {attLabel(!!r.online, String(r.status || (r.online ? "working" : "offline")))}
-                      </span>
-                    ) : (
-                      <span className="tc-chip">En turno</span>
-                    )}
-                  </div>
-                ))}
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                          <div>
+                            <div style={{ fontWeight: 900 }}>
+                              {i.display_name ? `${i.display_name} · ` : ""}
+                              {i.reason || "Incidencia"}
+                            </div>
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              {i.meta?.type ? `Tipo: ${i.meta.type}` : ""}
+                              {i.meta?.date ? ` · Fecha: ${i.meta.date}` : ""}
+                              {i.created_at ? ` · Creada: ${new Date(i.created_at).toLocaleString("es-ES")}` : ""}
+                            </div>
+                            {i.evidence_note ? (
+                              <div className="tc-sub" style={{ marginTop: 4 }}>
+                                Nota actual: <b>{i.evidence_note}</b>
+                              </div>
+                            ) : null}
+                          </div>
 
-                {(!expectedFiltered || expectedFiltered.length === 0) && <div className="tc-sub">No hay nadie en turno ahora mismo.</div>}
-              </div>
-            </div>
-          )}
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontWeight: 900, fontSize: 18 }}>-{eur(i.amount)}</div>
+                            <div className="tc-sub">
+                              Estado: <b>{String(i.status || "unjustified")}</b>
+                            </div>
+                          </div>
+                        </div>
 
-          {/* Competición */}
-          {tab === "equipo" && (
-            <div className="tc-card">
-              <div className="tc-title">🔥💧 Competición por equipos</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Ganador: <b>{winner}</b> · Bono central ganadora: <b>{eur(40)}</b>
-                {rankMsg ? ` · ${rankMsg}` : ""}
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-grid-2">
-                <TeamBar
-                  title="🔥 Fuego (Yami)"
-                  score={Number(fuego?.score || 0)}
-                  pct={Math.round((Number(fuego?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
-                  aCliente={pctAny(fuego?.avg_cliente ?? 0)}
-                  aRepite={pctAny(fuego?.avg_repite ?? 0)}
-                  isWinner={winner === "fuego"}
-                />
-                <TeamBar
-                  title="💧 Agua (Maria)"
-                  score={Number(agua?.score || 0)}
-                  pct={Math.round((Number(agua?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
-                  aCliente={pctAny(agua?.avg_cliente ?? 0)}
-                  aRepite={pctAny(agua?.avg_repite ?? 0)}
-                  isWinner={winner === "agua"}
-                />
-              </div>
-
-              <div className="tc-hr" />
-              <div className="tc-sub">Siguiente: “Mejoras de equipo” automático (consejos según %cliente y %repite).</div>
-            </div>
-          )}
-
-          {/* Checklist */}
-          {tab === "checklist" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">✅ Checklist Tarotistas (turno actual)</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Turno: <b>{clShiftKey || "—"}</b> · Completadas:{" "}
-                    <b>
-                      {clProgress.completed}/{clProgress.total}
-                    </b>{" "}
-                    · En progreso: <b>{clProgress.inProg}</b> · Sin empezar: <b>{clProgress.notStarted}</b>
-                  </div>
-                </div>
-
-                <div className="tc-row" style={{ flexWrap: "wrap" }}>
-                  <button className="tc-btn tc-btn-gold" onClick={loadChecklist} disabled={clLoading}>
-                    {clLoading ? "Cargando…" : "Actualizar checklist"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="tc-sub" style={{ marginTop: 10 }}>
-                {clMsg || " "}
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-row" style={{ flexWrap: "wrap", gap: 10 }}>
-                <input
-                  className="tc-input"
-                  value={clQ}
-                  onChange={(e) => setClQ(e.target.value)}
-                  placeholder="Buscar tarotista…"
-                  style={{ width: 280, maxWidth: "100%" }}
-                />
-                <div className="tc-chip">
-                  Nota: este checklist se <b>resetea solo</b> con el turno (shift_key).
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(clRowsFiltered || []).map((r: any) => (
-                  <div
-                    key={r.worker_id}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background:
-                        r.status === "completed"
-                          ? "rgba(120,255,190,0.10)"
-                          : r.status === "in_progress"
-                          ? "rgba(215,181,109,0.08)"
-                          : "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                      <div>
-                        <div style={{ fontWeight: 900 }}>{r.display_name}</div>
-                        <div className="tc-sub" style={{ marginTop: 6 }}>
-                          Estado:{" "}
-                          <b>
-                            {r.status === "completed" ? "Completado ✅" : r.status === "in_progress" ? "En progreso ⏳" : "Sin empezar ⬜"}
-                          </b>
-                          {r.completed_at ? ` · ${new Date(r.completed_at).toLocaleString("es-ES")}` : ""}
+                        <div className="tc-row" style={{ marginTop: 10, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                          <button className="tc-btn tc-btn-ok" onClick={() => decideIncident(i.id, "justified")}>
+                            Marcar JUSTIFICADA
+                          </button>
+                          <button className="tc-btn tc-btn-danger" onClick={() => decideIncident(i.id, "unjustified")}>
+                            Marcar NO justificada
+                          </button>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <span
-                          className="tc-chip"
-                          style={{
-                            borderColor:
-                              r.status === "completed"
-                                ? "rgba(120,255,190,0.35)"
-                                : r.status === "in_progress"
-                                ? "rgba(215,181,109,0.35)"
-                                : "rgba(255,255,255,0.14)",
-                          }}
-                        >
-                          {r.status === "completed" ? "OK" : r.status === "in_progress" ? "Casi" : "Pendiente"}
-                        </span>
-                      </div>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Worked = trabajo real · Break y baño separados · Expected = horario planificado
+                      {stMsg ? ` · ${stMsg}` : ""}
                     </div>
                   </div>
-                ))}
 
-                {(!clRowsFiltered || clRowsFiltered.length === 0) && (
-                  <div className="tc-sub">No hay tarotistas para este checklist. (Si eres central, solo verás tu equipo.)</div>
-                )}
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadStats(false)} disabled={stLoading}>
+                    {stLoading ? "Cargando…" : "Cargar stats"}
+                  </button>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-grid-4">
+                  <div>
+                    <div className="tc-sub">Worker</div>
+                    <input
+                      className="tc-input"
+                      value={stWorkerId}
+                      onChange={(e) => setStWorkerId(e.target.value)}
+                      placeholder="worker_id (opcional)"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Agrupar</div>
+                    <select
+                      className="tc-select"
+                      value={stGroup}
+                      onChange={(e) => setStGroup(e.target.value as any)}
+                      style={{ width: "100%", marginTop: 6 }}
+                    >
+                      <option value="day">día</option>
+                      <option value="week">semana</option>
+                      <option value="month">mes</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Desde</div>
+                    <input
+                      className="tc-input"
+                      value={stFrom}
+                      onChange={(e) => setStFrom(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Hasta</div>
+                    <input
+                      className="tc-input"
+                      value={stTo}
+                      onChange={(e) => setStTo(e.target.value)}
+                      placeholder="YYYY-MM-DD"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                  Tip: si quieres un desplegable global de workers, hacemos luego endpoint `/api/admin/workers/list`.
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead>
+                      <tr>
+                        <th>Periodo</th>
+                        <th>Trabajador</th>
+                        <th>Rol</th>
+                        <th>Worked</th>
+                        <th>Break</th>
+                        <th>Baño</th>
+                        <th>Expected</th>
+                        <th>Diff</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(stRows || []).map((r: any, idx: number) => {
+                        const diff = Number(r.diff_minutes || 0);
+                        const diffLabel = minsToHhmm(Math.abs(diff));
+                        return (
+                          <tr key={`${r.worker_id}-${r.group_key}-${idx}`}>
+                            <td><b>{r.group_key}</b></td>
+                            <td>{r.display_name || r.worker_id}</td>
+                            <td className="tc-muted">{r.role || "—"}</td>
+                            <td><b>{minsToHhmm(r.worked_minutes)}</b></td>
+                            <td>{minsToHhmm(r.break_minutes)}</td>
+                            <td>{minsToHhmm(r.bathroom_minutes)}</td>
+                            <td>{minsToHhmm(r.expected_minutes)}</td>
+                            <td style={{ fontWeight: 900 }}>
+                              {diff >= 0 ? `+${diffLabel}` : `-${diffLabel}`}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {(!stRows || stRows.length === 0) && (
+                        <tr>
+                          <td colSpan={8} className="tc-muted">
+                            Sin datos. Revisa el rango y el endpoint `/api/admin/attendance/stats`.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
+                  Nota: si quieres “Horas hechas” incluyendo descanso y baño, suma worked + break + baño.
+                </div>
               </div>
             </div>
           )}
 
-          {/* Incidencias */}
-          {tab === "incidencias" && (
+          {tab === "checklists" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
-                  <div className="tc-title">⚠️ Incidencias</div>
+                  <div className="tc-title">✅ Checklists (plantillas)</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Descuenta en la factura del mes seleccionado.
+                    Aquí defines qué items aparecen en el checklist de <b>tarotista</b> o <b>central</b>.
+                    {ckMsg ? ` · ${ckMsg}` : ""}
                   </div>
                 </div>
 
-                <div className="tc-row" style={{ flexWrap: "wrap" }}>
-                  <button className="tc-btn tc-btn-gold" onClick={loadTarotists} disabled={tarotistsLoading}>
-                    {tarotistsLoading ? "Cargando…" : "Recargar tarotistas"}
+                <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
+                  <select
+                    className="tc-select"
+                    value={ckTemplateKey}
+                    onChange={(e) => setCkTemplateKey(e.target.value as any)}
+                    style={{ minWidth: 220 }}
+                  >
+                    <option value="tarotista">tarotista</option>
+                    <option value="central">central</option>
+                  </select>
+
+                  <button className="tc-btn tc-btn-gold" onClick={loadChecklistAdmin} disabled={ckLoading}>
+                    {ckLoading ? "Cargando…" : "Recargar"}
                   </button>
                 </div>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>
-                {tarotistsMsg || " "}
-                {incMsg ? ` · ${incMsg}` : ""}
+              <div className="tc-hr" />
+
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  className="tc-input"
+                  value={ckQ}
+                  onChange={(e) => setCkQ(e.target.value)}
+                  placeholder="Buscar item…"
+                  style={{ width: 320, maxWidth: "100%" }}
+                />
+
+                <div className="tc-sub" style={{ opacity: 0.9 }}>
+                  Plantilla: <b>{ckTemplate?.title || "—"}</b> · Items: <b>{(ckItems || []).length}</b>
+                </div>
               </div>
 
               <div className="tc-hr" />
 
-              <div className="tc-row" style={{ flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir item</div>
+              <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
                 <input
                   className="tc-input"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder="Buscar tarotista…"
-                  style={{ width: 260, maxWidth: "100%" }}
+                  value={ckNewLabel}
+                  onChange={(e) => setCkNewLabel(e.target.value)}
+                  placeholder="Texto del item…"
+                  style={{ width: 420, maxWidth: "100%" }}
                 />
-
-                <select
-                  className="tc-select"
-                  value={incWorkerId}
-                  onChange={(e) => setIncWorkerId(e.target.value)}
-                  style={{ minWidth: 360, width: 520, maxWidth: "100%" }}
-                >
-                  {(tarotistsFiltered || []).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.display_name} {t.team_key ? `(${t.team_key})` : ""}
-                    </option>
-                  ))}
-                  {(!tarotistsFiltered || tarotistsFiltered.length === 0) && <option value="">(Sin resultados)</option>}
-                </select>
-
                 <input
                   className="tc-input"
-                  value={incAmount}
-                  onChange={(e) => setIncAmount(e.target.value)}
-                  style={{ width: 140 }}
-                  placeholder="Importe"
+                  value={ckNewSort}
+                  onChange={(e) => setCkNewSort(e.target.value)}
+                  placeholder="Sort"
+                  style={{ width: 120 }}
                 />
-
-                <input
-                  className="tc-input"
-                  value={incReason}
-                  onChange={(e) => setIncReason(e.target.value)}
-                  style={{ width: 360, maxWidth: "100%" }}
-                  placeholder="Motivo"
-                />
-
-                <button className="tc-btn tc-btn-danger" onClick={crearIncidencia} disabled={incLoading || !incWorkerId}>
-                  {incLoading ? "Guardando…" : "Guardar incidencia"}
+                <button className="tc-btn tc-btn-ok" onClick={addChecklistItem} disabled={ckLoading}>
+                  Añadir
                 </button>
               </div>
 
               <div className="tc-hr" />
 
-              <div className="tc-sub">
-                Seleccionada: <b>{selectedTarotist?.display_name || "—"}</b>{" "}
-                {selectedTarotist?.team_key ? (
-                  <>
-                    · Equipo <b>{selectedTarotist.team_key}</b>
-                  </>
-                ) : null}
-              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {(ckFiltered || []).map((it: any) => (
+                  <ChecklistRow
+                    key={it.id}
+                    item={it}
+                    onSave={(next) => saveChecklistItem(next)}
+                    onDelete={() => deleteChecklistItem(String(it.id))}
+                  />
+                ))}
 
-              <div className="tc-sub" style={{ marginTop: 8 }}>
-                Nota: para que se refleje en facturas, en Admin vuelves a generar facturas del mes.
-              </div>
-            </div>
-          )}
-
-          {/* Ranking */}
-          {tab === "ranking" && (
-            <div className="tc-card">
-              <div className="tc-title">🏆 Top 3 del mes</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Captadas / %Cliente / %Repite {rankMsg ? `· ${rankMsg}` : ""}
+                {(!ckFiltered || ckFiltered.length === 0) && (
+                  <div className="tc-sub">No hay items (o no coinciden con la búsqueda).</div>
+                )}
               </div>
 
               <div className="tc-hr" />
 
-              <div className="tc-grid-3">
-                <TopCard title="Captadas" items={topCaptadas.map((x: any) => `${x.display_name} (${Number(x.captadas_total || 0)})`)} />
-                <TopCard title="Cliente" items={topCliente.map((x: any) => `${x.display_name} (${pctAny(x.pct_cliente).toFixed(2)}%)`)} />
-                <TopCard title="Repite" items={topRepite.map((x: any) => `${x.display_name} (${pctAny(x.pct_repite).toFixed(2)}%)`)} />
+              <div className="tc-sub" style={{ opacity: 0.85 }}>
+                Nota: al borrar un item, también se eliminan los “checks” ya marcados en turnos anteriores para ese item.
+              </div>
+            </div>
+          )}
+
+          {tab === "crm" && (
+            <CRMClientesPanel mode="admin" />
+          )}
+
+          {tab === "sync" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">🔄 Sincronización</div>
+                  <div className="tc-sub">Importa/actualiza llamadas desde Google Sheets</div>
+                </div>
+
+                <button className="tc-btn tc-btn-gold" onClick={syncNow} disabled={syncLoading}>
+                  {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
+                </button>
+              </div>
+
+              <div style={{ marginTop: 10 }} className="tc-sub">
+                {syncMsg || "Haz sync antes de generar facturas para que cuadren minutos/captadas."}
               </div>
             </div>
           )}
@@ -1909,66 +2373,331 @@ export default function Central() {
   );
 }
 
-function TeamBar({
-  title,
-  score,
-  pct,
-  aCliente,
-  aRepite,
-  isWinner,
-}: {
-  title: string;
-  score: number;
-  pct: number;
-  aCliente: number;
-  aRepite: number;
-  isWinner: boolean;
-}) {
+function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-sub">{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
+    </div>
+  );
+}
+
+function KpiMini({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 12,
+        padding: 10,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-sub">{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
+    </div>
+  );
+}
+
+function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
     <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-        <div className="tc-title" style={{ fontSize: 14 }}>
-          {title} {isWinner ? "👑" : ""}
-        </div>
-        <div style={{ fontWeight: 900 }}>{Number(score || 0).toFixed(2)}</div>
-      </div>
-
-      <div style={{ marginTop: 10, height: 12, borderRadius: 999, background: "rgba(255,255,255,0.10)", overflow: "hidden" }}>
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background: isWinner
-              ? "linear-gradient(90deg, rgba(120,255,190,0.85), rgba(215,181,109,0.95))"
-              : "linear-gradient(90deg, rgba(181,156,255,0.85), rgba(215,181,109,0.65))",
-          }}
-        />
-      </div>
-
-      <div className="tc-sub" style={{ marginTop: 10 }}>
-        Media %Cliente: <b>{Number(aCliente || 0).toFixed(2)}%</b> · Media %Repite: <b>{Number(aRepite || 0).toFixed(2)}%</b>
+      <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
+      <div className="tc-hr" />
+      <div style={{ display: "grid", gap: 8 }}>
+        {(items || []).slice(0, 3).map((t, i) => (
+          <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
+            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
+          </div>
+        ))}
+        {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
       </div>
     </div>
   );
 }
 
-function TopCard({ title, items }: { title: string; items: string[] }) {
+function LineEditor({
+  line,
+  onSave,
+  onDelete,
+}: {
+  line: any;
+  onSave: (payload: { label: string; amount?: number; meta?: any }) => void;
+  onDelete: () => void;
+}) {
+  const [label, setLabel] = useState<string>(line.label || "");
+  const [amount, setAmount] = useState<string>(String(line.amount ?? "0"));
+
+  const meta = line?.meta || {};
+  const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
+
+  const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
+  const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
+
+  useEffect(() => {
+    setLabel(String(line.label || ""));
+    setAmount(String(line.amount ?? "0"));
+    setMinutes(String(line?.meta?.minutes ?? ""));
+    setRate(String(line?.meta?.rate ?? ""));
+  }, [line]);
+
+  const parsedMinutes = Number(String(minutes).replace(",", "."));
+  const parsedRate = Number(String(rate).replace(",", "."));
+  const calcAmount = roundMoney((isFinite(parsedMinutes) ? parsedMinutes : 0) * (isFinite(parsedRate) ? parsedRate : 0));
+
+  const displayAmount = hasBreakdown ? calcAmount : Number(String(amount).replace(",", ".")) || 0;
+  const code = String(meta.code || "").toUpperCase();
+
+  function saveLine() {
+    if (hasBreakdown) {
+      const nextMeta = {
+        ...meta,
+        minutes: isFinite(parsedMinutes) ? parsedMinutes : 0,
+        rate: isFinite(parsedRate) ? parsedRate : 0,
+      };
+
+      onSave({
+        label,
+        meta: nextMeta,
+      });
+      return;
+    }
+
+    onSave({
+      label,
+      amount: Number(String(amount).replace(",", ".")) || 0,
+      meta,
+    });
+  }
+
   return (
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>
-        🏆 {title}
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 220 }}>
+          <div style={{ fontWeight: 900 }}>{label}</div>
+          {hasBreakdown && (
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              {numES(isFinite(parsedRate) ? parsedRate : 0, 2)}€ x {numES(isFinite(parsedMinutes) ? parsedMinutes : 0, 0)} min = <b>{eur(calcAmount)}</b>
+              {code ? <> · Código <b>{code}</b></> : null}
+            </div>
+          )}
+        </div>
+
+        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(displayAmount)}</div>
       </div>
-      <div className="tc-hr" />
-      <div style={{ display: "grid", gap: 8 }}>
-        {(items || []).slice(0, 3).map((t, i) => (
-          <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
-            <span>
-              {i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}
-            </span>
+
+      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+        <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%" }} />
+
+        {hasBreakdown ? (
+          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 160 }}>
+              <div className="tc-sub">Minutos</div>
+              <input
+                className="tc-input"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+                style={{ width: 160, marginTop: 6 }}
+              />
+            </div>
+
+            <div style={{ minWidth: 160 }}>
+              <div className="tc-sub">Tarifa €/min</div>
+              <input
+                className="tc-input"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                style={{ width: 160, marginTop: 6 }}
+              />
+            </div>
+
+            <div style={{ minWidth: 180 }}>
+              <div className="tc-sub">Importe recalculado</div>
+              <div className="tc-chip" style={{ marginTop: 6 }}>
+                <b>{eur(calcAmount)}</b>
+              </div>
+            </div>
+
+            <div className="tc-row" style={{ alignItems: "flex-end" }}>
+              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                Guardar
+              </button>
+              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                Borrar
+              </button>
+            </div>
           </div>
-        ))}
-        {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
+        ) : (
+          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
+            <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
+
+            <div className="tc-row">
+              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                Guardar
+              </button>
+              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                Borrar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function ScheduleRow({
+  schedule,
+  onSave,
+  onDelete,
+}: {
+  schedule: any;
+  onSave: (patch: any) => void;
+  onDelete: () => void;
+}) {
+  const [day, setDay] = useState(String(schedule.day_of_week ?? 1));
+  const [start, setStart] = useState(String(schedule.start_time || ""));
+  const [end, setEnd] = useState(String(schedule.end_time || ""));
+  const [timezone, setTimezone] = useState(String(schedule.timezone || "Europe/Madrid"));
+  const [active, setActive] = useState(!!schedule.is_active);
+
+  useEffect(() => {
+    setDay(String(schedule.day_of_week ?? 1));
+    setStart(String(schedule.start_time || ""));
+    setEnd(String(schedule.end_time || ""));
+    setTimezone(String(schedule.timezone || "Europe/Madrid"));
+    setActive(!!schedule.is_active);
+  }, [schedule]);
+
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 12,
+        padding: 10,
+        background: "rgba(255,255,255,0.02)",
+      }}
+    >
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 220 }}>
+          <div style={{ fontWeight: 900 }}>{dayName(day)}</div>
+          <div className="tc-sub" style={{ marginTop: 4 }}>
+            {start} → {end} · {timezone}
+          </div>
+        </div>
+
+        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <select className="tc-select" value={day} onChange={(e) => setDay(e.target.value)} style={{ width: 130 }}>
+            <option value="0">Domingo</option>
+            <option value="1">Lunes</option>
+            <option value="2">Martes</option>
+            <option value="3">Miércoles</option>
+            <option value="4">Jueves</option>
+            <option value="5">Viernes</option>
+            <option value="6">Sábado</option>
+          </select>
+
+          <input className="tc-input" value={start} onChange={(e) => setStart(e.target.value)} style={{ width: 120 }} />
+          <input className="tc-input" value={end} onChange={(e) => setEnd(e.target.value)} style={{ width: 120 }} />
+          <input className="tc-input" value={timezone} onChange={(e) => setTimezone(e.target.value)} style={{ width: 160 }} />
+
+          <label className="tc-sub" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            Activo
+          </label>
+
+          <button
+            className="tc-btn tc-btn-ok"
+            onClick={() =>
+              onSave({
+                day_of_week: Number(day),
+                start_time: start,
+                end_time: end,
+                timezone,
+                is_active: active,
+              })
+            }
+          >
+            Guardar
+          </button>
+
+          <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+            Borrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChecklistRow({
+  item,
+  onSave,
+  onDelete,
+}: {
+  item: any;
+  onSave: (next: any) => void;
+  onDelete: () => void;
+}) {
+  const [label, setLabel] = useState<string>(String(item.label || ""));
+  const [sort, setSort] = useState<string>(String(item.sort ?? 0));
+  const [msg, setMsg] = useState<string>("");
+
+  useEffect(() => {
+    setLabel(String(item.label || ""));
+    setSort(String(item.sort ?? 0));
+  }, [item?.id]);
+
+  function save() {
+    setMsg("");
+    const s = Number(String(sort).replace(",", "."));
+    if (!String(label).trim()) return setMsg("⚠️ Falta texto");
+    if (!isFinite(s)) return setMsg("⚠️ Sort inválido");
+    onSave({ ...item, label: String(label).trim(), sort: s });
+    setMsg("✅ Guardando…");
+    setTimeout(() => setMsg(""), 1200);
+  }
+
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div className="tc-sub">Texto</div>
+          <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+        </div>
+
+        <div style={{ width: 140 }}>
+          <div className="tc-sub">Sort</div>
+          <input className="tc-input" value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+        </div>
+
+        <div className="tc-row" style={{ gap: 8, alignItems: "flex-end" }}>
+          <button className="tc-btn tc-btn-ok" onClick={save}>Guardar</button>
+          <button className="tc-btn tc-btn-danger" onClick={onDelete}>Borrar</button>
+        </div>
+      </div>
+
+      {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
   );
 }
