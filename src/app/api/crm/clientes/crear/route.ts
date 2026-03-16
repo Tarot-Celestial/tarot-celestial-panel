@@ -70,6 +70,7 @@ export async function POST(req: Request) {
     const nombre = String(body?.nombre || "").trim();
     const apellido = String(body?.apellido || "").trim();
     const telefono = normalizePhone(body?.telefono);
+    const telefono_normalizado = telefono.replace(/\D/g, "");
     const pais = String(body?.pais || "").trim();
     const email = String(body?.email || "").trim();
     const notas = String(body?.notas || "").trim();
@@ -104,18 +105,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const payload: any = {
-      nombre,
-      apellido: apellido || null,
-      telefono,
-      pais: pais || null,
-      email: email || null,
-      notas: notas || null,
-      origen: origen || "manual",
-      deuda_pendiente,
-      minutos_free_pendientes,
-      minutos_normales_pendientes,
-    };
+     const payload: any = {
+    nombre,
+    apellido: apellido || null,
+    telefono,
+    telefono_normalizado,
+    pais: pais || null,
+    email: email || null,
+    notas: notas || null,
+    origen: origen || "manual",
+    deuda_pendiente,
+    minutos_free_pendientes,
+    minutos_normales_pendientes,
+  };
 
     const { data: cliente, error } = await admin
       .from("crm_clientes")
