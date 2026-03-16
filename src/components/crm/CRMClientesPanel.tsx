@@ -44,6 +44,12 @@ export default function CRMClientesPanel({
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
 
+  const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
+  const [crmTarotistasLoading, setCrmTarotistasLoading] = useState(false);
+  const [crmTarotistaSendId, setCrmTarotistaSendId] = useState("");
+  const [crmSendLoading, setCrmSendLoading] = useState(false);
+  const [crmSendMsg, setCrmSendMsg] = useState("");
+
   const [crmClienteSelId, setCrmClienteSelId] = useState("");
   const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
   const [crmFichaLoading, setCrmFichaLoading] = useState(false);
@@ -109,8 +115,42 @@ export default function CRMClientesPanel({
     }
   }
 
+  async function loadCRMTarotistas() {
+    try {
+      setCrmTarotistasLoading(true);
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/call-popups/enviar", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
+      const tarotistas = Array.isArray(j.tarotistas) ? j.tarotistas : [];
+      setCrmTarotistasOpts(tarotistas);
+
+      setCrmTarotistaSendId((prev) => {
+        if (prev && tarotistas.some((t: any) => String(t.id) === String(prev))) return prev;
+        return "";
+      });
+    } catch (e) {
+      console.error("ERROR CARGANDO TAROTISTAS CRM", e);
+      setCrmTarotistasOpts([]);
+    } finally {
+      setCrmTarotistasLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadCRMEtiquetas();
+    loadCRMTarotistas();
   }, []);
 
   async function searchCRM() {
@@ -259,6 +299,8 @@ export default function CRMClientesPanel({
     setCrmClienteSelId("");
     setCrmClienteFicha(null);
     setCrmFichaMsg("");
+    setCrmSendMsg("");
+    setCrmTarotistaSendId("");
     setCrmEditNombre("");
     setCrmEditApellido("");
     setCrmEditTelefono("");
@@ -277,6 +319,7 @@ export default function CRMClientesPanel({
     try {
       setCrmFichaLoading(true);
       setCrmFichaMsg("");
+      setCrmSendMsg("");
       setCrmClienteSelId(id);
 
       const token = await getTokenOrLogin();
@@ -364,6 +407,60 @@ export default function CRMClientesPanel({
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
     } finally {
       setCrmSaveLoading(false);
+    }
+  }
+
+  async function sendCallPopup() {
+    if (!crmClienteSelId) {
+      setCrmSendMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+
+    if (!crmTarotistaSendId) {
+      setCrmSendMsg("⚠️ Selecciona una tarotista");
+      return;
+    }
+
+    try {
+      setCrmSendLoading(true);
+      setCrmSendMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/call-popups/enviar", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          tarotista_worker_id: crmTarotistaSendId,
+          cliente_id: Number(crmClienteSelId),
+          nombre: crmEditNombre.trim(),
+          apellido: crmEditApellido.trim(),
+          minutos_free_pendientes:
+            Number(String(crmEditMinFree).replace(",", ".")) || 0,
+          minutos_normales_pendientes:
+            Number(String(crmEditMinNormales).replace(",", ".")) || 0,
+        }),
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
+      const tarotistaNombre =
+        crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId))
+          ?.display_name || "la tarotista";
+
+      setCrmSendMsg(`✅ Llamada enviada a ${tarotistaNombre}`);
+    } catch (e: any) {
+      setCrmSendMsg(`❌ ${e?.message || "Error enviando llamada"}`);
+    } finally {
+      setCrmSendLoading(false);
     }
   }
 
@@ -508,18 +605,56 @@ export default function CRMClientesPanel({
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div>
+                  <div className="tc-sub">Enviar llamada a tarotista</div>
+                  <select
+                    className="tc-input"
+                    value={crmTarotistaSendId}
+                    onChange={(e) => setCrmTarotistaSendId(e.target.value)}
+                    style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+                  >
+                    <option value="">
+                      {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
+                    </option>
+                    {crmTarotistasOpts.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.display_name || t.id}
+                        {t.state ? ` · ${t.state}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="tc-sub">Resumen del popup</div>
+                  <div className="tc-sub" style={{ marginTop: 8 }}>
+                    {[crmEditNombre, crmEditApellido].filter(Boolean).join(" ") || "—"}
+                  </div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    {Number(String(crmEditMinFree).replace(",", ".")) || 0} minutos free · {" "}
+                    {Number(String(crmEditMinNormales).replace(",", ".")) || 0} minutos cliente
+                  </div>
+                </div>
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div><div className="tc-sub">ID cliente</div><div className="tc-sub" style={{ marginTop: 8, wordBreak: "break-all" }}>{crmClienteFicha?.id || crmClienteSelId || "—"}</div></div>
                 <div><div className="tc-sub">Última ficha cargada</div><div className="tc-sub" style={{ marginTop: 8 }}>{[crmClienteFicha?.nombre, crmClienteFicha?.apellido].filter(Boolean).join(" ") || "—"}</div></div>
               </div>
 
-              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
+              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button className="tc-btn" onClick={closeCRMFicha}>Cancelar</button>
+                <button className="tc-btn tc-btn-gold" onClick={sendCallPopup} disabled={crmSendLoading || !crmClienteSelId || !crmTarotistaSendId}>
+                  {crmSendLoading ? "Enviando..." : "Enviar llamada"}
+                </button>
                 <button className="tc-btn tc-btn-ok" onClick={saveCRMFicha} disabled={crmSaveLoading || !crmClienteSelId}>
                   {crmSaveLoading ? "Guardando..." : "Guardar cambios"}
                 </button>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>{crmFichaMsg || " "}</div>
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {crmFichaMsg || crmSendMsg || " "}
+              </div>
             </>
           )}
         </div>
