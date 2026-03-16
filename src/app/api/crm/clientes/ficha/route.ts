@@ -50,6 +50,23 @@ async function workerFromReq(req: Request) {
   return data || null;
 }
 
+function mapEtiquetasFromRelations(cliente: any) {
+  const rels = Array.isArray(cliente?.crm_cliente_etiquetas)
+    ? cliente.crm_cliente_etiquetas
+    : [];
+
+  const etiquetas = rels
+    .map((rel: any) => {
+      const et = rel?.crm_etiquetas;
+      if (!et) return null;
+      if (typeof et === "string") return et;
+      return et.nombre || null;
+    })
+    .filter(Boolean);
+
+  return Array.from(new Set(etiquetas));
+}
+
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -74,20 +91,33 @@ export async function GET(req: Request) {
 
     const admin = adminClient();
 
-    const { data: cliente, error } = await admin
+    const { data, error } = await admin
       .from("crm_clientes")
-      .select("*")
+      .select(`
+        *,
+        crm_cliente_etiquetas (
+          crm_etiquetas (
+            id,
+            nombre
+          )
+        )
+      `)
       .eq("id", id)
       .maybeSingle();
 
     if (error) throw error;
 
-    if (!cliente) {
+    if (!data) {
       return NextResponse.json(
         { ok: false, error: "CLIENTE_NO_ENCONTRADO" },
         { status: 404 }
       );
     }
+
+    const cliente = {
+      ...data,
+      etiquetas: mapEtiquetasFromRelations(data),
+    };
 
     return NextResponse.json({
       ok: true,
