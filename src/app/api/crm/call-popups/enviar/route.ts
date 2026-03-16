@@ -279,7 +279,7 @@ export async function POST(req: Request) {
     const { data, error } = await admin
       .from("crm_call_popups")
       .insert({
-        tarotista_worker_id: Number(tarotista.id),
+        tarotista_worker_id: tarotista.id,
         cliente_id,
         nombre,
         apellido,
