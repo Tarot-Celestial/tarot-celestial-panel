@@ -210,15 +210,21 @@ export async function POST(req: Request) {
     const tarotista = await findTarotistaByAnyKey(admin, tarotista_worker_raw);
 
     if (!tarotista) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "TAROTISTA_NO_ENCONTRADA",
-          tarotista_worker_raw,
-        },
-        { status: 400 }
-      );
-    }
+  const { data: allWorkers } = await admin
+    .from("workers")
+    .select("id, user_id, display_name, role, state")
+    .order("display_name", { ascending: true });
+
+  return NextResponse.json(
+    {
+      ok: false,
+      error: "TAROTISTA_NO_ENCONTRADA",
+      tarotista_worker_raw,
+      workers_debug: allWorkers || [],
+    },
+    { status: 400 }
+  );
+}
 
     if (normalizeRole(tarotista.role) !== "tarotista") {
       return NextResponse.json(
