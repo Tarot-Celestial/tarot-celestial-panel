@@ -2891,6 +2891,182 @@ async function saveCRMFicha() {
   </div>
 </div>
 
+{(crmFichaLoading || crmClienteFicha) && (
+  <div className="tc-card" style={{ marginTop: 12 }}>
+    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+      <div>
+        <div className="tc-title">🧾 Ficha CRM</div>
+        <div className="tc-sub" style={{ marginTop: 6 }}>
+          {crmFichaLoading
+            ? "Cargando ficha del cliente..."
+            : `Editando cliente #${crmClienteSelId || crmClienteFicha?.id || ""}`}
+        </div>
+      </div>
+
+      {!crmFichaLoading && (
+        <button className="tc-btn" onClick={closeCRMFicha}>
+          Cerrar ficha
+        </button>
+      )}
+    </div>
+
+    <div className="tc-hr" />
+
+    {crmFichaLoading ? (
+      <div className="tc-sub">Cargando ficha...</div>
+    ) : (
+      <>
+        <div className="tc-grid-4">
+          <div>
+            <div className="tc-sub">Nombre</div>
+            <input
+              className="tc-input"
+              value={crmEditNombre}
+              onChange={(e) => setCrmEditNombre(e.target.value)}
+              placeholder="Nombre"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Apellido</div>
+            <input
+              className="tc-input"
+              value={crmEditApellido}
+              onChange={(e) => setCrmEditApellido(e.target.value)}
+              placeholder="Apellido"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Teléfono</div>
+            <input
+              className="tc-input"
+              value={crmEditTelefono}
+              onChange={(e) => setCrmEditTelefono(e.target.value)}
+              placeholder="600123123"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">País</div>
+            <input
+              className="tc-input"
+              value={crmEditPais}
+              onChange={(e) => setCrmEditPais(e.target.value)}
+              placeholder="España"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Email</div>
+            <input
+              className="tc-input"
+              value={crmEditEmail}
+              onChange={(e) => setCrmEditEmail(e.target.value)}
+              placeholder="cliente@email.com"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Origen</div>
+            <input
+              className="tc-input"
+              value={crmEditOrigen}
+              onChange={(e) => setCrmEditOrigen(e.target.value)}
+              placeholder="manual"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Deuda pendiente</div>
+            <input
+              className="tc-input"
+              value={crmEditDeuda}
+              onChange={(e) => setCrmEditDeuda(e.target.value)}
+              placeholder="0"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Min free pendientes</div>
+            <input
+              className="tc-input"
+              value={crmEditMinFree}
+              onChange={(e) => setCrmEditMinFree(e.target.value)}
+              placeholder="0"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+        </div>
+
+        <div className="tc-grid-2" style={{ marginTop: 12 }}>
+          <div>
+            <div className="tc-sub">Min normales pendientes</div>
+            <input
+              className="tc-input"
+              value={crmEditMinNormales}
+              onChange={(e) => setCrmEditMinNormales(e.target.value)}
+              placeholder="0"
+              style={{ width: "100%", marginTop: 6 }}
+            />
+          </div>
+
+          <div>
+            <div className="tc-sub">Notas</div>
+            <textarea
+              className="tc-input"
+              value={crmEditNotas}
+              onChange={(e) => setCrmEditNotas(e.target.value)}
+              placeholder="Notas internas"
+              style={{ width: "100%", marginTop: 6, minHeight: 110 }}
+            />
+          </div>
+        </div>
+
+        <div className="tc-grid-2" style={{ marginTop: 12 }}>
+          <div>
+            <div className="tc-sub">ID cliente</div>
+            <div className="tc-sub" style={{ marginTop: 8, wordBreak: "break-all" }}>
+              {crmClienteFicha?.id || crmClienteSelId || "—"}
+            </div>
+          </div>
+
+          <div>
+            <div className="tc-sub">Última ficha cargada</div>
+            <div className="tc-sub" style={{ marginTop: 8 }}>
+              {[crmClienteFicha?.nombre, crmClienteFicha?.apellido].filter(Boolean).join(" ") || "—"}
+            </div>
+          </div>
+        </div>
+
+        <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}>
+          <button className="tc-btn" onClick={closeCRMFicha}>
+            Cancelar
+          </button>
+          <button
+            className="tc-btn tc-btn-ok"
+            onClick={saveCRMFicha}
+            disabled={crmSaveLoading || !crmClienteSelId}
+          >
+            {crmSaveLoading ? "Guardando..." : "Guardar cambios"}
+          </button>
+        </div>
+
+        <div className="tc-sub" style={{ marginTop: 10 }}>
+          {crmFichaMsg || " "}
+        </div>
+      </>
+    )}
+  </div>
+)}
+
               <div className="tc-card">
                 <div className="tc-title">📋 Resultados CRM</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
@@ -3322,4 +3498,3 @@ function ChecklistRow({
     </div>
   );
 }
-
