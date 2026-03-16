@@ -430,6 +430,8 @@ export default function Admin() {
   }
 
   async function openCRMFicha(id: string) {
+  console.log("CLICK VER FICHA", id);
+
   if (!id) return;
 
   try {
@@ -438,33 +440,40 @@ export default function Admin() {
     setCrmClienteSelId(id);
 
     const token = await getTokenOrLogin();
+    console.log("TOKEN OK", !!token);
+
     if (!token) return;
 
-    const r = await fetch(`/api/crm/clientes/ficha?id=${id}`, {
+    const r = await fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    const j = await safeJson(r);
+    console.log("RESP STATUS", r.status);
 
-    if (!j?.ok) throw new Error(j?.error || "Error cargando ficha");
+    const j = await safeJson(r);
+    console.log("RESP JSON", j);
+
+    if (!j?._ok || !j?.ok) {
+      throw new Error(j?.error || `HTTP ${j?._status}`);
+    }
 
     const c = j.cliente;
-
     setCrmClienteFicha(c);
 
-    setCrmEditNombre(c?.nombre || "");
-    setCrmEditApellido(c?.apellido || "");
-    setCrmEditTelefono(c?.telefono || "");
-    setCrmEditPais(c?.pais || "");
-    setCrmEditEmail(c?.email || "");
-    setCrmEditNotas(c?.notas || "");
-    setCrmEditOrigen(c?.origen || "");
-    setCrmEditDeuda(String(c?.deuda_pendiente || 0));
-    setCrmEditMinFree(String(c?.minutos_free_pendientes || 0));
-    setCrmEditMinNormales(String(c?.minutos_normales_pendientes || 0));
-
+    setCrmEditNombre(String(c?.nombre || ""));
+    setCrmEditApellido(String(c?.apellido || ""));
+    setCrmEditTelefono(String(c?.telefono || ""));
+    setCrmEditPais(String(c?.pais || ""));
+    setCrmEditEmail(String(c?.email || ""));
+    setCrmEditNotas(String(c?.notas || ""));
+    setCrmEditOrigen(String(c?.origen || ""));
+    setCrmEditDeuda(String(c?.deuda_pendiente ?? 0));
+    setCrmEditMinFree(String(c?.minutos_free_pendientes ?? 0));
+    setCrmEditMinNormales(String(c?.minutos_normales_pendientes ?? 0));
   } catch (e: any) {
-    setCrmFichaMsg(`❌ ${e?.message}`);
+    console.error("ERROR FICHA", e);
+    setCrmClienteFicha(null);
+    setCrmFichaMsg(`❌ ${e?.message || "Error cargando ficha"}`);
   } finally {
     setCrmFichaLoading(false);
   }
