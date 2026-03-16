@@ -429,493 +429,23 @@ export default function Admin() {
     setCrmMsg("");
   }
 
-  async function openCRMFicha(id: string) {
-  console.log("CLICK VER FICHA", id);
-
-  if (!id) return;
-
-  try {
-    setCrmFichaLoading(true);
-    setCrmFichaMsg("");
-    setCrmClienteSelId(id);
-
-    const token = await getTokenOrLogin();
-    console.log("TOKEN OK", !!token);
-
-    if (!token) return;
-
-    const r = await fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(id)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    console.log("RESP STATUS", r.status);
-
-    const j = await safeJson(r);
-    console.log("RESP JSON", j);
-
-    if (!j?._ok || !j?.ok) {
-      throw new Error(j?.error || `HTTP ${j?._status}`);
-    }
-
-    const c = j.cliente;
-    setCrmClienteFicha(c);
-
-    setCrmEditNombre(String(c?.nombre || ""));
-    setCrmEditApellido(String(c?.apellido || ""));
-    setCrmEditTelefono(String(c?.telefono || ""));
-    setCrmEditPais(String(c?.pais || ""));
-    setCrmEditEmail(String(c?.email || ""));
-    setCrmEditNotas(String(c?.notas || ""));
-    setCrmEditOrigen(String(c?.origen || ""));
-    setCrmEditDeuda(String(c?.deuda_pendiente ?? 0));
-    setCrmEditMinFree(String(c?.minutos_free_pendientes ?? 0));
-    setCrmEditMinNormales(String(c?.minutos_normales_pendientes ?? 0));
-  } catch (e: any) {
-    console.error("ERROR FICHA", e);
+  function closeCRMFicha() {
+    setCrmClienteSelId("");
     setCrmClienteFicha(null);
-    setCrmFichaMsg(`❌ ${e?.message || "Error cargando ficha"}`);
-  } finally {
-    setCrmFichaLoading(false);
-  }
-}
-
-async function saveCRMFicha() {
-  if (!crmClienteSelId) return;
-
-  "use client";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import AppHeader from "@/components/AppHeader";
-import { supabaseBrowser } from "@/lib/supabase-browser";
-import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
-
-const sb = supabaseBrowser();
-
-function monthKeyNow() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function eur(n: any) {
-  const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
-}
-
-function numES(n: any, digits = 2) {
-  const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-}
-
-function minsToHhmm(mins: any) {
-  const m = Math.max(0, Math.round(Number(mins) || 0));
-  const hh = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-}
-
-function roundMoney(n: any) {
-  return Math.round((Number(n) || 0) * 100) / 100;
-}
-
-function dayName(day: any) {
-  const d = Number(day);
-  if (d === 0) return "Domingo";
-  if (d === 1) return "Lunes";
-  if (d === 2) return "Martes";
-  if (d === 3) return "Miércoles";
-  if (d === 4) return "Jueves";
-  if (d === 5) return "Viernes";
-  if (d === 6) return "Sábado";
-  return "—";
-}
-
-async function safeJson(res: Response) {
-  const txt = await res.text();
-  if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
-  try {
-    const j = JSON.parse(txt);
-    return { ...j, _raw: txt, _status: res.status, _ok: res.ok };
-  } catch {
-    return { _raw: txt.slice(0, 800), _status: res.status, _ok: res.ok };
-  }
-}
-
-type TabKey =
-  | "facturas"
-  | "editor"
-  | "estadisticas"
-  | "contabilidad"
-  | "asistencia"
-  | "checklists"
-  | "crm"
-  | "sync";
-
-function ackLabel(v: any) {
-  const s = String(v || "pending");
-  if (s === "accepted") return "✅ Aceptada";
-  if (s === "rejected") return "❌ Rechazada";
-  if (s === "review") return "🟡 Revisión";
-  return "⏳ Pendiente";
-}
-
-function ackStyle(v: any) {
-  const s = String(v || "pending");
-  if (s === "accepted") {
-    return {
-      background: "rgba(120,255,190,0.10)",
-      border: "1px solid rgba(120,255,190,0.25)",
-    };
-  }
-  if (s === "rejected") {
-    return {
-      background: "rgba(255,80,80,0.10)",
-      border: "1px solid rgba(255,80,80,0.25)",
-    };
-  }
-  if (s === "review") {
-    return {
-      background: "rgba(215,181,109,0.10)",
-      border: "1px solid rgba(215,181,109,0.25)",
-    };
-  }
-  return {
-    background: "rgba(255,255,255,0.06)",
-    border: "1px solid rgba(255,255,255,0.15)",
-  };
-}
-
-export default function Admin() {
-  const [ok, setOk] = useState(false);
-  const [tab, setTab] = useState<TabKey>("facturas");
-
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string>("");
-
-  const [month, setMonth] = useState<string>(monthKeyNow());
-
-  const [genLoading, setGenLoading] = useState(false);
-  const [genMsg, setGenMsg] = useState<string>("");
-
-  const [listLoading, setListLoading] = useState(false);
-  const [listMsg, setListMsg] = useState<string>("");
-  const [invoices, setInvoices] = useState<any[]>([]);
-
-  const [selId, setSelId] = useState<string>("");
-  const [selLoading, setSelLoading] = useState(false);
-  const [selMsg, setSelMsg] = useState<string>("");
-  const [selInvoice, setSelInvoice] = useState<any>(null);
-  const [selWorker, setSelWorker] = useState<any>(null);
-  const [selLines, setSelLines] = useState<any[]>([]);
-  const [newLabel, setNewLabel] = useState("Ajuste");
-  const [newAmount, setNewAmount] = useState<string>("0");
-  const [newKind, setNewKind] = useState("adjustment");
-
-  const [statsLoading, setStatsLoading] = useState(false);
-  const [statsMsg, setStatsMsg] = useState("");
-  const [statsTotals, setStatsTotals] = useState<any>(null);
-  const [statsRows, setStatsRows] = useState<any[]>([]);
-  const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
-  const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
-
-  const pollRef = useRef<any>(null);
-  const lastMonthRef = useRef<string>("");
-
-  const totalSum = useMemo(() => {
-    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
-  }, [invoices]);
-
-  const [attLoading, setAttLoading] = useState(false);
-  const [attMsg, setAttMsg] = useState("");
-  const [attOnline, setAttOnline] = useState<any[]>([]);
-  const [attExpected, setAttExpected] = useState<any[]>([]);
-  const [attIncidents, setAttIncidents] = useState<any[]>([]);
-  const [attNote, setAttNote] = useState<string>("");
-
-  const [stLoading, setStLoading] = useState(false);
-  const [stMsg, setStMsg] = useState("");
-  const [stRows, setStRows] = useState<any[]>([]);
-  const [stWorkerId, setStWorkerId] = useState<string>("");
-  const [stGroup, setStGroup] = useState<"day" | "week" | "month">("day");
-  const [stFrom, setStFrom] = useState<string>("");
-  const [stTo, setStTo] = useState<string>("");
-
-  const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
-  const [ckLoading, setCkLoading] = useState(false);
-  const [ckMsg, setCkMsg] = useState("");
-  const [ckTemplate, setCkTemplate] = useState<any>(null);
-  const [ckItems, setCkItems] = useState<any[]>([]);
-  const [ckQ, setCkQ] = useState("");
-
-  const [ckNewLabel, setCkNewLabel] = useState("");
-  const [ckNewSort, setCkNewSort] = useState<string>("10");
-
-  const [accLoading, setAccLoading] = useState(false);
-  const [accMsg, setAccMsg] = useState("");
-  const [accTotals, setAccTotals] = useState<any>({ income: 0, expense: 0, net: 0 });
-  const [accEntries, setAccEntries] = useState<any[]>([]);
-  const [accMonths, setAccMonths] = useState<any[]>([]);
-  const [accBreakdown, setAccBreakdown] = useState<any>({ income: [], expense: [] });
-
-  const [crmQuery, setCrmQuery] = useState("");
-  const [crmTagFilter, setCrmTagFilter] = useState("");
-  const [crmPhoneFilter, setCrmPhoneFilter] = useState("");
-  const [crmCountryFilter, setCrmCountryFilter] = useState("");
-  const [crmLoading, setCrmLoading] = useState(false);
-  const [crmRows, setCrmRows] = useState<any[]>([]);
-  const [crmMsg, setCrmMsg] = useState("");
-  const [crmImportLoading, setCrmImportLoading] = useState(false);
-  const [crmCreateLoading, setCrmCreateLoading] = useState(false);
-  const [crmCreateMsg, setCrmCreateMsg] = useState("");
-
-  const [crmClienteSelId, setCrmClienteSelId] = useState("");
-  const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
-  const [crmFichaLoading, setCrmFichaLoading] = useState(false);
-  const [crmFichaMsg, setCrmFichaMsg] = useState("");
-
-  const [crmEditNombre, setCrmEditNombre] = useState("");
-  const [crmEditApellido, setCrmEditApellido] = useState("");
-  const [crmEditTelefono, setCrmEditTelefono] = useState("");
-  const [crmEditPais, setCrmEditPais] = useState("");
-  const [crmEditEmail, setCrmEditEmail] = useState("");
-  const [crmEditNotas, setCrmEditNotas] = useState("");
-  const [crmEditOrigen, setCrmEditOrigen] = useState("");
-  const [crmEditDeuda, setCrmEditDeuda] = useState("0");
-  const [crmEditMinFree, setCrmEditMinFree] = useState("0");
-  const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
-  const [crmSaveLoading, setCrmSaveLoading] = useState(false);
-
-  const [crmNewNombre, setCrmNewNombre] = useState("");
-  const [crmNewApellido, setCrmNewApellido] = useState("");
-  const [crmNewTelefono, setCrmNewTelefono] = useState("");
-  const [crmNewPais, setCrmNewPais] = useState("España");
-  const [crmNewEmail, setCrmNewEmail] = useState("");
-  const [crmNewNotas, setCrmNewNotas] = useState("");
-  const [crmNewOrigen, setCrmNewOrigen] = useState("manual");
-  const [crmNewDeuda, setCrmNewDeuda] = useState("0");
-  const [crmNewMinFree, setCrmNewMinFree] = useState("0");
-  const [crmNewMinNormales, setCrmNewMinNormales] = useState("0");
-
-  // Staff / horarios
-  const [staffLoading, setStaffLoading] = useState(false);
-  const [staffMsg, setStaffMsg] = useState("");
-  const [staffWorkers, setStaffWorkers] = useState<any[]>([]);
-  const [staffSchedules, setStaffSchedules] = useState<any[]>([]);
-  const [staffQ, setStaffQ] = useState("");
-
-  const [newWorkerName, setNewWorkerName] = useState("");
-  const [newWorkerRole, setNewWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
-  const [newWorkerTeam, setNewWorkerTeam] = useState("");
-  const [newWorkerEmail, setNewWorkerEmail] = useState("");
-
-  const [scheduleWorkerId, setScheduleWorkerId] = useState("");
-  const [scheduleDay, setScheduleDay] = useState("1");
-  const [scheduleStart, setScheduleStart] = useState("10:00:00");
-  const [scheduleEnd, setScheduleEnd] = useState("18:00:00");
-  const [scheduleTimezone, setScheduleTimezone] = useState("Europe/Madrid");
-
-  const [editingWorkerId, setEditingWorkerId] = useState("");
-  const [editingWorkerName, setEditingWorkerName] = useState("");
-  const [editingWorkerRole, setEditingWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
-  const [editingWorkerTeam, setEditingWorkerTeam] = useState("");
-  const [editingWorkerEmail, setEditingWorkerEmail] = useState("");
-
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("tc_month_admin");
-      if (saved) setMonth(saved);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("tc_month_admin", month);
-    } catch {}
-  }, [month]);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
-
-      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
-      const me = await safeJson(meRes);
-      if (!me?.ok) return (window.location.href = "/login");
-
-      if (me.role !== "admin") {
-        window.location.href = me.role === "central" ? "/panel-central" : "/panel-tarotista";
-        return;
-      }
-
-      setOk(true);
-    })();
-  }, []);
-
-  async function getTokenOrLogin() {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) {
-      window.location.href = "/login";
-      return "";
-    }
-    return token;
-  }
-
-  async function searchCRM() {
-    const q = crmQuery.trim();
-    const telefono = crmPhoneFilter.trim();
-    const etiqueta = crmTagFilter.trim();
-    const pais = crmCountryFilter.trim();
-
-    if (!q && !telefono && !etiqueta && !pais) {
-      setCrmMsg("⚠️ Escribe al menos un filtro");
-      setCrmRows([]);
-      return;
-    }
-
-    try {
-      setCrmLoading(true);
-      setCrmMsg("");
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const params = new URLSearchParams();
-      if (q) params.set("q", q);
-      if (telefono) params.set("telefono", telefono);
-      if (etiqueta) {
-        params.set("etiqueta", etiqueta);
-        params.set("tag", etiqueta);
-      }
-      if (pais) params.set("pais", pais);
-
-      const r = await fetch(`/api/crm/clientes/buscar?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const j = await safeJson(r);
-
-      if (!j?._ok || !j?.ok) {
-        throw new Error(j?.error || `HTTP ${j?._status}`);
-      }
-
-      setCrmRows(j.clientes || []);
-      setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
-    } catch (e: any) {
-      setCrmRows([]);
-      setCrmMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setCrmLoading(false);
-    }
-  }
-
-  async function importCRM() {
-    try {
-      setCrmImportLoading(true);
-      setCrmMsg("");
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch("/api/admin/crm/import", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const j = await safeJson(r);
-
-      if (!j?._ok || !j?.ok) {
-        throw new Error(j?.error || `HTTP ${j?._status}`);
-      }
-
-      setCrmMsg(j.message || "✅ Importación CRM lanzada correctamente.");
-    } catch (e: any) {
-      setCrmMsg(`❌ ${e?.message || "Error al importar CRM"}`);
-    } finally {
-      setCrmImportLoading(false);
-    }
-  }
-
-    async function createCRMClient() {
-  if (!crmNewNombre.trim()) {
-    setCrmCreateMsg("⚠️ El nombre es obligatorio");
-    return;
-  }
-
-  if (!crmNewTelefono.trim()) {
-    setCrmCreateMsg("⚠️ El teléfono es obligatorio");
-    return;
-  }
-
-  try {
-    setCrmCreateLoading(true);
-    setCrmCreateMsg("");
-
-    const token = await getTokenOrLogin();
-    if (!token) return;
-
-    const r = await fetch("/api/crm/clientes/crear", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        nombre: crmNewNombre.trim(),
-        apellido: crmNewApellido.trim(),
-        telefono: crmNewTelefono.trim(),
-        pais: crmNewPais.trim() || "España",
-        email: crmNewEmail.trim(),
-        notas: crmNewNotas.trim(),
-        origen: crmNewOrigen.trim() || "manual",
-        deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
-        minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
-        minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
-      }),
-    });
-
-    const j = await safeJson(r);
-
-    if (!j?._ok || !j?.ok) {
-      throw new Error(j?.error || `HTTP ${j?._status}`);
-    }
-
-    setCrmCreateMsg("✅ Cliente creado correctamente");
-
-    setCrmNewNombre("");
-    setCrmNewApellido("");
-    setCrmNewTelefono("");
-    setCrmNewPais("España");
-    setCrmNewEmail("");
-    setCrmNewNotas("");
-    setCrmNewOrigen("manual");
-    setCrmNewDeuda("0");
-    setCrmNewMinFree("0");
-    setCrmNewMinNormales("0");
-
-    await searchCRM();
-  } catch (e: any) {
-    setCrmCreateMsg(`❌ ${e?.message || "Error al crear cliente"}`);
-  } finally {
-    setCrmCreateLoading(false);
-  }
-}
-  
-  function clearCRMFilters() {
-    setCrmQuery("");
-    setCrmTagFilter("");
-    setCrmPhoneFilter("");
-    setCrmCountryFilter("");
-    setCrmRows([]);
-    setCrmMsg("");
+    setCrmFichaMsg("");
+    setCrmEditNombre("");
+    setCrmEditApellido("");
+    setCrmEditTelefono("");
+    setCrmEditPais("");
+    setCrmEditEmail("");
+    setCrmEditNotas("");
+    setCrmEditOrigen("");
+    setCrmEditDeuda("0");
+    setCrmEditMinFree("0");
+    setCrmEditMinNormales("0");
   }
 
   async function openCRMFicha(id: string) {
-  console.log("CLICK VER FICHA", id);
-
   if (!id) return;
 
   try {
@@ -924,19 +454,13 @@ export default function Admin() {
     setCrmClienteSelId(id);
 
     const token = await getTokenOrLogin();
-    console.log("TOKEN OK", !!token);
-
     if (!token) return;
 
     const r = await fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
-    console.log("RESP STATUS", r.status);
-
     const j = await safeJson(r);
-    console.log("RESP JSON", j);
-
     if (!j?._ok || !j?.ok) {
       throw new Error(j?.error || `HTTP ${j?._status}`);
     }
@@ -997,6 +521,20 @@ async function saveCRMFicha() {
     const j = await safeJson(r);
 
     if (!j?.ok) throw new Error(j?.error || "Error guardando");
+
+    setCrmClienteFicha((prev: any) => ({
+      ...(prev || {}),
+      nombre: crmEditNombre,
+      apellido: crmEditApellido,
+      telefono: crmEditTelefono,
+      pais: crmEditPais,
+      email: crmEditEmail,
+      notas: crmEditNotas,
+      origen: crmEditOrigen,
+      deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
+      minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
+      minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
+    }));
 
     setCrmFichaMsg("✅ Cliente actualizado");
 
@@ -3420,7 +2958,7 @@ async function saveCRMFicha() {
 
                       {crmRows.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="tc-muted">
+                          <td colSpan={8} className="tc-muted">
                             Sin resultados.
                           </td>
                         </tr>
@@ -6749,3 +6287,4 @@ function ChecklistRow({
     </div>
   );
 }
+
