@@ -41,21 +41,10 @@ async function workerFromReq(req: Request) {
   const admin = adminClient();
 
   const { data, error } = await admin
-  .from("crm_clientes")
-  .insert({
-    nombre,
-    apellido,
-    telefono,
-    pais,
-    email,
-    notas,
-    origen,
-    deuda_pendiente,
-    minutos_free_pendientes,
-    minutos_normales_pendientes,
-  })
-  .select("*")
-  .single();
+    .from("workers")
+    .select("id, user_id, display_name, role, team, state")
+    .eq("user_id", uid)
+    .maybeSingle();
 
   if (error) throw error;
   return data || null;
@@ -127,10 +116,6 @@ export async function POST(req: Request) {
       minutos_free_pendientes,
       minutos_normales_pendientes,
     };
-
-    if ("created_by_worker_id" in body || true) {
-      payload.created_by_worker_id = worker.id;
-    }
 
     const { data: cliente, error } = await admin
       .from("crm_clientes")
