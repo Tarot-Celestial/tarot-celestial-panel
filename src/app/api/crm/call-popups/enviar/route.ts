@@ -72,6 +72,64 @@ function pickNumericId(...values: any[]) {
   return 0;
 }
 
+async function findTarotistaByAnyKey(admin: ReturnType<typeof adminClient>, raw: string) {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+
+  // 1) numeric workers.id
+  if (/^\d+$/.test(value)) {
+    const { data, error } = await admin
+      .from("workers")
+      .select("id, user_id, display_name, role, state")
+      .eq("id", Number(value))
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  // 2) auth user uuid
+  if (looksLikeUuid(value)) {
+    const { data, error } = await admin
+      .from("workers")
+      .select("id, user_id, display_name, role, state")
+      .eq("user_id", value)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  // 3) display_name exact
+  {
+    const { data, error } = await admin
+      .from("workers")
+      .select("id, user_id, display_name, role, state")
+      .eq("display_name", value)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  // 4) display_name case-insensitive partial fallback
+  {
+    const { data, error } = await admin
+      .from("workers")
+      .select("id, user_id, display_name, role, state")
+      .ilike("display_name", `%${value}%`)
+      .order("display_name", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  return null;
+}
+
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -89,14 +147,15 @@ export async function GET(req: Request) {
     const { data, error } = await admin
       .from("workers")
       .select("id, user_id, display_name, role, state")
-      .eq("role", "tarotista")
       .order("display_name", { ascending: true });
 
     if (error) throw error;
 
+    const tarotistas = (data || []).filter((w: any) => normalizeRole(w.role) === "tarotista");
+
     return NextResponse.json({
       ok: true,
-      tarotistas: data || [],
+      tarotistas,
     });
   } catch (e: any) {
     return NextResponse.json(
@@ -120,7 +179,13 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
 
-    const tarotista_worker_raw = String(body?.tarotista_worker_id || "").trim();
+    const tarotista_worker_raw = String(
+      body?.tarotista_worker_id ??
+      body?.tarotista_id ??
+      body?.worker_id ??
+      body?.display_name ??
+      ""
+    ).trim();
 
     const nombre = String(body?.nombre || "").trim();
     const apellido = String(body?.apellido || "").trim();
@@ -142,32 +207,7 @@ export async function POST(req: Request) {
 
     const admin = adminClient();
 
-    let tarotista: any = null;
-
-    if (/^\d+$/.test(tarotista_worker_raw)) {
-      const { data, error } = await admin
-        .from("workers")
-        .select("id, user_id, display_name, role, state")
-        .eq("id", Number(tarotista_worker_raw))
-        .maybeSingle();
-
-      if (error) throw error;
-      tarotista = data || null;
-    } else if (looksLikeUuid(tarotista_worker_raw)) {
-      const { data, error } = await admin
-        .from("workers")
-        .select("id, user_id, display_name, role, state")
-        .eq("user_id", tarotista_worker_raw)
-        .maybeSingle();
-
-      if (error) throw error;
-      tarotista = data || null;
-    } else {
-      return NextResponse.json(
-        { ok: false, error: "TAROTISTA_ID_INVALIDO", tarotista_worker_raw },
-        { status: 400 }
-      );
-    }
+    const tarotista = await findTarotistaByAnyKey(admin, tarotista_worker_raw);
 
     if (!tarotista) {
       return NextResponse.json(
