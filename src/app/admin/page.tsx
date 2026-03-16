@@ -412,6 +412,92 @@ export default function Admin() {
     setCrmMsg("");
   }
 
+  async function openCRMFicha(id: string) {
+  if (!id) return;
+
+  try {
+    setCrmFichaLoading(true);
+    setCrmFichaMsg("");
+    setCrmClienteSelId(id);
+
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch(`/api/crm/clientes/ficha?id=${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const j = await safeJson(r);
+
+    if (!j?.ok) throw new Error(j?.error || "Error cargando ficha");
+
+    const c = j.cliente;
+
+    setCrmClienteFicha(c);
+
+    setCrmEditNombre(c?.nombre || "");
+    setCrmEditApellido(c?.apellido || "");
+    setCrmEditTelefono(c?.telefono || "");
+    setCrmEditPais(c?.pais || "");
+    setCrmEditEmail(c?.email || "");
+    setCrmEditNotas(c?.notas || "");
+    setCrmEditOrigen(c?.origen || "");
+    setCrmEditDeuda(String(c?.deuda_pendiente || 0));
+    setCrmEditMinFree(String(c?.minutos_free_pendientes || 0));
+    setCrmEditMinNormales(String(c?.minutos_normales_pendientes || 0));
+
+  } catch (e: any) {
+    setCrmFichaMsg(`❌ ${e?.message}`);
+  } finally {
+    setCrmFichaLoading(false);
+  }
+}
+
+async function saveCRMFicha() {
+  if (!crmClienteSelId) return;
+
+  try {
+    setCrmSaveLoading(true);
+    setCrmFichaMsg("");
+
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const r = await fetch("/api/crm/clientes/actualizar", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: crmClienteSelId,
+        nombre: crmEditNombre,
+        apellido: crmEditApellido,
+        telefono: crmEditTelefono,
+        pais: crmEditPais,
+        email: crmEditEmail,
+        notas: crmEditNotas,
+        origen: crmEditOrigen,
+        deuda_pendiente: Number(crmEditDeuda) || 0,
+        minutos_free_pendientes: Number(crmEditMinFree) || 0,
+        minutos_normales_pendientes: Number(crmEditMinNormales) || 0,
+      }),
+    });
+
+    const j = await safeJson(r);
+
+    if (!j?.ok) throw new Error(j?.error || "Error guardando");
+
+    setCrmFichaMsg("✅ Cliente actualizado");
+
+    await searchCRM();
+  } catch (e: any) {
+    setCrmFichaMsg(`❌ ${e?.message}`);
+  } finally {
+    setCrmSaveLoading(false);
+  }
+}
+
   async function loadAccounting(silent = false) {
     if (accLoading && !silent) return;
     if (!silent) {
@@ -2776,6 +2862,7 @@ export default function Admin() {
                         <th>Min free</th>
                         <th>Min normales</th>
                         <th>Deuda</th>
+                        <th>Acciones</th>
                       </tr>
                     </thead>
 
@@ -2809,6 +2896,14 @@ export default function Admin() {
                             <td>{r.minutos_free_pendientes ?? 0}</td>
                             <td>{r.minutos_normales_pendientes ?? 0}</td>
                             <td>{eur(r.deuda_pendiente || 0)}</td>
+                            <td>
+          <button
+            className="tc-btn"
+                onClick={() => openCRMFicha(r.id)}
+          >
+                  Ver ficha
+          </button>
+        </td>
                           </tr>
                         );
                       })}
