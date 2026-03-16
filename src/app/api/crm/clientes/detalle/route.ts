@@ -109,7 +109,7 @@ export async function GET(req: Request) {
         nota,
         llamada_ref,
         created_at,
-        created_by_worker_id
+        creado_por_worker_id
       `)
       .eq("cliente_id", id)
       .order("created_at", { ascending: false })
