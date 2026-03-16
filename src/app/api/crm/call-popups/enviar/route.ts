@@ -98,40 +98,40 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
 
-const tarotista_worker_id = String(body?.tarotista_worker_id || "").trim();
-const cliente_id_raw = String(body?.cliente_id ?? "").trim();
+    const tarotista_worker_id = String(body?.tarotista_worker_id || "").trim();
+    const cliente_id_raw = String(body?.cliente_id ?? "").trim();
 
-const nombre = String(body?.nombre || "").trim();
-const apellido = String(body?.apellido || "").trim();
+    const nombre = String(body?.nombre || "").trim();
+    const apellido = String(body?.apellido || "").trim();
 
-const minutos_free_pendientes =
-  Number(String(body?.minutos_free_pendientes ?? "0").replace(",", ".")) || 0;
+    const minutos_free_pendientes =
+      Number(String(body?.minutos_free_pendientes ?? "0").replace(",", ".")) || 0;
 
-const minutos_normales_pendientes =
-  Number(String(body?.minutos_normales_pendientes ?? "0").replace(",", ".")) || 0;
+    const minutos_normales_pendientes =
+      Number(String(body?.minutos_normales_pendientes ?? "0").replace(",", ".")) || 0;
 
-if (!tarotista_worker_id) {
-  return NextResponse.json(
-    { ok: false, error: "FALTA_TAROTISTA" },
-    { status: 400 }
-  );
-}
+    if (!tarotista_worker_id) {
+      return NextResponse.json(
+        { ok: false, error: "FALTA_TAROTISTA" },
+        { status: 400 }
+      );
+    }
 
-if (!cliente_id_raw) {
-  return NextResponse.json(
-    { ok: false, error: "FALTA_CLIENTE_ID" },
-    { status: 400 }
-  );
-}
+    if (!cliente_id_raw) {
+      return NextResponse.json(
+        { ok: false, error: "FALTA_CLIENTE_ID" },
+        { status: 400 }
+      );
+    }
 
-const cliente_id = parseInt(cliente_id_raw, 10);
+    const cliente_id = parseInt(cliente_id_raw, 10);
 
-if (!Number.isFinite(cliente_id) || cliente_id <= 0) {
-  return NextResponse.json(
-    { ok: false, error: "CLIENTE_ID_INVALIDO", cliente_id_raw },
-    { status: 400 }
-  );
-}
+    if (!Number.isFinite(cliente_id) || cliente_id <= 0) {
+      return NextResponse.json(
+        { ok: false, error: "CLIENTE_ID_INVALIDO", cliente_id_raw },
+        { status: 400 }
+      );
+    }
 
     const admin = adminClient();
 
@@ -149,21 +149,21 @@ if (!Number.isFinite(cliente_id) || cliente_id <= 0) {
         { status: 400 }
       );
     }
-     const cliente_id = Number(cliente_id_raw);
+
     const { data, error } = await admin
-  .from("crm_call_popups")
-  .insert({
-    tarotista_worker_id,
-    cliente_id,
-    nombre,
-    apellido,
-    minutos_free_pendientes,
-    minutos_normales_pendientes,
-    visible: true,
-    accepted: false,
-  })
-  .select("*")
-  .maybeSingle();
+      .from("crm_call_popups")
+      .insert({
+        tarotista_worker_id,
+        cliente_id,
+        nombre,
+        apellido,
+        minutos_free_pendientes,
+        minutos_normales_pendientes,
+        visible: true,
+        accepted: false,
+      })
+      .select("*")
+      .maybeSingle();
 
     if (error) throw error;
 
