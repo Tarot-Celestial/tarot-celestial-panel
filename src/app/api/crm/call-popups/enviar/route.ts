@@ -152,12 +152,12 @@ export async function POST(req: Request) {
 
       if (workerByUserIdError) throw workerByUserIdError;
 
-      if (!workerByUserId || workerByUserId.role !== "tarotista") {
-        return NextResponse.json(
-          { ok: false, error: "TAROTISTA_NO_VALIDA" },
-          { status: 400 }
-        );
-      }
+      if (!workerByUserId || String(workerByUserId.role || "").toLowerCase() !== "tarotista") {
+  return NextResponse.json(
+    { ok: false, error: "TAROTISTA_NO_VALIDA" },
+    { status: 400 }
+  );
+}
 
       tarotistaWorkerId = Number(workerByUserId.id || 0);
     } else {
@@ -182,12 +182,12 @@ export async function POST(req: Request) {
 
     if (tarotistaError) throw tarotistaError;
 
-    if (!tarotista || tarotista.role !== "tarotista") {
-      return NextResponse.json(
-        { ok: false, error: "TAROTISTA_NO_VALIDA" },
-        { status: 400 }
-      );
-    }
+    if (!tarotista || String(tarotista.role || "").toLowerCase() !== "tarotista") {
+  return NextResponse.json(
+    { ok: false, error: "TAROTISTA_NO_VALIDA" },
+    { status: 400 }
+  );
+}
 
     const { data, error } = await admin
       .from("crm_call_popups")
