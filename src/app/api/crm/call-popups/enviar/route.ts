@@ -54,6 +54,10 @@ function looksLikeUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 }
 
+function normalizeRole(v: any) {
+  return String(v || "").trim().toLowerCase();
+}
+
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -62,7 +66,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
 
-    if (!["admin", "central"].includes(String(worker.role || ""))) {
+    if (!["admin", "central"].includes(normalizeRole(worker.role))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -71,14 +75,15 @@ export async function GET(req: Request) {
     const { data, error } = await admin
       .from("workers")
       .select("id, user_id, display_name, role, state")
-      .eq("role", "tarotista")
       .order("display_name", { ascending: true });
 
     if (error) throw error;
 
+    const tarotistas = (data || []).filter((w: any) => normalizeRole(w.role) === "tarotista");
+
     return NextResponse.json({
       ok: true,
-      tarotistas: data || [],
+      tarotistas,
     });
   } catch (e: any) {
     return NextResponse.json(
@@ -96,7 +101,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
 
-    if (!["admin", "central"].includes(String(worker.role || ""))) {
+    if (!["admin", "central"].includes(normalizeRole(worker.role))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -139,60 +144,65 @@ export async function POST(req: Request) {
 
     const admin = adminClient();
 
-    let tarotistaWorkerId: number | null = null;
+    let tarotista: any = null;
 
     if (/^\d+$/.test(tarotista_worker_raw)) {
-      tarotistaWorkerId = parseInt(tarotista_worker_raw, 10);
-    } else if (looksLikeUuid(tarotista_worker_raw)) {
-      const { data: workerByUserId, error: workerByUserIdError } = await admin
+      const { data, error } = await admin
         .from("workers")
-        .select("id, role")
+        .select("id, user_id, display_name, role, state")
+        .eq("id", Number(tarotista_worker_raw))
+        .maybeSingle();
+
+      if (error) throw error;
+      tarotista = data || null;
+    } else if (looksLikeUuid(tarotista_worker_raw)) {
+      const { data, error } = await admin
+        .from("workers")
+        .select("id, user_id, display_name, role, state")
         .eq("user_id", tarotista_worker_raw)
         .maybeSingle();
 
-      if (workerByUserIdError) throw workerByUserIdError;
-
-      if (!workerByUserId || String(workerByUserId.role || "").toLowerCase() !== "tarotista") {
-  return NextResponse.json(
-    { ok: false, error: "TAROTISTA_NO_VALIDA" },
-    { status: 400 }
-  );
-}
-
-      tarotistaWorkerId = Number(workerByUserId.id || 0);
+      if (error) throw error;
+      tarotista = data || null;
     } else {
       return NextResponse.json(
-        { ok: false, error: "TAROTISTA_ID_INVALIDO" },
+        { ok: false, error: "TAROTISTA_ID_INVALIDO", tarotista_worker_raw },
         { status: 400 }
       );
     }
 
-    if (!Number.isFinite(tarotistaWorkerId) || !tarotistaWorkerId || tarotistaWorkerId <= 0) {
+    if (!tarotista) {
       return NextResponse.json(
-        { ok: false, error: "TAROTISTA_ID_INVALIDO" },
+        {
+          ok: false,
+          error: "TAROTISTA_NO_ENCONTRADA",
+          tarotista_worker_raw,
+        },
         { status: 400 }
       );
     }
 
-    const { data: tarotista, error: tarotistaError } = await admin
-      .from("workers")
-      .select("id, role")
-      .eq("id", tarotistaWorkerId)
-      .maybeSingle();
-
-    if (tarotistaError) throw tarotistaError;
-
-    if (!tarotista || String(tarotista.role || "").toLowerCase() !== "tarotista") {
-  return NextResponse.json(
-    { ok: false, error: "TAROTISTA_NO_VALIDA" },
-    { status: 400 }
-  );
-}
+    if (normalizeRole(tarotista.role) !== "tarotista") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "TAROTISTA_NO_VALIDA",
+          tarotista_worker_raw,
+          tarotista_encontrada: {
+            id: tarotista.id,
+            user_id: tarotista.user_id,
+            display_name: tarotista.display_name,
+            role: tarotista.role,
+          },
+        },
+        { status: 400 }
+      );
+    }
 
     const { data, error } = await admin
       .from("crm_call_popups")
       .insert({
-        tarotista_worker_id: tarotistaWorkerId,
+        tarotista_worker_id: Number(tarotista.id),
         cliente_id,
         nombre,
         apellido,
