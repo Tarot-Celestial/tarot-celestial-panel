@@ -200,8 +200,12 @@ export default function Tarotista() {
   const [msgText, setMsgText] = useState("");
   const msgEndRef = useRef<HTMLDivElement | null>(null);
   const chatChannelRef = useRef<any>(null);
+  const popupChannelRef = useRef<any>(null);
 
   const [selectedThreadId, setSelectedThreadId] = useState<string>("");
+  const [incomingPopup, setIncomingPopup] = useState<any>(null);
+  const [popupOpen, setPopupOpen] = useState(false);
+  const [popupBusy, setPopupBusy] = useState(false);
 
   const incidenciasLive = useMemo(() => {
     return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
@@ -876,10 +880,103 @@ export default function Tarotista() {
   }, [ok, attOnline]);
 
   useEffect(() => {
+    if (!ok || !myWorkerId) return;
+
+    loadPendingCallPopup(myWorkerId);
+
+    if (popupChannelRef.current) {
+      sb.removeChannel(popupChannelRef.current);
+      popupChannelRef.current = null;
+    }
+
+    const ch = sb
+      .channel(`crm-call-popup-${myWorkerId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "crm_call_popups",
+          filter: `tarotista_worker_id=eq.${myWorkerId}`,
+        },
+        (payload) => {
+          const row: any = payload.new;
+          if (!row || row.visible === false) return;
+          setIncomingPopup(row);
+          setPopupOpen(true);
+        }
+      )
+      .subscribe();
+
+    popupChannelRef.current = ch;
+
+    return () => {
+      sb.removeChannel(ch);
+      popupChannelRef.current = null;
+    };
+  }, [ok, myWorkerId]);
+
+  useEffect(() => {
     if (!ok) return;
     const t = setInterval(() => loadAttendanceMe(true), 60_000);
     return () => clearInterval(t);
   }, [ok]);
+
+  async function loadPendingCallPopup(workerId?: string) {
+    const wid = String(workerId || myWorkerId || "").trim();
+    if (!wid) return;
+
+    try {
+      const { data, error } = await sb
+        .from("crm_call_popups")
+        .select("*")
+        .eq("tarotista_worker_id", wid)
+        .eq("visible", true)
+        .eq("accepted", false)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setIncomingPopup(data);
+        setPopupOpen(true);
+      }
+    } catch (e) {
+      console.error("ERROR CARGANDO POPUP CRM", e);
+    }
+  }
+
+  async function closeIncomingPopup(markAccepted = false) {
+    const popupId = incomingPopup?.id;
+    if (!popupId) {
+      setPopupOpen(false);
+      setIncomingPopup(null);
+      return;
+    }
+
+    try {
+      setPopupBusy(true);
+
+      const patch: any = { visible: false };
+      if (markAccepted) patch.accepted = true;
+
+      const { error } = await sb
+        .from("crm_call_popups")
+        .update(patch)
+        .eq("id", popupId);
+
+      if (error) throw error;
+
+      setPopupOpen(false);
+      setIncomingPopup(null);
+    } catch (e) {
+      console.error("ERROR CERRANDO POPUP CRM", e);
+    } finally {
+      setPopupBusy(false);
+    }
+  }
 
   async function respondInvoice(action: "accepted" | "rejected") {
     try {
@@ -911,6 +1008,53 @@ export default function Tarotista() {
   return (
     <>
       <AppHeader />
+
+      {popupOpen && incomingPopup ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(8, 6, 16, 0.76)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            className="tc-card"
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              border: "1px solid rgba(215,181,109,0.35)",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
+            }}
+          >
+            <div className="tc-title" style={{ fontSize: 20 }}>
+              📞 Llamada entrante
+            </div>
+            <div className="tc-hr" />
+
+            <div style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.15 }}>
+              {[incomingPopup?.nombre, incomingPopup?.apellido].filter(Boolean).join(" ") || "Cliente"}
+            </div>
+
+            <div className="tc-sub" style={{ marginTop: 12, fontSize: 16 }}>
+              <b>{Number(incomingPopup?.minutos_free_pendientes || 0)}</b> minutos free · <b>{Number(incomingPopup?.minutos_normales_pendientes || 0)}</b> minutos cliente
+            </div>
+
+            <div className="tc-row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
+              <button className="tc-btn" onClick={() => closeIncomingPopup(false)} disabled={popupBusy}>
+                {popupBusy ? "…" : "Cerrar"}
+              </button>
+              <button className="tc-btn tc-btn-ok" onClick={() => closeIncomingPopup(true)} disabled={popupBusy}>
+                {popupBusy ? "…" : "Aceptar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {!ok ? (
         <div style={{ padding: 40 }}>Cargando…</div>
