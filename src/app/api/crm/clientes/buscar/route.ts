@@ -9,124 +9,115 @@ function getEnv(name: string) {
   return v;
 }
 
+function normalizeText(v: any) {
+  return String(v || "").trim();
+}
+
 async function uidFromBearer(req: Request) {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return { uid: null as string | null };
+  if (!token) return null;
 
   const userClient = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
   const { data } = await userClient.auth.getUser();
-  return { uid: data.user?.id || null };
-}
-
-function normalizarTelefono(v: string) {
-  return String(v || "").replace(/\D+/g, "");
+  return data.user?.id || null;
 }
 
 export async function GET(req: Request) {
   try {
-    const { uid } = await uidFromBearer(req);
+    const uid = await uidFromBearer(req);
     if (!uid) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
 
-    const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const admin = createClient(url, service, { auth: { persistSession: false } });
+    const url = new URL(req.url);
 
-    const { data: worker, error: workerError } = await admin
+    const q = normalizeText(url.searchParams.get("q"));
+    const telefono = normalizeText(url.searchParams.get("telefono"));
+    const pais = normalizeText(url.searchParams.get("pais"));
+    const etiqueta =
+      normalizeText(url.searchParams.get("etiqueta")) ||
+      normalizeText(url.searchParams.get("tag"));
+
+    const sbUrl = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+    const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
+    const admin = createClient(sbUrl, service, { auth: { persistSession: false } });
+
+    const { data: me, error: meError } = await admin
       .from("workers")
       .select("id, role")
       .eq("user_id", uid)
       .maybeSingle();
 
-    if (workerError) throw workerError;
-    if (!worker) {
+    if (meError) throw meError;
+    if (!me) {
       return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
     }
 
-    if (worker.role !== "admin" && worker.role !== "central") {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (me.role !== "admin" && me.role !== "central") {
+      return NextResponse.json({ ok: false, error: "NO_ALLOWED" }, { status: 403 });
     }
 
-    const { searchParams } = new URL(req.url);
-    const telefono = String(searchParams.get("telefono") || "").trim();
-    const q = String(searchParams.get("q") || "").trim();
-
-    if (!telefono && !q) {
-      return NextResponse.json({
-        ok: true,
-        clientes: [],
-      });
-    }
-
-    let clientes: any[] = [];
+    let query = admin
+      .from("crm_clientes")
+      .select(`
+        id,
+        nombre,
+        apellido,
+        telefono,
+        fecha_nacimiento,
+        pais,
+        minutos_free_pendientes,
+        minutos_normales_pendientes,
+        deuda_pendiente
+      `)
+      .order("updated_at", { ascending: false })
+      .limit(100);
 
     if (telefono) {
-      const telefonoNormalizado = normalizarTelefono(telefono);
-
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .select(`
-          id,
-          nombre,
-          apellido,
-          telefono,
-          telefono_normalizado,
-          pais,
-          minutos_free_pendientes,
-          minutos_normales_pendientes,
-          deuda_pendiente,
-          created_at
-        `)
-        .eq("telefono_normalizado", telefonoNormalizado)
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-      clientes = data || [];
-    } else {
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .select(`
-          id,
-          nombre,
-          apellido,
-          telefono,
-          telefono_normalizado,
-          pais,
-          minutos_free_pendientes,
-          minutos_normales_pendientes,
-          deuda_pendiente,
-          created_at
-        `)
-        .or(`nombre.ilike.%${q}%,apellido.ilike.%${q}%,telefono.ilike.%${q}%`)
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-      clientes = data || [];
+      query = query.ilike("telefono", `%${telefono}%`);
     }
 
-    const clienteIds = clientes.map((x) => x.id);
-    let etiquetasMap = new Map<string, any[]>();
+    if (pais) {
+      query = query.ilike("pais", `%${pais}%`);
+    }
+
+    if (q) {
+      query = query.or(
+        [
+          `nombre.ilike.%${q}%`,
+          `apellido.ilike.%${q}%`,
+          `telefono.ilike.%${q}%`,
+          `pais.ilike.%${q}%`,
+        ].join(",")
+      );
+    }
+
+    const { data: clientesBase, error: clientesError } = await query;
+    if (clientesError) throw clientesError;
+
+    let clientes = clientesBase || [];
+
+    const clienteIds = clientes.map((x: any) => x.id).filter(Boolean);
+
+    let tagsMap = new Map<string, any[]>();
 
     if (clienteIds.length > 0) {
       const { data: rels, error: relsError } = await admin
         .from("crm_cliente_etiquetas")
         .select(`
           cliente_id,
+          etiqueta_id,
           crm_etiquetas (
             id,
             nombre,
-            color,
-            activa
+            color
           )
         `)
         .in("cliente_id", clienteIds);
@@ -134,25 +125,38 @@ export async function GET(req: Request) {
       if (relsError) throw relsError;
 
       for (const row of rels || []) {
-        const clienteId = String((row as any).cliente_id);
-        const etiqueta = (row as any).crm_etiquetas;
-        if (!etiquetasMap.has(clienteId)) etiquetasMap.set(clienteId, []);
-        if (etiqueta) etiquetasMap.get(clienteId)!.push(etiqueta);
+        const cid = String(row.cliente_id || "");
+        const et = Array.isArray(row.crm_etiquetas)
+          ? row.crm_etiquetas[0]
+          : row.crm_etiquetas;
+
+        if (!cid || !et) continue;
+        if (!tagsMap.has(cid)) tagsMap.set(cid, []);
+        tagsMap.get(cid)!.push(et);
       }
     }
 
-    const result = clientes.map((c) => ({
+    clientes = clientes.map((c: any) => ({
       ...c,
-      etiquetas: etiquetasMap.get(String(c.id)) || [],
+      etiquetas: tagsMap.get(String(c.id)) || [],
     }));
+
+    if (etiqueta) {
+      const needle = etiqueta.toLowerCase();
+      clientes = clientes.filter((c: any) =>
+        (c.etiquetas || []).some((et: any) =>
+          String(et?.nombre || "").toLowerCase().includes(needle)
+        )
+      );
+    }
 
     return NextResponse.json({
       ok: true,
-      clientes: result,
+      clientes,
     });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message || "ERR" },
+      { ok: false, error: e?.message || "ERR_CRM_BUSCAR" },
       { status: 500 }
     );
   }
