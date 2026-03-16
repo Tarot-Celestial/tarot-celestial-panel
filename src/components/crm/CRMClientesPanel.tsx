@@ -49,6 +49,8 @@ export default function CRMClientesPanel({
   const [crmTarotistaSendId, setCrmTarotistaSendId] = useState("");
   const [crmSendLoading, setCrmSendLoading] = useState(false);
   const [crmSendMsg, setCrmSendMsg] = useState("");
+  const [crmSendMinFree, setCrmSendMinFree] = useState("0");
+  const [crmSendMinNormales, setCrmSendMinNormales] = useState("0");
 
   const [crmClienteSelId, setCrmClienteSelId] = useState("");
   const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
@@ -301,6 +303,8 @@ export default function CRMClientesPanel({
     setCrmFichaMsg("");
     setCrmSendMsg("");
     setCrmTarotistaSendId("");
+    setCrmSendMinFree("0");
+    setCrmSendMinNormales("0");
     setCrmEditNombre("");
     setCrmEditApellido("");
     setCrmEditTelefono("");
@@ -344,6 +348,8 @@ export default function CRMClientesPanel({
       setCrmEditDeuda(String(c?.deuda_pendiente ?? 0));
       setCrmEditMinFree(String(c?.minutos_free_pendientes ?? 0));
       setCrmEditMinNormales(String(c?.minutos_normales_pendientes ?? 0));
+      setCrmSendMinFree(String(c?.minutos_free_pendientes ?? 0));
+      setCrmSendMinNormales(String(c?.minutos_normales_pendientes ?? 0));
     } catch (e: any) {
       console.error("ERROR FICHA", e);
       setCrmClienteFicha(null);
@@ -436,13 +442,13 @@ export default function CRMClientesPanel({
         },
         body: JSON.stringify({
           tarotista_worker_id: crmTarotistaSendId,
-          cliente_id: Number(crmClienteSelId),
+          cliente_id: crmClienteSelId,
           nombre: crmEditNombre.trim(),
           apellido: crmEditApellido.trim(),
           minutos_free_pendientes:
-            Number(String(crmEditMinFree).replace(",", ".")) || 0,
+            Number(String(crmSendMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes:
-            Number(String(crmEditMinNormales).replace(",", ".")) || 0,
+            Number(String(crmSendMinNormales).replace(",", ".")) || 0,
         }),
       });
 
@@ -623,6 +629,30 @@ export default function CRMClientesPanel({
                       </option>
                     ))}
                   </select>
+
+                  <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                    <div>
+                      <div className="tc-sub">Minutos free a enviar</div>
+                      <input
+                        className="tc-input"
+                        value={crmSendMinFree}
+                        onChange={(e) => setCrmSendMinFree(e.target.value)}
+                        placeholder="0"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="tc-sub">Minutos cliente a enviar</div>
+                      <input
+                        className="tc-input"
+                        value={crmSendMinNormales}
+                        onChange={(e) => setCrmSendMinNormales(e.target.value)}
+                        placeholder="0"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -631,8 +661,8 @@ export default function CRMClientesPanel({
                     {[crmEditNombre, crmEditApellido].filter(Boolean).join(" ") || "—"}
                   </div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    {Number(String(crmEditMinFree).replace(",", ".")) || 0} minutos free · {" "}
-                    {Number(String(crmEditMinNormales).replace(",", ".")) || 0} minutos cliente
+                    {Number(String(crmSendMinFree).replace(",", ".")) || 0} minutos free · {" "}
+                    {Number(String(crmSendMinNormales).replace(",", ".")) || 0} minutos cliente
                   </div>
                 </div>
               </div>
