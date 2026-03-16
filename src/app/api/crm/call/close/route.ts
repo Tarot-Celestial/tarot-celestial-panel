@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "@vercel/edge";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -63,6 +63,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+
     const popup_id = Number(body?.popup_id || 0);
     const consumidos_free =
       Number(String(body?.consumidos_free ?? "0").replace(",", ".")) || 0;
@@ -70,11 +71,17 @@ export async function POST(req: Request) {
       Number(String(body?.consumidos_normales ?? "0").replace(",", ".")) || 0;
 
     if (!popup_id) {
-      return NextResponse.json({ ok: false, error: "FALTA_POPUP_ID" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "FALTA_POPUP_ID" },
+        { status: 400 }
+      );
     }
 
     if (consumidos_free < 0 || consumidos_normales < 0) {
-      return NextResponse.json({ ok: false, error: "MINUTOS_INVALIDOS" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "MINUTOS_INVALIDOS" },
+        { status: 400 }
+      );
     }
 
     const admin = adminClient();
@@ -88,30 +95,48 @@ export async function POST(req: Request) {
     if (popupError) throw popupError;
 
     if (!popup) {
-      return NextResponse.json({ ok: false, error: "POPUP_NO_ENCONTRADO" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: "POPUP_NO_ENCONTRADO" },
+        { status: 404 }
+      );
     }
 
     if (String(popup.tarotista_worker_id || "") !== String(worker.id || "")) {
-      return NextResponse.json({ ok: false, error: "POPUP_NO_PERTENECE_A_TAROTISTA" }, { status: 403 });
+      return NextResponse.json(
+        { ok: false, error: "POPUP_NO_PERTENECE_A_TAROTISTA" },
+        { status: 403 }
+      );
     }
 
     if (!popup.accepted) {
-      return NextResponse.json({ ok: false, error: "LLAMADA_NO_ACEPTADA" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "LLAMADA_NO_ACEPTADA" },
+        { status: 400 }
+      );
     }
 
     if (popup.closed === true) {
-      return NextResponse.json({ ok: false, error: "LLAMADA_YA_CERRADA" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "LLAMADA_YA_CERRADA" },
+        { status: 400 }
+      );
     }
 
     const enviados_free = Number(popup.minutos_free_pendientes || 0);
     const enviados_normales = Number(popup.minutos_normales_pendientes || 0);
 
     if (consumidos_free > enviados_free) {
-      return NextResponse.json({ ok: false, error: "FREE_SUPERA_ENVIADO" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "FREE_SUPERA_ENVIADO" },
+        { status: 400 }
+      );
     }
 
     if (consumidos_normales > enviados_normales) {
-      return NextResponse.json({ ok: false, error: "NORMALES_SUPERA_ENVIADO" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "NORMALES_SUPERA_ENVIADO" },
+        { status: 400 }
+      );
     }
 
     const restantes_free = Math.max(0, enviados_free - consumidos_free);
@@ -126,11 +151,15 @@ export async function POST(req: Request) {
     if (clienteError) throw clienteError;
 
     if (!cliente) {
-      return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: "CLIENTE_NO_ENCONTRADO" },
+        { status: 404 }
+      );
     }
 
     const nuevoFree = Number(cliente.minutos_free_pendientes || 0) + restantes_free;
-    const nuevoNormales = Number(cliente.minutos_normales_pendientes || 0) + restantes_normales;
+    const nuevoNormales =
+      Number(cliente.minutos_normales_pendientes || 0) + restantes_normales;
 
     const { error: updateClienteError } = await admin
       .from("crm_clientes")
