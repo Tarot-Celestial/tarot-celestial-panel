@@ -2434,6 +2434,8 @@ export default function Admin() {
       </div>
     </>
   );
+}
+
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div
