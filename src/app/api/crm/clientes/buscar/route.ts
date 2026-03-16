@@ -50,33 +50,14 @@ async function workerFromReq(req: Request) {
   return data || null;
 }
 
-function normalizePhone(v: any) {
-  return String(v || "").replace(/[^\d+]/g, "").trim();
-}
-
 function normalizePhoneDigits(v: any) {
   return String(v || "").replace(/\D/g, "").trim();
 }
 
-function mapEtiquetasFromRelations(cliente: any) {
-  const rels = Array.isArray(cliente?.crm_cliente_etiquetas)
-    ? cliente.crm_cliente_etiquetas
-    : [];
-
-  const etiquetas = rels
-    .map((rel: any) => {
-      const et = rel?.crm_etiquetas;
-      if (!et) return null;
-      if (typeof et === "string") return et;
-      return et.nombre || null;
-    })
-    .filter(Boolean);
-
-  return Array.from(new Set(etiquetas));
-}
-
 async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
-  if (!clientesBase?.length) return [];
+  if (!clientesBase?.length) {
+    return [];
+  }
 
   const ids = clientesBase
     .map((c: any) => c?.id)
@@ -99,40 +80,37 @@ async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBa
 
   if (error) throw error;
 
-  const byClienteId = new Map<number | string, string[]>();
+  const byClienteId = new Map<string | number, string[]>();
 
   for (const rel of rels || []) {
     const clienteId = rel?.cliente_id;
-
     const rawEtiquetas = rel?.crm_etiquetas;
-    const etiquetasArr = Array.isArray(rawEtiquetas)
+    const arr = Array.isArray(rawEtiquetas)
       ? rawEtiquetas
       : rawEtiquetas
       ? [rawEtiquetas]
       : [];
 
-    for (const et of etiquetasArr) {
+    for (const et of arr) {
       const nombre = et?.nombre;
       if (!clienteId || !nombre) continue;
 
       const prev = byClienteId.get(clienteId) || [];
-      prev.push(nombre);
+      prev.push(String(nombre));
       byClienteId.set(clienteId, prev);
     }
   }
 
-  return clientesBase.map((c: any) => {
-    const etiquetas = Array.from(new Set(byClienteId.get(c.id) || []));
-    return {
-      ...c,
-      etiquetas,
-    };
-  });
+  return clientesBase.map((c: any) => ({
+    ...c,
+    etiquetas: Array.from(new Set(byClienteId.get(c.id) || [])),
+  }));
 }
 
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
+
     if (!worker) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
@@ -150,83 +128,54 @@ export async function GET(req: Request) {
       String(searchParams.get("tag") || "").trim();
     const pais = String(searchParams.get("pais") || "").trim();
 
-    const telefonoNorm = normalizePhone(telefono);
     const telefonoDigits = normalizePhoneDigits(telefono);
 
     const admin = adminClient();
 
-    let clientes: any[] = [];
+    let query = admin
+      .from("crm_clientes")
+      .select("*")
+      .order("nombre", { ascending: true })
+      .limit(500);
 
     if (q) {
-      const { data, error } = await admin.rpc("crm_buscar_clientes_fuzzy", { q });
-
-      if (error) throw error;
-
-      const base = Array.isArray(data) ? data : [];
-      clientes = await attachEtiquetas(admin, base);
-    } else {
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .select(`
-          *,
-          crm_cliente_etiquetas (
-            crm_etiquetas (
-              id,
-              nombre
-            )
-          )
-        `)
-        .order("nombre", { ascending: true })
-        .limit(200);
-
-      if (error) throw error;
-
-      clientes = (data || []).map((c: any) => ({
-        ...c,
-        etiquetas: mapEtiquetasFromRelations(c),
-      }));
-    }
-
-    if (telefonoNorm || telefonoDigits) {
-      clientes = clientes.filter((c: any) => {
-        const tel = String(c.telefono || "");
-        const telNorm = String(c.telefono_normalizado || "").replace(/\D/g, "");
-        return tel.includes(telefonoNorm) || telNorm.includes(telefonoDigits);
-      });
-    }
-
-    if (pais) {
-      const paisLower = pais.toLowerCase();
-      clientes = clientes.filter((c: any) =>
-        String(c.pais || "").toLowerCase().includes(paisLower)
+      const qEsc = q.replace(/,/g, " ");
+      query = query.or(
+        [
+          `nombre.ilike.%${qEsc}%`,
+          `apellido.ilike.%${qEsc}%`,
+          `telefono.ilike.%${qEsc}%`,
+          `telefono_normalizado.ilike.%${normalizePhoneDigits(qEsc)}%`,
+          `email.ilike.%${qEsc}%`,
+        ].join(",")
       );
     }
 
+    if (telefono) {
+      query = query.or(
+        [
+          `telefono.ilike.%${telefono}%`,
+          `telefono_normalizado.ilike.%${telefonoDigits}%`,
+        ].join(",")
+      );
+    }
+
+    if (pais) {
+      query = query.ilike("pais", `%${pais}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw error;
+
+    let clientes = await attachEtiquetas(admin, data || []);
+
     if (etiqueta) {
       const etLower = etiqueta.toLowerCase();
-
-      clientes = clientes.filter((c: any) => {
-        const raw =
-          c.etiquetas ||
-          c.tags ||
-          c.labels ||
-          c.crm_tags ||
-          c.crm_etiquetas ||
-          [];
-
-        if (!Array.isArray(raw)) return false;
-
-        const arr = raw
-          .map((x: any) =>
-            typeof x === "string"
-              ? x
-              : x?.nombre || x?.label || x?.name || x?.tag || ""
-          )
-          .filter(Boolean)
-          .map((x: string) => x.toLowerCase());
-
-        return arr.some((x: string) => x.includes(etLower));
-      });
+      clientes = clientes.filter((c: any) =>
+        Array.isArray(c.etiquetas) &&
+        c.etiquetas.some((x: any) => String(x || "").toLowerCase().includes(etLower))
+      );
     }
 
     clientes = clientes.slice(0, 100);
