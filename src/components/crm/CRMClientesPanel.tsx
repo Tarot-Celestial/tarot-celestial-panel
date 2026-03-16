@@ -336,6 +336,7 @@ export default function CRMClientesPanel({
 
       const c = j.cliente;
       setCrmClienteFicha(c);
+      setCrmClienteSelId(String(c?.id || id || ""));
       setCrmEditNombre(String(c?.nombre || ""));
       setCrmEditApellido(String(c?.apellido || ""));
       setCrmEditTelefono(String(c?.telefono || ""));
@@ -440,7 +441,7 @@ export default function CRMClientesPanel({
         },
         body: JSON.stringify({
           tarotista_worker_id: crmTarotistaSendId,
-          cliente_id: crmClienteSelId,
+          cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
           nombre: crmEditNombre.trim(),
           apellido: crmEditApellido.trim(),
           minutos_free_pendientes:
