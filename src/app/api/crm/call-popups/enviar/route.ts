@@ -58,6 +58,20 @@ function normalizeRole(v: any) {
   return String(v || "").trim().toLowerCase();
 }
 
+function normalizePhoneDigits(v: any) {
+  return String(v || "").replace(/\D/g, "").trim();
+}
+
+function pickNumericId(...values: any[]) {
+  for (const value of values) {
+    const raw = String(value ?? "").trim();
+    if (!raw) continue;
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
+
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -108,10 +122,11 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const tarotista_worker_raw = String(body?.tarotista_worker_id || "").trim();
-    const cliente_id_raw = String(body?.cliente_id ?? "").trim();
 
     const nombre = String(body?.nombre || "").trim();
     const apellido = String(body?.apellido || "").trim();
+    const telefono = String(body?.telefono || body?.crmEditTelefono || "").trim();
+    const telefonoDigits = normalizePhoneDigits(telefono);
 
     const minutos_free_pendientes =
       Number(String(body?.minutos_free_pendientes ?? "0").replace(",", ".")) || 0;
@@ -122,22 +137,6 @@ export async function POST(req: Request) {
     if (!tarotista_worker_raw) {
       return NextResponse.json(
         { ok: false, error: "FALTA_TAROTISTA" },
-        { status: 400 }
-      );
-    }
-
-    if (!cliente_id_raw) {
-      return NextResponse.json(
-        { ok: false, error: "FALTA_CLIENTE_ID" },
-        { status: 400 }
-      );
-    }
-
-    const cliente_id = parseInt(cliente_id_raw, 10);
-
-    if (!Number.isFinite(cliente_id) || cliente_id <= 0) {
-      return NextResponse.json(
-        { ok: false, error: "CLIENTE_ID_INVALIDO", cliente_id_raw },
         { status: 400 }
       );
     }
@@ -193,6 +192,45 @@ export async function POST(req: Request) {
             user_id: tarotista.user_id,
             display_name: tarotista.display_name,
             role: tarotista.role,
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    let cliente_id = pickNumericId(
+      body?.cliente_id,
+      body?.id,
+      body?.cliente?.id,
+      body?.crmClienteSelId,
+      body?.crmClienteFicha?.id
+    );
+
+    if (!cliente_id && telefonoDigits) {
+      const { data: clienteByPhone, error: clienteByPhoneError } = await admin
+        .from("crm_clientes")
+        .select("id, telefono, telefono_normalizado")
+        .or(`telefono.ilike.%${telefonoDigits}%,telefono_normalizado.ilike.%${telefonoDigits}%`)
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (clienteByPhoneError) throw clienteByPhoneError;
+      if (clienteByPhone?.id) cliente_id = Number(clienteByPhone.id);
+    }
+
+    if (!cliente_id || !Number.isFinite(cliente_id) || cliente_id <= 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "CLIENTE_ID_INVALIDO",
+          debug: {
+            body_cliente_id: body?.cliente_id ?? null,
+            body_id: body?.id ?? null,
+            body_cliente_obj_id: body?.cliente?.id ?? null,
+            body_crmClienteSelId: body?.crmClienteSelId ?? null,
+            body_crmClienteFicha_id: body?.crmClienteFicha?.id ?? null,
+            telefono,
           },
         },
         { status: 400 }
