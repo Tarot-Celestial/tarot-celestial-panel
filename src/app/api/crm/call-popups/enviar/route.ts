@@ -50,10 +50,6 @@ async function workerFromReq(req: Request) {
   return data || null;
 }
 
-function looksLikeUuid(v: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
-}
-
 function normalizeRole(v: any) {
   return String(v || "").trim().toLowerCase();
 }
@@ -72,6 +68,9 @@ function pickNumericId(...values: any[]) {
   return 0;
 }
 
+/**
+ * 🔥 BÚSQUEDA ROBUSTA DE TAROTISTA (LA CLAVE DEL FIX)
+ */
 async function findTarotistaByAnyKey(admin: ReturnType<typeof adminClient>, raw: string) {
   const value = String(raw || "").trim();
   if (!value) return null;
@@ -84,58 +83,15 @@ async function findTarotistaByAnyKey(admin: ReturnType<typeof adminClient>, raw:
 
   const all = Array.isArray(workers) ? workers : [];
 
-  const match =
-    all.find((w: any) => String(w.id || "").trim() === value) ||
-    all.find((w: any) => String(w.user_id || "").trim() === value) ||
-    all.find((w: any) => String(w.display_name || "").trim() === value) ||
+  return (
+    all.find((w: any) => String(w.id) === value) ||
+    all.find((w: any) => String(w.user_id) === value) ||
+    all.find((w: any) => String(w.display_name) === value) ||
     all.find((w: any) =>
       String(w.display_name || "").toLowerCase().includes(value.toLowerCase())
     ) ||
-    null;
-
-  return match;
-}
-
-  // 2) auth user uuid
-  if (looksLikeUuid(value)) {
-    const { data, error } = await admin
-      .from("workers")
-      .select("id, user_id, display_name, role, state")
-      .eq("user_id", value)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data) return data;
-  }
-
-  // 3) display_name exact
-  {
-    const { data, error } = await admin
-      .from("workers")
-      .select("id, user_id, display_name, role, state")
-      .eq("display_name", value)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data) return data;
-  }
-
-  // 4) display_name case-insensitive partial fallback
-  {
-    const { data, error } = await admin
-      .from("workers")
-      .select("id, user_id, display_name, role, state")
-      .ilike("display_name", `%${value}%`)
-      .order("display_name", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data) return data;
-  }
-
-  return null;
+    null
+  );
 }
 
 export async function GET(req: Request) {
@@ -159,7 +115,9 @@ export async function GET(req: Request) {
 
     if (error) throw error;
 
-    const tarotistas = (data || []).filter((w: any) => normalizeRole(w.role) === "tarotista");
+    const tarotistas = (data || []).filter(
+      (w: any) => normalizeRole(w.role) === "tarotista"
+    );
 
     return NextResponse.json({
       ok: true,
@@ -188,16 +146,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const tarotista_worker_raw = String(
-      body?.tarotista_worker_id ??
-      body?.tarotista_id ??
-      body?.worker_id ??
-      body?.display_name ??
+      body?.tarotista_worker_id ||
+      body?.display_name ||
       ""
     ).trim();
 
     const nombre = String(body?.nombre || "").trim();
     const apellido = String(body?.apellido || "").trim();
-    const telefono = String(body?.telefono || body?.crmEditTelefono || "").trim();
+    const telefono = String(body?.telefono || "").trim();
     const telefonoDigits = normalizePhoneDigits(telefono);
 
     const minutos_free_pendientes =
@@ -218,74 +174,43 @@ export async function POST(req: Request) {
     const tarotista = await findTarotistaByAnyKey(admin, tarotista_worker_raw);
 
     if (!tarotista) {
-  const { data: allWorkers } = await admin
-    .from("workers")
-    .select("id, user_id, display_name, role, state")
-    .order("display_name", { ascending: true });
-
-  return NextResponse.json(
-    {
-      ok: false,
-      error: "TAROTISTA_NO_ENCONTRADA",
-      tarotista_worker_raw,
-      workers_debug: allWorkers || [],
-    },
-    { status: 400 }
-  );
-}
-
-    if (normalizeRole(tarotista.role) !== "tarotista") {
       return NextResponse.json(
         {
           ok: false,
-          error: "TAROTISTA_NO_VALIDA",
+          error: "TAROTISTA_NO_ENCONTRADA",
           tarotista_worker_raw,
-          tarotista_encontrada: {
-            id: tarotista.id,
-            user_id: tarotista.user_id,
-            display_name: tarotista.display_name,
-            role: tarotista.role,
-          },
         },
+        { status: 400 }
+      );
+    }
+
+    if (normalizeRole(tarotista.role) !== "tarotista") {
+      return NextResponse.json(
+        { ok: false, error: "TAROTISTA_NO_VALIDA" },
         { status: 400 }
       );
     }
 
     let cliente_id = pickNumericId(
       body?.cliente_id,
-      body?.id,
-      body?.cliente?.id,
-      body?.crmClienteSelId,
-      body?.crmClienteFicha?.id
+      body?.crmClienteFicha?.id,
+      body?.crmClienteSelId
     );
 
     if (!cliente_id && telefonoDigits) {
-      const { data: clienteByPhone, error: clienteByPhoneError } = await admin
+      const { data } = await admin
         .from("crm_clientes")
-        .select("id, telefono, telefono_normalizado")
-        .or(`telefono.ilike.%${telefonoDigits}%,telefono_normalizado.ilike.%${telefonoDigits}%`)
-        .order("id", { ascending: false })
+        .select("id")
+        .ilike("telefono", `%${telefonoDigits}%`)
         .limit(1)
         .maybeSingle();
 
-      if (clienteByPhoneError) throw clienteByPhoneError;
-      if (clienteByPhone?.id) cliente_id = Number(clienteByPhone.id);
+      if (data?.id) cliente_id = Number(data.id);
     }
 
-    if (!cliente_id || !Number.isFinite(cliente_id) || cliente_id <= 0) {
+    if (!cliente_id) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "CLIENTE_ID_INVALIDO",
-          debug: {
-            body_cliente_id: body?.cliente_id ?? null,
-            body_id: body?.id ?? null,
-            body_cliente_obj_id: body?.cliente?.id ?? null,
-            body_crmClienteSelId: body?.crmClienteSelId ?? null,
-            body_crmClienteFicha_id: body?.crmClienteFicha?.id ?? null,
-            telefono,
-          },
-        },
+        { ok: false, error: "CLIENTE_ID_INVALIDO" },
         { status: 400 }
       );
     }
@@ -308,10 +233,7 @@ export async function POST(req: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({
-      ok: true,
-      popup: data,
-    });
+    return NextResponse.json({ ok: true, popup: data });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "ERR" },
