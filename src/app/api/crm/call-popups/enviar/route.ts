@@ -76,17 +76,25 @@ async function findTarotistaByAnyKey(admin: ReturnType<typeof adminClient>, raw:
   const value = String(raw || "").trim();
   if (!value) return null;
 
-  // 1) numeric workers.id
-  if (/^\d+$/.test(value)) {
-    const { data, error } = await admin
-      .from("workers")
-      .select("id, user_id, display_name, role, state")
-      .eq("id", Number(value))
-      .maybeSingle();
+  const { data: workers, error } = await admin
+    .from("workers")
+    .select("id, user_id, display_name, role, state");
 
-    if (error) throw error;
-    if (data) return data;
-  }
+  if (error) throw error;
+
+  const all = Array.isArray(workers) ? workers : [];
+
+  const match =
+    all.find((w: any) => String(w.id || "").trim() === value) ||
+    all.find((w: any) => String(w.user_id || "").trim() === value) ||
+    all.find((w: any) => String(w.display_name || "").trim() === value) ||
+    all.find((w: any) =>
+      String(w.display_name || "").toLowerCase().includes(value.toLowerCase())
+    ) ||
+    null;
+
+  return match;
+}
 
   // 2) auth user uuid
   if (looksLikeUuid(value)) {
