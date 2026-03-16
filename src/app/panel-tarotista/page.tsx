@@ -206,6 +206,11 @@ export default function Tarotista() {
   const [incomingPopup, setIncomingPopup] = useState<any>(null);
   const [popupOpen, setPopupOpen] = useState(false);
   const [popupBusy, setPopupBusy] = useState(false);
+  const [activeCall, setActiveCall] = useState<any>(null);
+  const [closeFreeUsed, setCloseFreeUsed] = useState("0");
+  const [closeNormalesUsed, setCloseNormalesUsed] = useState("0");
+  const [closeLoading, setCloseLoading] = useState(false);
+  const [closeMsg, setCloseMsg] = useState("");
 
   const incidenciasLive = useMemo(() => {
     return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
@@ -883,6 +888,7 @@ export default function Tarotista() {
     if (!ok || !myWorkerId) return;
 
     loadPendingCallPopup(myWorkerId);
+    loadActiveCall(myWorkerId);
 
     if (popupChannelRef.current) {
       sb.removeChannel(popupChannelRef.current);
@@ -922,6 +928,115 @@ export default function Tarotista() {
     return () => clearInterval(t);
   }, [ok]);
 
+  async function loadActiveCall(workerId?: string) {
+    const wid = String(workerId || myWorkerId || "").trim();
+    if (!wid) return;
+
+    try {
+      const { data, error } = await sb
+        .from("crm_call_popups")
+        .select("*")
+        .eq("tarotista_worker_id", wid)
+        .eq("accepted", true)
+        .eq("closed", false)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (data) {
+        setActiveCall(data);
+        setCloseFreeUsed(String(data?.minutos_free_pendientes ?? 0));
+        setCloseNormalesUsed(String(data?.minutos_normales_pendientes ?? 0));
+      } else {
+        setActiveCall(null);
+      }
+    } catch (e) {
+      console.error("ERROR CARGANDO LLAMADA ACTIVA CRM", e);
+    }
+  }
+
+  async function acceptIncomingPopup() {
+    const popupId = incomingPopup?.id;
+    if (!popupId) return;
+
+    try {
+      setPopupBusy(true);
+      setCloseMsg("");
+
+      const token = await getTokenSafe();
+      if (!token) return;
+
+      const res = await fetch("/api/crm/call/accept", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ popup_id: popupId }),
+      });
+
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      const popup = j.popup || incomingPopup;
+      setPopupOpen(false);
+      setIncomingPopup(null);
+      setActiveCall(popup);
+      setCloseFreeUsed(String(popup?.minutos_free_pendientes ?? 0));
+      setCloseNormalesUsed(String(popup?.minutos_normales_pendientes ?? 0));
+      setCloseMsg("✅ Llamada aceptada");
+      setTimeout(() => setCloseMsg(""), 1200);
+    } catch (e: any) {
+      console.error("ERROR ACEPTANDO POPUP CRM", e);
+      setCloseMsg(`❌ ${e?.message || "Error aceptando llamada"}`);
+    } finally {
+      setPopupBusy(false);
+    }
+  }
+
+  async function closeActiveCall() {
+    const popupId = activeCall?.id;
+    if (!popupId) return;
+
+    try {
+      setCloseLoading(true);
+      setCloseMsg("");
+
+      const token = await getTokenSafe();
+      if (!token) return;
+
+      const consumidos_free =
+        Number(String(closeFreeUsed).replace(",", ".")) || 0;
+      const consumidos_normales =
+        Number(String(closeNormalesUsed).replace(",", ".")) || 0;
+
+      const res = await fetch("/api/crm/call/close", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          popup_id: popupId,
+          consumidos_free,
+          consumidos_normales,
+        }),
+      });
+
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setActiveCall(null);
+      setCloseFreeUsed("0");
+      setCloseNormalesUsed("0");
+      setCloseMsg(
+        `✅ Llamada cerrada · Devueltos ${Number(j?.restantes_free || 0)} free y ${Number(
+          j?.restantes_normales || 0
+        )} normales`
+      );
+    } catch (e: any) {
+      setCloseMsg(`❌ ${e?.message || "Error cerrando llamada"}`);
+    } finally {
+      setCloseLoading(false);
+    }
+  }
+
   async function loadPendingCallPopup(workerId?: string) {
     const wid = String(workerId || myWorkerId || "").trim();
     if (!wid) return;
@@ -949,6 +1064,11 @@ export default function Tarotista() {
   }
 
   async function closeIncomingPopup(markAccepted = false) {
+    if (markAccepted) {
+      await acceptIncomingPopup();
+      return;
+    }
+
     const popupId = incomingPopup?.id;
     if (!popupId) {
       setPopupOpen(false);
@@ -959,12 +1079,9 @@ export default function Tarotista() {
     try {
       setPopupBusy(true);
 
-      const patch: any = { visible: false };
-      if (markAccepted) patch.accepted = true;
-
       const { error } = await sb
         .from("crm_call_popups")
-        .update(patch)
+        .update({ visible: false })
         .eq("id", popupId);
 
       if (error) throw error;
@@ -1052,6 +1169,79 @@ export default function Tarotista() {
                 {popupBusy ? "…" : "Aceptar"}
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {activeCall ? (
+        <div
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            zIndex: 900,
+            width: "min(520px, calc(100vw - 32px))",
+          }}
+        >
+          <div className="tc-card" style={{ border: "1px solid rgba(120,255,190,0.25)", boxShadow: "0 18px 48px rgba(0,0,0,0.38)" }}>
+            <div className="tc-title" style={{ fontSize: 18 }}>☎️ Llamada en curso</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              {[activeCall?.nombre, activeCall?.apellido].filter(Boolean).join(" ") || "Cliente"}
+            </div>
+
+            <div className="tc-hr" />
+
+            <div className="tc-grid-2">
+              <div>
+                <div className="tc-sub">Free enviados</div>
+                <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>
+                  {Number(activeCall?.minutos_free_pendientes || 0)}
+                </div>
+              </div>
+              <div>
+                <div className="tc-sub">Normales enviados</div>
+                <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>
+                  {Number(activeCall?.minutos_normales_pendientes || 0)}
+                </div>
+              </div>
+            </div>
+
+            <div className="tc-hr" />
+
+            <div className="tc-grid-2">
+              <div>
+                <div className="tc-sub">Minutos free reales</div>
+                <input
+                  className="tc-input"
+                  value={closeFreeUsed}
+                  onChange={(e) => setCloseFreeUsed(e.target.value)}
+                  placeholder="0"
+                  style={{ width: "100%", marginTop: 6 }}
+                />
+              </div>
+              <div>
+                <div className="tc-sub">Minutos normales reales</div>
+                <input
+                  className="tc-input"
+                  value={closeNormalesUsed}
+                  onChange={(e) => setCloseNormalesUsed(e.target.value)}
+                  placeholder="0"
+                  style={{ width: "100%", marginTop: 6 }}
+                />
+              </div>
+            </div>
+
+            <div className="tc-sub" style={{ marginTop: 12 }}>
+              Al cerrar, el sistema devolverá automáticamente a la ficha del cliente los minutos no consumidos.
+            </div>
+
+            <div className="tc-row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <button className="tc-btn tc-btn-danger" onClick={closeActiveCall} disabled={closeLoading}>
+                {closeLoading ? "Cerrando..." : "Finalizar llamada"}
+              </button>
+            </div>
+
+            <div className="tc-sub" style={{ marginTop: 10 }}>{closeMsg || " "}</div>
           </div>
         </div>
       ) : null}
