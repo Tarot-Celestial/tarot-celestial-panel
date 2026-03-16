@@ -176,9 +176,13 @@ export default function Admin() {
   const [accBreakdown, setAccBreakdown] = useState<any>({ income: [], expense: [] });
 
   const [crmQuery, setCrmQuery] = useState("");
+  const [crmTagFilter, setCrmTagFilter] = useState("");
+  const [crmPhoneFilter, setCrmPhoneFilter] = useState("");
+  const [crmCountryFilter, setCrmCountryFilter] = useState("");
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
   const [crmMsg, setCrmMsg] = useState("");
+  const [crmImportLoading, setCrmImportLoading] = useState(false);
 
   // Staff / horarios
   const [staffLoading, setStaffLoading] = useState(false);
@@ -248,8 +252,12 @@ export default function Admin() {
 
   async function searchCRM() {
     const q = crmQuery.trim();
-    if (!q) {
-      setCrmMsg("⚠️ Escribe teléfono o nombre");
+    const telefono = crmPhoneFilter.trim();
+    const etiqueta = crmTagFilter.trim();
+    const pais = crmCountryFilter.trim();
+
+    if (!q && !telefono && !etiqueta && !pais) {
+      setCrmMsg("⚠️ Escribe al menos un filtro");
       setCrmRows([]);
       return;
     }
@@ -261,12 +269,16 @@ export default function Admin() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const isPhone = /\d/.test(q);
-      const url = isPhone
-        ? `/api/crm/clientes/buscar?telefono=${encodeURIComponent(q)}`
-        : `/api/crm/clientes/buscar?q=${encodeURIComponent(q)}`;
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (telefono) params.set("telefono", telefono);
+      if (etiqueta) {
+        params.set("etiqueta", etiqueta);
+        params.set("tag", etiqueta);
+      }
+      if (pais) params.set("pais", pais);
 
-      const r = await fetch(url, {
+      const r = await fetch(`/api/crm/clientes/buscar?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -284,6 +296,42 @@ export default function Admin() {
     } finally {
       setCrmLoading(false);
     }
+  }
+
+  async function importCRM() {
+    try {
+      setCrmImportLoading(true);
+      setCrmMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/crm/import", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status}`);
+      }
+
+      setCrmMsg(j.message || "✅ Importación CRM lanzada correctamente.");
+    } catch (e: any) {
+      setCrmMsg(`❌ ${e?.message || "Error al importar CRM"}`);
+    } finally {
+      setCrmImportLoading(false);
+    }
+  }
+
+  function clearCRMFilters() {
+    setCrmQuery("");
+    setCrmTagFilter("");
+    setCrmPhoneFilter("");
+    setCrmCountryFilter("");
+    setCrmRows([]);
+    setCrmMsg("");
   }
 
   async function loadAccounting(silent = false) {
@@ -2390,27 +2438,96 @@ export default function Admin() {
           )}
 
           {tab === "crm" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                <div>
-                  <div className="tc-title">👥 CRM</div>
-                  <div className="tc-sub">
-                    Busca clientes por teléfono o nombre
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <div className="tc-title">👥 CRM</div>
+                    <div className="tc-sub">
+                      Busca clientes por nombre, teléfono, país o etiqueta
+                    </div>
+                  </div>
+
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      className="tc-btn"
+                      onClick={clearCRMFilters}
+                      disabled={crmLoading || crmImportLoading}
+                    >
+                      Limpiar filtros
+                    </button>
+
+                    <button
+                      className="tc-btn tc-btn-gold"
+                      onClick={importCRM}
+                      disabled={crmImportLoading}
+                    >
+                      {crmImportLoading ? "Importando…" : "Importar CRM"}
+                    </button>
                   </div>
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    className="tc-input"
-                    value={crmQuery}
-                    onChange={(e) => setCrmQuery(e.target.value)}
-                    placeholder="Teléfono o nombre..."
-                    style={{ width: 260 }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") searchCRM();
-                    }}
-                  />
+                <div className="tc-hr" />
 
+                <div className="tc-grid-4">
+                  <div>
+                    <div className="tc-sub">Nombre / búsqueda general</div>
+                    <input
+                      className="tc-input"
+                      value={crmQuery}
+                      onChange={(e) => setCrmQuery(e.target.value)}
+                      placeholder="María, Ana, etc."
+                      style={{ width: "100%", marginTop: 6 }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") searchCRM();
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Teléfono</div>
+                    <input
+                      className="tc-input"
+                      value={crmPhoneFilter}
+                      onChange={(e) => setCrmPhoneFilter(e.target.value)}
+                      placeholder="600123123"
+                      style={{ width: "100%", marginTop: 6 }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") searchCRM();
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Etiqueta</div>
+                    <input
+                      className="tc-input"
+                      value={crmTagFilter}
+                      onChange={(e) => setCrmTagFilter(e.target.value)}
+                      placeholder="vip, premium, nueva..."
+                      style={{ width: "100%", marginTop: 6 }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") searchCRM();
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">País</div>
+                    <input
+                      className="tc-input"
+                      value={crmCountryFilter}
+                      onChange={(e) => setCrmCountryFilter(e.target.value)}
+                      placeholder="España, México..."
+                      style={{ width: "100%", marginTop: 6 }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") searchCRM();
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
                   <button
                     className="tc-btn tc-btn-gold"
                     onClick={searchCRM}
@@ -2419,46 +2536,78 @@ export default function Admin() {
                     {crmLoading ? "Buscando…" : "Buscar"}
                   </button>
                 </div>
+
+                <div className="tc-hr" />
+
+                <div className="tc-sub">{crmMsg || " "}</div>
               </div>
 
-              <div className="tc-hr" />
+              <div className="tc-card">
+                <div className="tc-title">📋 Resultados CRM</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Resultado de búsqueda con filtros
+                </div>
 
-              <div className="tc-sub">{crmMsg || " "}</div>
+                <div className="tc-hr" />
 
-              <div style={{ overflowX: "auto", marginTop: 10 }}>
-                <table className="tc-table">
-                  <thead>
-                    <tr>
-                      <th>Cliente</th>
-                      <th>Teléfono</th>
-                      <th>País</th>
-                      <th>Min free</th>
-                      <th>Min normales</th>
-                      <th>Deuda</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {(crmRows || []).map((r: any) => (
-                      <tr key={r.id}>
-                        <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
-                        <td>{r.telefono || "—"}</td>
-                        <td>{r.pais || "—"}</td>
-                        <td>{r.minutos_free_pendientes ?? 0}</td>
-                        <td>{r.minutos_normales_pendientes ?? 0}</td>
-                        <td>{eur(r.deuda_pendiente || 0)}</td>
-                      </tr>
-                    ))}
-
-                    {crmRows.length === 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead>
                       <tr>
-                        <td colSpan={6} className="tc-muted">
-                          Sin resultados.
-                        </td>
+                        <th>Cliente</th>
+                        <th>Teléfono</th>
+                        <th>País</th>
+                        <th>Etiquetas</th>
+                        <th>Min free</th>
+                        <th>Min normales</th>
+                        <th>Deuda</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
+                    </thead>
+
+                    <tbody>
+                      {(crmRows || []).map((r: any) => {
+                        const etiquetas =
+                          r.etiquetas ||
+                          r.tags ||
+                          r.labels ||
+                          r.crm_tags ||
+                          r.crm_etiquetas ||
+                          [];
+
+                        const etiquetasTexto = Array.isArray(etiquetas)
+                          ? etiquetas
+                              .map((x: any) =>
+                                typeof x === "string"
+                                  ? x
+                                  : x?.nombre || x?.label || x?.name || x?.tag || ""
+                              )
+                              .filter(Boolean)
+                              .join(", ")
+                          : "";
+
+                        return (
+                          <tr key={r.id}>
+                            <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
+                            <td>{r.telefono || "—"}</td>
+                            <td>{r.pais || "—"}</td>
+                            <td>{etiquetasTexto || "—"}</td>
+                            <td>{r.minutos_free_pendientes ?? 0}</td>
+                            <td>{r.minutos_normales_pendientes ?? 0}</td>
+                            <td>{eur(r.deuda_pendiente || 0)}</td>
+                          </tr>
+                        );
+                      })}
+
+                      {crmRows.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="tc-muted">
+                            Sin resultados.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
