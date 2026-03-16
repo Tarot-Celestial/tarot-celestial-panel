@@ -441,15 +441,16 @@ export default function CRMClientesPanel({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          tarotista_worker_id: crmTarotistaSendId,
-          cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
-          nombre: crmEditNombre.trim(),
-          apellido: crmEditApellido.trim(),
-          minutos_free_pendientes:
-            Number(String(crmSendMinFree).replace(",", ".")) || 0,
-          minutos_normales_pendientes:
-            Number(String(crmSendMinNormales).replace(",", ".")) || 0,
-        }),
+  tarotista_worker_id: String(crmTarotistaSendId || "").trim(),
+  cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
+  telefono: crmEditTelefono.trim(),
+  nombre: crmEditNombre.trim(),
+  apellido: crmEditApellido.trim(),
+  minutos_free_pendientes:
+    Number(String(crmSendMinFree).replace(",", ".")) || 0,
+  minutos_normales_pendientes:
+    Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+}),
       });
 
       const j = await safeJson(r);
