@@ -41,10 +41,21 @@ async function workerFromReq(req: Request) {
   const admin = adminClient();
 
   const { data, error } = await admin
-    .from("workers")
-    .select("id, role, display_name")
-    .eq("user_id", uid)
-    .maybeSingle();
+  .from("crm_clientes")
+  .insert({
+    nombre,
+    apellido,
+    telefono,
+    pais,
+    email,
+    notas,
+    origen,
+    deuda_pendiente,
+    minutos_free_pendientes,
+    minutos_normales_pendientes,
+  })
+  .select("*")
+  .single();
 
   if (error) throw error;
   return data || null;
