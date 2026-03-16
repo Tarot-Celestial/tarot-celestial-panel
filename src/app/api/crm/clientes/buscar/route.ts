@@ -103,13 +103,22 @@ async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBa
 
   for (const rel of rels || []) {
     const clienteId = rel?.cliente_id;
-    const nombre = rel?.crm_etiquetas?.nombre;
 
-    if (!clienteId || !nombre) continue;
+    const rawEtiquetas = rel?.crm_etiquetas;
+    const etiquetasArr = Array.isArray(rawEtiquetas)
+      ? rawEtiquetas
+      : rawEtiquetas
+      ? [rawEtiquetas]
+      : [];
 
-    const prev = byClienteId.get(clienteId) || [];
-    prev.push(nombre);
-    byClienteId.set(clienteId, prev);
+    for (const et of etiquetasArr) {
+      const nombre = et?.nombre;
+      if (!clienteId || !nombre) continue;
+
+      const prev = byClienteId.get(clienteId) || [];
+      prev.push(nombre);
+      byClienteId.set(clienteId, prev);
+    }
   }
 
   return clientesBase.map((c: any) => {
