@@ -1169,7 +1169,7 @@ export default function Admin() {
     return map;
   }, [staffSchedules]);
 
-  if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
+    if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <>
@@ -1181,7 +1181,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists</div>
+                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · CRM</div>
               </div>
 
               <div className="tc-row">
@@ -1200,31 +1200,32 @@ export default function Admin() {
             </div>
 
             <div style={{ marginTop: 12 }} className="tc-tabs">
-  <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
-    🧾 Facturas
-  </button>
-  <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
-    ✏️ Editor
-  </button>
-  <button className={`tc-tab ${tab === "estadisticas" ? "tc-tab-active" : ""}`} onClick={() => setTab("estadisticas")}>
-    📈 Estadísticas
-  </button>
-  <button className={`tc-tab ${tab === "contabilidad" ? "tc-tab-active" : ""}`} onClick={() => setTab("contabilidad")}>
-    💼 Contabilidad
-  </button>
-  <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
-    🟢 Asistencia
-  </button>
-  <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
-    ✅ Checklists
-  </button>
-  <button className={`tc-tab ${tab === "crm" ? "tc-tab-active" : ""}`} onClick={() => setTab("crm")}>
-    👥 CRM
-  </button>
-  <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
-    🔄 Sync
-  </button>
-</div>
+              <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
+                🧾 Facturas
+              </button>
+              <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
+                ✏️ Editor
+              </button>
+              <button className={`tc-tab ${tab === "estadisticas" ? "tc-tab-active" : ""}`} onClick={() => setTab("estadisticas")}>
+                📈 Estadísticas
+              </button>
+              <button className={`tc-tab ${tab === "contabilidad" ? "tc-tab-active" : ""}`} onClick={() => setTab("contabilidad")}>
+                💼 Contabilidad
+              </button>
+              <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
+                🟢 Asistencia
+              </button>
+              <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
+                ✅ Checklists
+              </button>
+              <button className={`tc-tab ${tab === "crm" ? "tc-tab-active" : ""}`} onClick={() => setTab("crm")}>
+                👥 CRM
+              </button>
+              <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
+                🔄 Sync
+              </button>
+            </div>
+          </div>
 
           {tab === "facturas" && (
             <div className="tc-card">
@@ -2382,34 +2383,35 @@ export default function Admin() {
             </div>
           )}
 
-            {tab === "crm" && (
-  <div className="tc-card">
-    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-      <div>
-        <div className="tc-title">👥 CRM</div>
-        <div className="tc-sub" style={{ marginTop: 6 }}>
-          Buscador y ficha de clientes del call center
-        </div>
-      </div>
-    </div>
+          {tab === "crm" && (
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div className="tc-title">👥 CRM</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Buscador y ficha de clientes del call center
+                  </div>
+                </div>
+              </div>
 
-    <div className="tc-hr" />
+              <div className="tc-hr" />
 
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 16,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div style={{ fontWeight: 900 }}>Módulo CRM listo para conectar</div>
-      <div className="tc-sub" style={{ marginTop: 8 }}>
-        En el siguiente paso pondremos aquí el buscador de cliente por teléfono o nombre.
-      </div>
-    </div>
-  </div>
-)}
+              <div
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  borderRadius: 14,
+                  padding: 16,
+                  background: "rgba(255,255,255,0.03)",
+                }}
+              >
+                <div style={{ fontWeight: 900 }}>Módulo CRM listo para conectar</div>
+                <div className="tc-sub" style={{ marginTop: 8 }}>
+                  En el siguiente paso pondremos aquí el buscador de cliente por teléfono o nombre.
+                </div>
+              </div>
+            </div>
+          )}
+
           {tab === "sync" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
@@ -2432,8 +2434,6 @@ export default function Admin() {
       </div>
     </>
   );
-}
-
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div
