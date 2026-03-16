@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -41,6 +41,9 @@ export default function CRMClientesPanel({
   const [crmCreateLoading, setCrmCreateLoading] = useState(false);
   const [crmCreateMsg, setCrmCreateMsg] = useState("");
 
+  const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
+  const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
+
   const [crmClienteSelId, setCrmClienteSelId] = useState("");
   const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
   const [crmFichaLoading, setCrmFichaLoading] = useState(false);
@@ -78,6 +81,37 @@ export default function CRMClientesPanel({
     }
     return token;
   }
+
+  async function loadCRMEtiquetas() {
+    try {
+      setCrmEtiquetasLoading(true);
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/etiquetas/listar", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
+      setCrmEtiquetasOpts(Array.isArray(j.etiquetas) ? j.etiquetas : []);
+    } catch (e) {
+      console.error("ERROR CARGANDO ETIQUETAS CRM", e);
+      setCrmEtiquetasOpts([]);
+    } finally {
+      setCrmEtiquetasLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadCRMEtiquetas();
+  }, []);
 
   async function searchCRM() {
     const q = crmQuery.trim();
@@ -372,7 +406,21 @@ export default function CRMClientesPanel({
 
           <div>
             <div className="tc-sub">Etiqueta</div>
-            <input className="tc-input" value={crmTagFilter} onChange={(e) => setCrmTagFilter(e.target.value)} placeholder="vip, premium, nueva..." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+            <select
+              className="tc-input"
+              value={crmTagFilter}
+              onChange={(e) => setCrmTagFilter(e.target.value)}
+              style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+            >
+              <option value="">
+                {crmEtiquetasLoading ? "Cargando etiquetas..." : "Todas las etiquetas"}
+              </option>
+              {crmEtiquetasOpts.map((et: any) => (
+                <option key={et.id} value={et.nombre}>
+                  {et.nombre}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
