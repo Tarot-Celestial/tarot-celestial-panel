@@ -186,6 +186,23 @@ export default function Admin() {
   const [crmCreateLoading, setCrmCreateLoading] = useState(false);
   const [crmCreateMsg, setCrmCreateMsg] = useState("");
 
+  const [crmClienteSelId, setCrmClienteSelId] = useState("");
+  const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
+  const [crmFichaLoading, setCrmFichaLoading] = useState(false);
+  const [crmFichaMsg, setCrmFichaMsg] = useState("");
+
+  const [crmEditNombre, setCrmEditNombre] = useState("");
+  const [crmEditApellido, setCrmEditApellido] = useState("");
+  const [crmEditTelefono, setCrmEditTelefono] = useState("");
+  const [crmEditPais, setCrmEditPais] = useState("");
+  const [crmEditEmail, setCrmEditEmail] = useState("");
+  const [crmEditNotas, setCrmEditNotas] = useState("");
+  const [crmEditOrigen, setCrmEditOrigen] = useState("");
+  const [crmEditDeuda, setCrmEditDeuda] = useState("0");
+  const [crmEditMinFree, setCrmEditMinFree] = useState("0");
+  const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
+  const [crmSaveLoading, setCrmSaveLoading] = useState(false);
+
   const [crmNewNombre, setCrmNewNombre] = useState("");
   const [crmNewApellido, setCrmNewApellido] = useState("");
   const [crmNewTelefono, setCrmNewTelefono] = useState("");
