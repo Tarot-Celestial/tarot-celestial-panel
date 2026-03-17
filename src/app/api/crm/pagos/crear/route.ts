@@ -57,7 +57,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
 
-    if (!["admin", "central"].includes(worker.role)) {
+    if (!["admin", "central"].includes(String(worker.role || ""))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -65,10 +65,11 @@ export async function POST(req: Request) {
 
     const cliente_id = String(body?.cliente_id || "").trim();
     const importe = Number(body?.importe || 0);
-    const moneda = String(body?.moneda || "EUR");
-    const metodo = String(body?.metodo || "paypal_manual");
-    const estado = String(body?.estado || "completed");
-    const notas = String(body?.notas || "");
+    const moneda = String(body?.moneda || "EUR").trim() || "EUR";
+    const metodo = String(body?.metodo || "paypal_manual").trim() || "paypal_manual";
+    const estado = String(body?.estado || "completed").trim() || "completed";
+    const notas = String(body?.notas || "").trim();
+    const referencia_externa = String(body?.referencia_externa || "").trim();
 
     if (!cliente_id) {
       return NextResponse.json({ ok: false, error: "FALTA_CLIENTE_ID" }, { status: 400 });
@@ -80,18 +81,33 @@ export async function POST(req: Request) {
 
     const admin = adminClient();
 
-    const { data, error } = await admin
+    const { data: cliente, error: clienteError } = await admin
+      .from("crm_clientes")
+      .select("id")
+      .eq("id", cliente_id)
+      .maybeSingle();
+
+    if (clienteError) throw clienteError;
+
+    if (!cliente) {
+      return NextResponse.json({ ok: false, error: "CLIENTE_NO_EXISTE" }, { status: 404 });
+    }
+
+    const payload: any = {
+      cliente_id,
+      importe,
+      moneda,
+      metodo,
+      estado,
+      notas: notas || null,
+      referencia_externa: referencia_externa || null,
+      created_by_user_id: worker.id,
+      created_by_role: worker.role,
+    };
+
+    const { data: pago, error } = await admin
       .from("crm_cliente_pagos")
-      .insert({
-        cliente_id,
-        importe,
-        moneda,
-        metodo,
-        estado,
-        notas,
-        created_by_user_id: worker.id,
-        created_by_role: worker.role,
-      })
+      .insert(payload)
       .select("*")
       .single();
 
@@ -99,7 +115,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      pago: data,
+      pago,
+      msg: "Pago creado correctamente",
     });
   } catch (e: any) {
     return NextResponse.json(
