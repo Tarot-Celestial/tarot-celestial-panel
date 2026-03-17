@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function PayPalFinalizarPage() {
+function PayPalFinalizarInner() {
   const searchParams = useSearchParams();
   const [msg, setMsg] = useState("Procesando pago...");
   const [done, setDone] = useState(false);
@@ -22,9 +22,10 @@ export default function PayPalFinalizarPage() {
       }
 
       try {
-        const r = await fetch(`/api/crm/pagos/paypal/capture?paypal_order_id=${encodeURIComponent(token)}${isCancel ? "&cancel=1" : ""}`, {
-          cache: "no-store",
-        });
+        const r = await fetch(
+          `/api/crm/pagos/paypal/capture?paypal_order_id=${encodeURIComponent(token)}${isCancel ? "&cancel=1" : ""}`,
+          { cache: "no-store" }
+        );
 
         const j = await r.json().catch(() => ({}));
 
@@ -85,5 +86,22 @@ export default function PayPalFinalizarPage() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+export default function PayPalFinalizarPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f0f11", color: "#fff", padding: 24 }}>
+          <div style={{ width: "100%", maxWidth: 560, border: "1px solid rgba(255,255,255,.1)", borderRadius: 16, padding: 24, background: "#17171a" }}>
+            <h1 style={{ margin: 0, fontSize: 24 }}>Tarot Celestial · PayPal</h1>
+            <p style={{ marginTop: 16, lineHeight: 1.5 }}>Procesando pago...</p>
+          </div>
+        </div>
+      }
+    >
+      <PayPalFinalizarInner />
+    </Suspense>
   );
 }
