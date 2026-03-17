@@ -88,6 +88,7 @@ export default function CRMClientesPanel({
   const [crmPagoReferencia, setCrmPagoReferencia] = useState("");
   const [crmPagoLoading, setCrmPagoLoading] = useState(false);
   const [crmPagoMsg, setCrmPagoMsg] = useState("");
+  const [crmPagoPendienteConfirmacion, setCrmPagoPendienteConfirmacion] = useState(false);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -194,6 +195,7 @@ export default function CRMClientesPanel({
         setCrmPagoReferencia(draft.referencia_externa);
       }
 
+      setCrmPagoPendienteConfirmacion(true);
       setCrmPagoMsg("ℹ️ He recuperado el borrador del cobro de PayPal para este cliente. Pega la referencia y pulsa 'Confirmar pago' o 'Pago erróneo'.");
     } catch {}
   }, [crmClienteSelId]);
@@ -365,6 +367,7 @@ export default function CRMClientesPanel({
     setCrmPagoReferencia("");
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
+    setCrmPagoPendienteConfirmacion(false);
   }
 
   async function loadPagosCliente(clienteId: string) {
@@ -606,10 +609,11 @@ export default function CRMClientesPanel({
       } catch {}
 
       const url = "https://www.paypal.com/virtualterminal/launch?source=appcenter";
+      setCrmPagoPendienteConfirmacion(true);
       window.open(url, "_blank", "noopener,noreferrer");
 
       setCrmPagoMsg(
-        "✅ TPV PayPal abierto. Haz el cobro allí y, al volver a esta pestaña, usa 'Confirmar pago' o 'Pago erróneo'."
+        "✅ TPV PayPal abierto. Cuando termines el intento de cobro, vuelve a esta ficha y usa 'Confirmar pago' o 'Pago erróneo'."
       );
     } catch (e: any) {
       setCrmPagoMsg(`❌ ${e?.message || "Error abriendo TPV PayPal"}`);
@@ -678,6 +682,7 @@ export default function CRMClientesPanel({
       } catch {}
 
       setCrmPagoMsg("✅ Pago registrado correctamente");
+      setCrmPagoPendienteConfirmacion(false);
       setCrmPagoImporte("");
       setCrmPagoNotas("");
       setCrmPagoReferencia("");
@@ -744,6 +749,7 @@ export default function CRMClientesPanel({
       } catch {}
 
       setCrmPagoMsg("✅ Pago marcado como erróneo");
+      setCrmPagoPendienteConfirmacion(false);
       setCrmPagoImporte("");
       setCrmPagoNotas("");
       setCrmPagoReferencia("");
