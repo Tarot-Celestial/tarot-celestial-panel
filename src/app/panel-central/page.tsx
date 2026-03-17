@@ -140,6 +140,7 @@ type ChatMessage = {
 export default function Central() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
+  const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [month, setMonth] = useState(monthKeyNow());
 
   const [rank, setRank] = useState<any>(null);
@@ -1911,6 +1912,61 @@ export default function Central() {
           )}
         </div>
       </div>
+
+      {crmCloseNotif && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div
+            className="tc-card"
+            style={{
+              width: "100%",
+              maxWidth: 440,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
+            }}
+          >
+            <div className="tc-title">📞 Llamada finalizada</div>
+            <div className="tc-sub" style={{ marginTop: 10 }}>
+              <b>{crmCloseNotif.tarotista_nombre || "Una tarotista"}</b> ha terminado la llamada
+            </div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              Le han sobrado en total <b>{crmCloseNotif.minutos_sobrantes_total || 0}</b> minutos
+            </div>
+
+            <div className="tc-row" style={{ marginTop: 16, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+              <button className="tc-btn" onClick={() => setCrmCloseNotif(null)}>
+                Cerrar
+              </button>
+              <button
+                className="tc-btn tc-btn-gold"
+                onClick={() => {
+                  setTab("crm" as any);
+                  setTimeout(() => {
+                    window.dispatchEvent(
+                      new CustomEvent("crm-open-cliente", {
+                        detail: { id: crmCloseNotif.cliente_id },
+                      })
+                    );
+                  }, 250);
+                  setCrmCloseNotif(null);
+                }}
+              >
+                Revisar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
   );
 }
