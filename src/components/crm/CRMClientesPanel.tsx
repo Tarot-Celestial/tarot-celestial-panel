@@ -85,6 +85,7 @@ export default function CRMClientesPanel({
   const [crmPagosLoading, setCrmPagosLoading] = useState(false);
   const [crmPagoImporte, setCrmPagoImporte] = useState("");
   const [crmPagoNotas, setCrmPagoNotas] = useState("");
+  const [crmPagoReferencia, setCrmPagoReferencia] = useState("");
   const [crmPagoLoading, setCrmPagoLoading] = useState(false);
   const [crmPagoMsg, setCrmPagoMsg] = useState("");
 
@@ -337,6 +338,7 @@ export default function CRMClientesPanel({
     setCrmPagosLoading(false);
     setCrmPagoImporte("");
     setCrmPagoNotas("");
+    setCrmPagoReferencia("");
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
   }
@@ -579,6 +581,7 @@ export default function CRMClientesPanel({
           moneda: "EUR",
           metodo: "paypal_manual",
           estado: "completed",
+          referencia_externa: crmPagoReferencia.trim(),
           notas: crmPagoNotas.trim(),
         }),
       });
@@ -592,6 +595,7 @@ export default function CRMClientesPanel({
       setCrmPagoMsg("✅ Pago registrado");
       setCrmPagoImporte("");
       setCrmPagoNotas("");
+      setCrmPagoReferencia("");
 
       await loadPagosCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
     } catch (e: any) {
@@ -823,6 +827,19 @@ export default function CRMClientesPanel({
                 </div>
 
                 <div>
+                  <div className="tc-sub">Referencia PayPal / operación</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoReferencia}
+                    onChange={(e) => setCrmPagoReferencia(e.target.value)}
+                    placeholder="Ej: 7AB12345CD6789012"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div className="tc-grid-1" style={{ marginTop: 12 }}>
+                <div>
                   <div className="tc-sub">Notas</div>
                   <input
                     className="tc-input"
@@ -834,7 +851,7 @@ export default function CRMClientesPanel({
                 </div>
               </div>
 
-              <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+              <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button
                   className="tc-btn tc-btn-ok"
                   onClick={crearPagoManual}
@@ -877,6 +894,11 @@ export default function CRMClientesPanel({
                       <div className="tc-sub">
                         {p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}
                       </div>
+                      {!!p.referencia_externa && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          Ref: {p.referencia_externa}
+                        </div>
+                      )}
                       {!!p.notas && (
                         <div className="tc-sub" style={{ width: "100%" }}>
                           {p.notas}
@@ -958,3 +980,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
