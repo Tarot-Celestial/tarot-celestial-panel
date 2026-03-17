@@ -25,7 +25,6 @@ function paypalBaseUrl() {
 async function getPayPalAccessToken() {
   const clientId = getEnv("PAYPAL_CLIENT_ID");
   const clientSecret = getEnv("PAYPAL_CLIENT_SECRET");
-
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
   const res = await fetch(`${paypalBaseUrl()}/v1/oauth2/token`, {
@@ -39,7 +38,6 @@ async function getPayPalAccessToken() {
   });
 
   const json = await res.json().catch(() => ({}));
-
   if (!res.ok || !json?.access_token) {
     throw new Error(json?.error_description || json?.error || "PAYPAL_AUTH_ERROR");
   }
@@ -50,10 +48,8 @@ async function getPayPalAccessToken() {
 async function uidFromBearer(req: Request) {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-
   if (!token) return null;
 
   const sb = createClient(url, anon, {
@@ -69,7 +65,6 @@ async function workerFromReq(req: Request) {
   if (!uid) return null;
 
   const admin = adminClient();
-
   const { data, error } = await admin
     .from("workers")
     .select("id, role")
@@ -93,13 +88,11 @@ export async function POST(req: Request) {
     if (!worker) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
-
     if (!["admin", "central"].includes(String(worker.role || ""))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));
-
     const cliente_id = String(body?.cliente_id || "").trim();
     const importe = Number(body?.importe || 0);
     const moneda = String(body?.moneda || "EUR").trim() || "EUR";
@@ -108,7 +101,6 @@ export async function POST(req: Request) {
     if (!cliente_id) {
       return NextResponse.json({ ok: false, error: "FALTA_CLIENTE_ID" }, { status: 400 });
     }
-
     if (!importe || importe <= 0) {
       return NextResponse.json({ ok: false, error: "IMPORTE_INVALIDO" }, { status: 400 });
     }
@@ -122,7 +114,6 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (clienteError) throw clienteError;
-
     if (!cliente) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_EXISTE" }, { status: 404 });
     }
@@ -163,8 +154,8 @@ export async function POST(req: Request) {
       application_context: {
         brand_name: "Tarot Celestial",
         user_action: "PAY_NOW",
-        return_url: `${appUrl}/paypal/finalizar`,
-        cancel_url: `${appUrl}/paypal/finalizar?cancel=1`,
+        return_url: `${appUrl}/paypal/finalizar?cliente_id=${encodeURIComponent(cliente_id)}`,
+        cancel_url: `${appUrl}/paypal/finalizar?cancel=1&cliente_id=${encodeURIComponent(cliente_id)}`,
       },
     };
 
