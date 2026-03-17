@@ -281,6 +281,23 @@ export default function Admin() {
     } catch {}
   }
 
+
+  async function markCrmCloseNotifRead(id: string) {
+    try {
+      const token = await getTokenOrLogin();
+      if (!token || !id) return;
+
+      await fetch("/api/admin/crm/call-close-notifications/mark-read", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
+    } catch {}
+  }
+
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
@@ -2449,12 +2466,19 @@ export default function Admin() {
             </div>
 
             <div className="tc-row" style={{ marginTop: 16, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <button className="tc-btn" onClick={() => setCrmCloseNotif(null)}>
+              <button
+                className="tc-btn"
+                onClick={async () => {
+                  await markCrmCloseNotifRead(String(crmCloseNotif?.id || ""));
+                  setCrmCloseNotif(null);
+                }}
+              >
                 Cerrar
               </button>
               <button
                 className="tc-btn tc-btn-gold"
-                onClick={() => {
+                onClick={async () => {
+                  await markCrmCloseNotifRead(String(crmCloseNotif?.id || ""));
                   setTab("crm" as any);
                   setTimeout(() => {
                     window.dispatchEvent(
