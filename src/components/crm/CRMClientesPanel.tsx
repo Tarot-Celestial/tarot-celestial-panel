@@ -1009,16 +1009,41 @@ export default function CRMClientesPanel({
 
               <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button
-                  className="tc-btn tc-btn-ok"
+                  className="tc-btn tc-btn-gold"
                   onClick={crearPagoManual}
-                  disabled={crmPagoLoading || !crmClienteSelId}
+                  disabled={crmPagoLoading || crmPagoPendienteConfirmacion || !crmClienteSelId}
+                  style={{ opacity: crmPagoPendienteConfirmacion ? 0.6 : 1 }}
                 >
-                  {crmPagoLoading ? "Registrando..." : "Registrar pago"}
+                  {crmPagoLoading ? "Abriendo..." : "Registrar pago"}
+                </button>
+
+                <button
+                  className="tc-btn tc-btn-ok"
+                  onClick={confirmarPagoManual}
+                  disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
+                  style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
+                >
+                  {crmPagoLoading ? "Guardando..." : "Confirmar pago"}
+                </button>
+
+                <button
+                  className="tc-btn"
+                  onClick={marcarPagoErroneo}
+                  disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
+                  style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
+                >
+                  {crmPagoLoading ? "Guardando..." : "Pago erróneo"}
                 </button>
               </div>
 
               <div className="tc-sub" style={{ marginTop: 10 }}>
                 {crmPagoMsg || " "}
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 4 }}>
+                {crmPagoPendienteConfirmacion
+                  ? "Hay un cobro pendiente de cerrar en esta ficha. Usa Confirmar pago o Pago erróneo."
+                  : "Primero pulsa Registrar pago para abrir el TPV. Después se habilitarán Confirmar pago y Pago erróneo."}
               </div>
 
               <div className="tc-hr" />
@@ -1136,3 +1161,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
