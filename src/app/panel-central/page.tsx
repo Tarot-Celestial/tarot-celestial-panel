@@ -228,6 +228,38 @@ export default function Central() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (!ok) return;
+
+    loadLatestCrmCloseNotif(true);
+
+    const channel = sb
+      .channel("crm-close-notifs-central")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "crm_call_close_notifications",
+        },
+        (payload) => {
+          const n: any = payload.new;
+          setCrmCloseNotif(n);
+        }
+      )
+      .subscribe();
+
+    const timer = setInterval(() => {
+      loadLatestCrmCloseNotif(true);
+    }, 10000);
+
+    return () => {
+      clearInterval(timer);
+      sb.removeChannel(channel);
+    };
+  }, [ok]);
+
+
 
   async function loadLatestCrmCloseNotif(silent = false) {
     try {
@@ -243,6 +275,24 @@ export default function Central() {
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) return;
       if (j.notification) setCrmCloseNotif(j.notification);
+    } catch {}
+  }
+
+
+  async function markCrmCloseNotifRead(id: string) {
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || !id) return;
+
+      await fetch("/api/central/crm/call-close-notifications/mark-read", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id }),
+      });
     } catch {}
   }
 
@@ -1961,7 +2011,13 @@ export default function Central() {
             </div>
 
             <div className="tc-row" style={{ marginTop: 16, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-              <button className="tc-btn" onClick={() => setCrmCloseNotif(null)}>
+              <button
+                className="tc-btn"
+                onClick={async () => {
+                  await markCrmCloseNotifRead(String(crmCloseNotif?.id || ""));
+                  setCrmCloseNotif(null);
+                }}
+              >
                 Cerrar
               </button>
               <button
@@ -2052,3 +2108,4 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
     </div>
   );
 }
+
