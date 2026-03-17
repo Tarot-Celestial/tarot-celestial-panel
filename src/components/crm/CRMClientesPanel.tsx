@@ -876,7 +876,13 @@ export default function CRMClientesPanel({
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                <div><div className="tc-sub">Min normales</div><input className="tc-input" value={crmNewMinNormales} onChange={(e) => setCrmNewMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">
+              <div className="tc-row" style={{ marginTop: 12 }}>
+                <button className="tc-btn tc-btn-gold" onClick={sendCallPopup} disabled={crmSendLoading || !crmClienteSelId || !crmTarotistaSendId}>
+                  {crmSendLoading ? "Enviando..." : "Enviar llamada"}
+                </button>
+              </div>
+Min normales</div><input className="tc-input" value={crmNewMinNormales} onChange={(e) => setCrmNewMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
@@ -1125,9 +1131,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button className="tc-btn" onClick={closeCRMFicha}>Cancelar</button>
-                <button className="tc-btn tc-btn-gold" onClick={sendCallPopup} disabled={crmSendLoading || !crmClienteSelId || !crmTarotistaSendId}>
-                  {crmSendLoading ? "Enviando..." : "Enviar llamada"}
-                </button>
+                
                 <button className="tc-btn tc-btn-ok" onClick={saveCRMFicha} disabled={crmSaveLoading || !crmClienteSelId}>
                   {crmSaveLoading ? "Guardando..." : "Guardar cambios"}
                 </button>
