@@ -174,6 +174,30 @@ export default function CRMClientesPanel({
     return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
 
+  useEffect(() => {
+    if (!crmClienteSelId) return;
+
+    try {
+      const raw = sessionStorage.getItem("crm_pago_paypal_draft");
+      if (!raw) return;
+
+      const draft = JSON.parse(raw);
+      if (String(draft?.cliente_id || "") !== String(crmClienteSelId)) return;
+
+      if (draft?.importe && !crmPagoImporte) {
+        setCrmPagoImporte(String(draft.importe));
+      }
+      if (typeof draft?.notas === "string" && !crmPagoNotas) {
+        setCrmPagoNotas(draft.notas);
+      }
+      if (typeof draft?.referencia_externa === "string" && !crmPagoReferencia) {
+        setCrmPagoReferencia(draft.referencia_externa);
+      }
+
+      setCrmPagoMsg("ℹ️ He recuperado el borrador del cobro de PayPal para este cliente. Pega la referencia y pulsa Confirmar pago.");
+    } catch {}
+  }, [crmClienteSelId]);
+
   async function searchCRM() {
     const q = crmQuery.trim();
     const telefono = crmPhoneFilter.trim();
@@ -598,6 +622,77 @@ export default function CRMClientesPanel({
     }
   }
 
+  async function confirmarPagoManual() {
+    if (!crmClienteSelId && !crmClienteFicha?.id) {
+      setCrmPagoMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+
+    const importe = Number(String(crmPagoImporte).replace(",", "."));
+    if (!importe || importe <= 0) {
+      setCrmPagoMsg("⚠️ Introduce un importe válido");
+      return;
+    }
+
+    if (!crmPagoReferencia.trim()) {
+      setCrmPagoMsg("⚠️ Pega la referencia de PayPal antes de confirmar");
+      return;
+    }
+
+    try {
+      setCrmPagoLoading(true);
+      setCrmPagoMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+
+      const r = await fetch("/api/crm/pagos/crear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: clienteId,
+          importe,
+          moneda: "EUR",
+          metodo: "paypal_manual",
+          estado: "completed",
+          referencia_externa: crmPagoReferencia.trim(),
+          notas: crmPagoNotas.trim(),
+        }),
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
+      try {
+        const raw = sessionStorage.getItem("crm_pago_paypal_draft");
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (String(draft?.cliente_id || "") === String(clienteId)) {
+            sessionStorage.removeItem("crm_pago_paypal_draft");
+          }
+        }
+      } catch {}
+
+      setCrmPagoMsg("✅ Pago registrado correctamente");
+      setCrmPagoImporte("");
+      setCrmPagoNotas("");
+      setCrmPagoReferencia("");
+      await loadPagosCliente(clienteId);
+    } catch (e: any) {
+      setCrmPagoMsg(`❌ ${e?.message || "Error confirmando pago"}`);
+    } finally {
+      setCrmPagoLoading(false);
+    }
+  }
+
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <div className="tc-card">
@@ -804,7 +899,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-title">💳 Cobros</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Abre el TPV virtual de PayPal para cobrar fuera del CRM y luego registra aquí la referencia y el resultado
+                Abre el TPV virtual de PayPal, haz el cobro fuera del CRM y después confirma aquí el pago con su referencia
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
