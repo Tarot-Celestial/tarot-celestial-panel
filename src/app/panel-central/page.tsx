@@ -141,6 +141,7 @@ export default function Central() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
+  const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
   const [month, setMonth] = useState(monthKeyNow());
 
   const [rank, setRank] = useState<any>(null);
@@ -244,7 +245,9 @@ export default function Central() {
         },
         (payload) => {
           const n: any = payload.new;
-          setCrmCloseNotif(n);
+          if (!crmDismissedIds.includes(String(n?.id || ""))) {
+            setCrmCloseNotif(n);
+          }
         }
       )
       .subscribe();
@@ -257,7 +260,7 @@ export default function Central() {
       clearInterval(timer);
       sb.removeChannel(channel);
     };
-  }, [ok]);
+  }, [ok, crmDismissedIds]);
 
 
 
@@ -274,7 +277,10 @@ export default function Central() {
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) return;
-      if (j.notification) setCrmCloseNotif(j.notification);
+      const notif = j.notification || null;
+      if (!notif?.id) return;
+      if (crmDismissedIds.includes(String(notif.id))) return;
+      setCrmCloseNotif(notif);
     } catch {}
   }
 
@@ -417,7 +423,7 @@ export default function Central() {
     const t = setInterval(() => loadAttendanceMe(true), 60_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
+  }, [ok, crmDismissedIds]);
 
   async function refreshRanking() {
     setRankMsg("");
@@ -2014,7 +2020,9 @@ export default function Central() {
               <button
                 className="tc-btn"
                 onClick={async () => {
-                  await markCrmCloseNotifRead(String(crmCloseNotif?.id || ""));
+                  const notifId = String(crmCloseNotif?.id || "");
+                  if (notifId) setCrmDismissedIds((prev) => (prev.includes(notifId) ? prev : [...prev, notifId]));
+                  await markCrmCloseNotifRead(notifId);
                   setCrmCloseNotif(null);
                 }}
               >
@@ -2108,4 +2116,3 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
     </div>
   );
 }
-
