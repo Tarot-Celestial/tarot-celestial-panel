@@ -80,6 +80,14 @@ export default function CRMClientesPanel({
   const [crmNewMinFree, setCrmNewMinFree] = useState("0");
   const [crmNewMinNormales, setCrmNewMinNormales] = useState("0");
 
+  // COBROS
+  const [crmPagos, setCrmPagos] = useState<any[]>([]);
+  const [crmPagosLoading, setCrmPagosLoading] = useState(false);
+  const [crmPagoImporte, setCrmPagoImporte] = useState("");
+  const [crmPagoNotas, setCrmPagoNotas] = useState("");
+  const [crmPagoLoading, setCrmPagoLoading] = useState(false);
+  const [crmPagoMsg, setCrmPagoMsg] = useState("");
+
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
@@ -325,6 +333,43 @@ export default function CRMClientesPanel({
     setCrmEditDeuda("0");
     setCrmEditMinFree("0");
     setCrmEditMinNormales("0");
+    setCrmPagos([]);
+    setCrmPagosLoading(false);
+    setCrmPagoImporte("");
+    setCrmPagoNotas("");
+    setCrmPagoLoading(false);
+    setCrmPagoMsg("");
+  }
+
+  async function loadPagosCliente(clienteId: string) {
+    if (!clienteId) {
+      setCrmPagos([]);
+      return;
+    }
+
+    try {
+      setCrmPagosLoading(true);
+      setCrmPagoMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/crm/pagos/listar?cliente_id=${encodeURIComponent(clienteId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCrmPagos(Array.isArray(j.pagos) ? j.pagos : []);
+    } catch (e) {
+      console.error("ERROR CARGANDO PAGOS CLIENTE", e);
+      setCrmPagos([]);
+    } finally {
+      setCrmPagosLoading(false);
+    }
   }
 
   async function openCRMFicha(id: string) {
@@ -334,6 +379,7 @@ export default function CRMClientesPanel({
       setCrmFichaLoading(true);
       setCrmFichaMsg("");
       setCrmSendMsg("");
+      setCrmPagoMsg("");
       setCrmClienteSelId(id);
 
       const token = await getTokenOrLogin();
@@ -361,6 +407,8 @@ export default function CRMClientesPanel({
       setCrmEditMinNormales(String(c?.minutos_normales_pendientes ?? 0));
       setCrmSendMinFree(String(c?.minutos_free_pendientes ?? 0));
       setCrmSendMinNormales(String(c?.minutos_normales_pendientes ?? 0));
+
+      await loadPagosCliente(String(c?.id || id || ""));
     } catch (e: any) {
       console.error("ERROR FICHA", e);
       setCrmClienteFicha(null);
@@ -497,6 +545,59 @@ export default function CRMClientesPanel({
       setCrmSendMsg(`❌ ${e?.message || "Error enviando llamada"}`);
     } finally {
       setCrmSendLoading(false);
+    }
+  }
+
+  async function crearPagoManual() {
+    if (!crmClienteSelId && !crmClienteFicha?.id) {
+      setCrmPagoMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+
+    const importe = Number(String(crmPagoImporte).replace(",", "."));
+    if (!importe || importe <= 0) {
+      setCrmPagoMsg("⚠️ Introduce un importe válido");
+      return;
+    }
+
+    try {
+      setCrmPagoLoading(true);
+      setCrmPagoMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/pagos/crear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
+          importe,
+          moneda: "EUR",
+          metodo: "paypal_manual",
+          estado: "completed",
+          notas: crmPagoNotas.trim(),
+        }),
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
+      setCrmPagoMsg("✅ Pago registrado");
+      setCrmPagoImporte("");
+      setCrmPagoNotas("");
+
+      await loadPagosCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
+    } catch (e: any) {
+      setCrmPagoMsg(`❌ ${e?.message || "Error registrando pago"}`);
+    } finally {
+      setCrmPagoLoading(false);
     }
   }
 
@@ -700,6 +801,90 @@ export default function CRMClientesPanel({
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div><div className="tc-sub">ID cliente</div><div className="tc-sub" style={{ marginTop: 8, wordBreak: "break-all" }}>{crmClienteFicha?.id || crmClienteSelId || "—"}</div></div>
                 <div><div className="tc-sub">Última ficha cargada</div><div className="tc-sub" style={{ marginTop: 8 }}>{[crmClienteFicha?.nombre, crmClienteFicha?.apellido].filter(Boolean).join(" ") || "—"}</div></div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-title">💳 Cobros</div>
+              <div className="tc-sub" style={{ marginTop: 6 }}>
+                Registro manual del cobro realizado en PayPal / TPV externo
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div>
+                  <div className="tc-sub">Importe (€)</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoImporte}
+                    onChange={(e) => setCrmPagoImporte(e.target.value)}
+                    placeholder="20"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <div className="tc-sub">Notas</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoNotas}
+                    onChange={(e) => setCrmPagoNotas(e.target.value)}
+                    placeholder="Cobro telefónico PayPal"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12 }}>
+                <button
+                  className="tc-btn tc-btn-ok"
+                  onClick={crearPagoManual}
+                  disabled={crmPagoLoading || !crmClienteSelId}
+                >
+                  {crmPagoLoading ? "Registrando..." : "Registrar pago"}
+                </button>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {crmPagoMsg || " "}
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-sub">Historial de pagos</div>
+              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                {crmPagosLoading ? (
+                  <div className="tc-sub">Cargando pagos...</div>
+                ) : crmPagos.length === 0 ? (
+                  <div className="tc-sub">Sin pagos registrados.</div>
+                ) : (
+                  crmPagos.map((p: any) => (
+                    <div
+                      key={p.id}
+                      className="tc-row"
+                      style={{
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        border: "1px solid rgba(255,255,255,.08)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div className="tc-sub">
+                        <b>{eur(p.importe || 0)}</b> · {p.estado || "—"} · {p.metodo || "—"}
+                      </div>
+                      <div className="tc-sub">
+                        {p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}
+                      </div>
+                      {!!p.notas && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          {p.notas}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
