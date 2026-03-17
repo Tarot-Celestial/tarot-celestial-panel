@@ -186,6 +186,27 @@ export async function POST(req: Request) {
 
     if (closeError) throw closeError;
 
+    // 🔔 notificación para admin / central cuando sobran minutos
+    try {
+      const minutos_sobrantes_total = restantes_free + restantes_normales;
+
+      if (minutos_sobrantes_total > 0) {
+        await admin.from("crm_call_close_notifications").insert({
+          cliente_id: popup.cliente_id,
+          popup_id: popup.id,
+          tarotista_worker_id: popup.tarotista_worker_id,
+          tarotista_nombre: worker.display_name || "",
+          minutos_sobrantes_total,
+          visible: true,
+          read_by_admin: false,
+          read_by_central: false,
+        });
+      }
+    } catch (notifError) {
+      console.error("ERROR CREANDO NOTIFICACION CIERRE", notifError);
+    }
+
+
     return NextResponse.json({
       ok: true,
       popup: closedPopup,
