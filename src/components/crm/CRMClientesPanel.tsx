@@ -194,7 +194,7 @@ export default function CRMClientesPanel({
         setCrmPagoReferencia(draft.referencia_externa);
       }
 
-      setCrmPagoMsg("ℹ️ He recuperado el borrador del cobro de PayPal para este cliente. Pega la referencia y pulsa Confirmar pago.");
+      setCrmPagoMsg("ℹ️ He recuperado el borrador del cobro de PayPal para este cliente. Pega la referencia y pulsa 'Confirmar pago' o 'Pago erróneo'.");
     } catch {}
   }, [crmClienteSelId]);
 
@@ -606,14 +606,10 @@ export default function CRMClientesPanel({
       } catch {}
 
       const url = "https://www.paypal.com/virtualterminal/launch?source=appcenter";
-      const w = window.open(url, "_blank", "noopener,noreferrer");
-
-      if (!w) {
-        throw new Error("POPUP_BLOQUEADO");
-      }
+      window.open(url, "_blank", "noopener,noreferrer");
 
       setCrmPagoMsg(
-        "✅ TPV PayPal abierto. Haz el cobro allí y, al volver, registra la referencia y el pago manualmente en esta misma ficha."
+        "✅ TPV PayPal abierto. Haz el cobro allí y, al volver a esta pestaña, usa 'Confirmar pago' o 'Pago erróneo'."
       );
     } catch (e: any) {
       setCrmPagoMsg(`❌ ${e?.message || "Error abriendo TPV PayPal"}`);
@@ -688,6 +684,72 @@ export default function CRMClientesPanel({
       await loadPagosCliente(clienteId);
     } catch (e: any) {
       setCrmPagoMsg(`❌ ${e?.message || "Error confirmando pago"}`);
+    } finally {
+      setCrmPagoLoading(false);
+    }
+  }
+
+  async function marcarPagoErroneo() {
+    if (!crmClienteSelId && !crmClienteFicha?.id) {
+      setCrmPagoMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+
+    const importe = Number(String(crmPagoImporte).replace(",", "."));
+    if (!importe || importe <= 0) {
+      setCrmPagoMsg("⚠️ Introduce un importe válido");
+      return;
+    }
+
+    try {
+      setCrmPagoLoading(true);
+      setCrmPagoMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+
+      const r = await fetch("/api/crm/pagos/crear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: clienteId,
+          importe,
+          moneda: "EUR",
+          metodo: "paypal_manual",
+          estado: "failed",
+          referencia_externa: crmPagoReferencia.trim(),
+          notas: crmPagoNotas.trim() || "Pago erróneo / no completado",
+        }),
+      });
+
+      const j = await safeJson(r);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
+      try {
+        const raw = sessionStorage.getItem("crm_pago_paypal_draft");
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (String(draft?.cliente_id || "") === String(clienteId)) {
+            sessionStorage.removeItem("crm_pago_paypal_draft");
+          }
+        }
+      } catch {}
+
+      setCrmPagoMsg("✅ Pago marcado como erróneo");
+      setCrmPagoImporte("");
+      setCrmPagoNotas("");
+      setCrmPagoReferencia("");
+      await loadPagosCliente(clienteId);
+    } catch (e: any) {
+      setCrmPagoMsg(`❌ ${e?.message || "Error marcando pago erróneo"}`);
     } finally {
       setCrmPagoLoading(false);
     }
@@ -899,7 +961,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-title">💳 Cobros</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Abre el TPV virtual de PayPal, haz el cobro fuera del CRM y después confirma aquí el pago con su referencia
+                Abre el TPV virtual de PayPal. Cuando termines el cobro, vuelve a esta pestaña y usa 'Confirmar pago' si salió bien o 'Pago erróneo' si falló.
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
