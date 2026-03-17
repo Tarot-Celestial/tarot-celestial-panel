@@ -37,20 +37,22 @@ function PayPalFinalizarInner() {
           return;
         }
 
+        const clienteId = j?.pago?.cliente_id ? String(j.pago.cliente_id) : "";
+
         if (j?.status === "cancelled") {
-          setMsg("Pago cancelado. Ya puedes cerrar esta ventana.");
+          setMsg("Pago cancelado. Volviendo al CRM...");
           setDone(true);
+          window.setTimeout(() => {
+            window.location.href = clienteId ? `/admin?open_cliente_id=${encodeURIComponent(clienteId)}` : "/admin";
+          }, 1200);
           return;
         }
 
-        setMsg("Pago completado correctamente. Ya puedes volver al CRM.");
+        setMsg("Pago completado correctamente. Volviendo al CRM...");
         setDone(true);
-
-        try {
-          if (window.opener) {
-            window.opener.postMessage({ type: "paypal-payment-finished", ok: true }, window.location.origin);
-          }
-        } catch {}
+        window.setTimeout(() => {
+          window.location.href = clienteId ? `/admin?open_cliente_id=${encodeURIComponent(clienteId)}` : "/admin";
+        }, 1200);
       } catch (e: any) {
         if (cancelled) return;
         setMsg(`Error procesando el pago: ${e?.message || "ERR"}`);
@@ -72,7 +74,10 @@ function PayPalFinalizarInner() {
         <p style={{ marginTop: 16, lineHeight: 1.5 }}>{msg}</p>
         {done ? (
           <button
-            onClick={() => window.close()}
+            onClick={() => {
+              const clienteId = searchParams.get("cliente_id") || "";
+              window.location.href = clienteId ? `/admin?open_cliente_id=${encodeURIComponent(clienteId)}` : "/admin";
+            }}
             style={{
               marginTop: 16,
               border: 0,
@@ -81,7 +86,7 @@ function PayPalFinalizarInner() {
               cursor: "pointer",
             }}
           >
-            Cerrar ventana
+            Volver al CRM
           </button>
         ) : null}
       </div>
