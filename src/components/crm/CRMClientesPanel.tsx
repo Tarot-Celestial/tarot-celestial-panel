@@ -173,6 +173,19 @@ export default function CRMClientesPanel({
     return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
 
+  useEffect(() => {
+    function onPayPalFinished(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type !== "paypal-payment-finished") return;
+      if (crmClienteSelId) {
+        loadPagosCliente(crmClienteSelId);
+      }
+    }
+
+    window.addEventListener("message", onPayPalFinished);
+    return () => window.removeEventListener("message", onPayPalFinished);
+  }, [crmClienteSelId]);
+
   const hasPendingPayments = useMemo(
     () => (crmPagos || []).some((p: any) => String(p?.estado || "").toLowerCase() === "pending"),
     [crmPagos]
@@ -574,7 +587,7 @@ export default function CRMClientesPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const popup = window.open("", "_blank", "noopener,noreferrer");
+      const popup = window.open("about:blank", "paypalCobroWindow", "width=520,height=760,noopener,noreferrer");
 
       const r = await fetch("/api/crm/pagos/paypal/create-order", {
         method: "POST",
@@ -600,11 +613,11 @@ export default function CRMClientesPanel({
       await loadPagosCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
 
       if (j?.approve_url) {
-        if (popup) {
-          popup.location.href = j.approve_url;
-        } else {
-          window.location.href = j.approve_url;
+        if (!popup) {
+          throw new Error("POPUP_BLOQUEADO");
         }
+        popup.location.replace(j.approve_url);
+        popup.focus();
       } else {
         if (popup) popup.close();
         throw new Error("NO_APPROVE_URL");
