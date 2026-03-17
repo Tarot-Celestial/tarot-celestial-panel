@@ -238,7 +238,7 @@ export default function Admin() {
     if (!ok) return;
 
     const channel = sb
-      .channel('crm-close-notifs-' + ('admin' in window.location.pathname ? 'admin' : 'central'))
+      .channel("crm-close-notifs-admin")
       .on(
         "postgres_changes",
         {
