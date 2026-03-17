@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -80,10 +80,12 @@ export default function CRMClientesPanel({
   const [crmNewMinFree, setCrmNewMinFree] = useState("0");
   const [crmNewMinNormales, setCrmNewMinNormales] = useState("0");
 
+  // COBROS
   const [crmPagos, setCrmPagos] = useState<any[]>([]);
   const [crmPagosLoading, setCrmPagosLoading] = useState(false);
   const [crmPagoImporte, setCrmPagoImporte] = useState("");
   const [crmPagoNotas, setCrmPagoNotas] = useState("");
+  const [crmPagoReferencia, setCrmPagoReferencia] = useState("");
   const [crmPagoLoading, setCrmPagoLoading] = useState(false);
   const [crmPagoMsg, setCrmPagoMsg] = useState("");
 
@@ -100,6 +102,7 @@ export default function CRMClientesPanel({
   async function loadCRMEtiquetas() {
     try {
       setCrmEtiquetasLoading(true);
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -107,8 +110,13 @@ export default function CRMClientesPanel({
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
+
       const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
+
       setCrmEtiquetasOpts(Array.isArray(j.etiquetas) ? j.etiquetas : []);
     } catch (e) {
       console.error("ERROR CARGANDO ETIQUETAS CRM", e);
@@ -121,6 +129,7 @@ export default function CRMClientesPanel({
   async function loadCRMTarotistas() {
     try {
       setCrmTarotistasLoading(true);
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -128,11 +137,16 @@ export default function CRMClientesPanel({
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
+
       const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      if (!j?._ok || !j?.ok) {
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
 
       const tarotistas = Array.isArray(j.tarotistas) ? j.tarotistas : [];
       setCrmTarotistasOpts(tarotistas);
+
       setCrmTarotistaSendId((prev) => {
         if (prev && tarotistas.some((t: any) => String(t.id) === String(prev))) return prev;
         return "";
@@ -155,33 +169,10 @@ export default function CRMClientesPanel({
       const id = e?.detail?.id;
       if (id) openCRMFicha(String(id));
     }
+
     window.addEventListener("crm-open-cliente", onOpenCliente);
     return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const openId = params.get("open_cliente_id");
-    if (openId) {
-      openCRMFicha(openId);
-      params.delete("open_cliente_id");
-      const newUrl = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
-      window.history.replaceState({}, "", newUrl);
-    }
-  }, []);
-
-  const hasPendingPayments = useMemo(
-    () => (crmPagos || []).some((p: any) => String(p?.estado || "").toLowerCase() === "pending"),
-    [crmPagos]
-  );
-
-  useEffect(() => {
-    if (!crmClienteSelId || !hasPendingPayments) return;
-    const id = window.setInterval(() => {
-      loadPagosCliente(crmClienteSelId);
-    }, 4000);
-    return () => window.clearInterval(id);
-  }, [crmClienteSelId, hasPendingPayments]);
 
   async function searchCRM() {
     const q = crmQuery.trim();
@@ -198,6 +189,7 @@ export default function CRMClientesPanel({
     try {
       setCrmLoading(true);
       setCrmMsg("");
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -213,7 +205,9 @@ export default function CRMClientesPanel({
       const r = await fetch(`/api/crm/clientes/buscar?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const j = await safeJson(r);
+
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setCrmRows(j.clientes || []);
@@ -230,6 +224,7 @@ export default function CRMClientesPanel({
     try {
       setCrmImportLoading(true);
       setCrmMsg("");
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -237,8 +232,11 @@ export default function CRMClientesPanel({
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const j = await safeJson(r);
+
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
       setCrmMsg(j.message || "✅ Importación CRM lanzada correctamente.");
     } catch (e: any) {
       setCrmMsg(`❌ ${e?.message || "Error al importar CRM"}`);
@@ -252,6 +250,7 @@ export default function CRMClientesPanel({
       setCrmCreateMsg("⚠️ El nombre es obligatorio");
       return;
     }
+
     if (!crmNewTelefono.trim()) {
       setCrmCreateMsg("⚠️ El teléfono es obligatorio");
       return;
@@ -260,6 +259,7 @@ export default function CRMClientesPanel({
     try {
       setCrmCreateLoading(true);
       setCrmCreateMsg("");
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -284,6 +284,7 @@ export default function CRMClientesPanel({
       });
 
       const j = await safeJson(r);
+
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setCrmCreateMsg("✅ Cliente creado correctamente");
@@ -337,6 +338,7 @@ export default function CRMClientesPanel({
     setCrmPagosLoading(false);
     setCrmPagoImporte("");
     setCrmPagoNotas("");
+    setCrmPagoReferencia("");
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
   }
@@ -350,6 +352,7 @@ export default function CRMClientesPanel({
     try {
       setCrmPagosLoading(true);
       setCrmPagoMsg("");
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -357,7 +360,9 @@ export default function CRMClientesPanel({
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
+
       const j = await safeJson(r);
+
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setCrmPagos(Array.isArray(j.pagos) ? j.pagos : []);
@@ -385,6 +390,7 @@ export default function CRMClientesPanel({
       const r = await fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(id)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
@@ -420,6 +426,7 @@ export default function CRMClientesPanel({
     try {
       setCrmSaveLoading(true);
       setCrmFichaMsg("");
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -475,6 +482,7 @@ export default function CRMClientesPanel({
       setCrmSendMsg("⚠️ Primero abre una ficha de cliente");
       return;
     }
+
     if (!crmTarotistaSendId) {
       setCrmSendMsg("⚠️ Selecciona una tarotista");
       return;
@@ -483,11 +491,20 @@ export default function CRMClientesPanel({
     try {
       setCrmSendLoading(true);
       setCrmSendMsg("");
+
       const token = await getTokenOrLogin();
       if (!token) return;
 
       const tarotistaSel =
         crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId)) || null;
+
+      console.log("SEND CALL POPUP", {
+        crmTarotistaSendId,
+        tarotistaSel,
+        crmTarotistasOpts,
+        clienteSelId: crmClienteSelId,
+        clienteFichaId: crmClienteFicha?.id,
+      });
 
       const payload = {
         tarotista_worker_id: String(tarotistaSel?.id || crmTarotistaSendId || "").trim(),
@@ -496,8 +513,10 @@ export default function CRMClientesPanel({
         telefono: crmEditTelefono.trim(),
         nombre: crmEditNombre.trim(),
         apellido: crmEditApellido.trim(),
-        minutos_free_pendientes: Number(String(crmSendMinFree).replace(",", ".")) || 0,
-        minutos_normales_pendientes: Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+        minutos_free_pendientes:
+          Number(String(crmSendMinFree).replace(",", ".")) || 0,
+        minutos_normales_pendientes:
+          Number(String(crmSendMinNormales).replace(",", ".")) || 0,
       };
 
       const r = await fetch("/api/crm/call-popups/enviar", {
@@ -508,6 +527,7 @@ export default function CRMClientesPanel({
         },
         body: JSON.stringify(payload),
       });
+
       const j = await safeJson(r);
 
       if (!j?._ok || !j?.ok) {
@@ -521,6 +541,7 @@ export default function CRMClientesPanel({
       }
 
       const tarotistaNombre = tarotistaSel?.display_name || "la tarotista";
+
       setCrmSendMsg(`✅ Llamada enviada a ${tarotistaNombre}`);
     } catch (e: any) {
       setCrmSendMsg(`❌ ${e?.message || "Error enviando llamada"}`);
@@ -529,7 +550,7 @@ export default function CRMClientesPanel({
     }
   }
 
-  async function iniciarPagoPaypal() {
+  async function crearPagoManual() {
     if (!crmClienteSelId && !crmClienteFicha?.id) {
       setCrmPagoMsg("⚠️ Primero abre una ficha de cliente");
       return;
@@ -544,40 +565,34 @@ export default function CRMClientesPanel({
     try {
       setCrmPagoLoading(true);
       setCrmPagoMsg("");
-      const token = await getTokenOrLogin();
-      if (!token) return;
 
-      const r = await fetch("/api/crm/pagos/paypal/create-order", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
-          importe,
-          moneda: "EUR",
-          notas: crmPagoNotas.trim(),
-        }),
-      });
+      const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
 
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) {
-        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      try {
+        sessionStorage.setItem(
+          "crm_pago_paypal_draft",
+          JSON.stringify({
+            cliente_id: clienteId,
+            importe,
+            notas: crmPagoNotas.trim(),
+            referencia_externa: crmPagoReferencia.trim(),
+            ts: Date.now(),
+          })
+        );
+      } catch {}
+
+      const url = "https://www.paypal.com/virtualterminal/launch?source=appcenter";
+      const w = window.open(url, "_blank", "noopener,noreferrer");
+
+      if (!w) {
+        throw new Error("POPUP_BLOQUEADO");
       }
 
-      await loadPagosCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
-
-      if (!j?.approve_url) {
-        throw new Error("NO_APPROVE_URL");
-      }
-
-      setCrmPagoMsg("✅ Pago creado en pending. Redirigiendo a PayPal...");
-      setCrmPagoImporte("");
-      setCrmPagoNotas("");
-      window.location.href = j.approve_url;
+      setCrmPagoMsg(
+        "✅ TPV PayPal abierto. Haz el cobro allí y, al volver, registra la referencia y el pago manualmente en esta misma ficha."
+      );
     } catch (e: any) {
-      setCrmPagoMsg(`❌ ${e?.message || "Error iniciando pago PayPal"}`);
+      setCrmPagoMsg(`❌ ${e?.message || "Error abriendo TPV PayPal"}`);
     } finally {
       setCrmPagoLoading(false);
     }
@@ -589,7 +604,9 @@ export default function CRMClientesPanel({
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <div className="tc-title">👥 CRM</div>
-            <div className="tc-sub">Busca clientes por nombre, teléfono, país o etiqueta</div>
+            <div className="tc-sub">
+              Busca clientes por nombre, teléfono, país o etiqueta
+            </div>
           </div>
 
           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
@@ -620,10 +637,19 @@ export default function CRMClientesPanel({
 
           <div>
             <div className="tc-sub">Etiqueta</div>
-            <select className="tc-input" value={crmTagFilter} onChange={(e) => setCrmTagFilter(e.target.value)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
-              <option value="">{crmEtiquetasLoading ? "Cargando etiquetas..." : "Todas las etiquetas"}</option>
+            <select
+              className="tc-input"
+              value={crmTagFilter}
+              onChange={(e) => setCrmTagFilter(e.target.value)}
+              style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+            >
+              <option value="">
+                {crmEtiquetasLoading ? "Cargando etiquetas..." : "Todas las etiquetas"}
+              </option>
               {crmEtiquetasOpts.map((et: any) => (
-                <option key={et.id} value={et.nombre}>{et.nombre}</option>
+                <option key={et.id} value={et.nombre}>
+                  {et.nombre}
+                </option>
               ))}
             </select>
           </div>
@@ -646,7 +672,9 @@ export default function CRMClientesPanel({
 
       <div className="tc-card">
         <div className="tc-title">➕ Crear cliente nuevo</div>
-        <div className="tc-sub" style={{ marginTop: 6 }}>Alta manual de cliente desde el panel {mode}</div>
+        <div className="tc-sub" style={{ marginTop: 6 }}>
+          Alta manual de cliente desde el panel {mode}
+        </div>
 
         <div className="tc-hr" />
 
@@ -713,8 +741,15 @@ export default function CRMClientesPanel({
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div>
                   <div className="tc-sub">Enviar llamada a tarotista</div>
-                  <select className="tc-input" value={crmTarotistaSendId} onChange={(e) => setCrmTarotistaSendId(e.target.value)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
-                    <option value="">{crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}</option>
+                  <select
+                    className="tc-input"
+                    value={crmTarotistaSendId}
+                    onChange={(e) => setCrmTarotistaSendId(e.target.value)}
+                    style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+                  >
+                    <option value="">
+                      {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
+                    </option>
                     {crmTarotistasOpts.map((t: any) => (
                       <option key={t.id} value={t.id}>
                         {t.display_name || t.id}
@@ -726,12 +761,24 @@ export default function CRMClientesPanel({
                   <div className="tc-grid-2" style={{ marginTop: 12 }}>
                     <div>
                       <div className="tc-sub">Minutos free a enviar</div>
-                      <input className="tc-input" value={crmSendMinFree} onChange={(e) => setCrmSendMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} />
+                      <input
+                        className="tc-input"
+                        value={crmSendMinFree}
+                        onChange={(e) => setCrmSendMinFree(e.target.value)}
+                        placeholder="0"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
                     </div>
 
                     <div>
                       <div className="tc-sub">Minutos cliente a enviar</div>
-                      <input className="tc-input" value={crmSendMinNormales} onChange={(e) => setCrmSendMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} />
+                      <input
+                        className="tc-input"
+                        value={crmSendMinNormales}
+                        onChange={(e) => setCrmSendMinNormales(e.target.value)}
+                        placeholder="0"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -742,7 +789,8 @@ export default function CRMClientesPanel({
                     {[crmEditNombre, crmEditApellido].filter(Boolean).join(" ") || "—"}
                   </div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    {Number(String(crmSendMinFree).replace(",", ".")) || 0} minutos free · {Number(String(crmSendMinNormales).replace(",", ".")) || 0} minutos cliente
+                    {Number(String(crmSendMinFree).replace(",", ".")) || 0} minutos free · {" "}
+                    {Number(String(crmSendMinNormales).replace(",", ".")) || 0} minutos cliente
                   </div>
                 </div>
               </div>
@@ -756,28 +804,59 @@ export default function CRMClientesPanel({
 
               <div className="tc-title">💳 Cobros</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Al pulsar Registrar pago se crea un pago pending y se redirige a PayPal. Al volver, el CRM abrirá esta misma ficha automáticamente.
+                Abre el TPV virtual de PayPal para cobrar fuera del CRM y luego registra aquí la referencia y el resultado
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div>
                   <div className="tc-sub">Importe (€)</div>
-                  <input className="tc-input" value={crmPagoImporte} onChange={(e) => setCrmPagoImporte(e.target.value)} placeholder="20" style={{ width: "100%", marginTop: 6 }} />
+                  <input
+                    className="tc-input"
+                    value={crmPagoImporte}
+                    onChange={(e) => setCrmPagoImporte(e.target.value)}
+                    placeholder="20"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
                 </div>
 
                 <div>
+                  <div className="tc-sub">Referencia PayPal / operación</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoReferencia}
+                    onChange={(e) => setCrmPagoReferencia(e.target.value)}
+                    placeholder="Ej: 7AB12345CD6789012"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div className="tc-grid-1" style={{ marginTop: 12 }}>
+                <div>
                   <div className="tc-sub">Notas</div>
-                  <input className="tc-input" value={crmPagoNotas} onChange={(e) => setCrmPagoNotas(e.target.value)} placeholder="Cobro PayPal" style={{ width: "100%", marginTop: 6 }} />
+                  <input
+                    className="tc-input"
+                    value={crmPagoNotas}
+                    onChange={(e) => setCrmPagoNotas(e.target.value)}
+                    placeholder="Cobro telefónico PayPal"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
                 </div>
               </div>
 
               <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-                <button className="tc-btn tc-btn-ok" onClick={iniciarPagoPaypal} disabled={crmPagoLoading || !crmClienteSelId}>
-                  {crmPagoLoading ? "Redirigiendo..." : "Registrar pago"}
+                <button
+                  className="tc-btn tc-btn-ok"
+                  onClick={crearPagoManual}
+                  disabled={crmPagoLoading || !crmClienteSelId}
+                >
+                  {crmPagoLoading ? "Registrando..." : "Registrar pago"}
                 </button>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>{crmPagoMsg || " "}</div>
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {crmPagoMsg || " "}
+              </div>
 
               <div className="tc-hr" />
 
@@ -789,12 +868,35 @@ export default function CRMClientesPanel({
                   <div className="tc-sub">Sin pagos registrados.</div>
                 ) : (
                   crmPagos.map((p: any) => (
-                    <div key={p.id} className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", border: "1px solid rgba(255,255,255,.08)", borderRadius: 10, padding: "10px 12px", gap: 10, flexWrap: "wrap" }}>
-                      <div className="tc-sub"><b>{eur(p.importe || 0)}</b> · {p.estado || "—"} · {p.metodo || "—"}</div>
-                      <div className="tc-sub">{p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}</div>
-                      {!!p.paypal_order_id && <div className="tc-sub" style={{ width: "100%" }}>Order ID: {p.paypal_order_id}</div>}
-                      {!!p.paypal_capture_id && <div className="tc-sub" style={{ width: "100%" }}>Capture ID: {p.paypal_capture_id}</div>}
-                      {!!p.notas && <div className="tc-sub" style={{ width: "100%" }}>{p.notas}</div>}
+                    <div
+                      key={p.id}
+                      className="tc-row"
+                      style={{
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        border: "1px solid rgba(255,255,255,.08)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div className="tc-sub">
+                        <b>{eur(p.importe || 0)}</b> · {p.estado || "—"} · {p.metodo || "—"}
+                      </div>
+                      <div className="tc-sub">
+                        {p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}
+                      </div>
+                      {!!p.referencia_externa && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          Ref: {p.referencia_externa}
+                        </div>
+                      )}
+                      {!!p.notas && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          {p.notas}
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -810,7 +912,9 @@ export default function CRMClientesPanel({
                 </button>
               </div>
 
-              <div className="tc-sub" style={{ marginTop: 10 }}>{crmFichaMsg || crmSendMsg || " "}</div>
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {crmFichaMsg || crmSendMsg || " "}
+              </div>
             </>
           )}
         </div>
