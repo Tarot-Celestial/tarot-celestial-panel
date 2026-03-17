@@ -228,6 +228,24 @@ export default function Central() {
     })();
   }, []);
 
+
+  async function loadLatestCrmCloseNotif(silent = false) {
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
+
+      const r = await fetch("/api/central/crm/call-close-notifications/latest", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) return;
+      if (j.notification) setCrmCloseNotif(j.notification);
+    } catch {}
+  }
+
   async function loadAttendanceMe(silent = false) {
     if (attLoading && !silent) return;
     if (!silent) {
