@@ -237,6 +237,8 @@ export default function Admin() {
   useEffect(() => {
     if (!ok) return;
 
+    loadLatestCrmCloseNotif(true);
+
     const channel = sb
       .channel("crm-close-notifs-admin")
       .on(
@@ -253,10 +255,31 @@ export default function Admin() {
       )
       .subscribe();
 
+    const timer = setInterval(() => {
+      loadLatestCrmCloseNotif(true);
+    }, 10000);
+
     return () => {
+      clearInterval(timer);
       sb.removeChannel(channel);
     };
   }, [ok]);
+
+
+  async function loadLatestCrmCloseNotif(silent = false) {
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/crm/call-close-notifications/latest", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) return;
+      if (j.notification) setCrmCloseNotif(j.notification);
+    } catch {}
+  }
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -2782,4 +2805,5 @@ function ChecklistRow({
     </div>
   );
 }
+
 
