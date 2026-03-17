@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -85,7 +85,6 @@ export default function CRMClientesPanel({
   const [crmPagosLoading, setCrmPagosLoading] = useState(false);
   const [crmPagoImporte, setCrmPagoImporte] = useState("");
   const [crmPagoNotas, setCrmPagoNotas] = useState("");
-  const [crmPagoReferencia, setCrmPagoReferencia] = useState("");
   const [crmPagoLoading, setCrmPagoLoading] = useState(false);
   const [crmPagoMsg, setCrmPagoMsg] = useState("");
 
@@ -173,6 +172,21 @@ export default function CRMClientesPanel({
     window.addEventListener("crm-open-cliente", onOpenCliente);
     return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
+
+  const hasPendingPayments = useMemo(
+    () => (crmPagos || []).some((p: any) => String(p?.estado || "").toLowerCase() === "pending"),
+    [crmPagos]
+  );
+
+  useEffect(() => {
+    if (!crmClienteSelId || !hasPendingPayments) return;
+
+    const id = window.setInterval(() => {
+      loadPagosCliente(crmClienteSelId);
+    }, 4000);
+
+    return () => window.clearInterval(id);
+  }, [crmClienteSelId, hasPendingPayments]);
 
   async function searchCRM() {
     const q = crmQuery.trim();
@@ -338,7 +352,6 @@ export default function CRMClientesPanel({
     setCrmPagosLoading(false);
     setCrmPagoImporte("");
     setCrmPagoNotas("");
-    setCrmPagoReferencia("");
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
   }
@@ -498,14 +511,6 @@ export default function CRMClientesPanel({
       const tarotistaSel =
         crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId)) || null;
 
-      console.log("SEND CALL POPUP", {
-        crmTarotistaSendId,
-        tarotistaSel,
-        crmTarotistasOpts,
-        clienteSelId: crmClienteSelId,
-        clienteFichaId: crmClienteFicha?.id,
-      });
-
       const payload = {
         tarotista_worker_id: String(tarotistaSel?.id || crmTarotistaSendId || "").trim(),
         display_name: String(tarotistaSel?.display_name || "").trim(),
@@ -550,7 +555,7 @@ export default function CRMClientesPanel({
     }
   }
 
-  async function crearPagoManual() {
+  async function iniciarPagoPaypal() {
     if (!crmClienteSelId && !crmClienteFicha?.id) {
       setCrmPagoMsg("⚠️ Primero abre una ficha de cliente");
       return;
@@ -569,7 +574,9 @@ export default function CRMClientesPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const r = await fetch("/api/crm/pagos/crear", {
+      const popup = window.open("", "_blank", "noopener,noreferrer");
+
+      const r = await fetch("/api/crm/pagos/paypal/create-order", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -579,9 +586,6 @@ export default function CRMClientesPanel({
           cliente_id: String(crmClienteFicha?.id || crmClienteSelId || "").trim(),
           importe,
           moneda: "EUR",
-          metodo: "paypal_manual",
-          estado: "completed",
-          referencia_externa: crmPagoReferencia.trim(),
           notas: crmPagoNotas.trim(),
         }),
       });
@@ -589,17 +593,28 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
 
       if (!j?._ok || !j?.ok) {
+        if (popup) popup.close();
         throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
       }
 
-      setCrmPagoMsg("✅ Pago registrado");
+      await loadPagosCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
+
+      if (j?.approve_url) {
+        if (popup) {
+          popup.location.href = j.approve_url;
+        } else {
+          window.location.href = j.approve_url;
+        }
+      } else {
+        if (popup) popup.close();
+        throw new Error("NO_APPROVE_URL");
+      }
+
+      setCrmPagoMsg("✅ Pago creado en pending. Se ha abierto PayPal para completar el cobro.");
       setCrmPagoImporte("");
       setCrmPagoNotas("");
-      setCrmPagoReferencia("");
-
-      await loadPagosCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
     } catch (e: any) {
-      setCrmPagoMsg(`❌ ${e?.message || "Error registrando pago"}`);
+      setCrmPagoMsg(`❌ ${e?.message || "Error iniciando pago PayPal"}`);
     } finally {
       setCrmPagoLoading(false);
     }
@@ -811,7 +826,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-title">💳 Cobros</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
-                Registro manual del cobro realizado en PayPal / TPV externo
+                Al pulsar Registrar pago se crea un pago pending y se abre PayPal para completar el cobro.
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
@@ -827,25 +842,12 @@ export default function CRMClientesPanel({
                 </div>
 
                 <div>
-                  <div className="tc-sub">Referencia PayPal / operación</div>
-                  <input
-                    className="tc-input"
-                    value={crmPagoReferencia}
-                    onChange={(e) => setCrmPagoReferencia(e.target.value)}
-                    placeholder="Ej: 7AB12345CD6789012"
-                    style={{ width: "100%", marginTop: 6 }}
-                  />
-                </div>
-              </div>
-
-              <div className="tc-grid-1" style={{ marginTop: 12 }}>
-                <div>
                   <div className="tc-sub">Notas</div>
                   <input
                     className="tc-input"
                     value={crmPagoNotas}
                     onChange={(e) => setCrmPagoNotas(e.target.value)}
-                    placeholder="Cobro telefónico PayPal"
+                    placeholder="Cobro PayPal"
                     style={{ width: "100%", marginTop: 6 }}
                   />
                 </div>
@@ -854,10 +856,10 @@ export default function CRMClientesPanel({
               <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button
                   className="tc-btn tc-btn-ok"
-                  onClick={crearPagoManual}
+                  onClick={iniciarPagoPaypal}
                   disabled={crmPagoLoading || !crmClienteSelId}
                 >
-                  {crmPagoLoading ? "Registrando..." : "Registrar pago"}
+                  {crmPagoLoading ? "Abriendo PayPal..." : "Registrar pago"}
                 </button>
               </div>
 
@@ -894,9 +896,14 @@ export default function CRMClientesPanel({
                       <div className="tc-sub">
                         {p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}
                       </div>
-                      {!!p.referencia_externa && (
+                      {!!p.paypal_order_id && (
                         <div className="tc-sub" style={{ width: "100%" }}>
-                          Ref: {p.referencia_externa}
+                          Order ID: {p.paypal_order_id}
+                        </div>
+                      )}
+                      {!!p.paypal_capture_id && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          Capture ID: {p.paypal_capture_id}
                         </div>
                       )}
                       {!!p.notas && (
