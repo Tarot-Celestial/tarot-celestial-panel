@@ -108,6 +108,7 @@ export default function Admin() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("facturas");
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
+  const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
 
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");
@@ -250,7 +251,9 @@ export default function Admin() {
         },
         (payload) => {
           const n: any = payload.new;
-          setCrmCloseNotif(n);
+          if (!crmDismissedIds.includes(String(n?.id || ""))) {
+            setCrmCloseNotif(n);
+          }
         }
       )
       .subscribe();
@@ -263,7 +266,7 @@ export default function Admin() {
       clearInterval(timer);
       sb.removeChannel(channel);
     };
-  }, [ok]);
+  }, [ok, crmDismissedIds]);
 
 
   async function loadLatestCrmCloseNotif(silent = false) {
@@ -277,7 +280,10 @@ export default function Admin() {
       });
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) return;
-      if (j.notification) setCrmCloseNotif(j.notification);
+      const notif = j.notification || null;
+      if (!notif?.id) return;
+      if (crmDismissedIds.includes(String(notif.id))) return;
+      setCrmCloseNotif(notif);
     } catch {}
   }
 
@@ -2469,7 +2475,9 @@ export default function Admin() {
               <button
                 className="tc-btn"
                 onClick={async () => {
-                  await markCrmCloseNotifRead(String(crmCloseNotif?.id || ""));
+                  const notifId = String(crmCloseNotif?.id || "");
+                  if (notifId) setCrmDismissedIds((prev) => (prev.includes(notifId) ? prev : [...prev, notifId]));
+                  await markCrmCloseNotifRead(notifId);
                   setCrmCloseNotif(null);
                 }}
               >
@@ -2478,7 +2486,9 @@ export default function Admin() {
               <button
                 className="tc-btn tc-btn-gold"
                 onClick={async () => {
-                  await markCrmCloseNotifRead(String(crmCloseNotif?.id || ""));
+                  const notifId = String(crmCloseNotif?.id || "");
+                  if (notifId) setCrmDismissedIds((prev) => (prev.includes(notifId) ? prev : [...prev, notifId]));
+                  await markCrmCloseNotifRead(notifId);
                   setTab("crm" as any);
                   setTimeout(() => {
                     window.dispatchEvent(
@@ -2829,5 +2839,4 @@ function ChecklistRow({
     </div>
   );
 }
-
 
