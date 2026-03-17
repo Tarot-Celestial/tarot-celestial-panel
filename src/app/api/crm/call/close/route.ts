@@ -50,6 +50,10 @@ async function workerFromReq(req: Request) {
   return data || null;
 }
 
+function normalizeRole(v: any) {
+  return String(v || "").trim().toLowerCase();
+}
+
 export async function POST(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -58,7 +62,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
 
-    if (String(worker.role || "") !== "tarotista") {
+    if (normalizeRole(worker.role) !== "tarotista") {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -170,54 +174,47 @@ export async function POST(req: Request) {
       .eq("id", popup.cliente_id);
 
     if (updateClienteError) throw updateClienteError;
-const { data: closedPopup, error: closeError } = await admin
-  .from("crm_call_popups")
-  .update({
-    closed: true,
-    visible: false,
-    minutos_free_consumidos: consumidos_free,
-    minutos_normales_consumidos: consumidos_normales,
-    closed_at: new Date().toISOString(),
-  })
-  .eq("id", popup_id)
-  .select("*")
-  .maybeSingle();
 
-if (closeError) throw closeError;
+    const { data: closedPopup, error: closeError } = await admin
+      .from("crm_call_popups")
+      .update({
+        closed: true,
+        visible: false,
+        minutos_free_consumidos: consumidos_free,
+        minutos_normales_consumidos: consumidos_normales,
+        closed_at: new Date().toISOString(),
+      })
+      .eq("id", popup_id)
+      .select("*")
+      .maybeSingle();
 
-return NextResponse.json({
-  ok: true,
-  popup: closedPopup,
-  restantes_free,
-  restantes_normales,
-  cliente_actualizado: {
-    id: popup.cliente_id,
-    minutos_free_pendientes: nuevoFree,
-    minutos_normales_pendientes: nuevoNormales,
-  },
-});
+    if (closeError) throw closeError;
 
-  if (notifError) throw notifError;
-}
+    const minutos_sobrantes_total = restantes_free + restantes_normales;
 
-return NextResponse.json({
-  ok: true,
-  popup: closedPopup,
-  restantes_free,
-  restantes_normales,
-  cliente_actualizado: {
-    id: popup.cliente_id,
-    minutos_free_pendientes: nuevoFree,
-    minutos_normales_pendientes: nuevoNormales,
-  },
-});
+    if (minutos_sobrantes_total > 0) {
+      const { error: notifError } = await admin
+        .from("crm_call_close_notifications")
+        .insert({
+          cliente_id: popup.cliente_id,
+          popup_id: popup.id,
+          tarotista_worker_id: popup.tarotista_worker_id,
+          tarotista_nombre: worker.display_name || "",
+          minutos_sobrantes_total,
+          visible: true,
+          read_by_admin: false,
+          read_by_central: false,
+        });
 
+      if (notifError) throw notifError;
+    }
 
     return NextResponse.json({
       ok: true,
       popup: closedPopup,
       restantes_free,
       restantes_normales,
+      minutos_sobrantes_total,
       cliente_actualizado: {
         id: popup.cliente_id,
         minutos_free_pendientes: nuevoFree,
