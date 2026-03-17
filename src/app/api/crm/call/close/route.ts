@@ -170,8 +170,7 @@ export async function POST(req: Request) {
       .eq("id", popup.cliente_id);
 
     if (updateClienteError) throw updateClienteError;
-
-    const { data: closedPopup, error: closeError } = await admin
+const { data: closedPopup, error: closeError } = await admin
   .from("crm_call_popups")
   .update({
     closed: true,
@@ -186,22 +185,17 @@ export async function POST(req: Request) {
 
 if (closeError) throw closeError;
 
-// 🔔 crear notificación para admin / central
-const minutos_sobrantes_total = restantes_free + restantes_normales;
-
-if (minutos_sobrantes_total > 0) {
-  const { error: notifError } = await admin
-    .from("crm_call_close_notifications")
-    .insert({
-      cliente_id: popup.cliente_id,
-      popup_id: popup.id,
-      tarotista_worker_id: popup.tarotista_worker_id,
-      tarotista_nombre: worker.display_name || "",
-      minutos_sobrantes_total,
-      visible: true,
-      read_by_admin: false,
-      read_by_central: false,
-    });
+return NextResponse.json({
+  ok: true,
+  popup: closedPopup,
+  restantes_free,
+  restantes_normales,
+  cliente_actualizado: {
+    id: popup.cliente_id,
+    minutos_free_pendientes: nuevoFree,
+    minutos_normales_pendientes: nuevoNormales,
+  },
+});
 
   if (notifError) throw notifError;
 }
