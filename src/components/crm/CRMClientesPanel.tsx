@@ -155,6 +155,16 @@ export default function CRMClientesPanel({
     loadCRMTarotistas();
   }, []);
 
+  useEffect(() => {
+    function onOpenCliente(e: any) {
+      const id = e?.detail?.id;
+      if (id) openCRMFicha(String(id));
+    }
+
+    window.addEventListener("crm-open-cliente", onOpenCliente);
+    return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
+  }, []);
+
   async function searchCRM() {
     const q = crmQuery.trim();
     const telefono = crmPhoneFilter.trim();
@@ -763,4 +773,5 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
 
