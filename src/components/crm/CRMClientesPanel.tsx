@@ -751,7 +751,7 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }}>
       <div className="tc-card">
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
@@ -1184,3 +1184,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
