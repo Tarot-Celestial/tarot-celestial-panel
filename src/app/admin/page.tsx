@@ -1225,18 +1225,18 @@ export default function Admin() {
     return map;
   }, [staffSchedules]);
 
-  if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
+  if (!ok) return <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center" }}>Cargando…</div>;
 
   return (
     <>
       <AppHeader />
 
-      <div className="tc-wrap">
-        <div className="tc-container">
-          <div className="tc-card">
-            <div className="tc-row" style={{ justifyContent: "space-between" }}>
+      <div className="tc-wrap" style={{ padding: 28 }}>
+        <div className="tc-container" style={{ maxWidth: 1440 }}>
+          <div className="tc-card" style={{ padding: 22, borderRadius: 24, background: "linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035))", boxShadow: "0 24px 70px rgba(0,0,0,0.28)" }}>
+            <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
               <div>
-                <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
+                <div className="tc-title" style={{ fontSize: 24, letterSpacing: ".02em" }}>👑 Admin — Tarot Celestial</div>
                 <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM</div>
               </div>
 
@@ -1255,7 +1255,7 @@ export default function Admin() {
               </div>
             </div>
 
-            <div style={{ marginTop: 12 }} className="tc-tabs">
+            <div style={{ marginTop: 16, padding: 8, borderRadius: 18, background: "rgba(255,255,255,0.05)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)" }} className="tc-tabs">
               <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
                 🧾 Facturas
               </button>
@@ -2539,13 +2539,17 @@ function KpiBox({ label, value, highlight }: { label: string; value: string; hig
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
+        borderRadius: 18,
+        padding: 16,
+        background: highlight
+          ? "linear-gradient(180deg, rgba(215,181,109,0.16), rgba(215,181,109,0.08))"
+          : "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025))",
+        boxShadow: "0 18px 36px rgba(0,0,0,0.18)",
+        backdropFilter: "blur(10px)",
       }}
     >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
+      <div className="tc-sub" style={{ textTransform: "uppercase", letterSpacing: ".05em", fontSize: 11 }}>{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 24, marginTop: 8, lineHeight: 1.05 }}>{value}</div>
     </div>
   );
 }
@@ -2555,21 +2559,22 @@ function KpiMini({ label, value }: { label: string; value: string }) {
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 12,
-        padding: 10,
-        background: "rgba(255,255,255,0.03)",
+        borderRadius: 16,
+        padding: 12,
+        background: "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025))",
+        boxShadow: "0 12px 24px rgba(0,0,0,0.12)",
       }}
     >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
+      <div className="tc-sub" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em" }}>{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 8 }}>{value}</div>
     </div>
   );
 }
 
 function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
+    <div className="tc-card" style={{ padding: 16, borderRadius: 20, background: "linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03))", boxShadow: "0 18px 36px rgba(0,0,0,0.16)" }}>
+      <div className="tc-title" style={{ fontSize: 15 }}>{title}</div>
       <div className="tc-hr" />
       <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
@@ -2833,14 +2838,6 @@ function ChecklistRow({
   }
 
   return (
-  <div style={{
-    padding:28,
-    maxWidth:1400,
-    margin:"0 auto",
-    display:"grid",
-    gap:20
-  }}>
-
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2868,7 +2865,5 @@ function ChecklistRow({
 
       {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
-  
-</div>
-);
+  );
 }
