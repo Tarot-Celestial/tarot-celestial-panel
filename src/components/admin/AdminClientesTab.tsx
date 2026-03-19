@@ -101,6 +101,25 @@ function KpiCard({
   hint: string;
   accent: string;
 }) {
+
+  const visibleBonusRows = useMemo(() => {
+    return combinedBonusRows.filter(({ item, variant }) =>
+      !isDismissed(dismissKey(variant === "vip" ? "vip" : "bonus", item))
+    );
+  }, [combinedBonusRows, dismissedKeys]);
+
+  const visibleRedRows = useMemo(() => {
+    return (data?.inactivityAlerts?.red || []).filter(
+      (item) => !isDismissed(dismissKey("inactive-red", item))
+    );
+  }, [data, dismissedKeys]);
+
+  const visibleYellowRows = useMemo(() => {
+    return (data?.inactivityAlerts?.yellow || []).filter(
+      (item) => !isDismissed(dismissKey("inactive-yellow", item))
+    );
+  }, [data, dismissedKeys]);
+
   return (
     <div
       style={{
@@ -177,6 +196,25 @@ function AlertRow({
       glow: "rgba(181,156,255,.22)",
     },
   }[tone];
+
+
+  const visibleBonusRows = useMemo(() => {
+    return combinedBonusRows.filter(({ item, variant }) =>
+      !isDismissed(dismissKey(variant === "vip" ? "vip" : "bonus", item))
+    );
+  }, [combinedBonusRows, dismissedKeys]);
+
+  const visibleRedRows = useMemo(() => {
+    return (data?.inactivityAlerts?.red || []).filter(
+      (item) => !isDismissed(dismissKey("inactive-red", item))
+    );
+  }, [data, dismissedKeys]);
+
+  const visibleYellowRows = useMemo(() => {
+    return (data?.inactivityAlerts?.yellow || []).filter(
+      (item) => !isDismissed(dismissKey("inactive-yellow", item))
+    );
+  }, [data, dismissedKeys]);
 
   return (
     <div
@@ -256,6 +294,43 @@ export default function AdminClientesTab({
   const [msg, setMsg] = useState("");
   const [data, setData] = useState<ApiPayload | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
+
+
+  function persistDismissed(next: string[]) {
+    setDismissedKeys(next);
+    try {
+      window.localStorage.setItem("admin-clientes-dismissed-v1", JSON.stringify(next));
+    } catch {}
+  }
+
+  function dismissKey(kind: "bonus" | "vip" | "inactive-yellow" | "inactive-red", item: AlertItem) {
+    if (kind === "bonus") {
+      return `bonus:${item.cliente_id}:${Number(item.bonus_count || 0)}`;
+    }
+    if (kind === "vip") {
+      return `vip:${item.cliente_id}:1000`;
+    }
+    return `${kind}:${item.cliente_id}:${item.ultimo_pago_at || "none"}`;
+  }
+
+  function isDismissed(key: string) {
+    return dismissedKeys.includes(key);
+  }
+
+  function dismissAlert(key: string) {
+    if (!key) return;
+    persistDismissed(Array.from(new Set([...dismissedKeys, key])));
+  }
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("admin-clientes-dismissed-v1");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) setDismissedKeys(parsed.map((x) => String(x)));
+    } catch {}
+  }, []);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -291,6 +366,20 @@ export default function AdminClientesTab({
 
       setData(j);
       setLastUpdated(j.generated_at || new Date().toISOString());
+
+      try {
+        const validKeys = new Set<string>();
+        for (const item of j?.bonusAlerts || []) validKeys.add(dismissKey("bonus", item));
+        for (const item of j?.vipAlerts || []) validKeys.add(dismissKey("vip", item));
+        for (const item of j?.inactivityAlerts?.yellow || []) validKeys.add(dismissKey("inactive-yellow", item));
+        for (const item of j?.inactivityAlerts?.red || []) validKeys.add(dismissKey("inactive-red", item));
+
+        const nextDismissed = dismissedKeys.filter((k) => validKeys.has(k));
+        if (nextDismissed.length !== dismissedKeys.length) {
+          persistDismissed(nextDismissed);
+        }
+      } catch {}
+
       if (!silent) setMsg("✅ Vista de clientes actualizada.");
     } catch (e: any) {
       if (!silent) setMsg(`❌ ${e?.message || "Error cargando alertas"}`);
@@ -343,10 +432,38 @@ export default function AdminClientesTab({
     return rows;
   }, [data]);
 
-  function reviewClient(clienteId: string) {
+  function reviewClient(
+    clienteId: string,
+    dismissKind?: "bonus" | "vip" | "inactive-yellow" | "inactive-red",
+    item?: AlertItem
+  ) {
     if (!clienteId) return;
+
+    if (dismissKind && item) {
+      dismissAlert(dismissKey(dismissKind, item));
+    }
+
     onReviewClient?.(clienteId);
   }
+
+
+  const visibleBonusRows = useMemo(() => {
+    return combinedBonusRows.filter(({ item, variant }) =>
+      !isDismissed(dismissKey(variant === "vip" ? "vip" : "bonus", item))
+    );
+  }, [combinedBonusRows, dismissedKeys]);
+
+  const visibleRedRows = useMemo(() => {
+    return (data?.inactivityAlerts?.red || []).filter(
+      (item) => !isDismissed(dismissKey("inactive-red", item))
+    );
+  }, [data, dismissedKeys]);
+
+  const visibleYellowRows = useMemo(() => {
+    return (data?.inactivityAlerts?.yellow || []).filter(
+      (item) => !isDismissed(dismissKey("inactive-yellow", item))
+    );
+  }, [data, dismissedKeys]);
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -420,14 +537,14 @@ export default function AdminClientesTab({
                 border: "1px solid rgba(255,208,104,.18)",
               }}
             >
-              {combinedBonusRows.length} avisos
+              {visibleBonusRows.length} avisos
             </div>
           </div>
 
           <div className="tc-hr" />
 
           <div style={{ display: "grid", gap: 12 }}>
-            {combinedBonusRows.length === 0 ? (
+            {visibleBonusRows.length === 0 ? (
               <div
                 style={{
                   borderRadius: 18,
@@ -442,7 +559,7 @@ export default function AdminClientesTab({
                 </div>
               </div>
             ) : (
-              combinedBonusRows.map(({ item, variant }) => (
+              visibleBonusRows.map(({ item, variant }) => (
                 <AlertRow
                   key={`${item.cliente_id}-${variant}`}
                   item={item}
@@ -493,7 +610,7 @@ export default function AdminClientesTab({
           <div className="tc-hr" />
 
           <div style={{ display: "grid", gap: 12 }}>
-            {(data?.inactivityAlerts?.red || []).map((item) => (
+            {visibleRedRows.map((item) => (
               <AlertRow
                 key={`${item.cliente_id}-red`}
                 item={item}
@@ -505,7 +622,7 @@ export default function AdminClientesTab({
               />
             ))}
 
-            {(data?.inactivityAlerts?.yellow || []).map((item) => (
+            {visibleYellowRows.map((item) => (
               <AlertRow
                 key={`${item.cliente_id}-yellow`}
                 item={item}
@@ -517,7 +634,7 @@ export default function AdminClientesTab({
               />
             ))}
 
-            {(data?.inactivityAlerts?.red || []).length === 0 && (data?.inactivityAlerts?.yellow || []).length === 0 ? (
+            {visibleRedRows.length === 0 && visibleYellowRows.length === 0 ? (
               <div
                 style={{
                   borderRadius: 18,
