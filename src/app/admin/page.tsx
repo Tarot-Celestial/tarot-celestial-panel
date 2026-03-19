@@ -145,13 +145,7 @@ export default function Admin() {
   const lastMonthRef = useRef<string>("");
 
   const totalSum = useMemo(() => {
-    return (
-<div style={{
-  padding:24,
-  maxWidth:1400,
-  margin:"0 auto",
-}}>
-invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -2839,6 +2833,14 @@ function ChecklistRow({
   }
 
   return (
+  <div style={{
+    padding:28,
+    maxWidth:1400,
+    margin:"0 auto",
+    display:"grid",
+    gap:20
+  }}>
+
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2870,4 +2872,3 @@ function ChecklistRow({
 </div>
 );
 }
-
