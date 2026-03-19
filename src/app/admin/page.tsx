@@ -16,7 +16,8 @@ function monthKeyNow() {
 
 function eur(n: any) {
   const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" }</div>
+);
 }
 
 function numES(n: any, digits = 2) {
@@ -24,7 +25,8 @@ function numES(n: any, digits = 2) {
   return x.toLocaleString("es-ES", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  });
+  }</div>
+);
 }
 
 function minsToHhmm(mins: any) {
@@ -145,7 +147,8 @@ export default function Admin() {
   const lastMonthRef = useRef<string>("");
 
   const totalSum = useMemo(() => {
-    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -221,11 +224,13 @@ export default function Admin() {
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+      if (!token) return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>window.location.href = "/login");
 
       const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
       const me = await safeJson(meRes);
-      if (!me?.ok) return (window.location.href = "/login");
+      if (!me?.ok) return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>window.location.href = "/login");
 
       if (me.role !== "admin") {
         window.location.href = me.role === "central" ? "/panel-central" : "/panel-tarotista";
@@ -264,7 +269,8 @@ export default function Admin() {
       loadLatestCrmCloseNotif(true);
     }, 10000);
 
-    return () => {
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>) => {
       clearInterval(timer);
       sb.removeChannel(channel);
     };
@@ -983,7 +989,8 @@ export default function Admin() {
       if (tab === "contabilidad") loadAccounting(true);
     }, 8000);
 
-    return () => {
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>) => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
@@ -1108,11 +1115,13 @@ export default function Admin() {
   const ckFiltered = useMemo(() => {
     const qq = ckQ.trim().toLowerCase();
     if (!qq) return ckItems || [];
-    return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
   }, [ckItems, ckQ]);
 
   const expectedNow = useMemo(() => {
-    return (attExpected || []).map((x: any) => ({
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>attExpected || []).map((x: any) => ({
       ...x,
       is_online: typeof x.online === "boolean" ? !!x.online : !!x.is_online,
       status: String(x.status || "working"),
@@ -1128,7 +1137,8 @@ export default function Admin() {
   }, [invoices]);
 
   const statsMergedRows = useMemo(() => {
-    return (statsRows || []).map((r: any) => {
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>statsRows || []).map((r: any) => {
       const inv = statsInvoiceMap.get(String(r.worker_id));
       return {
         ...r,
@@ -1197,14 +1207,16 @@ export default function Admin() {
   const filteredWorkers = useMemo(() => {
     const q = staffQ.trim().toLowerCase();
     if (!q) return staffWorkers || [];
-    return (staffWorkers || []).filter((w: any) => {
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>staffWorkers || []).filter((w: any) => {
       const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
       return text.includes(q);
     });
   }, [staffWorkers, staffQ]);
 
   const staffOperationalWorkers = useMemo(() => {
-    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
+    return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
   }, [filteredWorkers]);
 
   const schedulesByWorker = useMemo(() => {
@@ -1228,6 +1240,7 @@ export default function Admin() {
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <>
       <AppHeader />
 
@@ -1838,6 +1851,7 @@ export default function Admin() {
                       {(staffOperationalWorkers || []).map((w: any) => {
                         const schedules = schedulesByWorker.get(String(w.id)) || [];
                         return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
                           <tr key={w.id}>
                             <td><b>{w.display_name || "—"}</b></td>
                             <td>{w.role || "—"}</td>
@@ -2067,6 +2081,7 @@ export default function Admin() {
                   {(staffOperationalWorkers || []).map((w: any) => {
                     const schedules = schedulesByWorker.get(String(w.id)) || [];
                     return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
                       <div
                         key={w.id}
                         style={{
@@ -2312,6 +2327,7 @@ export default function Admin() {
                         const diff = Number(r.diff_minutes || 0);
                         const diffLabel = minsToHhmm(Math.abs(diff));
                         return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
                           <tr key={`${r.worker_id}-${r.group_key}-${idx}`}>
                             <td><b>{r.group_key}</b></td>
                             <td>{r.display_name || r.worker_id}</td>
@@ -2531,11 +2547,13 @@ export default function Admin() {
       )}
 
     </>
-  );
+  </div>
+);
 }
 
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2547,11 +2565,13 @@ function KpiBox({ label, value, highlight }: { label: string; value: string; hig
       <div className="tc-sub">{label}</div>
       <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
     </div>
-  );
+  </div>
+);
 }
 
 function KpiMini({ label, value }: { label: string; value: string }) {
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2563,11 +2583,13 @@ function KpiMini({ label, value }: { label: string; value: string }) {
       <div className="tc-sub">{label}</div>
       <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
     </div>
-  );
+  </div>
+);
 }
 
 function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
       <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
       <div className="tc-hr" />
@@ -2580,7 +2602,8 @@ function TopStatsCard({ title, items }: { title: string; items: string[] }) {
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 function LineEditor({
@@ -2638,6 +2661,7 @@ function LineEditor({
   }
 
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2717,7 +2741,8 @@ function LineEditor({
         )}
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 function ScheduleRow({
@@ -2744,6 +2769,7 @@ function ScheduleRow({
   }, [schedule]);
 
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2801,7 +2827,8 @@ function ScheduleRow({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }
 
 function ChecklistRow({
@@ -2833,6 +2860,7 @@ function ChecklistRow({
   }
 
   return (
+  <div style={{padding:16, background:"#0b0d10", minHeight:"100vh"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2860,6 +2888,8 @@ function ChecklistRow({
 
       {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
-  );
+  </div>
+);
 }
+
 
