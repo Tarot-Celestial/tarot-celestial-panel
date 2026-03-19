@@ -146,7 +146,13 @@ export default function Admin() {
 
   const totalSum = useMemo(() => {
     return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+
+<div style={{
+  display: "grid",
+  gridTemplateColumns: "260px 1fr",
+  minHeight: "100vh",
+}}>
+invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -222,13 +228,11 @@ export default function Admin() {
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>window.location.href = "/login");
+      if (!token) return (window.location.href = "/login");
 
       const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
       const me = await safeJson(meRes);
-      if (!me?.ok) return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>window.location.href = "/login");
+      if (!me?.ok) return (window.location.href = "/login");
 
       if (me.role !== "admin") {
         window.location.href = me.role === "central" ? "/panel-central" : "/panel-tarotista";
@@ -267,8 +271,7 @@ export default function Admin() {
       loadLatestCrmCloseNotif(true);
     }, 10000);
 
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>) => {
+    return () => {
       clearInterval(timer);
       sb.removeChannel(channel);
     };
@@ -987,8 +990,7 @@ export default function Admin() {
       if (tab === "contabilidad") loadAccounting(true);
     }, 8000);
 
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>) => {
+    return () => {
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = null;
     };
@@ -1113,13 +1115,11 @@ export default function Admin() {
   const ckFiltered = useMemo(() => {
     const qq = ckQ.trim().toLowerCase();
     if (!qq) return ckItems || [];
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
+    return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
   }, [ckItems, ckQ]);
 
   const expectedNow = useMemo(() => {
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>attExpected || []).map((x: any) => ({
+    return (attExpected || []).map((x: any) => ({
       ...x,
       is_online: typeof x.online === "boolean" ? !!x.online : !!x.is_online,
       status: String(x.status || "working"),
@@ -1135,8 +1135,7 @@ export default function Admin() {
   }, [invoices]);
 
   const statsMergedRows = useMemo(() => {
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>statsRows || []).map((r: any) => {
+    return (statsRows || []).map((r: any) => {
       const inv = statsInvoiceMap.get(String(r.worker_id));
       return {
         ...r,
@@ -1205,16 +1204,14 @@ export default function Admin() {
   const filteredWorkers = useMemo(() => {
     const q = staffQ.trim().toLowerCase();
     if (!q) return staffWorkers || [];
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>staffWorkers || []).filter((w: any) => {
+    return (staffWorkers || []).filter((w: any) => {
       const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
       return text.includes(q);
     });
   }, [staffWorkers, staffQ]);
 
   const staffOperationalWorkers = useMemo(() => {
-    return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
+    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
   }, [filteredWorkers]);
 
   const schedulesByWorker = useMemo(() => {
@@ -1238,13 +1235,12 @@ export default function Admin() {
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
     <>
       <AppHeader />
 
-      <div className="tc-wrap">
+      <div className="tc-wrap" style={{padding:28, maxWidth:1400, margin:"0 auto"}}>
         <div className="tc-container">
-          <div className="tc-card">
+          <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
@@ -1298,7 +1294,7 @@ export default function Admin() {
           </div>
 
           {tab === "facturas" && (
-            <div className="tc-card">
+            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🧾 Facturas del mes</div>
@@ -1378,7 +1374,7 @@ export default function Admin() {
           )}
 
           {tab === "editor" && (
-            <div className="tc-card">
+            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">✏️ Editor de factura</div>
@@ -1460,7 +1456,7 @@ export default function Admin() {
 
           {tab === "estadisticas" && (
             <div style={{ display: "grid", gap: 16 }}>
-              <div className="tc-card">
+              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title">📈 Estadísticas del mes</div>
@@ -1526,7 +1522,7 @@ export default function Admin() {
               </div>
 
               <div className="tc-grid-2">
-                <div className="tc-card">
+                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                   <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Comparativa clara entre fuego y agua
@@ -1542,7 +1538,7 @@ export default function Admin() {
                   </div>
                 </div>
 
-                <div className="tc-card">
+                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                   <div className="tc-title" style={{ fontSize: 14 }}>⏱️ Top por minutos</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Las 5 tarotistas con más producción del mes
@@ -1582,7 +1578,7 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="tc-card">
+              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                 <div className="tc-title">📋 Rendimiento por tarotista</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
                   Tabla completa con producción, calidad, dinero y aceptación de factura
@@ -1665,7 +1661,7 @@ export default function Admin() {
 
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
-              <div className="tc-card">
+              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title">🟢 Asistencia (en vivo)</div>
@@ -1700,7 +1696,7 @@ export default function Admin() {
               </div>
 
               <div className="tc-grid-2">
-                <div className="tc-card">
+                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                   <div className="tc-title" style={{ fontSize: 14 }}>🟢 Conectados ahora</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Estado real según control horario
@@ -1740,7 +1736,7 @@ export default function Admin() {
                   )}
                 </div>
 
-                <div className="tc-card">
+                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                   <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Comparativa entre horario activo y presencia real
@@ -1799,7 +1795,7 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="tc-card">
+              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 14 }}>👥 Gestión de plantilla y horarios</div>
@@ -1849,7 +1845,6 @@ export default function Admin() {
                       {(staffOperationalWorkers || []).map((w: any) => {
                         const schedules = schedulesByWorker.get(String(w.id)) || [];
                         return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
                           <tr key={w.id}>
                             <td><b>{w.display_name || "—"}</b></td>
                             <td>{w.role || "—"}</td>
@@ -2079,7 +2074,6 @@ export default function Admin() {
                   {(staffOperationalWorkers || []).map((w: any) => {
                     const schedules = schedulesByWorker.get(String(w.id)) || [];
                     return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
                       <div
                         key={w.id}
                         style={{
@@ -2145,7 +2139,7 @@ export default function Admin() {
                 </div>
               </div>
 
-              <div className="tc-card">
+              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                 <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias de asistencia</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
                   Mes {month}. Aquí justificas o marcas como no justificadas.
@@ -2234,7 +2228,7 @@ export default function Admin() {
                 )}
               </div>
 
-              <div className="tc-card">
+              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
@@ -2325,7 +2319,6 @@ export default function Admin() {
                         const diff = Number(r.diff_minutes || 0);
                         const diffLabel = minsToHhmm(Math.abs(diff));
                         return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
                           <tr key={`${r.worker_id}-${r.group_key}-${idx}`}>
                             <td><b>{r.group_key}</b></td>
                             <td>{r.display_name || r.worker_id}</td>
@@ -2359,7 +2352,7 @@ export default function Admin() {
           )}
 
           {tab === "checklists" && (
-            <div className="tc-card">
+            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">✅ Checklists (plantillas)</div>
@@ -2459,7 +2452,7 @@ export default function Admin() {
           )}
 
           {tab === "sync" && (
-            <div className="tc-card">
+            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🔄 Sincronización</div>
@@ -2493,7 +2486,7 @@ export default function Admin() {
           }}
         >
           <div
-            className="tc-card"
+            className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}
             style={{
               width: "100%",
               maxWidth: 440,
@@ -2550,7 +2543,6 @@ export default function Admin() {
 
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2561,13 +2553,12 @@ function KpiBox({ label, value, highlight }: { label: string; value: string; hig
     >
       <div className="tc-sub">{label}</div>
       <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
-    </div></div>
+    </div>
   );
 }
 
 function KpiMini({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2578,14 +2569,13 @@ function KpiMini({ label, value }: { label: string; value: string }) {
     >
       <div className="tc-sub">{label}</div>
       <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
-    </div></div>
+    </div>
   );
 }
 
 function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
+    <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}} style={{ boxShadow: "none", padding: 14 }}>
       <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
       <div className="tc-hr" />
       <div style={{ display: "grid", gap: 8 }}>
@@ -2596,7 +2586,7 @@ function TopStatsCard({ title, items }: { title: string; items: string[] }) {
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
       </div>
-    </div></div>
+    </div>
   );
 }
 
@@ -2655,7 +2645,6 @@ function LineEditor({
   }
 
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2734,7 +2723,7 @@ function LineEditor({
           </div>
         )}
       </div>
-    </div></div>
+    </div>
   );
 }
 
@@ -2762,7 +2751,6 @@ function ScheduleRow({
   }, [schedule]);
 
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2819,7 +2807,7 @@ function ScheduleRow({
           </button>
         </div>
       </div>
-    </div></div>
+    </div>
   );
 }
 
@@ -2852,7 +2840,6 @@ function ChecklistRow({
   }
 
   return (
-    <div style={{padding:24, maxWidth:1400, margin:"0 auto"}}>
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
@@ -2879,8 +2866,10 @@ function ChecklistRow({
       </div>
 
       {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
-    </div></div>
-  );
+    </div>
+  
+</div>
+);
 }
 
 
