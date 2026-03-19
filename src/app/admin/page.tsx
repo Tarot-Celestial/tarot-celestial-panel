@@ -145,14 +145,7 @@ export default function Admin() {
   const lastMonthRef = useRef<string>("");
 
   const totalSum = useMemo(() => {
-    return (
-
-<div style={{
-  display: "grid",
-  gridTemplateColumns: "260px 1fr",
-  minHeight: "100vh",
-}}>
-invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -1238,9 +1231,9 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
     <>
       <AppHeader />
 
-      <div className="tc-wrap" style={{padding:28, maxWidth:1400, margin:"0 auto"}}>
+      <div className="tc-wrap">
         <div className="tc-container">
-          <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+          <div className="tc-card">
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
@@ -1294,7 +1287,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
           </div>
 
           {tab === "facturas" && (
-            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+            <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🧾 Facturas del mes</div>
@@ -1374,7 +1367,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
           )}
 
           {tab === "editor" && (
-            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+            <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">✏️ Editor de factura</div>
@@ -1456,7 +1449,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
 
           {tab === "estadisticas" && (
             <div style={{ display: "grid", gap: 16 }}>
-              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+              <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title">📈 Estadísticas del mes</div>
@@ -1522,7 +1515,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
               </div>
 
               <div className="tc-grid-2">
-                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+                <div className="tc-card">
                   <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Comparativa clara entre fuego y agua
@@ -1538,7 +1531,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
                   </div>
                 </div>
 
-                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+                <div className="tc-card">
                   <div className="tc-title" style={{ fontSize: 14 }}>⏱️ Top por minutos</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Las 5 tarotistas con más producción del mes
@@ -1578,7 +1571,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
                 </div>
               </div>
 
-              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+              <div className="tc-card">
                 <div className="tc-title">📋 Rendimiento por tarotista</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
                   Tabla completa con producción, calidad, dinero y aceptación de factura
@@ -1661,7 +1654,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
 
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
-              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+              <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title">🟢 Asistencia (en vivo)</div>
@@ -1696,7 +1689,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
               </div>
 
               <div className="tc-grid-2">
-                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+                <div className="tc-card">
                   <div className="tc-title" style={{ fontSize: 14 }}>🟢 Conectados ahora</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Estado real según control horario
@@ -1736,7 +1729,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
                   )}
                 </div>
 
-                <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+                <div className="tc-card">
                   <div className="tc-title" style={{ fontSize: 14 }}>🕒 Deberían estar conectados</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
                     Comparativa entre horario activo y presencia real
@@ -1795,7 +1788,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
                 </div>
               </div>
 
-              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+              <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 14 }}>👥 Gestión de plantilla y horarios</div>
@@ -2139,7 +2132,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
                 </div>
               </div>
 
-              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+              <div className="tc-card">
                 <div className="tc-title" style={{ fontSize: 14 }}>⚠️ Incidencias de asistencia</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
                   Mes {month}. Aquí justificas o marcas como no justificadas.
@@ -2228,7 +2221,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
                 )}
               </div>
 
-              <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+              <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 14 }}>📊 Estadísticas horarias</div>
@@ -2352,7 +2345,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
           )}
 
           {tab === "checklists" && (
-            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+            <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">✅ Checklists (plantillas)</div>
@@ -2452,7 +2445,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
           )}
 
           {tab === "sync" && (
-            <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}>
+            <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🔄 Sincronización</div>
@@ -2486,7 +2479,7 @@ invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
           }}
         >
           <div
-            className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}}
+            className="tc-card"
             style={{
               width: "100%",
               maxWidth: 440,
@@ -2575,7 +2568,7 @@ function KpiMini({ label, value }: { label: string; value: string }) {
 
 function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <div className="tc-card" style={{backdropFilter:"blur(12px)", background:"rgba(255,255,255,0.04)"}} style={{ boxShadow: "none", padding: 14 }}>
+    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
       <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
       <div className="tc-hr" />
       <div style={{ display: "grid", gap: 8 }}>
@@ -2867,9 +2860,7 @@ function ChecklistRow({
 
       {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
-  
-</div>
-);
+  );
 }
 
 
