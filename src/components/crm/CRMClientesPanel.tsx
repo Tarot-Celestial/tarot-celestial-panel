@@ -18,8 +18,7 @@ async function safeJson(res: Response) {
 
 function eur(n: any) {
   const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" }</div>
-);
+  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
 type CRMClientesPanelProps = {
@@ -174,8 +173,7 @@ export default function CRMClientesPanel({
     }
 
     window.addEventListener("crm-open-cliente", onOpenCliente);
-    return (
-  <div style={{display:"grid",gap:28,padding:20}}>) => window.removeEventListener("crm-open-cliente", onOpenCliente);
+    return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
 
   useEffect(() => {
@@ -753,7 +751,6 @@ export default function CRMClientesPanel({
   }
 
   return (
-  <div style={{display:"grid",gap:28,padding:20}}>
     <div style={{ display: "grid", gap: 16 }}>
       <div className="tc-card">
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
@@ -1162,7 +1159,6 @@ export default function CRMClientesPanel({
                   : "";
 
                 return (
-  <div style={{display:"grid",gap:28,padding:20}}>
                   <tr key={r.id}>
                     <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
                     <td>{r.telefono || "—"}</td>
@@ -1186,6 +1182,5 @@ export default function CRMClientesPanel({
         </div>
       </div>
     </div>
-  </div>
-);
+  );
 }
