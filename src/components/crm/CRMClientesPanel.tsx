@@ -481,23 +481,10 @@ export default function CRMClientesPanel({
       });
 
       const j = await safeJson(r);
-      if (!j?.ok) throw new Error(j?.error || "Error guardando");
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || "Error guardando");
 
-      setCrmClienteFicha((prev: any) => ({
-        ...(prev || {}),
-        nombre: crmEditNombre,
-        apellido: crmEditApellido,
-        telefono: crmEditTelefono,
-        pais: crmEditPais,
-        email: crmEditEmail,
-        notas: crmEditNotas,
-        origen: crmEditOrigen,
-        deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
-        minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
-        minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
-      }));
-
-      setCrmFichaMsg("✅ Cliente actualizado");
+      await openCRMFicha(crmClienteSelId);
+      setCrmFichaMsg("✅ Cliente actualizado correctamente");
       await searchCRM();
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
