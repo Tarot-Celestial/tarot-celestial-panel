@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
+import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 
 const sb = supabaseBrowser();
@@ -67,6 +68,7 @@ type TabKey =
   | "contabilidad"
   | "asistencia"
   | "checklists"
+  | "clientes"
   | "crm"
   | "sync";
 
@@ -312,6 +314,16 @@ export default function Admin() {
       return "";
     }
     return token;
+  }
+
+  function openAdminClienteReview(clienteId: string) {
+    if (!clienteId) return;
+    setTab("crm");
+    setTimeout(() => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: clienteId } }));
+      }
+    }, 40);
   }
 
   async function loadAccounting(silent = false) {
@@ -1221,7 +1233,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · CRM</div>
+                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM</div>
               </div>
 
               <div className="tc-row">
@@ -1257,6 +1269,9 @@ export default function Admin() {
               </button>
               <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
                 ✅ Checklists
+              </button>
+              <button className={`tc-tab ${tab === "clientes" ? "tc-tab-active" : ""}`} onClick={() => setTab("clientes")}>
+                💎 Clientes
               </button>
               <button className={`tc-tab ${tab === "crm" ? "tc-tab-active" : ""}`} onClick={() => setTab("crm")}>
                 👥 CRM
@@ -2415,6 +2430,10 @@ export default function Admin() {
                 Nota: al borrar un item, también se eliminan los “checks” ya marcados en turnos anteriores para ese item.
               </div>
             </div>
+          )}
+
+          {tab === "clientes" && (
+            <AdminClientesTab onReviewClient={openAdminClienteReview} />
           )}
 
           {tab === "crm" && (
