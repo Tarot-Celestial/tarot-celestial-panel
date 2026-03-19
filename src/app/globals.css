@@ -148,3 +148,95 @@ a{ color: inherit; text-decoration: none; }
 .tc-click{ cursor:pointer; }
 .tc-muted{ opacity: .78; }
 .tc-hr{ height:1px; background: rgba(255,255,255,0.10); margin: 12px 0; }
+
+/* =========================
+🔥 PREMIUM UPGRADE LAYER
+========================= */
+
+/* ====== CARDS PRO ====== */
+.tc-card{
+backdrop-filter: blur(12px);
+border: 1px solid rgba(255,255,255,0.10);
+box-shadow:
+0 20px 60px rgba(0,0,0,0.45),
+inset 0 1px 0 rgba(255,255,255,0.04);
+transition: all 0.25s ease;
+}
+
+.tc-card:hover{
+transform: translateY(-2px);
+box-shadow:
+0 30px 80px rgba(0,0,0,0.55),
+inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* ====== BOTONES PRO ====== */
+.tc-btn{
+font-weight: 700;
+letter-spacing: .02em;
+transition: all 0.2s ease;
+}
+
+.tc-btn:hover{
+transform: translateY(-1px);
+}
+
+.tc-btn-gold{
+background: linear-gradient(135deg, #d7b56d, #c9a24f);
+box-shadow: 0 10px 30px rgba(215,181,109,0.25);
+}
+
+/* ====== INPUTS PRO ====== */
+.tc-input, .tc-select{
+background: rgba(255,255,255,0.05);
+border: 1px solid rgba(255,255,255,0.12);
+transition: all 0.2s ease;
+}
+
+.tc-input:focus, .tc-select:focus{
+border-color: var(--tc-gold);
+box-shadow: 0 0 0 2px rgba(215,181,109,0.2);
+}
+
+/* ====== TABS PRO ====== */
+.tc-tab{
+transition: all 0.2s ease;
+}
+
+.tc-tab:hover{
+background: rgba(255,255,255,0.06);
+}
+
+/* ====== TAB ACTIVO MEJOR ====== */
+.tc-tab-active{
+box-shadow: 0 6px 20px rgba(181,156,255,0.25);
+}
+
+/* ====== TABLAS PRO ====== */
+.tc-table tr{
+transition: all 0.2s ease;
+}
+
+.tc-table tr:hover{
+background: rgba(255,255,255,0.04);
+}
+
+/* ====== CHIP PRO ====== */
+.tc-chip{
+backdrop-filter: blur(6px);
+}
+
+/* ====== SCROLL PREMIUM ====== */
+::-webkit-scrollbar{
+width: 8px;
+height: 8px;
+}
+
+::-webkit-scrollbar-thumb{
+background: rgba(255,255,255,0.2);
+border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover{
+background: rgba(255,255,255,0.3);
+}
