@@ -173,7 +173,14 @@ export default function CRMClientesPanel({
     }
 
     window.addEventListener("crm-open-cliente", onOpenCliente);
-    return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
+    return (
+  <div style={{
+    display: "grid",
+    gap: 28,
+    padding: 20,
+    background: "radial-gradient(circle at top, #1a1d23, #0b0d10)",
+    minHeight: "100vh"
+  }}>) => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
 
   useEffect(() => {
@@ -751,8 +758,15 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 24, padding: 8 }}>
-      <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}}>
+  <div style={{
+    display: "grid",
+    gap: 28,
+    padding: 20,
+    background: "radial-gradient(circle at top, #1a1d23, #0b0d10)",
+    minHeight: "100vh"
+  }}>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="tc-card" style={{borderRadius:26,padding:22,background:"rgba(20,22,28,0.85)",border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 50px 120px rgba(0,0,0,0.45)",backdropFilter:"blur(10px)"}}>
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <div className="tc-title">👥 CRM</div>
@@ -762,7 +776,7 @@ export default function CRMClientesPanel({
           </div>
 
           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <button className="tc-btn" onClick={clearCRMFilters} disabled={crmLoading || crmImportLoading}>
+            <button className="tc-btn" style={{borderRadius:12,fontWeight:700,letterSpacing:".02em"}} onClick={clearCRMFilters} disabled={crmLoading || crmImportLoading}>
               Limpiar filtros
             </button>
 
@@ -779,18 +793,18 @@ export default function CRMClientesPanel({
         <div className="tc-grid-4">
           <div>
             <div className="tc-sub">Nombre / búsqueda general</div>
-            <input className="tc-input" value={crmQuery} onChange={(e) => setCrmQuery(e.target.value)} placeholder="María, Ana, etc." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+            <input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmQuery} onChange={(e) => setCrmQuery(e.target.value)} placeholder="María, Ana, etc." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
           </div>
 
           <div>
             <div className="tc-sub">Teléfono</div>
-            <input className="tc-input" value={crmPhoneFilter} onChange={(e) => setCrmPhoneFilter(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+            <input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmPhoneFilter} onChange={(e) => setCrmPhoneFilter(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
           </div>
 
           <div>
             <div className="tc-sub">Etiqueta</div>
             <select
-              className="tc-input"
+              className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
               value={crmTagFilter}
               onChange={(e) => setCrmTagFilter(e.target.value)}
               style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
@@ -808,7 +822,7 @@ export default function CRMClientesPanel({
 
           <div>
             <div className="tc-sub">País</div>
-            <input className="tc-input" value={crmCountryFilter} onChange={(e) => setCrmCountryFilter(e.target.value)} placeholder="España, México..." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+            <input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmCountryFilter} onChange={(e) => setCrmCountryFilter(e.target.value)} placeholder="España, México..." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
           </div>
         </div>
 
@@ -822,7 +836,7 @@ export default function CRMClientesPanel({
         <div className="tc-sub">{crmMsg || " "}</div>
       </div>
 
-      <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}}>
+      <div className="tc-card" style={{borderRadius:26,padding:22,background:"rgba(20,22,28,0.85)",border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 50px 120px rgba(0,0,0,0.45)",backdropFilter:"blur(10px)"}}>
         <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div>
             <div className="tc-title">➕ Nuevo cliente</div>
@@ -852,23 +866,23 @@ export default function CRMClientesPanel({
               }}
             >
               <div className="tc-grid-4">
-                <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmNewNombre} onChange={(e) => setCrmNewNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmNewApellido} onChange={(e) => setCrmNewApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Teléfono</div><input className="tc-input" value={crmNewTelefono} onChange={(e) => setCrmNewTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">País</div><input className="tc-input" value={crmNewPais} onChange={(e) => setCrmNewPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Email</div><input className="tc-input" value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Deuda</div><input className="tc-input" value={crmNewDeuda} onChange={(e) => setCrmNewDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Min free</div><input className="tc-input" value={crmNewMinFree} onChange={(e) => setCrmNewMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Nombre</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewNombre} onChange={(e) => setCrmNewNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Apellido</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewApellido} onChange={(e) => setCrmNewApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Teléfono</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewTelefono} onChange={(e) => setCrmNewTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">País</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewPais} onChange={(e) => setCrmNewPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Email</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Origen</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Deuda</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewDeuda} onChange={(e) => setCrmNewDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min free</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewMinFree} onChange={(e) => setCrmNewMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                <div><div className="tc-sub">Min normales</div><input className="tc-input" value={crmNewMinNormales} onChange={(e) => setCrmNewMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min normales</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewMinNormales} onChange={(e) => setCrmNewMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Notas</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
               <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-                <button className="tc-btn" onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
+                <button className="tc-btn" style={{borderRadius:12,fontWeight:700,letterSpacing:".02em"}} onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
                   Cancelar
                 </button>
                 <button className="tc-btn tc-btn-ok" onClick={createCRMClient} disabled={crmCreateLoading}>
@@ -887,7 +901,7 @@ export default function CRMClientesPanel({
       </div>
 
       {(crmFichaLoading || crmClienteFicha) && (
-        <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}} style={{ marginTop: 12 }}>
+        <div className="tc-card" style={{borderRadius:26,padding:22,background:"rgba(20,22,28,0.85)",border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 50px 120px rgba(0,0,0,0.45)",backdropFilter:"blur(10px)"}} style={{ marginTop: 12 }}>
           <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div className="tc-title">🧾 Ficha CRM</div>
@@ -896,7 +910,7 @@ export default function CRMClientesPanel({
               </div>
             </div>
 
-            {!crmFichaLoading && <button className="tc-btn" onClick={closeCRMFicha}>Cerrar ficha</button>}
+            {!crmFichaLoading && <button className="tc-btn" style={{borderRadius:12,fontWeight:700,letterSpacing:".02em"}} onClick={closeCRMFicha}>Cerrar ficha</button>}
           </div>
 
           <div className="tc-hr" />
@@ -906,26 +920,26 @@ export default function CRMClientesPanel({
           ) : (
             <>
               <div className="tc-grid-4">
-                <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmEditNombre} onChange={(e) => setCrmEditNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmEditApellido} onChange={(e) => setCrmEditApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Teléfono</div><input className="tc-input" value={crmEditTelefono} onChange={(e) => setCrmEditTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">País</div><input className="tc-input" value={crmEditPais} onChange={(e) => setCrmEditPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Email</div><input className="tc-input" value={crmEditEmail} onChange={(e) => setCrmEditEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmEditOrigen} onChange={(e) => setCrmEditOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Deuda pendiente</div><input className="tc-input" value={crmEditDeuda} onChange={(e) => setCrmEditDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Nombre</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditNombre} onChange={(e) => setCrmEditNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Apellido</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditApellido} onChange={(e) => setCrmEditApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Teléfono</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditTelefono} onChange={(e) => setCrmEditTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">País</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditPais} onChange={(e) => setCrmEditPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Email</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditEmail} onChange={(e) => setCrmEditEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Origen</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditOrigen} onChange={(e) => setCrmEditOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Deuda pendiente</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditDeuda} onChange={(e) => setCrmEditDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Notas</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 110 }} /></div>
+                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Notas</div><textarea className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}} value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 110 }} /></div>
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div>
                   <div className="tc-sub">Enviar llamada a tarotista</div>
                   <select
-                    className="tc-input"
+                    className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
                     value={crmTarotistaSendId}
                     onChange={(e) => setCrmTarotistaSendId(e.target.value)}
                     style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
@@ -945,7 +959,7 @@ export default function CRMClientesPanel({
                     <div>
                       <div className="tc-sub">Minutos free a enviar</div>
                       <input
-                        className="tc-input"
+                        className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
                         value={crmSendMinFree}
                         onChange={(e) => setCrmSendMinFree(e.target.value)}
                         placeholder="0"
@@ -956,7 +970,7 @@ export default function CRMClientesPanel({
                     <div>
                       <div className="tc-sub">Minutos cliente a enviar</div>
                       <input
-                        className="tc-input"
+                        className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
                         value={crmSendMinNormales}
                         onChange={(e) => setCrmSendMinNormales(e.target.value)}
                         placeholder="0"
@@ -1000,7 +1014,7 @@ export default function CRMClientesPanel({
                 <div>
                   <div className="tc-sub">Importe (€)</div>
                   <input
-                    className="tc-input"
+                    className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
                     value={crmPagoImporte}
                     onChange={(e) => setCrmPagoImporte(e.target.value)}
                     placeholder="20"
@@ -1011,7 +1025,7 @@ export default function CRMClientesPanel({
                 <div>
                   <div className="tc-sub">Referencia PayPal / operación</div>
                   <input
-                    className="tc-input"
+                    className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
                     value={crmPagoReferencia}
                     onChange={(e) => setCrmPagoReferencia(e.target.value)}
                     placeholder="Ej: 7AB12345CD6789012"
@@ -1024,7 +1038,7 @@ export default function CRMClientesPanel({
                 <div>
                   <div className="tc-sub">Notas</div>
                   <input
-                    className="tc-input"
+                    className="tc-input" style={{borderRadius:14,padding:"12px 14px",background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.12)"}}
                     value={crmPagoNotas}
                     onChange={(e) => setCrmPagoNotas(e.target.value)}
                     placeholder="Cobro telefónico PayPal"
@@ -1053,7 +1067,7 @@ export default function CRMClientesPanel({
                 </button>
 
                 <button
-                  className="tc-btn"
+                  className="tc-btn" style={{borderRadius:12,fontWeight:700,letterSpacing:".02em"}}
                   onClick={marcarPagoErroneo}
                   disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
                   style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
@@ -1117,7 +1131,7 @@ export default function CRMClientesPanel({
               </div>
 
               <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-                <button className="tc-btn" onClick={closeCRMFicha}>Cancelar</button>
+                <button className="tc-btn" style={{borderRadius:12,fontWeight:700,letterSpacing:".02em"}} onClick={closeCRMFicha}>Cancelar</button>
                 <button className="tc-btn tc-btn-ok" onClick={saveCRMFicha} disabled={crmSaveLoading || !crmClienteSelId}>
                   {crmSaveLoading ? "Guardando..." : "Guardar cambios"}
                 </button>
@@ -1131,7 +1145,7 @@ export default function CRMClientesPanel({
         </div>
       )}
 
-      <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}}>
+      <div className="tc-card" style={{borderRadius:26,padding:22,background:"rgba(20,22,28,0.85)",border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 50px 120px rgba(0,0,0,0.45)",backdropFilter:"blur(10px)"}}>
         <div className="tc-title">📋 Resultados CRM</div>
         <div className="tc-sub" style={{ marginTop: 6 }}>Resultado de búsqueda con filtros</div>
 
@@ -1159,6 +1173,13 @@ export default function CRMClientesPanel({
                   : "";
 
                 return (
+  <div style={{
+    display: "grid",
+    gap: 28,
+    padding: 20,
+    background: "radial-gradient(circle at top, #1a1d23, #0b0d10)",
+    minHeight: "100vh"
+  }}>
                   <tr key={r.id}>
                     <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
                     <td>{r.telefono || "—"}</td>
@@ -1167,7 +1188,7 @@ export default function CRMClientesPanel({
                     <td>{r.minutos_free_pendientes ?? 0}</td>
                     <td>{r.minutos_normales_pendientes ?? 0}</td>
                     <td>{eur(r.deuda_pendiente || 0)}</td>
-                    <td><button className="tc-btn" onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button></td>
+                    <td><button className="tc-btn" style={{borderRadius:12,fontWeight:700,letterSpacing:".02em"}} onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button></td>
                   </tr>
                 );
               })}
