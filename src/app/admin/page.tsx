@@ -145,7 +145,13 @@ export default function Admin() {
   const lastMonthRef = useRef<string>("");
 
   const totalSum = useMemo(() => {
-    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    return (
+<div style={{
+  padding:24,
+  maxWidth:1400,
+  margin:"0 auto",
+}}>
+invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -2860,7 +2866,8 @@ function ChecklistRow({
 
       {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
-  );
+  
+</div>
+);
 }
-
 
