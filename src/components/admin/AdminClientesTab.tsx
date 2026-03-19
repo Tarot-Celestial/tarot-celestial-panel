@@ -101,25 +101,6 @@ function KpiCard({
   hint: string;
   accent: string;
 }) {
-
-  const visibleBonusRows = useMemo(() => {
-    return combinedBonusRows.filter(({ item, variant }) =>
-      !isDismissed(dismissKey(variant === "vip" ? "vip" : "bonus", item))
-    );
-  }, [combinedBonusRows, dismissedKeys]);
-
-  const visibleRedRows = useMemo(() => {
-    return (data?.inactivityAlerts?.red || []).filter(
-      (item) => !isDismissed(dismissKey("inactive-red", item))
-    );
-  }, [data, dismissedKeys]);
-
-  const visibleYellowRows = useMemo(() => {
-    return (data?.inactivityAlerts?.yellow || []).filter(
-      (item) => !isDismissed(dismissKey("inactive-yellow", item))
-    );
-  }, [data, dismissedKeys]);
-
   return (
     <div
       style={{
@@ -196,25 +177,6 @@ function AlertRow({
       glow: "rgba(181,156,255,.22)",
     },
   }[tone];
-
-
-  const visibleBonusRows = useMemo(() => {
-    return combinedBonusRows.filter(({ item, variant }) =>
-      !isDismissed(dismissKey(variant === "vip" ? "vip" : "bonus", item))
-    );
-  }, [combinedBonusRows, dismissedKeys]);
-
-  const visibleRedRows = useMemo(() => {
-    return (data?.inactivityAlerts?.red || []).filter(
-      (item) => !isDismissed(dismissKey("inactive-red", item))
-    );
-  }, [data, dismissedKeys]);
-
-  const visibleYellowRows = useMemo(() => {
-    return (data?.inactivityAlerts?.yellow || []).filter(
-      (item) => !isDismissed(dismissKey("inactive-yellow", item))
-    );
-  }, [data, dismissedKeys]);
 
   return (
     <div
@@ -297,21 +259,29 @@ export default function AdminClientesTab({
   const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
 
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("admin_clientes_dismissed_v1");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setDismissedKeys(parsed.map((x) => String(x)));
+      }
+    } catch {}
+  }, []);
+
   function persistDismissed(next: string[]) {
     setDismissedKeys(next);
     try {
-      window.localStorage.setItem("admin-clientes-dismissed-v1", JSON.stringify(next));
+      window.localStorage.setItem("admin_clientes_dismissed_v1", JSON.stringify(next));
     } catch {}
   }
 
-  function dismissKey(kind: "bonus" | "vip" | "inactive-yellow" | "inactive-red", item: AlertItem) {
-    if (kind === "bonus") {
-      return `bonus:${item.cliente_id}:${Number(item.bonus_count || 0)}`;
-    }
-    if (kind === "vip") {
-      return `vip:${item.cliente_id}:1000`;
-    }
-    return `${kind}:${item.cliente_id}:${item.ultimo_pago_at || "none"}`;
+  function dismissKey(kind: "bonus" | "vip" | "inactive-red" | "inactive-yellow", item: AlertItem) {
+    const datePart = item.ultimo_pago_at ? String(item.ultimo_pago_at) : "sin-fecha";
+    const totalPart = Number(item.total_gastado || 0);
+    const bonusPart = Number(item.bonus_count || 0);
+    return `${kind}::${item.cliente_id}::${datePart}::${totalPart}::${bonusPart}`;
   }
 
   function isDismissed(key: string) {
@@ -319,18 +289,9 @@ export default function AdminClientesTab({
   }
 
   function dismissAlert(key: string) {
-    if (!key) return;
-    persistDismissed(Array.from(new Set([...dismissedKeys, key])));
+    if (!key || dismissedKeys.includes(key)) return;
+    persistDismissed([...dismissedKeys, key]);
   }
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem("admin-clientes-dismissed-v1");
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) setDismissedKeys(parsed.map((x) => String(x)));
-    } catch {}
-  }, []);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -366,20 +327,6 @@ export default function AdminClientesTab({
 
       setData(j);
       setLastUpdated(j.generated_at || new Date().toISOString());
-
-      try {
-        const validKeys = new Set<string>();
-        for (const item of j?.bonusAlerts || []) validKeys.add(dismissKey("bonus", item));
-        for (const item of j?.vipAlerts || []) validKeys.add(dismissKey("vip", item));
-        for (const item of j?.inactivityAlerts?.yellow || []) validKeys.add(dismissKey("inactive-yellow", item));
-        for (const item of j?.inactivityAlerts?.red || []) validKeys.add(dismissKey("inactive-red", item));
-
-        const nextDismissed = dismissedKeys.filter((k) => validKeys.has(k));
-        if (nextDismissed.length !== dismissedKeys.length) {
-          persistDismissed(nextDismissed);
-        }
-      } catch {}
-
       if (!silent) setMsg("✅ Vista de clientes actualizada.");
     } catch (e: any) {
       if (!silent) setMsg(`❌ ${e?.message || "Error cargando alertas"}`);
@@ -432,25 +379,12 @@ export default function AdminClientesTab({
     return rows;
   }, [data]);
 
-  function reviewClient(
-    clienteId: string,
-    dismissKind?: "bonus" | "vip" | "inactive-yellow" | "inactive-red",
-    item?: AlertItem
-  ) {
-    if (!clienteId) return;
-
-    if (dismissKind && item) {
-      dismissAlert(dismissKey(dismissKind, item));
-    }
-
-    onReviewClient?.(clienteId);
-  }
-
 
   const visibleBonusRows = useMemo(() => {
-    return combinedBonusRows.filter(({ item, variant }) =>
-      !isDismissed(dismissKey(variant === "vip" ? "vip" : "bonus", item))
-    );
+    return combinedBonusRows.filter(({ item, variant }) => {
+      const kind = variant === "vip" ? "vip" : "bonus";
+      return !isDismissed(dismissKey(kind, item));
+    });
   }, [combinedBonusRows, dismissedKeys]);
 
   const visibleRedRows = useMemo(() => {
@@ -464,6 +398,15 @@ export default function AdminClientesTab({
       (item) => !isDismissed(dismissKey("inactive-yellow", item))
     );
   }, [data, dismissedKeys]);
+
+  function reviewClient(
+    clienteId: string,
+    keyToDismiss?: string
+  ) {
+    if (!clienteId) return;
+    if (keyToDismiss) dismissAlert(keyToDismiss);
+    onReviewClient?.(clienteId);
+  }
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -575,7 +518,7 @@ export default function AdminClientesTab({
                       ? "Ha superado los 1.000 € acumulados. Ya puedes revisarlo y adjudicarle la etiqueta VIP."
                       : `Con el gasto actual le corresponden ${item.bonus_count * 20} minuto${item.bonus_count * 20 === 1 ? "" : "s"} de regalo en total.`
                   }
-                  cta={() => reviewClient(item.cliente_id)}
+                  cta={() => reviewClient(item.cliente_id, dismissKey(variant === "vip" ? "vip" : "bonus", item))}
                 />
               ))
             )}
@@ -603,7 +546,7 @@ export default function AdminClientesTab({
                 border: "1px solid rgba(255,98,98,.18)",
               }}
             >
-              {summary.inactivos30 + summary.inactivos60} avisos
+              {visibleYellowRows.length + visibleRedRows.length} avisos
             </div>
           </div>
 
@@ -618,7 +561,7 @@ export default function AdminClientesTab({
                 badge="Riesgo alto"
                 title="Ojo, posible cliente perdido"
                 description={`Lleva ${formatDays(item.dias_sin_pago)} sin registrar pago. Conviene revisar ficha, notas y seguimiento.`}
-                cta={() => reviewClient(item.cliente_id)}
+                cta={() => reviewClient(item.cliente_id, dismissKey("inactive-red", item))}
               />
             ))}
 
@@ -630,7 +573,7 @@ export default function AdminClientesTab({
                 badge="Seguimiento"
                 title="Cliente con más de un mes sin pagar"
                 description={`Lleva ${formatDays(item.dias_sin_pago)} sin actividad económica registrada. Buen momento para revisar y contactar.`}
-                cta={() => reviewClient(item.cliente_id)}
+                cta={() => reviewClient(item.cliente_id, dismissKey("inactive-yellow", item))}
               />
             ))}
 
@@ -655,3 +598,4 @@ export default function AdminClientesTab({
     </div>
   );
 }
+
