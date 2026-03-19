@@ -319,11 +319,15 @@ export default function Admin() {
   function openAdminClienteReview(clienteId: string) {
     if (!clienteId) return;
     setTab("crm");
-    setTimeout(() => {
+    window.setTimeout(() => {
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: clienteId } }));
+        window.dispatchEvent(
+          new CustomEvent("crm-open-cliente", {
+            detail: { id: String(clienteId) },
+          })
+        );
       }
-    }, 40);
+    }, 250);
   }
 
   async function loadAccounting(silent = false) {
