@@ -751,8 +751,8 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div className="tc-card" style={{borderRadius:20, boxShadow:"0 25px 60px rgba(0,0,0,.25)"}}>
+    <div style={{ display: "grid", gap: 24, padding: 8 }}>
+      <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}}>
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <div className="tc-title">👥 CRM</div>
@@ -822,7 +822,7 @@ export default function CRMClientesPanel({
         <div className="tc-sub">{crmMsg || " "}</div>
       </div>
 
-      <div className="tc-card" style={{borderRadius:20, boxShadow:"0 25px 60px rgba(0,0,0,.25)"}}>
+      <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}}>
         <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div>
             <div className="tc-title">➕ Nuevo cliente</div>
@@ -887,7 +887,7 @@ export default function CRMClientesPanel({
       </div>
 
       {(crmFichaLoading || crmClienteFicha) && (
-        <div className="tc-card" style={{borderRadius:20, boxShadow:"0 25px 60px rgba(0,0,0,.25)"}} style={{ marginTop: 12 }}>
+        <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}} style={{ marginTop: 12 }}>
           <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div className="tc-title">🧾 Ficha CRM</div>
@@ -1131,7 +1131,7 @@ export default function CRMClientesPanel({
         </div>
       )}
 
-      <div className="tc-card" style={{borderRadius:20, boxShadow:"0 25px 60px rgba(0,0,0,.25)"}}>
+      <div className="tc-card" style={{borderRadius:22, padding:18, boxShadow:"0 30px 80px rgba(0,0,0,.25)", backdropFilter:"blur(6px)"}}>
         <div className="tc-title">📋 Resultados CRM</div>
         <div className="tc-sub" style={{ marginTop: 6 }}>Resultado de búsqueda con filtros</div>
 
