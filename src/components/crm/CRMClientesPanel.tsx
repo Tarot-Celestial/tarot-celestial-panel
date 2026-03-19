@@ -751,7 +751,7 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems: "start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems:"start" }}>
       <div className="tc-card">
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
@@ -887,7 +887,7 @@ export default function CRMClientesPanel({
       </div>
 
       {(crmFichaLoading || crmClienteFicha) && (
-        <div className="tc-card" style={{ marginTop: 12 }}>
+        <div className="tc-card" style={{ marginTop: 12, position:"sticky", top:10 }}>
           <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div className="tc-title">🧾 Ficha CRM</div>
@@ -918,7 +918,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Notas</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 110 }} /></div>
+                <div><div className="tc-sub">Notas</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 180 }} /></div>
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
