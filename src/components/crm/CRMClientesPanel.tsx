@@ -70,12 +70,6 @@ export default function CRMClientesPanel({
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
   const [crmSaveLoading, setCrmSaveLoading] = useState(false);
 
-  const [crmNotes, setCrmNotes] = useState<any[]>([]);
-  const [crmNotesLoading, setCrmNotesLoading] = useState(false);
-  const [crmNoteText, setCrmNoteText] = useState("");
-  const [crmNoteSaving, setCrmNoteSaving] = useState(false);
-  const [crmNotesMsg, setCrmNotesMsg] = useState("");
-
   const [crmNewNombre, setCrmNewNombre] = useState("");
   const [crmNewApellido, setCrmNewApellido] = useState("");
   const [crmNewTelefono, setCrmNewTelefono] = useState("");
@@ -96,6 +90,13 @@ export default function CRMClientesPanel({
   const [crmPagoLoading, setCrmPagoLoading] = useState(false);
   const [crmPagoMsg, setCrmPagoMsg] = useState("");
   const [crmPagoPendienteConfirmacion, setCrmPagoPendienteConfirmacion] = useState(false);
+
+  // NOTAS CON AUTOR
+  const [crmNotes, setCrmNotes] = useState<any[]>([]);
+  const [crmNotesLoading, setCrmNotesLoading] = useState(false);
+  const [crmNotesMsg, setCrmNotesMsg] = useState("");
+  const [crmNewNote, setCrmNewNote] = useState("");
+  const [crmSavingNote, setCrmSavingNote] = useState(false);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -378,86 +379,9 @@ export default function CRMClientesPanel({
     setCrmPagoPendienteConfirmacion(false);
     setCrmNotes([]);
     setCrmNotesLoading(false);
-    setCrmNoteText("");
-    setCrmNoteSaving(false);
     setCrmNotesMsg("");
-  }
-
-
-  async function loadNotasCliente(clienteId: string) {
-    if (!clienteId) {
-      setCrmNotes([]);
-      return;
-    }
-
-    try {
-      setCrmNotesLoading(true);
-      setCrmNotesMsg("");
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/crm/clientes/notas/listar?cliente_id=${encodeURIComponent(clienteId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setCrmNotes(Array.isArray(j.notas) ? j.notas : []);
-    } catch (e: any) {
-      console.error("ERROR CARGANDO NOTAS CLIENTE", e);
-      setCrmNotes([]);
-      setCrmNotesMsg(`❌ ${e?.message || "Error cargando notas"}`);
-    } finally {
-      setCrmNotesLoading(false);
-    }
-  }
-
-  async function addCRMNote() {
-    const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
-    const texto = crmNoteText.trim();
-
-    if (!clienteId) {
-      setCrmNotesMsg("⚠️ Primero abre una ficha de cliente");
-      return;
-    }
-    if (!texto) {
-      setCrmNotesMsg("⚠️ Escribe una nota");
-      return;
-    }
-
-    try {
-      setCrmNoteSaving(true);
-      setCrmNotesMsg("");
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch("/api/crm/clientes/notas/crear", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cliente_id: clienteId,
-          texto,
-        }),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setCrmNoteText("");
-      setCrmNotesMsg("✅ Nota guardada");
-      await loadNotasCliente(clienteId);
-    } catch (e: any) {
-      setCrmNotesMsg(`❌ ${e?.message || "Error guardando nota"}`);
-    } finally {
-      setCrmNoteSaving(false);
-    }
+    setCrmNewNote("");
+    setCrmSavingNote(false);
   }
 
   async function loadPagosCliente(clienteId: string) {
@@ -488,6 +412,80 @@ export default function CRMClientesPanel({
       setCrmPagos([]);
     } finally {
       setCrmPagosLoading(false);
+    }
+  }
+
+  async function loadNotasCliente(clienteId: string) {
+    if (!clienteId) {
+      setCrmNotes([]);
+      return;
+    }
+
+    try {
+      setCrmNotesLoading(true);
+      setCrmNotesMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/crm/clientes/notas/listar?cliente_id=${encodeURIComponent(clienteId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCrmNotes(Array.isArray(j.notas) ? j.notas : []);
+    } catch (e) {
+      console.error("ERROR CARGANDO NOTAS CLIENTE", e);
+      setCrmNotes([]);
+    } finally {
+      setCrmNotesLoading(false);
+    }
+  }
+
+  async function createCRMNote() {
+    const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+    if (!clienteId) {
+      setCrmNotesMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+
+    if (!crmNewNote.trim()) {
+      setCrmNotesMsg("⚠️ Escribe una nota");
+      return;
+    }
+
+    try {
+      setCrmSavingNote(true);
+      setCrmNotesMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/clientes/notas/crear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: clienteId,
+          texto: crmNewNote.trim(),
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCrmNewNote("");
+      setCrmNotesMsg("✅ Nota guardada");
+      await loadNotasCliente(clienteId);
+    } catch (e: any) {
+      setCrmNotesMsg(`❌ ${e?.message || "Error guardando nota"}`);
+    } finally {
+      setCrmSavingNote(false);
     }
   }
 
@@ -527,10 +525,9 @@ export default function CRMClientesPanel({
       setCrmSendMinFree(String(c?.minutos_free_pendientes ?? 0));
       setCrmSendMinNormales(String(c?.minutos_normales_pendientes ?? 0));
 
-      const clienteId = String(c?.id || id || "");
       await Promise.all([
-        loadPagosCliente(clienteId),
-        loadNotasCliente(clienteId),
+        loadPagosCliente(String(c?.id || id || "")),
+        loadNotasCliente(String(c?.id || id || "")),
       ]);
     } catch (e: any) {
       console.error("ERROR FICHA", e);
@@ -842,30 +839,22 @@ export default function CRMClientesPanel({
     }
   }
 
-
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <div
-        className="tc-card"
-        style={{
-          borderRadius: 24,
-          padding: 20,
-          background:
-            "radial-gradient(circle at top right, rgba(181,156,255,.18), transparent 28%), radial-gradient(circle at top left, rgba(215,181,109,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
-          boxShadow: "0 26px 70px rgba(0,0,0,.22)",
-        }}
-      >
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+    <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems:"start" }}>
+      <div className="tc-card">
+        <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
-            <div className="tc-title" style={{ fontSize: 24 }}>👥 CRM Clientes</div>
-            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
-              Búsqueda, revisión y gestión de clientes desde un panel maestro-detalle más claro y profesional.
+            <div className="tc-title">👥 CRM</div>
+            <div className="tc-sub">
+              Busca clientes por nombre, teléfono, país o etiqueta
             </div>
           </div>
 
           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <span className="tc-chip">Resultados: {crmRows.length}</span>
-            <span className="tc-chip">Ficha: {crmClienteSelId ? "Abierta" : "Sin seleccionar"}</span>
+            <button className="tc-btn" onClick={clearCRMFilters} disabled={crmLoading || crmImportLoading}>
+              Limpiar filtros
+            </button>
+
             {showImportButton ? (
               <button className="tc-btn tc-btn-gold" onClick={importCRM} disabled={crmImportLoading}>
                 {crmImportLoading ? "Importando…" : "Importar CRM"}
@@ -873,534 +862,477 @@ export default function CRMClientesPanel({
             ) : null}
           </div>
         </div>
+
+        <div className="tc-hr" />
+
+        <div className="tc-grid-4">
+          <div>
+            <div className="tc-sub">Nombre / búsqueda general</div>
+            <input className="tc-input" value={crmQuery} onChange={(e) => setCrmQuery(e.target.value)} placeholder="María, Ana, etc." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+          </div>
+
+          <div>
+            <div className="tc-sub">Teléfono</div>
+            <input className="tc-input" value={crmPhoneFilter} onChange={(e) => setCrmPhoneFilter(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+          </div>
+
+          <div>
+            <div className="tc-sub">Etiqueta</div>
+            <select
+              className="tc-input"
+              value={crmTagFilter}
+              onChange={(e) => setCrmTagFilter(e.target.value)}
+              style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+            >
+              <option value="">
+                {crmEtiquetasLoading ? "Cargando etiquetas..." : "Todas las etiquetas"}
+              </option>
+              {crmEtiquetasOpts.map((et: any) => (
+                <option key={et.id} value={et.nombre}>
+                  {et.nombre}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <div className="tc-sub">País</div>
+            <input className="tc-input" value={crmCountryFilter} onChange={(e) => setCrmCountryFilter(e.target.value)} placeholder="España, México..." style={{ width: "100%", marginTop: 6 }} onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }} />
+          </div>
+        </div>
+
+        <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+          <button className="tc-btn tc-btn-gold" onClick={searchCRM} disabled={crmLoading}>
+            {crmLoading ? "Buscando…" : "Buscar"}
+          </button>
+        </div>
+
+        <div className="tc-hr" />
+        <div className="tc-sub">{crmMsg || " "}</div>
       </div>
 
-      <div className="crm-master-detail" style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20, alignItems: "start" }}>
-        <div style={{ display: "grid", gap: 18 }}>
-          <div className="tc-card" style={{ borderRadius: 22, padding: 18 }}>
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <div>
-                <div className="tc-title" style={{ fontSize: 20 }}>Buscar clientes</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Filtra por nombre, teléfono, país o etiqueta.
-                </div>
-              </div>
-
-              <button className="tc-btn" onClick={clearCRMFilters} disabled={crmLoading || crmImportLoading}>
-                Limpiar
-              </button>
-            </div>
-
-            <div className="tc-hr" />
-
-            <div style={{ display: "grid", gap: 12 }}>
-              <div>
-                <div className="tc-sub">Nombre / búsqueda general</div>
-                <input
-                  className="tc-input"
-                  value={crmQuery}
-                  onChange={(e) => setCrmQuery(e.target.value)}
-                  placeholder="María, Ana, etc."
-                  style={{ width: "100%", marginTop: 6 }}
-                  onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }}
-                />
-              </div>
-
-              <div>
-                <div className="tc-sub">Teléfono</div>
-                <input
-                  className="tc-input"
-                  value={crmPhoneFilter}
-                  onChange={(e) => setCrmPhoneFilter(e.target.value)}
-                  placeholder="600123123"
-                  style={{ width: "100%", marginTop: 6 }}
-                  onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }}
-                />
-              </div>
-
-              <div>
-                <div className="tc-sub">Etiqueta</div>
-                <select
-                  className="tc-select"
-                  value={crmTagFilter}
-                  onChange={(e) => setCrmTagFilter(e.target.value)}
-                  style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
-                >
-                  <option value="">
-                    {crmEtiquetasLoading ? "Cargando etiquetas..." : "Todas las etiquetas"}
-                  </option>
-                  {crmEtiquetasOpts.map((et: any) => (
-                    <option key={et.id} value={et.nombre}>
-                      {et.nombre}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="tc-sub">País</div>
-                <input
-                  className="tc-input"
-                  value={crmCountryFilter}
-                  onChange={(e) => setCrmCountryFilter(e.target.value)}
-                  placeholder="España, México..."
-                  style={{ width: "100%", marginTop: 6 }}
-                  onKeyDown={(e) => { if (e.key === "Enter") searchCRM(); }}
-                />
-              </div>
-            </div>
-
-            <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 14, gap: 10 }}>
-              <div className="tc-sub">{crmMsg || "Busca para cargar clientes"}</div>
-              <button className="tc-btn tc-btn-gold" onClick={searchCRM} disabled={crmLoading}>
-                {crmLoading ? "Buscando…" : "Buscar"}
-              </button>
+      <div className="tc-card">
+        <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <div className="tc-title">➕ Nuevo cliente</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              Alta manual rápida desde el panel {mode}
             </div>
           </div>
 
-          <div className="tc-card" style={{ borderRadius: 22, padding: 18 }}>
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-              <div>
-                <div className="tc-title" style={{ fontSize: 20 }}>Resultados</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Selecciona un cliente para abrir su ficha.
+          <button
+            className={`tc-btn ${mostrarNuevoCliente ? "" : "tc-btn-gold"}`}
+            onClick={() => setMostrarNuevoCliente((v) => !v)}
+          >
+            {mostrarNuevoCliente ? "Ocultar formulario" : "+ Nuevo cliente"}
+          </button>
+        </div>
+
+        {mostrarNuevoCliente ? (
+          <>
+            <div className="tc-hr" />
+
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,.08)",
+                borderRadius: 14,
+                padding: 14,
+                background: "rgba(255,255,255,.02)",
+              }}
+            >
+              <div className="tc-grid-4">
+                <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmNewNombre} onChange={(e) => setCrmNewNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmNewApellido} onChange={(e) => setCrmNewApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Teléfono</div><input className="tc-input" value={crmNewTelefono} onChange={(e) => setCrmNewTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">País</div><input className="tc-input" value={crmNewPais} onChange={(e) => setCrmNewPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Email</div><input className="tc-input" value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Deuda</div><input className="tc-input" value={crmNewDeuda} onChange={(e) => setCrmNewDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min free</div><input className="tc-input" value={crmNewMinFree} onChange={(e) => setCrmNewMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div><div className="tc-sub">Min normales</div><input className="tc-input" value={crmNewMinNormales} onChange={(e) => setCrmNewMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
+              </div>
+
+              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+                <button className="tc-btn" onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
+                  Cancelar
+                </button>
+                <button className="tc-btn tc-btn-ok" onClick={createCRMClient} disabled={crmCreateLoading}>
+                  {crmCreateLoading ? "Creando..." : "Crear cliente"}
+                </button>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10 }}>{crmCreateMsg || " "}</div>
+            </div>
+          </>
+        ) : (
+          <div className="tc-sub" style={{ marginTop: 12 }}>
+            Pulsa <b>+ Nuevo cliente</b> para desplegar el formulario de alta.
+          </div>
+        )}
+      </div>
+
+      {(crmFichaLoading || crmClienteFicha) && (
+        <div className="tc-card" style={{ marginTop: 12, position:"sticky", top:10 }}>
+          <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div className="tc-title">🧾 Ficha CRM</div>
+              <div className="tc-sub" style={{ marginTop: 6 }}>
+                {crmFichaLoading ? "Cargando ficha del cliente..." : `Editando cliente #${crmClienteSelId || crmClienteFicha?.id || ""}`}
+              </div>
+            </div>
+
+            {!crmFichaLoading && <button className="tc-btn" onClick={closeCRMFicha}>Cerrar ficha</button>}
+          </div>
+
+          <div className="tc-hr" />
+
+          {crmFichaLoading ? (
+            <div className="tc-sub">Cargando ficha...</div>
+          ) : (
+            <>
+              <div className="tc-grid-4">
+                <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmEditNombre} onChange={(e) => setCrmEditNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmEditApellido} onChange={(e) => setCrmEditApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Teléfono</div><input className="tc-input" value={crmEditTelefono} onChange={(e) => setCrmEditTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">País</div><input className="tc-input" value={crmEditPais} onChange={(e) => setCrmEditPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Email</div><input className="tc-input" value={crmEditEmail} onChange={(e) => setCrmEditEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmEditOrigen} onChange={(e) => setCrmEditOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Deuda pendiente</div><input className="tc-input" value={crmEditDeuda} onChange={(e) => setCrmEditDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Resumen legacy</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Resumen interno del cliente" style={{ width: "100%", marginTop: 6, minHeight: 140 }} /></div>
+              </div>
+
+              <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title" style={{ fontSize: 16 }}>📝 Historial de notas</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Cada nota guarda quién la escribió y cuándo.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                  <textarea
+                    className="tc-input"
+                    value={crmNewNote}
+                    onChange={(e) => setCrmNewNote(e.target.value)}
+                    placeholder="Escribe una nueva nota del cliente..."
+                    style={{ width: "100%", minHeight: 120, lineHeight: 1.45 }}
+                  />
+                  <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8 }}>
+                    <button className="tc-btn tc-btn-gold" onClick={createCRMNote} disabled={crmSavingNote || !crmClienteSelId}>
+                      {crmSavingNote ? "Guardando nota..." : "Guardar nota"}
+                    </button>
+                  </div>
+                  <div className="tc-sub">{crmNotesMsg || " "}</div>
+                </div>
+
+                <div className="tc-hr" />
+
+                <div style={{ display: "grid", gap: 10 }}>
+                  {crmNotesLoading ? (
+                    <div className="tc-sub">Cargando notas...</div>
+                  ) : crmNotes.length === 0 ? (
+                    <div className="tc-sub">Todavía no hay notas registradas para este cliente.</div>
+                  ) : (
+                    crmNotes.map((n: any) => (
+                      <div
+                        key={n.id}
+                        style={{
+                          border: "1px solid rgba(255,255,255,.08)",
+                          borderRadius: 14,
+                          padding: 12,
+                          background: "rgba(255,255,255,.025)",
+                        }}
+                      >
+                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 800 }}>{n.author_name || n.author_email || "Usuario"}</div>
+                          <div className="tc-sub">
+                            {n.created_at ? new Date(n.created_at).toLocaleString("es-ES") : "—"}
+                          </div>
+                        </div>
+                        {!!n.author_email && (
+                          <div className="tc-sub" style={{ marginTop: 4 }}>{n.author_email}</div>
+                        )}
+                        <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                          {n.texto || "—"}
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
-              <span className="tc-chip">{crmRows.length} filas</span>
-            </div>
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div>
+                  <div className="tc-sub">Enviar llamada a tarotista</div>
+                  <select
+                    className="tc-input"
+                    value={crmTarotistaSendId}
+                    onChange={(e) => setCrmTarotistaSendId(e.target.value)}
+                    style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+                  >
+                    <option value="">
+                      {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
+                    </option>
+                    {crmTarotistasOpts.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.display_name || t.id}
+                        {t.state ? ` · ${t.state}` : ""}
+                      </option>
+                    ))}
+                  </select>
 
-            <div className="tc-hr" />
+                  <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                    <div>
+                      <div className="tc-sub">Minutos free a enviar</div>
+                      <input
+                        className="tc-input"
+                        value={crmSendMinFree}
+                        onChange={(e) => setCrmSendMinFree(e.target.value)}
+                        placeholder="0"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+                    </div>
 
-            <div style={{ display: "grid", gap: 10, maxHeight: "70vh", overflow: "auto", paddingRight: 4 }}>
+                    <div>
+                      <div className="tc-sub">Minutos cliente a enviar</div>
+                      <input
+                        className="tc-input"
+                        value={crmSendMinNormales}
+                        onChange={(e) => setCrmSendMinNormales(e.target.value)}
+                        placeholder="0"
+                        style={{ width: "100%", marginTop: 6 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="tc-row" style={{ marginTop: 12 }}>
+                    <button className="tc-btn tc-btn-gold" onClick={sendCallPopup} disabled={crmSendLoading || !crmClienteSelId || !crmTarotistaSendId}>
+                      {crmSendLoading ? "Enviando..." : "Enviar llamada"}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="tc-sub">Resumen del popup</div>
+                  <div className="tc-sub" style={{ marginTop: 8 }}>
+                    {[crmEditNombre, crmEditApellido].filter(Boolean).join(" ") || "—"}
+                  </div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    {Number(String(crmSendMinFree).replace(",", ".")) || 0} minutos free · {" "}
+                    {Number(String(crmSendMinNormales).replace(",", ".")) || 0} minutos cliente
+                  </div>
+                </div>
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div><div className="tc-sub">ID cliente</div><div className="tc-sub" style={{ marginTop: 8, wordBreak: "break-all" }}>{crmClienteFicha?.id || crmClienteSelId || "—"}</div></div>
+                <div><div className="tc-sub">Última ficha cargada</div><div className="tc-sub" style={{ marginTop: 8 }}>{[crmClienteFicha?.nombre, crmClienteFicha?.apellido].filter(Boolean).join(" ") || "—"}</div></div>
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-title">💳 Cobros</div>
+              <div className="tc-sub" style={{ marginTop: 6 }}>
+                Abre el TPV virtual de PayPal. Cuando termines el cobro, vuelve a esta pestaña y usa 'Confirmar pago' si salió bien o 'Pago erróneo' si falló.
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div>
+                  <div className="tc-sub">Importe (€)</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoImporte}
+                    onChange={(e) => setCrmPagoImporte(e.target.value)}
+                    placeholder="20"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+
+                <div>
+                  <div className="tc-sub">Referencia PayPal / operación</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoReferencia}
+                    onChange={(e) => setCrmPagoReferencia(e.target.value)}
+                    placeholder="Ej: 7AB12345CD6789012"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div className="tc-grid-1" style={{ marginTop: 12 }}>
+                <div>
+                  <div className="tc-sub">Notas</div>
+                  <input
+                    className="tc-input"
+                    value={crmPagoNotas}
+                    onChange={(e) => setCrmPagoNotas(e.target.value)}
+                    placeholder="Cobro telefónico PayPal"
+                    style={{ width: "100%", marginTop: 6 }}
+                  />
+                </div>
+              </div>
+
+              <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+                <button
+                  className="tc-btn tc-btn-gold"
+                  onClick={crearPagoManual}
+                  disabled={crmPagoLoading || crmPagoPendienteConfirmacion || !crmClienteSelId}
+                  style={{ opacity: crmPagoPendienteConfirmacion ? 0.6 : 1 }}
+                >
+                  {crmPagoLoading ? "Abriendo..." : "Registrar pago"}
+                </button>
+
+                <button
+                  className="tc-btn tc-btn-ok"
+                  onClick={confirmarPagoManual}
+                  disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
+                  style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
+                >
+                  {crmPagoLoading ? "Guardando..." : "Confirmar pago"}
+                </button>
+
+                <button
+                  className="tc-btn"
+                  onClick={marcarPagoErroneo}
+                  disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
+                  style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
+                >
+                  {crmPagoLoading ? "Guardando..." : "Pago erróneo"}
+                </button>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {crmPagoMsg || " "}
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 4 }}>
+                {crmPagoPendienteConfirmacion
+                  ? "Hay un cobro pendiente de cerrar en esta ficha. Usa Confirmar pago o Pago erróneo."
+                  : "Primero pulsa Registrar pago para abrir el TPV. Después se habilitarán Confirmar pago y Pago erróneo."}
+              </div>
+
+              <div className="tc-hr" />
+
+              <div className="tc-sub">Historial de pagos</div>
+              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                {crmPagosLoading ? (
+                  <div className="tc-sub">Cargando pagos...</div>
+                ) : crmPagos.length === 0 ? (
+                  <div className="tc-sub">Sin pagos registrados.</div>
+                ) : (
+                  crmPagos.map((p: any) => (
+                    <div
+                      key={p.id}
+                      className="tc-row"
+                      style={{
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        border: "1px solid rgba(255,255,255,.08)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div className="tc-sub">
+                        <b>{eur(p.importe || 0)}</b> · {p.estado || "—"} · {p.metodo || "—"}
+                      </div>
+                      <div className="tc-sub">
+                        {p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}
+                      </div>
+                      {!!p.referencia_externa && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          Ref: {p.referencia_externa}
+                        </div>
+                      )}
+                      {!!p.notas && (
+                        <div className="tc-sub" style={{ width: "100%" }}>
+                          {p.notas}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+                <button className="tc-btn" onClick={closeCRMFicha}>Cancelar</button>
+                <button className="tc-btn tc-btn-ok" onClick={saveCRMFicha} disabled={crmSaveLoading || !crmClienteSelId}>
+                  {crmSaveLoading ? "Guardando..." : "Guardar cambios"}
+                </button>
+              </div>
+
+              <div className="tc-sub" style={{ marginTop: 10 }}>
+                {crmFichaMsg || crmSendMsg || " "}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      <div className="tc-card">
+        <div className="tc-title">📋 Resultados CRM</div>
+        <div className="tc-sub" style={{ marginTop: 6 }}>Resultado de búsqueda con filtros</div>
+
+        <div className="tc-hr" />
+
+        <div style={{ overflowX: "auto" }}>
+          <table className="tc-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Teléfono</th>
+                <th>País</th>
+                <th>Etiquetas</th>
+                <th>Min free</th>
+                <th>Min normales</th>
+                <th>Deuda</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
               {(crmRows || []).map((r: any) => {
                 const etiquetas = r.etiquetas || r.tags || r.labels || r.crm_tags || r.crm_etiquetas || [];
                 const etiquetasTexto = Array.isArray(etiquetas)
                   ? etiquetas.map((x: any) => typeof x === "string" ? x : x?.nombre || x?.label || x?.name || x?.tag || "").filter(Boolean).join(", ")
                   : "";
-                const selected = String(crmClienteSelId || "") === String(r.id || "");
 
                 return (
-                  <button
-                    key={r.id}
-                    onClick={() => openCRMFicha(String(r.id || ""))}
-                    style={{
-                      textAlign: "left",
-                      width: "100%",
-                      borderRadius: 18,
-                      padding: 14,
-                      cursor: "pointer",
-                      border: selected ? "1px solid rgba(181,156,255,.35)" : "1px solid rgba(255,255,255,.08)",
-                      background: selected
-                        ? "linear-gradient(135deg, rgba(181,156,255,.16), rgba(255,255,255,.03))"
-                        : "rgba(255,255,255,.03)",
-                      boxShadow: selected ? "0 16px 40px rgba(0,0,0,.18)" : "none",
-                      color: "inherit",
-                    }}
-                  >
-                    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 15 }}>
-                          {[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}
-                        </div>
-                        <div className="tc-sub" style={{ marginTop: 6 }}>
-                          {r.telefono || "—"} · {r.pais || "—"}
-                        </div>
-                        <div className="tc-sub" style={{ marginTop: 6, opacity: .86 }}>
-                          Etiquetas: <b>{etiquetasTexto || "—"}</b>
-                        </div>
-                      </div>
-
-                      <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <div className="tc-sub">Deuda</div>
-                        <div style={{ fontWeight: 900 }}>{eur(r.deuda_pendiente || 0)}</div>
-                      </div>
-                    </div>
-
-                    <div className="tc-row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
-                      <span className="tc-chip">Free: {r.minutos_free_pendientes ?? 0}</span>
-                      <span className="tc-chip">Cliente: {r.minutos_normales_pendientes ?? 0}</span>
-                      {selected ? <span className="tc-chip">Ficha abierta</span> : null}
-                    </div>
-                  </button>
+                  <tr key={r.id}>
+                    <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
+                    <td>{r.telefono || "—"}</td>
+                    <td>{r.pais || "—"}</td>
+                    <td>{etiquetasTexto || "—"}</td>
+                    <td>{r.minutos_free_pendientes ?? 0}</td>
+                    <td>{r.minutos_normales_pendientes ?? 0}</td>
+                    <td>{eur(r.deuda_pendiente || 0)}</td>
+                    <td><button className="tc-btn" onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button></td>
+                  </tr>
                 );
               })}
 
               {crmRows.length === 0 && (
-                <div
-                  style={{
-                    borderRadius: 18,
-                    border: "1px dashed rgba(255,255,255,.14)",
-                    background: "rgba(255,255,255,.025)",
-                    padding: 18,
-                  }}
-                >
-                  <div style={{ fontWeight: 800 }}>Sin resultados</div>
-                  <div className="tc-sub" style={{ marginTop: 8 }}>
-                    Usa los filtros de arriba para encontrar clientes.
-                  </div>
-                </div>
+                <tr>
+                  <td colSpan={8} className="tc-muted">Sin resultados.</td>
+                </tr>
               )}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 18 }}>
-          <div className="tc-card" style={{ borderRadius: 22, padding: 18 }}>
-            <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <div>
-                <div className="tc-title" style={{ fontSize: 20 }}>➕ Nuevo cliente</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Alta manual rápida desde el panel {mode}
-                </div>
-              </div>
-
-              <button
-                className={`tc-btn ${mostrarNuevoCliente ? "" : "tc-btn-gold"}`}
-                onClick={() => setMostrarNuevoCliente((v) => !v)}
-              >
-                {mostrarNuevoCliente ? "Ocultar formulario" : "+ Nuevo cliente"}
-              </button>
-            </div>
-
-            {mostrarNuevoCliente ? (
-              <>
-                <div className="tc-hr" />
-                <div style={{ display: "grid", gap: 14 }}>
-                  <div className="tc-grid-4">
-                    <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmNewNombre} onChange={(e) => setCrmNewNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmNewApellido} onChange={(e) => setCrmNewApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Teléfono</div><input className="tc-input" value={crmNewTelefono} onChange={(e) => setCrmNewTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">País</div><input className="tc-input" value={crmNewPais} onChange={(e) => setCrmNewPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Email</div><input className="tc-input" value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Deuda</div><input className="tc-input" value={crmNewDeuda} onChange={(e) => setCrmNewDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Min free</div><input className="tc-input" value={crmNewMinFree} onChange={(e) => setCrmNewMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                  </div>
-
-                  <div className="tc-grid-2">
-                    <div><div className="tc-sub">Min normales</div><input className="tc-input" value={crmNewMinNormales} onChange={(e) => setCrmNewMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
-                  </div>
-
-                  <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 4, gap: 10, flexWrap: "wrap" }}>
-                    <div className="tc-sub">{crmCreateMsg || "Completa los datos y crea el cliente."}</div>
-                    <div className="tc-row" style={{ gap: 8 }}>
-                      <button className="tc-btn" onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
-                        Cancelar
-                      </button>
-                      <button className="tc-btn tc-btn-ok" onClick={createCRMClient} disabled={crmCreateLoading}>
-                        {crmCreateLoading ? "Creando..." : "Crear cliente"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="tc-sub" style={{ marginTop: 12 }}>
-                Pulsa <b>+ Nuevo cliente</b> para desplegar el formulario de alta.
-              </div>
-            )}
-          </div>
-
-          {(crmFichaLoading || crmClienteFicha) ? (
-            <div className="tc-card" style={{ borderRadius: 24, padding: 20, boxShadow: "0 28px 70px rgba(0,0,0,.24)" }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-                <div>
-                  <div className="tc-title" style={{ fontSize: 24 }}>🧾 Ficha CRM</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    {crmFichaLoading ? "Cargando ficha del cliente..." : `Editando cliente #${crmClienteSelId || crmClienteFicha?.id || ""}`}
-                  </div>
-                </div>
-
-                {!crmFichaLoading && <button className="tc-btn" onClick={closeCRMFicha}>Cerrar ficha</button>}
-              </div>
-
-              <div className="tc-hr" />
-
-              {crmFichaLoading ? (
-                <div className="tc-sub">Cargando ficha...</div>
-              ) : (
-                <>
-                  <div className="tc-grid-4">
-                    <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmEditNombre} onChange={(e) => setCrmEditNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmEditApellido} onChange={(e) => setCrmEditApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Teléfono</div><input className="tc-input" value={crmEditTelefono} onChange={(e) => setCrmEditTelefono(e.target.value)} placeholder="600123123" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">País</div><input className="tc-input" value={crmEditPais} onChange={(e) => setCrmEditPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Email</div><input className="tc-input" value={crmEditEmail} onChange={(e) => setCrmEditEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmEditOrigen} onChange={(e) => setCrmEditOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Deuda pendiente</div><input className="tc-input" value={crmEditDeuda} onChange={(e) => setCrmEditDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                  </div>
-
-                  <div className="tc-grid-2" style={{ marginTop: 14 }}>
-                    <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div>
-                  <div className="tc-sub">Resumen interno del cliente</div>
-                  <textarea
-                    className="tc-input"
-                    value={crmEditNotas}
-                    onChange={(e) => setCrmEditNotas(e.target.value)}
-                    placeholder="Resumen general visible en la ficha"
-                    style={{ width: "100%", marginTop: 6, minHeight: 180, fontSize: 15, lineHeight: 1.5 }}
-                  />
-                  <div className="tc-sub" style={{ marginTop: 8 }}>
-                    Este campo puede quedarse como resumen. Las notas con autor quedan guardadas debajo en el historial.
-                  </div>
-                </div>
-              </div>
-
-              <div className="tc-grid-2" style={{ marginTop: 14 }}>
-                <div className="tc-card" style={{ borderRadius: 20, padding: 16, background: "rgba(255,255,255,.025)" }}>
-                  <div className="tc-title" style={{ fontSize: 18 }}>📝 Notas del CRM</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Cada nota guarda automáticamente qué usuario la escribió y cuándo.
-                  </div>
-
-                  <div style={{ marginTop: 12 }}>
-                    <textarea
-                      className="tc-input"
-                      value={crmNoteText}
-                      onChange={(e) => setCrmNoteText(e.target.value)}
-                      placeholder="Escribe una nota nueva para este cliente…"
-                      style={{ width: "100%", minHeight: 130, fontSize: 15, lineHeight: 1.5 }}
-                    />
-                  </div>
-
-                  <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-                    <button className="tc-btn tc-btn-ok" onClick={addCRMNote} disabled={crmNoteSaving || !crmClienteSelId}>
-                      {crmNoteSaving ? "Guardando nota..." : "Guardar nota"}
-                    </button>
-                  </div>
-
-                  <div className="tc-sub" style={{ marginTop: 10 }}>
-                    {crmNotesMsg || " "}
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {crmNotesLoading ? (
-                      <div className="tc-sub">Cargando notas...</div>
-                    ) : crmNotes.length === 0 ? (
-                      <div className="tc-sub">Todavía no hay notas guardadas para este cliente.</div>
-                    ) : (
-                      crmNotes.map((note: any) => (
-                        <div
-                          key={note.id}
-                          style={{
-                            border: "1px solid rgba(255,255,255,.08)",
-                            borderRadius: 14,
-                            padding: 12,
-                            background: "rgba(255,255,255,.03)",
-                          }}
-                        >
-                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                            <div style={{ fontWeight: 800 }}>
-                              {note.author_name || note.author_email || "Usuario"}
-                            </div>
-                            <div className="tc-sub">
-                              {note.created_at ? new Date(note.created_at).toLocaleString("es-ES") : "—"}
-                            </div>
-                          </div>
-                          {note.author_email ? (
-                            <div className="tc-sub" style={{ marginTop: 4 }}>
-                              {note.author_email}
-                            </div>
-                          ) : null}
-                          <div style={{ marginTop: 10, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                            {note.texto || note.body || ""}
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="tc-grid-2" style={{ marginTop: 0 }}>
-                    <div className="tc-card" style={{ borderRadius: 20, padding: 16, background: "rgba(255,255,255,.025)" }}>
-                      <div className="tc-title" style={{ fontSize: 18 }}>📞 Enviar llamada</div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>Selecciona tarotista y minutos a enviar.</div>
-
-                      <div style={{ marginTop: 12 }}>
-                        <div className="tc-sub">Tarotista</div>
-                        <select
-                          className="tc-select"
-                          value={crmTarotistaSendId}
-                          onChange={(e) => setCrmTarotistaSendId(e.target.value)}
-                          style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
-                        >
-                          <option value="">
-                            {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
-                          </option>
-                          {crmTarotistasOpts.map((t: any) => (
-                            <option key={t.id} value={t.id}>
-                              {t.display_name || t.id}
-                              {t.state ? ` · ${t.state}` : ""}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                        <div>
-                          <div className="tc-sub">Minutos free</div>
-                          <input className="tc-input" value={crmSendMinFree} onChange={(e) => setCrmSendMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} />
-                        </div>
-                        <div>
-                          <div className="tc-sub">Minutos cliente</div>
-                          <input className="tc-input" value={crmSendMinNormales} onChange={(e) => setCrmSendMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} />
-                        </div>
-                      </div>
-
-                      <div className="tc-row" style={{ marginTop: 12, justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                        <div className="tc-sub">
-                          {[crmEditNombre, crmEditApellido].filter(Boolean).join(" ") || "—"} · {Number(String(crmSendMinFree).replace(",", ".")) || 0} free / {Number(String(crmSendMinNormales).replace(",", ".")) || 0} cliente
-                        </div>
-                        <button className="tc-btn tc-btn-gold" onClick={sendCallPopup} disabled={crmSendLoading || !crmClienteSelId || !crmTarotistaSendId}>
-                          {crmSendLoading ? "Enviando..." : "Enviar llamada"}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="tc-card" style={{ borderRadius: 20, padding: 16, background: "rgba(255,255,255,.025)" }}>
-                      <div className="tc-title" style={{ fontSize: 18 }}>💳 Cobros</div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Registra el intento en PayPal y vuelve aquí para confirmarlo o marcarlo como erróneo.
-                      </div>
-
-                      <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                        <div>
-                          <div className="tc-sub">Importe (€)</div>
-                          <input className="tc-input" value={crmPagoImporte} onChange={(e) => setCrmPagoImporte(e.target.value)} placeholder="20" style={{ width: "100%", marginTop: 6 }} />
-                        </div>
-                        <div>
-                          <div className="tc-sub">Referencia</div>
-                          <input className="tc-input" value={crmPagoReferencia} onChange={(e) => setCrmPagoReferencia(e.target.value)} placeholder="Ej: 7AB12345CD6789012" style={{ width: "100%", marginTop: 6 }} />
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 12 }}>
-                        <div className="tc-sub">Notas</div>
-                        <input className="tc-input" value={crmPagoNotas} onChange={(e) => setCrmPagoNotas(e.target.value)} placeholder="Cobro telefónico PayPal" style={{ width: "100%", marginTop: 6 }} />
-                      </div>
-
-                      <div className="tc-row" style={{ justifyContent: "flex-start", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          className="tc-btn tc-btn-gold"
-                          onClick={crearPagoManual}
-                          disabled={crmPagoLoading || crmPagoPendienteConfirmacion || !crmClienteSelId}
-                          style={{ opacity: crmPagoPendienteConfirmacion ? 0.6 : 1 }}
-                        >
-                          {crmPagoLoading ? "Abriendo..." : "Registrar pago"}
-                        </button>
-
-                        <button
-                          className="tc-btn tc-btn-ok"
-                          onClick={confirmarPagoManual}
-                          disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
-                          style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
-                        >
-                          {crmPagoLoading ? "Guardando..." : "Confirmar pago"}
-                        </button>
-
-                        <button
-                          className="tc-btn"
-                          onClick={marcarPagoErroneo}
-                          disabled={crmPagoLoading || !crmPagoPendienteConfirmacion}
-                          style={{ opacity: crmPagoPendienteConfirmacion ? 1 : 0.6 }}
-                        >
-                          {crmPagoLoading ? "Guardando..." : "Pago erróneo"}
-                        </button>
-                      </div>
-
-                      <div className="tc-sub" style={{ marginTop: 10 }}>{crmPagoMsg || " "}</div>
-                    </div>
-                  </div>
-
-                  <div className="tc-grid-2" style={{ marginTop: 14 }}>
-                    <div><div className="tc-sub">ID cliente</div><div className="tc-sub" style={{ marginTop: 8, wordBreak: "break-all" }}>{crmClienteFicha?.id || crmClienteSelId || "—"}</div></div>
-                    <div><div className="tc-sub">Última ficha cargada</div><div className="tc-sub" style={{ marginTop: 8 }}>{[crmClienteFicha?.nombre, crmClienteFicha?.apellido].filter(Boolean).join(" ") || "—"}</div></div>
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-title" style={{ fontSize: 18 }}>Historial de pagos</div>
-                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                    {crmPagosLoading ? (
-                      <div className="tc-sub">Cargando pagos...</div>
-                    ) : crmPagos.length === 0 ? (
-                      <div className="tc-sub">Sin pagos registrados.</div>
-                    ) : (
-                      crmPagos.map((p: any) => (
-                        <div
-                          key={p.id}
-                          className="tc-row"
-                          style={{
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            border: "1px solid rgba(255,255,255,.08)",
-                            borderRadius: 14,
-                            padding: "12px 14px",
-                            gap: 10,
-                            flexWrap: "wrap",
-                            background: "rgba(255,255,255,.025)",
-                          }}
-                        >
-                          <div className="tc-sub">
-                            <b>{eur(p.importe || 0)}</b> · {p.estado || "—"} · {p.metodo || "—"}
-                          </div>
-                          <div className="tc-sub">
-                            {p.created_at ? new Date(p.created_at).toLocaleString("es-ES") : "—"}
-                          </div>
-                          {!!p.referencia_externa && (
-                            <div className="tc-sub" style={{ width: "100%" }}>
-                              Ref: {p.referencia_externa}
-                            </div>
-                          )}
-                          {!!p.notas && (
-                            <div className="tc-sub" style={{ width: "100%" }}>
-                              {p.notas}
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 14, gap: 10, flexWrap: "wrap" }}>
-                    <div className="tc-sub">{crmFichaMsg || crmSendMsg || " "}</div>
-                    <div className="tc-row" style={{ gap: 8 }}>
-                      <button className="tc-btn" onClick={closeCRMFicha}>Cancelar</button>
-                      <button className="tc-btn tc-btn-ok" onClick={saveCRMFicha} disabled={crmSaveLoading || !crmClienteSelId}>
-                        {crmSaveLoading ? "Guardando..." : "Guardar cambios"}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          ) : (
-            <div
-              className="tc-card"
-              style={{
-                borderRadius: 24,
-                padding: 24,
-                minHeight: 320,
-                display: "grid",
-                alignContent: "center",
-                justifyItems: "start",
-                background: "linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.025))",
-              }}
-            >
-              <div className="tc-title" style={{ fontSize: 24 }}>Selecciona un cliente</div>
-              <div className="tc-sub" style={{ marginTop: 10, maxWidth: 540 }}>
-                Abre una ficha desde la columna izquierda para editar datos, enviar llamadas, revisar notas y gestionar cobros.
-              </div>
-            </div>
-          )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   );
 }
+
