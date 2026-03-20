@@ -145,7 +145,13 @@ export default function Admin() {
   const lastMonthRef = useRef<string>("");
 
   const totalSum = useMemo(() => {
-    return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+    return (
+<div style={{
+  padding:24,
+  maxWidth:1400,
+  margin:"0 auto",
+}}>
+invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -1225,19 +1231,19 @@ export default function Admin() {
     return map;
   }, [staffSchedules]);
 
-  if (!ok) return <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", fontSize: 18, letterSpacing: ".02em" }}>Cargando…</div>;
+  if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <>
       <AppHeader />
 
-      <div className="tc-wrap" style={{ padding: 30 }}>
-        <div className="tc-container" style={{ maxWidth: 1500 }}>
-          <div className="tc-card" style={{ position: "relative", overflow: "hidden", padding: 24, borderRadius: 28, background: "radial-gradient(circle at top right, rgba(181,156,255,.22), transparent 26%), radial-gradient(circle at top left, rgba(215,181,109,.16), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035))", boxShadow: "0 28px 90px rgba(0,0,0,0.34)" }}>
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div className="tc-wrap">
+        <div className="tc-container">
+          <div className="tc-card">
+            <div className="tc-row" style={{ justifyContent: "space-between" }}>
               <div>
-                <div className="tc-title" style={{ fontSize: 28, letterSpacing: ".02em", lineHeight: 1.05 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub" style={{ marginTop: 8, maxWidth: 840, fontSize: 13 }}>Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM</div>
+                <div className="tc-title" style={{ fontSize: 18 }}>👑 Admin — Tarot Celestial</div>
+                <div className="tc-sub">Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM</div>
               </div>
 
               <div className="tc-row">
@@ -1255,7 +1261,7 @@ export default function Admin() {
               </div>
             </div>
 
-            <div style={{ marginTop: 18, padding: 8, borderRadius: 20, background: "rgba(255,255,255,0.05)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 10px 30px rgba(0,0,0,.18)", backdropFilter: "blur(10px)" }} className="tc-tabs">
+            <div style={{ marginTop: 12 }} className="tc-tabs">
               <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
                 🧾 Facturas
               </button>
@@ -2482,10 +2488,8 @@ export default function Admin() {
             className="tc-card"
             style={{
               width: "100%",
-              maxWidth: 520,
-              boxShadow: "0 30px 90px rgba(0,0,0,0.48)",
-              borderRadius: 24,
-              background: "linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04))",
+              maxWidth: 440,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.45)",
             }}
           >
             <div className="tc-title">📞 Llamada finalizada</div>
@@ -2536,87 +2540,47 @@ export default function Admin() {
   );
 }
 
-
 function KpiBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
     <div
       style={{
-        position: "relative",
-        overflow: "hidden",
-        border: highlight ? "1px solid rgba(215,181,109,0.28)" : "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 18,
-        padding: 16,
-        background: highlight
-          ? "linear-gradient(180deg, rgba(215,181,109,0.16), rgba(255,255,255,0.03))"
-          : "linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025))",
-        boxShadow: "0 18px 40px rgba(0,0,0,0.18)",
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: highlight ? "rgba(215,181,109,0.10)" : "rgba(255,255,255,0.03)",
       }}
     >
-      <div
-        style={{
-          position: "absolute",
-          inset: "auto -18px -24px auto",
-          width: 92,
-          height: 92,
-          borderRadius: 999,
-          background: highlight ? "rgba(215,181,109,0.24)" : "rgba(181,156,255,0.16)",
-          filter: "blur(22px)",
-          opacity: 0.55,
-          pointerEvents: "none",
-        }}
-      />
-      <div className="tc-sub" style={{ fontSize: 12, letterSpacing: ".04em", textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 26, marginTop: 8, lineHeight: 1.05 }}>{value}</div>
+      <div className="tc-sub">{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 6 }}>{value}</div>
     </div>
   );
 }
-
 
 function KpiMini({ label, value }: { label: string; value: string }) {
   return (
     <div
       style={{
         border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 16,
-        padding: 12,
-        background: "linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02))",
-        boxShadow: "0 14px 30px rgba(0,0,0,0.14)",
+        borderRadius: 12,
+        padding: 10,
+        background: "rgba(255,255,255,0.03)",
       }}
     >
-      <div className="tc-sub" style={{ fontSize: 12 }}>{label}</div>
-      <div style={{ fontWeight: 900, fontSize: 20, marginTop: 8, lineHeight: 1.05 }}>{value}</div>
+      <div className="tc-sub">{label}</div>
+      <div style={{ fontWeight: 900, fontSize: 18, marginTop: 6 }}>{value}</div>
     </div>
   );
 }
 
-
 function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <div
-      className="tc-card"
-      style={{
-        padding: 18,
-        borderRadius: 20,
-        background: "linear-gradient(180deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025))",
-        boxShadow: "0 22px 50px rgba(0,0,0,0.18)",
-      }}
-    >
-      <div className="tc-title" style={{ fontSize: 15 }}>{title}</div>
+    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
+      <div className="tc-title" style={{ fontSize: 14 }}>{title}</div>
       <div className="tc-hr" />
-      <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ display: "grid", gap: 8 }}>
         {(items || []).slice(0, 3).map((t, i) => (
-          <div
-            key={i}
-            className="tc-row"
-            style={{
-              justifyContent: "space-between",
-              padding: "10px 12px",
-              borderRadius: 14,
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <span style={{ fontWeight: 700 }}>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
+          <div key={i} className="tc-row" style={{ justifyContent: "space-between" }}>
+            <span>{i === 0 ? "🥇" : i === 1 ? "🥈" : "🥉"} {t}</span>
           </div>
         ))}
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
@@ -2902,5 +2866,7 @@ function ChecklistRow({
 
       {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
-  );
+  
+</div>
+);
 }
