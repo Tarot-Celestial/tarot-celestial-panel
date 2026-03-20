@@ -403,6 +403,3 @@ function BarRow({ label, width, positive }: { label: string; width: number; posi
     </div>
   );
 }
-
-  );
-}
