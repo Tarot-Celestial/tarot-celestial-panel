@@ -751,8 +751,8 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 16, alignItems:"start" }}>
-      <div className="tc-card">
+    <div className="crm-master-detail" style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 20, alignItems:"start" }}>
+      <div className="tc-card" style={{ borderRadius: 22, padding: 18 }}>
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
             <div className="tc-title">👥 CRM</div>
@@ -822,7 +822,7 @@ export default function CRMClientesPanel({
         <div className="tc-sub">{crmMsg || " "}</div>
       </div>
 
-      <div className="tc-card">
+      <div className="tc-card" style={{ borderRadius: 22, padding: 18 }}>
         <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div>
             <div className="tc-title">➕ Nuevo cliente</div>
@@ -887,10 +887,10 @@ export default function CRMClientesPanel({
       </div>
 
       {(crmFichaLoading || crmClienteFicha) && (
-        <div className="tc-card" style={{ marginTop: 12, position:"sticky", top:10 }}>
+        <div className="tc-card" style={{ marginTop: 12, position:"sticky", top:10, borderRadius: 24, padding: 20, boxShadow: "0 28px 70px rgba(0,0,0,.24)" }}>
           <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <div>
-              <div className="tc-title">🧾 Ficha CRM</div>
+              <div className="tc-title" style={{ fontSize: 24 }}>🧾 Ficha CRM</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
                 {crmFichaLoading ? "Cargando ficha del cliente..." : `Editando cliente #${crmClienteSelId || crmClienteFicha?.id || ""}`}
               </div>
@@ -918,7 +918,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Notas</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 180 }} /></div>
+                <div><div className="tc-sub">Notas</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 220, fontSize: 15, lineHeight: 1.5 }} /></div>
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
@@ -1131,8 +1131,8 @@ export default function CRMClientesPanel({
         </div>
       )}
 
-      <div className="tc-card">
-        <div className="tc-title">📋 Resultados CRM</div>
+      <div className="tc-card" style={{ borderRadius: 22, padding: 18 }}>
+        <div className="tc-title" style={{ fontSize: 20 }}>📋 Resultados CRM</div>
         <div className="tc-sub" style={{ marginTop: 6 }}>Resultado de búsqueda con filtros</div>
 
         <div className="tc-hr" />
