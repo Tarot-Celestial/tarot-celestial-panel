@@ -70,6 +70,12 @@ export default function CRMClientesPanel({
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
   const [crmSaveLoading, setCrmSaveLoading] = useState(false);
 
+  const [crmNotes, setCrmNotes] = useState<any[]>([]);
+  const [crmNotesLoading, setCrmNotesLoading] = useState(false);
+  const [crmNoteText, setCrmNoteText] = useState("");
+  const [crmNoteSaving, setCrmNoteSaving] = useState(false);
+  const [crmNotesMsg, setCrmNotesMsg] = useState("");
+
   const [crmNewNombre, setCrmNewNombre] = useState("");
   const [crmNewApellido, setCrmNewApellido] = useState("");
   const [crmNewTelefono, setCrmNewTelefono] = useState("");
@@ -370,6 +376,88 @@ export default function CRMClientesPanel({
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
     setCrmPagoPendienteConfirmacion(false);
+    setCrmNotes([]);
+    setCrmNotesLoading(false);
+    setCrmNoteText("");
+    setCrmNoteSaving(false);
+    setCrmNotesMsg("");
+  }
+
+
+  async function loadNotasCliente(clienteId: string) {
+    if (!clienteId) {
+      setCrmNotes([]);
+      return;
+    }
+
+    try {
+      setCrmNotesLoading(true);
+      setCrmNotesMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/crm/clientes/notas/listar?cliente_id=${encodeURIComponent(clienteId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCrmNotes(Array.isArray(j.notas) ? j.notas : []);
+    } catch (e: any) {
+      console.error("ERROR CARGANDO NOTAS CLIENTE", e);
+      setCrmNotes([]);
+      setCrmNotesMsg(`❌ ${e?.message || "Error cargando notas"}`);
+    } finally {
+      setCrmNotesLoading(false);
+    }
+  }
+
+  async function addCRMNote() {
+    const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+    const texto = crmNoteText.trim();
+
+    if (!clienteId) {
+      setCrmNotesMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+    if (!texto) {
+      setCrmNotesMsg("⚠️ Escribe una nota");
+      return;
+    }
+
+    try {
+      setCrmNoteSaving(true);
+      setCrmNotesMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/clientes/notas/crear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: clienteId,
+          texto,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setCrmNoteText("");
+      setCrmNotesMsg("✅ Nota guardada");
+      await loadNotasCliente(clienteId);
+    } catch (e: any) {
+      setCrmNotesMsg(`❌ ${e?.message || "Error guardando nota"}`);
+    } finally {
+      setCrmNoteSaving(false);
+    }
   }
 
   async function loadPagosCliente(clienteId: string) {
@@ -439,7 +527,11 @@ export default function CRMClientesPanel({
       setCrmSendMinFree(String(c?.minutos_free_pendientes ?? 0));
       setCrmSendMinNormales(String(c?.minutos_normales_pendientes ?? 0));
 
-      await loadPagosCliente(String(c?.id || id || ""));
+      const clienteId = String(c?.id || id || "");
+      await Promise.all([
+        loadPagosCliente(clienteId),
+        loadNotasCliente(clienteId),
+      ]);
     } catch (e: any) {
       console.error("ERROR FICHA", e);
       setCrmClienteFicha(null);
@@ -1043,10 +1135,89 @@ export default function CRMClientesPanel({
 
                   <div className="tc-grid-2" style={{ marginTop: 14 }}>
                     <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                    <div><div className="tc-sub">Notas</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6, minHeight: 220, fontSize: 15, lineHeight: 1.5 }} /></div>
+                    <div>
+                  <div className="tc-sub">Resumen interno del cliente</div>
+                  <textarea
+                    className="tc-input"
+                    value={crmEditNotas}
+                    onChange={(e) => setCrmEditNotas(e.target.value)}
+                    placeholder="Resumen general visible en la ficha"
+                    style={{ width: "100%", marginTop: 6, minHeight: 180, fontSize: 15, lineHeight: 1.5 }}
+                  />
+                  <div className="tc-sub" style={{ marginTop: 8 }}>
+                    Este campo puede quedarse como resumen. Las notas con autor quedan guardadas debajo en el historial.
+                  </div>
+                </div>
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 14 }}>
+                <div className="tc-card" style={{ borderRadius: 20, padding: 16, background: "rgba(255,255,255,.025)" }}>
+                  <div className="tc-title" style={{ fontSize: 18 }}>📝 Notas del CRM</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Cada nota guarda automáticamente qué usuario la escribió y cuándo.
                   </div>
 
-                  <div className="tc-grid-2" style={{ marginTop: 14 }}>
+                  <div style={{ marginTop: 12 }}>
+                    <textarea
+                      className="tc-input"
+                      value={crmNoteText}
+                      onChange={(e) => setCrmNoteText(e.target.value)}
+                      placeholder="Escribe una nota nueva para este cliente…"
+                      style={{ width: "100%", minHeight: 130, fontSize: 15, lineHeight: 1.5 }}
+                    />
+                  </div>
+
+                  <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+                    <button className="tc-btn tc-btn-ok" onClick={addCRMNote} disabled={crmNoteSaving || !crmClienteSelId}>
+                      {crmNoteSaving ? "Guardando nota..." : "Guardar nota"}
+                    </button>
+                  </div>
+
+                  <div className="tc-sub" style={{ marginTop: 10 }}>
+                    {crmNotesMsg || " "}
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {crmNotesLoading ? (
+                      <div className="tc-sub">Cargando notas...</div>
+                    ) : crmNotes.length === 0 ? (
+                      <div className="tc-sub">Todavía no hay notas guardadas para este cliente.</div>
+                    ) : (
+                      crmNotes.map((note: any) => (
+                        <div
+                          key={note.id}
+                          style={{
+                            border: "1px solid rgba(255,255,255,.08)",
+                            borderRadius: 14,
+                            padding: 12,
+                            background: "rgba(255,255,255,.03)",
+                          }}
+                        >
+                          <div className="tc-row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                            <div style={{ fontWeight: 800 }}>
+                              {note.author_name || note.author_email || "Usuario"}
+                            </div>
+                            <div className="tc-sub">
+                              {note.created_at ? new Date(note.created_at).toLocaleString("es-ES") : "—"}
+                            </div>
+                          </div>
+                          {note.author_email ? (
+                            <div className="tc-sub" style={{ marginTop: 4 }}>
+                              {note.author_email}
+                            </div>
+                          ) : null}
+                          <div style={{ marginTop: 10, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                            {note.texto || note.body || ""}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="tc-grid-2" style={{ marginTop: 0 }}>
                     <div className="tc-card" style={{ borderRadius: 20, padding: 16, background: "rgba(255,255,255,.025)" }}>
                       <div className="tc-title" style={{ fontSize: 18 }}>📞 Enviar llamada</div>
                       <div className="tc-sub" style={{ marginTop: 6 }}>Selecciona tarotista y minutos a enviar.</div>
