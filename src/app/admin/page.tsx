@@ -1225,14 +1225,14 @@ export default function Admin() {
     return map;
   }, [staffSchedules]);
 
-  if (!ok) return <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", fontSize: 18, letterSpacing: ".02em" }}>Cargando…</div>;
+  if (!ok) return <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", fontSize: 18, letterSpacing: ".02em", background: "transparent" }}>Cargando…</div>;
 
   return (
     <>
       <AppHeader />
 
-      <div className="tc-wrap" style={{ padding: 30 }}>
-        <div className="tc-container" style={{ maxWidth: 1500 }}>
+      <div className="tc-wrap" style={{ padding: 30, gap: 18 }}>
+        <div className="tc-container" style={{ maxWidth: 1500, display: "grid", gap: 18 }}>
           <div className="tc-card" style={{ position: "relative", overflow: "hidden", padding: 24, borderRadius: 28, background: "radial-gradient(circle at top right, rgba(181,156,255,.22), transparent 26%), radial-gradient(circle at top left, rgba(215,181,109,.16), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035))", boxShadow: "0 28px 90px rgba(0,0,0,0.34)" }}>
             <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div>
@@ -1284,11 +1284,50 @@ export default function Admin() {
                 🔄 Sync
               </button>
             </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.2fr .9fr .9fr .9fr",
+              gap: 14,
+              alignItems: "stretch",
+            }}
+          >
+            <div
+              className="tc-card"
+              style={{
+                padding: 20,
+                borderRadius: 24,
+                background:
+                  "radial-gradient(circle at top right, rgba(181,156,255,.16), transparent 30%), linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
+              }}
+            >
+              <div className="tc-sub" style={{ textTransform: "uppercase", letterSpacing: ".05em" }}>
+                Resumen ejecutivo
+              </div>
+              <div style={{ fontSize: 30, fontWeight: 900, marginTop: 10, lineHeight: 1.02 }}>
+                {eur(totalSum)}
+              </div>
+              <div className="tc-sub" style={{ marginTop: 8 }}>
+                Total visible en facturas del mes · {month}
+              </div>
+              <div className="tc-row" style={{ marginTop: 14, gap: 8, flexWrap: "wrap" }}>
+                <span className="tc-chip">Facturas: {(invoices || []).length}</span>
+                <span className="tc-chip">Aceptadas: {statsComputed.accepted}</span>
+                <span className="tc-chip">Pendientes: {statsComputed.pending}</span>
+              </div>
+            </div>
+
+            <KpiBox label="Facturación" value={eur(totalSum)} highlight />
+            <KpiBox label="Clientes VIP" value={String((statsComputed.review || 0) + 0)} />
+            <KpiBox label="Tarotistas activas" value={String(statsComputed.workers || 0)} />
+          </div>
+
           </div>
 
           {tab === "facturas" && (
-            <div className="tc-card" style={{ position: "relative", overflow: "hidden", padding: 24, borderRadius: 28, background: "radial-gradient(circle at top right, rgba(181,156,255,.20), transparent 28%), radial-gradient(circle at top left, rgba(215,181,109,.14), transparent 24%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035))", boxShadow: "0 28px 90px rgba(0,0,0,0.34)" }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
                   <div className="tc-title">🧾 Facturas del mes</div>
                   <div className="tc-sub">Genera y revisa. Click para editar. (Se actualiza “en directo”)</div>
@@ -2570,6 +2609,8 @@ function KpiBox({ label, value, highlight }: { label: string; value: string; hig
     </div>
   );
 }
+
+
 function KpiMini({ label, value }: { label: string; value: string }) {
   return (
     <div
@@ -2586,6 +2627,8 @@ function KpiMini({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+
 function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   return (
     <div
@@ -2620,6 +2663,7 @@ function TopStatsCard({ title, items }: { title: string; items: string[] }) {
     </div>
   );
 }
+
 function LineEditor({
   line,
   onSave,
