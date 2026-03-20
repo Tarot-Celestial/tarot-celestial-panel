@@ -21,6 +21,22 @@ function eur(n: any) {
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
+function normalizeTags(raw: any): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((x: any) =>
+      typeof x === "string" ? x : x?.nombre || x?.label || x?.name || x?.tag || ""
+    )
+    .map((x: any) => String(x || "").trim())
+    .filter(Boolean);
+}
+
+function toggleTag(list: string[], tag: string) {
+  const t = String(tag || "").trim();
+  if (!t) return list;
+  return list.includes(t) ? list.filter((x) => x !== t) : [...list, t];
+}
+
 type CRMClientesPanelProps = {
   mode?: "admin" | "central";
   showImportButton?: boolean;
@@ -44,6 +60,8 @@ export default function CRMClientesPanel({
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
+  const [crmEditEtiquetas, setCrmEditEtiquetas] = useState<string[]>([]);
+  const [crmNewEtiquetas, setCrmNewEtiquetas] = useState<string[]>([]);
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
   const [crmTarotistasLoading, setCrmTarotistasLoading] = useState(false);
@@ -314,6 +332,7 @@ export default function CRMClientesPanel({
           deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
           minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
+          etiquetas: crmNewEtiquetas,
         }),
       });
 
@@ -332,6 +351,7 @@ export default function CRMClientesPanel({
       setCrmNewDeuda("0");
       setCrmNewMinFree("0");
       setCrmNewMinNormales("0");
+      setCrmNewEtiquetas([]);
       setMostrarNuevoCliente(false);
 
       await searchCRM();
@@ -369,6 +389,7 @@ export default function CRMClientesPanel({
     setCrmEditDeuda("0");
     setCrmEditMinFree("0");
     setCrmEditMinNormales("0");
+    setCrmEditEtiquetas([]);
     setCrmPagos([]);
     setCrmPagosLoading(false);
     setCrmPagoImporte("");
@@ -377,6 +398,7 @@ export default function CRMClientesPanel({
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
     setCrmPagoPendienteConfirmacion(false);
+    setCrmNewEtiquetas([]);
     setCrmNotes([]);
     setCrmNotesLoading(false);
     setCrmNotesMsg("");
@@ -518,6 +540,7 @@ export default function CRMClientesPanel({
       setCrmEditPais(String(c?.pais || ""));
       setCrmEditEmail(String(c?.email || ""));
       setCrmEditNotas(String(c?.notas || ""));
+      setCrmEditEtiquetas(normalizeTags(c?.etiquetas || c?.tags || c?.labels || c?.crm_tags || c?.crm_etiquetas || []));
       setCrmEditOrigen(String(c?.origen || ""));
       setCrmEditDeuda(String(c?.deuda_pendiente ?? 0));
       setCrmEditMinFree(String(c?.minutos_free_pendientes ?? 0));
@@ -566,6 +589,7 @@ export default function CRMClientesPanel({
           deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
           minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
+          etiquetas: crmEditEtiquetas,
         }),
       });
 
@@ -947,6 +971,35 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">País</div><input className="tc-input" value={crmNewPais} onChange={(e) => setCrmNewPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Email</div><input className="tc-input" value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div className="tc-sub">Etiquetas</div>
+                  <div className="tc-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                    {crmEtiquetasOpts.map((et: any) => {
+                      const tag = String(et?.nombre || "");
+                      const active = crmNewEtiquetas.includes(tag);
+                      return (
+                        <button
+                          type="button"
+                          key={et.id || tag}
+                          className="tc-btn"
+                          onClick={() => setCrmNewEtiquetas((prev) => toggleTag(prev, tag))}
+                          style={{
+                            minHeight: 34,
+                            padding: "8px 12px",
+                            borderRadius: 999,
+                            background: active ? "rgba(181,156,255,.20)" : "rgba(255,255,255,.05)",
+                            border: active ? "1px solid rgba(181,156,255,.45)" : "1px solid rgba(255,255,255,.12)",
+                          }}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                    {crmEtiquetasOpts.length === 0 && (
+                      <div className="tc-sub">{crmEtiquetasLoading ? "Cargando etiquetas..." : "No hay etiquetas disponibles."}</div>
+                    )}
+                  </div>
+                </div>
                 <div><div className="tc-sub">Deuda</div><input className="tc-input" value={crmNewDeuda} onChange={(e) => setCrmNewDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Min free</div><input className="tc-input" value={crmNewMinFree} onChange={(e) => setCrmNewMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
@@ -1005,9 +1058,43 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
-              <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Resumen legacy</div><textarea className="tc-input" value={crmEditNotas} onChange={(e) => setCrmEditNotas(e.target.value)} placeholder="Resumen interno del cliente" style={{ width: "100%", marginTop: 6, minHeight: 140 }} /></div>
+              <div style={{ marginTop: 12 }}>
+                <div className="tc-sub">Min normales pendientes</div>
+                <input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} />
+              </div>
+
+              <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+                <div className="tc-title" style={{ fontSize: 16 }}>🏷️ Etiquetas del cliente</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Puedes activar o quitar etiquetas directamente desde la ficha.
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  {crmEtiquetasOpts.map((et: any) => {
+                    const tag = String(et?.nombre || "");
+                    const active = crmEditEtiquetas.includes(tag);
+                    return (
+                      <button
+                        type="button"
+                        key={et.id || tag}
+                        className="tc-btn"
+                        onClick={() => setCrmEditEtiquetas((prev) => toggleTag(prev, tag))}
+                        style={{
+                          minHeight: 34,
+                          padding: "8px 12px",
+                          borderRadius: 999,
+                          background: active ? "rgba(181,156,255,.20)" : "rgba(255,255,255,.05)",
+                          border: active ? "1px solid rgba(181,156,255,.45)" : "1px solid rgba(255,255,255,.12)",
+                        }}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                  {crmEtiquetasOpts.length === 0 && (
+                    <div className="tc-sub">{crmEtiquetasLoading ? "Cargando etiquetas..." : "No hay etiquetas disponibles."}</div>
+                  )}
+                </div>
               </div>
 
               <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
@@ -1335,4 +1422,3 @@ export default function CRMClientesPanel({
     </div>
   );
 }
-
