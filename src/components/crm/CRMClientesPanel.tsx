@@ -37,6 +37,12 @@ function toggleTag(list: string[], tag: string) {
   return list.includes(t) ? list.filter((x) => x !== t) : [...list, t];
 }
 
+function addTag(list: string[], tag: string) {
+  const t = String(tag || "").trim();
+  if (!t) return list;
+  return list.includes(t) ? list : [...list, t];
+}
+
 type CRMClientesPanelProps = {
   mode?: "admin" | "central";
   showImportButton?: boolean;
@@ -62,6 +68,10 @@ export default function CRMClientesPanel({
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
   const [crmEditEtiquetas, setCrmEditEtiquetas] = useState<string[]>([]);
   const [crmNewEtiquetas, setCrmNewEtiquetas] = useState<string[]>([]);
+  const [crmEditEtiquetaSelect, setCrmEditEtiquetaSelect] = useState("");
+  const [crmEditEtiquetaNueva, setCrmEditEtiquetaNueva] = useState("");
+  const [crmNewEtiquetaSelect, setCrmNewEtiquetaSelect] = useState("");
+  const [crmNewEtiquetaNueva, setCrmNewEtiquetaNueva] = useState("");
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
   const [crmTarotistasLoading, setCrmTarotistasLoading] = useState(false);
@@ -352,6 +362,8 @@ export default function CRMClientesPanel({
       setCrmNewMinFree("0");
       setCrmNewMinNormales("0");
       setCrmNewEtiquetas([]);
+      setCrmNewEtiquetaSelect("");
+      setCrmNewEtiquetaNueva("");
       setMostrarNuevoCliente(false);
 
       await searchCRM();
@@ -390,6 +402,8 @@ export default function CRMClientesPanel({
     setCrmEditMinFree("0");
     setCrmEditMinNormales("0");
     setCrmEditEtiquetas([]);
+    setCrmEditEtiquetaSelect("");
+    setCrmEditEtiquetaNueva("");
     setCrmPagos([]);
     setCrmPagosLoading(false);
     setCrmPagoImporte("");
@@ -972,31 +986,95 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Email</div><input className="tc-input" value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <div className="tc-sub">Etiquetas</div>
-                  <div className="tc-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                    {crmEtiquetasOpts.map((et: any) => {
-                      const tag = String(et?.nombre || "");
-                      const active = crmNewEtiquetas.includes(tag);
-                      return (
-                        <button
-                          type="button"
-                          key={et.id || tag}
-                          className="tc-btn"
-                          onClick={() => setCrmNewEtiquetas((prev) => toggleTag(prev, tag))}
-                          style={{
-                            minHeight: 34,
-                            padding: "8px 12px",
-                            borderRadius: 999,
-                            background: active ? "rgba(181,156,255,.20)" : "rgba(255,255,255,.05)",
-                            border: active ? "1px solid rgba(181,156,255,.45)" : "1px solid rgba(255,255,255,.12)",
-                          }}
+                  <div className="tc-sub">Etiqueta</div>
+
+                  {crmNewEtiquetas.length > 0 ? (
+                    <div className="tc-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                      {crmNewEtiquetas.map((tag) => (
+                        <span
+                          key={tag}
+                          className="tc-chip"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px" }}
                         >
                           {tag}
+                          <button
+                            type="button"
+                            onClick={() => setCrmNewEtiquetas((prev) => prev.filter((x) => x !== tag))}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: "inherit",
+                              cursor: "pointer",
+                              fontWeight: 900,
+                              lineHeight: 1,
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="tc-sub" style={{ marginTop: 8 }}>Este cliente aún no tiene etiquetas.</div>
+                  )}
+
+                  <div className="tc-row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                    <select
+                      className="tc-input"
+                      value={crmNewEtiquetaSelect}
+                      onChange={(e) => setCrmNewEtiquetaSelect(e.target.value)}
+                      style={{ minWidth: 240, colorScheme: "dark" }}
+                    >
+                      <option value="">
+                        {crmEtiquetasLoading ? "Cargando etiquetas..." : "Añadir etiqueta"}
+                      </option>
+                      {crmEtiquetasOpts.map((et: any) => {
+                        const tag = String(et?.nombre || "");
+                        return (
+                          <option key={et.id || tag} value={tag}>
+                            {tag}
+                          </option>
+                        );
+                      })}
+                      <option value="__nueva__">Etiqueta nueva</option>
+                    </select>
+
+                    {crmNewEtiquetaSelect === "__nueva__" ? (
+                      <>
+                        <input
+                          className="tc-input"
+                          value={crmNewEtiquetaNueva}
+                          onChange={(e) => setCrmNewEtiquetaNueva(e.target.value)}
+                          placeholder="Escribe la nueva etiqueta"
+                          style={{ minWidth: 240 }}
+                        />
+                        <button
+                          type="button"
+                          className="tc-btn"
+                          onClick={() => {
+                            const tag = crmNewEtiquetaNueva.trim();
+                            if (!tag) return;
+                            setCrmNewEtiquetas((prev) => addTag(prev, tag));
+                            setCrmNewEtiquetaNueva("");
+                            setCrmNewEtiquetaSelect("");
+                          }}
+                        >
+                          Añadir
                         </button>
-                      );
-                    })}
-                    {crmEtiquetasOpts.length === 0 && (
-                      <div className="tc-sub">{crmEtiquetasLoading ? "Cargando etiquetas..." : "No hay etiquetas disponibles."}</div>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="tc-btn"
+                        disabled={!crmNewEtiquetaSelect}
+                        onClick={() => {
+                          if (!crmNewEtiquetaSelect) return;
+                          setCrmNewEtiquetas((prev) => addTag(prev, crmNewEtiquetaSelect));
+                          setCrmNewEtiquetaSelect("");
+                        }}
+                      >
+                        Añadir
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1064,35 +1142,98 @@ export default function CRMClientesPanel({
               </div>
 
               <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
-                <div className="tc-title" style={{ fontSize: 16 }}>🏷️ Etiquetas del cliente</div>
+                <div className="tc-title" style={{ fontSize: 16 }}>🏷️ Etiqueta</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Puedes activar o quitar etiquetas directamente desde la ficha.
+                  Aquí ves las etiquetas actuales del cliente y puedes añadir otras nuevas.
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                  {crmEtiquetasOpts.map((et: any) => {
-                    const tag = String(et?.nombre || "");
-                    const active = crmEditEtiquetas.includes(tag);
-                    return (
-                      <button
-                        type="button"
-                        key={et.id || tag}
-                        className="tc-btn"
-                        onClick={() => setCrmEditEtiquetas((prev) => toggleTag(prev, tag))}
-                        style={{
-                          minHeight: 34,
-                          padding: "8px 12px",
-                          borderRadius: 999,
-                          background: active ? "rgba(181,156,255,.20)" : "rgba(255,255,255,.05)",
-                          border: active ? "1px solid rgba(181,156,255,.45)" : "1px solid rgba(255,255,255,.12)",
-                        }}
+                {crmEditEtiquetas.length > 0 ? (
+                  <div className="tc-row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                    {crmEditEtiquetas.map((tag) => (
+                      <span
+                        key={tag}
+                        className="tc-chip"
+                        style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px" }}
                       >
                         {tag}
+                        <button
+                          type="button"
+                          onClick={() => setCrmEditEtiquetas((prev) => prev.filter((x) => x !== tag))}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "inherit",
+                            cursor: "pointer",
+                            fontWeight: 900,
+                            lineHeight: 1,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="tc-sub" style={{ marginTop: 12 }}>Este cliente aún no tiene etiquetas.</div>
+                )}
+
+                <div className="tc-row" style={{ gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+                  <select
+                    className="tc-input"
+                    value={crmEditEtiquetaSelect}
+                    onChange={(e) => setCrmEditEtiquetaSelect(e.target.value)}
+                    style={{ minWidth: 240, colorScheme: "dark" }}
+                  >
+                    <option value="">
+                      {crmEtiquetasLoading ? "Cargando etiquetas..." : "Añadir etiqueta"}
+                    </option>
+                    {crmEtiquetasOpts.map((et: any) => {
+                      const tag = String(et?.nombre || "");
+                      return (
+                        <option key={et.id || tag} value={tag}>
+                          {tag}
+                        </option>
+                      );
+                    })}
+                    <option value="__nueva__">Etiqueta nueva</option>
+                  </select>
+
+                  {crmEditEtiquetaSelect === "__nueva__" ? (
+                    <>
+                      <input
+                        className="tc-input"
+                        value={crmEditEtiquetaNueva}
+                        onChange={(e) => setCrmEditEtiquetaNueva(e.target.value)}
+                        placeholder="Escribe la nueva etiqueta"
+                        style={{ minWidth: 240 }}
+                      />
+                      <button
+                        type="button"
+                        className="tc-btn"
+                        onClick={() => {
+                          const tag = crmEditEtiquetaNueva.trim();
+                          if (!tag) return;
+                          setCrmEditEtiquetas((prev) => addTag(prev, tag));
+                          setCrmEditEtiquetaNueva("");
+                          setCrmEditEtiquetaSelect("");
+                        }}
+                      >
+                        Añadir
                       </button>
-                    );
-                  })}
-                  {crmEtiquetasOpts.length === 0 && (
-                    <div className="tc-sub">{crmEtiquetasLoading ? "Cargando etiquetas..." : "No hay etiquetas disponibles."}</div>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="tc-btn"
+                      disabled={!crmEditEtiquetaSelect}
+                      onClick={() => {
+                        if (!crmEditEtiquetaSelect) return;
+                        setCrmEditEtiquetas((prev) => addTag(prev, crmEditEtiquetaSelect));
+                        setCrmEditEtiquetaSelect("");
+                      }}
+                    >
+                      Añadir
+                    </button>
                   )}
                 </div>
               </div>
@@ -1422,3 +1563,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
