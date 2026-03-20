@@ -240,3 +240,141 @@ border-radius: 999px;
 ::-webkit-scrollbar-thumb:hover{
 background: rgba(255,255,255,0.3);
 }
+
+
+
+/* =========================
+   WOW / FUTURISTIC LAYER
+   ========================= */
+:root{
+  --tc-shadow-xl: 0 24px 80px rgba(0,0,0,0.42);
+  --tc-glass: linear-gradient(180deg, rgba(255,255,255,0.072), rgba(255,255,255,0.032));
+}
+
+body{
+  background:
+    radial-gradient(1000px 540px at 10% -10%, rgba(181,156,255,0.22), transparent 52%),
+    radial-gradient(820px 520px at 100% 0%, rgba(215,181,109,0.16), transparent 50%),
+    radial-gradient(820px 520px at 50% 110%, rgba(143,108,255,0.14), transparent 55%),
+    linear-gradient(180deg, #0a0712 0%, #0c0816 100%);
+}
+
+.tc-wrap{ padding: 30px; gap: 18px; }
+.tc-container{ max-width: 1500px; }
+
+.tc-card{
+  border-radius: 22px;
+  background: var(--tc-glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--tc-shadow-xl), inset 0 1px 0 rgba(255,255,255,0.04);
+  padding: 18px;
+}
+
+.tc-title{ font-size: 18px; line-height: 1.08; letter-spacing: .01em; }
+.tc-sub{ font-size: 13px; opacity: .82; }
+
+.tc-btn{
+  min-height: 42px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(0,0,0,0.18);
+}
+
+.tc-btn-gold{
+  color: #1a1a1a;
+  border-color: rgba(215,181,109,0.55);
+}
+
+.tc-input, .tc-select{
+  min-height: 44px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+textarea.tc-input{
+  min-height: 120px;
+  resize: vertical;
+}
+
+.tc-chip{
+  font-size: 12px;
+  padding: 7px 11px;
+  border-radius: 999px;
+}
+
+.tc-tabs{
+  gap: 10px;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.045);
+  backdrop-filter: blur(10px);
+}
+
+.tc-tab{
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-weight: 700;
+}
+
+.tc-tab-active{
+  background: linear-gradient(135deg, rgba(181,156,255,.24), rgba(215,181,109,.12));
+  border-color: rgba(181,156,255,0.45);
+}
+
+.tc-grid-3{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 14px;
+}
+.tc-grid-4{
+  display:grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 14px;
+}
+.tc-grid-1{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+.tc-kpis{
+  display:grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 12px;
+}
+
+.tc-table{
+  font-size: 14px;
+}
+.tc-table th{
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .70;
+  padding: 12px 10px;
+}
+.tc-table td{
+  padding: 13px 10px;
+}
+.tc-table tbody tr:hover{
+  background: rgba(255,255,255,0.055);
+}
+
+@media (max-width: 1180px){
+  .tc-grid-4{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .tc-grid-3{ grid-template-columns: 1fr; }
+  .tc-kpis{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+
+@media (max-width: 920px){
+  .tc-wrap{ padding: 18px; }
+  .tc-grid-4, .tc-grid-2, .tc-kpis{ grid-template-columns: 1fr !important; }
+  .tc-card{ padding: 16px; border-radius: 18px; }
+}
+
+
+.crm-master-detail{ display:grid; grid-template-columns:420px 1fr; gap:20px; align-items:start; }
+@media (max-width: 1180px){
+  .crm-master-detail{ grid-template-columns:1fr !important; }
+}
