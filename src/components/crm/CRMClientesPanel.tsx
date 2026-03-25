@@ -21,28 +21,6 @@ function eur(n: any) {
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
-function normalizeTags(raw: any): string[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((x: any) =>
-      typeof x === "string" ? x : x?.nombre || x?.label || x?.name || x?.tag || ""
-    )
-    .map((x: any) => String(x || "").trim())
-    .filter(Boolean);
-}
-
-function toggleTag(list: string[], tag: string) {
-  const t = String(tag || "").trim();
-  if (!t) return list;
-  return list.includes(t) ? list.filter((x) => x !== t) : [...list, t];
-}
-
-function addTag(list: string[], tag: string) {
-  const t = String(tag || "").trim();
-  if (!t) return list;
-  return list.includes(t) ? list : [...list, t];
-}
-
 type CRMClientesPanelProps = {
   mode?: "admin" | "central";
   showImportButton?: boolean;
@@ -66,12 +44,6 @@ export default function CRMClientesPanel({
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
-  const [crmEditEtiquetas, setCrmEditEtiquetas] = useState<string[]>([]);
-  const [crmNewEtiquetas, setCrmNewEtiquetas] = useState<string[]>([]);
-  const [crmEditEtiquetaSelect, setCrmEditEtiquetaSelect] = useState("");
-  const [crmEditEtiquetaNueva, setCrmEditEtiquetaNueva] = useState("");
-  const [crmNewEtiquetaSelect, setCrmNewEtiquetaSelect] = useState("");
-  const [crmNewEtiquetaNueva, setCrmNewEtiquetaNueva] = useState("");
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
   const [crmTarotistasLoading, setCrmTarotistasLoading] = useState(false);
@@ -125,6 +97,10 @@ export default function CRMClientesPanel({
   const [crmNotesMsg, setCrmNotesMsg] = useState("");
   const [crmNewNote, setCrmNewNote] = useState("");
   const [crmSavingNote, setCrmSavingNote] = useState(false);
+  const [crmEditingNoteId, setCrmEditingNoteId] = useState("");
+  const [crmEditingNoteText, setCrmEditingNoteText] = useState("");
+  const [crmUpdatingNote, setCrmUpdatingNote] = useState(false);
+  const [crmPinningNoteId, setCrmPinningNoteId] = useState("");
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -342,7 +318,6 @@ export default function CRMClientesPanel({
           deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
           minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
-          etiquetas: crmNewEtiquetas,
         }),
       });
 
@@ -361,9 +336,6 @@ export default function CRMClientesPanel({
       setCrmNewDeuda("0");
       setCrmNewMinFree("0");
       setCrmNewMinNormales("0");
-      setCrmNewEtiquetas([]);
-      setCrmNewEtiquetaSelect("");
-      setCrmNewEtiquetaNueva("");
       setMostrarNuevoCliente(false);
 
       await searchCRM();
@@ -401,9 +373,6 @@ export default function CRMClientesPanel({
     setCrmEditDeuda("0");
     setCrmEditMinFree("0");
     setCrmEditMinNormales("0");
-    setCrmEditEtiquetas([]);
-    setCrmEditEtiquetaSelect("");
-    setCrmEditEtiquetaNueva("");
     setCrmPagos([]);
     setCrmPagosLoading(false);
     setCrmPagoImporte("");
@@ -412,7 +381,6 @@ export default function CRMClientesPanel({
     setCrmPagoLoading(false);
     setCrmPagoMsg("");
     setCrmPagoPendienteConfirmacion(false);
-    setCrmNewEtiquetas([]);
     setCrmNotes([]);
     setCrmNotesLoading(false);
     setCrmNotesMsg("");
@@ -525,6 +493,81 @@ export default function CRMClientesPanel({
     }
   }
 
+  function startEditCRMNote(note: any) {
+    setCrmEditingNoteId(String(note?.id || ""));
+    setCrmEditingNoteText(String(note?.texto || ""));
+    setCrmNotesMsg("");
+  }
+
+  function cancelEditCRMNote() {
+    setCrmEditingNoteId("");
+    setCrmEditingNoteText("");
+  }
+
+  async function updateCRMNote(noteId: string) {
+    if (!noteId) return;
+    if (!crmEditingNoteText.trim()) {
+      setCrmNotesMsg("⚠️ La nota no puede estar vacía");
+      return;
+    }
+    try {
+      setCrmUpdatingNote(true);
+      setCrmNotesMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const r = await fetch("/api/crm/clientes/notas/update", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: noteId,
+          texto: crmEditingNoteText.trim(),
+        }),
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+      setCrmNotesMsg("✅ Nota actualizada");
+      cancelEditCRMNote();
+      await loadNotasCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
+    } catch (e: any) {
+      setCrmNotesMsg(`❌ ${e?.message || "Error actualizando nota"}`);
+    } finally {
+      setCrmUpdatingNote(false);
+    }
+  }
+
+  async function togglePinCRMNote(note: any) {
+    const noteId = String(note?.id || "");
+    if (!noteId) return;
+    try {
+      setCrmPinningNoteId(noteId);
+      setCrmNotesMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const r = await fetch("/api/crm/clientes/notas/pin", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: noteId,
+          is_pinned: !Boolean(note?.is_pinned),
+        }),
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+      setCrmNotesMsg(!Boolean(note?.is_pinned) ? "✅ Nota anclada" : "✅ Nota desanclada");
+      await loadNotasCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
+    } catch (e: any) {
+      setCrmNotesMsg(`❌ ${e?.message || "Error anclando nota"}`);
+    } finally {
+      setCrmPinningNoteId("");
+    }
+  }
+
   async function openCRMFicha(id: string) {
     if (!id) return;
 
@@ -554,7 +597,6 @@ export default function CRMClientesPanel({
       setCrmEditPais(String(c?.pais || ""));
       setCrmEditEmail(String(c?.email || ""));
       setCrmEditNotas(String(c?.notas || ""));
-      setCrmEditEtiquetas(normalizeTags(c?.etiquetas || c?.tags || c?.labels || c?.crm_tags || c?.crm_etiquetas || []));
       setCrmEditOrigen(String(c?.origen || ""));
       setCrmEditDeuda(String(c?.deuda_pendiente ?? 0));
       setCrmEditMinFree(String(c?.minutos_free_pendientes ?? 0));
@@ -603,7 +645,6 @@ export default function CRMClientesPanel({
           deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
           minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
-          etiquetas: crmEditEtiquetas,
         }),
       });
 
@@ -985,99 +1026,6 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">País</div><input className="tc-input" value={crmNewPais} onChange={(e) => setCrmNewPais(e.target.value)} placeholder="España" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Email</div><input className="tc-input" value={crmNewEmail} onChange={(e) => setCrmNewEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmNewOrigen} onChange={(e) => setCrmNewOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <div className="tc-sub">Etiqueta</div>
-
-                  {crmNewEtiquetas.length > 0 ? (
-                    <div className="tc-row" style={{ gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                      {crmNewEtiquetas.map((tag) => (
-                        <span
-                          key={tag}
-                          className="tc-chip"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px" }}
-                        >
-                          {tag}
-                          <button
-                            type="button"
-                            onClick={() => setCrmNewEtiquetas((prev) => prev.filter((x) => x !== tag))}
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              color: "inherit",
-                              cursor: "pointer",
-                              fontWeight: 900,
-                              lineHeight: 1,
-                            }}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="tc-sub" style={{ marginTop: 8 }}>Este cliente aún no tiene etiquetas.</div>
-                  )}
-
-                  <div className="tc-row" style={{ gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-                    <select
-                      className="tc-input"
-                      value={crmNewEtiquetaSelect}
-                      onChange={(e) => setCrmNewEtiquetaSelect(e.target.value)}
-                      style={{ minWidth: 240, colorScheme: "dark" }}
-                    >
-                      <option value="">
-                        {crmEtiquetasLoading ? "Cargando etiquetas..." : "Añadir etiqueta"}
-                      </option>
-                      {crmEtiquetasOpts.map((et: any) => {
-                        const tag = String(et?.nombre || "");
-                        return (
-                          <option key={et.id || tag} value={tag}>
-                            {tag}
-                          </option>
-                        );
-                      })}
-                      <option value="__nueva__">Etiqueta nueva</option>
-                    </select>
-
-                    {crmNewEtiquetaSelect === "__nueva__" ? (
-                      <>
-                        <input
-                          className="tc-input"
-                          value={crmNewEtiquetaNueva}
-                          onChange={(e) => setCrmNewEtiquetaNueva(e.target.value)}
-                          placeholder="Escribe la nueva etiqueta"
-                          style={{ minWidth: 240 }}
-                        />
-                        <button
-                          type="button"
-                          className="tc-btn"
-                          onClick={() => {
-                            const tag = crmNewEtiquetaNueva.trim();
-                            if (!tag) return;
-                            setCrmNewEtiquetas((prev) => addTag(prev, tag));
-                            setCrmNewEtiquetaNueva("");
-                            setCrmNewEtiquetaSelect("");
-                          }}
-                        >
-                          Añadir
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        type="button"
-                        className="tc-btn"
-                        disabled={!crmNewEtiquetaSelect}
-                        onClick={() => {
-                          if (!crmNewEtiquetaSelect) return;
-                          setCrmNewEtiquetas((prev) => addTag(prev, crmNewEtiquetaSelect));
-                          setCrmNewEtiquetaSelect("");
-                        }}
-                      >
-                        Añadir
-                      </button>
-                    )}
-                  </div>
-                </div>
                 <div><div className="tc-sub">Deuda</div><input className="tc-input" value={crmNewDeuda} onChange={(e) => setCrmNewDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Min free</div><input className="tc-input" value={crmNewMinFree} onChange={(e) => setCrmNewMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
@@ -1136,106 +1084,9 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
-              <div style={{ marginTop: 12 }}>
-                <div className="tc-sub">Min normales pendientes</div>
-                <input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} />
-              </div>
-
-              <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
-                <div className="tc-title" style={{ fontSize: 16 }}>🏷️ Etiqueta</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Aquí ves las etiquetas actuales del cliente y puedes añadir otras nuevas.
-                </div>
-
-                {crmEditEtiquetas.length > 0 ? (
-                  <div className="tc-row" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                    {crmEditEtiquetas.map((tag) => (
-                      <span
-                        key={tag}
-                        className="tc-chip"
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 12px" }}
-                      >
-                        {tag}
-                        <button
-                          type="button"
-                          onClick={() => setCrmEditEtiquetas((prev) => prev.filter((x) => x !== tag))}
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            color: "inherit",
-                            cursor: "pointer",
-                            fontWeight: 900,
-                            lineHeight: 1,
-                          }}
-                        >
-                          ×
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="tc-sub" style={{ marginTop: 12 }}>Este cliente aún no tiene etiquetas.</div>
-                )}
-
-                <div className="tc-row" style={{ gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-                  <select
-                    className="tc-input"
-                    value={crmEditEtiquetaSelect}
-                    onChange={(e) => setCrmEditEtiquetaSelect(e.target.value)}
-                    style={{ minWidth: 240, colorScheme: "dark" }}
-                  >
-                    <option value="">
-                      {crmEtiquetasLoading ? "Cargando etiquetas..." : "Añadir etiqueta"}
-                    </option>
-                    {crmEtiquetasOpts.map((et: any) => {
-                      const tag = String(et?.nombre || "");
-                      return (
-                        <option key={et.id || tag} value={tag}>
-                          {tag}
-                        </option>
-                      );
-                    })}
-                    <option value="__nueva__">Etiqueta nueva</option>
-                  </select>
-
-                  {crmEditEtiquetaSelect === "__nueva__" ? (
-                    <>
-                      <input
-                        className="tc-input"
-                        value={crmEditEtiquetaNueva}
-                        onChange={(e) => setCrmEditEtiquetaNueva(e.target.value)}
-                        placeholder="Escribe la nueva etiqueta"
-                        style={{ minWidth: 240 }}
-                      />
-                      <button
-                        type="button"
-                        className="tc-btn"
-                        onClick={() => {
-                          const tag = crmEditEtiquetaNueva.trim();
-                          if (!tag) return;
-                          setCrmEditEtiquetas((prev) => addTag(prev, tag));
-                          setCrmEditEtiquetaNueva("");
-                          setCrmEditEtiquetaSelect("");
-                        }}
-                      >
-                        Añadir
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      className="tc-btn"
-                      disabled={!crmEditEtiquetaSelect}
-                      onClick={() => {
-                        if (!crmEditEtiquetaSelect) return;
-                        setCrmEditEtiquetas((prev) => addTag(prev, crmEditEtiquetaSelect));
-                        setCrmEditEtiquetaSelect("");
-                      }}
-                    >
-                      Añadir
-                    </button>
-                  )}
-                </div>
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Resumen interno</div><div className="tc-sub" style={{ marginTop: 10 }}>Las notas con autor están justo debajo.</div></div>
               </div>
 
               <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
@@ -1272,18 +1123,29 @@ export default function CRMClientesPanel({
                   ) : crmNotes.length === 0 ? (
                     <div className="tc-sub">Todavía no hay notas registradas para este cliente.</div>
                   ) : (
-                    crmNotes.map((n: any) => (
+                    [...crmNotes].sort((a: any, b: any) => {
+                      const ap = a?.is_pinned ? 1 : 0;
+                      const bp = b?.is_pinned ? 1 : 0;
+                      if (ap !== bp) return bp - ap;
+                      return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
+                    }).map((n: any) => (
                       <div
                         key={n.id}
                         style={{
-                          border: "1px solid rgba(255,255,255,.08)",
+                          border: n?.is_pinned ? "1px solid rgba(215,181,109,.26)" : "1px solid rgba(255,255,255,.08)",
                           borderRadius: 14,
                           padding: 12,
-                          background: "rgba(255,255,255,.025)",
+                          background: n?.is_pinned ? "linear-gradient(135deg, rgba(215,181,109,.10), rgba(255,255,255,.025))" : "rgba(255,255,255,.025)",
+                          boxShadow: n?.is_pinned ? "0 10px 26px rgba(0,0,0,.16)" : "none",
                         }}
                       >
                         <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                          <div style={{ fontWeight: 800 }}>{n.author_name || n.author_email || "Usuario"}</div>
+                          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                            <div style={{ fontWeight: 800 }}>{n.author_name || n.author_email || "Usuario"}</div>
+                            {n?.is_pinned ? (
+                              <span className="tc-chip" style={{ background: "rgba(215,181,109,.14)", border: "1px solid rgba(215,181,109,.22)" }}>📌 Anclada</span>
+                            ) : null}
+                          </div>
                           <div className="tc-sub">
                             {n.created_at ? new Date(n.created_at).toLocaleString("es-ES") : "—"}
                           </div>
@@ -1291,8 +1153,41 @@ export default function CRMClientesPanel({
                         {!!n.author_email && (
                           <div className="tc-sub" style={{ marginTop: 4 }}>{n.author_email}</div>
                         )}
-                        <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                          {n.texto || "—"}
+
+                        {crmEditingNoteId === String(n.id) ? (
+                          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                            <textarea
+                              className="tc-input"
+                              value={crmEditingNoteText}
+                              onChange={(e) => setCrmEditingNoteText(e.target.value)}
+                              style={{ width: "100%", minHeight: 120, lineHeight: 1.45 }}
+                            />
+                            <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8 }}>
+                              <button className="tc-btn" onClick={cancelEditCRMNote} disabled={crmUpdatingNote}>Cancelar</button>
+                              <button className="tc-btn tc-btn-ok" onClick={() => updateCRMNote(String(n.id))} disabled={crmUpdatingNote}>
+                                {crmUpdatingNote ? "Guardando..." : "Guardar"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                            {n.texto || "—"}
+                          </div>
+                        )}
+
+                        <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+                          <button
+                            className="tc-btn"
+                            onClick={() => togglePinCRMNote(n)}
+                            disabled={crmPinningNoteId === String(n.id) || crmEditingNoteId === String(n.id)}
+                          >
+                            {crmPinningNoteId === String(n.id) ? "..." : n?.is_pinned ? "Desanclar" : "Anclar"}
+                          </button>
+                          {crmEditingNoteId !== String(n.id) ? (
+                            <button className="tc-btn" onClick={() => startEditCRMNote(n)}>
+                              Editar
+                            </button>
+                          ) : null}
                         </div>
                       </div>
                     ))
