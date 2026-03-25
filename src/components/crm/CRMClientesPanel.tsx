@@ -112,6 +112,15 @@ export default function CRMClientesPanel({
     return token;
   }
 
+  function sortNotes(rows: any[]) {
+    return [...(rows || [])].sort((a: any, b: any) => {
+      const ap = a?.is_pinned ? 1 : 0;
+      const bp = b?.is_pinned ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
+    });
+  }
+
   async function loadCRMEtiquetas() {
     try {
       setCrmEtiquetasLoading(true);
@@ -386,6 +395,10 @@ export default function CRMClientesPanel({
     setCrmNotesMsg("");
     setCrmNewNote("");
     setCrmSavingNote(false);
+    setCrmEditingNoteId("");
+    setCrmEditingNoteText("");
+    setCrmUpdatingNote(false);
+    setCrmPinningNoteId("");
   }
 
   async function loadPagosCliente(clienteId: string) {
@@ -440,7 +453,7 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
-      setCrmNotes(Array.isArray(j.notas) ? j.notas : []);
+      setCrmNotes(sortNotes(Array.isArray(j.notas) ? j.notas : []));
     } catch (e) {
       console.error("ERROR CARGANDO NOTAS CLIENTE", e);
       setCrmNotes([]);
@@ -540,7 +553,8 @@ export default function CRMClientesPanel({
 
   async function togglePinCRMNote(note: any) {
     const noteId = String(note?.id || "");
-    if (!noteId) return;
+    const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+    if (!noteId || !clienteId) return;
     try {
       setCrmPinningNoteId(noteId);
       setCrmNotesMsg("");
@@ -560,7 +574,7 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
       setCrmNotesMsg(!Boolean(note?.is_pinned) ? "✅ Nota anclada" : "✅ Nota desanclada");
-      await loadNotasCliente(String(crmClienteFicha?.id || crmClienteSelId || ""));
+      await loadNotasCliente(clienteId);
     } catch (e: any) {
       setCrmNotesMsg(`❌ ${e?.message || "Error anclando nota"}`);
     } finally {
@@ -681,14 +695,6 @@ export default function CRMClientesPanel({
 
       const tarotistaSel =
         crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId)) || null;
-
-      console.log("SEND CALL POPUP", {
-        crmTarotistaSendId,
-        tarotistaSel,
-        crmTarotistasOpts,
-        clienteSelId: crmClienteSelId,
-        clienteFichaId: crmClienteFicha?.id,
-      });
 
       const payload = {
         tarotista_worker_id: String(tarotistaSel?.id || crmTarotistaSendId || "").trim(),
@@ -1094,7 +1100,7 @@ export default function CRMClientesPanel({
                   <div>
                     <div className="tc-title" style={{ fontSize: 16 }}>📝 Historial de notas</div>
                     <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Cada nota guarda quién la escribió y cuándo.
+                      Cada nota guarda quién la escribió y cuándo. Las ancladas se quedan arriba.
                     </div>
                   </div>
                 </div>
@@ -1123,12 +1129,7 @@ export default function CRMClientesPanel({
                   ) : crmNotes.length === 0 ? (
                     <div className="tc-sub">Todavía no hay notas registradas para este cliente.</div>
                   ) : (
-                    [...crmNotes].sort((a: any, b: any) => {
-                      const ap = a?.is_pinned ? 1 : 0;
-                      const bp = b?.is_pinned ? 1 : 0;
-                      if (ap !== bp) return bp - ap;
-                      return String(b?.created_at || "").localeCompare(String(a?.created_at || ""));
-                    }).map((n: any) => (
+                    crmNotes.map((n: any) => (
                       <div
                         key={n.id}
                         style={{
@@ -1181,7 +1182,7 @@ export default function CRMClientesPanel({
                             onClick={() => togglePinCRMNote(n)}
                             disabled={crmPinningNoteId === String(n.id) || crmEditingNoteId === String(n.id)}
                           >
-                            {crmPinningNoteId === String(n.id) ? "..." : n?.is_pinned ? "Desanclar" : "Anclar"}
+                            {crmPinningNoteId === String(n.id) ? "Guardando..." : n?.is_pinned ? "Desanclar" : "Anclar"}
                           </button>
                           {crmEditingNoteId !== String(n.id) ? (
                             <button className="tc-btn" onClick={() => startEditCRMNote(n)}>
@@ -1458,4 +1459,3 @@ export default function CRMClientesPanel({
     </div>
   );
 }
-
