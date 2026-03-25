@@ -9,11 +9,15 @@ const supabase = createClient(
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+
     const id = String(body?.id || "");
     const is_pinned = !!body?.is_pinned;
 
     if (!id) {
-      return NextResponse.json({ ok: false, error: "Falta id" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "Falta id de la nota" },
+        { status: 400 }
+      );
     }
 
     const { error } = await supabase
@@ -22,7 +26,10 @@ export async function POST(req: NextRequest) {
       .eq("id", id);
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true });
