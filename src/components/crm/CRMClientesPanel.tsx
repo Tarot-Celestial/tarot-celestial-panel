@@ -1050,21 +1050,6 @@ export default function CRMClientesPanel({
               <div className="tc-card" style={{ marginTop: 12 }}>
                 <div className="tc-sub">Etiquetas cliente</div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                  {crmClienteEtiquetasSel.map((id: any) => {
-                    const et = crmEtiquetasOpts.find((e: any) => e.id === id);
-                    if (!et) return null;
-                    return (
-                      <div key={id} className="tc-chip">
-                        {et.nombre}
-                        <button onClick={() =>
-                          setCrmClienteEtiquetasSel(prev => prev.filter(x => x !== id))
-                        }>✕</button>
-                      </div>
-                    );
-                  })}
-                </div>
-
                 <button
                   className="tc-btn"
                   style={{ marginTop: 8 }}
@@ -1074,24 +1059,31 @@ export default function CRMClientesPanel({
                 </button>
 
                 {crmEtiquetasDropdown && (
-                  <div style={{
-                    position: "fixed",
-                    inset: 0,
-                    zIndex: 999999,
-                    background: "rgba(0,0,0,.6)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center"
-                  }}>
-                    <div style={{
-                      width: 340,
-                      maxHeight: "70vh",
-                      overflowY: "auto",
-                      background: "#111",
-                      borderRadius: 12,
-                      padding: 14,
-                      border: "1px solid rgba(255,255,255,.1)"
-                    }}>
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      width: "100vw",
+                      height: "100vh",
+                      zIndex: 2147483647,
+                      background: "rgba(0,0,0,0.7)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 350,
+                        maxHeight: "80vh",
+                        overflowY: "auto",
+                        background: "#000",
+                        borderRadius: 12,
+                        padding: 16,
+                        border: "1px solid rgba(255,255,255,.2)"
+                      }}
+                    >
                       <div style={{ fontWeight: 600, marginBottom: 10 }}>
                         Etiquetas
                       </div>
@@ -1205,21 +1197,6 @@ export default function CRMClientesPanel({
               <div className="tc-card" style={{ marginTop: 12 }}>
                 <div className="tc-sub">Etiquetas cliente</div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                  {crmClienteEtiquetasSel.map((id: any) => {
-                    const et = crmEtiquetasOpts.find((e: any) => e.id === id);
-                    if (!et) return null;
-                    return (
-                      <div key={id} className="tc-chip">
-                        {et.nombre}
-                        <button onClick={() =>
-                          setCrmClienteEtiquetasSel(prev => prev.filter(x => x !== id))
-                        }>✕</button>
-                      </div>
-                    );
-                  })}
-                </div>
-
                 <button
                   className="tc-btn"
                   style={{ marginTop: 8 }}
@@ -1229,24 +1206,31 @@ export default function CRMClientesPanel({
                 </button>
 
                 {crmEtiquetasDropdown && (
-                  <div style={{
-                    position: "fixed",
-                    inset: 0,
-                    zIndex: 999999,
-                    background: "rgba(0,0,0,.6)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center"
-                  }}>
-                    <div style={{
-                      width: 340,
-                      maxHeight: "70vh",
-                      overflowY: "auto",
-                      background: "#111",
-                      borderRadius: 12,
-                      padding: 14,
-                      border: "1px solid rgba(255,255,255,.1)"
-                    }}>
+                  <div
+                    style={{
+                      position: "fixed",
+                      top: 0,
+                      left: 0,
+                      width: "100vw",
+                      height: "100vh",
+                      zIndex: 2147483647,
+                      background: "rgba(0,0,0,0.7)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 350,
+                        maxHeight: "80vh",
+                        overflowY: "auto",
+                        background: "#000",
+                        borderRadius: 12,
+                        padding: 16,
+                        border: "1px solid rgba(255,255,255,.2)"
+                      }}
+                    >
                       <div style={{ fontWeight: 600, marginBottom: 10 }}>
                         Etiquetas
                       </div>
