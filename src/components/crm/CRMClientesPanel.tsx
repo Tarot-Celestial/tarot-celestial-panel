@@ -45,6 +45,7 @@ export default function CRMClientesPanel({
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmClienteEtiquetasSel, setCrmClienteEtiquetasSel] = useState<string[]>([]);
   const [crmEtiquetasDropdown, setCrmEtiquetasDropdown] = useState(false);
+
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
@@ -349,6 +350,7 @@ export default function CRMClientesPanel({
       setCrmNewMinNormales("0");
       setMostrarNuevoCliente(false);
 
+      await saveEtiquetasCliente();
       await searchCRM();
     } catch (e: any) {
       setCrmCreateMsg(`❌ ${e?.message || "Error al crear cliente"}`);
@@ -434,7 +436,47 @@ export default function CRMClientesPanel({
     }
   }
 
-  async function loadNotasCliente(clienteId: string) {
+  
+
+  async function loadEtiquetasCliente(clienteId: string) {
+    if (!clienteId) return;
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/crm/clientes/ficha?id=${clienteId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      const etiquetas = j?.cliente?.etiquetas || [];
+      const ids = Array.isArray(etiquetas)
+        ? etiquetas.map((e: any) => e.id).filter(Boolean)
+        : [];
+      setCrmClienteEtiquetasSel(ids);
+    } catch {}
+  }
+
+  async function saveEtiquetasCliente() {
+    if (!crmClienteSelId) return;
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      await fetch("/api/crm/clientes/etiquetas/update", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: crmClienteSelId,
+          etiquetas: crmClienteEtiquetasSel,
+        }),
+      });
+    } catch {}
+  }
+
+async function loadNotasCliente(clienteId: string) {
     if (!clienteId) {
       setCrmNotes([]);
       return;
@@ -624,6 +666,8 @@ export default function CRMClientesPanel({
         loadPagosCliente(String(c?.id || id || "")),
         loadNotasCliente(String(c?.id || id || "")),
       ]);
+
+      await loadEtiquetasCliente(String(c?.id || id || ""));
     } catch (e: any) {
       console.error("ERROR FICHA", e);
       setCrmClienteFicha(null);
@@ -669,6 +713,7 @@ export default function CRMClientesPanel({
 
       await openCRMFicha(crmClienteSelId);
       setCrmFichaMsg("✅ Cliente actualizado correctamente");
+      await saveEtiquetasCliente();
       await searchCRM();
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
@@ -1043,7 +1088,56 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
-              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+              
+              {/* ETIQUETAS CLIENTE */}
+              <div className="tc-card" style={{ marginTop: 12 }}>
+                <div className="tc-sub">Etiquetas cliente</div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {crmClienteEtiquetasSel.map((id: any) => {
+                    const et = crmEtiquetasOpts.find((e: any) => e.id === id);
+                    if (!et) return null;
+                    return (
+                      <div key={id} className="tc-chip">
+                        {et.nombre}
+                        <button onClick={() =>
+                          setCrmClienteEtiquetasSel(prev => prev.filter(x => x !== id))
+                        }>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  className="tc-btn"
+                  style={{ marginTop: 8 }}
+                  onClick={() => setCrmEtiquetasDropdown(v => !v)}
+                >
+                  Seleccionar etiquetas
+                </button>
+
+                {crmEtiquetasDropdown && (
+                  <div style={{ marginTop: 8 }}>
+                    {crmEtiquetasOpts.map((et: any) => (
+                      <div
+                        key={et.id}
+                        style={{ cursor: "pointer", padding: 4 }}
+                        onClick={() =>
+                          setCrmClienteEtiquetasSel(prev =>
+                            prev.includes(et.id)
+                              ? prev.filter(x => x !== et.id)
+                              : [...prev, et.id]
+                          )
+                        }
+                      >
+                        {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+<div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button className="tc-btn" onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
                   Cancelar
                 </button>
@@ -1096,67 +1190,6 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Resumen interno</div><div className="tc-sub" style={{ marginTop: 10 }}>Las notas con autor están justo debajo.</div></div>
               </div>
-
-              {/* ETIQUETAS CLIENTE */}
-              <div className="tc-card" style={{ marginTop: 12 }}>
-                <div className="tc-sub">Etiquetas cliente</div>
-
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-                  {crmClienteEtiquetasSel.map((id: any) => {
-                    const et = crmEtiquetasOpts.find((e: any) => e.id === id);
-                    if (!et) return null;
-                    return (
-                      <div key={id} className="tc-chip">
-                        {et.nombre}
-                        <button onClick={() =>
-                          setCrmClienteEtiquetasSel(prev => prev.filter(x => x !== id))
-                        }>✕</button>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div style={{ position: "relative", marginTop: 8 }}>
-                  <button
-                    className="tc-btn"
-                    onClick={() => setCrmEtiquetasDropdown(v => !v)}
-                  >
-                    Seleccionar etiquetas
-                  </button>
-
-                  {crmEtiquetasDropdown && (
-                    <div style={{
-                      position:"absolute",
-                      zIndex:50,
-                      background:"#111",
-                      border:"1px solid rgba(255,255,255,.1)",
-                      borderRadius:10,
-                      padding:8,
-                      marginTop:6,
-                      width:"100%",
-                      maxHeight:200,
-                      overflowY:"auto"
-                    }}>
-                      {crmEtiquetasOpts.map((et: any) => (
-                        <div
-                          key={et.id}
-                          style={{ padding:6, cursor:"pointer" }}
-                          onClick={() =>
-                            setCrmClienteEtiquetasSel(prev =>
-                              prev.includes(et.id)
-                                ? prev.filter(x => x !== et.id)
-                                : [...prev, et.id]
-                            )
-                          }
-                        >
-                          {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
 
               <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
