@@ -350,6 +350,7 @@ export default function CRMClientesPanel({
       setCrmNewMinNormales("0");
       setMostrarNuevoCliente(false);
 
+      await saveEtiquetasCliente();
       await searchCRM();
     } catch (e: any) {
       setCrmCreateMsg(`❌ ${e?.message || "Error al crear cliente"}`);
@@ -435,7 +436,47 @@ export default function CRMClientesPanel({
     }
   }
 
-  async function loadNotasCliente(clienteId: string) {
+  
+
+  async function loadEtiquetasCliente(clienteId: string) {
+    if (!clienteId) return;
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/crm/clientes/ficha?id=${clienteId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      const etiquetas = j?.cliente?.etiquetas || [];
+      const ids = Array.isArray(etiquetas)
+        ? etiquetas.map((e: any) => e.id).filter(Boolean)
+        : [];
+      setCrmClienteEtiquetasSel(ids);
+    } catch {}
+  }
+
+  async function saveEtiquetasCliente() {
+    if (!crmClienteSelId) return;
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      await fetch("/api/crm/clientes/etiquetas/update", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cliente_id: crmClienteSelId,
+          etiquetas: crmClienteEtiquetasSel,
+        }),
+      });
+    } catch {}
+  }
+
+async function loadNotasCliente(clienteId: string) {
     if (!clienteId) {
       setCrmNotes([]);
       return;
@@ -625,6 +666,8 @@ export default function CRMClientesPanel({
         loadPagosCliente(String(c?.id || id || "")),
         loadNotasCliente(String(c?.id || id || "")),
       ]);
+
+      await loadEtiquetasCliente(String(c?.id || id || ""));
     } catch (e: any) {
       console.error("ERROR FICHA", e);
       setCrmClienteFicha(null);
@@ -670,6 +713,7 @@ export default function CRMClientesPanel({
 
       await openCRMFicha(crmClienteSelId);
       setCrmFichaMsg("✅ Cliente actualizado correctamente");
+      await saveEtiquetasCliente();
       await searchCRM();
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
@@ -1091,6 +1135,24 @@ export default function CRMClientesPanel({
                     ))}
                   </div>
                 )}
+              </div>
+
+
+              <div style={{ marginTop:12 }}>
+                <div className="tc-sub">Etiquetas</div>
+                <select
+                  multiple
+                  className="tc-input"
+                  style={{ width:"100%", marginTop:6, minHeight:80 }}
+                  onChange={(e)=>{
+                    const opts = Array.from(e.target.selectedOptions).map(o=>o.value);
+                    setCrmClienteEtiquetasSel(opts);
+                  }}
+                >
+                  {crmEtiquetasOpts.map((et:any)=>(
+                    <option key={et.id} value={et.id}>{et.nombre}</option>
+                  ))}
+                </select>
               </div>
 
 <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
