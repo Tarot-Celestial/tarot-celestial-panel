@@ -56,6 +56,7 @@ export default function CRMClientesPanel({
   const [crmTarotistaReservaId, setCrmTarotistaReservaId] = useState("");
   const [crmReservaFecha, setCrmReservaFecha] = useState("");
   const [crmReservaNota, setCrmReservaNota] = useState("");
+  const [crmReservaTarotistaManual, setCrmReservaTarotistaManual] = useState("");
   const [crmReservaLoading, setCrmReservaLoading] = useState(false);
   const [crmReservaMsg, setCrmReservaMsg] = useState("");
   const [crmTarotistaSendId, setCrmTarotistaSendId] = useState("");
@@ -504,6 +505,7 @@ export default function CRMClientesPanel({
     setCrmTarotistaReservaId("");
     setCrmReservaFecha("");
     setCrmReservaNota("");
+    setCrmReservaTarotistaManual("");
     setCrmReservaLoading(false);
     setCrmReservaMsg("");
     setCrmTarotistaSendId("");
@@ -841,8 +843,8 @@ export default function CRMClientesPanel({
       return;
     }
 
-    if (!crmTarotistaReservaId) {
-      setCrmReservaMsg("⚠️ Selecciona una tarotista");
+    if (!crmTarotistaReservaId && !crmReservaTarotistaManual.trim()) {
+      setCrmReservaMsg("⚠️ Selecciona una tarotista o escribe un nombre manual");
       return;
     }
 
@@ -860,7 +862,8 @@ export default function CRMClientesPanel({
 
       const payload = {
         cliente_id: clienteId,
-        tarotista_worker_id: crmTarotistaReservaId,
+        tarotista_worker_id: crmTarotistaReservaId || null,
+        tarotista_nombre_manual: crmReservaTarotistaManual.trim() || null,
         fecha_reserva: new Date(crmReservaFecha).toISOString(),
         nota: crmReservaNota.trim(),
       };
@@ -880,6 +883,7 @@ export default function CRMClientesPanel({
       setCrmReservaMsg("✅ Reserva creada correctamente");
       setCrmReservaFecha("");
       setCrmReservaNota("");
+      setCrmReservaTarotistaManual("");
     } catch (e: any) {
       setCrmReservaMsg(`❌ ${e?.message || "Error creando reserva"}`);
     } finally {
@@ -1545,18 +1549,27 @@ export default function CRMClientesPanel({
                       className="tc-input"
                       value={crmTarotistaReservaId}
                       onChange={(e) => setCrmTarotistaReservaId(e.target.value)}
-                      style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+                      style={{ width: "100%", marginTop: 6, colorScheme: "dark", background: "rgba(255,255,255,.04)", color: "#fff" }}
                     >
-                      <option value="">
+                      <option value="" style={{ background: "#111", color: "#fff" }}>
                         {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
                       </option>
                       {crmTarotistasOpts.map((t: any) => (
-                        <option key={t.id} value={t.id}>
-                          {t.display_name || t.id}
+                        <option key={t.id} value={t.id} style={{ background: "#111", color: "#fff" }}>
+                          {t.display_name || t.nombre || t.name || t.alias || t.email || t.id}
                           {t.state ? ` · ${t.state}` : ""}
                         </option>
                       ))}
                     </select>
+
+                    <div className="tc-sub" style={{ marginTop: 10 }}>O escribir nombre manual</div>
+                    <input
+                      className="tc-input"
+                      value={crmReservaTarotistaManual}
+                      onChange={(e) => setCrmReservaTarotistaManual(e.target.value)}
+                      placeholder="Ej: Estefanía"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
                   </div>
 
                   <div>
@@ -1586,7 +1599,7 @@ export default function CRMClientesPanel({
                   <button
                     className="tc-btn tc-btn-gold"
                     onClick={crearCRMReserva}
-                    disabled={crmReservaLoading || !crmClienteSelId || !crmTarotistaReservaId || !crmReservaFecha}
+                    disabled={crmReservaLoading || !crmClienteSelId || (!crmTarotistaReservaId && !crmReservaTarotistaManual.trim()) || !crmReservaFecha}
                   >
                     {crmReservaLoading ? "Reservando..." : "Guardar reserva"}
                   </button>
