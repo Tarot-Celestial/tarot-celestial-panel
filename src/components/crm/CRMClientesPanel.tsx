@@ -43,6 +43,9 @@ export default function CRMClientesPanel({
   const [mostrarNuevoCliente, setMostrarNuevoCliente] = useState(false);
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
+  const [crmClienteEtiquetasSel, setCrmClienteEtiquetasSel] = useState<string[]>([]);
+  const [crmEtiquetasDropdown, setCrmEtiquetasDropdown] = useState(false);
+
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
@@ -1041,7 +1044,56 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
-              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+              
+              {/* ETIQUETAS CLIENTE */}
+              <div className="tc-card" style={{ marginTop: 12 }}>
+                <div className="tc-sub">Etiquetas cliente</div>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {crmClienteEtiquetasSel.map((id: any) => {
+                    const et = crmEtiquetasOpts.find((e: any) => e.id === id);
+                    if (!et) return null;
+                    return (
+                      <div key={id} className="tc-chip">
+                        {et.nombre}
+                        <button onClick={() =>
+                          setCrmClienteEtiquetasSel(prev => prev.filter(x => x !== id))
+                        }>✕</button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  className="tc-btn"
+                  style={{ marginTop: 8 }}
+                  onClick={() => setCrmEtiquetasDropdown(v => !v)}
+                >
+                  Seleccionar etiquetas
+                </button>
+
+                {crmEtiquetasDropdown && (
+                  <div style={{ marginTop: 8 }}>
+                    {crmEtiquetasOpts.map((et: any) => (
+                      <div
+                        key={et.id}
+                        style={{ cursor: "pointer", padding: 4 }}
+                        onClick={() =>
+                          setCrmClienteEtiquetasSel(prev =>
+                            prev.includes(et.id)
+                              ? prev.filter(x => x !== et.id)
+                              : [...prev, et.id]
+                          )
+                        }
+                      >
+                        {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+<div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button className="tc-btn" onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
                   Cancelar
                 </button>
