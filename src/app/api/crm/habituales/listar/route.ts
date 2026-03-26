@@ -17,7 +17,7 @@ export async function GET() {
     fromDate.setMonth(fromDate.getMonth() - 2);
 
     const { data: pagos, error } = await supabase
-      .from("crm_pagos")
+      .from("crm_cliente_pagos")
       .select("id, cliente_id, created_at, estado")
       .gte("created_at", fromDate.toISOString())
       .eq("estado", "completed")
