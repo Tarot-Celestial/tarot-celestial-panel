@@ -30,20 +30,33 @@ export async function GET(req: Request) {
 
     const reservasBase = Array.isArray(data) ? data : [];
 
-    const clienteIds = [...new Set(reservasBase.map((r: any) => String(r?.cliente_id || "")).filter(Boolean))];
-    const workerIds = [...new Set(reservasBase.map((r: any) => String(r?.tarotista_worker_id || "")).filter(Boolean))];
+    const clienteIds = [...new Set(
+      reservasBase
+        .map((r: any) => String(r?.cliente_id || ""))
+        .filter(Boolean)
+    )];
+
+    const workerIds = [...new Set(
+      reservasBase
+        .map((r: any) => String(r?.tarotista_worker_id || ""))
+        .filter(Boolean)
+    )];
 
     let clientesMap = new Map<string, any>();
     let workersMap = new Map<string, any>();
 
     if (clienteIds.length > 0) {
-      const { data: clientes, error: clientesError } = await supabase
-        .from("crm_clientes")
-        .select("id, nombre, apellido, telefono")
-        .in("id", clienteIds);
+      const posiblesTablasClientes = ["crm_clientes", "clientes", "crm_clientes_panel"];
+      for (const tabla of posiblesTablasClientes) {
+        const { data: clientes, error: clientesError } = await supabase
+          .from(tabla)
+          .select("id, nombre, apellido, telefono")
+          .in("id", clienteIds);
 
-      if (!clientesError && Array.isArray(clientes)) {
-        clientesMap = new Map(clientes.map((c: any) => [String(c.id), c]));
+        if (!clientesError && Array.isArray(clientes)) {
+          clientesMap = new Map(clientes.map((c: any) => [String(c.id), c]));
+          if (clientes.length > 0) break;
+        }
       }
     }
 
@@ -64,7 +77,9 @@ export async function GET(req: Request) {
 
       return {
         ...r,
-        cliente_nombre: cliente ? [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") : "",
+        cliente_nombre: cliente
+          ? [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ")
+          : "",
         cliente_telefono: cliente?.telefono || "",
         tarotista_display_name: worker?.display_name || "",
       };
