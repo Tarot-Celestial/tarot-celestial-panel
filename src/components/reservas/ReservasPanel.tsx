@@ -21,6 +21,39 @@ type ReservasPanelProps = {
   embedded?: boolean;
 };
 
+function estadoLabel(v: any) {
+  return String(v || "") === "finalizada" ? "✅ Finalizada" : "⏳ Pendiente";
+}
+
+function estadoStyles(v: any) {
+  if (String(v || "") === "finalizada") {
+    return {
+      border: "1px solid rgba(120,255,190,.20)",
+      background: "linear-gradient(180deg, rgba(120,255,190,.06), rgba(255,255,255,.02))",
+      boxShadow: "0 12px 32px rgba(0,0,0,.18)",
+      chipBg: "rgba(120,255,190,.10)",
+      chipBorder: "1px solid rgba(120,255,190,.22)",
+    };
+  }
+
+  return {
+    border: "1px solid rgba(215,181,109,.22)",
+    background: "linear-gradient(180deg, rgba(215,181,109,.08), rgba(255,255,255,.02))",
+    boxShadow: "0 14px 36px rgba(0,0,0,.22), 0 0 0 1px rgba(215,181,109,.06) inset",
+    chipBg: "rgba(215,181,109,.12)",
+    chipBorder: "1px solid rgba(215,181,109,.24)",
+  };
+}
+
+function formatFecha(value: any) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString("es-ES");
+  } catch {
+    return String(value);
+  }
+}
+
 export default function ReservasPanel({
   mode = "admin",
   embedded = false,
@@ -29,7 +62,7 @@ export default function ReservasPanel({
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [q, setQ] = useState("");
-  const [estado, setEstado] = useState<"todas" | "pendiente" | "finalizada">("todas");
+  const [filtro, setFiltro] = useState<"proximas" | "hoy" | "todas" | "finalizadas">("proximas");
   const [finalizandoId, setFinalizandoId] = useState("");
 
   async function getTokenOrLogin() {
@@ -52,10 +85,7 @@ export default function ReservasPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const params = new URLSearchParams();
-      if (estado !== "todas") params.set("estado", estado);
-
-      const r = await fetch(`/api/crm/reservas/listar?${params.toString()}`, {
+      const r = await fetch("/api/crm/reservas/listar", {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -110,40 +140,76 @@ export default function ReservasPanel({
     loadReservas(false);
     const t = setInterval(() => loadReservas(true), 15000);
     return () => clearInterval(t);
-  }, [estado]);
+  }, []);
 
   const filtered = useMemo(() => {
-    const qq = q.trim().toLowerCase();
-    if (!qq) return rows || [];
-    return (rows || []).filter((r: any) => {
-      const text = [
-        r?.cliente_nombre,
-        r?.cliente_telefono,
-        r?.tarotista_display_name,
-        r?.tarotista_nombre_manual,
-        r?.tarotista_worker_id,
-        r?.cliente_id,
-        r?.nota,
-        r?.estado,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return text.includes(qq);
-    });
-  }, [rows, q]);
+    const now = new Date();
+    const end2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-  const wrapProps = embedded
-    ? {}
-    : { className: "tc-card" };
+    let list = [...(rows || [])];
+
+    list = list.filter((r: any) => {
+      const fecha = r?.fecha_reserva ? new Date(r.fecha_reserva) : null;
+      const estado = String(r?.estado || "");
+
+      if (filtro === "finalizadas") return estado === "finalizada";
+      if (filtro === "todas") return true;
+      if (!fecha || Number.isNaN(fecha.getTime())) return true;
+
+      if (filtro === "hoy") {
+        return fecha >= startDay && fecha <= endDay;
+      }
+
+      // proximas
+      return estado !== "finalizada" && fecha >= now && fecha <= end2h;
+    });
+
+    const qq = q.trim().toLowerCase();
+    if (qq) {
+      list = list.filter((r: any) => {
+        const text = [
+          r?.cliente_nombre,
+          r?.cliente_telefono,
+          r?.tarotista_display_name,
+          r?.tarotista_nombre_manual,
+          r?.tarotista_worker_id,
+          r?.cliente_id,
+          r?.nota,
+          r?.estado,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return text.includes(qq);
+      });
+    }
+
+    list.sort((a: any, b: any) => {
+      const ae = String(a?.estado || "") === "finalizada" ? 1 : 0;
+      const be = String(b?.estado || "") === "finalizada" ? 1 : 0;
+      if (ae !== be) return ae - be;
+
+      const at = a?.fecha_reserva ? new Date(a.fecha_reserva).getTime() : 0;
+      const bt = b?.fecha_reserva ? new Date(b.fecha_reserva).getTime() : 0;
+
+      if (ae === 0) return at - bt;
+      return bt - at;
+    });
+
+    return list;
+  }, [rows, q, filtro]);
+
+  const wrapProps = embedded ? {} : { className: "tc-card" };
 
   return (
     <div {...wrapProps}>
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div>
           <div className="tc-title">🗓️ Reservas</div>
           <div className="tc-sub" style={{ marginTop: 6 }}>
-            Panel de reservas de tarotistas para clientas.
+            Gestión pro de reservas para {mode === "admin" ? "admin" : "centrales"}.
           </div>
         </div>
 
@@ -156,18 +222,32 @@ export default function ReservasPanel({
             style={{ width: 280, maxWidth: "100%" }}
           />
 
-          <select
-            className="tc-input"
-            value={estado}
-            onChange={(e) => setEstado(e.target.value as any)}
-            style={{ width: 170, colorScheme: "dark" }}
+          <button
+            className={`tc-btn ${filtro === "proximas" ? "tc-btn-gold" : ""}`}
+            onClick={() => setFiltro("proximas")}
           >
-            <option value="todas">Todas</option>
-            <option value="pendiente">Pendientes</option>
-            <option value="finalizada">Finalizadas</option>
-          </select>
+            Próximas 2h
+          </button>
+          <button
+            className={`tc-btn ${filtro === "hoy" ? "tc-btn-gold" : ""}`}
+            onClick={() => setFiltro("hoy")}
+          >
+            Hoy
+          </button>
+          <button
+            className={`tc-btn ${filtro === "todas" ? "tc-btn-gold" : ""}`}
+            onClick={() => setFiltro("todas")}
+          >
+            Todas
+          </button>
+          <button
+            className={`tc-btn ${filtro === "finalizadas" ? "tc-btn-gold" : ""}`}
+            onClick={() => setFiltro("finalizadas")}
+          >
+            Finalizadas
+          </button>
 
-          <button className="tc-btn tc-btn-gold" onClick={() => loadReservas(false)} disabled={loading}>
+          <button className="tc-btn" onClick={() => loadReservas(false)} disabled={loading}>
             {loading ? "Cargando..." : "Actualizar"}
           </button>
         </div>
@@ -179,7 +259,7 @@ export default function ReservasPanel({
 
       <div className="tc-hr" />
 
-      <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "grid", gap: 14 }}>
         {(filtered || []).map((r: any) => {
           const clienteNombre = r?.cliente_nombre || (r?.cliente_id ? `Cliente ${String(r.cliente_id).slice(0, 8)}` : "Cliente");
           const tarotistaNombre =
@@ -187,55 +267,68 @@ export default function ReservasPanel({
             r?.tarotista_nombre_manual ||
             (r?.tarotista_worker_id ? `Worker ${String(r.tarotista_worker_id).slice(0, 8)}` : "—");
 
+          const st = estadoStyles(r?.estado);
+
           return (
             <div
               key={r.id}
               style={{
-                border: "1px solid rgba(255,255,255,.08)",
-                borderRadius: 16,
-                padding: 14,
-                background:
-                  String(r?.estado || "") === "finalizada"
-                    ? "rgba(120,255,190,.05)"
-                    : "rgba(255,255,255,.03)",
+                border: st.border,
+                borderRadius: 18,
+                padding: 16,
+                background: st.background,
+                boxShadow: st.boxShadow,
+                transition: "transform .18s ease, box-shadow .18s ease",
               }}
             >
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div style={{ minWidth: 280 }}>
-                  <div style={{ fontWeight: 900 }}>
-                    {clienteNombre}
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                <div style={{ minWidth: 280, flex: 1 }}>
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>
+                      {clienteNombre}
+                    </div>
+
                     {r?.cliente_telefono ? (
-                      <span className="tc-chip" style={{ marginLeft: 8 }}>
-                        {r.cliente_telefono}
-                      </span>
+                      <span className="tc-chip">{r.cliente_telefono}</span>
                     ) : null}
+
+                    <span
+                      className="tc-chip"
+                      style={{
+                        background: st.chipBg,
+                        border: st.chipBorder,
+                      }}
+                    >
+                      {estadoLabel(r?.estado)}
+                    </span>
                   </div>
 
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                  <div className="tc-sub" style={{ marginTop: 10 }}>
                     Tarotista: <b>{tarotistaNombre}</b>
                   </div>
 
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Fecha reserva:{" "}
-                    <b>
-                      {r?.fecha_reserva
-                        ? new Date(r.fecha_reserva).toLocaleString("es-ES")
-                        : "—"}
-                    </b>
+                    Reserva: <b>{formatFecha(r?.fecha_reserva)}</b>
                   </div>
 
                   {!!r?.nota && (
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Nota: {r.nota}
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: "10px 12px",
+                        borderRadius: 12,
+                        border: "1px solid rgba(255,255,255,.08)",
+                        background: "rgba(255,255,255,.03)",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      <div className="tc-sub" style={{ marginBottom: 4 }}>Observación</div>
+                      <div>{r.nota}</div>
                     </div>
                   )}
                 </div>
 
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-                  <span className="tc-chip">
-                    {String(r?.estado || "") === "finalizada" ? "✅ Finalizada" : "⏳ Pendiente"}
-                  </span>
-
+                <div style={{ display: "grid", gap: 8, minWidth: 160 }}>
                   {String(r?.estado || "") !== "finalizada" ? (
                     <button
                       className="tc-btn tc-btn-ok"
@@ -244,7 +337,11 @@ export default function ReservasPanel({
                     >
                       {finalizandoId === String(r.id) ? "Guardando..." : "Finalizado"}
                     </button>
-                  ) : null}
+                  ) : (
+                    <button className="tc-btn" disabled>
+                      Cerrada
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -252,10 +349,21 @@ export default function ReservasPanel({
         })}
 
         {(!filtered || filtered.length === 0) && (
-          <div className="tc-sub">No hay reservas para este filtro.</div>
+          <div
+            style={{
+              border: "1px solid rgba(255,255,255,.08)",
+              borderRadius: 18,
+              padding: 24,
+              background: "rgba(255,255,255,.02)",
+            }}
+          >
+            <div className="tc-title" style={{ fontSize: 16 }}>No hay reservas en este filtro</div>
+            <div className="tc-sub" style={{ marginTop: 8 }}>
+              Prueba con “Todas” o “Hoy” para ver más resultados.
+            </div>
+          </div>
         )}
       </div>
     </div>
   );
 }
-
