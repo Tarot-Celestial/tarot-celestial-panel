@@ -143,8 +143,6 @@ export default function Central() {
   const [tab, setTab] = useState<TabKey>("equipo");
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
-  const [crmReservaNotif, setCrmReservaNotif] = useState<any>(null);
-  const [crmReservaDismissedIds, setCrmReservaDismissedIds] = useState<string[]>([]);
   const [month, setMonth] = useState(monthKeyNow());
 
   const [rank, setRank] = useState<any>(null);
@@ -266,57 +264,6 @@ export default function Central() {
   }, [ok, crmDismissedIds]);
 
 
-
-
-  async function loadReservaNotif() {
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const r = await fetch("/api/crm/reservas/proximas", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) return;
-      const reserva = Array.isArray(j.reservas) ? j.reservas[0] : null;
-      if (!reserva?.id) return;
-      if (crmReservaDismissedIds.includes(String(reserva.id))) return;
-      setCrmReservaNotif(reserva);
-    } catch {}
-  }
-
-  async function markReservaAvisada(id: string) {
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token || !id) return;
-
-      await fetch("/api/crm/reservas/avisar", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-    } catch {}
-  }
-
-  async function finalizarReservaDesdeAviso(id: string) {
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token || !id) return;
-
-      await fetch("/api/crm/reservas/finalizar", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-
-      setCrmReservaNotif(null);
-      setCrmReservaDismissedIds((prev) => [...prev, String(id)]);
-    } catch {}
-  }
 
   async function loadLatestCrmCloseNotif(silent = false) {
     try {
@@ -989,13 +936,6 @@ export default function Central() {
   // ---------------- INIT LOADS ----------------
   useEffect(() => {
     if (!ok) return;
-    loadReservaNotif();
-    const t = setInterval(() => loadReservaNotif(), 15000);
-    return () => clearInterval(t);
-  }, [ok, crmReservaDismissedIds]);
-
-  useEffect(() => {
-    if (!ok) return;
     refreshRanking();
     loadTarotists();
     loadAttendanceMe(true);
@@ -1003,13 +943,6 @@ export default function Central() {
     loadExpected(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
-
-  useEffect(() => {
-    if (!ok) return;
-    loadReservaNotif();
-    const t = setInterval(() => loadReservaNotif(), 15000);
-    return () => clearInterval(t);
-  }, [ok, crmReservaDismissedIds]);
 
   useEffect(() => {
     if (!ok) return;
@@ -2115,58 +2048,6 @@ export default function Central() {
                 }}
               >
                 Revisar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {crmReservaNotif && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.72)",
-            zIndex: 999999,
-            display: "grid",
-            placeItems: "center",
-            padding: 20,
-          }}
-        >
-          <div className="tc-card" style={{ width: "min(640px, 96vw)", borderRadius: 24, padding: 22 }}>
-            <div className="tc-title">⏰ Recordatorio de reserva</div>
-            <div className="tc-sub" style={{ marginTop: 8 }}>
-              Falta 1 minuto para esta reserva.
-            </div>
-
-            <div className="tc-hr" />
-
-            <div style={{ display: "grid", gap: 10 }}>
-              <div><b>Clienta:</b> {crmReservaNotif.cliente_nombre || "—"}</div>
-              <div><b>Teléfono:</b> {crmReservaNotif.cliente_telefono || "—"}</div>
-              <div><b>Tarotista:</b> {crmReservaNotif.tarotista_display_name || crmReservaNotif.tarotista_nombre_manual || "—"}</div>
-              <div><b>Hora:</b> {crmReservaNotif.fecha_reserva ? new Date(crmReservaNotif.fecha_reserva).toLocaleString("es-ES") : "—"}</div>
-              {!!crmReservaNotif.nota && <div><b>Nota:</b> {crmReservaNotif.nota}</div>}
-            </div>
-
-            <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 16, gap: 8, flexWrap: "wrap" }}>
-              <button
-                className="tc-btn"
-                onClick={async () => {
-                  await markReservaAvisada(String(crmReservaNotif.id));
-                  setCrmReservaDismissedIds((prev) => [...prev, String(crmReservaNotif.id)]);
-                  setCrmReservaNotif(null);
-                  setTab("reservas");
-                }}
-              >
-                Ir al aviso
-              </button>
-              <button
-                className="tc-btn tc-btn-ok"
-                onClick={() => finalizarReservaDesdeAviso(String(crmReservaNotif.id))}
-              >
-                Finalizado
               </button>
             </div>
           </div>
