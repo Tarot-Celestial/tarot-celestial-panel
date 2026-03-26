@@ -1239,7 +1239,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 28, letterSpacing: ".02em", lineHeight: 1.05 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub" style={{ marginTop: 8, maxWidth: 840, fontSize: 13 }}>Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM</div>
+                <div className="tc-sub" style={{ marginTop: 8, maxWidth: 840, fontSize: 13 }}>Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM · Reservas</div>
               </div>
 
               <div className="tc-row">
