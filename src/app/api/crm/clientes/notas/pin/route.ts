@@ -14,10 +14,7 @@ export async function POST(req: NextRequest) {
     const is_pinned = !!body?.is_pinned;
 
     if (!id) {
-      return NextResponse.json(
-        { ok: false, error: "Falta id de la nota" },
-        { status: 400 }
-      );
+      return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
     }
 
     const { error } = await supabase
@@ -25,18 +22,10 @@ export async function POST(req: NextRequest) {
       .update({ is_pinned })
       .eq("id", id);
 
-    if (error) {
-      return NextResponse.json(
-        { ok: false, error: error.message },
-        { status: 500 }
-      );
-    }
+    if (error) throw error;
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "Error interno" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
 }
