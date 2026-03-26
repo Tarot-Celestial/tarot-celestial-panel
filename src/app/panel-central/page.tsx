@@ -6,10 +6,11 @@ import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
+import HabitualesPanel from "@/components/habituales/HabitualesPanel";
 
 const sb = supabaseBrowser();
 
-type TabKey = "equipo" | "llamadas" | "crm" | "reservas" | "incidencias" | "ranking" | "checklist" | "chat";
+type TabKey = "equipo" | "llamadas" | "crm" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
 
 function monthKeyNow() {
   const d = new Date();
@@ -1250,6 +1251,9 @@ export default function Central() {
               <button className={`tc-tab ${tab === "reservas" ? "tc-tab-active" : ""}`} onClick={() => setTab("reservas")}>
                 🗓️ Reservas
               </button>
+              <button className={`tc-tab ${tab === "habituales" ? "tc-tab-active" : ""}`} onClick={() => setTab("habituales")}>
+                ⭐ Habituales
+              </button>
               <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
                 ✅ Checklist
               </button>
@@ -1489,6 +1493,7 @@ export default function Central() {
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
           {tab === "reservas" && <ReservasPanel mode="central" />}
+          {tab === "habituales" && <HabitualesPanel mode="central" />}
 
           {/* ✅ OUTBOUND LLAMADAS */}
           {tab === "llamadas" && (
