@@ -7,6 +7,7 @@ import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
 import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
+import HabitualesPanel from "@/components/habituales/HabitualesPanel";
 
 const sb = supabaseBrowser();
 
@@ -72,6 +73,7 @@ type TabKey =
   | "clientes"
   | "crm"
   | "reservas"
+  | "habituales"
   | "sync";
 
 function ackLabel(v: any) {
@@ -1285,6 +1287,9 @@ export default function Admin() {
               <button className={`tc-tab ${tab === "reservas" ? "tc-tab-active" : ""}`} onClick={() => setTab("reservas")}>
                 🗓️ Reservas
               </button>
+              <button className={`tc-tab ${tab === "habituales" ? "tc-tab-active" : ""}`} onClick={() => setTab("habituales")}>
+                ⭐ Habituales
+              </button>
               <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
                 🔄 Sync
               </button>
@@ -2489,6 +2494,7 @@ export default function Admin() {
           )}
 
           {tab === "reservas" && <ReservasPanel mode="admin" />}
+          {tab === "habituales" && <HabitualesPanel mode="admin" />}
 
           {tab === "sync" && (
             <div className="tc-card">
@@ -2950,3 +2956,4 @@ function ChecklistRow({
     </div>
   );
 }
+
