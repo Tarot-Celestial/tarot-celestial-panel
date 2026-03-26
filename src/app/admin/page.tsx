@@ -2488,6 +2488,8 @@ export default function Admin() {
             <CRMClientesPanel mode="admin" />
           )}
 
+          {tab === "reservas" && <ReservasPanel mode="admin" />}
+
           {tab === "sync" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
