@@ -1074,72 +1074,74 @@ export default function CRMClientesPanel({
                 </button>
 
                 {crmEtiquetasDropdown && (
-                  <div
-                    style={{
-                      position: "fixed",
-                      top: "30%",
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      zIndex: 999999,
-                      background: "#111",
-                      border: "1px solid rgba(255,255,255,.1)",
-                      borderRadius: 12,
-                      padding: 12,
-                      width: 300,
-                      maxHeight: 300,
+                  <div style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 999999,
+                    background: "rgba(0,0,0,.6)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}>
+                    <div style={{
+                      width: 340,
+                      maxHeight: "70vh",
                       overflowY: "auto",
-                      boxShadow: "0 10px 40px rgba(0,0,0,.6)"
-                    }}
-                  >
-                    <div style={{ marginBottom: 8, fontWeight: 600 }}>Etiquetas</div>
-
-                    {crmEtiquetasOpts.map((et: any) => (
-                      <div
-                        key={et.id}
-                        style={{ padding: 6, cursor: "pointer" }}
-                        onClick={() =>
-                          setCrmClienteEtiquetasSel(prev =>
-                            prev.includes(et.id)
-                              ? prev.filter(x => x !== et.id)
-                              : [...prev, et.id]
-                          )
-                        }
-                      >
-                        {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
+                      background: "#111",
+                      borderRadius: 12,
+                      padding: 14,
+                      border: "1px solid rgba(255,255,255,.1)"
+                    }}>
+                      <div style={{ fontWeight: 600, marginBottom: 10 }}>
+                        Etiquetas
                       </div>
-                    ))}
 
-                    <div style={{ marginTop: 10 }}>
+                      {crmEtiquetasOpts.map((et: any) => (
+                        <div
+                          key={et.id}
+                          style={{ padding: 6, cursor: "pointer" }}
+                          onClick={() =>
+                            setCrmClienteEtiquetasSel(prev =>
+                              prev.includes(et.id)
+                                ? prev.filter(x => x !== et.id)
+                                : [...prev, et.id]
+                            )
+                          }
+                        >
+                          {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
+                        </div>
+                      ))}
+
                       <input
                         className="tc-input"
                         placeholder="Nueva etiqueta..."
+                        style={{ marginTop: 10 }}
                         value={crmNuevaEtiqueta}
                         onChange={(e)=>setCrmNuevaEtiqueta(e.target.value)}
                       />
+
+                      <button
+                        className="tc-btn tc-btn-gold"
+                        style={{ marginTop: 6, width: "100%" }}
+                        onClick={() => {
+                          if (!crmNuevaEtiqueta.trim()) return;
+                          const id = "tmp-" + Date.now();
+                          setCrmEtiquetasOpts(prev => [...prev, { id, nombre: crmNuevaEtiqueta }]);
+                          setCrmClienteEtiquetasSel(prev => [...prev, id]);
+                          setCrmNuevaEtiqueta("");
+                        }}
+                      >
+                        Crear etiqueta
+                      </button>
+
+                      <button
+                        className="tc-btn"
+                        style={{ marginTop: 8, width: "100%" }}
+                        onClick={() => setCrmEtiquetasDropdown(false)}
+                      >
+                        Cerrar
+                      </button>
                     </div>
-
-                    <button
-                      className="tc-btn tc-btn-gold"
-                      style={{ marginTop: 6, width: "100%" }}
-                      onClick={() => {
-                        if (!crmNuevaEtiqueta.trim()) return;
-                        // solo UI (backend ya lo tienes)
-                        const fakeId = "tmp-" + Date.now();
-                        setCrmEtiquetasOpts(prev => [...prev, { id: fakeId, nombre: crmNuevaEtiqueta }]);
-                        setCrmClienteEtiquetasSel(prev => [...prev, fakeId]);
-                        setCrmNuevaEtiqueta("");
-                      }}
-                    >
-                      Crear etiqueta
-                    </button>
-
-                    <button
-                      className="tc-btn"
-                      style={{ marginTop: 8, width: "100%" }}
-                      onClick={() => setCrmEtiquetasDropdown(false)}
-                    >
-                      Cerrar
-                    </button>
                   </div>
                 )}
               </div>
@@ -1227,72 +1229,74 @@ export default function CRMClientesPanel({
                 </button>
 
                 {crmEtiquetasDropdown && (
-                  <div
-                    style={{
-                      position: "fixed",
-                      top: "30%",
-                      left: "50%",
-                      transform: "translateX(-50%)",
-                      zIndex: 999999,
-                      background: "#111",
-                      border: "1px solid rgba(255,255,255,.1)",
-                      borderRadius: 12,
-                      padding: 12,
-                      width: 300,
-                      maxHeight: 300,
+                  <div style={{
+                    position: "fixed",
+                    inset: 0,
+                    zIndex: 999999,
+                    background: "rgba(0,0,0,.6)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}>
+                    <div style={{
+                      width: 340,
+                      maxHeight: "70vh",
                       overflowY: "auto",
-                      boxShadow: "0 10px 40px rgba(0,0,0,.6)"
-                    }}
-                  >
-                    <div style={{ marginBottom: 8, fontWeight: 600 }}>Etiquetas</div>
-
-                    {crmEtiquetasOpts.map((et: any) => (
-                      <div
-                        key={et.id}
-                        style={{ padding: 6, cursor: "pointer" }}
-                        onClick={() =>
-                          setCrmClienteEtiquetasSel(prev =>
-                            prev.includes(et.id)
-                              ? prev.filter(x => x !== et.id)
-                              : [...prev, et.id]
-                          )
-                        }
-                      >
-                        {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
+                      background: "#111",
+                      borderRadius: 12,
+                      padding: 14,
+                      border: "1px solid rgba(255,255,255,.1)"
+                    }}>
+                      <div style={{ fontWeight: 600, marginBottom: 10 }}>
+                        Etiquetas
                       </div>
-                    ))}
 
-                    <div style={{ marginTop: 10 }}>
+                      {crmEtiquetasOpts.map((et: any) => (
+                        <div
+                          key={et.id}
+                          style={{ padding: 6, cursor: "pointer" }}
+                          onClick={() =>
+                            setCrmClienteEtiquetasSel(prev =>
+                              prev.includes(et.id)
+                                ? prev.filter(x => x !== et.id)
+                                : [...prev, et.id]
+                            )
+                          }
+                        >
+                          {et.nombre} {crmClienteEtiquetasSel.includes(et.id) ? "✔" : ""}
+                        </div>
+                      ))}
+
                       <input
                         className="tc-input"
                         placeholder="Nueva etiqueta..."
+                        style={{ marginTop: 10 }}
                         value={crmNuevaEtiqueta}
                         onChange={(e)=>setCrmNuevaEtiqueta(e.target.value)}
                       />
+
+                      <button
+                        className="tc-btn tc-btn-gold"
+                        style={{ marginTop: 6, width: "100%" }}
+                        onClick={() => {
+                          if (!crmNuevaEtiqueta.trim()) return;
+                          const id = "tmp-" + Date.now();
+                          setCrmEtiquetasOpts(prev => [...prev, { id, nombre: crmNuevaEtiqueta }]);
+                          setCrmClienteEtiquetasSel(prev => [...prev, id]);
+                          setCrmNuevaEtiqueta("");
+                        }}
+                      >
+                        Crear etiqueta
+                      </button>
+
+                      <button
+                        className="tc-btn"
+                        style={{ marginTop: 8, width: "100%" }}
+                        onClick={() => setCrmEtiquetasDropdown(false)}
+                      >
+                        Cerrar
+                      </button>
                     </div>
-
-                    <button
-                      className="tc-btn tc-btn-gold"
-                      style={{ marginTop: 6, width: "100%" }}
-                      onClick={() => {
-                        if (!crmNuevaEtiqueta.trim()) return;
-                        // solo UI (backend ya lo tienes)
-                        const fakeId = "tmp-" + Date.now();
-                        setCrmEtiquetasOpts(prev => [...prev, { id: fakeId, nombre: crmNuevaEtiqueta }]);
-                        setCrmClienteEtiquetasSel(prev => [...prev, fakeId]);
-                        setCrmNuevaEtiqueta("");
-                      }}
-                    >
-                      Crear etiqueta
-                    </button>
-
-                    <button
-                      className="tc-btn"
-                      style={{ marginTop: 8, width: "100%" }}
-                      onClick={() => setCrmEtiquetasDropdown(false)}
-                    >
-                      Cerrar
-                    </button>
                   </div>
                 )}
               </div>
