@@ -45,6 +45,7 @@ export default function CRMClientesPanel({
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmClienteEtiquetasSel, setCrmClienteEtiquetasSel] = useState<string[]>([]);
   const [crmEtiquetasDropdown, setCrmEtiquetasDropdown] = useState(false);
+
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
@@ -1043,7 +1044,25 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Notas</div><input className="tc-input" value={crmNewNotas} onChange={(e) => setCrmNewNotas(e.target.value)} placeholder="Notas internas" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
-              <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+              
+              <div style={{ marginTop:12 }}>
+                <div className="tc-sub">Etiquetas</div>
+                <select
+                  multiple
+                  className="tc-input"
+                  style={{ width:"100%", marginTop:6, minHeight:80 }}
+                  onChange={(e)=>{
+                    const vals = Array.from(e.target.selectedOptions).map(o=>o.value);
+                    setCrmClienteEtiquetasSel(vals);
+                  }}
+                >
+                  {crmEtiquetasOpts.map((et:any)=>(
+                    <option key={et.id} value={et.id}>{et.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+<div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                 <button className="tc-btn" onClick={() => setMostrarNuevoCliente(false)} disabled={crmCreateLoading}>
                   Cancelar
                 </button>
@@ -1099,7 +1118,7 @@ export default function CRMClientesPanel({
 
               
               {/* ETIQUETAS CLIENTE */}
-              <div className="tc-card" style={{ marginTop: 12, overflow: "visible" }}>
+              <div className="tc-card" style={{ marginTop: 12, overflow: "visible", position: "relative" }}>
                 <div className="tc-sub">Etiquetas cliente</div>
 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
@@ -1118,16 +1137,15 @@ export default function CRMClientesPanel({
                 </div>
 
                 <div style={{ position: "relative", marginTop: 8 }}>
-                  <button
-                    className="tc-btn"
-                    onClick={() => setCrmEtiquetasDropdown(v => !v)}
-                  >
+                  <button className="tc-btn" onClick={() => setCrmEtiquetasDropdown(v => !v)}>
                     Seleccionar etiquetas
                   </button>
 
                   {crmEtiquetasDropdown && (
                     <div style={{
                       position:"absolute",
+                      top:"100%",
+                      left:0,
                       zIndex:9999,
                       background:"#111",
                       border:"1px solid rgba(255,255,255,.1)",
@@ -1135,7 +1153,7 @@ export default function CRMClientesPanel({
                       padding:8,
                       marginTop:6,
                       width:"100%",
-                      maxHeight:200,
+                      maxHeight:220,
                       overflowY:"auto"
                     }}>
                       {crmEtiquetasOpts.map((et: any) => (
