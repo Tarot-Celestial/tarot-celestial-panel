@@ -8,8 +8,23 @@ import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import DiarioPanel from "@/components/diario/DiarioPanel";
+import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
+
+const ADMIN_NAV = [
+  { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre" },
+  { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
+  { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
+  { key: "contabilidad", icon: Wallet, label: "Contabilidad", kicker: "Ingresos y gastos" },
+  { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo" },
+  { key: "checklists", icon: CheckSquare, label: "Checklists", kicker: "Plantillas y tareas" },
+  { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
+  { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
+  { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día" },
+  { key: "sync", icon: Database, label: "Sistema", kicker: "Sync y mantenimiento" },
+] as const;
 
 function monthKeyNow() {
   const d = new Date();
@@ -1235,13 +1250,43 @@ export default function Admin() {
     <>
       <AppHeader />
 
-      <div className="tc-wrap" style={{ padding: 30, gap: 18 }}>
-        <div className="tc-container" style={{ maxWidth: 1500, display: "grid", gap: 18 }}>
-          <div className="tc-card" style={{ position: "relative", overflow: "hidden", padding: 24, borderRadius: 28, background: "radial-gradient(circle at top right, rgba(181,156,255,.22), transparent 26%), radial-gradient(circle at top left, rgba(215,181,109,.16), transparent 22%), linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035))", boxShadow: "0 28px 90px rgba(0,0,0,0.34)" }}>
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div className="tc-shell">
+        <aside className="tc-sidebar">
+          <div className="tc-sidebar-card">
+            <div className="tc-sidebar-title">Navegación admin</div>
+            <div className="tc-sidebar-nav">
+              {ADMIN_NAV.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
+                    onClick={() => setTab(item.key as TabKey)}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                      <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
+                        <Icon size={16} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="tc-sidebtn-main">{item.label}</div>
+                        <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                      </div>
+                    </div>
+                    <span className="tc-sidebtn-dot" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        <main className="tc-main">
+          <section className="tc-hero">
+            <div className="tc-hero-top">
               <div>
-                <div className="tc-title" style={{ fontSize: 28, letterSpacing: ".02em", lineHeight: 1.05 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub" style={{ marginTop: 8, maxWidth: 840, fontSize: 13 }}>Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM · Diario · Reservas · Diario</div>
+                <div className="tc-hero-title">👑 Admin — Tarot Celestial</div>
+                <div className="tc-hero-sub">Panel maestro con facturación, operaciones, CRM y control de equipo en una sola experiencia premium.</div>
               </div>
 
               <div className="tc-row">
@@ -1254,88 +1299,42 @@ export default function Admin() {
                   style={{ width: 120 }}
                 />
                 <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
-                  {listLoading ? "Cargando…" : "Cargar"}
+                  {listLoading ? "Cargando…" : "Refrescar"}
                 </button>
               </div>
             </div>
 
-            <div style={{ marginTop: 18, padding: 8, borderRadius: 20, background: "rgba(255,255,255,0.05)", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05), 0 10px 30px rgba(0,0,0,.18)", backdropFilter: "blur(10px)" }} className="tc-tabs">
-              <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
-                🧾 Facturas
-              </button>
-              <button className={`tc-tab ${tab === "editor" ? "tc-tab-active" : ""}`} onClick={() => setTab("editor")}>
-                ✏️ Editor
-              </button>
-              <button className={`tc-tab ${tab === "estadisticas" ? "tc-tab-active" : ""}`} onClick={() => setTab("estadisticas")}>
-                📈 Estadísticas
-              </button>
-              <button className={`tc-tab ${tab === "contabilidad" ? "tc-tab-active" : ""}`} onClick={() => setTab("contabilidad")}>
-                💼 Contabilidad
-              </button>
-              <button className={`tc-tab ${tab === "asistencia" ? "tc-tab-active" : ""}`} onClick={() => setTab("asistencia")}>
-                🟢 Asistencia
-              </button>
-              <button className={`tc-tab ${tab === "checklists" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklists")}>
-                ✅ Checklists
-              </button>
-              <button className={`tc-tab ${tab === "clientes" ? "tc-tab-active" : ""}`} onClick={() => setTab("clientes")}>
-                💎 Clientes
-              </button>
-              <button className={`tc-tab ${tab === "crm" ? "tc-tab-active" : ""}`} onClick={() => setTab("crm")}>
-                👥 CRM
-              </button>
-              <button className={`tc-tab ${tab === "reservas" ? "tc-tab-active" : ""}`} onClick={() => setTab("reservas")}>
-                🗓️ Reservas
-              </button>
-              <button className={`tc-tab ${tab === "diario" ? "tc-tab-active" : ""}`} onClick={() => setTab("diario")}>
-                📅 Diario
-              </button>
-              <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
-                🔄 Sync
-              </button>
-            </div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1.2fr .9fr .9fr .9fr",
-              gap: 14,
-              alignItems: "stretch",
-            }}
-          >
-            <div
-              className="tc-card"
-              style={{
-                padding: 20,
-                borderRadius: 24,
-                background:
-                  "radial-gradient(circle at top right, rgba(181,156,255,.16), transparent 30%), linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
-              }}
-            >
-              <div className="tc-sub" style={{ textTransform: "uppercase", letterSpacing: ".05em" }}>
-                Resumen ejecutivo
+            <div className="tc-hero-kpis">
+              <div className="tc-kpi-panel tc-kpi-panel-main">
+                <div className="tc-kpi-label">Resumen ejecutivo</div>
+                <div className="tc-kpi-value">{eur(totalSum)}</div>
+                <div className="tc-kpi-note">Facturación visible del mes {month}</div>
+                <div className="tc-row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+                  <span className="tc-chip">Facturas: {(invoices || []).length}</span>
+                  <span className="tc-chip">Aceptadas: {statsComputed.accepted}</span>
+                  <span className="tc-chip">Pendientes: {statsComputed.pending}</span>
+                </div>
               </div>
-              <div style={{ fontSize: 30, fontWeight: 900, marginTop: 10, lineHeight: 1.02 }}>
-                {eur(totalSum)}
+              <div className="tc-kpi-panel">
+                <div className="tc-kpi-label">Tarotistas activas</div>
+                <div className="tc-kpi-value">{String(statsComputed.workers || 0)}</div>
+                <div className="tc-kpi-note">Con datos operativos este mes</div>
               </div>
-              <div className="tc-sub" style={{ marginTop: 8 }}>
-                Total visible en facturas del mes · {month}
+              <div className="tc-kpi-panel">
+                <div className="tc-kpi-label">Clientes VIP</div>
+                <div className="tc-kpi-value">{String(statsComputed.review || 0)}</div>
+                <div className="tc-kpi-note">Casos en revisión y seguimiento</div>
               </div>
-              <div className="tc-row" style={{ marginTop: 14, gap: 8, flexWrap: "wrap" }}>
-                <span className="tc-chip">Facturas: {(invoices || []).length}</span>
-                <span className="tc-chip">Aceptadas: {statsComputed.accepted}</span>
-                <span className="tc-chip">Pendientes: {statsComputed.pending}</span>
+              <div className="tc-kpi-panel">
+                <div className="tc-kpi-label">Módulo activo</div>
+                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{String(tab).toUpperCase()}</div>
+                <div className="tc-kpi-note">Navegación lateral tipo sistema operativo</div>
               </div>
             </div>
+          </section>
 
-            <KpiBox label="Facturación" value={eur(totalSum)} highlight />
-            <KpiBox label="Clientes VIP" value={String((statsComputed.review || 0) + 0)} />
-            <KpiBox label="Tarotistas activas" value={String(statsComputed.workers || 0)} />
-          </div>
-
-          </div>
-
-          {tab === "facturas" && (
+          <div className="tc-main-content">
+{tab === "facturas" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
@@ -2515,7 +2514,8 @@ export default function Admin() {
             </div>
           )}
         </div>
-      </div>
+      </main>
+    </div>
 
       {crmCloseNotif && (
         <div
