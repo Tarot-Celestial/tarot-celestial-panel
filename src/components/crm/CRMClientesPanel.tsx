@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -849,6 +850,7 @@ export default function CRMClientesPanel({
       await saveEtiquetasCliente(crmClienteSelId);
       await openCRMFicha(crmClienteSelId);
       setCrmFichaMsg("✅ Cliente y etiquetas actualizados correctamente");
+      tcToast({title:"Ficha actualizada",description:"Cambios guardados",tone:"success"});
       await searchCRM();
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
