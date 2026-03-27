@@ -7,7 +7,7 @@ import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
 import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
-import HabitualesPanel from "@/components/habituales/HabitualesPanel";
+import DiarioPanel from "@/components/diario/DiarioPanel";
 
 const sb = supabaseBrowser();
 
@@ -73,7 +73,7 @@ type TabKey =
   | "clientes"
   | "crm"
   | "reservas"
-  | "habituales"
+  | "diario"
   | "sync";
 
 function ackLabel(v: any) {
@@ -1241,7 +1241,7 @@ export default function Admin() {
             <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
               <div>
                 <div className="tc-title" style={{ fontSize: 28, letterSpacing: ".02em", lineHeight: 1.05 }}>👑 Admin — Tarot Celestial</div>
-                <div className="tc-sub" style={{ marginTop: 8, maxWidth: 840, fontSize: 13 }}>Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM · Reservas</div>
+                <div className="tc-sub" style={{ marginTop: 8, maxWidth: 840, fontSize: 13 }}>Sincronización · Facturas · Estadísticas · Contabilidad · Edición · Asistencia · Checklists · Clientes · CRM · Diario · Reservas · Diario</div>
               </div>
 
               <div className="tc-row">
@@ -1287,8 +1287,8 @@ export default function Admin() {
               <button className={`tc-tab ${tab === "reservas" ? "tc-tab-active" : ""}`} onClick={() => setTab("reservas")}>
                 🗓️ Reservas
               </button>
-              <button className={`tc-tab ${tab === "habituales" ? "tc-tab-active" : ""}`} onClick={() => setTab("habituales")}>
-                ⭐ Habituales
+              <button className={`tc-tab ${tab === "diario" ? "tc-tab-active" : ""}`} onClick={() => setTab("diario")}>
+                📅 Diario
               </button>
               <button className={`tc-tab ${tab === "sync" ? "tc-tab-active" : ""}`} onClick={() => setTab("sync")}>
                 🔄 Sync
@@ -2494,7 +2494,7 @@ export default function Admin() {
           )}
 
           {tab === "reservas" && <ReservasPanel mode="admin" />}
-          {tab === "habituales" && <HabitualesPanel mode="admin" />}
+          {tab === "diario" && <DiarioPanel />}
 
           {tab === "sync" && (
             <div className="tc-card">
@@ -2956,4 +2956,3 @@ function ChecklistRow({
     </div>
   );
 }
-
