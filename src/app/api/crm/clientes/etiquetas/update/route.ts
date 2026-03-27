@@ -31,10 +31,10 @@ export async function POST(req: Request) {
 
     // insertar nuevas
     if (etiquetas.length > 0) {
-      const rows = etiquetas.map((etiqueta_id) => ({
-        cliente_id,
-        etiqueta_id,
-      }));
+      const rows = etiquetas.map((etiqueta_id: string) => ({
+  cliente_id,
+  etiqueta_id,
+}));
 
       const { error: insError } = await supabase
         .from("crm_cliente_etiquetas")
