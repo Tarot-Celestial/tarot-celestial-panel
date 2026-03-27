@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -54,6 +55,7 @@ export default function HabitualesPanel({
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
+      tcToast({ title: "Habituales actualizados", description: "Clientes cargados correctamente", tone: "info", duration: 2500 });
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
