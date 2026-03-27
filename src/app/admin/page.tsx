@@ -8,11 +8,13 @@ import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import DiarioPanel from "@/components/diario/DiarioPanel";
+import DashboardPanel from "@/components/admin/DashboardPanel";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
 
 const ADMIN_NAV = [
+  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
@@ -79,6 +81,7 @@ async function safeJson(res: Response) {
 }
 
 type TabKey =
+  | "dashboard"
   | "facturas"
   | "editor"
   | "estadisticas"
@@ -127,7 +130,7 @@ function ackStyle(v: any) {
 
 export default function Admin() {
   const [ok, setOk] = useState(false);
-  const [tab, setTab] = useState<TabKey>("facturas");
+  const [tab, setTab] = useState<TabKey>("dashboard");
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
 
@@ -1334,7 +1337,9 @@ export default function Admin() {
           </section>
 
           <div className="tc-main-content">
-{tab === "facturas" && (
+{tab === "dashboard" && <DashboardPanel month={month} />}
+
+          {tab === "facturas" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
