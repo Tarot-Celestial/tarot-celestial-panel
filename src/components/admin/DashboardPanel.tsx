@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -32,6 +33,13 @@ function numES(n: any, digits = 0) {
 type DashboardPanelProps = {
   month: string;
 };
+
+function minsUntil(dateValue: any) {
+  if (!dateValue) return null;
+  const t = new Date(dateValue).getTime();
+  if (!Number.isFinite(t)) return null;
+  return Math.round((t - Date.now()) / 60000);
+}
 
 export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [loading, setLoading] = useState(false);
@@ -99,14 +107,17 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
 
       if (!silent) setMsg("✅ Dashboard actualizado");
     } catch (e: any) {
-      if (!silent) setMsg(`❌ ${e?.message || "Error cargando dashboard"}`);
+      if (!silent) {
+        setMsg(`❌ ${e?.message || "Error cargando dashboard"}`);
+        tcToast({ title: "Error en dashboard", description: String(e?.message || "No se pudo cargar"), tone: "error" });
+      }
       setInvoices([]);
       setStatsRows([]);
       setStatsTotals(null);
       setReservas([]);
       setDiarioRows([]);
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent) setLoading(false);
     }
   }
 
@@ -136,6 +147,49 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       })
       .slice(0, 5);
   }, [reservas]);
+
+  const alertas = useMemo(() => {
+    const items: { title: string; description: string; tone: "danger" | "warning" | "success" | "info" }[] = [];
+
+    const verySoon = reservasProximas.filter((r: any) => {
+      const mins = minsUntil(r?.fecha_reserva);
+      return mins !== null && mins >= -2 && mins <= 10;
+    });
+
+    if (verySoon.length > 0) {
+      items.push({
+        title: "Reservas inminentes",
+        description: `${verySoon.length} reserva(s) en los próximos 10 minutos.`,
+        tone: "danger",
+      });
+    }
+
+    if ((diarioRows || []).length >= 5) {
+      items.push({
+        title: "Buen ritmo de compras",
+        description: `Hoy han comprado ${diarioRows.length} clientes.`,
+        tone: "success",
+      });
+    }
+
+    if (pendientes >= 8) {
+      items.push({
+        title: "Carga alta en reservas",
+        description: `Hay ${pendientes} reservas pendientes en cola.`,
+        tone: "warning",
+      });
+    }
+
+    if (items.length === 0) {
+      items.push({
+        title: "Panel estable",
+        description: "No hay alertas críticas ahora mismo.",
+        tone: "info",
+      });
+    }
+
+    return items;
+  }, [reservasProximas, diarioRows, pendientes]);
 
   const topProduccion = useMemo(() => {
     return [...(statsRows || [])]
@@ -177,6 +231,44 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
         <DashKpi label="Tarotistas con datos" value={String(statsRows.length)} />
       </div>
 
+      <div className="tc-card" style={{ borderRadius: 24 }}>
+        <div className="tc-title" style={{ fontSize: 16 }}>🚨 Alertas inteligentes</div>
+        <div className="tc-sub" style={{ marginTop: 6 }}>
+          Señales rápidas del negocio que requieren atención o indican buen rendimiento.
+        </div>
+        <div className="tc-hr" />
+        <div className="tc-grid-3">
+          {alertas.map((a, idx) => (
+            <div
+              key={idx}
+              style={{
+                borderRadius: 18,
+                padding: 16,
+                border:
+                  a.tone === "danger"
+                    ? "1px solid rgba(255,90,106,.28)"
+                    : a.tone === "warning"
+                    ? "1px solid rgba(215,181,109,.28)"
+                    : a.tone === "success"
+                    ? "1px solid rgba(105,240,177,.26)"
+                    : "1px solid rgba(181,156,255,.26)",
+                background:
+                  a.tone === "danger"
+                    ? "linear-gradient(180deg, rgba(255,90,106,.12), rgba(255,255,255,.03))"
+                    : a.tone === "warning"
+                    ? "linear-gradient(180deg, rgba(215,181,109,.12), rgba(255,255,255,.03))"
+                    : a.tone === "success"
+                    ? "linear-gradient(180deg, rgba(105,240,177,.10), rgba(255,255,255,.03))"
+                    : "linear-gradient(180deg, rgba(181,156,255,.10), rgba(255,255,255,.03))",
+              }}
+            >
+              <div style={{ fontWeight: 900 }}>{a.title}</div>
+              <div className="tc-sub" style={{ marginTop: 8 }}>{a.description}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="tc-grid-2">
         <div className="tc-card">
           <div className="tc-title" style={{ fontSize: 16 }}>⚡ Actividad inmediata</div>
@@ -184,25 +276,39 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           <div className="tc-hr" />
           <div style={{ display: "grid", gap: 10 }}>
             {reservasProximas.length === 0 && <div className="tc-sub">No hay reservas próximas pendientes.</div>}
-            {reservasProximas.map((r: any) => (
-              <div
-                key={r.id}
-                style={{
-                  border: "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 16,
-                  padding: 12,
-                  background: "rgba(255,255,255,.03)",
-                }}
-              >
-                <div style={{ fontWeight: 800 }}>
-                  {r?.cliente_nombre || "Cliente"}
+            {reservasProximas.map((r: any) => {
+              const mins = minsUntil(r?.fecha_reserva);
+              const urgent = mins !== null && mins >= -2 && mins <= 10;
+
+              return (
+                <div
+                  key={r.id}
+                  style={{
+                    border: urgent ? "1px solid rgba(255,90,106,.26)" : "1px solid rgba(255,255,255,.08)",
+                    borderRadius: 16,
+                    padding: 12,
+                    background: urgent ? "rgba(255,90,106,.08)" : "rgba(255,255,255,.03)",
+                    boxShadow: urgent ? "0 10px 28px rgba(255,90,106,.10)" : "none",
+                  }}
+                >
+                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 800 }}>
+                      {r?.cliente_nombre || "Cliente"}
+                    </div>
+                    {urgent ? <span className="tc-chip" style={{ background: "rgba(255,90,106,.16)", border: "1px solid rgba(255,90,106,.26)" }}>Urgente</span> : null}
+                  </div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    {r?.tarotista_display_name || r?.tarotista_nombre_manual || "Tarotista"} · {r?.fecha_reserva ? new Date(r.fecha_reserva).toLocaleString("es-ES") : "—"}
+                  </div>
+                  {mins !== null ? (
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      {mins >= 0 ? `Empieza en ${mins} min` : `Debía empezar hace ${Math.abs(mins)} min`}
+                    </div>
+                  ) : null}
+                  {!!r?.nota && <div className="tc-sub" style={{ marginTop: 6 }}>{r.nota}</div>}
                 </div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  {r?.tarotista_display_name || r?.tarotista_nombre_manual || "Tarotista"} · {r?.fecha_reserva ? new Date(r.fecha_reserva).toLocaleString("es-ES") : "—"}
-                </div>
-                {!!r?.nota && <div className="tc-sub" style={{ marginTop: 6 }}>{r.nota}</div>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -239,57 +345,19 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           </div>
         </div>
       </div>
-
-      <div className="tc-grid-2">
-        <div className="tc-card">
-          <div className="tc-title" style={{ fontSize: 16 }}>💳 Clientes que han comprado hoy</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>Resumen directo del diario.</div>
-          <div className="tc-hr" />
-          <div style={{ display: "grid", gap: 10 }}>
-            {diarioRows.length === 0 && <div className="tc-sub">No hay compras registradas hoy.</div>}
-            {diarioRows.slice(0, 8).map((r: any) => (
-              <div
-                key={r.id || `${r.nombre}-${r.telefono}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto",
-                  gap: 12,
-                  alignItems: "center",
-                  border: "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 16,
-                  padding: 12,
-                  background: "rgba(255,255,255,.03)",
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 800 }}>{r?.nombre || "Cliente"}</div>
-                  <div className="tc-sub" style={{ marginTop: 4 }}>{r?.telefono || "—"}</div>
-                </div>
-                <div className="tc-sub">{r?.ultima_compra ? new Date(r.ultima_compra).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—"}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="tc-card">
-          <div className="tc-title" style={{ fontSize: 16 }}>📈 Resumen de rendimiento</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>Lectura rápida del mes actual.</div>
-          <div className="tc-hr" />
-          <div className="tc-grid-2">
-            <DashMini label="Minutos totales" value={numES(statsTotals?.minutes_total || 0)} />
-            <DashMini label="Llamadas" value={numES(statsTotals?.calls_total || 0)} />
-            <DashMini label="Captadas" value={numES(statsTotals?.captadas_total || 0)} />
-            <DashMini label="Pago minutos" value={eur(statsTotals?.pay_minutes || 0)} />
-            <DashMini label="Bonus captadas" value={eur(statsTotals?.bonus_captadas || 0)} />
-            <DashMini label="% Cliente medio" value={`${numES(statsTotals?.avg_pct_cliente || 0, 2)}%`} />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
 
-function DashKpi({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+function DashKpi({
+  label,
+  value,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
   return (
     <div
       className="tc-card"
@@ -297,28 +365,12 @@ function DashKpi({ label, value, highlight = false }: { label: string; value: st
         padding: 18,
         borderRadius: 20,
         background: highlight
-          ? "linear-gradient(180deg, rgba(215,181,109,.16), rgba(255,255,255,.04))"
-          : "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))",
+          ? "linear-gradient(180deg, rgba(215,181,109,.12), rgba(255,255,255,.03))"
+          : "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
       }}
     >
       <div className="tc-sub">{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 900, marginTop: 10, lineHeight: 1.02 }}>{value}</div>
-    </div>
-  );
-}
-
-function DashMini({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,.08)",
-        borderRadius: 16,
-        padding: 12,
-        background: "rgba(255,255,255,.03)",
-      }}
-    >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontWeight: 900, marginTop: 8 }}>{value}</div>
+      <div style={{ fontSize: 28, fontWeight: 900, marginTop: 10 }}>{value}</div>
     </div>
   );
 }
