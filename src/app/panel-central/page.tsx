@@ -7,8 +7,21 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
+import { BarChart3, CalendarDays, CheckSquare, Headphones, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
+
+const CENTRAL_NAV = [
+  { key: "equipo", icon: Users, label: "Equipo", kicker: "Competición en vivo" },
+  { key: "llamadas", icon: Phone, label: "Llamadas", kicker: "Pendientes del día" },
+  { key: "chat", icon: MessageSquare, label: "Chat", kicker: "Tarotistas ↔ centrales" },
+  { key: "crm", icon: Headphones, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda operativa" },
+  { key: "habituales", icon: Star, label: "Habituales", kicker: "Clientes recientes" },
+  { key: "checklist", icon: CheckSquare, label: "Checklist", kicker: "Turno actual" },
+  { key: "incidencias", icon: ShieldCheck, label: "Incidencias", kicker: "Control disciplinario" },
+  { key: "ranking", icon: BarChart3, label: "Ranking", kicker: "Resultados y equipos" },
+] as const;
 
 type TabKey = "equipo" | "llamadas" | "crm" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
 
@@ -1144,77 +1157,49 @@ export default function Central() {
     <>
       <AppHeader />
 
-      <div className="tc-wrap">
-        <div className="tc-container">
-          <div className="tc-card">
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+      <div className="tc-shell">
+        <aside className="tc-sidebar">
+          <div className="tc-sidebar-card">
+            <div className="tc-sidebar-title">Navegación centrales</div>
+            <div className="tc-sidebar-nav">
+              {CENTRAL_NAV.map((item) => {
+                const Icon = item.icon;
+                const active = tab === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
+                    onClick={() => setTab(item.key as TabKey)}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                      <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
+                        <Icon size={16} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="tc-sidebtn-main">{item.label}</div>
+                        <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                      </div>
+                    </div>
+                    <span className="tc-sidebtn-dot" />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        <main className="tc-main">
+          <section className="tc-hero">
+            <div className="tc-hero-top">
               <div>
-                <div className="tc-title" style={{ fontSize: 18 }}>
-                  🎧 Panel Central
-                </div>
-                <div className="tc-sub">Competición · Checklist · Incidencias · Ranking · Presencias · Chat</div>
+                <div className="tc-hero-title">🎧 Central — Tarot Celestial</div>
+                <div className="tc-hero-sub">Centro operativo premium para llamadas, reservas, chat, checklist y rendimiento del equipo en tiempo real.</div>
               </div>
 
               <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                <span
-                  className="tc-chip"
-                  style={{
-                    ...attStyle(attOnline, attStatus),
-                    padding: "6px 10px",
-                    borderRadius: 999,
-                    fontSize: 12,
-                  }}
-                  title={attStatus}
-                >
+                <span className="tc-chip" style={{ ...attStyle(attOnline, attStatus), padding: "6px 10px", borderRadius: 999, fontSize: 12 }} title={attStatus}>
                   {attLabel(attOnline, attStatus)}
                 </span>
-
-                <button
-                  className="tc-btn tc-btn-ok"
-                  onClick={() => postAttendanceEvent("online", { action: "check_in" })}
-                  disabled={attLoading || attOnline}
-                  title="Solo te conecta si estás en turno"
-                >
-                  🟢 Conectarme
-                </button>
-                <button
-                  className="tc-btn tc-btn-danger"
-                  onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
-                  disabled={attLoading || !attOnline}
-                >
-                  🔴 Desconectarme
-                </button>
-
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
-                  disabled={attLoading || !attOnline || attStatus === "break"}
-                >
-                  ⏸️ Descanso
-                </button>
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
-                  disabled={attLoading || !attOnline || attStatus !== "break"}
-                >
-                  ▶️ Volver
-                </button>
-
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
-                  disabled={attLoading || !attOnline || attStatus === "bathroom"}
-                >
-                  🚻 Baño
-                </button>
-                <button
-                  className="tc-btn"
-                  onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
-                  disabled={attLoading || !attOnline || attStatus !== "bathroom"}
-                >
-                  ✅ Salí
-                </button>
-
                 <span className="tc-chip">Mes</span>
                 <input
                   className="tc-input"
@@ -1223,51 +1208,36 @@ export default function Central() {
                   placeholder="2026-02"
                   style={{ width: 120 }}
                 />
-                <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>
-                  Actualizar
-                </button>
+                <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>Actualizar</button>
               </div>
             </div>
 
-            {attMsg ? (
-              <div className="tc-sub" style={{ marginTop: 10 }}>
-                {attMsg}
+            <div className="tc-hero-kpis">
+              <div className="tc-kpi-panel tc-kpi-panel-main">
+                <div className="tc-kpi-label">Estado central</div>
+                <div className="tc-kpi-value" style={{ fontSize: 24 }}>{attLabel(attOnline, attStatus)}</div>
+                <div className="tc-kpi-note">Acceso rápido a tu estado operativo y al mes activo</div>
               </div>
-            ) : null}
-
-            <div style={{ marginTop: 12 }} className="tc-tabs">
-              <button className={`tc-tab ${tab === "equipo" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipo")}>
-                🔥💧 Equipo
-              </button>
-              <button className={`tc-tab ${tab === "llamadas" ? "tc-tab-active" : ""}`} onClick={() => setTab("llamadas")}>
-                📞 Llamadas
-              </button>
-              <button className={`tc-tab ${tab === "chat" ? "tc-tab-active" : ""}`} onClick={() => setTab("chat")}>
-                💬 Chat
-              </button>
-              <button className={`tc-tab ${tab === "crm" ? "tc-tab-active" : ""}`} onClick={() => setTab("crm")}>
-                👥 CRM
-              </button>
-              <button className={`tc-tab ${tab === "reservas" ? "tc-tab-active" : ""}`} onClick={() => setTab("reservas")}>
-                🗓️ Reservas
-              </button>
-              <button className={`tc-tab ${tab === "habituales" ? "tc-tab-active" : ""}`} onClick={() => setTab("habituales")}>
-                ⭐ Habituales
-              </button>
-              <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
-                ✅ Checklist
-              </button>
-              <button className={`tc-tab ${tab === "incidencias" ? "tc-tab-active" : ""}`} onClick={() => setTab("incidencias")}>
-                ⚠️ Incidencias
-              </button>
-              <button className={`tc-tab ${tab === "ranking" ? "tc-tab-active" : ""}`} onClick={() => setTab("ranking")}>
-                🏆 Ranking
-              </button>
+              <div className="tc-kpi-panel">
+                <div className="tc-kpi-label">Chats</div>
+                <div className="tc-kpi-value">{String(threads.length || 0)}</div>
+                <div className="tc-kpi-note">Conversaciones cargadas</div>
+              </div>
+              <div className="tc-kpi-panel">
+                <div className="tc-kpi-label">Reservas</div>
+                <div className="tc-kpi-value">{String(tab === "reservas" ? "Live" : "Activas")}</div>
+                <div className="tc-kpi-note">Seguimiento operativo en tiempo real</div>
+              </div>
+              <div className="tc-kpi-panel">
+                <div className="tc-kpi-label">Módulo activo</div>
+                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{String(tab).toUpperCase()}</div>
+                <div className="tc-kpi-note">Vista lateral tipo software premium</div>
+              </div>
             </div>
-          </div>
+          </section>
 
-          {/* ✅ CHAT */}
-          {tab === "chat" && (
+          <div className="tc-main-content">
+{tab === "chat" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
@@ -1995,7 +1965,8 @@ export default function Central() {
             </div>
           )}
         </div>
-      </div>
+      </main>
+    </div>
 
       {crmCloseNotif && (
         <div
