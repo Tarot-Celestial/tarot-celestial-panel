@@ -1107,7 +1107,34 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gap: 18 }}>
+      <div
+        className="tc-card"
+        style={{
+          padding: 22,
+          borderRadius: 24,
+          background:
+            "radial-gradient(circle at top right, rgba(181,156,255,.18), transparent 26%), radial-gradient(circle at top left, rgba(215,181,109,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03))",
+        }}
+      >
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title" style={{ fontSize: 24 }}>👥 CRM Operativo</div>
+            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
+              Búsqueda, ficha, pagos, reservas, notas y etiquetas en una vista de trabajo premium.
+            </div>
+          </div>
+
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span className="tc-chip">Modo: {mode}</span>
+            <span className="tc-chip">Resultados: {crmRows.length}</span>
+            {crmClienteSelId ? <span className="tc-chip">Cliente activo</span> : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="crm-master-detail">
+        <div style={{ display: "grid", gap: 16 }}>
       <div className="tc-card">
         <div className="tc-row" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <div>
@@ -1269,6 +1296,10 @@ export default function CRMClientesPanel({
           </div>
         )}
       </div>
+
+        </div>
+
+        <div style={{ display: "grid", gap: 16 }}>
 
       {(crmFichaLoading || crmClienteFicha) && (
         <div className="tc-card" style={{ marginTop: 12 }}>
@@ -1644,6 +1675,30 @@ export default function CRMClientesPanel({
         </div>
       )}
 
+          {!crmFichaLoading && !crmClienteFicha && (
+            <div
+              className="tc-card"
+              style={{
+                minHeight: 320,
+                display: "grid",
+                placeItems: "center",
+                textAlign: "center",
+                borderRadius: 22,
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
+              }}
+            >
+              <div style={{ maxWidth: 440 }}>
+                <div className="tc-title" style={{ fontSize: 20 }}>Selecciona una clienta</div>
+                <div className="tc-sub" style={{ marginTop: 10 }}>
+                  Abre una ficha desde resultados para trabajar pagos, llamadas, reservas, etiquetas y notas en una vista lateral fija.
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
 
       {crmEtiquetasModalFor && typeof document !== "undefined"
         ? createPortal(
@@ -1757,9 +1812,17 @@ export default function CRMClientesPanel({
         : null}
 
 
-      <div className="tc-card">
-        <div className="tc-title">📋 Resultados CRM</div>
-        <div className="tc-sub" style={{ marginTop: 6 }}>Resultado de búsqueda con filtros</div>
+      <div className="tc-card" style={{ borderRadius: 20, overflow: "hidden" }}>
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <div className="tc-title">📋 Resultados CRM</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>Listado operativo con acceso rápido a ficha</div>
+          </div>
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span className="tc-chip">Clientes: {crmRows.length}</span>
+            {crmMsg ? <span className="tc-chip">{crmMsg}</span> : null}
+          </div>
+        </div>
 
         <div className="tc-hr" />
 
@@ -1810,3 +1873,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
