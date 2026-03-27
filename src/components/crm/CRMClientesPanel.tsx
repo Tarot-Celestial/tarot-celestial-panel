@@ -1106,6 +1106,40 @@ export default function CRMClientesPanel({
     }
   }
 
+
+  function openFichaAndFocusPagos(id: string) {
+    if (!id) return;
+    openCRMFicha(id);
+    setTimeout(() => {
+      if (typeof window !== "undefined") {
+        const el = document.getElementById("crm-pagos-card");
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 350);
+  }
+
+  function openFichaAndFocusLlamada(id: string) {
+    if (!id) return;
+    openCRMFicha(id);
+    setTimeout(() => {
+      if (typeof window !== "undefined") {
+        const el = document.getElementById("crm-llamada-card");
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 350);
+  }
+
+  function openFichaAndFocusNotas(id: string) {
+    if (!id) return;
+    openCRMFicha(id);
+    setTimeout(() => {
+      if (typeof window !== "undefined") {
+        const el = document.getElementById("crm-notas-card");
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 350);
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div
@@ -1364,7 +1398,7 @@ export default function CRMClientesPanel({
                 </div>
               </div>
 
-<div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+<div id="crm-notas-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 16 }}>📝 Historial de notas</div>
@@ -1465,7 +1499,7 @@ export default function CRMClientesPanel({
                 </div>
               </div>
 
-              <div className="tc-grid-2" style={{ marginTop: 12 }}>
+              <div id="crm-llamada-card" className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div>
                   <div className="tc-sub">Enviar llamada a tarotista</div>
                   <select
@@ -1535,7 +1569,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-hr" />
 
-              <div className="tc-title">💳 Cobros</div>
+              <div id="crm-pagos-card" className="tc-title">💳 Cobros</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
                 Abre el TPV virtual de PayPal. Cuando termines el cobro, vuelve a esta pestaña y usa 'Confirmar pago' si salió bien o 'Pago erróneo' si falló.
               </div>
@@ -1826,48 +1860,129 @@ export default function CRMClientesPanel({
 
         <div className="tc-hr" />
 
-        <div style={{ overflowX: "auto" }}>
-          <table className="tc-table">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Teléfono</th>
-                <th>País</th>
-                <th>Etiquetas</th>
-                <th>Min free</th>
-                <th>Min normales</th>
-                <th>Deuda</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(crmRows || []).map((r: any) => {
-                const etiquetas = r.etiquetas || r.tags || r.labels || r.crm_tags || r.crm_etiquetas || [];
-                const etiquetasTexto = Array.isArray(etiquetas)
-                  ? etiquetas.map((x: any) => typeof x === "string" ? x : x?.nombre || x?.label || x?.name || x?.tag || "").filter(Boolean).join(", ")
-                  : "";
+        <div style={{ display: "grid", gap: 12 }}>
+          {(crmRows || []).map((r: any) => {
+            const etiquetas = r.etiquetas || r.tags || r.labels || r.crm_tags || r.crm_etiquetas || [];
+            const etiquetasArr = Array.isArray(etiquetas)
+              ? etiquetas
+                  .map((x: any) =>
+                    typeof x === "string"
+                      ? { nombre: x }
+                      : {
+                          nombre: x?.nombre || x?.label || x?.name || x?.tag || "",
+                        }
+                  )
+                  .filter((x: any) => x?.nombre)
+              : [];
 
-                return (
-                  <tr key={r.id}>
-                    <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
-                    <td>{r.telefono || "—"}</td>
-                    <td>{r.pais || "—"}</td>
-                    <td>{etiquetasTexto || "—"}</td>
-                    <td>{r.minutos_free_pendientes ?? 0}</td>
-                    <td>{r.minutos_normales_pendientes ?? 0}</td>
-                    <td>{eur(r.deuda_pendiente || 0)}</td>
-                    <td><button className="tc-btn" onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button></td>
-                  </tr>
-                );
-              })}
+            const isActive = String(crmClienteSelId || "") === String(r.id || "");
 
-              {crmRows.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="tc-muted">Sin resultados.</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+            return (
+              <div
+                key={r.id}
+                className="tc-click"
+                onClick={() => openCRMFicha(String(r.id || ""))}
+                style={{
+                  border: isActive ? "1px solid rgba(181,156,255,.34)" : "1px solid rgba(255,255,255,.08)",
+                  borderRadius: 18,
+                  padding: 14,
+                  background: isActive
+                    ? "linear-gradient(180deg, rgba(181,156,255,.12), rgba(255,255,255,.03))"
+                    : "linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02))",
+                  boxShadow: isActive ? "0 16px 40px rgba(0,0,0,.20)" : "0 10px 28px rgba(0,0,0,.10)",
+                  transition: "transform .18s ease, box-shadow .18s ease, border-color .18s ease",
+                }}
+              >
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <div style={{ minWidth: 260, flex: 1 }}>
+                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>
+                        {[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}
+                      </div>
+                      {r.pais ? <span className="tc-chip">{r.pais}</span> : null}
+                      {r.telefono ? <span className="tc-chip">{r.telefono}</span> : null}
+                    </div>
+
+                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      {etiquetasArr.length > 0 ? (
+                        etiquetasArr.map((et: any, idx: number) => (
+                          <span key={`${r.id}-tag-${idx}`} className="tc-chip" style={{ background: "rgba(181,156,255,.12)", border: "1px solid rgba(181,156,255,.22)" }}>
+                            {et.nombre}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="tc-sub">Sin etiquetas</span>
+                      )}
+                    </div>
+
+                    <div className="tc-row" style={{ gap: 16, flexWrap: "wrap", marginTop: 12 }}>
+                      <div className="tc-sub">Min free: <b>{r.minutos_free_pendientes ?? 0}</b></div>
+                      <div className="tc-sub">Min cliente: <b>{r.minutos_normales_pendientes ?? 0}</b></div>
+                      <div className="tc-sub">Deuda: <b>{eur(r.deuda_pendiente || 0)}</b></div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8, minWidth: 220 }}>
+                    <button
+                      className="tc-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCRMFicha(String(r.id || ""));
+                      }}
+                    >
+                      👁️ Ver ficha
+                    </button>
+
+                    <button
+                      className="tc-btn tc-btn-gold"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openFichaAndFocusLlamada(String(r.id || ""));
+                      }}
+                    >
+                      📞 Llamar
+                    </button>
+
+                    <button
+                      className="tc-btn tc-btn-ok"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openFichaAndFocusPagos(String(r.id || ""));
+                      }}
+                    >
+                      💳 Pago rápido
+                    </button>
+
+                    <button
+                      className="tc-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openFichaAndFocusNotas(String(r.id || ""));
+                      }}
+                    >
+                      📝 Notas
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {crmRows.length === 0 && (
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,.08)",
+                borderRadius: 18,
+                padding: 24,
+                background: "rgba(255,255,255,.02)",
+              }}
+            >
+              <div className="tc-title" style={{ fontSize: 16 }}>Sin resultados</div>
+              <div className="tc-sub" style={{ marginTop: 8 }}>
+                Usa los filtros de arriba para localizar una clienta y abrir su ficha operativa.
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
