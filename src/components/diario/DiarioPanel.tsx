@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -19,6 +20,7 @@ async function safeJson(res: Response) {
 function eur(n: any) {
   const x = Number(n) || 0;
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+      tcToast({ title: "Diario actualizado", description: "Resumen cargado correctamente", tone: "info", duration: 2500 });
 }
 
 type DiarioPanelProps = {
