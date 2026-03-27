@@ -162,7 +162,6 @@ export default function ReservasPanel({
         return fecha >= startDay && fecha <= endDay;
       }
 
-      // proximas
       return estado !== "finalizada" && fecha >= now && fecha <= end2h;
     });
 
@@ -201,10 +200,10 @@ export default function ReservasPanel({
     return list;
   }, [rows, q, filtro]);
 
-  const wrapProps = embedded ? {} : { className: "tc-card" };
-
   const pendientes = (rows || []).filter((x: any) => String(x?.estado || "") !== "finalizada").length;
   const finalizadas = (rows || []).filter((x: any) => String(x?.estado || "") === "finalizada").length;
+
+  const wrapProps = embedded ? {} : { className: "tc-card" };
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -217,7 +216,10 @@ export default function ReservasPanel({
             "radial-gradient(circle at top right, rgba(215,181,109,.18), transparent 26%), radial-gradient(circle at top left, rgba(181,156,255,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03))",
         }}
       >
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+        <div
+          className="tc-row"
+          style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}
+        >
           <div>
             <div className="tc-title" style={{ fontSize: 24 }}>🗓️ Reservas premium</div>
             <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
@@ -234,165 +236,154 @@ export default function ReservasPanel({
       </div>
 
       <div {...wrapProps}>
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div>
-          <div className="tc-title">🗓️ Reservas</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>
-            Gestión pro de reservas para {mode === "admin" ? "admin" : "centrales"}.
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title">🗓️ Reservas</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              Gestión pro de reservas para {mode === "admin" ? "admin" : "centrales"}.
+            </div>
+          </div>
+
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <input
+              className="tc-input"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar clienta, tarotista, nota..."
+              style={{ width: 280, maxWidth: "100%" }}
+            />
+
+            <button className={`tc-btn ${filtro === "proximas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("proximas")}>
+              Próximas 2h
+            </button>
+            <button className={`tc-btn ${filtro === "hoy" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("hoy")}>
+              Hoy
+            </button>
+            <button className={`tc-btn ${filtro === "todas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("todas")}>
+              Todas
+            </button>
+            <button className={`tc-btn ${filtro === "finalizadas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("finalizadas")}>
+              Finalizadas
+            </button>
+
+            <button className="tc-btn" onClick={() => loadReservas(false)} disabled={loading}>
+              {loading ? "Cargando..." : "Actualizar"}
+            </button>
           </div>
         </div>
 
-        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <input
-            className="tc-input"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar clienta, tarotista, nota..."
-            style={{ width: 280, maxWidth: "100%" }}
-          />
-
-          <button
-            className={`tc-btn ${filtro === "proximas" ? "tc-btn-gold" : ""}`}
-            onClick={() => setFiltro("proximas")}
-          >
-            Próximas 2h
-          </button>
-          <button
-            className={`tc-btn ${filtro === "hoy" ? "tc-btn-gold" : ""}`}
-            onClick={() => setFiltro("hoy")}
-          >
-            Hoy
-          </button>
-          <button
-            className={`tc-btn ${filtro === "todas" ? "tc-btn-gold" : ""}`}
-            onClick={() => setFiltro("todas")}
-          >
-            Todas
-          </button>
-          <button
-            className={`tc-btn ${filtro === "finalizadas" ? "tc-btn-gold" : ""}`}
-            onClick={() => setFiltro("finalizadas")}
-          >
-            Finalizadas
-          </button>
-
-          <button className="tc-btn" onClick={() => loadReservas(false)} disabled={loading}>
-            {loading ? "Cargando..." : "Actualizar"}
-          </button>
+        <div className="tc-sub" style={{ marginTop: 10 }}>
+          {msg || " "}
         </div>
-      </div>
 
-      <div className="tc-sub" style={{ marginTop: 10 }}>
-        {msg || " "}
-      </div>
+        <div className="tc-hr" />
 
-      <div className="tc-hr" />
+        <div style={{ display: "grid", gap: 14 }}>
+          {(filtered || []).map((r: any) => {
+            const clienteNombre =
+              r?.cliente_nombre || (r?.cliente_id ? `Cliente ${String(r.cliente_id).slice(0, 8)}` : "Cliente");
+            const tarotistaNombre =
+              r?.tarotista_display_name ||
+              r?.tarotista_nombre_manual ||
+              (r?.tarotista_worker_id ? `Worker ${String(r.tarotista_worker_id).slice(0, 8)}` : "—");
 
-      <div style={{ display: "grid", gap: 14 }}>
-        {(filtered || []).map((r: any) => {
-          const clienteNombre = r?.cliente_nombre || (r?.cliente_id ? `Cliente ${String(r.cliente_id).slice(0, 8)}` : "Cliente");
-          const tarotistaNombre =
-            r?.tarotista_display_name ||
-            r?.tarotista_nombre_manual ||
-            (r?.tarotista_worker_id ? `Worker ${String(r.tarotista_worker_id).slice(0, 8)}` : "—");
+            const st = estadoStyles(r?.estado);
 
-          const st = estadoStyles(r?.estado);
+            return (
+              <div
+                key={r.id}
+                style={{
+                  border: st.border,
+                  borderRadius: 18,
+                  padding: 16,
+                  background: st.background,
+                  boxShadow: st.boxShadow,
+                  transition: "transform .18s ease, box-shadow .18s ease",
+                }}
+              >
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <div style={{ minWidth: 280, flex: 1 }}>
+                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>
+                        {clienteNombre}
+                      </div>
 
-          return (
-            <div
-              key={r.id}
-              style={{
-                border: st.border,
-                borderRadius: 18,
-                padding: 16,
-                background: st.background,
-                boxShadow: st.boxShadow,
-                transition: "transform .18s ease, box-shadow .18s ease",
-              }}
-            >
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-                <div style={{ minWidth: 280, flex: 1 }}>
-                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>
-                      {clienteNombre}
+                      {r?.cliente_telefono ? <span className="tc-chip">{r.cliente_telefono}</span> : null}
+
+                      <span
+                        className="tc-chip"
+                        style={{
+                          background: st.chipBg,
+                          border: st.chipBorder,
+                        }}
+                      >
+                        {estadoLabel(r?.estado)}
+                      </span>
                     </div>
 
-                    {r?.cliente_telefono ? (
-                      <span className="tc-chip">{r.cliente_telefono}</span>
-                    ) : null}
-
-                    <span
-                      className="tc-chip"
-                      style={{
-                        background: st.chipBg,
-                        border: st.chipBorder,
-                      }}
-                    >
-                      {estadoLabel(r?.estado)}
-                    </span>
-                  </div>
-
-                  <div className="tc-sub" style={{ marginTop: 10 }}>
-                    Tarotista: <b>{tarotistaNombre}</b>
-                  </div>
-
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Reserva: <b>{formatFecha(r?.fecha_reserva)}</b>
-                  </div>
-
-                  {!!r?.nota && (
-                    <div
-                      style={{
-                        marginTop: 10,
-                        padding: "10px 12px",
-                        borderRadius: 12,
-                        border: "1px solid rgba(255,255,255,.08)",
-                        background: "rgba(255,255,255,.03)",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      <div className="tc-sub" style={{ marginBottom: 4 }}>Observación</div>
-                      <div>{r.nota}</div>
+                    <div className="tc-sub" style={{ marginTop: 10 }}>
+                      Tarotista: <b>{tarotistaNombre}</b>
                     </div>
-                  )}
-                </div>
 
-                <div style={{ display: "grid", gap: 8, minWidth: 160 }}>
-                  {String(r?.estado || "") !== "finalizada" ? (
-                    <button
-                      className="tc-btn tc-btn-ok"
-                      onClick={() => finalizarReserva(String(r.id))}
-                      disabled={finalizandoId === String(r.id)}
-                    >
-                      {finalizandoId === String(r.id) ? "Guardando..." : "Finalizado"}
-                    </button>
-                  ) : (
-                    <button className="tc-btn" disabled>
-                      Cerrada
-                    </button>
-                  )}
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Reserva: <b>{formatFecha(r?.fecha_reserva)}</b>
+                    </div>
+
+                    {!!r?.nota && (
+                      <div
+                        style={{
+                          marginTop: 10,
+                          padding: "10px 12px",
+                          borderRadius: 12,
+                          border: "1px solid rgba(255,255,255,.08)",
+                          background: "rgba(255,255,255,.03)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        <div className="tc-sub" style={{ marginBottom: 4 }}>Observación</div>
+                        <div>{r.nota}</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8, minWidth: 160 }}>
+                    {String(r?.estado || "") !== "finalizada" ? (
+                      <button
+                        className="tc-btn tc-btn-ok"
+                        onClick={() => finalizarReserva(String(r.id))}
+                        disabled={finalizandoId === String(r.id)}
+                      >
+                        {finalizandoId === String(r.id) ? "Guardando..." : "Finalizado"}
+                      </button>
+                    ) : (
+                      <button className="tc-btn" disabled>
+                        Cerrada
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
 
-        {(!filtered || filtered.length === 0) && (
-          <div
-            style={{
-              border: "1px solid rgba(255,255,255,.08)",
-              borderRadius: 18,
-              padding: 24,
-              background: "rgba(255,255,255,.02)",
-            }}
-          >
-            <div className="tc-title" style={{ fontSize: 16 }}>No hay reservas en este filtro</div>
-            <div className="tc-sub" style={{ marginTop: 8 }}>
-              Prueba con “Todas” o “Hoy” para ver más resultados.
+          {(!filtered || filtered.length === 0) && (
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,.08)",
+                borderRadius: 18,
+                padding: 24,
+                background: "rgba(255,255,255,.02)",
+              }}
+            >
+              <div className="tc-title" style={{ fontSize: 16 }}>No hay reservas en este filtro</div>
+              <div className="tc-sub" style={{ marginTop: 8 }}>
+                Prueba con “Todas” o “Hoy” para ver más resultados.
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
 }
+
