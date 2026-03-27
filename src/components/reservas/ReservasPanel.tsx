@@ -203,8 +203,37 @@ export default function ReservasPanel({
 
   const wrapProps = embedded ? {} : { className: "tc-card" };
 
+  const pendientes = (rows || []).filter((x: any) => String(x?.estado || "") !== "finalizada").length;
+  const finalizadas = (rows || []).filter((x: any) => String(x?.estado || "") === "finalizada").length;
+
   return (
-    <div {...wrapProps}>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div
+        className="tc-card"
+        style={{
+          padding: 22,
+          borderRadius: 24,
+          background:
+            "radial-gradient(circle at top right, rgba(215,181,109,.18), transparent 26%), radial-gradient(circle at top left, rgba(181,156,255,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03))",
+        }}
+      >
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title" style={{ fontSize: 24 }}>🗓️ Reservas premium</div>
+            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
+              Vista operativa en tiempo real para {mode === "admin" ? "admin" : "centrales"}, con prioridades claras y foco en próximas acciones.
+            </div>
+          </div>
+
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span className="tc-chip">Pendientes: {pendientes}</span>
+            <span className="tc-chip">Finalizadas: {finalizadas}</span>
+            <span className="tc-chip">Total: {(rows || []).length}</span>
+          </div>
+        </div>
+      </div>
+
+      <div {...wrapProps}>
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div>
           <div className="tc-title">🗓️ Reservas</div>
