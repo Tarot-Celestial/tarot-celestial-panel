@@ -53,12 +53,6 @@ export default function CRMClientesPanel({
 
   const [crmTarotistasOpts, setCrmTarotistasOpts] = useState<any[]>([]);
   const [crmTarotistasLoading, setCrmTarotistasLoading] = useState(false);
-  const [crmTarotistaReservaId, setCrmTarotistaReservaId] = useState("");
-  const [crmReservaFecha, setCrmReservaFecha] = useState("");
-  const [crmReservaNota, setCrmReservaNota] = useState("");
-  const [crmReservaTarotistaManual, setCrmReservaTarotistaManual] = useState("");
-  const [crmReservaLoading, setCrmReservaLoading] = useState(false);
-  const [crmReservaMsg, setCrmReservaMsg] = useState("");
   const [crmTarotistaSendId, setCrmTarotistaSendId] = useState("");
   const [crmSendLoading, setCrmSendLoading] = useState(false);
   const [crmSendMsg, setCrmSendMsg] = useState("");
@@ -225,8 +219,11 @@ export default function CRMClientesPanel({
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      await loadEtiquetasCliente(targetId);
     } catch (e) {
       console.error("ERROR GUARDANDO ETIQUETAS CLIENTE", e);
+      throw e;
     }
   }
 
@@ -254,6 +251,35 @@ export default function CRMClientesPanel({
       setCrmEtiquetasOpts([]);
     } finally {
       setCrmEtiquetasLoading(false);
+    }
+  }
+
+  async function loadEtiquetasCliente(clienteId: string) {
+    if (!clienteId) {
+      setCrmClienteEtiquetasSel([]);
+      return;
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/crm/clientes/etiquetas/get?cliente_id=${encodeURIComponent(clienteId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      const ids = Array.isArray(j.etiquetas)
+        ? j.etiquetas.map((x: any) => String(x?.id || x?.etiqueta_id || "")).filter(Boolean)
+        : [];
+
+      setCrmClienteEtiquetasSel(ids);
+    } catch (e) {
+      console.error("ERROR CARGANDO ETIQUETAS CLIENTE", e);
+      setCrmClienteEtiquetasSel([]);
     }
   }
 
@@ -502,12 +528,6 @@ export default function CRMClientesPanel({
     setCrmClienteFicha(null);
     setCrmFichaMsg("");
     setCrmSendMsg("");
-    setCrmTarotistaReservaId("");
-    setCrmReservaFecha("");
-    setCrmReservaNota("");
-    setCrmReservaTarotistaManual("");
-    setCrmReservaLoading(false);
-    setCrmReservaMsg("");
     setCrmTarotistaSendId("");
     setCrmSendMinFree("0");
     setCrmSendMinNormales("0");
@@ -781,6 +801,7 @@ export default function CRMClientesPanel({
       await Promise.all([
         loadPagosCliente(String(c?.id || id || "")),
         loadNotasCliente(String(c?.id || id || "")),
+        loadEtiquetasCliente(String(c?.id || id || "")),
       ]);
     } catch (e: any) {
       console.error("ERROR FICHA", e);
@@ -827,67 +848,12 @@ export default function CRMClientesPanel({
 
       await saveEtiquetasCliente(crmClienteSelId);
       await openCRMFicha(crmClienteSelId);
-      setCrmFichaMsg("✅ Cliente actualizado correctamente");
+      setCrmFichaMsg("✅ Cliente y etiquetas actualizados correctamente");
       await searchCRM();
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
     } finally {
       setCrmSaveLoading(false);
-    }
-  }
-
-  async function crearCRMReserva() {
-    const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
-    if (!clienteId) {
-      setCrmReservaMsg("⚠️ Primero abre una ficha de cliente");
-      return;
-    }
-
-    if (!crmTarotistaReservaId && !crmReservaTarotistaManual.trim()) {
-      setCrmReservaMsg("⚠️ Selecciona una tarotista o escribe un nombre manual");
-      return;
-    }
-
-    if (!crmReservaFecha.trim()) {
-      setCrmReservaMsg("⚠️ Selecciona fecha y hora");
-      return;
-    }
-
-    try {
-      setCrmReservaLoading(true);
-      setCrmReservaMsg("");
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const payload = {
-        cliente_id: clienteId,
-        tarotista_worker_id: crmTarotistaReservaId || null,
-        tarotista_nombre_manual: crmReservaTarotistaManual.trim() || null,
-        fecha_reserva: new Date(crmReservaFecha).toISOString(),
-        nota: crmReservaNota.trim(),
-      };
-
-      const r = await fetch("/api/crm/reservas/crear", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
-
-      setCrmReservaMsg("✅ Reserva creada correctamente");
-      setCrmReservaFecha("");
-      setCrmReservaNota("");
-      setCrmReservaTarotistaManual("");
-    } catch (e: any) {
-      setCrmReservaMsg(`❌ ${e?.message || "Error creando reserva"}`);
-    } finally {
-      setCrmReservaLoading(false);
     }
   }
 
@@ -1528,85 +1494,6 @@ export default function CRMClientesPanel({
                     {Number(String(crmSendMinFree).replace(",", ".")) || 0} minutos free · {" "}
                     {Number(String(crmSendMinNormales).replace(",", ".")) || 0} minutos cliente
                   </div>
-                </div>
-              </div>
-
-
-              <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title" style={{ fontSize: 16 }}>🗓️ Reservar tarotista</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Crea una reserva para esta clienta cuando la tarotista esté ocupada.
-                    </div>
-                  </div>
-                </div>
-
-                <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                  <div>
-                    <div className="tc-sub">Tarotista</div>
-                    <select
-                      className="tc-input"
-                      value={crmTarotistaReservaId}
-                      onChange={(e) => setCrmTarotistaReservaId(e.target.value)}
-                      style={{ width: "100%", marginTop: 6, colorScheme: "dark", background: "rgba(255,255,255,.04)", color: "#fff" }}
-                    >
-                      <option value="" style={{ background: "#111", color: "#fff" }}>
-                        {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
-                      </option>
-                      {crmTarotistasOpts.map((t: any) => (
-                        <option key={t.id} value={t.id} style={{ background: "#111", color: "#fff" }}>
-                          {t.display_name || t.nombre || t.name || t.alias || t.email || t.id}
-                          {t.state ? ` · ${t.state}` : ""}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="tc-sub" style={{ marginTop: 10 }}>O escribir nombre manual</div>
-                    <input
-                      className="tc-input"
-                      value={crmReservaTarotistaManual}
-                      onChange={(e) => setCrmReservaTarotistaManual(e.target.value)}
-                      placeholder="Ej: Estefanía"
-                      style={{ width: "100%", marginTop: 6 }}
-                    />
-                  </div>
-
-                  <div>
-                    <div className="tc-sub">Fecha y hora de reserva</div>
-                    <input
-                      className="tc-input"
-                      type="datetime-local"
-                      value={crmReservaFecha}
-                      onChange={(e) => setCrmReservaFecha(e.target.value)}
-                      style={{ width: "100%", marginTop: 6 }}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <div className="tc-sub">Nota / observación</div>
-                  <textarea
-                    className="tc-input"
-                    value={crmReservaNota}
-                    onChange={(e) => setCrmReservaNota(e.target.value)}
-                    placeholder="Ej: clienta prefiere que la llame Estefanía en cuanto quede libre"
-                    style={{ width: "100%", marginTop: 6, minHeight: 92, lineHeight: 1.45 }}
-                  />
-                </div>
-
-                <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-                  <button
-                    className="tc-btn tc-btn-gold"
-                    onClick={crearCRMReserva}
-                    disabled={crmReservaLoading || !crmClienteSelId || (!crmTarotistaReservaId && !crmReservaTarotistaManual.trim()) || !crmReservaFecha}
-                  >
-                    {crmReservaLoading ? "Reservando..." : "Guardar reserva"}
-                  </button>
-                </div>
-
-                <div className="tc-sub" style={{ marginTop: 10 }}>
-                  {crmReservaMsg || " "}
                 </div>
               </div>
 
