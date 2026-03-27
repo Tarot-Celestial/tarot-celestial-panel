@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
@@ -24,11 +24,9 @@ export default function AppHeader() {
   const [role, setRole] = useState<string>("");
   const [team, setTeam] = useState<string>("");
   const [month, setMonth] = useState<string>(monthKeyNow());
-
   const pathname = usePathname();
 
   useEffect(() => {
-    // Si realmente se pierde la sesión, ahí sí mandamos a login
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
       if (!session) window.location.href = "/login";
     });
@@ -36,7 +34,7 @@ export default function AppHeader() {
     (async () => {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return; // IMPORTANT: no redirects aquí
+      if (!token) return;
 
       const me = await fetch("/api/me", {
         headers: { Authorization: `Bearer ${token}` },
@@ -58,76 +56,70 @@ export default function AppHeader() {
     window.location.href = "/login";
   }
 
-  function roleLabel(r: string) {
-    if (r === "admin") return "admin";
-    if (r === "central") return "central";
-    if (r === "tarotista") return "tarotista";
-    return r || "usuario";
-  }
+  const roleLabel = useMemo(() => {
+    if (role === "admin") return "Admin";
+    if (role === "central") return "Centrales";
+    if (role === "tarotista") return "Tarotista";
+    return role || "Usuario";
+  }, [role]);
 
-  function teamLabel(t: string) {
-    if (!t) return "";
-    if (t.toLowerCase().includes("fuego")) return "🔥 Equipo Fuego";
-    if (t.toLowerCase().includes("agua")) return "💧 Equipo Agua";
-    return t;
-  }
+  const teamLabel = useMemo(() => {
+    if (!team) return "";
+    if (team.toLowerCase().includes("fuego")) return "🔥 Equipo Fuego";
+    if (team.toLowerCase().includes("agua")) return "💧 Equipo Agua";
+    return team;
+  }, [team]);
 
   return (
-    <div
-      style={{
-        position: "sticky",
-        top: 0,
-        zIndex: 50,
-        backdropFilter: "blur(10px)",
-        background: "rgba(11,7,20,0.55)",
-        borderBottom: "1px solid rgba(255,255,255,0.10)",
-      }}
-    >
-      <div className="tc-container" style={{ padding: "12px 16px" }}>
-        <div className="tc-row" style={{ justifyContent: "space-between" }}>
-          {/* IZQUIERDA */}
-          <div className="tc-row" style={{ gap: 12 }}>
-            <div
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.06)",
-                display: "grid",
-                placeItems: "center",
-                overflow: "hidden",
-              }}
-            >
-              <Image src="/tarot-celestial-logo.png" alt="Tarot Celestial" width={36} height={36} />
-            </div>
-
-            <div style={{ lineHeight: 1.2 }}>
-              <div style={{ fontWeight: 900, letterSpacing: 0.2 }}>Tarot Celestial</div>
-              <div className="tc-sub">
-                <b>{name}</b> · {roleLabel(role)}
-                {team ? ` · ${teamLabel(team)}` : ""}
-                {pathname ? ` · ${pathname}` : ""}
-              </div>
-            </div>
+    <header className="tc-header">
+      <div className="tc-header-inner">
+        <div className="tc-header-brand">
+          <div className="tc-header-logo-wrap">
+            <Image src="/tarot-celestial-logo.png" alt="Tarot Celestial" width={38} height={38} />
           </div>
 
-          {/* DERECHA */}
-          <div className="tc-row" style={{ gap: 10 }}>
+          <div>
+            <div className="tc-header-title">Tarot Celestial</div>
+            <div className="tc-header-subtitle">
+              <span className="tc-header-user">{name}</span>
+              <span className="tc-header-dot">•</span>
+              <span>{roleLabel}</span>
+              {teamLabel ? (
+                <>
+                  <span className="tc-header-dot">•</span>
+                  <span>{teamLabel}</span>
+                </>
+              ) : null}
+              {pathname ? (
+                <>
+                  <span className="tc-header-dot">•</span>
+                  <span>{pathname}</span>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="tc-header-actions">
+          <div className="tc-header-month">
+            <span className="tc-chip tc-chip-soft">Mes activo</span>
             <input
               className="tc-input"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
-              style={{ width: 140 }}
+              style={{ width: 138 }}
               title={monthLabelEs(month)}
             />
-
-            <button className="tc-btn tc-btn-gold" onClick={logout}>
-              Salir
-            </button>
           </div>
+
+          <button className="tc-btn tc-btn-gold" onClick={logout}>
+            Salir
+          </button>
         </div>
       </div>
-    </div>
+    </header>
+  );
+}
+
   );
 }
