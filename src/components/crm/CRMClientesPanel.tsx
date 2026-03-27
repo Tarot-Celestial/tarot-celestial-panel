@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -59,6 +58,13 @@ export default function CRMClientesPanel({
   const [crmSendMsg, setCrmSendMsg] = useState("");
   const [crmSendMinFree, setCrmSendMinFree] = useState("0");
   const [crmSendMinNormales, setCrmSendMinNormales] = useState("0");
+  const [crmReservaTarotistaId, setCrmReservaTarotistaId] = useState("");
+  const [crmReservaTarotistaManual, setCrmReservaTarotistaManual] = useState("");
+  const [crmReservaFecha, setCrmReservaFecha] = useState("");
+  const [crmReservaNota, setCrmReservaNota] = useState("");
+  const [crmReservaLoading, setCrmReservaLoading] = useState(false);
+  const [crmReservaMsg, setCrmReservaMsg] = useState("");
+
 
   const [crmClienteSelId, setCrmClienteSelId] = useState("");
   const [crmClienteFicha, setCrmClienteFicha] = useState<any>(null);
@@ -532,6 +538,12 @@ export default function CRMClientesPanel({
     setCrmTarotistaSendId("");
     setCrmSendMinFree("0");
     setCrmSendMinNormales("0");
+    setCrmReservaTarotistaId("");
+    setCrmReservaTarotistaManual("");
+    setCrmReservaFecha("");
+    setCrmReservaNota("");
+    setCrmReservaLoading(false);
+    setCrmReservaMsg("");
     setCrmEditNombre("");
     setCrmEditApellido("");
     setCrmEditTelefono("");
@@ -850,12 +862,72 @@ export default function CRMClientesPanel({
       await saveEtiquetasCliente(crmClienteSelId);
       await openCRMFicha(crmClienteSelId);
       setCrmFichaMsg("✅ Cliente y etiquetas actualizados correctamente");
-      tcToast({title:"Ficha actualizada",description:"Cambios guardados",tone:"success"});
       await searchCRM();
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
     } finally {
       setCrmSaveLoading(false);
+    }
+  }
+
+  async function crearReservaCRM() {
+    const clienteId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+    if (!clienteId) {
+      setCrmReservaMsg("⚠️ Primero abre una ficha de cliente");
+      return;
+    }
+
+    const tarotista_worker_id = String(crmReservaTarotistaId || "").trim();
+    const tarotista_nombre_manual = String(crmReservaTarotistaManual || "").trim();
+    const fecha_reserva = String(crmReservaFecha || "").trim();
+
+    if (!tarotista_worker_id && !tarotista_nombre_manual) {
+      setCrmReservaMsg("⚠️ Selecciona una tarotista o escribe un nombre manual");
+      return;
+    }
+
+    if (!fecha_reserva) {
+      setCrmReservaMsg("⚠️ Selecciona fecha y hora para la reserva");
+      return;
+    }
+
+    try {
+      setCrmReservaLoading(true);
+      setCrmReservaMsg("");
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const payload: any = {
+        cliente_id: clienteId,
+        fecha_reserva: new Date(fecha_reserva).toISOString(),
+        nota: crmReservaNota.trim(),
+      };
+
+      if (tarotista_worker_id) payload.tarotista_worker_id = tarotista_worker_id;
+      if (tarotista_nombre_manual) payload.tarotista_nombre_manual = tarotista_nombre_manual;
+
+      const r = await fetch("/api/crm/reservas/crear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      setCrmReservaMsg("✅ Reserva creada correctamente");
+      setCrmReservaTarotistaId("");
+      setCrmReservaTarotistaManual("");
+      setCrmReservaFecha("");
+      setCrmReservaNota("");
+    } catch (e: any) {
+      setCrmReservaMsg(`❌ ${e?.message || "Error creando reserva"}`);
+    } finally {
+      setCrmReservaLoading(false);
     }
   }
 
@@ -1106,40 +1178,6 @@ export default function CRMClientesPanel({
     } finally {
       setCrmPagoLoading(false);
     }
-  }
-
-
-  function openFichaAndFocusPagos(id: string) {
-    if (!id) return;
-    openCRMFicha(id);
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        const el = document.getElementById("crm-pagos-card");
-        el?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, 350);
-  }
-
-  function openFichaAndFocusLlamada(id: string) {
-    if (!id) return;
-    openCRMFicha(id);
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        const el = document.getElementById("crm-llamada-card");
-        el?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, 350);
-  }
-
-  function openFichaAndFocusNotas(id: string) {
-    if (!id) return;
-    openCRMFicha(id);
-    setTimeout(() => {
-      if (typeof window !== "undefined") {
-        const el = document.getElementById("crm-notas-card");
-        el?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, 350);
   }
 
   return (
@@ -1400,7 +1438,7 @@ export default function CRMClientesPanel({
                 </div>
               </div>
 
-<div id="crm-notas-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+<div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 16 }}>📝 Historial de notas</div>
@@ -1501,7 +1539,85 @@ export default function CRMClientesPanel({
                 </div>
               </div>
 
-              <div id="crm-llamada-card" className="tc-grid-2" style={{ marginTop: 12 }}>
+              <div id="crm-reserva-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+                <div className="tc-title" style={{ fontSize: 16 }}>📅 Reservar tarotista</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>
+                  Crea una reserva para esta clienta y aparecerá automáticamente en la pestaña Reservas.
+                </div>
+
+                <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                  <div>
+                    <div className="tc-sub">Tarotista</div>
+                    <select
+                      className="tc-input"
+                      value={crmReservaTarotistaId}
+                      onChange={(e) => setCrmReservaTarotistaId(e.target.value)}
+                      style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+                    >
+                      <option value="">
+                        {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
+                      </option>
+                      {crmTarotistasOpts.map((t: any) => (
+                        <option key={t.id} value={t.id}>
+                          {t.display_name || t.id}
+                          {t.state ? ` · ${t.state}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">O nombre manual</div>
+                    <input
+                      className="tc-input"
+                      value={crmReservaTarotistaManual}
+                      onChange={(e) => setCrmReservaTarotistaManual(e.target.value)}
+                      placeholder="Escribe el nombre si no está en la lista"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="tc-grid-2" style={{ marginTop: 12 }}>
+                  <div>
+                    <div className="tc-sub">Fecha y hora</div>
+                    <input
+                      className="tc-input"
+                      type="datetime-local"
+                      value={crmReservaFecha}
+                      onChange={(e) => setCrmReservaFecha(e.target.value)}
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="tc-sub">Nota</div>
+                    <input
+                      className="tc-input"
+                      value={crmReservaNota}
+                      onChange={(e) => setCrmReservaNota(e.target.value)}
+                      placeholder="Observación opcional"
+                      style={{ width: "100%", marginTop: 6 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+                  <button
+                    className="tc-btn tc-btn-gold"
+                    onClick={crearReservaCRM}
+                    disabled={crmReservaLoading || !crmClienteSelId}
+                  >
+                    {crmReservaLoading ? "Creando..." : "Crear reserva"}
+                  </button>
+                </div>
+
+                <div className="tc-sub" style={{ marginTop: 10 }}>
+                  {crmReservaMsg || " "}
+                </div>
+              </div>
+
+              <div className="tc-grid-2" style={{ marginTop: 12 }}>
                 <div>
                   <div className="tc-sub">Enviar llamada a tarotista</div>
                   <select
@@ -1571,7 +1687,7 @@ export default function CRMClientesPanel({
 
               <div className="tc-hr" />
 
-              <div id="crm-pagos-card" className="tc-title">💳 Cobros</div>
+              <div className="tc-title">💳 Cobros</div>
               <div className="tc-sub" style={{ marginTop: 6 }}>
                 Abre el TPV virtual de PayPal. Cuando termines el cobro, vuelve a esta pestaña y usa 'Confirmar pago' si salió bien o 'Pago erróneo' si falló.
               </div>
@@ -1862,129 +1978,48 @@ export default function CRMClientesPanel({
 
         <div className="tc-hr" />
 
-        <div style={{ display: "grid", gap: 12 }}>
-          {(crmRows || []).map((r: any) => {
-            const etiquetas = r.etiquetas || r.tags || r.labels || r.crm_tags || r.crm_etiquetas || [];
-            const etiquetasArr = Array.isArray(etiquetas)
-              ? etiquetas
-                  .map((x: any) =>
-                    typeof x === "string"
-                      ? { nombre: x }
-                      : {
-                          nombre: x?.nombre || x?.label || x?.name || x?.tag || "",
-                        }
-                  )
-                  .filter((x: any) => x?.nombre)
-              : [];
+        <div style={{ overflowX: "auto" }}>
+          <table className="tc-table">
+            <thead>
+              <tr>
+                <th>Cliente</th>
+                <th>Teléfono</th>
+                <th>País</th>
+                <th>Etiquetas</th>
+                <th>Min free</th>
+                <th>Min normales</th>
+                <th>Deuda</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(crmRows || []).map((r: any) => {
+                const etiquetas = r.etiquetas || r.tags || r.labels || r.crm_tags || r.crm_etiquetas || [];
+                const etiquetasTexto = Array.isArray(etiquetas)
+                  ? etiquetas.map((x: any) => typeof x === "string" ? x : x?.nombre || x?.label || x?.name || x?.tag || "").filter(Boolean).join(", ")
+                  : "";
 
-            const isActive = String(crmClienteSelId || "") === String(r.id || "");
+                return (
+                  <tr key={r.id}>
+                    <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
+                    <td>{r.telefono || "—"}</td>
+                    <td>{r.pais || "—"}</td>
+                    <td>{etiquetasTexto || "—"}</td>
+                    <td>{r.minutos_free_pendientes ?? 0}</td>
+                    <td>{r.minutos_normales_pendientes ?? 0}</td>
+                    <td>{eur(r.deuda_pendiente || 0)}</td>
+                    <td><button className="tc-btn" onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button></td>
+                  </tr>
+                );
+              })}
 
-            return (
-              <div
-                key={r.id}
-                className="tc-click"
-                onClick={() => openCRMFicha(String(r.id || ""))}
-                style={{
-                  border: isActive ? "1px solid rgba(181,156,255,.34)" : "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 18,
-                  padding: 14,
-                  background: isActive
-                    ? "linear-gradient(180deg, rgba(181,156,255,.12), rgba(255,255,255,.03))"
-                    : "linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02))",
-                  boxShadow: isActive ? "0 16px 40px rgba(0,0,0,.20)" : "0 10px 28px rgba(0,0,0,.10)",
-                  transition: "transform .18s ease, box-shadow .18s ease, border-color .18s ease",
-                }}
-              >
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 260, flex: 1 }}>
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 16 }}>
-                        {[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}
-                      </div>
-                      {r.pais ? <span className="tc-chip">{r.pais}</span> : null}
-                      {r.telefono ? <span className="tc-chip">{r.telefono}</span> : null}
-                    </div>
-
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                      {etiquetasArr.length > 0 ? (
-                        etiquetasArr.map((et: any, idx: number) => (
-                          <span key={`${r.id}-tag-${idx}`} className="tc-chip" style={{ background: "rgba(181,156,255,.12)", border: "1px solid rgba(181,156,255,.22)" }}>
-                            {et.nombre}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="tc-sub">Sin etiquetas</span>
-                      )}
-                    </div>
-
-                    <div className="tc-row" style={{ gap: 16, flexWrap: "wrap", marginTop: 12 }}>
-                      <div className="tc-sub">Min free: <b>{r.minutos_free_pendientes ?? 0}</b></div>
-                      <div className="tc-sub">Min cliente: <b>{r.minutos_normales_pendientes ?? 0}</b></div>
-                      <div className="tc-sub">Deuda: <b>{eur(r.deuda_pendiente || 0)}</b></div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8, minWidth: 220 }}>
-                    <button
-                      className="tc-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openCRMFicha(String(r.id || ""));
-                      }}
-                    >
-                      👁️ Ver ficha
-                    </button>
-
-                    <button
-                      className="tc-btn tc-btn-gold"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFichaAndFocusLlamada(String(r.id || ""));
-                      }}
-                    >
-                      📞 Llamar
-                    </button>
-
-                    <button
-                      className="tc-btn tc-btn-ok"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFichaAndFocusPagos(String(r.id || ""));
-                      }}
-                    >
-                      💳 Pago rápido
-                    </button>
-
-                    <button
-                      className="tc-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFichaAndFocusNotas(String(r.id || ""));
-                      }}
-                    >
-                      📝 Notas
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {crmRows.length === 0 && (
-            <div
-              style={{
-                border: "1px solid rgba(255,255,255,.08)",
-                borderRadius: 18,
-                padding: 24,
-                background: "rgba(255,255,255,.02)",
-              }}
-            >
-              <div className="tc-title" style={{ fontSize: 16 }}>Sin resultados</div>
-              <div className="tc-sub" style={{ marginTop: 8 }}>
-                Usa los filtros de arriba para localizar una clienta y abrir su ficha operativa.
-              </div>
-            </div>
-          )}
+              {crmRows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="tc-muted">Sin resultados.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
