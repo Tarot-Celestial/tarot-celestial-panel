@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -128,6 +129,7 @@ export default function ReservasPanel({
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
       setMsg("✅ Reserva finalizada");
+      tcToast({title:"Reserva finalizada",description:"Todo correcto",tone:"success"});
       await loadReservas(true);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error finalizando reserva"}`);
@@ -386,4 +388,5 @@ export default function ReservasPanel({
     </div>
   );
 }
+
 
