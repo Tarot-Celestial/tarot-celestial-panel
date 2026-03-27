@@ -14,8 +14,8 @@ export async function GET() {
     const supabase = adminClient();
 
     const now = new Date();
-    const from = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
-    const to = new Date(now.getTime() + 60 * 1000).toISOString();
+    const from = new Date(now.getTime() - 60 * 1000).toISOString();
+    const to = new Date(now.getTime() + 2 * 60 * 1000).toISOString();
 
     const { data, error } = await supabase
       .from("crm_reservas")
@@ -24,53 +24,55 @@ export async function GET() {
       .eq("avisada", false)
       .gte("fecha_reserva", from)
       .lte("fecha_reserva", to)
-      .order("fecha_reserva", { ascending: true });
+      .order("fecha_reserva", { ascending: true })
+      .limit(1);
 
     if (error) throw error;
 
     const reservasBase = Array.isArray(data) ? data : [];
+    if (reservasBase.length === 0) {
+      return NextResponse.json({ ok: true, reservas: [] });
+    }
 
-    const clienteIds = [...new Set(reservasBase.map((r: any) => String(r?.cliente_id || "")).filter(Boolean))];
-    const workerIds = [...new Set(reservasBase.map((r: any) => String(r?.tarotista_worker_id || "")).filter(Boolean))];
+    const reserva = reservasBase[0];
+    const clienteId = String(reserva?.cliente_id || "");
+    const workerId = String(reserva?.tarotista_worker_id || "");
 
-    let clientesMap = new Map<string, any>();
-    let workersMap = new Map<string, any>();
+    let cliente = null;
+    let worker = null;
 
-    if (clienteIds.length > 0) {
-      const { data: clientes, error: clientesError } = await supabase
-        .from("crm_clientes")
-        .select("id, nombre, apellido, telefono")
-        .in("id", clienteIds);
+    if (clienteId) {
+      for (const tabla of ["crm_clientes", "clientes", "crm_clientes_panel"]) {
+        const { data: c, error: ce } = await supabase
+          .from(tabla)
+          .select("id, nombre, apellido, telefono")
+          .eq("id", clienteId)
+          .maybeSingle();
 
-      if (!clientesError && Array.isArray(clientes)) {
-        clientesMap = new Map(clientes.map((c: any) => [String(c.id), c]));
+        if (!ce && c) {
+          cliente = c;
+          break;
+        }
       }
     }
 
-    if (workerIds.length > 0) {
-      const { data: workers, error: workersError } = await supabase
+    if (workerId) {
+      const { data: w } = await supabase
         .from("workers")
         .select("id, display_name")
-        .in("id", workerIds);
-
-      if (!workersError && Array.isArray(workers)) {
-        workersMap = new Map(workers.map((w: any) => [String(w.id), w]));
-      }
+        .eq("id", workerId)
+        .maybeSingle();
+      worker = w || null;
     }
 
-    const reservas = reservasBase.map((r: any) => {
-      const cliente = clientesMap.get(String(r?.cliente_id || ""));
-      const worker = workersMap.get(String(r?.tarotista_worker_id || ""));
+    const enriched = {
+      ...reserva,
+      cliente_nombre: cliente ? [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") : "",
+      cliente_telefono: cliente?.telefono || "",
+      tarotista_display_name: worker?.display_name || "",
+    };
 
-      return {
-        ...r,
-        cliente_nombre: cliente ? [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") : "",
-        cliente_telefono: cliente?.telefono || "",
-        tarotista_display_name: worker?.display_name || "",
-      };
-    });
-
-    return NextResponse.json({ ok: true, reservas });
+    return NextResponse.json({ ok: true, reservas: [enriched] });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "Error cargando próximas reservas" },
