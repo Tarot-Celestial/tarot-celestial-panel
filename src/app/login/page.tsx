@@ -25,27 +25,26 @@ export default function LoginPage() {
         email: email.trim(),
         password,
       });
-
       if (error) throw error;
 
-      const user = data.user;
-      if (!user) throw new Error("No user");
+      const token = data.session?.access_token;
+      if (!token) throw new Error("No token");
 
-      const { data: worker, error: wErr } = await sb
-        .from("workers")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      // ✅ Login manual (NO presencia): crea work_session y pone state=online
+      await fetch("/api/work/login", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-      if (wErr || !worker) throw new Error("No se pudo obtener el rol");
+      const me = await fetch("/api/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => r.json());
 
-      if (worker.role === "admin") {
-        window.location.href = "/admin";
-      } else if (worker.role === "central") {
-        window.location.href = "/panel-central";
-      } else {
-        window.location.href = "/panel-tarotista";
-      }
+      if (!me?.ok || !me?.role) throw new Error(me?.error || "No role");
+
+      if (me.role === "admin") window.location.href = "/admin";
+      else if (me.role === "central") window.location.href = "/panel-central";
+      else window.location.href = "/panel-tarotista";
     } catch (e: any) {
       setErr(e?.message || "Error de login");
     } finally {
@@ -71,6 +70,7 @@ export default function LoginPage() {
             width={110}
             height={110}
             style={{ borderRadius: 18 }}
+            onError={(e) => ((e.target as any).style.display = "none")}
           />
           <div style={{ fontWeight: 800, fontSize: 22 }}>Tarot Celestial</div>
           <div style={{ opacity: 0.7, fontSize: 12 }}>Acceso al panel interno</div>
@@ -105,7 +105,7 @@ export default function LoginPage() {
             }}
           />
 
-          {err && <div style={{ color: "#ff5a7a", fontSize: 12 }}>{err}</div>}
+          {err ? <div style={{ color: "#ff5a7a", fontSize: 12 }}>{err}</div> : null}
 
           <button
             onClick={login}

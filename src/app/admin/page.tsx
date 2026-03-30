@@ -248,32 +248,15 @@ export default function Admin() {
       const token = data.session?.access_token;
       if (!token) return (window.location.href = "/login");
 
-      const { data: userData } = await sb.auth.getUser();
-const user = userData?.user;
+      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
+      const me = await safeJson(meRes);
+      if (!me?.ok) return (window.location.href = "/login");
 
-if (!user) {
-  window.location.href = "/login";
-  return;
-}
+      if (me.role !== "admin") {
+        window.location.href = me.role === "central" ? "/panel-central" : "/panel-tarotista";
+        return;
+      }
 
-// 🔥 ahora sacamos el worker
-const { data: worker } = await sb
-  .from("workers")
-  .select("role")
-  .eq("user_id", user.id)
-  .maybeSingle();
-
-if (!worker) {
-  window.location.href = "/login";
-  return;
-}
-
-if (worker.role !== "admin") {
-  window.location.href =
-    worker.role === "central" ? "/panel-central" : "/panel-tarotista";
-  return;
-}
-      
       setOk(true);
     })();
   }, []);
