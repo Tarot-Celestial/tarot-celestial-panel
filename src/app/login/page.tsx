@@ -31,19 +31,21 @@ export default function LoginPage() {
       const user = data.user;
       if (!user) throw new Error("No user");
 
-      const { data: worker } = await sb
+      const { data: worker, error: workerError } = await sb
+  .from("workers")
+  .select("role")
+  .eq("user_id", user.id)
+  .maybeSingle();
 
-      if (worker.role === "admin") window.location.href = "/admin";
-      else if (worker.role === "central") window.location.href = "/panel-central";
-      else window.location.href = "/panel-tarotista";
-    } catch (e: any) {
-      setErr(e?.message || "Error de login");
-    } finally {
-      setLoading(false);
-    }
-  }
+console.log("USER ID:", user.id);
+console.log("WORKER:", worker);
+console.log("WORKER ERROR:", workerError);
 
-  return (
+if (!worker) {
+  setErr("No se encontró tu usuario en workers");
+  setLoading(false);
+  return;
+}
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
       <div
         style={{
