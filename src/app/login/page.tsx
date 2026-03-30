@@ -21,6 +21,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // 🔐 LOGIN SUPABASE
       const { data, error } = await sb.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -31,14 +32,15 @@ export default function LoginPage() {
       const user = data.user;
       if (!user) throw new Error("No user");
 
+      // 🔍 BUSCAR WORKER
       const { data: worker, error: workerError } = await sb
         .from("workers")
-        .select("role")
+        .select("*")
         .eq("user_id", user.id)
         .maybeSingle();
 
       console.log("USER ID:", user.id);
-      console.log("WORKER:", worker);
+      console.log("WORKER COMPLETO:", worker);
       console.log("WORKER ERROR:", workerError);
 
       if (!worker) {
@@ -47,9 +49,19 @@ export default function LoginPage() {
         return;
       }
 
-      if (worker.role === "admin") window.location.href = "/admin";
-      else if (worker.role === "central") window.location.href = "/panel-central";
-      else window.location.href = "/panel-tarotista";
+      // 🔥 NORMALIZAR ROLE
+      const role = worker?.role?.toLowerCase();
+
+      // 🚀 REDIRECCIÓN
+      if (role === "admin") {
+        window.location.href = "/admin";
+      } else if (role === "central") {
+        window.location.href = "/panel-central";
+      } else if (role === "tarotista") {
+        window.location.href = "/panel-tarotista";
+      } else {
+        alert("ROL DESCONOCIDO: " + role);
+      }
 
     } catch (e: any) {
       setErr(e?.message || "Error de login");
