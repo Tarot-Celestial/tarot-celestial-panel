@@ -72,9 +72,32 @@ export default function AppHeader() {
       const token = data.session?.access_token;
       if (!token) return;
 
-      const me = await fetch("/api/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      }).then((r) => r.json());
+     const { data } = await sb.auth.getUser();
+const user = data?.user;
+
+if (!user) {
+  window.location.href = "/login";
+  return;
+}
+
+// 🔥 obtener rol desde tu tabla
+const { data: worker } = await sb
+  .from("workers")
+  .select("role")
+  .eq("user_id", user.id)
+  .maybeSingle();
+
+if (!worker) {
+  window.location.href = "/login";
+  return;
+}
+
+// 🔥 redirección
+if (worker.role !== "admin") {
+  window.location.href =
+    worker.role === "central" ? "/panel-central" : "/panel-tarotista";
+  return;
+}
 
       if (me?.ok) {
         setName(me.display_name || "Usuario");
