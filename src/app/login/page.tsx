@@ -32,12 +32,6 @@ export default function LoginPage() {
       if (!user) throw new Error("No user");
 
       const { data: worker } = await sb
-        .from("workers")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (!worker) throw new Error("No worker");
 
       if (worker.role === "admin") window.location.href = "/admin";
       else if (worker.role === "central") window.location.href = "/panel-central";
