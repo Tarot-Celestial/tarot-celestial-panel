@@ -21,7 +21,6 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 🔥 LOGIN REAL SUPABASE
       const { data, error } = await sb.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -32,7 +31,6 @@ export default function LoginPage() {
       const user = data.user;
       if (!user) throw new Error("No user");
 
-      // 🔥 SACAR ROLE SIN API
       const { data: worker } = await sb
         .from("workers")
         .select("role")
@@ -41,11 +39,9 @@ export default function LoginPage() {
 
       if (!worker) throw new Error("No worker");
 
-      // 🔥 REDIRECCIÓN
       if (worker.role === "admin") window.location.href = "/admin";
       else if (worker.role === "central") window.location.href = "/panel-central";
       else window.location.href = "/panel-tarotista";
-
     } catch (e: any) {
       setErr(e?.message || "Error de login");
     } finally {
@@ -55,10 +51,22 @@ export default function LoginPage() {
 
   return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div style={{ width: "100%", maxWidth: 420, border: "1px solid rgba(255,255,255,0.15)", borderRadius: 16, padding: 16 }}>
-        
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 420,
+          border: "1px solid rgba(255,255,255,0.15)",
+          borderRadius: 16,
+          padding: 16,
+        }}
+      >
         <div style={{ display: "grid", placeItems: "center", gap: 10 }}>
-          <Image src="/tarot-celestial-logo.png" alt="Tarot Celestial" width={110} height={110} />
+          <Image
+            src="/tarot-celestial-logo.png"
+            alt="Tarot Celestial"
+            width={110}
+            height={110}
+          />
           <div style={{ fontWeight: 800, fontSize: 22 }}>Tarot Celestial</div>
           <div style={{ opacity: 0.7, fontSize: 12 }}>Acceso al panel interno</div>
         </div>
@@ -66,8 +74,17 @@ export default function LoginPage() {
         <div style={{ height: 1, background: "rgba(255,255,255,0.12)", margin: "14px 0" }} />
 
         <div style={{ display: "grid", gap: 10 }}>
-          <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input placeholder="Contraseña" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            placeholder="Contraseña"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
           {err && <div style={{ color: "#ff5a7a" }}>{err}</div>}
 
@@ -75,10 +92,7 @@ export default function LoginPage() {
             {loading ? "Entrando..." : "Entrar"}
           </button>
         </div>
-
       </div>
     </div>
-  );
-}
   );
 }
