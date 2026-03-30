@@ -252,14 +252,20 @@ export default function Admin() {
       return;
     }
 
-    // 🔥 SACAMOS EL ROLE DESDE METADATA (NO API)
-    const role = user.user_metadata?.role;
+    // 🔥 SACAMOS ROLE REAL DE LA TABLA workers
+    const { data: worker, error } = await sb
+      .from("workers")
+      .select("role")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    if (!role) {
-      console.error("❌ Usuario sin role en metadata");
+    if (error || !worker) {
+      console.error("❌ No se encontró worker:", error);
       window.location.href = "/login";
       return;
     }
+
+    const role = worker.role?.toLowerCase();
 
     if (role !== "admin") {
       window.location.href =
