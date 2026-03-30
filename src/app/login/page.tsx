@@ -32,20 +32,33 @@ export default function LoginPage() {
       if (!user) throw new Error("No user");
 
       const { data: worker, error: workerError } = await sb
-  .from("workers")
-  .select("role")
-  .eq("user_id", user.id)
-  .maybeSingle();
+        .from("workers")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-console.log("USER ID:", user.id);
-console.log("WORKER:", worker);
-console.log("WORKER ERROR:", workerError);
+      console.log("USER ID:", user.id);
+      console.log("WORKER:", worker);
+      console.log("WORKER ERROR:", workerError);
 
-if (!worker) {
-  setErr("No se encontró tu usuario en workers");
-  setLoading(false);
-  return;
-}
+      if (!worker) {
+        setErr("No se encontró tu usuario en workers");
+        setLoading(false);
+        return;
+      }
+
+      if (worker.role === "admin") window.location.href = "/admin";
+      else if (worker.role === "central") window.location.href = "/panel-central";
+      else window.location.href = "/panel-tarotista";
+
+    } catch (e: any) {
+      setErr(e?.message || "Error de login");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
       <div
         style={{
@@ -64,10 +77,18 @@ if (!worker) {
             height={110}
           />
           <div style={{ fontWeight: 800, fontSize: 22 }}>Tarot Celestial</div>
-          <div style={{ opacity: 0.7, fontSize: 12 }}>Acceso al panel interno</div>
+          <div style={{ opacity: 0.7, fontSize: 12 }}>
+            Acceso al panel interno
+          </div>
         </div>
 
-        <div style={{ height: 1, background: "rgba(255,255,255,0.12)", margin: "14px 0" }} />
+        <div
+          style={{
+            height: 1,
+            background: "rgba(255,255,255,0.12)",
+            margin: "14px 0",
+          }}
+        />
 
         <div style={{ display: "grid", gap: 10 }}>
           <input
@@ -75,6 +96,7 @@ if (!worker) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+
           <input
             placeholder="Contraseña"
             type="password"
@@ -82,7 +104,11 @@ if (!worker) {
             onChange={(e) => setPassword(e.target.value)}
           />
 
-          {err && <div style={{ color: "#ff5a7a" }}>{err}</div>}
+          {err && (
+            <div style={{ color: "#ff5a7a", fontSize: 12 }}>
+              {err}
+            </div>
+          )}
 
           <button onClick={login} disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
