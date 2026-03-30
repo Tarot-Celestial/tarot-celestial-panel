@@ -243,24 +243,33 @@ export default function Admin() {
   }, [month]);
 
   useEffect(() => {
-    (async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
+  (async () => {
+    const { data } = await sb.auth.getUser();
+    const user = data?.user;
 
-      const meRes = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } });
-      const me = await safeJson(meRes);
-      if (!me?.ok) return (window.location.href = "/login");
+    if (!user) {
+      window.location.href = "/login";
+      return;
+    }
 
-      if (me.role !== "admin") {
-        window.location.href = me.role === "central" ? "/panel-central" : "/panel-tarotista";
-        return;
-      }
+    // 🔥 SACAMOS EL ROLE DESDE METADATA (NO API)
+    const role = user.user_metadata?.role;
 
-      setOk(true);
-    })();
-  }, []);
+    if (!role) {
+      console.error("❌ Usuario sin role en metadata");
+      window.location.href = "/login";
+      return;
+    }
 
+    if (role !== "admin") {
+      window.location.href =
+        role === "central" ? "/panel-central" : "/panel-tarotista";
+      return;
+    }
+
+    setOk(true);
+  })();
+}, []);
 
   useEffect(() => {
     if (!ok) return;
