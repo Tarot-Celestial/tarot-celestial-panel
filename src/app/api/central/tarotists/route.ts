@@ -1,0 +1,75 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+export const runtime = "nodejs";
+
+function getEnvAny(names: string[]) {
+  for (const n of names) {
+    const v = process.env[n];
+    if (v) return v;
+  }
+  throw new Error(`Missing env var: one of [${names.join(", ")}]`);
+}
+
+async function getMeFromBearer(req: Request) {
+  const supabaseUrl = getEnvAny(["NEXT_PUBLIC_SUPABASE_URL"]);
+  const anonKey = getEnvAny(["NEXT_PUBLIC_SUPABASE_ANON_KEY"]);
+
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return { ok: false as const, error: "NO_TOKEN" as const };
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+
+  const { data } = await userClient.auth.getUser();
+  const uid = data?.user?.id || null;
+  if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };
+
+  const url = getEnvAny(["NEXT_PUBLIC_SUPABASE_URL"]);
+  const service = getEnvAny(["SUPABASE_SERVICE_ROLE_KEY"]);
+  const admin = createClient(url, service, { auth: { persistSession: false } });
+
+  // ✅ OJO: NO pedimos team_key porque NO existe en workers
+  const { data: w, error: werr } = await admin
+    .from("workers")
+    .select("id, role, display_name")
+    .eq("user_id", uid)
+    .maybeSingle();
+
+  if (werr) return { ok: false as const, error: `WORKER_QUERY_ERROR:${werr.message}` as const };
+  if (!w) return { ok: false as const, error: "NO_WORKER" as const };
+
+  return { ok: true as const, worker: w };
+}
+
+export async function GET(req: Request) {
+  try {
+    const me = await getMeFromBearer(req);
+    if (!me.ok) return NextResponse.json(me, { status: 401 });
+
+    const worker = me.worker;
+
+    if (worker.role !== "central" && worker.role !== "admin") {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const url = getEnvAny(["NEXT_PUBLIC_SUPABASE_URL"]);
+    const service = getEnvAny(["SUPABASE_SERVICE_ROLE_KEY"]);
+    const admin = createClient(url, service, { auth: { persistSession: false } });
+
+    // ✅ Tampoco pedimos team_key aquí (no existe en workers)
+    const { data, error } = await admin
+      .from("workers")
+      .select("id, display_name, role, is_active")
+      .eq("role", "tarotista")
+      .order("display_name", { ascending: true });
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, tarotists: data || [] });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
+}

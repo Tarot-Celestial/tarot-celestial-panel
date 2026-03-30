@@ -1,0 +1,5 @@
+{
+  "crons": [
+    { "path": "/api/sync/calls?mode=daily", "schedule": "0 4 * * *" }
+  ]
+}
