@@ -40,7 +40,7 @@ export default function LoginPage() {
         .maybeSingle();
 
       console.log("USER ID:", user.id);
-      console.log("WORKER COMPLETO:", worker);
+      console.log("ROLE REAL:", worker?.role);
       console.log("WORKER ERROR:", workerError);
 
       if (!worker) {
