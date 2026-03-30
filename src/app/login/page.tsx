@@ -21,30 +21,35 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // ✅ LOGIN REAL
       const { data, error } = await sb.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
+
       if (error) throw error;
 
-      const token = data.session?.access_token;
-      if (!token) throw new Error("No token");
+      const user = data.user;
+      if (!user) throw new Error("No user");
 
-      // ✅ Login manual (NO presencia): crea work_session y pone state=online
-      await fetch("/api/work/login", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // ✅ SACAR ROLE DESDE workers (SIN API)
+      const { data: worker, error: wErr } = await sb
+        .from("workers")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-      const me = await fetch("/api/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      }).then((r) => r.json());
+      if (wErr || !worker) throw new Error("No se pudo obtener el rol");
 
-      if (!me?.ok || !me?.role) throw new Error(me?.error || "No role");
+      // ✅ REDIRECCIÓN LIMPIA
+      if (worker.role === "admin") {
+        window.location.href = "/admin";
+      } else if (worker.role === "central") {
+        window.location.href = "/panel-central";
+      } else {
+        window.location.href = "/panel-tarotista";
+      }
 
-      if (me.role === "admin") window.location.href = "/admin";
-      else if (me.role === "central") window.location.href = "/panel-central";
-      else window.location.href = "/panel-tarotista";
     } catch (e: any) {
       setErr(e?.message || "Error de login");
     } finally {
@@ -124,5 +129,7 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
   );
 }
