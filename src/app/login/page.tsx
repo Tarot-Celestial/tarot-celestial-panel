@@ -21,7 +21,6 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // ✅ LOGIN REAL
       const { data, error } = await sb.auth.signInWithPassword({
         email: email.trim(),
         password,
@@ -32,7 +31,6 @@ export default function LoginPage() {
       const user = data.user;
       if (!user) throw new Error("No user");
 
-      // ✅ SACAR ROLE DESDE workers (SIN API)
       const { data: worker, error: wErr } = await sb
         .from("workers")
         .select("role")
@@ -41,7 +39,6 @@ export default function LoginPage() {
 
       if (wErr || !worker) throw new Error("No se pudo obtener el rol");
 
-      // ✅ REDIRECCIÓN LIMPIA
       if (worker.role === "admin") {
         window.location.href = "/admin";
       } else if (worker.role === "central") {
@@ -49,7 +46,6 @@ export default function LoginPage() {
       } else {
         window.location.href = "/panel-tarotista";
       }
-
     } catch (e: any) {
       setErr(e?.message || "Error de login");
     } finally {
@@ -75,7 +71,6 @@ export default function LoginPage() {
             width={110}
             height={110}
             style={{ borderRadius: 18 }}
-            onError={(e) => ((e.target as any).style.display = "none")}
           />
           <div style={{ fontWeight: 800, fontSize: 22 }}>Tarot Celestial</div>
           <div style={{ opacity: 0.7, fontSize: 12 }}>Acceso al panel interno</div>
@@ -110,7 +105,7 @@ export default function LoginPage() {
             }}
           />
 
-          {err ? <div style={{ color: "#ff5a7a", fontSize: 12 }}>{err}</div> : null}
+          {err && <div style={{ color: "#ff5a7a", fontSize: 12 }}>{err}</div>}
 
           <button
             onClick={login}
@@ -129,7 +124,5 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
-  );
-}
   );
 }
