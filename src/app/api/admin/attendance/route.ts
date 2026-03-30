@@ -9,11 +9,15 @@ const supabase = createClient(
 
 export async function GET() {
   const { data } = await supabase
-    .from("worker_payments")
-    .select("*");
+    .from("attendance_events")
+    .select("status");
+
+  const online = (data||[]).filter(x=>x.status==="online").length;
+  const offline = (data||[]).filter(x=>x.status==="offline").length;
 
   return NextResponse.json({
     ok: true,
-    rows: data || []
+    online,
+    offline
   });
 }
