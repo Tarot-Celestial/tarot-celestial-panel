@@ -12,26 +12,18 @@ const SHEET_URL =
 // 🔥 Convertir DD/MM/YYYY → YYYY-MM-DD
 function formatDate(d: string) {
   if (!d) return null;
-
   const parts = d.split("/");
   if (parts.length !== 3) return null;
-
   const [day, month, year] = parts;
-
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-// 🔥 Normalizar código (evita constraint error)
+// 🔥 Normalizar código (evita constraint)
 function normalizeCodigo(c: string) {
   if (!c) return "cliente";
-
   const val = c.trim().toLowerCase();
-
   const allowed = ["cliente", "vip", "promo"];
-
-  if (allowed.includes(val)) return val;
-
-  return "cliente";
+  return allowed.includes(val) ? val : "cliente";
 }
 
 // 🔥 Hash único por fila
@@ -58,6 +50,7 @@ export async function POST() {
       const cols = row.split(",");
 
       const hash = createHash(row);
+      if (!hash) return null;
 
       return {
         call_date: formatDate(cols[0]),
@@ -68,12 +61,17 @@ export async function POST() {
         importe: Number(cols[5]) || 0,
         captada: cols[6]?.trim() === "TRUE",
         source_row_hash: hash,
+        updated_at: new Date().toISOString(),
       };
     });
 
     // 4. Filtrar datos válidos
     const clean = parsed.filter(
-      (r) => r.call_date && !isNaN(r.minutos)
+      (r) =>
+        r &&
+        r.call_date &&
+        r.source_row_hash &&
+        !isNaN(r.minutos)
     );
 
     if (!clean.length) {
@@ -83,44 +81,32 @@ export async function POST() {
       });
     }
 
-    // 5. Obtener hashes existentes
-    const { data: existing } = await supabase
+    // 5. UPSERT robusto (sin romper por duplicados)
+    const { error } = await supabase
       .from("calls")
-      .select("source_row_hash");
+      .upsert(clean, {
+        onConflict: "source_row_hash",
+        ignoreDuplicates: true, // 🔥 clave para evitar error
+      });
 
-    const existingHashes = new Set(
-      (existing || []).map((e) => e.source_row_hash)
-    );
-
-    // 6. Filtrar nuevos registros
-    const toInsert = clean.filter(
-      (r) => !existingHashes.has(r.source_row_hash)
-    );
-
-    // 7. Insertar solo nuevos
-    let inserted = 0;
-
-    if (toInsert.length > 0) {
-      const { error } = await supabase
-        .from("calls")
-        .insert(toInsert);
-
-      if (error) {
-        return NextResponse.json({
-          ok: false,
-          error: error.message,
-        });
-      }
-
-      inserted = toInsert.length;
+    if (error) {
+      return NextResponse.json({
+        ok: false,
+        error: error.message,
+      });
     }
 
-    // 8. Respuesta final
+    // 6. Log de sync
+    await supabase.from("admin_notifications").insert({
+      kind: "sync",
+      title: "Sync completado",
+      body: `Se procesaron ${clean.length} registros`,
+    });
+
+    // 7. Respuesta final
     return NextResponse.json({
       ok: true,
-      inserted,
-      skipped: clean.length - inserted,
-      total: clean.length,
+      processed: clean.length,
     });
 
   } catch (e: any) {
