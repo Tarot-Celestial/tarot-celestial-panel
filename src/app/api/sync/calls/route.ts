@@ -21,30 +21,57 @@ function formatDate(d: string) {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
+// 🔥 Normalizar código (evita constraint error)
+function normalizeCodigo(c: string) {
+  if (!c) return "cliente";
+
+  const val = c.trim().toLowerCase();
+
+  const allowed = ["cliente", "vip", "promo"];
+
+  if (allowed.includes(val)) return val;
+
+  return "cliente";
+}
+
+// 🔥 Hash único por fila
+function createHash(row: string) {
+  let hash = 0;
+  for (let i = 0; i < row.length; i++) {
+    hash = (hash << 5) - hash + row.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash.toString();
+}
+
 export async function POST() {
   try {
     // 1. Descargar CSV
     const res = await fetch(SHEET_URL);
     const csv = await res.text();
 
-    // 2. Parsear filas
+    // 2. Separar filas
     const rows = csv.split("\n").slice(1);
 
+    // 3. Parsear datos
     const parsed = rows.map((row) => {
       const cols = row.split(",");
+
+      const hash = createHash(row);
 
       return {
         call_date: formatDate(cols[0]),
         telefonista: cols[1]?.trim(),
         tarotista: cols[2]?.trim(),
         minutos: Number(cols[3]) || 0,
-        codigo: cols[4]?.trim(),
+        codigo: normalizeCodigo(cols[4]),
         importe: Number(cols[5]) || 0,
         captada: cols[6]?.trim() === "TRUE",
+        source_row_hash: hash,
       };
     });
 
-    // 3. Limpiar datos inválidos
+    // 4. Filtrar datos válidos
     const clean = parsed.filter(
       (r) => r.call_date && !isNaN(r.minutos)
     );
@@ -56,20 +83,44 @@ export async function POST() {
       });
     }
 
-    // 4. Insertar en Supabase
-    const { error } = await supabase.from("calls").insert(clean);
+    // 5. Obtener hashes existentes
+    const { data: existing } = await supabase
+      .from("calls")
+      .select("source_row_hash");
 
-    if (error) {
-      return NextResponse.json({
-        ok: false,
-        error: error.message,
-      });
+    const existingHashes = new Set(
+      (existing || []).map((e) => e.source_row_hash)
+    );
+
+    // 6. Filtrar nuevos registros
+    const toInsert = clean.filter(
+      (r) => !existingHashes.has(r.source_row_hash)
+    );
+
+    // 7. Insertar solo nuevos
+    let inserted = 0;
+
+    if (toInsert.length > 0) {
+      const { error } = await supabase
+        .from("calls")
+        .insert(toInsert);
+
+      if (error) {
+        return NextResponse.json({
+          ok: false,
+          error: error.message,
+        });
+      }
+
+      inserted = toInsert.length;
     }
 
-    // 5. Respuesta OK
+    // 8. Respuesta final
     return NextResponse.json({
       ok: true,
-      inserted: clean.length,
+      inserted,
+      skipped: clean.length - inserted,
+      total: clean.length,
     });
 
   } catch (e: any) {
