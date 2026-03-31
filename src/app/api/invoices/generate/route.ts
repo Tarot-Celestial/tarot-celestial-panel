@@ -15,7 +15,7 @@ export async function POST() {
   try {
     const month = monthKeyNow();
 
-    // 1. Obtener llamadas del mes
+    // 🔥 1. Obtener llamadas del mes
     const { data: calls, error } = await supabase
       .from("calls")
       .select("*")
@@ -26,27 +26,46 @@ export async function POST() {
       return NextResponse.json({ ok: false, error: error.message });
     }
 
-    // 2. Agrupar por tarotista
+    // 🔥 2. Obtener trabajadores
+    const { data: workers } = await supabase
+      .from("workers")
+      .select("id, name");
+
+    // 🔥 3. Crear mapa nombre → worker_id
+    const workerMap: Record<string, string> = {};
+
+    for (const w of workers || []) {
+      workerMap[w.name?.toLowerCase()] = w.id;
+    }
+
+    // 🔥 4. Agrupar ingresos por worker_id
     const grouped: Record<string, number> = {};
 
     for (const c of calls || []) {
-      const key = c.tarotista || "Sin nombre";
-      grouped[key] = (grouped[key] || 0) + Number(c.importe || 0);
+      const name = c.tarotista?.toLowerCase();
+      const workerId = workerMap[name];
+
+      if (!workerId) continue;
+
+      grouped[workerId] =
+        (grouped[workerId] || 0) + Number(c.importe || 0);
     }
 
-    // 3. Generar facturas
-    const invoices = Object.entries(grouped).map(([name, total]) => ({
-      worker_name: name,
-      month_key: month,
-      amount_eur: total,
-      status: "pending",
-    }));
+    // 🔥 5. Crear facturas
+    const invoices = Object.entries(grouped).map(
+      ([worker_id, total]) => ({
+        worker_id,
+        month_key: month,
+        amount_eur: total,
+        is_paid: false,
+      })
+    );
 
-    // 4. Insertar en tabla invoices
+    // 🔥 6. UPSERT real
     const { error: insertError } = await supabase
       .from("worker_payments")
       .upsert(invoices, {
-        onConflict: "worker_name,month_key",
+        onConflict: "worker_id,month_key",
       });
 
     if (insertError) {
