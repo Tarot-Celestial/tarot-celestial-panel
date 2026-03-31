@@ -9,7 +9,7 @@ const supabase = createClient(
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
-// 🔥 Convertir DD/MM/YYYY → YYYY-MM-DD
+// 🔥 Convertir fecha
 function formatDate(d: string) {
   if (!d) return null;
   const parts = d.split("/");
@@ -18,7 +18,7 @@ function formatDate(d: string) {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-// 🔥 Normalizar código (evita constraint)
+// 🔥 Normalizar código
 function normalizeCodigo(c: string) {
   if (!c) return "cliente";
   const val = c.trim().toLowerCase();
@@ -26,7 +26,7 @@ function normalizeCodigo(c: string) {
   return allowed.includes(val) ? val : "cliente";
 }
 
-// 🔥 Hash único por fila
+// 🔥 Hash único
 function createHash(row: string) {
   let hash = 0;
   for (let i = 0; i < row.length; i++) {
@@ -38,14 +38,11 @@ function createHash(row: string) {
 
 export async function POST() {
   try {
-    // 1. Descargar CSV
     const res = await fetch(SHEET_URL);
     const csv = await res.text();
 
-    // 2. Separar filas
     const rows = csv.split("\n").slice(1);
 
-    // 3. Parsear datos
     const parsed = rows.map((row) => {
       const cols = row.split(",");
 
@@ -61,11 +58,9 @@ export async function POST() {
         importe: Number(cols[5]) || 0,
         captada: cols[6]?.trim() === "TRUE",
         source_row_hash: hash,
-        updated_at: new Date().toISOString(),
       };
     });
 
-    // 4. Filtrar datos válidos
     const clean = parsed.filter(
       (r) =>
         r &&
@@ -81,12 +76,11 @@ export async function POST() {
       });
     }
 
-    // 5. UPSERT robusto (sin romper por duplicados)
     const { error } = await supabase
       .from("calls")
       .upsert(clean, {
         onConflict: "source_row_hash",
-        ignoreDuplicates: true, // 🔥 clave para evitar error
+        ignoreDuplicates: true,
       });
 
     if (error) {
@@ -96,14 +90,13 @@ export async function POST() {
       });
     }
 
-    // 6. Log de sync
+    // log opcional
     await supabase.from("admin_notifications").insert({
       kind: "sync",
       title: "Sync completado",
       body: `Se procesaron ${clean.length} registros`,
     });
 
-    // 7. Respuesta final
     return NextResponse.json({
       ok: true,
       processed: clean.length,
