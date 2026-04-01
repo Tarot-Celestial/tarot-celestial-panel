@@ -1,1 +1,5 @@
-export { runtime, POST } from "@/app/api/admin/accounting/route";
+export const runtime = "nodejs";
+
+export async function POST() {
+  return new Response(JSON.stringify({ ok: true }));
+}

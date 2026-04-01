@@ -1,1 +1,5 @@
-export { runtime, GET } from "@/app/api/admin/accounting/route";
+export const runtime = "nodejs";
+
+export async function GET() {
+  return new Response(JSON.stringify({ ok: true }));
+}
