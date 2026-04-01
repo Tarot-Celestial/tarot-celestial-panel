@@ -3,6 +3,12 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
+type Agg = {
+  tarotista: string;
+  total_minutos: number;
+  total_importe: number;
+};
+
 function getMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
@@ -16,7 +22,6 @@ export async function POST() {
     const start = `${year}-${String(month).padStart(2,"0")}-01`;
     const end = new Date(year, month, 0).toISOString().slice(0,10);
 
-    // 🔥 SOLO CAMPOS REALES (sin worker_id que no existe)
     const { data, error } = await supabase
       .from("calls")
       .select("tarotista, minutos, importe")
@@ -25,10 +30,10 @@ export async function POST() {
 
     if (error) throw error;
 
-    const map = {};
+    const map: Record<string, Agg> = {};
 
     for (const r of data || []) {
-      const key = r.tarotista || "sin_nombre";
+      const key = (r as any).tarotista || "sin_nombre";
 
       if (!map[key]) {
         map[key] = {
@@ -38,8 +43,8 @@ export async function POST() {
         };
       }
 
-      map[key].total_minutos += Number(r.minutos) || 0;
-      map[key].total_importe += Number(r.importe) || 0;
+      map[key].total_minutos += Number((r as any).minutos) || 0;
+      map[key].total_importe += Number((r as any).importe) || 0;
     }
 
     return NextResponse.json({
