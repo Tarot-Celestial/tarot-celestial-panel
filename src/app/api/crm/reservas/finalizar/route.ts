@@ -24,7 +24,7 @@ async function uidFromBearer(req: Request) {
   return { uid: data.user?.id || null };
 }
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
     const { uid } = await uidFromBearer(req);
     if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
@@ -43,13 +43,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const { data, error } = await db
+    const body = await req.json().catch(() => ({}));
+    const id = String(body?.id || "").trim();
+    if (!id) return NextResponse.json({ ok: false, error: "ID_REQUIRED" }, { status: 400 });
+
+    const { error } = await db
       .from("reservas")
-      .select("*")
-      .order("fecha_reserva", { ascending: true });
+      .update({ estado: "finalizada", updated_at: new Date().toISOString() })
+      .eq("id", id);
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, reservas: data || [] });
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
