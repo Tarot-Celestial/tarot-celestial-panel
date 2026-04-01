@@ -85,8 +85,17 @@ export async function POST() {
         .eq("month_key", month_key)
         .maybeSingle();
 
-      if (existing) continue;
+      if (existing) {
+  await supabase
+    .from("invoices")
+    .update({
+      total: totals.importe,
+    })
+    .eq("id", existing.id);
 
+  continue;
+}
+      
       const { data: invoice } = await supabase
         .from("invoices")
         .insert({
