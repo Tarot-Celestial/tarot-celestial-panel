@@ -3,27 +3,27 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
-// 🔥 SAFE SPLIT
-function safeSplit(value: any) {
-  if (!value || typeof value !== "string") return null;
-  return value.split("-");
+// 🔥 AUTO MONTH KEY
+function getCurrentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 }
 
 export async function POST(req: Request) {
   try {
-    const { month_key } = await req.json();
+    let body = {};
+    try {
+      body = await req.json();
+    } catch {}
 
+    let month_key = (body as any)?.month_key;
+
+    // 🔥 SI NO VIENE → AUTO
     if (!month_key) {
-      return NextResponse.json({ ok: false, error: "month_key requerido" }, { status: 400 });
+      month_key = getCurrentMonthKey();
     }
 
-    const parts = safeSplit(month_key);
-
-    if (!parts || parts.length !== 2) {
-      return NextResponse.json({ ok: false, error: "month_key inválido" }, { status: 400 });
-    }
-
-    const [year, month] = parts.map(Number);
+    const [year, month] = month_key.split("-").map(Number);
 
     const start = `${year}-${String(month).padStart(2, "0")}-01`;
     const end = new Date(year, month, 0).toISOString().slice(0,10);
@@ -36,9 +36,9 @@ export async function POST(req: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, count: data.length });
+    return NextResponse.json({ ok: true, month_key, count: data.length });
 
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+  } catch (e:any) {
+    return NextResponse.json({ ok:false, error:e.message }, { status:500 });
   }
 }
