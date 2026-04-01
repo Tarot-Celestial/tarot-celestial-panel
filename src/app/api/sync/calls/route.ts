@@ -11,7 +11,6 @@ const supabase = createClient(
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
-// ✅ FIX TYPESCRIPT
 function parse(line: string): string[] {
   return line.split(",");
 }
@@ -46,10 +45,15 @@ export async function POST() {
 
     const rows = csv.split("\n").slice(1);
 
-    const parsed = rows.map((row:string)=>{
-      const c = parse(row);
+    const map = new Map();
 
-      return {
+    rows.forEach((row:string)=>{
+      const c = parse(row);
+      const h = hash(row);
+
+      if (!h) return;
+
+      map.set(h, {
         call_date: formatDate(c[0]),
         telefonista: c[1]?.trim(),
         tarotista: c[3]?.trim(),
@@ -57,11 +61,11 @@ export async function POST() {
         codigo: normalizeCodigo(c[5]),
         importe: Number(c[6]) || 0,
         captada: c[7]?.trim() === "TRUE",
-        source_row_hash: hash(row)
-      };
+        source_row_hash: h
+      });
     });
 
-    const clean = parsed.filter(r=>r.call_date);
+    const clean = Array.from(map.values()).filter(r=>r.call_date);
 
     const { error } = await supabase
       .from("calls")
@@ -77,3 +81,4 @@ export async function POST() {
     return NextResponse.json({ok:false,error:e.message});
   }
 }
+
