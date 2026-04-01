@@ -15,12 +15,15 @@ function parse(line: string): string[] {
   return line.split(",");
 }
 
-function norm(h: string){
-  return h.toLowerCase().trim();
+function safe(val: any){
+  return (val || "").toString().trim();
 }
 
 function formatDate(d: string){
-  const [day,month,year]=d.split("/");
+  if(!d) return null;
+  const parts = d.split("/");
+  if(parts.length!==3) return null;
+  const [day,month,year]=parts;
   return `${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`;
 }
 
@@ -31,39 +34,62 @@ function hash(r:string){
 }
 
 export async function POST(){
-  const res = await fetch(SHEET_URL);
-  const csv = await res.text();
+  try{
 
-  const lines = csv.split("\n").filter(l=>l.trim());
-  const headers = parse(lines[0]).map(norm);
-
-  const idx = (name:string[]) => headers.findIndex(h=>name.some(n=>h.includes(n)));
-
-  const iFecha = idx(["fecha"]);
-  const iTel = idx(["telefonista"]);
-  const iTarot = idx(["tarotista"]);
-  const iMin = idx(["tiempo"]); // 🔥 FIX
-  const iCodigo = idx(["codigo"]);
-  const iImporte = idx(["importe"]);
-  const iCapt = idx(["captado"]); // 🔥 FIX
-
-  const rows = lines.slice(1);
-
-  const data = rows.map(r=>{
-    const c = parse(r);
-    return {
-      call_date: formatDate(c[iFecha]),
-      telefonista: c[iTel],
-      tarotista: c[iTarot],
-      minutos: Number(c[iMin])||0,
-      codigo: (c[iCodigo]||"cliente").toLowerCase(),
-      importe: Number((c[iImporte]||"0").replace("€","").replace(",","."))||0,
-      captada: c[iCapt]==="TRUE",
-      source_row_hash: hash(r)
+    const res = await fetch(SHEET_URL);
+    if(!res.ok){
+      return NextResponse.json({ok:false,error:"No se pudo descargar sheet"},{status:500});
     }
-  });
 
-  await supabase.from("calls").upsert(data,{onConflict:"source_row_hash"});
+    const csv = await res.text();
+    const lines = csv.split("\n").filter(l=>l.trim());
 
-  return NextResponse.json({ok:true});
+    if(lines.length<2){
+      return NextResponse.json({ok:false,error:"Sheet vacío"},{status:400});
+    }
+
+    const headers = parse(lines[0]).map(h=>h.toLowerCase());
+
+    const find = (names:string[])=>{
+      return headers.findIndex(h=>names.some(n=>h.includes(n)));
+    };
+
+    const iFecha = find(["fecha"]);
+    const iTel = find(["telefonista"]);
+    const iTarot = find(["tarotista"]);
+    const iMin = find(["tiempo"]);
+    const iCodigo = find(["codigo"]);
+    const iImporte = find(["importe"]);
+    const iCapt = find(["captado"]);
+
+    const rows = lines.slice(1);
+
+    const data = rows.map(r=>{
+      const c = parse(r);
+
+      return {
+        call_date: formatDate(safe(c[iFecha])),
+        telefonista: safe(c[iTel]),
+        tarotista: safe(c[iTarot]),
+        minutos: Number(safe(c[iMin]))||0,
+        codigo: safe(c[iCodigo]).toLowerCase()||"cliente",
+        importe: Number(safe(c[iImporte]).replace("€","").replace(",", "."))||0,
+        captada: safe(c[iCapt]).toUpperCase()==="TRUE",
+        source_row_hash: hash(r)
+      }
+    }).filter(r=>r.call_date);
+
+    const { error } = await supabase
+      .from("calls")
+      .upsert(data,{onConflict:"source_row_hash"});
+
+    if(error){
+      return NextResponse.json({ok:false,error:error.message},{status:500});
+    }
+
+    return NextResponse.json({ok:true, inserted:data.length});
+
+  }catch(e:any){
+    return NextResponse.json({ok:false,error:e.message||"error"},{status:500});
+  }
 }
