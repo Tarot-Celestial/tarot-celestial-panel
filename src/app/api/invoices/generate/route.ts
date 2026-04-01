@@ -31,43 +31,63 @@ export async function POST() {
   try {
     const month_key = "2026-04";
 
-    // 🔥 BORRAR SIEMPRE (clave)
+    // 🔥 limpiar siempre
     await supabase.from("invoice_lines").delete().neq("id", "");
     await supabase.from("invoices").delete().neq("id", "");
 
+    // 🔥 workers
     const { data: workers } = await supabase
       .from("workers")
       .select("id, display_name")
       .eq("role", "tarotista");
 
+    // 🔥 mapping
+    const { data: mapping } = await supabase
+      .from("tarot_mapping")
+      .select("sheet_name, worker_id");
+
+    const map: Record<string, string> = {};
+    (mapping || []).forEach((m: any) => {
+      map[normalize(m.sheet_name)] = m.worker_id;
+    });
+
+    // 🔥 calls
     const { data: calls } = await supabase
       .from("calls")
       .select("tarotista, minutos, codigo")
       .gte("call_date", "2026-04-01")
       .lte("call_date", "2026-04-30");
 
-    const callsMap: Record<string, { minutos: number; importe: number }> = {};
+    // 🔥 agrupar por worker_id directamente
+    const totalsByWorker: Record<
+      string,
+      { minutos: number; importe: number }
+    > = {};
 
     for (const c of calls || []) {
       const key = normalize(c.tarotista);
+      const worker_id = map[key];
 
-      if (!callsMap[key]) {
-        callsMap[key] = { minutos: 0, importe: 0 };
+      if (!worker_id) continue; // ignorar CallXXX sin mapping
+
+      if (!totalsByWorker[worker_id]) {
+        totalsByWorker[worker_id] = { minutos: 0, importe: 0 };
       }
 
       const min = toNumber(c.minutos);
       const imp = calcImporte(c.codigo, min);
 
-      callsMap[key].minutos += min;
-      callsMap[key].importe += imp;
+      totalsByWorker[worker_id].minutos += min;
+      totalsByWorker[worker_id].importe += imp;
     }
 
     let created = 0;
 
     for (const w of workers || []) {
-      const key = normalize(w.display_name);
-
-      const totals = callsMap[key] || { minutos: 0, importe: 0 };
+      const totals = totalsByWorker[w.id] || {
+        minutos: 0,
+        importe: 0,
+      };
 
       const { data: invoice } = await supabase
         .from("invoices")
