@@ -9,7 +9,6 @@ const supabase = createClient(
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
-// 🔥 Convertir fecha
 function formatDate(d: string) {
   if (!d) return null;
   const parts = d.split("/");
@@ -18,7 +17,6 @@ function formatDate(d: string) {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-// 🔥 Normalizar código
 function normalizeCodigo(c: string) {
   if (!c) return "cliente";
   const val = c.trim().toLowerCase();
@@ -26,7 +24,6 @@ function normalizeCodigo(c: string) {
   return allowed.includes(val) ? val : "cliente";
 }
 
-// 🔥 Hash único
 function createHash(row: string) {
   let hash = 0;
   for (let i = 0; i < row.length; i++) {
@@ -51,12 +48,16 @@ export async function POST() {
 
       return {
         call_date: formatDate(cols[0]),
-        telefonista: cols[1]?.trim(),
-        tarotista: cols[2]?.trim(),
-        minutos: Number(cols[3]) || 0,
-        codigo: normalizeCodigo(cols[4]),
-        importe: Number(cols[5]) || 0,
-        captada: cols[6]?.trim() === "TRUE",
+
+        // 🔥 FIX REAL: columnas corregidas
+        telefonista: cols[2]?.trim(), // antes mal
+        tarotista: cols[3]?.trim(),   // antes mal
+
+        minutos: Number(cols[4]) || 0,
+        codigo: normalizeCodigo(cols[5]),
+        importe: Number(cols[6]) || 0,
+        captada: cols[7]?.trim() === "TRUE",
+
         source_row_hash: hash,
       };
     });
@@ -90,7 +91,6 @@ export async function POST() {
       });
     }
 
-    // log opcional
     await supabase.from("admin_notifications").insert({
       kind: "sync",
       title: "Sync completado",
@@ -109,3 +109,4 @@ export async function POST() {
     });
   }
 }
+
