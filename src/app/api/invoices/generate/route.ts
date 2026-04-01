@@ -16,63 +16,65 @@ export async function POST() {
     const start = `${year}-${String(month).padStart(2, "0")}-01`;
     const end = new Date(year, month, 0).toISOString().slice(0, 10);
 
-    // 🔥 1. TRAER CALLS
-    const { data: calls, error } = await supabase
+    // 🔥 CALLS
+    const { data: calls } = await supabase
       .from("calls")
       .select("tarotista, minutos, importe")
       .gte("call_date", start)
       .lte("call_date", end);
 
-    if (error) throw error;
-
     if (!calls || calls.length === 0) {
-      return NextResponse.json({ ok: true, message: "No hay datos" });
+      return NextResponse.json({ ok: true, message: "No hay llamadas" });
     }
 
-    // 🔥 2. AGRUPAR POR TAROTISTA
-    const map: Record<string, { minutos: number; importe: number }> = {};
+    // 🔥 AGRUPAR
+    const map: Record<string, any> = {};
 
     for (const c of calls) {
-      const name = c.tarotista || "sin_nombre";
+      const key = c.tarotista || "sin_nombre";
 
-      if (!map[name]) {
-        map[name] = { minutos: 0, importe: 0 };
+      if (!map[key]) {
+        map[key] = { minutos: 0, importe: 0 };
       }
 
-      map[name].minutos += Number(c.minutos) || 0;
-      map[name].importe += Number(c.importe) || 0;
+      map[key].minutos += Number(c.minutos) || 0;
+      map[key].importe += Number(c.importe) || 0;
     }
 
-    const results = [];
+    const created = [];
 
-    // 🔥 3. CREAR FACTURAS
+    // 🔥 TRAER TODOS LOS WORKERS
+    const { data: workers } = await supabase
+      .from("workers")
+      .select("id, display_name");
+
+    const workerMap: Record<string, string> = {};
+
+    for (const w of workers || []) {
+      workerMap[w.display_name?.toLowerCase()] = w.id;
+    }
+
+    // 🔥 CREAR FACTURAS
     for (const tarotista in map) {
+      const worker_id = workerMap[tarotista.toLowerCase()];
+
+      if (!worker_id) continue; // ❗ aquí estaba el problema
+
       const totals = map[tarotista];
 
-      // buscar worker
-      const { data: worker } = await supabase
-        .from("workers")
-        .select("id")
-        .eq("display_name", tarotista)
-        .single();
-
-      if (!worker) continue;
-
-      // evitar duplicados
       const { data: existing } = await supabase
         .from("invoices")
         .select("id")
-        .eq("worker_id", worker.id)
+        .eq("worker_id", worker_id)
         .eq("month_key", month_key)
         .maybeSingle();
 
       if (existing) continue;
 
-      // crear factura
       const { data: invoice } = await supabase
         .from("invoices")
         .insert({
-          worker_id: worker.id,
+          worker_id,
           month_key,
           status: "pending",
           total: totals.importe,
@@ -82,7 +84,6 @@ export async function POST() {
 
       if (!invoice) continue;
 
-      // líneas
       await supabase.from("invoice_lines").insert([
         {
           invoice_id: invoice.id,
@@ -98,13 +99,14 @@ export async function POST() {
         },
       ]);
 
-      results.push(invoice);
+      created.push(invoice);
     }
 
     return NextResponse.json({
       ok: true,
-      created: results.length,
+      created: created.length,
     });
+
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
