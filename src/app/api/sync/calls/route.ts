@@ -15,16 +15,23 @@ function parse(line: string): string[] {
   return line.split(",");
 }
 
-function safe(val: any){
-  return (val || "").toString().trim();
+function safe(v:any){ return (v||"").toString().trim(); }
+
+function formatDate(d:string){
+  if(!d) return null;
+  const p=d.split("/");
+  if(p.length!==3) return null;
+  return `${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
 }
 
-function formatDate(d: string){
-  if(!d) return null;
-  const parts = d.split("/");
-  if(parts.length!==3) return null;
-  const [day,month,year]=parts;
-  return `${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`;
+// 🔥 FIX CODIGO (constraint)
+function normalizeCodigo(v:string){
+  const val = (v||"").toLowerCase();
+
+  if(val.includes("vip")) return "vip";
+  if(val.includes("promo")) return "promo";
+  if(val.includes("rueda")) return "cliente"; // adaptar rueda → cliente
+  return "cliente";
 }
 
 function hash(r:string){
@@ -37,22 +44,12 @@ export async function POST(){
   try{
 
     const res = await fetch(SHEET_URL);
-    if(!res.ok){
-      return NextResponse.json({ok:false,error:"No se pudo descargar sheet"},{status:500});
-    }
-
     const csv = await res.text();
+
     const lines = csv.split("\n").filter(l=>l.trim());
-
-    if(lines.length<2){
-      return NextResponse.json({ok:false,error:"Sheet vacío"},{status:400});
-    }
-
     const headers = parse(lines[0]).map(h=>h.toLowerCase());
 
-    const find = (names:string[])=>{
-      return headers.findIndex(h=>names.some(n=>h.includes(n)));
-    };
+    const find=(names:string[])=>headers.findIndex(h=>names.some(n=>h.includes(n)));
 
     const iFecha = find(["fecha"]);
     const iTel = find(["telefonista"]);
@@ -72,7 +69,7 @@ export async function POST(){
         telefonista: safe(c[iTel]),
         tarotista: safe(c[iTarot]),
         minutos: Number(safe(c[iMin]))||0,
-        codigo: safe(c[iCodigo]).toLowerCase()||"cliente",
+        codigo: normalizeCodigo(safe(c[iCodigo])),
         importe: Number(safe(c[iImporte]).replace("€","").replace(",", "."))||0,
         captada: safe(c[iCapt]).toUpperCase()==="TRUE",
         source_row_hash: hash(r)
@@ -90,6 +87,6 @@ export async function POST(){
     return NextResponse.json({ok:true, inserted:data.length});
 
   }catch(e:any){
-    return NextResponse.json({ok:false,error:e.message||"error"},{status:500});
+    return NextResponse.json({ok:false,error:e.message},{status:500});
   }
 }
