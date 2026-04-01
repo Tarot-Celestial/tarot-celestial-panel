@@ -11,24 +11,26 @@ const supabase = createClient(
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
-function parse(line) {
+// ✅ FIX TYPESCRIPT
+function parse(line: string): string[] {
   return line.split(",");
 }
 
-function formatDate(d) {
+function formatDate(d: string): string | null {
   if (!d) return null;
-  const [day, month, year] = d.split("/");
-  if (!day || !month || !year) return null;
+  const parts = d.split("/");
+  if (parts.length !== 3) return null;
+  const [day, month, year] = parts;
   return `${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`;
 }
 
-function normalizeCodigo(c) {
+function normalizeCodigo(c: string): string {
   if (!c) return "cliente";
   const val = c.trim().toLowerCase();
   return ["cliente","vip","promo"].includes(val) ? val : "cliente";
 }
 
-function hash(row){
+function hash(row: string): string {
   let h=0;
   for(let i=0;i<row.length;i++){
     h=(h<<5)-h+row.charCodeAt(i);
@@ -44,21 +46,17 @@ export async function POST() {
 
     const rows = csv.split("\n").slice(1);
 
-    const parsed = rows.map(row=>{
+    const parsed = rows.map((row:string)=>{
       const c = parse(row);
 
       return {
         call_date: formatDate(c[0]),
-
-        // 🔥 CORRECTO SEGÚN TU SHEET REAL
-        telefonista: c[1]?.trim(),   // numero
-        tarotista: c[3]?.trim(),     // tarotista REAL
-
+        telefonista: c[1]?.trim(),
+        tarotista: c[3]?.trim(),
         minutos: Number(c[4]) || 0,
         codigo: normalizeCodigo(c[5]),
         importe: Number(c[6]) || 0,
         captada: c[7]?.trim() === "TRUE",
-
         source_row_hash: hash(row)
       };
     });
@@ -75,8 +73,7 @@ export async function POST() {
 
     return NextResponse.json({ok:true, inserted:clean.length});
 
-  } catch(e){
+  } catch(e:any){
     return NextResponse.json({ok:false,error:e.message});
   }
 }
-
