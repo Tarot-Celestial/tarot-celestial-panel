@@ -5,14 +5,10 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const now = new Date().toISOString();
-
     const { data, error } = await supabase
       .from("reservas")
       .select("*")
-      .gte("fecha_reserva", now)
-      .order("fecha_reserva", { ascending: true })
-      .limit(5);
+      .order("fecha_reserva", { ascending: true });
 
     if (error) throw error;
 
