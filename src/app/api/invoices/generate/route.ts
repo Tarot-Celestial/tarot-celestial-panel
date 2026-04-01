@@ -13,10 +13,10 @@ export async function POST() {
     const month_key = getMonthKey();
     const [year, month] = month_key.split("-").map(Number);
 
-    const start = `${year}-${String(month).padStart(2, "0")}-01`;
-    const end = new Date(year, month, 0).toISOString().slice(0, 10);
+    const start = `${year}-${String(month).padStart(2,"0")}-01`;
+    const end = new Date(year, month, 0).toISOString().slice(0,10);
 
-    // 🔥 CALLS
+    // calls
     const { data: calls } = await supabase
       .from("calls")
       .select("tarotista, minutos, importe")
@@ -27,11 +27,21 @@ export async function POST() {
       return NextResponse.json({ ok: true, message: "No hay llamadas" });
     }
 
-    // 🔥 AGRUPAR
+    // mapping table
+    const { data: mapping } = await supabase
+      .from("tarot_mapping")
+      .select("sheet_name, worker_id");
+
+    const mapWorkers: Record<string,string> = {};
+    (mapping || []).forEach((m:any)=>{
+      mapWorkers[m.sheet_name?.toLowerCase()] = m.worker_id;
+    });
+
+    // agrupar
     const map: Record<string, any> = {};
 
     for (const c of calls) {
-      const key = c.tarotista || "sin_nombre";
+      const key = (c.tarotista || "sin_nombre").toLowerCase();
 
       if (!map[key]) {
         map[key] = { minutos: 0, importe: 0 };
@@ -43,22 +53,9 @@ export async function POST() {
 
     const created = [];
 
-    // 🔥 TRAER TODOS LOS WORKERS
-    const { data: workers } = await supabase
-      .from("workers")
-      .select("id, display_name");
-
-    const workerMap: Record<string, string> = {};
-
-    for (const w of workers || []) {
-      workerMap[w.display_name?.toLowerCase()] = w.id;
-    }
-
-    // 🔥 CREAR FACTURAS
     for (const tarotista in map) {
-      const worker_id = workerMap[tarotista.toLowerCase()];
-
-      if (!worker_id) continue; // ❗ aquí estaba el problema
+      const worker_id = mapWorkers[tarotista];
+      if (!worker_id) continue;
 
       const totals = map[tarotista];
 
@@ -107,7 +104,7 @@ export async function POST() {
       created: created.length,
     });
 
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+  } catch (e:any) {
+    return NextResponse.json({ ok:false, error:e.message }, { status:500 });
   }
 }
