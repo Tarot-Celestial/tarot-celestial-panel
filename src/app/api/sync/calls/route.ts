@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+export const runtime = "nodejs";
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -9,28 +11,30 @@ const supabase = createClient(
 const SHEET_URL =
   "https://docs.google.com/spreadsheets/d/e/2PACX-1vSLT1yIj5KRXABYpubiiM_9DQLqAT3zriTsW44S-SBvz_ZhjKJJu35pP9F4j-sT6Pt0hmRGsnqlulyM/pub?gid=1587355871&single=true&output=csv";
 
-function formatDate(d: string) {
-  if (!d) return null;
-  const parts = d.split("/");
-  if (parts.length !== 3) return null;
-  const [day, month, year] = parts;
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+function parse(line) {
+  return line.split(",");
 }
 
-function normalizeCodigo(c: string) {
+function formatDate(d) {
+  if (!d) return null;
+  const [day, month, year] = d.split("/");
+  if (!day || !month || !year) return null;
+  return `${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}`;
+}
+
+function normalizeCodigo(c) {
   if (!c) return "cliente";
   const val = c.trim().toLowerCase();
-  const allowed = ["cliente", "vip", "promo"];
-  return allowed.includes(val) ? val : "cliente";
+  return ["cliente","vip","promo"].includes(val) ? val : "cliente";
 }
 
-function createHash(row: string) {
-  let hash = 0;
-  for (let i = 0; i < row.length; i++) {
-    hash = (hash << 5) - hash + row.charCodeAt(i);
-    hash |= 0;
+function hash(row){
+  let h=0;
+  for(let i=0;i<row.length;i++){
+    h=(h<<5)-h+row.charCodeAt(i);
+    h|=0;
   }
-  return hash.toString();
+  return h.toString();
 }
 
 export async function POST() {
@@ -40,73 +44,39 @@ export async function POST() {
 
     const rows = csv.split("\n").slice(1);
 
-    const parsed = rows.map((row) => {
-      const cols = row.split(",");
-
-      const hash = createHash(row);
-      if (!hash) return null;
+    const parsed = rows.map(row=>{
+      const c = parse(row);
 
       return {
-        call_date: formatDate(cols[0]),
+        call_date: formatDate(c[0]),
 
-        // 🔥 FIX REAL: columnas corregidas
-        telefonista: cols[2]?.trim(), // antes mal
-        tarotista: cols[3]?.trim(),   // antes mal
+        // 🔥 CORRECTO SEGÚN TU SHEET REAL
+        telefonista: c[1]?.trim(),   // numero
+        tarotista: c[3]?.trim(),     // tarotista REAL
 
-        minutos: Number(cols[4]) || 0,
-        codigo: normalizeCodigo(cols[5]),
-        importe: Number(cols[6]) || 0,
-        captada: cols[7]?.trim() === "TRUE",
+        minutos: Number(c[4]) || 0,
+        codigo: normalizeCodigo(c[5]),
+        importe: Number(c[6]) || 0,
+        captada: c[7]?.trim() === "TRUE",
 
-        source_row_hash: hash,
+        source_row_hash: hash(row)
       };
     });
 
-    const clean = parsed.filter(
-      (r) =>
-        r &&
-        r.call_date &&
-        r.source_row_hash &&
-        !isNaN(r.minutos)
-    );
-
-    if (!clean.length) {
-      return NextResponse.json({
-        ok: false,
-        error: "No hay datos válidos en el sheet",
-      });
-    }
+    const clean = parsed.filter(r=>r.call_date);
 
     const { error } = await supabase
       .from("calls")
-      .upsert(clean, {
-        onConflict: "source_row_hash",
-        ignoreDuplicates: true,
-      });
+      .upsert(clean, { onConflict:"source_row_hash" });
 
-    if (error) {
-      return NextResponse.json({
-        ok: false,
-        error: error.message,
-      });
+    if(error){
+      return NextResponse.json({ok:false,error:error.message});
     }
 
-    await supabase.from("admin_notifications").insert({
-      kind: "sync",
-      title: "Sync completado",
-      body: `Se procesaron ${clean.length} registros`,
-    });
+    return NextResponse.json({ok:true, inserted:clean.length});
 
-    return NextResponse.json({
-      ok: true,
-      processed: clean.length,
-    });
-
-  } catch (e: any) {
-    return NextResponse.json({
-      ok: false,
-      error: e.message,
-    });
+  } catch(e){
+    return NextResponse.json({ok:false,error:e.message});
   }
 }
 
