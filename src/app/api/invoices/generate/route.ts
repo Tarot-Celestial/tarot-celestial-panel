@@ -3,12 +3,6 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
-type Agg = {
-  tarotista: string;
-  total_minutos: number;
-  total_importe: number;
-};
-
 function getMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
@@ -16,12 +10,14 @@ function getMonthKey() {
 
 export async function POST() {
   try {
+
     const month_key = getMonthKey();
     const [year, month] = month_key.split("-").map(Number);
 
     const start = `${year}-${String(month).padStart(2,"0")}-01`;
     const end = new Date(year, month, 0).toISOString().slice(0,10);
 
+    // 🔥 SOLO LECTURA (NO INSERT / NO UPDATE → evita stack depth)
     const { data, error } = await supabase
       .from("calls")
       .select("tarotista, minutos, importe")
@@ -30,29 +26,29 @@ export async function POST() {
 
     if (error) throw error;
 
-    const map: Record<string, Agg> = {};
+    const result = [];
+
+    const seen = new Set();
 
     for (const r of data || []) {
-      const key = (r as any).tarotista || "sin_nombre";
+      const name = r.tarotista || "sin_nombre";
 
-      if (!map[key]) {
-        map[key] = {
-          tarotista: key,
-          total_minutos: 0,
-          total_importe: 0
-        };
-      }
+      if (seen.has(name)) continue;
+      seen.add(name);
 
-      map[key].total_minutos += Number((r as any).minutos) || 0;
-      map[key].total_importe += Number((r as any).importe) || 0;
+      result.push({
+        tarotista: name
+      });
     }
 
     return NextResponse.json({
       ok: true,
-      workers: Object.values(map)
+      month_key,
+      tarotistas: result
     });
 
   } catch (e:any) {
     return NextResponse.json({ ok:false, error:e.message }, { status:500 });
   }
 }
+
