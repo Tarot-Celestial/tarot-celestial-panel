@@ -13,32 +13,27 @@ function normalize(s: string) {
 
 function toNumber(val: any) {
   if (!val) return 0;
-  return Number(String(val).replace("€", "").replace(",", ".").trim()) || 0;
+  return Number(String(val).replace(",", ".").replace("€", "").trim()) || 0;
 }
 
 function calcImporte(codigo: string, minutos: number) {
-  const code = (codigo || "").toLowerCase().trim();
+  const c = (codigo || "").toLowerCase();
 
-  if (code === "free") return minutos * 0.04;
-  if (code === "rueda") return minutos * 0.08;
-  if (code === "cliente") return minutos * 0.12;
-  if (code === "repite") return minutos * 0.14;
+  if (c === "free") return minutos * 0.04;
+  if (c === "rueda") return minutos * 0.08;
+  if (c === "cliente") return minutos * 0.12;
+  if (c === "repite") return minutos * 0.14;
 
   return 0;
 }
 
-function getMonthKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export async function POST() {
   try {
-    const month_key = getMonthKey();
-    const [year, month] = month_key.split("-").map(Number);
+    const month_key = "2026-04";
 
-    const start = `${year}-${String(month).padStart(2, "0")}-01`;
-    const end = new Date(year, month, 0).toISOString().slice(0, 10);
+    // 🔥 BORRAR SIEMPRE (clave)
+    await supabase.from("invoice_lines").delete().neq("id", "");
+    await supabase.from("invoices").delete().neq("id", "");
 
     const { data: workers } = await supabase
       .from("workers")
@@ -48,8 +43,8 @@ export async function POST() {
     const { data: calls } = await supabase
       .from("calls")
       .select("tarotista, minutos, codigo")
-      .gte("call_date", start)
-      .lte("call_date", end);
+      .gte("call_date", "2026-04-01")
+      .lte("call_date", "2026-04-30");
 
     const callsMap: Record<string, { minutos: number; importe: number }> = {};
 
@@ -60,46 +55,24 @@ export async function POST() {
         callsMap[key] = { minutos: 0, importe: 0 };
       }
 
-      const minutos = toNumber(c.minutos);
-      const importe = calcImporte(c.codigo, minutos);
+      const min = toNumber(c.minutos);
+      const imp = calcImporte(c.codigo, min);
 
-      callsMap[key].minutos += minutos;
-      callsMap[key].importe += importe;
+      callsMap[key].minutos += min;
+      callsMap[key].importe += imp;
     }
 
-    const created = [];
+    let created = 0;
 
     for (const w of workers || []) {
-      const worker_id = w.id;
-      const name = normalize(w.display_name);
+      const key = normalize(w.display_name);
 
-      const totals = callsMap[name] || {
-        minutos: 0,
-        importe: 0,
-      };
+      const totals = callsMap[key] || { minutos: 0, importe: 0 };
 
-      const { data: existing } = await supabase
-        .from("invoices")
-        .select("id")
-        .eq("worker_id", worker_id)
-        .eq("month_key", month_key)
-        .maybeSingle();
-
-      if (existing) {
-  await supabase
-    .from("invoices")
-    .update({
-      total: totals.importe,
-    })
-    .eq("id", existing.id);
-
-  continue;
-}
-      
       const { data: invoice } = await supabase
         .from("invoices")
         .insert({
-          worker_id,
+          worker_id: w.id,
           month_key,
           status: "pending",
           total: totals.importe,
@@ -112,27 +85,30 @@ export async function POST() {
       await supabase.from("invoice_lines").insert([
         {
           invoice_id: invoice.id,
-          kind: "minutes_total",
+          kind: "minutos",
           label: "Minutos",
           amount: totals.minutos,
         },
         {
           invoice_id: invoice.id,
-          kind: "importe_total",
+          kind: "importe",
           label: "Importe",
           amount: totals.importe,
         },
       ]);
 
-      created.push(invoice);
+      created++;
     }
 
     return NextResponse.json({
       ok: true,
-      created: created.length,
+      created,
     });
 
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e.message },
+      { status: 500 }
+    );
   }
 }
