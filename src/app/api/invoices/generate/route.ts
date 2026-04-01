@@ -23,17 +23,19 @@ export async function POST() {
     const start = `${year}-${String(month).padStart(2,"0")}-01`;
     const end = new Date(year, month, 0).toISOString().slice(0,10);
 
+    // 🔥 LIMIT para evitar problemas DB internos
     const { data, error } = await supabase
       .from("calls")
       .select("worker_id, minutos, importe")
       .gte("call_date", start)
-      .lte("call_date", end);
+      .lte("call_date", end)
+      .limit(10000);
 
     if (error) throw error;
 
     const map: Record<string, WorkerAgg> = {};
 
-    (data || []).forEach((r: any) => {
+    for (const r of data || []) {
       const key = r.worker_id || "unknown";
 
       if (!map[key]) {
@@ -46,7 +48,7 @@ export async function POST() {
 
       map[key].total_minutos += Number(r.minutos) || 0;
       map[key].total_importe += Number(r.importe) || 0;
-    });
+    }
 
     return NextResponse.json({
       ok: true,
