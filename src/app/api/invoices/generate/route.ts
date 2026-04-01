@@ -3,11 +3,6 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
-function getMonthKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 function normalize(s: string) {
   return (s || "")
     .toLowerCase()
@@ -32,6 +27,11 @@ function calcImporte(codigo: string, minutos: number) {
   return 0;
 }
 
+function getMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export async function POST() {
   try {
     const month_key = getMonthKey();
@@ -44,15 +44,6 @@ export async function POST() {
       .from("workers")
       .select("id, display_name")
       .eq("role", "tarotista");
-
-    const { data: mapping } = await supabase
-      .from("tarot_mapping")
-      .select("sheet_name, worker_id");
-
-    const mapWorkers: Record<string, string> = {};
-    (mapping || []).forEach((m: any) => {
-      mapWorkers[normalize(m.sheet_name)] = m.worker_id;
-    });
 
     const { data: calls } = await supabase
       .from("calls")
@@ -80,21 +71,12 @@ export async function POST() {
 
     for (const w of workers || []) {
       const worker_id = w.id;
+      const name = normalize(w.display_name);
 
-      const keys = Object.entries(mapWorkers)
-        .filter(([_, id]) => id === worker_id)
-        .map(([key]) => key);
-
-      let total_minutos = 0;
-      let total_importe = 0;
-
-      for (const k of keys) {
-        const t = callsMap[k];
-        if (t) {
-          total_minutos += t.minutos;
-          total_importe += t.importe;
-        }
-      }
+      const totals = callsMap[name] || {
+        minutos: 0,
+        importe: 0,
+      };
 
       const { data: existing } = await supabase
         .from("invoices")
@@ -111,7 +93,7 @@ export async function POST() {
           worker_id,
           month_key,
           status: "pending",
-          total: total_importe,
+          total: totals.importe,
         })
         .select()
         .single();
@@ -123,13 +105,13 @@ export async function POST() {
           invoice_id: invoice.id,
           kind: "minutes_total",
           label: "Minutos",
-          amount: total_minutos,
+          amount: totals.minutos,
         },
         {
           invoice_id: invoice.id,
           kind: "importe_total",
           label: "Importe",
-          amount: total_importe,
+          amount: totals.importe,
         },
       ]);
 
@@ -142,9 +124,6 @@ export async function POST() {
     });
 
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
 }
