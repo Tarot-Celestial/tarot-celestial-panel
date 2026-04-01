@@ -18,19 +18,15 @@ function parse(line: string): string[] {
 function safe(v:any){ return (v||"").toString().trim(); }
 
 function formatDate(d:string){
-  if(!d) return null;
   const p=d.split("/");
   if(p.length!==3) return null;
   return `${p[2]}-${p[1].padStart(2,"0")}-${p[0].padStart(2,"0")}`;
 }
 
-// 🔥 FIX CODIGO (constraint)
 function normalizeCodigo(v:string){
-  const val = (v||"").toLowerCase();
-
+  const val=v.toLowerCase();
   if(val.includes("vip")) return "vip";
   if(val.includes("promo")) return "promo";
-  if(val.includes("rueda")) return "cliente"; // adaptar rueda → cliente
   return "cliente";
 }
 
@@ -59,12 +55,15 @@ export async function POST(){
     const iImporte = find(["importe"]);
     const iCapt = find(["captado"]);
 
-    const rows = lines.slice(1);
+    const map = new Map();
 
-    const data = rows.map(r=>{
+    lines.slice(1).forEach(r=>{
       const c = parse(r);
+      const h = hash(r);
 
-      return {
+      if(map.has(h)) return; // 🔥 FIX DUPLICADOS
+
+      map.set(h,{
         call_date: formatDate(safe(c[iFecha])),
         telefonista: safe(c[iTel]),
         tarotista: safe(c[iTarot]),
@@ -72,9 +71,11 @@ export async function POST(){
         codigo: normalizeCodigo(safe(c[iCodigo])),
         importe: Number(safe(c[iImporte]).replace("€","").replace(",", "."))||0,
         captada: safe(c[iCapt]).toUpperCase()==="TRUE",
-        source_row_hash: hash(r)
-      }
-    }).filter(r=>r.call_date);
+        source_row_hash: h
+      });
+    });
+
+    const data = Array.from(map.values()).filter(r=>r.call_date);
 
     const { error } = await supabase
       .from("calls")
