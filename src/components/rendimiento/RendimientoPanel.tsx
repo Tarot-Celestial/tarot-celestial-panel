@@ -41,8 +41,8 @@ function fmt(v: any) {
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [importing, setImporting] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
 
   async function getToken() {
     const { data } = await sb.auth.getSession();
@@ -85,6 +85,26 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     setSavingId(null);
   }
 
+  async function deleteRow(id?: string) {
+    if (!id) return;
+
+    if (!confirm("¿Seguro que quieres eliminar esta línea?")) return;
+
+    const token = await getToken();
+    if (!token) return;
+
+    await fetch("/api/crm/rendimiento/delete", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id }),
+    });
+
+    setRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
   function updateField(id: string, field: keyof Row, value: any) {
     setRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
@@ -108,14 +128,9 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       body: JSON.stringify({ month: "2026-04" }),
     });
 
-    const json = await res.json();
     setImporting(false);
 
-    if (json.ok) {
-      fetchData();
-    } else {
-      alert("Error importando");
-    }
+    if (res.ok) fetchData();
   }
 
   useEffect(() => {
@@ -123,13 +138,6 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     const i = setInterval(fetchData, 8000);
     return () => clearInterval(i);
   }, [mode]);
-
-  const metrics = useMemo(() => {
-    const total = rows.length;
-    const importe = rows.reduce((a, r) => a + (Number(r.importe) || 0), 0);
-    const minutos = rows.reduce((a, r) => a + (Number(r.tiempo) || 0), 0);
-    return { total, importe, minutos };
-  }, [rows]);
 
   if (loading) return <div className="p-4">Cargando...</div>;
 
@@ -141,29 +149,10 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         <div className="tc-title">📈 Rendimiento</div>
 
         {mode === "admin" && (
-          <button
-            className="tc-btn tc-btn-gold"
-            onClick={importApril}
-          >
+          <button className="tc-btn tc-btn-gold" onClick={importApril}>
             {importing ? "Importando..." : "Importar abril"}
           </button>
         )}
-      </div>
-
-      {/* METRICS */}
-      <div className="tc-grid-3" style={{ marginTop: 10 }}>
-        <div className="tc-card">
-          <div className="tc-sub">Registros</div>
-          <div style={{ fontSize: 26, fontWeight: 900 }}>{metrics.total}</div>
-        </div>
-        <div className="tc-card">
-          <div className="tc-sub">Facturación</div>
-          <div style={{ fontSize: 26, fontWeight: 900 }}>{eur(metrics.importe)}</div>
-        </div>
-        <div className="tc-card">
-          <div className="tc-sub">Minutos</div>
-          <div style={{ fontSize: 26, fontWeight: 900 }}>{metrics.minutos}</div>
-        </div>
       </div>
 
       {/* TABLE */}
@@ -172,17 +161,16 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
           <thead>
             <tr>
               <th>FECHA</th>
-              <th>TELEFONISTA</th>
               <th>CLIENTE</th>
-              <th>TAROTISTA</th>
               <th>TIEMPO</th>
-              <th>CALL</th>
               <th>CÓDIGO</th>
               <th>PAGO</th>
               <th>IMPORTE</th>
+              <th>CALL</th>
               <th>PROMO</th>
               <th>CAPTADO</th>
               <th>RECUPERADO</th>
+              <th></th>
             </tr>
           </thead>
 
@@ -191,8 +179,6 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
               <tr key={row.id}>
 
                 <td>{fmt(row.fecha_hora)}</td>
-
-                <td>{row.telefonista_nombre}</td>
 
                 <td>
                   <input
@@ -204,8 +190,6 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                     onBlur={() => saveRow(row)}
                   />
                 </td>
-
-                <td>{row.tarotista_nombre || row.tarotista_manual_call}</td>
 
                 <td>
                   <input
@@ -219,8 +203,6 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>{row.llamada_call ? "✔" : "-"}</td>
-
                 <td>
                   <input
                     className="tc-input"
@@ -232,7 +214,22 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>{row.forma_pago}</td>
+                <td>
+                  <select
+                    className="tc-select"
+                    value={row.forma_pago || ""}
+                    onChange={(e) => {
+                      updateField(row.id!, "forma_pago", e.target.value);
+                      saveRow({ ...row, forma_pago: e.target.value });
+                    }}
+                  >
+                    <option value="">—</option>
+                    <option value="TPV">TPV</option>
+                    <option value="PAYPAL">PAYPAL</option>
+                    <option value="BIZUM">BIZUM</option>
+                    <option value="OTROS">OTROS</option>
+                  </select>
+                </td>
 
                 <td>
                   <input
@@ -246,16 +243,57 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td style={{ color: row.promo ? "#ffd700" : "" }}>
-                  {row.promo ? "✔" : "-"}
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={!!row.llamada_call}
+                    onChange={(e) => {
+                      updateField(row.id!, "llamada_call", e.target.checked);
+                      saveRow({ ...row, llamada_call: e.target.checked });
+                    }}
+                  />
                 </td>
 
-                <td style={{ color: row.captado ? "#00ffcc" : "" }}>
-                  {row.captado ? "✔" : "-"}
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={!!row.promo}
+                    onChange={(e) => {
+                      updateField(row.id!, "promo", e.target.checked);
+                      saveRow({ ...row, promo: e.target.checked });
+                    }}
+                  />
                 </td>
 
-                <td style={{ color: row.recuperado ? "#a78bfa" : "" }}>
-                  {row.recuperado ? "✔" : "-"}
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={!!row.captado}
+                    onChange={(e) => {
+                      updateField(row.id!, "captado", e.target.checked);
+                      saveRow({ ...row, captado: e.target.checked });
+                    }}
+                  />
+                </td>
+
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={!!row.recuperado}
+                    onChange={(e) => {
+                      updateField(row.id!, "recuperado", e.target.checked);
+                      saveRow({ ...row, recuperado: e.target.checked });
+                    }}
+                  />
+                </td>
+
+                <td>
+                  <button
+                    className="tc-btn"
+                    onClick={() => deleteRow(row.id)}
+                  >
+                    ❌
+                  </button>
                 </td>
 
               </tr>
