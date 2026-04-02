@@ -35,8 +35,7 @@ export async function POST() {
     const { data: calls } = await supabase
       .from("calls")
       .select("worker_id, tarotista, minutos, codigo")
-      .gte("call_date", "2026-04-01")
-      .lte("call_date", "2026-04-30");
+      // SIN FILTRO
 
     const totals: Record<string, { minutos: number; importe: number }> = {};
 
