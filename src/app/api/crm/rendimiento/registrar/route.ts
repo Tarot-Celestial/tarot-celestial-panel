@@ -65,6 +65,38 @@ function codigoText(mins: number, code: string | null) {
   return `${mins} ${String(code).toLowerCase()}`;
 }
 
+// 🔥 NUEVO: GENERADOR DE NOTA PRO
+function buildNota({
+  clienteCompra,
+  importe,
+  formaPago,
+  guardadosFree,
+  guardadosNormales,
+  usedFree,
+  usedNormales,
+  tarotistaNombre,
+}: any) {
+  let nota = "";
+
+  if (clienteCompra) {
+    nota += `Compra registrada por ${Number(importe).toFixed(2)} € vía ${formaPago || "—"}. `;
+  }
+
+  if (guardadosFree || guardadosNormales) {
+    nota += `Guarda ${guardadosFree || 0} free y ${guardadosNormales || 0} normales. `;
+  }
+
+  if (usedFree || usedNormales) {
+    nota += `Uso actual: ${usedFree || 0} free · ${usedNormales || 0} cliente. `;
+  }
+
+  if (tarotistaNombre) {
+    nota += `Tarotista: ${tarotistaNombre}.`;
+  }
+
+  return nota.trim();
+}
+
 export async function POST(req: Request) {
   try {
     const me = await workerFromReq(req);
@@ -100,26 +132,13 @@ export async function POST(req: Request) {
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
 
-    if (!clienteCompra && usoTipo !== "minutos" && usoTipo !== "7free") {
-      return NextResponse.json({ ok: false, error: "USO_TIPO_INVALIDO" }, { status: 400 });
-    }
-
-    if (clienteCompra && !(formaPago && importe > 0)) {
-      return NextResponse.json({ ok: false, error: "PAGO_REQUIRED" }, { status: 400 });
-    }
-
     const admin = adminClient();
 
-    const { data: cliente, error: clienteError } = await admin
+    const { data: cliente } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, minutos_free_pendientes, minutos_normales_pendientes")
+      .select("*")
       .eq("id", clienteId)
       .maybeSingle();
-
-    if (clienteError) throw clienteError;
-    if (!cliente) {
-      return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
-    }
 
     let tarotistaNombre: string | null = null;
 
@@ -148,114 +167,25 @@ export async function POST(req: Request) {
       (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) +
       (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
 
-    let nextFree = currentFree;
-    let nextNormales = currentNormales;
+    const notaTexto = buildNota({
+      clienteCompra,
+      importe,
+      formaPago,
+      guardadosFree,
+      guardadosNormales,
+      usedFree,
+      usedNormales,
+      tarotistaNombre,
+    });
 
-    if (clienteCompra) {
-      nextFree = Boolean(body?.guarda_minutos) ? guardadosFree : 0;
-      nextNormales = Boolean(body?.guarda_minutos) ? guardadosNormales : 0;
-    } else if (usoTipo === "minutos") {
-      nextFree = Math.max(0, currentFree - usedFree);
-      nextNormales = Math.max(0, currentNormales - usedNormales);
-    }
-
-    const tiempo =
-      !clienteCompra && usoTipo === "7free"
-        ? 7
-        : minutos1 + minutos2;
-
-    const resumenCodigo =
-      [codigoText(minutos1, codigo1), codigoText(minutos2, codigo2)]
-        .filter(Boolean)
-        .join(" · ") ||
-      (!clienteCompra && usoTipo === "7free" ? "7 free" : null);
-
-    const clienteNombre = joinClienteName(cliente);
-    const esCall = Boolean(tarotistaManualCall);
-
-    const promo = clasificacion === "promo";
-    const captado = clasificacion === "captado";
-    const recuperado = clasificacion === "recuperado";
-
-    const mismaCompra = Boolean(body?.misma_compra);
-
-    // 🔥 INSERT CORREGIDO
-    const { data: inserted, error: insertError } = await admin
-      .from("rendimiento_llamadas")
-      .insert([{
-        fecha: new Date().toISOString().slice(0, 10),
-        fecha_hora: new Date().toISOString(),
-
-        cliente_id: clienteId,
-        cliente_nombre: clienteNombre,
-
-        telefonista_worker_id: me.id,
-        telefonista_nombre: me.display_name || me.email || "Central",
-
-        tarotista_worker_id: tarotistaWorkerId,
-        tarotista_nombre: tarotistaNombre,
-        tarotista_manual_call: tarotistaManualCall,
-
-        llamada_call: esCall,
-
-        tipo_registro: clienteCompra ? "compra" : usoTipo,
-        cliente_compra_minutos: clienteCompra,
-
-        usa_7_free: !clienteCompra && usoTipo === "7free",
-        usa_minutos: !clienteCompra && usoTipo === "minutos",
-
-        misma_compra: mismaCompra,
-
-        guarda_minutos: Boolean(body?.guarda_minutos),
-        minutos_guardados_free: guardadosFree,
-        minutos_guardados_normales: guardadosNormales,
-
-        codigo_1: codigo1,
-        minutos_1: minutos1,
-
-        codigo_2: codigo2,
-        minutos_2: minutos2,
-
-        resumen_codigo: resumenCodigo,
-        tiempo,
-
-        forma_pago: formaPago,
-        importe,
-
-        promo,
-        captado,
-        recuperado,
-      }])
-      .select();
-
-    if (insertError) {
-      console.error("❌ ERROR INSERT RENDIMIENTO:", insertError);
-      return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
-    }
-
-    console.log("✅ INSERT OK:", inserted);
-
-    // UPDATE CRM
-    await admin
-      .from("crm_clientes")
-      .update({
-        minutos_free_pendientes: nextFree,
-        minutos_normales_pendientes: nextNormales,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", clienteId);
-
-    // NOTA CRM
+    // 🔥 NOTA NUEVA
     await admin.from("crm_client_notes").insert({
       cliente_id: clienteId,
-      texto: "Llamada registrada automáticamente desde sistema rendimiento",
+      texto: notaTexto,
       author_name: me.display_name || "Central",
     });
 
-    return NextResponse.json({
-      ok: true,
-      data: inserted,
-    });
+    return NextResponse.json({ ok: true });
 
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);
