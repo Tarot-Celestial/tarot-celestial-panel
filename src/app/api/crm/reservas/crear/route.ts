@@ -108,7 +108,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NOT_FOUND" }, { status: 404 });
     }
 
-    let tarotista_display_name: string | null = null;
+    let tarotista_nombre: string | null = null;
     if (tarotista_worker_id) {
       const { data: tarotista, error: tarotistaErr } = await db
         .from("workers")
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (tarotistaErr) throw tarotistaErr;
-      tarotista_display_name = tarotista?.display_name || null;
+      tarotista_nombre = tarotista?.display_name || null;
     }
 
     const payload: Record<string, any> = {
@@ -125,7 +125,7 @@ export async function POST(req: Request) {
       cliente_nombre: [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || null,
       telefono_normalizado: cliente?.telefono || null,
       tarotista_worker_id,
-      tarotista_display_name,
+      tarotista_nombre,
       tarotista_nombre_manual,
       fecha_reserva: new Date(fecha_reserva).toISOString(),
       estado: "pendiente",
