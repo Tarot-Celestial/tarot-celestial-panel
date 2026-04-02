@@ -103,6 +103,8 @@ export default function ReservasPanel({
   const [q, setQ] = useState("");
   const [filtro, setFiltro] = useState<"proximas" | "hoy" | "todas" | "finalizadas">("proximas");
   const [finalizandoId, setFinalizandoId] = useState("");
+  const [popupReserva, setPopupReserva] = useState<any | null>(null);
+  const [avisadas, setAvisadas] = useState<string[]>([]);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -195,6 +197,29 @@ export default function ReservasPanel({
       setFinalizandoId("");
     }
   }
+
+  // 🔥 DETECTOR DE RESERVA EXACTA
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+
+      rows.forEach((r: any) => {
+        if (!r?.fecha_reserva) return;
+
+        const fecha = new Date(r.fecha_reserva);
+        const diff = fecha.getTime() - now.getTime();
+
+        const yaAvisada = avisadas.includes(r.id);
+
+        if (diff <= 30000 && diff >= -30000 && !yaAvisada && !isClosedEstado(r.estado)) {
+          setAvisadas((prev) => [...prev, r.id]);
+          setPopupReserva(r);
+        }
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [rows, avisadas]);
 
   useEffect(() => {
     loadReservas(false);
@@ -445,7 +470,43 @@ export default function ReservasPanel({
             </div>
           )}
         </div>
-      </div>
+            {/* 🔥 POPUP CENTRAL */}
+      {popupReserva && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          width: "100vw",
+          height: "100vh",
+          background: "rgba(0,0,0,0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: "#111",
+            padding: 30,
+            borderRadius: 16,
+            width: 400,
+            textAlign: "center",
+            boxShadow: "0 0 40px rgba(0,0,0,0.6)"
+          }}>
+            <h2 style={{ marginBottom: 10 }}>⏰ Reserva ahora</h2>
+            <p><strong>{popupReserva.cliente_nombre}</strong></p>
+            <p style={{ marginBottom: 20 }}>
+              {new Date(popupReserva.fecha_reserva).toLocaleTimeString()}
+            </p>
+
+            <button
+              className="tc-btn tc-btn-ok"
+              onClick={() => setPopupReserva(null)}
+            >
+              Ir a la reserva
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
