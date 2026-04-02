@@ -87,9 +87,20 @@ function estadoStyles(v: any) {
 function formatFecha(value: any) {
   if (!value) return "—";
   try {
-    return new Date(value + 'Z').toLocaleString("es-ES");
+    const d = parseReservaDate(value);
+    return d ? d.toLocaleString("es-ES") : String(value);
   } catch {
     return String(value);
+  }
+}
+
+function parseReservaDate(value: any) {
+  if (!value) return null;
+  try {
+    const s = String(value);
+    return new Date(/z$/i.test(s) ? s : `${s}Z`);
+  } catch {
+    return null;
   }
 }
 
@@ -104,30 +115,7 @@ export default function ReservasPanel({
   const [filtro, setFiltro] = useState<"proximas" | "hoy" | "todas" | "finalizadas">("proximas");
   const [finalizandoId, setFinalizandoId] = useState("");
 
-  const [popupReserva, setPopupReserva] = useState<any | null>(null);
-  const [avisadas, setAvisadas] = useState<string[]>([]);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = new Date();
-
-      rows.forEach((r: any) => {
-        if (!r?.fecha_reserva) return;
-
-        const fecha = new Date(r.fecha_reserva + 'Z');
-        const diff = fecha.getTime() - now.getTime();
-
-        const yaAvisada = avisadas.includes(r.id);
-
-        if (diff <= 30000 && diff >= -30000 && !yaAvisada && !isClosedEstado(r.estado)) {
-          setAvisadas((prev) => [...prev, r.id]);
-          setPopupReserva(r);
-        }
-      });
-    }, 5000);
-
-    return () => clearInterval(interval);
-  }, [rows, avisadas]);
+  const [focusReservaId, setFocusReservaId] = useState<string>("");
 
 
   async function getTokenOrLogin() {
@@ -223,6 +211,58 @@ export default function ReservasPanel({
   }
 
   useEffect(() => {
+    function onOpenReserva(ev: Event) {
+      const detail = (ev as CustomEvent).detail || {};
+      const reservaId = String(detail.id || "");
+      if (!reservaId) return;
+      setFiltro("todas");
+      setFocusReservaId(reservaId);
+      loadReservas(true).finally(() => {
+        window.setTimeout(() => {
+          const el = document.querySelector(`[data-reserva-id="${reservaId}"]`);
+          if (el instanceof HTMLElement) {
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 250);
+      });
+    }
+
+    window.addEventListener("reservas-open-item", onOpenReserva as EventListener);
+    return () => window.removeEventListener("reservas-open-item", onOpenReserva as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (!focusReservaId) return;
+    const t = window.setTimeout(() => setFocusReservaId(""), 6000);
+    return () => window.clearTimeout(t);
+  }, [focusReservaId]);
+
+  useEffect(() => {
+    function onOpenReserva(ev: Event) {
+      const detail = (ev as CustomEvent).detail || {};
+      const reservaId = String(detail.id || "");
+      if (!reservaId) return;
+      setFiltro("todas");
+      setFocusReservaId(reservaId);
+      loadReservas(true).finally(() => {
+        window.setTimeout(() => {
+          const el = document.querySelector(`[data-reserva-id="${reservaId}"]`);
+          if (el instanceof HTMLElement) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 250);
+      });
+    }
+
+    window.addEventListener("reservas-open-item", onOpenReserva as EventListener);
+    return () => window.removeEventListener("reservas-open-item", onOpenReserva as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (!focusReservaId) return;
+    const t = window.setTimeout(() => setFocusReservaId(""), 6000);
+    return () => window.clearTimeout(t);
+  }, [focusReservaId]);
+
+  useEffect(() => {
     loadReservas(false);
     const t = setInterval(() => loadReservas(true), 15000);
     return () => clearInterval(t);
@@ -237,7 +277,7 @@ export default function ReservasPanel({
     let list = [...(rows || [])];
 
     list = list.filter((r: any) => {
-      const fecha = r?.fecha_reserva ? new Date(r.fecha_reserva + 'Z') : null;
+      const fecha = r?.fecha_reserva ? parseReservaDate(r.fecha_reserva) : null;
       const closed = isClosedEstado(r?.estado);
 
       if (filtro === "finalizadas") return closed;
@@ -277,8 +317,8 @@ export default function ReservasPanel({
       const be = isClosedEstado(b?.estado) ? 1 : 0;
       if (ae !== be) return ae - be;
 
-      const at = a?.fecha_reserva ? new Date(a.fecha_reserva).getTime() : 0;
-      const bt = b?.fecha_reserva ? new Date(b.fecha_reserva).getTime() : 0;
+      const at = a?.fecha_reserva ? (parseReservaDate(a.fecha_reserva)?.getTime() || 0) : 0;
+      const bt = b?.fecha_reserva ? (parseReservaDate(b.fecha_reserva)?.getTime() || 0) : 0;
 
       if (ae === 0) return at - bt;
       return bt - at;
@@ -381,12 +421,17 @@ export default function ReservasPanel({
             return (
               <div
                 key={r.id}
+                data-reserva-id={String(r.id)}
                 style={{
-                  border: st.border,
+                  border: focusReservaId === String(r.id) ? "1px solid rgba(181,156,255,.50)" : st.border,
                   borderRadius: 18,
                   padding: 16,
-                  background: st.background,
-                  boxShadow: st.boxShadow,
+                  background: focusReservaId === String(r.id)
+                    ? "linear-gradient(180deg, rgba(181,156,255,.16), rgba(255,255,255,.04))"
+                    : st.background,
+                  boxShadow: focusReservaId === String(r.id)
+                    ? "0 0 0 2px rgba(181,156,255,.18), 0 18px 46px rgba(0,0,0,.24)"
+                    : st.boxShadow,
                   transition: "transform .18s ease, box-shadow .18s ease",
                 }}
               >
@@ -472,33 +517,6 @@ export default function ReservasPanel({
           )}
         </div>
       </div>
-    
-      {popupReserva && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.7)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 9999
-        }}>
-          <div style={{
-            background: "#111",
-            padding: 30,
-            borderRadius: 16,
-            width: 420,
-            textAlign: "center"
-          }}>
-            <h2>⏰ Reserva ahora</h2>
-            <p><strong>{popupReserva.cliente_nombre}</strong></p>
-            <p>{new Date(popupReserva.fecha_reserva + 'Z').toLocaleString("es-ES")}</p>
-            <button className="tc-btn tc-btn-ok" onClick={() => setPopupReserva(null)}>
-              Ir a la reserva
-            </button>
-          </div>
-        </div>
-      )}
 
     </div>
   );
