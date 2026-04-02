@@ -3,14 +3,6 @@ import { supabase } from "@/lib/supabaseClient";
 
 export const runtime = "nodejs";
 
-function normalize(s: string) {
-  return (s || "")
-    .toLowerCase()
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
 function toNumber(val: any) {
   if (!val) return 0;
   return Number(String(val).replace(",", ".").replace("€", "").trim()) || 0;
@@ -31,44 +23,33 @@ export async function POST() {
   try {
     const month_key = "2026-04";
 
-    // 🔥 limpiar siempre
+    // 🔥 limpiar facturas
     await supabase.from("invoice_lines").delete().neq("id", "");
     await supabase.from("invoices").delete().neq("id", "");
 
-    // 🔥 workers
+    // 🔥 workers tarotistas
     const { data: workers } = await supabase
       .from("workers")
       .select("id, display_name")
       .eq("role", "tarotista");
 
-    // 🔥 mapping
-    const { data: mapping } = await supabase
-      .from("tarot_mapping")
-      .select("sheet_name, worker_id");
-
-    const map: Record<string, string> = {};
-    (mapping || []).forEach((m: any) => {
-      map[normalize(m.sheet_name)] = m.worker_id;
-    });
-
-    // 🔥 calls
+    // 🔥 llamadas
     const { data: calls } = await supabase
       .from("calls")
       .select("worker_id, minutos, codigo")
       .gte("call_date", "2026-04-01")
       .lte("call_date", "2026-04-30");
 
-    // 🔥 agrupar por worker_id directamente
+    // 🔥 agrupar por worker_id
     const totalsByWorker: Record<
       string,
       { minutos: number; importe: number }
     > = {};
 
     for (const c of calls || []) {
-      const key = normalize(c.tarotista);
-      const worker_id = map[key];
+      const worker_id = c.worker_id;
 
-      if (!worker_id) continue; // ignorar CallXXX sin mapping
+      if (!worker_id) continue;
 
       if (!totalsByWorker[worker_id]) {
         totalsByWorker[worker_id] = { minutos: 0, importe: 0 };
