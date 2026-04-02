@@ -205,6 +205,7 @@ export default function ReservasPanel({
       rows.forEach((r: any) => {
         if (!r?.fecha_reserva) return;
         const fecha = new Date(r.fecha_reserva);
+        const fechaLocal = new Date(fecha.getTime() + (2 * 60 * 60 * 1000)); // España +2h
         const diff = fecha.getTime() - now.getTime();
         const yaAvisada = avisadas.includes(r.id);
         if (diff <= 30000 && diff >= -30000 && !yaAvisada && !isClosedEstado(r.estado)) {
