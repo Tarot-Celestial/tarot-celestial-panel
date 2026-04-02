@@ -49,7 +49,7 @@ export async function POST(req: Request) {
 
     const { error } = await db
       .from("reservas")
-      .update({ estado: "finalizada", updated_at: new Date().toISOString() })
+      .update({ estado: "completada", updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) throw error;
 
