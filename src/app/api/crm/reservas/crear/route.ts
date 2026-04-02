@@ -14,54 +14,99 @@ async function uidFromBearer(req: Request) {
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return { uid: null as string | null };
 
-  const userClient = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false },
-  });
+  const userClient = createClient(
+    getEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
+    {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false },
+    }
+  );
 
   const { data, error } = await userClient.auth.getUser();
   if (error) throw error;
   return { uid: data.user?.id || null };
 }
 
+function adminDb() {
+  return createClient(
+    getEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    getEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false } }
+  );
+}
+
+async function getClienteById(db: ReturnType<typeof adminDb>, clienteId: string) {
+  const candidates = ["crm_clientes", "clientes", "crm_clientes_panel"];
+
+  for (const table of candidates) {
+    const { data, error } = await db
+      .from(table)
+      .select("id, nombre, apellido, telefono")
+      .eq("id", clienteId)
+      .maybeSingle();
+
+    if (!error && data) {
+      return data;
+    }
+
+    const msg = String(error?.message || "");
+    if (
+      msg.includes("schema cache") ||
+      msg.includes("relation") ||
+      msg.includes("does not exist")
+    ) {
+      continue;
+    }
+
+    if (error) throw error;
+  }
+
+  return null;
+}
+
 export async function POST(req: Request) {
   try {
     const { uid } = await uidFromBearer(req);
-    if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!uid) {
+      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    }
 
-    const db = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("SUPABASE_SERVICE_ROLE_KEY"), {
-      auth: { persistSession: false },
-    });
+    const db = adminDb();
 
     const { data: me, error: meErr } = await db
       .from("workers")
       .select("id, role")
       .eq("user_id", uid)
       .maybeSingle();
+
     if (meErr) throw meErr;
     if (!me || (me.role !== "admin" && me.role !== "central")) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
+
     const cliente_id = String(body?.cliente_id || "").trim();
     const tarotista_worker_id = String(body?.tarotista_worker_id || "").trim() || null;
     const tarotista_nombre_manual = String(body?.tarotista_nombre_manual || "").trim() || null;
     const fecha_reserva = String(body?.fecha_reserva || "").trim();
     const nota = String(body?.nota || "").trim() || null;
 
-    if (!cliente_id) return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
-    if (!fecha_reserva) return NextResponse.json({ ok: false, error: "FECHA_REQUIRED" }, { status: 400 });
+    if (!cliente_id) {
+      return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
+    }
+    if (!fecha_reserva) {
+      return NextResponse.json({ ok: false, error: "FECHA_REQUIRED" }, { status: 400 });
+    }
     if (!tarotista_worker_id && !tarotista_nombre_manual) {
       return NextResponse.json({ ok: false, error: "TAROTISTA_REQUIRED" }, { status: 400 });
     }
 
-    const { data: cliente, error: clienteErr } = await db
-      .from("clientes")
-      .select("id, nombre, apellido, telefono")
-      .eq("id", cliente_id)
-      .maybeSingle();
-    if (clienteErr) throw clienteErr;
+    const cliente = await getClienteById(db, cliente_id);
+    if (!cliente) {
+      return NextResponse.json({ ok: false, error: "CLIENTE_NOT_FOUND" }, { status: 404 });
+    }
 
     let tarotista_display_name: string | null = null;
     if (tarotista_worker_id) {
@@ -70,6 +115,7 @@ export async function POST(req: Request) {
         .select("id, display_name")
         .eq("id", tarotista_worker_id)
         .maybeSingle();
+
       if (tarotistaErr) throw tarotistaErr;
       tarotista_display_name = tarotista?.display_name || null;
     }
@@ -87,11 +133,19 @@ export async function POST(req: Request) {
       created_by_worker_id: me.id,
     };
 
-    const { data: inserted, error } = await db.from("reservas").insert(payload).select("id").single();
+    const { data: inserted, error } = await db
+      .from("reservas")
+      .insert(payload)
+      .select("id")
+      .single();
+
     if (error) throw error;
 
     return NextResponse.json({ ok: true, id: inserted.id });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message || "ERR" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: err?.message || "ERR" },
+      { status: 500 }
+    );
   }
 }
