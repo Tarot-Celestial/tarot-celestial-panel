@@ -145,7 +145,7 @@ export async function POST(req: Request) {
       const row = {
         fecha,
         fecha_hora: fechaHora,
-        id_unico: clean(cols[iIdUnico]) || null,
+        // NO meter id_unico
         cliente_nombre: clean(cols[iCliente]) || 'Cliente',
         telefonista_nombre: clean(cols[iTelefonista]) || 'Central',
         tarotista_nombre: clean(cols[iTarotista]) || null,
