@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-export default function RendimientoPanel() {
+type Props = {
+  mode?: "admin" | "central";
+};
+
+export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -10,7 +14,7 @@ export default function RendimientoPanel() {
     try {
       setLoading(true);
 
-      const res = await fetch("/api/crm/rendimiento/listar");
+      const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`);
       const json = await res.json();
 
       console.log("📊 DATA RENDIMIENTO:", json);
@@ -32,7 +36,7 @@ export default function RendimientoPanel() {
 
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [mode]);
 
   if (loading) {
     return <div className="p-4">Cargando rendimiento...</div>;
@@ -44,6 +48,10 @@ export default function RendimientoPanel() {
 
   return (
     <div className="p-4 overflow-auto">
+      <div className="mb-2 text-xs text-gray-500">
+        Vista: {mode === "central" ? "Central" : "Admin"}
+      </div>
+
       <table className="w-full text-sm border">
         <thead className="bg-gray-100">
           <tr>
