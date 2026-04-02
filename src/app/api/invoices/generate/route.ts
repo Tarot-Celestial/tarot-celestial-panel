@@ -23,52 +23,60 @@ export async function POST() {
   try {
     const month_key = "2026-04";
 
-    // 🔥 limpiar facturas
+    // limpiar
     await supabase.from("invoice_lines").delete().neq("id", "");
     await supabase.from("invoices").delete().neq("id", "");
 
-    // 🔥 workers tarotistas
     const { data: workers } = await supabase
       .from("workers")
       .select("id, display_name")
       .eq("role", "tarotista");
 
-    // 🔥 llamadas
     const { data: calls } = await supabase
       .from("calls")
-      .select("worker_id, minutos, codigo")
+      .select("worker_id, tarotista, minutos, codigo")
       .gte("call_date", "2026-04-01")
       .lte("call_date", "2026-04-30");
 
-    // 🔥 agrupar por worker_id
-    const totalsByWorker: Record<
-      string,
-      { minutos: number; importe: number }
-    > = {};
+    const totals: Record<string, { minutos: number; importe: number }> = {};
 
     for (const c of calls || []) {
-      const worker_id = c.worker_id;
+      let key = "";
 
-      if (!worker_id) continue;
+      // 🔥 CASO 1 → tarotista normal
+      if (c.worker_id) {
+        key = c.worker_id;
+      }
+      // 🔥 CASO 2 → CALLXXX
+      else {
+        key = c.tarotista?.toLowerCase().trim();
+      }
 
-      if (!totalsByWorker[worker_id]) {
-        totalsByWorker[worker_id] = { minutos: 0, importe: 0 };
+      if (!key) continue;
+
+      if (!totals[key]) {
+        totals[key] = { minutos: 0, importe: 0 };
       }
 
       const min = toNumber(c.minutos);
-      const imp = calcImporte(c.codigo, min);
 
-      totalsByWorker[worker_id].minutos += min;
-      totalsByWorker[worker_id].importe += imp;
+      // 🔥 CALLXXX tarifa fija
+      let imp = 0;
+      if (!c.worker_id) {
+        imp = min * 0.12;
+      } else {
+        imp = calcImporte(c.codigo, min);
+      }
+
+      totals[key].minutos += min;
+      totals[key].importe += imp;
     }
 
     let created = 0;
 
+    // 🔥 FACTURAS TAROTISTAS NORMALES
     for (const w of workers || []) {
-      const totals = totalsByWorker[w.id] || {
-        minutos: 0,
-        importe: 0,
-      };
+      const t = totals[w.id] || { minutos: 0, importe: 0 };
 
       const { data: invoice } = await supabase
         .from("invoices")
@@ -76,7 +84,7 @@ export async function POST() {
           worker_id: w.id,
           month_key,
           status: "pending",
-          total: totals.importe,
+          total: t.importe,
         })
         .select()
         .single();
@@ -86,19 +94,53 @@ export async function POST() {
       await supabase.from("invoice_lines").insert([
         {
           invoice_id: invoice.id,
-          kind: "minutos",
           label: "Minutos",
-          amount: totals.minutos,
+          amount: t.minutos,
         },
         {
           invoice_id: invoice.id,
-          kind: "importe",
           label: "Importe",
-          amount: totals.importe,
+          amount: t.importe,
         },
       ]);
 
       created++;
+    }
+
+    // 🔥 FACTURAS CALLXXX
+    for (const key in totals) {
+      if (key.includes("call")) {
+        const t = totals[key];
+
+        const { data: invoice } = await supabase
+          .from("invoices")
+          .insert({
+            worker_id: null,
+            month_key,
+            status: "pending",
+            total: t.importe,
+            notes: key, // guardamos Call111 aquí
+          })
+          .select()
+          .single();
+
+        if (!invoice) continue;
+
+        await supabase.from("invoice_lines").insert([
+          {
+            invoice_id: invoice.id,
+            label: "Minutos",
+            amount: t.minutos,
+          },
+          {
+            invoice_id: invoice.id,
+            label: "Importe",
+            amount: t.importe,
+          },
+        ]);
+
+        created++;
+      }
     }
 
     return NextResponse.json({
