@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const cliente_id = String(body?.cliente_id || "").trim();
-    const tarotista_worker_id = String(body?.tarotista_worker_id || "").trim() || null;
+    const tarotista_id = String(body?.tarotista_id || "").trim() || null;
     const tarotista_nombre_manual = String(body?.tarotista_nombre_manual || "").trim() || null;
     const fecha_reserva = String(body?.fecha_reserva || "").trim();
     const nota = String(body?.nota || "").trim() || null;
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     if (!fecha_reserva) {
       return NextResponse.json({ ok: false, error: "FECHA_REQUIRED" }, { status: 400 });
     }
-    if (!tarotista_worker_id && !tarotista_nombre_manual) {
+    if (!tarotista_id && !tarotista_nombre_manual) {
       return NextResponse.json({ ok: false, error: "TAROTISTA_REQUIRED" }, { status: 400 });
     }
 
@@ -109,11 +109,11 @@ export async function POST(req: Request) {
     }
 
     let tarotista_nombre: string | null = null;
-    if (tarotista_worker_id) {
+    if (tarotista_id) {
       const { data: tarotista, error: tarotistaErr } = await db
         .from("workers")
         .select("id, display_name")
-        .eq("id", tarotista_worker_id)
+        .eq("id", tarotista_id)
         .maybeSingle();
 
       if (tarotistaErr) throw tarotistaErr;
@@ -124,7 +124,7 @@ export async function POST(req: Request) {
       cliente_id,
       cliente_nombre: [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || null,
       telefono_normalizado: cliente?.telefono || null,
-      tarotista_worker_id,
+      tarotista_id,
       tarotista_nombre,
       tarotista_nombre_manual,
       fecha_reserva: new Date(fecha_reserva).toISOString(),
