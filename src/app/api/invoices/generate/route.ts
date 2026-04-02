@@ -85,14 +85,14 @@ if (key.length > 20) {
 }
 
   const { data: invoice } = await supabase
-    .from("invoices")
-    .insert({
-      worker_id,
-      month_key,
-      status: "pending",
-      total: t.importe,
-      notes: worker ? null : key, // call111 etc
-    })
+  .from("invoices")
+  .insert({
+    worker_id,
+    month_key,
+    status: "pending",
+    total: t.importe,
+    notes: worker_id ? null : key,
+  })
     .select()
     .single();
 
