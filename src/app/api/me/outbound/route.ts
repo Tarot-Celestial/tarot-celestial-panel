@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { getAdminClient, workerFromRequest } from '@/lib/server/auth-worker';
 
@@ -16,7 +17,7 @@ export async function GET(req: Request) {
     const date = (searchParams.get('date') || todayISO()).slice(0, 10);
     const admin = getAdminClient();
 
-    const { data: batch, error } = await admin
+    const { data: batches, error } = await admin
       .from('outbound_batches')
       .select(`
         id, batch_date, note, status, created_at,
@@ -30,16 +31,14 @@ export async function GET(req: Request) {
       .eq('batch_date', date)
       .eq('created_by_worker_id', me.id)
       .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(5);
     if (error) throw error;
 
+    const batch = (batches || [])[0] || null;
     const normalized = batch
       ? {
           ...batch,
-          outbound_batch_items: (batch.outbound_batch_items ?? [])
-            .slice()
-            .sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)),
+          outbound_batch_items: (batch.outbound_batch_items ?? []).slice().sort((a: any, b: any) => (a.position ?? 0) - (b.position ?? 0)),
         }
       : null;
 

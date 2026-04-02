@@ -506,3 +506,25 @@ textarea.tc-input{
   .tc-hero-kpis{ grid-template-columns: 1fr; }
   .tc-hero-title{ font-size: 24px; }
 }
+
+
+/* ==== SELECT / DROPDOWN VISIBILITY FIX ==== */
+.tc-select,
+.tc-input,
+select.tc-select,
+select.tc-input {
+  color: rgba(255,255,255,0.96);
+}
+
+.tc-select option,
+select.tc-select option,
+select.tc-input option {
+  color: #111111;
+  background: #ffffff;
+}
+
+.tc-select optgroup,
+select.tc-select optgroup {
+  color: #111111;
+  background: #f4f4f4;
+}

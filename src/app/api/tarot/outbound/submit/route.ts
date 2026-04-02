@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { getAdminClient, workerFromRequest } from '@/lib/server/auth-worker';
 
@@ -20,13 +21,16 @@ export async function POST(req: Request) {
 
     const db = getAdminClient();
 
-    let { data: batch, error: existingErr } = await db
+    const { data: existingBatches, error: existingErr } = await db
       .from('outbound_batches')
       .select('id, batch_date, status, created_at')
       .eq('batch_date', batch_date)
       .eq('created_by_worker_id', me.id)
-      .maybeSingle();
+      .order('created_at', { ascending: false })
+      .limit(10);
     if (existingErr) throw existingErr;
+
+    let batch = (existingBatches || [])[0] || null;
 
     if (!batch?.id) {
       const created = await db
@@ -36,6 +40,12 @@ export async function POST(req: Request) {
         .single();
       if (created.error) throw created.error;
       batch = created.data;
+    } else if ((existingBatches || []).length > 1) {
+      const oldIds = (existingBatches || []).slice(1).map((x: any) => x.id).filter(Boolean);
+      if (oldIds.length) {
+        await db.from('outbound_batch_items').delete().in('batch_id', oldIds);
+        await db.from('outbound_batches').delete().in('id', oldIds);
+      }
     }
 
     const payload = items
@@ -49,9 +59,7 @@ export async function POST(req: Request) {
       }))
       .filter((x: any) => x.customer_name);
 
-    if (!payload.length) {
-      return NextResponse.json({ ok: false, error: 'VALID_ITEMS_REQUIRED' }, { status: 400 });
-    }
+    if (!payload.length) return NextResponse.json({ ok: false, error: 'VALID_ITEMS_REQUIRED' }, { status: 400 });
 
     const { error: delErr } = await db.from('outbound_batch_items').delete().eq('batch_id', batch.id);
     if (delErr) throw delErr;

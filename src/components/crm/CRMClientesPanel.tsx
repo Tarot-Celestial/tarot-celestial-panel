@@ -5,6 +5,17 @@ import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 
+function crmNoteTone(text: string) {
+  const s = String(text || "").toLowerCase();
+  if (s.includes("compra registrada")) return { chip: "Compra", border: "1px solid rgba(105,240,177,.26)", bg: "linear-gradient(135deg, rgba(105,240,177,.12), rgba(255,255,255,.03))", color: "#b7ffe0" };
+  if (s.includes("7 free")) return { chip: "7 Free", border: "1px solid rgba(255,90,106,.22)", bg: "linear-gradient(135deg, rgba(255,90,106,.12), rgba(255,255,255,.03))", color: "#ffc1c7" };
+  if (s.includes("cliente usa") || s.includes("uso actual:")) return { chip: "Minutos", border: "1px solid rgba(122,162,255,.22)", bg: "linear-gradient(135deg, rgba(122,162,255,.12), rgba(255,255,255,.03))", color: "#c9d9ff" };
+  if (s.includes("promo")) return { chip: "Promo", border: "1px solid rgba(215,181,109,.24)", bg: "linear-gradient(135deg, rgba(215,181,109,.14), rgba(255,255,255,.03))", color: "#f7dfab" };
+  if (s.includes("captad")) return { chip: "Captado", border: "1px solid rgba(105,240,177,.22)", bg: "linear-gradient(135deg, rgba(105,240,177,.10), rgba(255,255,255,.03))", color: "#aefad5" };
+  if (s.includes("recuperad")) return { chip: "Recuperado", border: "1px solid rgba(181,156,255,.24)", bg: "linear-gradient(135deg, rgba(181,156,255,.12), rgba(255,255,255,.03))", color: "#decfff" };
+  return { chip: "Nota", border: "1px solid rgba(255,255,255,.08)", bg: "rgba(255,255,255,.025)", color: "rgba(255,255,255,.92)" };
+}
+
 const sb = supabaseBrowser();
 
 async function safeJson(res: Response) {
@@ -1475,20 +1486,23 @@ export default function CRMClientesPanel({
                   ) : crmNotes.length === 0 ? (
                     <div className="tc-sub">Todavía no hay notas registradas para este cliente.</div>
                   ) : (
-                    crmNotes.map((n: any) => (
+                    crmNotes.map((n: any) => {
+                      const tone = crmNoteTone(n.texto || "");
+                      return (
                       <div
                         key={n.id}
                         style={{
-                          border: n?.is_pinned ? "1px solid rgba(215,181,109,.26)" : "1px solid rgba(255,255,255,.08)",
+                          border: n?.is_pinned ? "1px solid rgba(215,181,109,.26)" : tone.border,
                           borderRadius: 14,
                           padding: 12,
-                          background: n?.is_pinned ? "linear-gradient(135deg, rgba(215,181,109,.10), rgba(255,255,255,.025))" : "rgba(255,255,255,.025)",
+                          background: n?.is_pinned ? "linear-gradient(135deg, rgba(215,181,109,.10), rgba(255,255,255,.025))" : tone.bg,
                           boxShadow: n?.is_pinned ? "0 10px 26px rgba(0,0,0,.16)" : "none",
                         }}
                       >
                         <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                             <div style={{ fontWeight: 800 }}>{n.author_name || n.author_email || "Usuario"}</div>
+                            <span className="tc-chip" style={{ border: tone.border, background: tone.bg, color: tone.color }}>{tone.chip}</span>
                             {n?.is_pinned ? (
                               <span className="tc-chip" style={{ background: "rgba(215,181,109,.14)", border: "1px solid rgba(215,181,109,.22)" }}>📌 Anclada</span>
                             ) : null}
@@ -1537,7 +1551,8 @@ export default function CRMClientesPanel({
                           ) : null}
                         </div>
                       </div>
-                    ))
+                    );
+                    })
                   )}
                 </div>
               </div>

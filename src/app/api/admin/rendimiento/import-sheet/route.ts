@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAdminClient, monthRange, normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
+import { getAdminClient, monthRange, normalizeMonthKey, workerFromRequest, normalizeText } from '@/lib/server/auth-worker';
 
 export const runtime = 'nodejs';
 
@@ -53,19 +53,28 @@ function clean(v: any) {
 }
 
 function toBool(v: any) {
-  const s = clean(v).toLowerCase();
+  const s = normalizeText(v);
   return ['1', 'true', 'si', 'sí', 'x', 'yes'].includes(s);
 }
 
 function toNum(v: any) {
-  return Number(clean(v).replace(/€/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+  const raw = clean(v);
+  if (!raw) return 0;
+  const normalized = raw
+    .replace(/€/g, '')
+    .replace(/\s/g, '')
+    .replace(/\.(?=\d{3}(\D|$))/g, '')
+    .replace(',', '.');
+  return Number(normalized) || 0;
 }
 
 function parseDateTime(raw: string) {
   const s = clean(raw);
   if (!s) return null;
   const [datePart, timePart = '12:00'] = s.split(/\s+/);
-  if (/^\d{4}-\d{2}-\d{2}/.test(datePart)) return `${datePart}T${timePart.length <= 5 ? `${timePart}:00` : timePart}`;
+  if (/^\d{4}-\d{2}-\d{2}/.test(datePart)) {
+    return `${datePart}T${timePart.length <= 5 ? `${timePart}:00` : timePart}`;
+  }
   const m = datePart.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (!m) return null;
   const year = m[3].length === 2 ? `20${m[3]}` : m[3];
@@ -76,14 +85,18 @@ function parseDateTime(raw: string) {
 
 function buildKey(row: any) {
   return [
-    row.id_unico || '',
     row.fecha || '',
-    row.cliente_nombre || '',
-    row.telefonista_nombre || '',
-    row.tarotista_nombre || '',
-    row.tiempo || 0,
-    row.resumen_codigo || '',
-    row.importe || 0,
+    normalizeText(row.cliente_nombre || ''),
+    normalizeText(row.telefonista_nombre || ''),
+    normalizeText(row.tarotista_nombre || row.tarotista_manual_call || ''),
+    Number(row.tiempo || 0),
+    normalizeText(row.resumen_codigo || ''),
+    normalizeText(row.forma_pago || ''),
+    Number(row.importe || 0),
+    row.llamada_call ? 1 : 0,
+    row.promo ? 1 : 0,
+    row.captado ? 1 : 0,
+    row.recuperado ? 1 : 0,
   ].join('|');
 }
 
@@ -105,7 +118,6 @@ export async function POST(req: Request) {
 
     const headers = rows[0].map((h) => clean(h).toLowerCase());
     const iFecha = findIndex(headers, ['fecha']);
-    const iIdUnico = findIndex(headers, ['id_unico', 'id unico']);
     const iTelefonista = findIndex(headers, ['telefonista']);
     const iCliente = findIndex(headers, ['clientes', 'cliente']);
     const iTarotista = findIndex(headers, ['tarotista']);
@@ -123,7 +135,7 @@ export async function POST(req: Request) {
     const admin = getAdminClient();
     const { data: existing, error: existingError } = await admin
       .from('rendimiento_llamadas')
-      .select('id_unico, fecha, cliente_nombre, telefonista_nombre, tarotista_nombre, tiempo, resumen_codigo, importe')
+      .select('id, fecha, fecha_hora, cliente_nombre, telefonista_nombre, tarotista_nombre, tarotista_manual_call, tiempo, resumen_codigo, forma_pago, importe, llamada_call, promo, captado, recuperado')
       .gte('fecha', start)
       .lt('fecha', endExclusive);
     if (existingError) throw existingError;
@@ -141,17 +153,16 @@ export async function POST(req: Request) {
       const tiempo = toNum(cols[iTiempo]);
       const resumenCodigo = clean(cols[iCodigo]) || null;
       const usaFree = toBool(cols[iFree]);
-      const tipo_registro = importe > 0 ? 'compra' : usaFree ? '7free' : 'minutos';
+
       const row = {
         fecha,
         fecha_hora: fechaHora,
-        // NO meter id_unico
         cliente_nombre: clean(cols[iCliente]) || 'Cliente',
         telefonista_nombre: clean(cols[iTelefonista]) || 'Central',
         tarotista_nombre: clean(cols[iTarotista]) || null,
         tarotista_manual_call: toBool(cols[iCall]) ? clean(cols[iTarotista]) || null : null,
         llamada_call: toBool(cols[iCall]),
-        tipo_registro,
+        tipo_registro: importe > 0 ? 'compra' : usaFree ? '7free' : 'minutos',
         cliente_compra_minutos: importe > 0,
         usa_7_free: usaFree,
         usa_minutos: !importe && !usaFree,
@@ -171,6 +182,7 @@ export async function POST(req: Request) {
         captado: toBool(cols[iCaptado]),
         recuperado: toBool(cols[iRecuperado]),
       };
+
       const key = buildKey(row);
       if (existingKeys.has(key)) continue;
       existingKeys.add(key);
@@ -178,7 +190,7 @@ export async function POST(req: Request) {
     }
 
     if (!payload.length) {
-      return NextResponse.json({ ok: true, month, inserted: 0, skipped: rows.length - 1, message: 'No había filas nuevas para importar.' });
+      return NextResponse.json({ ok: true, month, inserted: 0, skipped: rows.length - 1, message: 'No había filas nuevas para sincronizar.' });
     }
 
     const { error: insertError } = await admin.from('rendimiento_llamadas').insert(payload);
