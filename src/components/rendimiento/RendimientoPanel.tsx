@@ -11,7 +11,6 @@ export default function RendimientoPanel() {
       setLoading(true);
 
       const res = await fetch("/api/crm/rendimiento/listar");
-
       const json = await res.json();
 
       console.log("📊 DATA RENDIMIENTO:", json);
@@ -31,7 +30,6 @@ export default function RendimientoPanel() {
   useEffect(() => {
     fetchData();
 
-    // 🔥 AUTO REFRESH CADA 5s (tipo dashboard)
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
   }, []);
@@ -77,7 +75,5 @@ export default function RendimientoPanel() {
         </tbody>
       </table>
     </div>
-  );
-}
   );
 }
