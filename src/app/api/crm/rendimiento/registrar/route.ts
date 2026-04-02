@@ -69,26 +69,33 @@ export async function POST(req: Request) {
   try {
     const me = await workerFromReq(req);
     if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+
     if (!["admin", "central"].includes(String(me.role || ""))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));
     const clienteId = String(body?.cliente_id || "").trim();
+
     if (!clienteId) {
       return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
     }
 
     const clienteCompra = Boolean(body?.cliente_compra_minutos);
     const usoTipo = String(body?.uso_tipo || "").trim();
+
     const codigo1 = cleanText(body?.codigo_1);
     const codigo2 = cleanText(body?.codigo_2);
+
     const minutos1 = toNum(body?.minutos_1);
     const minutos2 = toNum(body?.minutos_2);
+
     const guardadosFree = toNum(body?.guardados_free);
     const guardadosNormales = toNum(body?.guardados_normales);
+
     const tarotistaWorkerId = cleanText(body?.tarotista_worker_id);
     const tarotistaManualCall = cleanText(body?.tarotista_manual_call);
+
     const formaPago = cleanText(body?.forma_pago);
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
@@ -96,6 +103,7 @@ export async function POST(req: Request) {
     if (!clienteCompra && usoTipo !== "minutos" && usoTipo !== "7free") {
       return NextResponse.json({ ok: false, error: "USO_TIPO_INVALIDO" }, { status: 400 });
     }
+
     if (clienteCompra && !(formaPago && importe > 0)) {
       return NextResponse.json({ ok: false, error: "PAGO_REQUIRED" }, { status: 400 });
     }
@@ -114,25 +122,35 @@ export async function POST(req: Request) {
     }
 
     let tarotistaNombre: string | null = null;
+
     if (tarotistaWorkerId) {
-      const { data: tarotista, error: tarotistaError } = await admin
+      const { data: tarotista } = await admin
         .from("workers")
-        .select("id, display_name")
+        .select("display_name")
         .eq("id", tarotistaWorkerId)
         .maybeSingle();
-      if (tarotistaError) throw tarotistaError;
+
       tarotistaNombre = tarotista?.display_name || null;
     }
-    if (!tarotistaNombre && tarotistaManualCall) tarotistaNombre = tarotistaManualCall;
+
+    if (!tarotistaNombre && tarotistaManualCall) {
+      tarotistaNombre = tarotistaManualCall;
+    }
 
     const currentFree = toNum(cliente?.minutos_free_pendientes);
     const currentNormales = toNum(cliente?.minutos_normales_pendientes);
 
-    const usedFree = (codigo1 === "FREE" ? minutos1 : 0) + (codigo2 === "FREE" ? minutos2 : 0);
-    const usedNormales = (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) + (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
+    const usedFree =
+      (codigo1 === "FREE" ? minutos1 : 0) +
+      (codigo2 === "FREE" ? minutos2 : 0);
+
+    const usedNormales =
+      (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) +
+      (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
 
     let nextFree = currentFree;
     let nextNormales = currentNormales;
+
     if (clienteCompra) {
       nextFree = Boolean(body?.guarda_minutos) ? guardadosFree : 0;
       nextNormales = Boolean(body?.guarda_minutos) ? guardadosNormales : 0;
@@ -141,55 +159,84 @@ export async function POST(req: Request) {
       nextNormales = Math.max(0, currentNormales - usedNormales);
     }
 
-    const tiempo = !clienteCompra && usoTipo === "7free" ? 7 : minutos1 + minutos2;
-    const resumenCodigo = [codigoText(minutos1, codigo1), codigoText(minutos2, codigo2)].filter(Boolean).join(" · ") || (!clienteCompra && usoTipo === "7free" ? "7 free" : null);
+    const tiempo =
+      !clienteCompra && usoTipo === "7free"
+        ? 7
+        : minutos1 + minutos2;
+
+    const resumenCodigo =
+      [codigoText(minutos1, codigo1), codigoText(minutos2, codigo2)]
+        .filter(Boolean)
+        .join(" · ") ||
+      (!clienteCompra && usoTipo === "7free" ? "7 free" : null);
 
     const clienteNombre = joinClienteName(cliente);
     const esCall = Boolean(tarotistaManualCall);
+
     const promo = clasificacion === "promo";
     const captado = clasificacion === "captado";
     const recuperado = clasificacion === "recuperado";
+
     const mismaCompra = Boolean(body?.misma_compra);
 
+    // 🔥 INSERT CORREGIDO
     const { data: inserted, error: insertError } = await admin
       .from("rendimiento_llamadas")
-      .insert({
+      .insert([{
         fecha: new Date().toISOString().slice(0, 10),
         fecha_hora: new Date().toISOString(),
+
         cliente_id: clienteId,
         cliente_nombre: clienteNombre,
+
         telefonista_worker_id: me.id,
         telefonista_nombre: me.display_name || me.email || "Central",
+
         tarotista_worker_id: tarotistaWorkerId,
         tarotista_nombre: tarotistaNombre,
         tarotista_manual_call: tarotistaManualCall,
+
         llamada_call: esCall,
+
         tipo_registro: clienteCompra ? "compra" : usoTipo,
         cliente_compra_minutos: clienteCompra,
+
         usa_7_free: !clienteCompra && usoTipo === "7free",
         usa_minutos: !clienteCompra && usoTipo === "minutos",
+
         misma_compra: mismaCompra,
+
         guarda_minutos: Boolean(body?.guarda_minutos),
         minutos_guardados_free: guardadosFree,
         minutos_guardados_normales: guardadosNormales,
+
         codigo_1: codigo1,
         minutos_1: minutos1,
+
         codigo_2: codigo2,
         minutos_2: minutos2,
+
         resumen_codigo: resumenCodigo,
         tiempo,
+
         forma_pago: formaPago,
         importe,
+
         promo,
         captado,
         recuperado,
-      })
-      .select("id, id_unico")
-      .single();
+      }])
+      .select();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      console.error("❌ ERROR INSERT RENDIMIENTO:", insertError);
+      return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
+    }
 
-    const { error: updateError } = await admin
+    console.log("✅ INSERT OK:", inserted);
+
+    // UPDATE CRM
+    await admin
       .from("crm_clientes")
       .update({
         minutos_free_pendientes: nextFree,
@@ -197,34 +244,21 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", clienteId);
-    if (updateError) throw updateError;
 
-    let notaTexto = "";
-    if (!clienteCompra && usoTipo === "7free") {
-      notaTexto = `Cliente usa 7 free con ${tarotistaNombre || tarotistaManualCall || "tarotista sin indicar"}.`;
-    } else if (!clienteCompra && usoTipo === "minutos") {
-      notaTexto = `Cliente usa ${resumenCodigo || "minutos"} con ${tarotistaNombre || tarotistaManualCall || "tarotista sin indicar"}. Pendiente CRM: ${nextFree} free y ${nextNormales} normales.`;
-    } else {
-      notaTexto = `Compra registrada por ${importe.toFixed(2)} € vía ${formaPago || "sin método"}. ${mismaCompra ? "Usa todo en la misma compra." : `Guarda ${nextFree} free y ${nextNormales} normales.`} ${resumenCodigo ? `Uso actual: ${resumenCodigo}. ` : ""}Tarotista: ${tarotistaNombre || tarotistaManualCall || "sin indicar"}.`;
-    }
-
-    const { error: noteError } = await admin.from("crm_client_notes").insert({
+    // NOTA CRM
+    await admin.from("crm_client_notes").insert({
       cliente_id: clienteId,
-      texto: notaTexto,
-      author_user_id: me.user_id || null,
-      author_name: me.display_name || me.email || "Central",
-      author_email: me.email || null,
-      is_pinned: false,
+      texto: "Llamada registrada automáticamente desde sistema rendimiento",
+      author_name: me.display_name || "Central",
     });
-    if (noteError) throw noteError;
 
     return NextResponse.json({
       ok: true,
-      id: inserted?.id,
-      id_unico: inserted?.id_unico,
-      message: `✅ Llamada registrada (#${inserted?.id_unico || "nuevo"})`,
+      data: inserted,
     });
+
   } catch (e: any) {
+    console.error("🔥 ERROR GENERAL:", e);
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
 }
