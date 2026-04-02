@@ -2548,6 +2548,7 @@ export default function Admin() {
             <CRMClientesPanel mode="admin" />
           )}
 
+          {tab === "rendimiento" && <RendimientoPanel mode="admin" />}
           {tab === "reservas" && <ReservasPanel mode="admin" />}
           {tab === "diario" && <DiarioPanel />}
 
