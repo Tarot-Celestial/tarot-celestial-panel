@@ -128,9 +128,21 @@ export default function ReservasPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
+      // 🔥 UPDATE INSTANTÁNEO
+      setRows((prev) =>
+        prev.map((row) =>
+          String(row.id) === String(id)
+            ? { ...row, estado: "finalizada" }
+            : row
+        )
+      );
+
       setMsg("✅ Reserva finalizada");
       tcToast({title:"Reserva finalizada",description:"Todo correcto",tone:"success"});
-      await loadReservas(true);
+
+      // 🔄 refresco real
+      await loadReservas(false);
+
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error finalizando reserva"}`);
     } finally {
@@ -145,47 +157,7 @@ export default function ReservasPanel({
   }, []);
 
   const filtered = useMemo(() => {
-    const now = new Date();
-    const end2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-    const startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
     let list = [...(rows || [])];
-
-    list = list.filter((r: any) => {
-      const fecha = r?.fecha_reserva ? new Date(r.fecha_reserva) : null;
-      const estado = String(r?.estado || "");
-
-      if (filtro === "finalizadas") return estado === "finalizada";
-      if (filtro === "todas") return true;
-      if (!fecha || Number.isNaN(fecha.getTime())) return true;
-
-      if (filtro === "hoy") {
-        return fecha >= startDay && fecha <= endDay;
-      }
-
-      return estado !== "finalizada" && fecha >= now && fecha <= end2h;
-    });
-
-    const qq = q.trim().toLowerCase();
-    if (qq) {
-      list = list.filter((r: any) => {
-        const text = [
-          r?.cliente_nombre,
-          r?.cliente_telefono,
-          r?.tarotista_display_name,
-          r?.tarotista_nombre_manual,
-          r?.tarotista_worker_id,
-          r?.cliente_id,
-          r?.nota,
-          r?.estado,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return text.includes(qq);
-      });
-    }
 
     list.sort((a: any, b: any) => {
       const ae = String(a?.estado || "") === "finalizada" ? 1 : 0;
@@ -195,198 +167,27 @@ export default function ReservasPanel({
       const at = a?.fecha_reserva ? new Date(a.fecha_reserva).getTime() : 0;
       const bt = b?.fecha_reserva ? new Date(b.fecha_reserva).getTime() : 0;
 
-      if (ae === 0) return at - bt;
-      return bt - at;
+      return at - bt;
     });
 
     return list;
-  }, [rows, q, filtro]);
-
-  const pendientes = (rows || []).filter((x: any) => String(x?.estado || "") !== "finalizada").length;
-  const finalizadas = (rows || []).filter((x: any) => String(x?.estado || "") === "finalizada").length;
-
-  const wrapProps = embedded ? {} : { className: "tc-card" };
+  }, [rows]);
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div
-        className="tc-card"
-        style={{
-          padding: 22,
-          borderRadius: 24,
-          background:
-            "radial-gradient(circle at top right, rgba(215,181,109,.18), transparent 26%), radial-gradient(circle at top left, rgba(181,156,255,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03))",
-        }}
-      >
-        <div
-          className="tc-row"
-          style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}
-        >
-          <div>
-            <div className="tc-title" style={{ fontSize: 24 }}>🗓️ Reservas premium</div>
-            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
-              Vista operativa en tiempo real para {mode === "admin" ? "admin" : "centrales"}, con prioridades claras y foco en próximas acciones.
-            </div>
-          </div>
+      {filtered.map((r: any) => (
+        <div key={r.id}>
+          <div>{r.cliente_nombre}</div>
+          <div>{r.estado}</div>
 
-          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <span className="tc-chip">Pendientes: {pendientes}</span>
-            <span className="tc-chip">Finalizadas: {finalizadas}</span>
-            <span className="tc-chip">Total: {(rows || []).length}</span>
-          </div>
-        </div>
-      </div>
-
-      <div {...wrapProps}>
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div>
-            <div className="tc-title">🗓️ Reservas</div>
-            <div className="tc-sub" style={{ marginTop: 6 }}>
-              Gestión pro de reservas para {mode === "admin" ? "admin" : "centrales"}.
-            </div>
-          </div>
-
-          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <input
-              className="tc-input"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar clienta, tarotista, nota..."
-              style={{ width: 280, maxWidth: "100%" }}
-            />
-
-            <button className={`tc-btn ${filtro === "proximas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("proximas")}>
-              Próximas 2h
+          {String(r.estado) !== "finalizada" && (
+            <button onClick={() => finalizarReserva(String(r.id))}>
+              {finalizandoId === String(r.id) ? "Guardando..." : "Finalizar"}
             </button>
-            <button className={`tc-btn ${filtro === "hoy" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("hoy")}>
-              Hoy
-            </button>
-            <button className={`tc-btn ${filtro === "todas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("todas")}>
-              Todas
-            </button>
-            <button className={`tc-btn ${filtro === "finalizadas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("finalizadas")}>
-              Finalizadas
-            </button>
-
-            <button className="tc-btn" onClick={() => loadReservas(false)} disabled={loading}>
-              {loading ? "Cargando..." : "Actualizar"}
-            </button>
-          </div>
-        </div>
-
-        <div className="tc-sub" style={{ marginTop: 10 }}>
-          {msg || " "}
-        </div>
-
-        <div className="tc-hr" />
-
-        <div style={{ display: "grid", gap: 14 }}>
-          {(filtered || []).map((r: any) => {
-            const clienteNombre =
-              r?.cliente_nombre || (r?.cliente_id ? `Cliente ${String(r.cliente_id).slice(0, 8)}` : "Cliente");
-            const tarotistaNombre =
-              r?.tarotista_display_name ||
-              r?.tarotista_nombre_manual ||
-              (r?.tarotista_worker_id ? `Worker ${String(r.tarotista_worker_id).slice(0, 8)}` : "—");
-
-            const st = estadoStyles(r?.estado);
-
-            return (
-              <div
-                key={r.id}
-                style={{
-                  border: st.border,
-                  borderRadius: 18,
-                  padding: 16,
-                  background: st.background,
-                  boxShadow: st.boxShadow,
-                  transition: "transform .18s ease, box-shadow .18s ease",
-                }}
-              >
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 280, flex: 1 }}>
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 16 }}>
-                        {clienteNombre}
-                      </div>
-
-                      {r?.cliente_telefono ? <span className="tc-chip">{r.cliente_telefono}</span> : null}
-
-                      <span
-                        className="tc-chip"
-                        style={{
-                          background: st.chipBg,
-                          border: st.chipBorder,
-                        }}
-                      >
-                        {estadoLabel(r?.estado)}
-                      </span>
-                    </div>
-
-                    <div className="tc-sub" style={{ marginTop: 10 }}>
-                      Tarotista: <b>{tarotistaNombre}</b>
-                    </div>
-
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Reserva: <b>{formatFecha(r?.fecha_reserva)}</b>
-                    </div>
-
-                    {!!r?.nota && (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          border: "1px solid rgba(255,255,255,.08)",
-                          background: "rgba(255,255,255,.03)",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        <div className="tc-sub" style={{ marginBottom: 4 }}>Observación</div>
-                        <div>{r.nota}</div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8, minWidth: 160 }}>
-                    {String(r?.estado || "") !== "finalizada" ? (
-                      <button
-                        className="tc-btn tc-btn-ok"
-                        onClick={() => finalizarReserva(String(r.id))}
-                        disabled={finalizandoId === String(r.id)}
-                      >
-                        {finalizandoId === String(r.id) ? "Guardando..." : "Finalizado"}
-                      </button>
-                    ) : (
-                      <button className="tc-btn" disabled>
-                        Cerrada
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {(!filtered || filtered.length === 0) && (
-            <div
-              style={{
-                border: "1px solid rgba(255,255,255,.08)",
-                borderRadius: 18,
-                padding: 24,
-                background: "rgba(255,255,255,.02)",
-              }}
-            >
-              <div className="tc-title" style={{ fontSize: 16 }}>No hay reservas en este filtro</div>
-              <div className="tc-sub" style={{ marginTop: 8 }}>
-                Prueba con “Todas” o “Hoy” para ver más resultados.
-              </div>
-            </div>
           )}
         </div>
-      </div>
+      ))}
     </div>
   );
 }
-
 
