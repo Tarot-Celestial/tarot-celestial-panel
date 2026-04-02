@@ -79,12 +79,10 @@ for (const key in totals) {
 
   let worker_id: string | null = null;
 
-  // 👉 si es UUID (tarotista real)
-  const worker = (workers || []).find(w => w.id === key);
-
-  if (worker) {
-    worker_id = worker.id;
-  }
+// 🔥 si parece UUID → es tarotista real
+if (key.length > 20) {
+  worker_id = key;
+}
 
   const { data: invoice } = await supabase
     .from("invoices")
