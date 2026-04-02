@@ -13,6 +13,10 @@ type Row = {
   id?: string;
   fecha_hora?: string | null;
   cliente_nombre?: string | null;
+  telefonista_nombre?: string | null;
+  tarotista_nombre?: string | null;
+  tarotista_manual_call?: string | null;
+  llamada_call?: boolean | null;
   tiempo?: number | null;
   resumen_codigo?: string | null;
   forma_pago?: string | null;
@@ -22,33 +26,29 @@ type Row = {
   recuperado?: boolean | null;
 };
 
-const defaultWidths = {
-  fecha: 180,
-  cliente: 220,
-  tiempo: 80,
-  codigo: 180,
-  pago: 120,
-  importe: 100,
-};
+function eur(n: any) {
+  return (Number(n) || 0).toLocaleString("es-ES", {
+    style: "currency",
+    currency: "EUR",
+  });
+}
+
+function fmt(v: any) {
+  if (!v) return "—";
+  return new Date(v).toLocaleString("es-ES");
+}
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
-  const [widths, setWidths] = useState(defaultWidths);
+  const [loading, setLoading] = useState(true);
 
-  // 🔥 cargar layout guardado
-  useEffect(() => {
-    const saved = localStorage.getItem("rendimiento_layout");
-    if (saved) setWidths(JSON.parse(saved));
-  }, []);
-
-  // 🔥 guardar layout
-  useEffect(() => {
-    localStorage.setItem("rendimiento_layout", JSON.stringify(widths));
-  }, [widths]);
+  async function getToken() {
+    const { data } = await sb.auth.getSession();
+    return data.session?.access_token;
+  }
 
   async function fetchData() {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
+    const token = await getToken();
     if (!token) return;
 
     const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`, {
@@ -57,11 +57,8 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
 
     const json = await res.json();
     if (json?.ok) setRows(json.data || []);
+    setLoading(false);
   }
-
-  useEffect(() => {
-    fetchData();
-  }, [mode]);
 
   function updateField(id: string, field: keyof Row, value: any) {
     setRows((prev) =>
@@ -70,8 +67,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   }
 
   async function saveRow(row: Row) {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
+    const token = await getToken();
     if (!token) return;
 
     await fetch("/api/crm/rendimiento/update", {
@@ -87,70 +83,45 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     });
   }
 
-  // 🔥 RESIZE
-  function startResize(e: any, key: keyof typeof widths) {
-    const startX = e.clientX;
-    const startWidth = widths[key];
+  useEffect(() => {
+    fetchData();
+  }, [mode]);
 
-    function onMove(ev: any) {
-      const newWidth = startWidth + (ev.clientX - startX);
-      setWidths((prev) => ({
-        ...prev,
-        [key]: Math.max(60, newWidth),
-      }));
-    }
-
-    function stop() {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", stop);
-    }
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", stop);
-  }
-
-  function th(label: string, key: keyof typeof widths) {
-    return (
-      <th style={{ width: widths[key], position: "relative" }}>
-        {label}
-        <div
-          onMouseDown={(e) => startResize(e, key)}
-          style={{
-            position: "absolute",
-            right: 0,
-            top: 0,
-            width: 6,
-            height: "100%",
-            cursor: "col-resize",
-          }}
-        />
-      </th>
-    );
-  }
+  if (loading) return <div className="p-4">Cargando...</div>;
 
   return (
     <div className="tc-card">
-      <div style={{ overflowX: "auto" }}>
+
+      <div style={{ overflowX: "auto", marginTop: 12 }}>
         <table
           className="tc-table"
-          style={{ tableLayout: "fixed", width: "100%" }}
+          style={{ tableLayout: "fixed", width: "100%" }} // 🔥 CLAVE
         >
           <thead>
             <tr>
-              {th("FECHA", "fecha")}
-              {th("CLIENTE", "cliente")}
-              {th("TIEMPO", "tiempo")}
-              {th("CÓDIGO", "codigo")}
-              {th("PAGO", "pago")}
-              {th("IMPORTE", "importe")}
-              <th>✔</th>
+              <th>FECHA</th>
+              <th>CLIENTE</th>
+
+              <th style={{ width: 80, textAlign: "center" }}>TIEMPO</th>
+
+              <th>CÓDIGO</th>
+              <th>PAGO</th>
+
+              <th style={{ width: 100, textAlign: "center" }}>IMPORTE</th>
+
+              <th>CALL</th>
+              <th>PROMO</th>
+              <th>CAPTADO</th>
+              <th>RECUPERADO</th>
+              <th style={{ width: 60 }}></th>
             </tr>
           </thead>
 
           <tbody>
             {rows.map((row) => (
               <tr key={row.id}>
-                <td>{new Date(row.fecha_hora || "").toLocaleString()}</td>
+
+                <td>{fmt(row.fecha_hora)}</td>
 
                 <td>
                   <input
@@ -163,10 +134,12 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>
+                {/* 🔥 TIEMPO COMPACTO */}
+                <td style={{ textAlign: "center" }}>
                   <input
                     className="tc-input"
-                    style={{ width: 60, textAlign: "center" }}
+                    style={{ width: 60, textAlign: "center", padding: "4px 6px" }}
+                    type="number"
                     value={row.tiempo || 0}
                     onChange={(e) =>
                       updateField(row.id!, "tiempo", Number(e.target.value))
@@ -186,12 +159,29 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>{row.forma_pago}</td>
-
                 <td>
+                  <select
+                    className="tc-select"
+                    value={row.forma_pago || ""}
+                    onChange={(e) => {
+                      updateField(row.id!, "forma_pago", e.target.value);
+                      saveRow({ ...row, forma_pago: e.target.value });
+                    }}
+                  >
+                    <option value="">—</option>
+                    <option value="TPV">TPV</option>
+                    <option value="PAYPAL">PAYPAL</option>
+                    <option value="BIZUM">BIZUM</option>
+                    <option value="OTROS">OTROS</option>
+                  </select>
+                </td>
+
+                {/* 🔥 IMPORTE COMPACTO */}
+                <td style={{ textAlign: "center" }}>
                   <input
                     className="tc-input"
-                    style={{ width: 80, textAlign: "center" }}
+                    style={{ width: 80, textAlign: "center", padding: "4px 6px" }}
+                    type="number"
                     value={row.importe || ""}
                     onChange={(e) =>
                       updateField(row.id!, "importe", Number(e.target.value))
@@ -200,7 +190,15 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>✔</td>
+                <td>{row.llamada_call ? "✔" : "-"}</td>
+                <td>{row.promo ? "✔" : "-"}</td>
+                <td>{row.captado ? "✔" : "-"}</td>
+                <td>{row.recuperado ? "✔" : "-"}</td>
+
+                <td>
+                  <button className="tc-btn">❌</button>
+                </td>
+
               </tr>
             ))}
           </tbody>
