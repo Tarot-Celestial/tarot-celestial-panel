@@ -11,6 +11,7 @@ import ReservasPanel from "@/components/reservas/ReservasPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import DiarioPanel from "@/components/diario/DiarioPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
+import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -26,6 +27,7 @@ const ADMIN_NAV = [
   { key: "checklists", icon: CheckSquare, label: "Checklists", kicker: "Plantillas y tareas" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
   { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día" },
   { key: "sync", icon: Database, label: "Sistema", kicker: "Sync y mantenimiento" },
@@ -94,6 +96,7 @@ type TabKey =
   | "checklists"
   | "clientes"
   | "crm"
+  | "rendimiento"
   | "reservas"
   | "diario"
   | "sync";

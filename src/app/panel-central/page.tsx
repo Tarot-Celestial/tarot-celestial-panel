@@ -7,6 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
+import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import { BarChart3, CalendarDays, CheckSquare, Headphones, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -16,6 +17,7 @@ const CENTRAL_NAV = [
   { key: "llamadas", icon: Phone, label: "Llamadas", kicker: "Pendientes del día" },
   { key: "chat", icon: MessageSquare, label: "Chat", kicker: "Tarotistas ↔ centrales" },
   { key: "crm", icon: Headphones, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda operativa" },
   { key: "habituales", icon: Star, label: "Habituales", kicker: "Clientes recientes" },
   { key: "checklist", icon: CheckSquare, label: "Checklist", kicker: "Turno actual" },
@@ -23,7 +25,7 @@ const CENTRAL_NAV = [
   { key: "ranking", icon: BarChart3, label: "Ranking", kicker: "Resultados y equipos" },
 ] as const;
 
-type TabKey = "equipo" | "llamadas" | "crm" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
+type TabKey = "equipo" | "llamadas" | "crm" | "rendimiento" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
 
 function monthKeyNow() {
   const d = new Date();
@@ -1462,6 +1464,7 @@ export default function Central() {
           )}
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
+          {tab === "rendimiento" && <RendimientoPanel mode="central" />}
           {tab === "reservas" && <ReservasPanel mode="central" />}
           {tab === "habituales" && <HabitualesPanel mode="central" />}
 
