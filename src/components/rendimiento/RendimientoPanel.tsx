@@ -162,10 +162,10 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
             <tr>
               <th>FECHA</th>
               <th>CLIENTE</th>
-              <th>TIEMPO</th>
+              <th style={{ width: 90, textAlign: "center" }}>TIEMPO</th>
               <th>CÓDIGO</th>
               <th>PAGO</th>
-              <th>IMPORTE</th>
+              <th style={{ width: 110, textAlign: "center" }}>IMPORTE</th>
               <th>CALL</th>
               <th>PROMO</th>
               <th>CAPTADO</th>
