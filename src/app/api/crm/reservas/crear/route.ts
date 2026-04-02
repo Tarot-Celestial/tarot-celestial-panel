@@ -123,7 +123,7 @@ export async function POST(req: Request) {
     const payload: Record<string, any> = {
       cliente_id,
       cliente_nombre: [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || null,
-      cliente_telefono: cliente?.telefono || null,
+      telefono_normalizado: cliente?.telefono || null,
       tarotista_worker_id,
       tarotista_display_name,
       tarotista_nombre_manual,
