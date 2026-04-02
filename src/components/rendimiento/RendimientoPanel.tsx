@@ -65,6 +65,9 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [pago, setPago] = useState("todos");
   const [importing, setImporting] = useState(false);
 
+  // 🔥 NUEVO: estado edición
+  const [editing, setEditing] = useState<Row | null>(null);
+
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
@@ -105,6 +108,40 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     }
   }
 
+  async function saveEdit() {
+    if (!editing?.id) return;
+
+    const token = await getTokenOrLogin();
+    if (!token) return;
+
+    const res = await fetch("/api/crm/rendimiento/update", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: editing.id,
+        updates: {
+          cliente_nombre: editing.cliente_nombre,
+          importe: editing.importe,
+        },
+      }),
+    });
+
+    const json = await res.json();
+
+    if (json.ok) {
+      setEditing(null);
+      fetchData();
+    } else {
+      alert("Error al guardar");
+    }
+  }
+
+  function openEdit(row: Row) {
+    setEditing(row);
+  }
 
   async function importApril() {
     if (mode !== "admin" || importing) return;
@@ -150,186 +187,70 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         .toLowerCase()
         .includes(qq);
 
-      const hayTipo = tipo === "todos"
-        || (tipo === "compra" && row.tipo_registro === "compra")
-        || (tipo === "minutos" && row.tipo_registro === "minutos")
-        || (tipo === "7free" && row.tipo_registro === "7free")
-        || (tipo === "promo" && Boolean(row.promo))
-        || (tipo === "captado" && Boolean(row.captado))
-        || (tipo === "recuperado" && Boolean(row.recuperado));
-
-      const forma = String(row.forma_pago || "").toUpperCase();
-      const hayPago = pago === "todos" || forma === pago;
-
-      return hayTexto && hayTipo && hayPago;
+      return hayTexto;
     });
-  }, [rows, q, tipo, pago]);
-
-  const metrics = useMemo(() => {
-    const total = filtered.length;
-    const ventas = filtered.filter((r) => r.tipo_registro === "compra").length;
-    const importe = filtered.reduce((acc, r) => acc + (Number(r.importe) || 0), 0);
-    const minutos = filtered.reduce((acc, r) => acc + (Number(r.tiempo) || 0), 0);
-    return { total, ventas, importe, minutos };
-  }, [filtered]);
+  }, [rows, q]);
 
   return (
     <div className="tc-card">
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, alignItems: "flex-start" }}>
-        <div>
-          <div className="tc-title">📈 Rendimiento</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>
-            {mode === "central"
-              ? "Tus llamadas, compras y uso de minutos registrados desde el CRM."
-              : "Vista global de llamadas registradas por el equipo desde el CRM."}
+      <table className="tc-table">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Importe</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.map((row) => (
+            <tr key={row.id}>
+              <td>{fmtDate(row.fecha_hora)}</td>
+              <td>{row.cliente_nombre}</td>
+              <td>{row.importe ? eur(row.importe) : "—"}</td>
+              <td>
+                <button className="tc-btn" onClick={() => openEdit(row)}>
+                  ✏️
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* MODAL */}
+      {editing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+          <div className="tc-card" style={{ width: 400 }}>
+            <div className="tc-title">Editar registro</div>
+
+            <input
+              className="tc-input"
+              value={editing.cliente_nombre || ""}
+              onChange={(e) =>
+                setEditing({ ...editing, cliente_nombre: e.target.value })
+              }
+            />
+
+            <input
+              className="tc-input"
+              value={editing.importe || ""}
+              onChange={(e) =>
+                setEditing({ ...editing, importe: Number(e.target.value) })
+              }
+            />
+
+            <div className="tc-row">
+              <button className="tc-btn tc-btn-gold" onClick={saveEdit}>
+                Guardar
+              </button>
+              <button className="tc-btn" onClick={() => setEditing(null)}>
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
-
-        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <span className="tc-chip">Vista: {mode === "central" ? "Central" : "Admin"}</span>
-          {mode === "admin" ? (
-            <button className="tc-btn tc-btn-gold" onClick={importApril} disabled={importing}>
-              {importing ? "Importando abril…" : "Importar abril desde Sheets"}
-            </button>
-          ) : null}
-          <button className="tc-btn" onClick={() => fetchData(false)} disabled={loading}>
-            {loading ? "Cargando..." : "Actualizar"}
-          </button>
-        </div>
-      </div>
-
-      <div className="tc-sub" style={{ marginTop: 10 }}>{msg || " "}</div>
-
-      <div className="tc-grid-4" style={{ marginTop: 12 }}>
-        <div className="tc-card">
-          <div className="tc-sub">Registros</div>
-          <div style={{ fontSize: 28, fontWeight: 900, marginTop: 8 }}>{metrics.total}</div>
-        </div>
-        <div className="tc-card">
-          <div className="tc-sub">Compras</div>
-          <div style={{ fontSize: 28, fontWeight: 900, marginTop: 8 }}>{metrics.ventas}</div>
-        </div>
-        <div className="tc-card">
-          <div className="tc-sub">Importe</div>
-          <div style={{ fontSize: 28, fontWeight: 900, marginTop: 8 }}>{eur(metrics.importe)}</div>
-        </div>
-        <div className="tc-card">
-          <div className="tc-sub">Minutos movidos</div>
-          <div style={{ fontSize: 28, fontWeight: 900, marginTop: 8 }}>{metrics.minutos}</div>
-        </div>
-      </div>
-
-      <div className="tc-hr" />
-
-      <div className="tc-row" style={{ gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input
-          className="tc-input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Buscar cliente, telefonista, tarotista o código..."
-          style={{ width: 320, maxWidth: "100%" }}
-        />
-
-        <select className="tc-select" value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ width: 180 }}>
-          <option value="todos">Todos los tipos</option>
-          <option value="compra">Compra</option>
-          <option value="minutos">Uso minutos</option>
-          <option value="7free">7 free</option>
-          <option value="promo">Promo</option>
-          <option value="captado">Captado</option>
-          <option value="recuperado">Recuperado</option>
-        </select>
-
-        <select className="tc-select" value={pago} onChange={(e) => setPago(e.target.value)} style={{ width: 170 }}>
-          <option value="todos">Todos los pagos</option>
-          <option value="TPV">TPV</option>
-          <option value="PAYPAL">PAYPAL</option>
-          <option value="BIZUM">BIZUM</option>
-          <option value="OTROS">OTROS</option>
-        </select>
-      </div>
-
-      <div style={{ overflowX: "auto", marginTop: 14 }}>
-        <table className="tc-table">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Registro</th>
-              <th>Cliente</th>
-              <th>Telefonista</th>
-              <th>Tarotista</th>
-              <th>Tiempo</th>
-              <th>Código</th>
-              <th>Pago</th>
-              <th>Importe</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((row) => {
-              const badge = tipoBadge(row);
-              return (
-                <tr key={String(row.id || `${row.id_unico}-${row.fecha_hora}`)}>
-                  <td>
-                    <div style={{ fontWeight: 700 }}>{fmtDate(row.fecha_hora || row.fecha || null)}</div>
-                    <div className="tc-sub">{row.fecha || "—"}</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 800 }}>#{row.id_unico || "—"}</div>
-                    <div className="tc-sub">{String(row.tipo_registro || "—").toUpperCase()}</div>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 800 }}>{row.cliente_nombre || "—"}</div>
-                  </td>
-                  <td>{row.telefonista_nombre || "—"}</td>
-                  <td>
-                    <div>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</div>
-                    {row.llamada_call ? <div className="tc-sub">CALL</div> : null}
-                  </td>
-                  <td>{Number(row.tiempo) || 0} min</td>
-                  <td>{row.resumen_codigo || "—"}</td>
-                  <td>{row.forma_pago || "—"}</td>
-                  <td>{Number(row.importe) ? eur(row.importe) : "—"}</td>
-                  <td>
-                    <span
-                      className="tc-chip"
-                      style={{
-                        ...badge.style,
-                        borderWidth: 1,
-                        borderStyle: "solid",
-                        fontWeight: 800,
-                      }}
-                    >
-                      {badge.label}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-
-            {filtered.length === 0 && !loading && (
-              <tr>
-                <td colSpan={10}>
-                  <div
-                    className="tc-card"
-                    style={{
-                      margin: "8px 0",
-                      textAlign: "center",
-                      background: "rgba(255,255,255,0.03)",
-                    }}
-                  >
-                    <div style={{ fontSize: 28, marginBottom: 8 }}>✨</div>
-                    <div style={{ fontWeight: 800 }}>No hay registros para los filtros actuales</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Prueba quitando filtros o registra una llamada desde la ficha del cliente.
-                    </div>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
   );
 }
