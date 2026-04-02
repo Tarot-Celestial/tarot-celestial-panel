@@ -41,23 +41,41 @@ function fmt(v: any) {
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   async function getToken() {
     const { data } = await sb.auth.getSession();
     return data.session?.access_token;
   }
 
-  async function fetchData() {
+  // 🔥 ANTI DUPLICADOS
+  function dedupe(data: Row[]) {
+    const map = new Map();
+    data.forEach((r) => {
+      if (r.id) map.set(r.id, r);
+    });
+    return Array.from(map.values());
+  }
+
+  async function fetchData(showLoader = true) {
     const token = await getToken();
     if (!token) return;
+
+    if (showLoader) setLoading(true);
+    else setRefreshing(true);
 
     const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
     const json = await res.json();
-    if (json?.ok) setRows(json.data || []);
+
+    if (json?.ok) {
+      setRows(dedupe(json.data || [])); // 🔥 clave
+    }
+
     setLoading(false);
+    setRefreshing(false);
   }
 
   function updateField(id: string, field: keyof Row, value: any) {
@@ -84,7 +102,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   }
 
   useEffect(() => {
-    fetchData();
+    fetchData(true);
   }, [mode]);
 
   if (loading) return <div className="p-4">Cargando...</div>;
@@ -92,10 +110,25 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   return (
     <div className="tc-card">
 
+      {/* 🔥 HEADER CON BOTÓN */}
+      <div
+        className="tc-row"
+        style={{ justifyContent: "space-between", marginBottom: 10 }}
+      >
+        <div className="tc-title">📈 Rendimiento</div>
+
+        <button
+          className="tc-btn"
+          onClick={() => fetchData(false)}
+        >
+          {refreshing ? "Actualizando..." : "Actualizar"}
+        </button>
+      </div>
+
       <div style={{ overflowX: "auto", marginTop: 12 }}>
         <table
           className="tc-table"
-          style={{ tableLayout: "fixed", width: "100%" }} // 🔥 CLAVE
+          style={{ tableLayout: "fixed", width: "100%" }}
         >
           <thead>
             <tr>
@@ -134,7 +167,6 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                {/* 🔥 TIEMPO COMPACTO */}
                 <td style={{ textAlign: "center" }}>
                   <input
                     className="tc-input"
@@ -176,7 +208,6 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   </select>
                 </td>
 
-                {/* 🔥 IMPORTE COMPACTO */}
                 <td style={{ textAlign: "center" }}>
                   <input
                     className="tc-input"
