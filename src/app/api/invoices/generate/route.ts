@@ -210,7 +210,7 @@ export async function POST(req: Request) {
           kind: "adjustment",
           label: "Sin producción en el periodo",
           amount: 0,
-          meta: { minutes: 0, rate: 0 },
+          meta: { code: "none", minutes: 0, rate: 0 },
         });
       }
 
