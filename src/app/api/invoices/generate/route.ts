@@ -19,35 +19,36 @@ function calcImporte(codigo: string, minutos: number) {
   return 0;
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
-    const month_key = "2026-04";
+    const { month } = await req.json();
 
-    // limpiar
-    await supabase.from("invoice_lines").delete().neq("id", "");
-    await supabase.from("invoices").delete().neq("id", "");
+    if (!month) {
+      return NextResponse.json({ ok: false, error: "month requerido" }, { status: 400 });
+    }
 
-    const { data: workers } = await supabase
-      .from("workers")
-      .select("id, display_name")
-      .eq("role", "tarotista");
+    const [year, monthNum] = month.split("-").map(Number);
+    const from = `${month}-01`;
+    const toDate = new Date(year, monthNum, 1);
+    const to = toDate.toISOString().slice(0, 10);
+
+    await supabase.from("invoice_lines").delete().eq("month_key", month);
+    await supabase.from("invoices").delete().eq("month_key", month);
 
     const { data: calls } = await supabase
       .from("calls")
-      .select("worker_id, tarotista, minutos, codigo")
-      // SIN FILTRO
+      .select("worker_id, tarotista, minutos, codigo, call_date")
+      .gte("call_date", from)
+      .lt("call_date", to);
 
     const totals: Record<string, { minutos: number; importe: number }> = {};
 
     for (const c of calls || []) {
       let key = "";
 
-      // 🔥 CASO 1 → tarotista normal
       if (c.worker_id) {
         key = c.worker_id;
-      }
-      // 🔥 CASO 2 → CALLXXX
-      else {
+      } else {
         key = c.tarotista?.toLowerCase().trim();
       }
 
@@ -59,7 +60,6 @@ export async function POST() {
 
       const min = toNumber(c.minutos);
 
-      // 🔥 CALLXXX tarifa fija
       let imp = 0;
       if (!c.worker_id) {
         imp = min * 0.12;
@@ -73,51 +73,48 @@ export async function POST() {
 
     let created = 0;
 
-    // 🔥 FACTURAS REALES (DESDE DATOS)
-for (const key in totals) {
-  const t = totals[key];
+    for (const key in totals) {
+      const t = totals[key];
 
-  let worker_id: string | null = null;
+      let worker_id: string | null = null;
 
-// 🔥 si parece UUID → es tarotista real
-if (key.length > 20) {
-  worker_id = key;
-}
+      if (key.length > 20) {
+        worker_id = key;
+      }
 
-  const { data: invoice } = await supabase
-  .from("invoices")
-  .insert({
-    worker_id,
-    month_key,
-    status: "pending",
-    total: t.importe,
-    notes: worker_id ? null : key,
-  })
-    .select()
-    .single();
+      const { data: invoice, error } = await supabase
+        .from("invoices")
+        .insert({
+          worker_id,
+          month_key: month,
+          status: "pending",
+          total: t.importe,
+          notes: worker_id ? null : key,
+        })
+        .select()
+        .single();
 
-  if (!invoice) continue;
+      if (error || !invoice) continue;
 
-  await supabase.from("invoice_lines").insert([
-    {
-      invoice_id: invoice.id,
-      label: "Minutos",
-      amount: t.minutos,
-    },
-    {
-      invoice_id: invoice.id,
-      label: "Importe",
-      amount: t.importe,
-    },
-  ]);
+      await supabase.from("invoice_lines").insert([
+        {
+          invoice_id: invoice.id,
+          label: "Minutos",
+          amount: t.minutos,
+          month_key: month,
+        },
+        {
+          invoice_id: invoice.id,
+          label: "Importe",
+          amount: t.importe,
+          month_key: month,
+        },
+      ]);
 
-  created++;
-}
+      created++;
+    }
 
-    return NextResponse.json({
-      ok: true,
-      created,
-    });
+    return NextResponse.json({ ok: true, created });
 
   } catch (e: any) {
     return NextResponse.json(
