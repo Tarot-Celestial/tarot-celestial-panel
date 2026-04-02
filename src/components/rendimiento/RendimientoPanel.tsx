@@ -63,6 +63,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [q, setQ] = useState("");
   const [tipo, setTipo] = useState("todos");
   const [pago, setPago] = useState("todos");
+  const [importing, setImporting] = useState(false);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -101,6 +102,29 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       setMsg(`❌ ${err?.message || "Error cargando rendimiento"}`);
     } finally {
       if (!silent) setLoading(false);
+    }
+  }
+
+
+  async function importApril() {
+    if (mode !== "admin" || importing) return;
+    try {
+      setImporting(true);
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const res = await fetch('/api/admin/rendimiento/import-sheet', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: '2026-04' }),
+      });
+      const json = await res.json();
+      if (!json?.ok) throw new Error(json?.error || 'No se pudo importar abril');
+      setMsg(`✅ Abril importado: ${json.inserted || 0} filas nuevas`);
+      await fetchData(false);
+    } catch (err: any) {
+      setMsg(`❌ ${err?.message || 'Error importando abril'}`);
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -163,6 +187,11 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
 
         <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
           <span className="tc-chip">Vista: {mode === "central" ? "Central" : "Admin"}</span>
+          {mode === "admin" ? (
+            <button className="tc-btn tc-btn-gold" onClick={importApril} disabled={importing}>
+              {importing ? "Importando abril…" : "Importar abril desde Sheets"}
+            </button>
+          ) : null}
           <button className="tc-btn" onClick={() => fetchData(false)} disabled={loading}>
             {loading ? "Cargando..." : "Actualizar"}
           </button>
