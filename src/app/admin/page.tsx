@@ -9,7 +9,6 @@ import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
-import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import DiarioPanel from "@/components/diario/DiarioPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, ShieldCheck, Users, Wallet } from "lucide-react";
