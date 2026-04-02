@@ -73,74 +73,48 @@ export async function POST() {
 
     let created = 0;
 
-    // 🔥 FACTURAS TAROTISTAS NORMALES
-    for (const w of workers || []) {
-      const t = totals[w.id] || { minutos: 0, importe: 0 };
+    // 🔥 FACTURAS REALES (DESDE DATOS)
+for (const key in totals) {
+  const t = totals[key];
 
-      const { data: invoice } = await supabase
-        .from("invoices")
-        .insert({
-          worker_id: w.id,
-          month_key,
-          status: "pending",
-          total: t.importe,
-        })
-        .select()
-        .single();
+  let worker_id: string | null = null;
 
-      if (!invoice) continue;
+  // 👉 si es UUID (tarotista real)
+  const worker = (workers || []).find(w => w.id === key);
 
-      await supabase.from("invoice_lines").insert([
-        {
-          invoice_id: invoice.id,
-          label: "Minutos",
-          amount: t.minutos,
-        },
-        {
-          invoice_id: invoice.id,
-          label: "Importe",
-          amount: t.importe,
-        },
-      ]);
+  if (worker) {
+    worker_id = worker.id;
+  }
 
-      created++;
-    }
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .insert({
+      worker_id,
+      month_key,
+      status: "pending",
+      total: t.importe,
+      notes: worker ? null : key, // call111 etc
+    })
+    .select()
+    .single();
 
-    // 🔥 FACTURAS CALLXXX
-    for (const key in totals) {
-      if (key.includes("call")) {
-        const t = totals[key];
+  if (!invoice) continue;
 
-        const { data: invoice } = await supabase
-          .from("invoices")
-          .insert({
-            worker_id: null,
-            month_key,
-            status: "pending",
-            total: t.importe,
-            notes: key, // guardamos Call111 aquí
-          })
-          .select()
-          .single();
+  await supabase.from("invoice_lines").insert([
+    {
+      invoice_id: invoice.id,
+      label: "Minutos",
+      amount: t.minutos,
+    },
+    {
+      invoice_id: invoice.id,
+      label: "Importe",
+      amount: t.importe,
+    },
+  ]);
 
-        if (!invoice) continue;
-
-        await supabase.from("invoice_lines").insert([
-          {
-            invoice_id: invoice.id,
-            label: "Minutos",
-            amount: t.minutos,
-          },
-          {
-            invoice_id: invoice.id,
-            label: "Importe",
-            amount: t.importe,
-          },
-        ]);
-
-        created++;
-      }
-    }
+  created++;
+}
 
     return NextResponse.json({
       ok: true,
