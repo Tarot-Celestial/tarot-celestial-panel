@@ -198,26 +198,21 @@ export default function ReservasPanel({
     }
   }
 
-  // 🔥 DETECTOR DE RESERVA EXACTA
+  // Detector exacto de hora (±30s)
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
-
       rows.forEach((r: any) => {
         if (!r?.fecha_reserva) return;
-
         const fecha = new Date(r.fecha_reserva);
         const diff = fecha.getTime() - now.getTime();
-
         const yaAvisada = avisadas.includes(r.id);
-
         if (diff <= 30000 && diff >= -30000 && !yaAvisada && !isClosedEstado(r.estado)) {
           setAvisadas((prev) => [...prev, r.id]);
           setPopupReserva(r);
         }
       });
     }, 5000);
-
     return () => clearInterval(interval);
   }, [rows, avisadas]);
 
@@ -470,14 +465,12 @@ export default function ReservasPanel({
             </div>
           )}
         </div>
-            {/* 🔥 POPUP CENTRAL */}
+      </div>
+
       {popupReserva && (
         <div style={{
           position: "fixed",
-          top: 0,
-          left: 0,
-          width: "100vw",
-          height: "100vh",
+          inset: 0,
           background: "rgba(0,0,0,0.7)",
           display: "flex",
           alignItems: "center",
@@ -488,20 +481,13 @@ export default function ReservasPanel({
             background: "#111",
             padding: 30,
             borderRadius: 16,
-            width: 400,
-            textAlign: "center",
-            boxShadow: "0 0 40px rgba(0,0,0,0.6)"
+            width: 420,
+            textAlign: "center"
           }}>
-            <h2 style={{ marginBottom: 10 }}>⏰ Reserva ahora</h2>
+            <h2>⏰ Reserva ahora</h2>
             <p><strong>{popupReserva.cliente_nombre}</strong></p>
-            <p style={{ marginBottom: 20 }}>
-              {new Date(popupReserva.fecha_reserva).toLocaleTimeString()}
-            </p>
-
-            <button
-              className="tc-btn tc-btn-ok"
-              onClick={() => setPopupReserva(null)}
-            >
+            <p>{formatFecha(popupReserva.fecha_reserva)}</p>
+            <button className="tc-btn tc-btn-ok" onClick={() => setPopupReserva(null)}>
               Ir a la reserva
             </button>
           </div>
