@@ -384,19 +384,6 @@ export default function Admin() {
     }, 250);
   }
 
-  function openReservaFromPopup(reserva: any) {
-    setTab("reservas");
-    window.setTimeout(() => {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("reservas-open-item", {
-            detail: { id: String(reserva?.id || "") },
-          })
-        );
-      }
-    }, 250);
-  }
-
   async function loadAccounting(silent = false) {
     if (accLoading && !silent) return;
     if (!silent) {
