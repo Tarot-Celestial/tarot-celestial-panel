@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -41,8 +41,6 @@ function fmt(v: any) {
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [importing, setImporting] = useState(false);
 
   async function getToken() {
     const { data } = await sb.auth.getSession();
@@ -62,13 +60,15 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     setLoading(false);
   }
 
-  async function saveRow(row: Row) {
-    if (!row.id) return;
+  function updateField(id: string, field: keyof Row, value: any) {
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
+    );
+  }
 
+  async function saveRow(row: Row) {
     const token = await getToken();
     if (!token) return;
-
-    setSavingId(row.id);
 
     await fetch("/api/crm/rendimiento/update", {
       method: "POST",
@@ -81,62 +81,10 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         updates: row,
       }),
     });
-
-    setSavingId(null);
-  }
-
-  async function deleteRow(id?: string) {
-    if (!id) return;
-
-    if (!confirm("¿Seguro que quieres eliminar esta línea?")) return;
-
-    const token = await getToken();
-    if (!token) return;
-
-    await fetch("/api/crm/rendimiento/delete", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ id }),
-    });
-
-    setRows((prev) => prev.filter((r) => r.id !== id));
-  }
-
-  function updateField(id: string, field: keyof Row, value: any) {
-    setRows((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
-    );
-  }
-
-  async function importApril() {
-    if (mode !== "admin") return;
-
-    const token = await getToken();
-    if (!token) return;
-
-    setImporting(true);
-
-    const res = await fetch("/api/admin/rendimiento/import-sheet", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ month: "2026-04" }),
-    });
-
-    setImporting(false);
-
-    if (res.ok) fetchData();
   }
 
   useEffect(() => {
     fetchData();
-    const i = setInterval(fetchData, 8000);
-    return () => clearInterval(i);
   }, [mode]);
 
   if (loading) return <div className="p-4">Cargando...</div>;
@@ -144,33 +92,28 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   return (
     <div className="tc-card">
 
-      {/* HEADER */}
-      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-        <div className="tc-title">📈 Rendimiento</div>
-
-        {mode === "admin" && (
-          <button className="tc-btn tc-btn-gold" onClick={importApril}>
-            {importing ? "Importando..." : "Importar abril"}
-          </button>
-        )}
-      </div>
-
-      {/* TABLE */}
       <div style={{ overflowX: "auto", marginTop: 12 }}>
-        <table className="tc-table">
+        <table
+          className="tc-table"
+          style={{ tableLayout: "fixed", width: "100%" }} // 🔥 CLAVE
+        >
           <thead>
             <tr>
               <th>FECHA</th>
               <th>CLIENTE</th>
-              <th style={{ width: 90, textAlign: "center" }}>TIEMPO</th>
+
+              <th style={{ width: 80, textAlign: "center" }}>TIEMPO</th>
+
               <th>CÓDIGO</th>
               <th>PAGO</th>
-              <th style={{ width: 110, textAlign: "center" }}>IMPORTE</th>
+
+              <th style={{ width: 100, textAlign: "center" }}>IMPORTE</th>
+
               <th>CALL</th>
               <th>PROMO</th>
               <th>CAPTADO</th>
               <th>RECUPERADO</th>
-              <th></th>
+              <th style={{ width: 60 }}></th>
             </tr>
           </thead>
 
@@ -191,9 +134,11 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>
+                {/* 🔥 TIEMPO COMPACTO */}
+                <td style={{ textAlign: "center" }}>
                   <input
                     className="tc-input"
+                    style={{ width: 60, textAlign: "center", padding: "4px 6px" }}
                     type="number"
                     value={row.tiempo || 0}
                     onChange={(e) =>
@@ -231,9 +176,11 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   </select>
                 </td>
 
-                <td>
+                {/* 🔥 IMPORTE COMPACTO */}
+                <td style={{ textAlign: "center" }}>
                   <input
                     className="tc-input"
+                    style={{ width: 80, textAlign: "center", padding: "4px 6px" }}
                     type="number"
                     value={row.importe || ""}
                     onChange={(e) =>
@@ -243,57 +190,13 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
                   />
                 </td>
 
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={!!row.llamada_call}
-                    onChange={(e) => {
-                      updateField(row.id!, "llamada_call", e.target.checked);
-                      saveRow({ ...row, llamada_call: e.target.checked });
-                    }}
-                  />
-                </td>
+                <td>{row.llamada_call ? "✔" : "-"}</td>
+                <td>{row.promo ? "✔" : "-"}</td>
+                <td>{row.captado ? "✔" : "-"}</td>
+                <td>{row.recuperado ? "✔" : "-"}</td>
 
                 <td>
-                  <input
-                    type="checkbox"
-                    checked={!!row.promo}
-                    onChange={(e) => {
-                      updateField(row.id!, "promo", e.target.checked);
-                      saveRow({ ...row, promo: e.target.checked });
-                    }}
-                  />
-                </td>
-
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={!!row.captado}
-                    onChange={(e) => {
-                      updateField(row.id!, "captado", e.target.checked);
-                      saveRow({ ...row, captado: e.target.checked });
-                    }}
-                  />
-                </td>
-
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={!!row.recuperado}
-                    onChange={(e) => {
-                      updateField(row.id!, "recuperado", e.target.checked);
-                      saveRow({ ...row, recuperado: e.target.checked });
-                    }}
-                  />
-                </td>
-
-                <td>
-                  <button
-                    className="tc-btn"
-                    onClick={() => deleteRow(row.id)}
-                  >
-                    ❌
-                  </button>
+                  <button className="tc-btn">❌</button>
                 </td>
 
               </tr>
