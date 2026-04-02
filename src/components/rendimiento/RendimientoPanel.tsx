@@ -26,29 +26,33 @@ type Row = {
   promo?: boolean | null;
   captado?: boolean | null;
   recuperado?: boolean | null;
-  tipo_registro?: string | null;
 };
 
 function eur(n: any) {
-  const x = Number(n) || 0;
-  return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+  return (Number(n) || 0).toLocaleString("es-ES", {
+    style: "currency",
+    currency: "EUR",
+  });
 }
 
-function fmtDate(v: string | null | undefined) {
+function fmtDate(v: any) {
   if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleString("es-ES");
+  return new Date(v).toLocaleString("es-ES");
 }
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Row | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  async function getToken() {
+    const { data } = await sb.auth.getSession();
+    return data.session?.access_token;
+  }
 
   async function fetchData() {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
+    const token = await getToken();
     if (!token) return;
 
     const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`, {
@@ -60,11 +64,38 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     setLoading(false);
   }
 
+  async function importApril() {
+    if (mode !== "admin") return;
+
+    const token = await getToken();
+    if (!token) return;
+
+    setImporting(true);
+
+    const res = await fetch("/api/admin/rendimiento/import-sheet", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ month: "2026-04" }),
+    });
+
+    const json = await res.json();
+    setImporting(false);
+
+    if (json.ok) {
+      alert("✅ Importado correctamente");
+      fetchData();
+    } else {
+      alert("❌ Error importando");
+    }
+  }
+
   async function saveEdit() {
     if (!editing?.id) return;
 
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
+    const token = await getToken();
     if (!token) return;
 
     await fetch("/api/crm/rendimiento/update", {
@@ -87,13 +118,28 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     fetchData();
   }, [mode]);
 
-  const filtered = useMemo(() => rows, [rows]);
-
   if (loading) return <div className="p-4">Cargando...</div>;
 
   return (
     <div className="tc-card">
-      <table className="tc-table">
+
+      {/* 🔥 HEADER */}
+      <div className="tc-row" style={{ justifyContent: "space-between" }}>
+        <div className="tc-title">📈 Rendimiento</div>
+
+        {mode === "admin" && (
+          <button
+            className="tc-btn tc-btn-gold"
+            onClick={importApril}
+            disabled={importing}
+          >
+            {importing ? "Importando..." : "Importar abril desde Sheets"}
+          </button>
+        )}
+      </div>
+
+      {/* 🔥 TABLA */}
+      <table className="tc-table" style={{ marginTop: 12 }}>
         <thead>
           <tr>
             <th>FECHA</th>
@@ -113,7 +159,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         </thead>
 
         <tbody>
-          {filtered.map((row) => (
+          {rows.map((row) => (
             <tr key={row.id}>
               <td>{fmtDate(row.fecha_hora)}</td>
               <td>{row.telefonista_nombre}</td>
@@ -128,17 +174,23 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
               <td>{row.captado ? "✔" : "-"}</td>
               <td>{row.recuperado ? "✔" : "-"}</td>
               <td>
-                <button onClick={() => setEditing(row)}>✏️</button>
+                <button className="tc-btn" onClick={() => setEditing(row)}>
+                  ✏️
+                </button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
 
+      {/* 🔥 MODAL EDIT */}
       {editing && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-          <div className="tc-card">
+          <div className="tc-card" style={{ width: 400 }}>
+            <div className="tc-title">Editar</div>
+
             <input
+              className="tc-input"
               value={editing.cliente_nombre || ""}
               onChange={(e) =>
                 setEditing({ ...editing, cliente_nombre: e.target.value })
@@ -146,14 +198,21 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
             />
 
             <input
+              className="tc-input"
               value={editing.importe || ""}
               onChange={(e) =>
                 setEditing({ ...editing, importe: Number(e.target.value) })
               }
             />
 
-            <button onClick={saveEdit}>Guardar</button>
-            <button onClick={() => setEditing(null)}>Cancelar</button>
+            <div className="tc-row">
+              <button className="tc-btn tc-btn-gold" onClick={saveEdit}>
+                Guardar
+              </button>
+              <button className="tc-btn" onClick={() => setEditing(null)}>
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
