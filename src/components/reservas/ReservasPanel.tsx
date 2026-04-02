@@ -128,17 +128,21 @@ export default function ReservasPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
-      // 🔥 UPDATE INSTANTÁNEO
+      // 🔥 FIX REAL (SIN ROMPER DISEÑO)
       setRows((prev) =>
-        prev.map((row) =>
-          String(row.id) === String(id)
-            ? { ...row, estado: "finalizada" }
-            : row
+        prev.map((r) =>
+          String(r.id) === String(id)
+            ? { ...r, estado: "finalizada" }
+            : r
         )
       );
 
       setMsg("✅ Reserva finalizada");
-      tcToast({title:"Reserva finalizada",description:"Todo correcto",tone:"success"});
+      tcToast({
+        title: "Reserva finalizada",
+        description: "Todo correcto",
+        tone: "success",
+      });
 
       // 🔄 refresco real
       await loadReservas(false);
@@ -157,37 +161,65 @@ export default function ReservasPanel({
   }, []);
 
   const filtered = useMemo(() => {
+    const now = new Date();
+    const end2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+    const startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
     let list = [...(rows || [])];
 
-    list.sort((a: any, b: any) => {
-      const ae = String(a?.estado || "") === "finalizada" ? 1 : 0;
-      const be = String(b?.estado || "") === "finalizada" ? 1 : 0;
-      if (ae !== be) return ae - be;
+    list = list.filter((r: any) => {
+      const fecha = r?.fecha_reserva ? new Date(r.fecha_reserva) : null;
+      const estado = String(r?.estado || "");
 
-      const at = a?.fecha_reserva ? new Date(a.fecha_reserva).getTime() : 0;
-      const bt = b?.fecha_reserva ? new Date(b.fecha_reserva).getTime() : 0;
+      if (filtro === "finalizadas") return estado === "finalizada";
+      if (filtro === "todas") return true;
+      if (!fecha || Number.isNaN(fecha.getTime())) return true;
 
-      return at - bt;
+      if (filtro === "hoy") {
+        return fecha >= startDay && fecha <= endDay;
+      }
+
+      return estado !== "finalizada" && fecha >= now && fecha <= end2h;
     });
 
     return list;
-  }, [rows]);
+  }, [rows, q, filtro]);
+
+  const pendientes = rows.filter((x) => String(x.estado) !== "finalizada").length;
+  const finalizadas = rows.filter((x) => String(x.estado) === "finalizada").length;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      {filtered.map((r: any) => (
-        <div key={r.id}>
-          <div>{r.cliente_nombre}</div>
-          <div>{r.estado}</div>
-
-          {String(r.estado) !== "finalizada" && (
-            <button onClick={() => finalizarReserva(String(r.id))}>
-              {finalizandoId === String(r.id) ? "Guardando..." : "Finalizar"}
-            </button>
-          )}
+      <div className="tc-card" style={{ padding: 22, borderRadius: 24 }}>
+        <div className="tc-row" style={{ justifyContent: "space-between" }}>
+          <div className="tc-title">🗓️ Reservas premium</div>
+          <div className="tc-row">
+            <span className="tc-chip">Pendientes: {pendientes}</span>
+            <span className="tc-chip">Finalizadas: {finalizadas}</span>
+            <span className="tc-chip">Total: {rows.length}</span>
+          </div>
         </div>
-      ))}
+      </div>
+
+      <div>
+        {(filtered || []).map((r: any) => {
+          const st = estadoStyles(r.estado);
+
+          return (
+            <div key={r.id} style={{ border: st.border, padding: 16 }}>
+              <div>{r.cliente_nombre}</div>
+              <div>{estadoLabel(r.estado)}</div>
+
+              {r.estado !== "finalizada" && (
+                <button onClick={() => finalizarReserva(r.id)}>
+                  {finalizandoId === r.id ? "Guardando..." : "Finalizado"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
-
