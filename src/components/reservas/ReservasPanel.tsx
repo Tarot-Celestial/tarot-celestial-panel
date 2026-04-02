@@ -87,7 +87,7 @@ function estadoStyles(v: any) {
 function formatFecha(value: any) {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleString("es-ES");
+    return new Date(value + 'Z').toLocaleString("es-ES");
   } catch {
     return String(value);
   }
@@ -103,6 +103,32 @@ export default function ReservasPanel({
   const [q, setQ] = useState("");
   const [filtro, setFiltro] = useState<"proximas" | "hoy" | "todas" | "finalizadas">("proximas");
   const [finalizandoId, setFinalizandoId] = useState("");
+
+  const [popupReserva, setPopupReserva] = useState<any | null>(null);
+  const [avisadas, setAvisadas] = useState<string[]>([]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+
+      rows.forEach((r: any) => {
+        if (!r?.fecha_reserva) return;
+
+        const fecha = new Date(r.fecha_reserva + 'Z');
+        const diff = fecha.getTime() - now.getTime();
+
+        const yaAvisada = avisadas.includes(r.id);
+
+        if (diff <= 30000 && diff >= -30000 && !yaAvisada && !isClosedEstado(r.estado)) {
+          setAvisadas((prev) => [...prev, r.id]);
+          setPopupReserva(r);
+        }
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [rows, avisadas]);
+
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -211,7 +237,7 @@ export default function ReservasPanel({
     let list = [...(rows || [])];
 
     list = list.filter((r: any) => {
-      const fecha = r?.fecha_reserva ? new Date(r.fecha_reserva) : null;
+      const fecha = r?.fecha_reserva ? new Date(r.fecha_reserva + 'Z') : null;
       const closed = isClosedEstado(r?.estado);
 
       if (filtro === "finalizadas") return closed;
@@ -446,6 +472,34 @@ export default function ReservasPanel({
           )}
         </div>
       </div>
+    
+      {popupReserva && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.7)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 9999
+        }}>
+          <div style={{
+            background: "#111",
+            padding: 30,
+            borderRadius: 16,
+            width: 420,
+            textAlign: "center"
+          }}>
+            <h2>⏰ Reserva ahora</h2>
+            <p><strong>{popupReserva.cliente_nombre}</strong></p>
+            <p>{new Date(popupReserva.fecha_reserva + 'Z').toLocaleString("es-ES")}</p>
+            <button className="tc-btn tc-btn-ok" onClick={() => setPopupReserva(null)}>
+              Ir a la reserva
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
