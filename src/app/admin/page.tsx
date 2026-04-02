@@ -458,32 +458,43 @@ export default function Admin() {
   }
 
   async function generateInvoices() {
-    if (genLoading) return;
-    setGenLoading(true);
-    setGenMsg("");
-    try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
+  if (genLoading) return;
+  setGenLoading(true);
+  setGenMsg("");
 
-      const r = await fetch("/api/invoices/generate", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ month }),
-      });
+  try {
+    const token = await getTokenOrLogin();
+    if (!token) return;
 
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+    const r = await fetch("/api/invoices/generate", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ month }),
+    });
 
-      const count = j?.result?.invoices ?? "?";
-      setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
-      await listInvoices();
-      setTab("facturas");
-    } catch (e: any) {
-      setGenMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setGenLoading(false);
+    const j = await safeJson(r);
+
+    if (!j?._ok || !j?.ok) {
+      throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
     }
+
+    // 🔥 ARREGLO REAL
+    const count = j?.created ?? 0;
+
+    setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
+
+    await listInvoices();
+    setTab("facturas");
+
+  } catch (e: any) {
+    setGenMsg(`❌ ${e?.message || "Error"}`);
+  } finally {
+    setGenLoading(false);
   }
+}
 
   async function listInvoices(silent = false) {
     if (listLoading && !silent) return;
