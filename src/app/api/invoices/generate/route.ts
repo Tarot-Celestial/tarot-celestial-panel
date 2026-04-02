@@ -54,7 +54,7 @@ export async function POST() {
     // 🔥 calls
     const { data: calls } = await supabase
       .from("calls")
-      .select("tarotista, minutos, codigo")
+      .select("worker_id, minutos, codigo")
       .gte("call_date", "2026-04-01")
       .lte("call_date", "2026-04-30");
 
