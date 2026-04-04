@@ -528,3 +528,32 @@ select.tc-select optgroup {
   color: #111111;
   background: #f4f4f4;
 }
+
+/* ==== RENDIMIENTO TABLE POLISH ==== */
+.tc-rendimiento-table th,
+.tc-rendimiento-table td {
+  vertical-align: middle;
+}
+.tc-rendimiento-table input.tc-input,
+.tc-rendimiento-table select.tc-select {
+  height: 40px;
+  max-width: 100%;
+}
+.tc-rendimiento-table td > div {
+  overflow-wrap: anywhere;
+}
+
+/* ==== STRONGER SELECT VISIBILITY FIX ==== */
+.tc-select,
+select.tc-select {
+  color-scheme: dark;
+  background-color: rgba(38, 34, 55, 0.95);
+  color: rgba(255,255,255,0.96);
+}
+.tc-select option,
+select.tc-select option,
+.tc-select optgroup,
+select.tc-select optgroup {
+  background: #1a1625 !important;
+  color: #ffffff !important;
+}

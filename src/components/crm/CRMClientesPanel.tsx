@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
@@ -17,6 +17,31 @@ function crmNoteTone(text: string) {
 }
 
 const sb = supabaseBrowser();
+
+function renderNoteText(text: string) {
+  const lines = String(text || "").split(/\n/);
+  return lines.map((line, lineIndex) => {
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    return (
+      <span key={`line-${lineIndex}`}>
+        {parts.map((part, idx) => {
+          if (/^\*\*[^*]+\*\*$/.test(part)) {
+            return <strong key={`part-${lineIndex}-${idx}`}>{part.slice(2, -2)}</strong>;
+          }
+          return <span key={`part-${lineIndex}-${idx}`}>{part}</span>;
+        })}
+        {lineIndex < lines.length - 1 ? <br /> : null}
+      </span>
+    );
+  });
+}
+
+function applyBoldToValue(value: string, start: number, end: number) {
+  const from = Number.isFinite(start) ? start : value.length;
+  const to = Number.isFinite(end) ? end : value.length;
+  const selected = value.slice(from, to) || "texto en negrita";
+  return `${value.slice(0, from)}**${selected}**${value.slice(to)}`;
+}
 
 async function safeJson(res: Response) {
   const txt = await res.text();
@@ -124,6 +149,8 @@ export default function CRMClientesPanel({
   const [crmSavingNote, setCrmSavingNote] = useState(false);
   const [crmEditingNoteId, setCrmEditingNoteId] = useState("");
   const [crmEditingNoteText, setCrmEditingNoteText] = useState("");
+  const crmNewNoteRef = useRef<HTMLTextAreaElement | null>(null);
+  const crmEditNoteRef = useRef<HTMLTextAreaElement | null>(null);
   const [crmUpdatingNote, setCrmUpdatingNote] = useState(false);
   const [crmPinningNoteId, setCrmPinningNoteId] = useState("");
   const [crmRegistrarOpen, setCrmRegistrarOpen] = useState(false);
@@ -704,6 +731,20 @@ export default function CRMClientesPanel({
   function cancelEditCRMNote() {
     setCrmEditingNoteId("");
     setCrmEditingNoteText("");
+  }
+
+  function applyBoldToNewNote() {
+    const el = crmNewNoteRef.current;
+    const next = applyBoldToValue(crmNewNote, el?.selectionStart ?? crmNewNote.length, el?.selectionEnd ?? crmNewNote.length);
+    setCrmNewNote(next);
+    setTimeout(() => el?.focus(), 0);
+  }
+
+  function applyBoldToEditingNote() {
+    const el = crmEditNoteRef.current;
+    const next = applyBoldToValue(crmEditingNoteText, el?.selectionStart ?? crmEditingNoteText.length, el?.selectionEnd ?? crmEditingNoteText.length);
+    setCrmEditingNoteText(next);
+    setTimeout(() => el?.focus(), 0);
   }
 
   async function updateCRMNote(noteId: string) {
@@ -1463,7 +1504,12 @@ export default function CRMClientesPanel({
                 </div>
 
                 <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
+                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 8 }}>
+                    <div className="tc-sub">Usa <b>**texto**</b> para negrita o pulsa el botón.</div>
+                    <button type="button" className="tc-btn" onClick={applyBoldToNewNote}>Negrita</button>
+                  </div>
                   <textarea
+                    ref={crmNewNoteRef}
                     className="tc-input"
                     value={crmNewNote}
                     onChange={(e) => setCrmNewNote(e.target.value)}
@@ -1517,7 +1563,12 @@ export default function CRMClientesPanel({
 
                         {crmEditingNoteId === String(n.id) ? (
                           <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                            <div className="tc-row" style={{ justifyContent: "space-between", gap: 8 }}>
+                              <div className="tc-sub">Usa <b>**texto**</b> para negrita o pulsa el botón.</div>
+                              <button type="button" className="tc-btn" onClick={applyBoldToEditingNote}>Negrita</button>
+                            </div>
                             <textarea
+                              ref={crmEditNoteRef}
                               className="tc-input"
                               value={crmEditingNoteText}
                               onChange={(e) => setCrmEditingNoteText(e.target.value)}
@@ -1532,7 +1583,7 @@ export default function CRMClientesPanel({
                           </div>
                         ) : (
                           <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                            {n.texto || "—"}
+                            {renderNoteText(n.texto || "—")}
                           </div>
                         )}
 

@@ -24,9 +24,13 @@ function formatDate(d:string){
 }
 
 function normalizeCodigo(v:string){
-  const val=v.toLowerCase();
-  if(val.includes("vip")) return "vip";
-  if(val.includes("promo")) return "promo";
+  const val = safe(v).toLowerCase();
+  if (!val) return "cliente";
+  if (val.includes("free")) return "free";
+  if (val.includes("rueda")) return "rueda";
+  if (val.includes("repite")) return "repite";
+  if (val.includes("cliente")) return "cliente";
+  if (val.includes("call")) return "cliente";
   return "cliente";
 }
 

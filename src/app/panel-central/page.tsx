@@ -8,6 +8,7 @@ import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
+import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import { BarChart3, CalendarDays, CheckSquare, Headphones, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -1153,10 +1154,25 @@ export default function Central() {
     }
   }
 
+
+  function openReservaFromPopup(reserva: any) {
+    setTab("reservas" as any);
+    window.setTimeout(() => {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("reservas-open-item", {
+            detail: { id: String(reserva?.id || "") },
+          })
+        );
+      }
+    }, 250);
+  }
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
     <>
+      <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <AppHeader />
 
       <div className="tc-shell">
