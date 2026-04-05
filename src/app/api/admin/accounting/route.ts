@@ -8,27 +8,38 @@ const supabase = createClient(
 );
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  try {
+    const body = await req.json();
 
-  const date = new Date(body.date);
+    const entryDate = body.date || body.fecha;
 
-  // 🔥 FIX timezone (important)
-  const correctedDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    if (!entryDate) {
+      return NextResponse.json({ ok: false, error: "DATE_REQUIRED" });
+    }
 
-  const month_key = correctedDate.toISOString().slice(0,7);
+    const d = new Date(entryDate);
+    const fixed = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
 
-  const { error } = await supabase.from("accounting_entries").insert({
-    entry_date: correctedDate.toISOString(),
-    month_key,
-    entry_type: body.type,
-    concept: body.concept,
-    amount_eur: body.amount,
-    note: body.note
-  });
+    const month_key = fixed.toISOString().slice(0, 7);
 
-  if (error) {
-    return NextResponse.json({ ok:false, error:error.message });
+    const { error } = await supabase.from("accounting_entries").insert({
+      entry_date: fixed.toISOString(),
+      month_key,
+      entry_type: body.type || body.entry_type,
+      concept: body.concept,
+      amount_eur: Number(body.amount || body.amount_eur || 0),
+      note: body.note || null,
+    });
+
+    if (error) {
+      console.error("INSERT ERROR:", error);
+      return NextResponse.json({ ok: false, error: error.message });
+    }
+
+    return NextResponse.json({ ok: true });
+
+  } catch (e:any) {
+    console.error(e);
+    return NextResponse.json({ ok:false, error:e.message });
   }
-
-  return NextResponse.json({ ok:true });
 }
