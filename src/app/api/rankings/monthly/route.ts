@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
-import { accumulateRendimientoByWorker, listMonthlyRendimiento, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { monthRange, normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
+import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 
 export const runtime = 'nodejs';
 
@@ -15,13 +15,14 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
+    const { start, endExclusive } = monthRange(month);
 
     const [workers, rendimientoRows] = await Promise.all([
       listTarotistaWorkers(),
-      listMonthlyRendimiento(month),
+      listRendimientoRows(start, endExclusive),
     ]);
 
-    const { rows } = accumulateRendimientoByWorker(rendimientoRows, workers);
+    const rows = aggregateRendimientoByTarotista(rendimientoRows, workers);
 
     const top = {
       captadas: [...rows].sort((a, b) => Number(b.captadas_total || 0) - Number(a.captadas_total || 0)).slice(0, 10),

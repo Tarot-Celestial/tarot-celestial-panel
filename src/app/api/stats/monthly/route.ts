@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import {
+  captadasTier,
+  monthRange,
   normalizeMonthKey,
   roundMoney,
   workerFromRequest,
-  captadasTier,
 } from '@/lib/server/auth-worker';
-import { accumulateRendimientoByWorker, listMonthlyRendimiento, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 
 export const runtime = 'nodejs';
 
@@ -16,15 +17,14 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
+    const { start, endExclusive } = monthRange(month);
 
     const [workers, rendimientoRows] = await Promise.all([
       listTarotistaWorkers(),
-      listMonthlyRendimiento(month),
+      listRendimientoRows(start, endExclusive),
     ]);
 
-    const { rows: baseRows } = accumulateRendimientoByWorker(rendimientoRows, workers);
-
-    const rows = baseRows.map((row) => {
+    const rows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row) => {
       const bonusCaptadas = roundMoney(Number(row.captadas_total || 0) * captadasTier(Number(row.captadas_total || 0)));
       return {
         ...row,
@@ -49,12 +49,9 @@ export async function GET(req: Request) {
       { minutes_total: 0, calls_total: 0, captadas_total: 0, pay_minutes: 0, bonus_captadas: 0, revenue_total: 0 }
     );
 
-    totals.avg_pct_cliente = rows.length
-      ? roundMoney(rows.reduce((a, r) => a + Number(r.pct_cliente || 0), 0) / rows.length)
-      : 0;
-    totals.avg_pct_repite = rows.length
-      ? roundMoney(rows.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / rows.length)
-      : 0;
+    const count = rows.length || 1;
+    totals.avg_pct_cliente = roundMoney(rows.reduce((a, r) => a + Number(r.pct_cliente || 0), 0) / count);
+    totals.avg_pct_repite = roundMoney(rows.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / count);
 
     if (me.role === 'admin' || me.role === 'central') {
       return NextResponse.json({ ok: true, month, totals, rows });
