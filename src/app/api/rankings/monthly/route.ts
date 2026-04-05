@@ -1,21 +1,8 @@
 import { NextResponse } from 'next/server';
-import {
-  getAdminClient,
-  monthRange,
-  normalizeMonthKey,
-  normalizeText,
-  workerFromRequest,
-} from '@/lib/server/auth-worker';
+import { normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
+import { accumulateRendimientoByWorker, listMonthlyRendimiento, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 
 export const runtime = 'nodejs';
-
-type CallRow = {
-  worker_id?: string | null;
-  tarotista?: string | null;
-  minutos?: number | string | null;
-  codigo?: string | null;
-  captada?: boolean | null;
-};
 
 function score(row: any) {
   return Number(row.captadas_total || 0) * 10 + Number(row.pct_cliente || 0) + Number(row.pct_repite || 0);
@@ -28,59 +15,13 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
-    const { start, endExclusive } = monthRange(month);
-    const admin = getAdminClient();
 
-    const { data: workers, error: workersError } = await admin
-      .from('workers')
-      .select('id, display_name, role, team')
-      .eq('role', 'tarotista');
-    if (workersError) throw workersError;
+    const [workers, rendimientoRows] = await Promise.all([
+      listTarotistaWorkers(),
+      listMonthlyRendimiento(month),
+    ]);
 
-    const workerIdByName = new Map<string, string>();
-    const rowsMap = new Map<string, any>();
-    for (const w of workers || []) {
-      workerIdByName.set(normalizeText(w.display_name), String(w.id));
-      rowsMap.set(String(w.id), {
-        worker_id: String(w.id),
-        display_name: w.display_name || '—',
-        team: w.team || null,
-        captadas_total: 0,
-        minutes_total: 0,
-        minutes_cliente: 0,
-        minutes_repite: 0,
-        pct_cliente: 0,
-        pct_repite: 0,
-      });
-    }
-
-    const { data: calls, error: callsError } = await admin
-      .from('calls')
-      .select('worker_id, tarotista, minutos, codigo, captada')
-      .gte('call_date', start)
-      .lt('call_date', endExclusive);
-    if (callsError) throw callsError;
-
-    for (const call of (calls || []) as CallRow[]) {
-      const wid = call.worker_id ? String(call.worker_id) : workerIdByName.get(normalizeText(call.tarotista)) || null;
-      if (!wid || !rowsMap.has(wid)) continue;
-      const row = rowsMap.get(wid);
-      const minutes = Number(call.minutos || 0) || 0;
-      const code = normalizeText(call.codigo);
-      row.minutes_total += minutes;
-      if (call.captada) row.captadas_total += 1;
-      if (code === 'cliente') row.minutes_cliente += minutes;
-      if (code === 'repite') row.minutes_repite += minutes;
-    }
-
-    const rows = Array.from(rowsMap.values()).map((row) => {
-      const denom = Number(row.minutes_total || 0) || 0;
-      return {
-        ...row,
-        pct_cliente: denom ? (Number(row.minutes_cliente || 0) / denom) * 100 : 0,
-        pct_repite: denom ? (Number(row.minutes_repite || 0) / denom) * 100 : 0,
-      };
-    });
+    const { rows } = accumulateRendimientoByWorker(rendimientoRows, workers);
 
     const top = {
       captadas: [...rows].sort((a, b) => Number(b.captadas_total || 0) - Number(a.captadas_total || 0)).slice(0, 10),

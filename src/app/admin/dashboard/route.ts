@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -15,16 +14,18 @@ export async function GET() {
     .select("importe, created_at");
 
   const total = (pagos||[])
-    .filter(p=>p.created_at?.startsWith(month))
-    .reduce((a,p)=>a + Number(p.importe||0),0);
+    .filter((p:any)=>p.created_at?.startsWith(month))
+    .reduce((a:number,p:any)=>a + Number(p.importe||0),0);
 
   const { count: clientes } = await supabase
     .from("crm_clientes")
     .select("*", { count: "exact", head: true });
 
-  const { count: llamadas } = await supabase
-    .from("calls")
-    .select("*", { count: "exact", head: true });
+  const { count: rendimiento } = await supabase
+    .from("rendimiento_llamadas")
+    .select("*", { count: "exact", head: true })
+    .gte('fecha', `${month}-01`)
+    .lt('fecha', new Date(Date.UTC(Number(month.slice(0,4)), Number(month.slice(5,7)), 1)).toISOString().slice(0,10));
 
   const { count: workers } = await supabase
     .from("workers")
@@ -34,7 +35,7 @@ export async function GET() {
     ok: true,
     total,
     clientes,
-    reservas: llamadas,
+    reservas: rendimiento,
     tarotistas: workers
   });
 }
