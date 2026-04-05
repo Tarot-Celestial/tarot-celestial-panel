@@ -1,37 +1,29 @@
-import { NextResponse } from 'next/server';
-import { getAdminClient } from '@/lib/server/auth-worker';
-import { summarizeRendimientoRows } from '@/lib/server/rendimiento-metrics';
 
-export const runtime = 'nodejs';
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function GET() {
-  try {
-    const admin = getAdminClient();
-    const month = new Date().toISOString().slice(0, 7);
-    const start = `${month}-01`;
-    const [year, mm] = month.split('-').map(Number);
-    const endExclusive = new Date(Date.UTC(year, mm, 1)).toISOString().slice(0, 10);
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-    const [{ count: clientes }, { count: workers }, rendimientoRes] = await Promise.all([
-      admin.from('crm_clientes').select('*', { count: 'exact', head: true }),
-      admin.from('workers').select('*', { count: 'exact', head: true }),
-      admin.from('rendimiento_llamadas').select('*').gte('fecha', start).lt('fecha', endExclusive),
-    ]);
+  const { data, error } = await supabase
+    .from("rendimiento_llamadas")
+    .select("importe")
+    .gte("fecha_hora", start);
 
-    if (rendimientoRes.error) throw rendimientoRes.error;
-    const resumen = summarizeRendimientoRows((rendimientoRes.data || []) as any[]);
-
-    return NextResponse.json({
-      ok: true,
-      total: resumen.total_importe,
-      clientes,
-      reservas: resumen.total,
-      tarotistas: workers,
-      minutos: resumen.total_minutos,
-      captadas: resumen.total_captadas,
-      compras: resumen.total_compras,
-    });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'ERR' }, { status: 500 });
+  if (error) {
+    return NextResponse.json({ ok: false, error: error.message });
   }
+
+  const totalFacturacion = (data || []).reduce((acc, r) => acc + (r.importe || 0), 0);
+
+  return NextResponse.json({
+    ok: true,
+    facturacion_mes: totalFacturacion
+  });
 }
