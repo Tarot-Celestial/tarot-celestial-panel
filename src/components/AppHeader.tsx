@@ -111,15 +111,15 @@ export default function AppHeader() {
   async function loadNotifications() {
     if (!notifUserId) return;
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
+      const { data: sessionData } = await sb.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch(`/api/notifications/list?user_id=${encodeURIComponent(notifUserId)}`, {
         cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const j = await res.json().catch(() => null);
-      const data = Array.isArray(j?.data) ? j.data : [];
-      setNotifications(data);
+      const notifData = Array.isArray(j?.data) ? j.data : [];
+      setNotifications(notifData);
     } catch {
       setNotifications([]);
     }
