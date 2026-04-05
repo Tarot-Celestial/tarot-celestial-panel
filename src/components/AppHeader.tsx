@@ -14,6 +14,7 @@ type HeaderNotif = {
   message?: string | null;
   read?: boolean | null;
   created_at?: string | null;
+  synthetic?: boolean | null;
 };
 
 function pathLabel(pathname: string) {
@@ -110,8 +111,11 @@ export default function AppHeader() {
   async function loadNotifications() {
     if (!notifUserId) return;
     try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       const res = await fetch(`/api/notifications/list?user_id=${encodeURIComponent(notifUserId)}`, {
         cache: "no-store",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       const j = await res.json().catch(() => null);
       const data = Array.isArray(j?.data) ? j.data : [];
@@ -130,9 +134,18 @@ export default function AppHeader() {
 
   async function markAsRead(id: string) {
     try {
+      if (String(id).startsWith("virtual:")) {
+        setNotifications((prev) => prev.map((n) => (String(n.id) === String(id) ? { ...n, read: true } : n)));
+        return;
+      }
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
       await fetch("/api/notifications/read", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ id }),
       });
       setNotifications((prev) => prev.map((n) => (String(n.id) === String(id) ? { ...n, read: true } : n)));

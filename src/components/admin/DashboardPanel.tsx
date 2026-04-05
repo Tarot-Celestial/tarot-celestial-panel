@@ -41,6 +41,11 @@ function minsUntil(dateValue: any) {
   return Math.round((t - Date.now()) / 60000);
 }
 
+function isPendingReserva(v: any) {
+  const s = String(v || "").trim().toLowerCase();
+  return ["pendiente", "pending", "confirmada", "confirmado", "programada", "activa"].includes(s);
+}
+
 export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -133,13 +138,13 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   );
 
   const pendientes = useMemo(
-    () => (reservas || []).filter((x: any) => String(x?.estado || "") !== "finalizada").length,
+    () => (reservas || []).filter((x: any) => isPendingReserva(x?.estado)).length,
     [reservas]
   );
 
   const reservasProximas = useMemo(() => {
     return [...(reservas || [])]
-      .filter((x: any) => String(x?.estado || "") !== "finalizada")
+      .filter((x: any) => isPendingReserva(x?.estado))
       .sort((a: any, b: any) => {
         const at = a?.fecha_reserva ? new Date(a.fecha_reserva).getTime() : 0;
         const bt = b?.fecha_reserva ? new Date(b.fecha_reserva).getTime() : 0;
@@ -172,10 +177,36 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       });
     }
 
-    if (pendientes >= 8) {
+    if (pendientes >= 5) {
       items.push({
-        title: "Carga alta en reservas",
-        description: `Hay ${pendientes} reservas pendientes en cola.`,
+        title: "Carga de reservas",
+        description: `Hay ${pendientes} reservas activas o pendientes de gestionar.`,
+        tone: pendientes >= 10 ? "danger" : "warning",
+      });
+    }
+
+    const totalMes = Number(statsTotals?.revenue_total || 0);
+    if (totalMes >= 3000) {
+      items.push({
+        title: "Facturación fuerte",
+        description: `El mes ya acumula ${eur(totalMes)} en cobros registrados.`,
+        tone: "success",
+      });
+    }
+
+    const top = [...(statsRows || [])].sort((a: any, b: any) => Number(b?.captadas_total || 0) - Number(a?.captadas_total || 0))[0];
+    if (top && Number(top?.captadas_total || 0) >= 3) {
+      items.push({
+        title: "Tarotista destacada",
+        description: `${top.display_name || "Equipo"} lidera captación con ${numES(top.captadas_total || 0)} captadas.`,
+        tone: "info",
+      });
+    }
+
+    if ((diarioRows || []).length === 0 && new Date().getHours() >= 12) {
+      items.push({
+        title: "Sin compras hoy",
+        description: "Todavía no hay compras registradas hoy. Revisa seguimientos, cobros o captación.",
         tone: "warning",
       });
     }
@@ -189,7 +220,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
     }
 
     return items;
-  }, [reservasProximas, diarioRows, pendientes]);
+  }, [reservasProximas, diarioRows, pendientes, statsRows, statsTotals]);
 
   const topProduccion = useMemo(() => {
     return [...(statsRows || [])]

@@ -169,6 +169,7 @@ export default function Admin() {
   const [statsRows, setStatsRows] = useState<any[]>([]);
   const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
   const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
+  const [heroVipCount, setHeroVipCount] = useState(0);
 
   const pollRef = useRef<any>(null);
   const lastMonthRef = useRef<string>("");
@@ -657,7 +658,7 @@ export default function Admin() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const [statsRes, rankRes, invRes] = await Promise.all([
+      const [statsRes, rankRes, invRes, vipRes] = await Promise.all([
         fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
@@ -667,11 +668,15 @@ export default function Admin() {
         fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
+        fetch(`/api/admin/crm/clientes-alertas`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
 
       const statsJ = await safeJson(statsRes);
       const rankJ = await safeJson(rankRes);
       const invJ = await safeJson(invRes);
+      const vipJ = await safeJson(vipRes);
 
       if (!statsJ?._ok || !statsJ?.ok) throw new Error(statsJ?.error || `HTTP ${statsJ?._status}`);
       if (!rankJ?._ok || !rankJ?.ok) throw new Error(rankJ?.error || `HTTP ${rankJ?._status}`);
@@ -682,10 +687,12 @@ export default function Admin() {
       setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
       setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
       setInvoices(invJ.invoices || []);
+      setHeroVipCount(Number(vipJ?.summary?.clientesVip || 0));
 
       if (!silent) setStatsMsg("✅ Estadísticas cargadas.");
     } catch (e: any) {
       if (!silent) setStatsMsg(`❌ ${e?.message || "Error"}`);
+      setHeroVipCount(0);
     } finally {
       if (!silent) setStatsLoading(false);
     }
@@ -1232,8 +1239,10 @@ export default function Admin() {
       minutes_per_worker: workers ? minutes / workers : 0,
       captadas_per_100_min: minutes ? (captadas / minutes) * 100 : 0,
       factura_media: workers ? invoiceTotal / workers : 0,
+      revenue_total: Number(statsTotals?.revenue_total || 0),
+      vip_count: heroVipCount,
     };
-  }, [invoices, statsRows, statsTotals]);
+  }, [invoices, statsRows, statsTotals, heroVipCount]);
 
   const attSummary = useMemo(() => {
     const online = (attOnline || []).length;
@@ -1336,7 +1345,7 @@ export default function Admin() {
             <div className="tc-hero-top">
               <div>
                 <div className="tc-hero-title">👑 Admin — Tarot Celestial</div>
-                <div className="tc-hero-sub">Panel maestro con facturación, operaciones, CRM y control de equipo en una sola experiencia premium.</div>
+                
               </div>
 
               <div className="tc-row">
@@ -1372,13 +1381,13 @@ export default function Admin() {
               </div>
               <div className="tc-kpi-panel">
                 <div className="tc-kpi-label">Clientes VIP</div>
-                <div className="tc-kpi-value">{String(statsComputed.review || 0)}</div>
-                <div className="tc-kpi-note">Casos en revisión y seguimiento</div>
+                <div className="tc-kpi-value">{String(statsComputed.vip_count || 0)}</div>
+                <div className="tc-kpi-note">Con 1.000 € o más acumulados</div>
               </div>
               <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Módulo activo</div>
-                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{String(tab).toUpperCase()}</div>
-                <div className="tc-kpi-note">Navegación lateral tipo sistema operativo</div>
+                <div className="tc-kpi-label">Facturación</div>
+                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{eur(statsComputed.revenue_total || 0)}</div>
+                <div className="tc-kpi-note">Cobros registrados este mes</div>
               </div>
             </div>
           </section>
