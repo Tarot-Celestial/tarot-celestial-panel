@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
 
+function normalizarTelefono(tel: string | null) {
+  if (!tel) return null;
+
+  // quitar espacios, guiones, etc
+  let limpio = tel.replace(/\D/g, "");
+
+  // si empieza sin +, asumimos España
+  if (!limpio.startsWith("34") && limpio.length === 9) {
+    limpio = "34" + limpio;
+  }
+
+  return limpio;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -14,16 +28,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Crear cliente directamente
+    const telefono_normalizado = normalizarTelefono(telefono);
+
+    if (!telefono_normalizado) {
+      return NextResponse.json(
+        { ok: false, error: "Teléfono inválido" },
+        { status: 400 }
+      );
+    }
+
     const { data: cliente, error } = await supabase
       .from("crm_clientes")
       .insert([
         {
           nombre,
           telefono,
+          telefono_normalizado, // 🔥 CLAVE
           email,
           origen: origen || "facebook_ads",
-          estado: "nuevo_lead",
         },
       ])
       .select()
@@ -31,7 +53,6 @@ export async function POST(req: NextRequest) {
 
     if (error) throw error;
 
-    // Crear notificación
     await supabase.from("notificaciones").insert([
       {
         tipo: "nuevo_lead",
