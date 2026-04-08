@@ -14,12 +14,13 @@ type Lead = {
 export default function CaptacionPanel({ mode }: { mode?: string }) {
   const [items, setItems] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
+  const [view, setView] = useState<"pendientes" | "todos">("pendientes");
 
   async function load() {
     try {
       setLoading(true);
 
-      const res = await fetch("/api/captacion/list", {
+      const res = await fetch(`/api/captacion/list?scope=${view}`, {
         cache: "no-store",
       });
 
@@ -43,7 +44,7 @@ export default function CaptacionPanel({ mode }: { mode?: string }) {
         headers: { "Content-Type": "application/json" },
       });
 
-      // 🔥 UX PRO → desaparece al instante
+      // 🔥 desaparecer instantáneo
       setItems((prev) => prev.filter((l) => l.id !== id));
     } catch (e) {
       console.error("Error acción", e);
@@ -52,16 +53,39 @@ export default function CaptacionPanel({ mode }: { mode?: string }) {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [view]);
 
   return (
     <div style={{ padding: 20 }}>
       <h2 style={{ fontSize: 24, fontWeight: "bold" }}>Captación</h2>
 
+      {/* 🔥 FILTROS */}
+      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+        <button
+          onClick={() => setView("pendientes")}
+          style={{
+            fontWeight: view === "pendientes" ? "bold" : "normal",
+          }}
+        >
+          🔥 Pendientes
+        </button>
+
+        <button
+          onClick={() => setView("todos")}
+          style={{
+            fontWeight: view === "todos" ? "bold" : "normal",
+          }}
+        >
+          📋 Todos
+        </button>
+      </div>
+
       {loading && <p>Cargando...</p>}
 
       {!loading && !items.length && (
-        <p style={{ opacity: 0.6 }}>No hay leads pendientes</p>
+        <p style={{ opacity: 0.6, marginTop: 10 }}>
+          No hay leads en esta vista
+        </p>
       )}
 
       <div style={{ marginTop: 20, display: "grid", gap: 12 }}>
