@@ -2,7 +2,7 @@
 import { useState } from "react";
 
 export default function AdminClientesTab({   clientes,   oro,   plata,   bronce,   onReviewClient, }: any) {
-  const [filtroRango, setFiltroRango] = useState(null);
+  const [filtroRango, setFiltroRango] = useState<string | null>(null);
 
   const clientesFiltrados = filtroRango
     ? clientes.filter((c: any) => c.rango_actual === filtroRango)
