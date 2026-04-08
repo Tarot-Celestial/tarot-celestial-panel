@@ -1,10 +1,11 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import TCToaster from "@/components/ui/TCToaster";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 
@@ -15,6 +16,7 @@ type HeaderNotif = {
   read?: boolean | null;
   created_at?: string | null;
   synthetic?: boolean | null;
+  kind?: string | null;
 };
 
 function pathLabel(pathname: string) {
@@ -38,6 +40,7 @@ export default function AppHeader() {
   const [estadoLoading, setEstadoLoading] = useState(false);
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const lastLeadToastIdRef = useRef("");
 
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
@@ -120,6 +123,20 @@ export default function AppHeader() {
       const j = await res.json().catch(() => null);
       const notifData = Array.isArray(j?.data) ? j.data : [];
       setNotifications(notifData);
+
+      const latestUnreadLead = notifData.find(
+        (n: any) => !n?.read && (String(n?.kind || "") === "lead" || /lead de facebook/i.test(String(n?.title || "")))
+      );
+
+      if (latestUnreadLead?.id && String(latestUnreadLead.id) !== String(lastLeadToastIdRef.current || "")) {
+        lastLeadToastIdRef.current = String(latestUnreadLead.id);
+        tcToast({
+          title: latestUnreadLead.title || "🔥 Nuevo lead",
+          description: latestUnreadLead.message || "Ha entrado un lead nuevo y conviene llamarlo cuanto antes.",
+          tone: "warning",
+          duration: 6500,
+        });
+      }
     } catch {
       setNotifications([]);
     }

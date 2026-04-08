@@ -74,6 +74,9 @@ export default function CRMClientesPanel({
   const [crmCountryFilter, setCrmCountryFilter] = useState("");
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
+  const [crmFreshLeads, setCrmFreshLeads] = useState<any[]>([]);
+  const [crmFreshLeadsLoading, setCrmFreshLeadsLoading] = useState(false);
+  const [crmFreshLeadsMsg, setCrmFreshLeadsMsg] = useState("");
   const [crmMsg, setCrmMsg] = useState("");
   const [crmImportLoading, setCrmImportLoading] = useState(false);
   const [crmCreateLoading, setCrmCreateLoading] = useState(false);
@@ -366,6 +369,10 @@ export default function CRMClientesPanel({
   useEffect(() => {
     loadCRMEtiquetas();
     loadCRMTarotistas();
+    loadFreshLeads();
+
+    const interval = window.setInterval(() => loadFreshLeads(true), 20000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -402,6 +409,68 @@ export default function CRMClientesPanel({
       setCrmPagoMsg("ℹ️ He recuperado el borrador del cobro de PayPal para este cliente. Pega la referencia y pulsa 'Confirmar pago' o 'Pago erróneo'.");
     } catch {}
   }, [crmClienteSelId]);
+
+
+  async function loadFreshLeads(silent = false) {
+    try {
+      if (!silent) {
+        setCrmFreshLeadsLoading(true);
+        setCrmFreshLeadsMsg("");
+      }
+
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/leads/recent?limit=6&minutes=240", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      const leads = Array.isArray(j?.leads) ? j.leads : [];
+      setCrmFreshLeads(leads);
+      if (!silent) {
+        setCrmFreshLeadsMsg(leads.length ? `Leads calientes: ${leads.length}` : "No hay leads recientes sin contactar");
+      }
+    } catch (e: any) {
+      if (!silent) setCrmFreshLeadsMsg(`❌ ${e?.message || "Error cargando leads"}`);
+      setCrmFreshLeads([]);
+    } finally {
+      if (!silent) setCrmFreshLeadsLoading(false);
+    }
+  }
+
+  async function markLeadAsContacted(clienteId: string) {
+    const id = String(clienteId || "").trim();
+    if (!id) return;
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/crm/leads/contacted", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ cliente_id: id }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+
+      setCrmFreshLeads((prev) => prev.filter((lead: any) => String(lead?.id || "") !== id));
+      setCrmFreshLeadsMsg("✅ Lead marcado como contactado");
+
+      if (String(crmClienteSelId || crmClienteFicha?.id || "") === id) {
+        await openCRMFicha(id);
+      }
+    } catch (e: any) {
+      setCrmFreshLeadsMsg(`❌ ${e?.message || "Error marcando lead"}`);
+    }
+  }
 
   async function searchCRM() {
     const q = crmQuery.trim();
@@ -1259,6 +1328,92 @@ export default function CRMClientesPanel({
             <span className="tc-chip">Resultados: {crmRows.length}</span>
             {crmClienteSelId ? <span className="tc-chip">Cliente activo</span> : null}
           </div>
+        </div>
+      </div>
+
+      <div
+        className="tc-card"
+        style={{
+          borderRadius: 22,
+          border: "1px solid rgba(255,149,92,.18)",
+          background:
+            "radial-gradient(circle at top right, rgba(255,149,92,.16), transparent 24%), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
+        }}
+      >
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title">🔥 Leads calientes de Meta / Facebook</div>
+            <div className="tc-sub" style={{ marginTop: 6, maxWidth: 760 }}>
+              Los leads nuevos entran aquí automáticamente para que el equipo contacte en caliente.
+            </div>
+          </div>
+
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span className="tc-chip">Pendientes: {crmFreshLeads.length}</span>
+            {crmFreshLeadsMsg ? <span className="tc-chip">{crmFreshLeadsMsg}</span> : null}
+            <button className="tc-btn tc-btn-gold" onClick={() => loadFreshLeads()} disabled={crmFreshLeadsLoading}>
+              {crmFreshLeadsLoading ? "Actualizando…" : "Actualizar leads"}
+            </button>
+          </div>
+        </div>
+
+        <div className="tc-hr" />
+
+        <div style={{ display: "grid", gap: 10 }}>
+          {crmFreshLeads.map((lead: any) => {
+            const fullName = String(lead?.nombre_completo || "Lead Facebook").trim();
+            const createdAt = lead?.created_at
+              ? new Date(lead.created_at).toLocaleString("es-ES", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "—";
+
+            return (
+              <div
+                key={lead.id}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 12,
+                  alignItems: "center",
+                  border: "1px solid rgba(255,255,255,.08)",
+                  borderRadius: 16,
+                  padding: 14,
+                  background: "rgba(255,255,255,.025)",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ fontWeight: 900 }}>{fullName}</div>
+                    <span className="tc-chip">{lead?.campaign_name || lead?.origen || "facebook_ads"}</span>
+                    {lead?.form_name ? <span className="tc-chip">{lead.form_name}</span> : null}
+                  </div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    {lead?.telefono || "Sin teléfono"}
+                    {lead?.email ? ` · ${lead.email}` : ""}
+                    {createdAt ? ` · entró ${createdAt}` : ""}
+                  </div>
+                </div>
+
+                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <button className="tc-btn" onClick={() => openCRMFicha(String(lead.id || ""))}>
+                    Abrir ficha
+                  </button>
+                  <button className="tc-btn tc-btn-ok" onClick={() => markLeadAsContacted(String(lead.id || ""))}>
+                    Marcar contactado
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {!crmFreshLeads.length ? (
+            <div className="tc-sub">No hay leads recientes pendientes en este momento.</div>
+          ) : null}
         </div>
       </div>
 
