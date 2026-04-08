@@ -19,10 +19,17 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("captacion_leads")
     .select("*")
-    .in("estado", ["nuevo","reintento_2","reintento_3"])
+    // 🔥 SOLO EXCLUIMOS LOS CERRADOS (MUCHO MÁS ROBUSTO)
+    .not(
+      "estado",
+      "in",
+      '("contactado","no_interesado","numero_invalido","perdido")'
+    )
     .order("next_contact_at", { ascending: true });
 
-  if (error) return NextResponse.json({ ok:false });
+  if (error) {
+    return NextResponse.json({ ok: false, error: error.message });
+  }
 
-  return NextResponse.json({ ok:true, items:data });
+  return NextResponse.json({ ok: true, items: data });
 }
