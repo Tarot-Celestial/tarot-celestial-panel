@@ -5,7 +5,7 @@ export default function AdminClientesTab({   clientes,   oro,   plata,   bronce,
   const [filtroRango, setFiltroRango] = useState(null);
 
   const clientesFiltrados = filtroRango
-    ? clientes.filter(c => c.rango_actual === filtroRango)
+    ? clientes.filter((c: any) => c.rango_actual === filtroRango)
     : clientes;
 
   return (
