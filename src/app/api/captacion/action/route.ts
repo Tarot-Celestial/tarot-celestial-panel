@@ -45,8 +45,11 @@ async function workerFromReq(req: Request) {
 
 function scheduleForAttempt(createdAt: string, attempt: number) {
   const base = new Date(createdAt || new Date().toISOString());
-  const daysOffset = attempt <= 1 ? 0 : attempt - 1;
-  base.setDate(base.getDate() + daysOffset);
+  if (attempt === 2) {
+    base.setDate(base.getDate() + 1);
+  } else if (attempt >= 3) {
+    base.setDate(base.getDate() + 2);
+  }
   return base.toISOString();
 }
 
@@ -83,10 +86,31 @@ export async function POST(req: Request) {
     if (leadError) throw leadError;
     if (!lead) return NextResponse.json({ ok: false, error: "LEAD_NO_EXISTE" }, { status: 404 });
 
+    if (String(worker.role) === "central" && lead.assigned_worker_id && String(lead.assigned_worker_id) !== String(worker.id)) {
+      return NextResponse.json({ ok: false, error: "LEAD_ASIGNADO_A_OTRA_PERSONA" }, { status: 403 });
+    }
+
     const nowIso = new Date().toISOString();
     const authorName = String(worker.display_name || worker.email || "Equipo").trim() || "Equipo";
-    const patch: Record<string, any> = {
+    const basePatch: Record<string, any> = {
       updated_at: nowIso,
+      assigned_worker_id: lead.assigned_worker_id || worker.id,
+      assigned_role: lead.assigned_role || worker.role,
+    };
+
+    if (action === "assign_to_me") {
+      const { data: updated, error: updateError } = await admin
+        .from("captacion_leads")
+        .update(basePatch)
+        .eq("id", leadId)
+        .select("*")
+        .single();
+      if (updateError) throw updateError;
+      return NextResponse.json({ ok: true, lead: updated });
+    }
+
+    const patch: Record<string, any> = {
+      ...basePatch,
       last_contact_at: nowIso,
     };
 
@@ -113,6 +137,7 @@ export async function POST(req: Request) {
         patch.estado = "perdido";
         patch.closed_at = nowIso;
         patch.last_result = "no_responde";
+        patch.intento_actual = Number(lead.max_intentos || 3);
         notePrefix = "⌛ Lead sin respuesta tras 3 intentos";
       } else {
         patch.intento_actual = nextAttempt;
