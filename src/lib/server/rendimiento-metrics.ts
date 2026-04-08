@@ -21,6 +21,10 @@ type RendimientoRow = {
   tipo_registro?: string | null;
   cliente_compra_minutos?: boolean | null;
   usa_7_free?: boolean | null;
+  codigo_1?: string | null;
+  minutos_1?: number | string | null;
+  codigo_2?: string | null;
+  minutos_2?: number | string | null;
 };
 
 type WorkerLite = {
@@ -75,6 +79,55 @@ export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbac
   return result;
 }
 
+function parseCodeSlot(rawCode: unknown, rawMinutes: unknown) {
+  const result = {
+    free: 0,
+    rueda: 0,
+    cliente: 0,
+    repite: 0,
+    call_fixed: 0,
+    otros: 0,
+  };
+  const mins = Number(rawMinutes || 0) || 0;
+  if (!mins) return result;
+
+  const code = normalizeText(rawCode);
+  if (code === 'free' || code === '7free') result.free = mins;
+  else if (code === 'rueda') result.rueda = mins;
+  else if (code === 'cliente') result.cliente = mins;
+  else if (code === 'repite') result.repite = mins;
+  else if (code.includes('call')) result.call_fixed = mins;
+  else result.otros = mins;
+  return result;
+}
+
+function sumParsed(a: ReturnType<typeof parseResumenCodigo>, b: ReturnType<typeof parseResumenCodigo>) {
+  return {
+    free: roundMoney((a.free || 0) + (b.free || 0)),
+    rueda: roundMoney((a.rueda || 0) + (b.rueda || 0)),
+    cliente: roundMoney((a.cliente || 0) + (b.cliente || 0)),
+    repite: roundMoney((a.repite || 0) + (b.repite || 0)),
+    call_fixed: roundMoney((a.call_fixed || 0) + (b.call_fixed || 0)),
+    otros: roundMoney((a.otros || 0) + (b.otros || 0)),
+  };
+}
+
+function parseRowBreakdown(row: RendimientoRow) {
+  const fromSlots = sumParsed(
+    parseCodeSlot(row.codigo_1, row.minutos_1),
+    parseCodeSlot(row.codigo_2, row.minutos_2)
+  );
+
+  const slotTotal = Object.values(fromSlots).reduce((acc, n) => acc + Number(n || 0), 0);
+  if (slotTotal > 0) return fromSlots;
+
+  return parseResumenCodigo(
+    row.resumen_codigo,
+    Number(row.tiempo || 0) || 0,
+    String(row.tipo_registro || '')
+  );
+}
+
 export function resolveTarotistaWorkerId(row: RendimientoRow, workerIdByName: Map<string, string>) {
   if (row.tarotista_worker_id) return String(row.tarotista_worker_id);
   const byName = workerIdByName.get(normalizeText(row.tarotista_nombre));
@@ -94,11 +147,13 @@ export async function listTarotistaWorkers() {
 
 export async function listRendimientoRows(start: string, endExclusive: string) {
   const admin = getAdminClient();
+  const startIso = `${start}T00:00:00.000Z`;
+  const endIso = `${endExclusive}T00:00:00.000Z`;
   const { data, error } = await admin
     .from('rendimiento_llamadas')
     .select('*')
-    .gte('fecha', start)
-    .lt('fecha', endExclusive)
+    .gte('fecha_hora', startIso)
+    .lt('fecha_hora', endIso)
     .order('fecha_hora', { ascending: true });
   if (error) throw error;
   return (data || []) as RendimientoRow[];
@@ -143,7 +198,7 @@ export function aggregateRendimientoByTarotista(rows: RendimientoRow[], workers:
 
     const agg = rowsMap.get(resolvedWorkerId);
     const importe = Number(row.importe || 0) || 0;
-    const parsed = parseResumenCodigo(row.resumen_codigo, Number(row.tiempo || 0) || 0, String(row.tipo_registro || ''));
+    const parsed = parseRowBreakdown(row);
     if (special && parsed.call_fixed === 0) {
       const fallbackCall = Number(row.tiempo || 0) || 0;
       if (fallbackCall > 0) parsed.call_fixed += fallbackCall;
@@ -193,7 +248,7 @@ export function summarizeRendimientoRows(rows: RendimientoRow[]) {
   const total_importe = roundMoney(rows.reduce((acc, row) => acc + (Number(row.importe || 0) || 0), 0));
   const total_minutos = roundMoney(
     rows.reduce((acc, row) => {
-      const parsed = parseResumenCodigo(row.resumen_codigo, Number(row.tiempo || 0) || 0, String(row.tipo_registro || ''));
+      const parsed = parseRowBreakdown(row);
       return acc + Object.values(parsed).reduce((a, n) => a + Number(n || 0), 0);
     }, 0)
   );
