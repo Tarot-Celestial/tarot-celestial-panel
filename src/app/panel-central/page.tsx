@@ -1502,7 +1502,7 @@ export default function Central() {
           )}
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
-          {tab === "captacion" && <CaptacionPanel mode="central" />}
+          {tab === "captacion" && <CaptacionPanel />}
           {tab === "rendimiento" && <RendimientoPanel mode="central" />}
           {tab === "reservas" && <ReservasPanel mode="central" />}
           {tab === "habituales" && <HabitualesPanel mode="central" />}
