@@ -20,7 +20,7 @@ export default function AdminClientesTab({   clientes,   oro,   plata,   bronce,
         <button onClick={() => setFiltroRango(null)}>Quitar filtro</button>
       )}
 
-      {clientesFiltrados.map(c => (
+      {clientesFiltrados.map((c: any) => (
         <div key={c.id}>{c.nombre}</div>
       ))}
     </div>
