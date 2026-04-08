@@ -1,7 +1,7 @@
 // MODIFIED: filtro por rango
 import { useState } from "react";
 
-export default function AdminClientesTab({ clientes, oro, plata, bronce }) {
+export default function AdminClientesTab({   clientes,   oro,   plata,   bronce,   onReviewClient, }: any) {
   const [filtroRango, setFiltroRango] = useState(null);
 
   const clientesFiltrados = filtroRango
