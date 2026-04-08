@@ -89,7 +89,7 @@ export default function CaptacionPanel({ mode }: { mode: "admin" | "central" }) 
     try {
       if (showSpinner) setLoading(true);
       setMsg("");
-      const res = await authedFetch(`/api/captacion/list?scope=${view}`);
+      const res = await fetch(`/api/captacion/list?scope=${view}`, {   cache: "no-store", });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar captación");
       setItems(Array.isArray(json?.items) ? json.items : []);
