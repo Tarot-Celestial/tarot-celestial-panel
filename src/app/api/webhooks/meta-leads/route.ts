@@ -30,12 +30,12 @@ export async function POST(req: NextRequest) {
 
     const telefono_normalizado = normalizarTelefono(telefono);
 
-    if (!telefono_normalizado) {
-      return NextResponse.json(
-        { ok: false, error: "Teléfono inválido" },
-        { status: 400 }
-      );
-    }
+   let telefono_normalizado = normalizarTelefono(telefono);
+
+// 🔥 fallback si no hay teléfono
+if (!telefono_normalizado) {
+  telefono_normalizado = "sin_telefono_" + Date.now();
+}
 
     const { data: cliente, error } = await supabase
       .from("crm_clientes")
