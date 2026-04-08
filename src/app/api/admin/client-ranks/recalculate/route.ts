@@ -17,7 +17,36 @@ function adminClient() {
     { auth: { persistSession: false } }
   );
 }
+async function notifyRankChange(admin: any, params: {
+  clienteId: string;
+  clientName: string;
+  rank: string;
+  previousRank?: string | null;
+}) {
+  const { clienteId, clientName, rank, previousRank } = params;
 
+  const order: any = {
+    bronce: 1,
+    plata: 2,
+    oro: 3,
+  };
+
+  // ❌ si no hay previo → no notificar (primer cálculo)
+  if (!previousRank) return;
+
+  // ❌ si no sube → no notificar
+  if (order[rank] <= order[previousRank]) return;
+
+  await admin.from("notifications").insert({
+    type: "rank_upgrade",
+    title: "Cliente sube de rango",
+    message: `🔥 ${clientName} ha subido a ${rank.toUpperCase()}`,
+    cliente_id: clienteId,
+    rango: rank,
+    read: false,
+    created_at: new Date().toISOString(),
+  });
+}
 async function uidFromBearer(req: Request) {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
