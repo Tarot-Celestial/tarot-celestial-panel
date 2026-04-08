@@ -32,10 +32,10 @@ export async function POST(req: NextRequest) {
 
    let telefono_normalizado = normalizarTelefono(telefono);
 
-// 🔥 fallback si no hay teléfono
-if (!telefono_normalizado) {
+  // 🔥 fallback si no hay teléfono
+  if (!telefono_normalizado) {
   telefono_normalizado = "sin_telefono_" + Date.now();
-}
+  }
 
     const { data: cliente, error } = await supabase
       .from("crm_clientes")
