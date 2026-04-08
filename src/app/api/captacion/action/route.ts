@@ -78,7 +78,7 @@ export async function POST(req: Request) {
     const intentoActual = Number(lead.intento_actual || 1);
     let intento = intentoActual;
     let estado = String(lead.estado || "nuevo");
-    let nextContactAt: string | null = lead.next_contact_at: null;
+    let nextContactAt: string | null = lead.next_contact_at || null;
     let contactedAt: string | null = lead.contacted_at || null;
     let closedAt: string | null = lead.closed_at || null;
     let lastResult = String(action);
