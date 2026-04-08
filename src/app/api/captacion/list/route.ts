@@ -16,16 +16,26 @@ const supabase = createClient(
 );
 
 export async function GET(req: NextRequest) {
-  const { data, error } = await supabase
+  const { searchParams } = new URL(req.url);
+  const scope = searchParams.get("scope") || "pendientes";
+
+  let query = supabase
     .from("captacion_leads")
     .select("*")
-    // 🔥 SOLO EXCLUIMOS LOS CERRADOS (MUCHO MÁS ROBUSTO)
-    .not(
+    .order("next_contact_at", { ascending: true });
+
+  // 🔥 FILTRO POR VISTA
+  if (scope === "pendientes") {
+    query = query.not(
       "estado",
       "in",
       '("contactado","no_interesado","numero_invalido","perdido")'
-    )
-    .order("next_contact_at", { ascending: true });
+    );
+  }
+
+  // 👇 "todos" no aplica filtro
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message });
