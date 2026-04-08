@@ -18,6 +18,35 @@ function adminClient() {
   );
 }
 
+async function uidFromBearer(req: Request) {
+  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+
+  const sb = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+
+  const { data } = await sb.auth.getUser();
+  return data.user?.id || null;
+}
+
+async function workerFromReq(req: Request) {
+  const uid = await uidFromBearer(req);
+  if (!uid) return null;
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("workers")
+    .select("id, role, display_name")
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
+
 function firstDayOfMonth(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -33,89 +62,165 @@ function calcRank(total: number) {
   return null;
 }
 
+function normalizeName(v: any) {
+  return String(v || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function runRecalc() {
   const admin = adminClient();
-
   const now = new Date();
   const currentMonthStart = firstDayOfMonth(now);
-  const prevMonthStart = addMonths(currentMonthStart, -1);
   const nextMonthStart = addMonths(currentMonthStart, 1);
 
-  // 🔥 TRAEMOS TODAS LAS LLAMADAS
   const { data: rows, error } = await admin
     .from("rendimiento_llamadas")
-    .select("cliente_nombre, importe, fecha_hora");
-
+    .select("cliente_id, cliente_nombre, importe, fecha_hora");
   if (error) throw error;
 
-  const gastos: Record<string, number> = {};
+  const { data: clientes, error: cliErr } = await admin
+    .from("crm_clientes")
+    .select("id, nombre, apellido");
+  if (cliErr) throw cliErr;
 
-  // 🔥 FILTRAMOS MES ANTERIOR EN JS (más fiable)
-  for (const row of rows || []) {
-    const fecha = new Date(row.fecha_hora);
-
-    if (fecha >= currentMonthStart && fecha < nextMonthStart) {
-      const nombre = (row.cliente_nombre || "").toLowerCase().trim();
-      if (!nombre) continue;
-
-      gastos[nombre] = (gastos[nombre] || 0) + Number(row.importe || 0);
-    }
+  const clienteByNormalized = new Map<string, string>();
+  for (const c of clientes || []) {
+    const full = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim();
+    const key1 = normalizeName(full);
+    const key2 = normalizeName(c?.nombre);
+    if (key1) clienteByNormalized.set(key1, String(c.id));
+    if (key2 && !clienteByNormalized.has(key2)) clienteByNormalized.set(key2, String(c.id));
   }
 
-  let updated = 0;
+  const gastos = new Map<string, { total: number; compras: number }>();
+
+  for (const row of rows || []) {
+    const fecha = new Date(row.fecha_hora);
+    if (!(fecha >= currentMonthStart && fecha < nextMonthStart)) continue;
+
+    const importe = Number(row.importe || 0);
+    if (!(importe > 0)) continue;
+
+    let clienteId = String(row.cliente_id || "").trim();
+    if (!clienteId) {
+      clienteId = clienteByNormalized.get(normalizeName(row.cliente_nombre)) || "";
+    }
+    if (!clienteId) continue;
+
+    const prev = gastos.get(clienteId) || { total: 0, compras: 0 };
+    prev.total += importe;
+    prev.compras += 1;
+    gastos.set(clienteId, prev);
+  }
+
+  await admin
+    .from("crm_clientes")
+    .update({
+      rango_actual: null,
+      rango_gasto_mes_anterior: 0,
+      rango_compras_mes_anterior: 0,
+      rango_actual_desde: currentMonthStart.toISOString().slice(0, 10),
+      rango_actual_hasta: nextMonthStart.toISOString().slice(0, 10),
+      updated_at: new Date().toISOString(),
+    })
+    .neq("id", "00000000-0000-0000-0000-000000000000");
+
   let bronce = 0;
   let plata = 0;
   let oro = 0;
+  let updated = 0;
+  let gastoMesAnterior = 0;
+  let comprasMesAnterior = 0;
 
-  // 🔥 ASIGNAMOS RANGOS
-  for (const nombre in gastos) {
-    const total = gastos[nombre];
-    const rank = calcRank(total);
+  for (const [clienteId, info] of Array.from(gastos.entries())) {
+    const rank = calcRank(info.total);
     if (!rank) continue;
+    if (rank === "bronce") bronce += 1;
+    if (rank === "plata") plata += 1;
+    if (rank === "oro") oro += 1;
+    gastoMesAnterior += info.total;
+    comprasMesAnterior += info.compras;
 
-    if (rank === "bronce") bronce++;
-    if (rank === "plata") plata++;
-    if (rank === "oro") oro++;
+    const payload = {
+      cliente_id: clienteId,
+      periodo_mes: currentMonthStart.toISOString().slice(0, 10),
+      calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10),
+      gasto_mes_anterior: Number(info.total.toFixed(2)),
+      compras_mes_anterior: info.compras,
+      rango: rank,
+      beneficios: rank === "oro"
+        ? {
+            nuevos_minutos_tarotista: 12,
+            minutos_extra_regulares: 12,
+            pases_gratis_mes: 3,
+            minutos_por_pase: 7,
+            seguimiento_post_ritual: true,
+            sorteos_activos: 1,
+          }
+        : rank === "plata"
+          ? {
+              nuevos_minutos_tarotista: 10,
+              minutos_extra_regulares: 10,
+              pases_gratis_mes: 3,
+              minutos_por_pase: 7,
+              seguimiento_post_ritual: true,
+              sorteos_activos: 0,
+            }
+          : {
+              nuevos_minutos_tarotista: 0,
+              minutos_extra_regulares: 0,
+              pases_gratis_mes: 3,
+              minutos_por_pase: 7,
+              seguimiento_post_ritual: false,
+              sorteos_activos: 0,
+            },
+      recalculated_at: new Date().toISOString(),
+    };
 
-    // 🔥 BUSCAMOS CLIENTE POR NOMBRE
-    const { data: cliente } = await admin
-      .from("crm_clientes")
-      .select("id, nombre")
-      .ilike("nombre", `%${nombre}%`)
-      .maybeSingle();
-
-    if (!cliente) continue;
-
-    // 🔥 ACTUALIZAMOS CLIENTE
     await admin
+      .from("cliente_rangos_mensuales")
+      .upsert(payload, { onConflict: "cliente_id,periodo_mes" });
+
+    const { error: updErr } = await admin
       .from("crm_clientes")
       .update({
         rango_actual: rank,
-        rango_gasto_mes_anterior: Number(total.toFixed(2)),
+        rango_gasto_mes_anterior: Number(info.total.toFixed(2)),
+        rango_compras_mes_anterior: info.compras,
         rango_actual_desde: currentMonthStart.toISOString().slice(0, 10),
         rango_actual_hasta: nextMonthStart.toISOString().slice(0, 10),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", cliente.id);
-
-    updated++;
+      .eq("id", clienteId);
+    if (updErr) throw updErr;
+    updated += 1;
   }
 
   return {
     ok: true,
+    periodo_actual: currentMonthStart.toISOString().slice(0, 10),
+    calculado_desde: currentMonthStart.toISOString().slice(0, 10),
     clientes_actualizados: updated,
+    gastoMesAnterior: Number(gastoMesAnterior.toFixed(2)),
+    comprasMesAnterior,
     rangos: { bronce, plata, oro },
   };
 }
 
 export async function POST(req: Request) {
   try {
+    const worker = await workerFromReq(req);
+    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!["admin", "central"].includes(String(worker.role || ""))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
     const result = await runRecalc();
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "ERR" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
 }

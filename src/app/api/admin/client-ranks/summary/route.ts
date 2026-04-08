@@ -53,36 +53,35 @@ export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
     if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!['admin','central'].includes(String(worker.role || ''))) {
+    if (!["admin", "central"].includes(String(worker.role || ""))) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
     const admin = adminClient();
     const period = firstDayOfMonthUTC(new Date()).toISOString().slice(0, 10);
 
-    const [histRes, clientRes] = await Promise.all([
-      admin.from("cliente_rangos_mensuales").select("cliente_id, rango, gasto_mes_anterior, compras_mes_anterior").eq("periodo_mes", period),
-      admin.from("crm_clientes").select("id, rango_actual").not("rango_actual", "is", null),
-    ]);
-    if (histRes.error) throw histRes.error;
-    if (clientRes.error) throw clientRes.error;
+    const { data: rows, error } = await admin
+      .from("crm_clientes")
+      .select("id, rango_actual, rango_gasto_mes_anterior, rango_compras_mes_anterior")
+      .not("rango_actual", "is", null);
+    if (error) throw error;
 
-    const history = histRes.data || [];
     const counts = { bronce: 0, plata: 0, oro: 0 };
     let gasto = 0;
     let compras = 0;
-    for (const row of history) {
-      const rank = String(row?.rango || "").toLowerCase();
+
+    for (const row of rows || []) {
+      const rank = String(row?.rango_actual || "").toLowerCase();
       if (rank in counts) counts[rank as keyof typeof counts] += 1;
-      gasto += Number(row?.gasto_mes_anterior || 0);
-      compras += Number(row?.compras_mes_anterior || 0);
+      gasto += Number(row?.rango_gasto_mes_anterior || 0);
+      compras += Number(row?.rango_compras_mes_anterior || 0);
     }
 
     return NextResponse.json({
       ok: true,
       period,
       summary: {
-        totalConRango: history.length,
+        totalConRango: (rows || []).length,
         bronce: counts.bronce,
         plata: counts.plata,
         oro: counts.oro,
