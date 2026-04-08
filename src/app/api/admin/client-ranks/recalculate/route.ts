@@ -18,161 +18,91 @@ function adminClient() {
   );
 }
 
-async function uidFromBearer(req: Request) {
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return null;
-
-  const sb = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false },
-  });
-
-  const { data } = await sb.auth.getUser();
-  return data.user?.id || null;
+function firstDayOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-async function workerFromReq(req: Request) {
-  const uid = await uidFromBearer(req);
-  if (!uid) return null;
-  const admin = adminClient();
-  const { data, error } = await admin
-    .from("workers")
-    .select("id, role, display_name")
-    .eq("user_id", uid)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
+function addMonths(date: Date, months: number) {
+  return new Date(date.getFullYear(), date.getMonth() + months, 1);
 }
 
-function firstDayOfMonthUTC(date: Date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
-}
-
-function addMonthsUTC(date: Date, months: number) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 0, 0, 0, 0));
-}
-
-function calcRank(total: number, purchases: number) {
-  if (purchases <= 0 || total <= 0) return null;
+function calcRank(total: number) {
   if (total >= 500) return "oro";
   if (total >= 100) return "plata";
-  return "bronce";
+  if (total > 0) return "bronce";
+  return null;
 }
 
 async function runRecalc() {
   const admin = adminClient();
-  const now = new Date();
-  const currentMonthStart = firstDayOfMonthUTC(now);
-  const prevMonthStart = addMonthsUTC(currentMonthStart, -1);
-  const nextMonthStart = addMonthsUTC(currentMonthStart, 1);
 
+  const now = new Date();
+  const currentMonthStart = firstDayOfMonth(now);
+  const prevMonthStart = addMonths(currentMonthStart, -1);
+  const nextMonthStart = addMonths(currentMonthStart, 1);
+
+  // 🔥 TRAEMOS TODAS LAS LLAMADAS
   const { data: rows, error } = await admin
     .from("rendimiento_llamadas")
-    .select("cliente_id, importe, fecha_hora, tipo_registro, forma_pago, cliente_compra_minutos")
-    .gte("fecha_hora", prevMonthStart.toISOString())
-    .lt("fecha_hora", currentMonthStart.toISOString())
-    .not("cliente_id", "is", null);
+    .select("cliente_nombre, importe, fecha_hora");
+
   if (error) throw error;
 
-  const byCliente = new Map<string, { total: number; purchases: number }>();
+  const gastos: Record<string, number> = {};
+
+  // 🔥 FILTRAMOS MES ANTERIOR EN JS (más fiable)
   for (const row of rows || []) {
-    const clienteId = String(row?.cliente_id || "").trim();
-    if (!clienteId) continue;
-    const importe = Number(row?.importe || 0);
-    if (!(importe > 0)) continue;
-    const prev = byCliente.get(clienteId) || { total: 0, purchases: 0 };
-    prev.total += importe;
-    prev.purchases += 1;
-    byCliente.set(clienteId, prev);
+    const fecha = new Date(row.fecha_hora);
+
+    if (fecha >= prevMonthStart && fecha < currentMonthStart) {
+      const nombre = (row.cliente_nombre || "").toLowerCase().trim();
+      if (!nombre) continue;
+
+      gastos[nombre] = (gastos[nombre] || 0) + Number(row.importe || 0);
+    }
   }
 
-  await admin
-    .from("crm_clientes")
-    .update({
-      rango_actual: null,
-      rango_gasto_mes_anterior: 0,
-      rango_compras_mes_anterior: 0,
-      rango_actual_desde: currentMonthStart.toISOString().slice(0, 10),
-      rango_actual_hasta: addMonthsUTC(currentMonthStart, 1).toISOString().slice(0, 10),
-      updated_at: new Date().toISOString(),
-    })
-    .neq("id", "00000000-0000-0000-0000-000000000000");
-
+  let updated = 0;
   let bronce = 0;
   let plata = 0;
   let oro = 0;
-  let updated = 0;
 
-  for (const [clienteId, info] of Array.from(byCliente.entries())) {
-    const rank = calcRank(info.total, info.purchases);
+  // 🔥 ASIGNAMOS RANGOS
+  for (const nombre in gastos) {
+    const total = gastos[nombre];
+    const rank = calcRank(total);
     if (!rank) continue;
-    if (rank === "bronce") bronce += 1;
-    if (rank === "plata") plata += 1;
-    if (rank === "oro") oro += 1;
 
-    const payload = {
-      cliente_id: clienteId,
-      periodo_mes: currentMonthStart.toISOString().slice(0, 10),
-      calculado_desde_mes: prevMonthStart.toISOString().slice(0, 10),
-      gasto_mes_anterior: Number(info.total.toFixed(2)),
-      compras_mes_anterior: info.purchases,
-      rango: rank,
-      beneficios: rank === "oro"
-        ? {
-            nuevos_minutos_tarotista: 12,
-            minutos_extra_regulares: 12,
-            pases_gratis_mes: 3,
-            minutos_por_pase: 7,
-            seguimiento_post_ritual: true,
-            sorteos_activos: 1,
-          }
-        : rank === "plata"
-          ? {
-              nuevos_minutos_tarotista: 10,
-              minutos_extra_regulares: 10,
-              pases_gratis_mes: 3,
-              minutos_por_pase: 7,
-              seguimiento_post_ritual: true,
-              sorteos_activos: 0,
-            }
-          : {
-              nuevos_minutos_tarotista: 0,
-              minutos_extra_regulares: 0,
-              pases_gratis_mes: 3,
-              minutos_por_pase: 7,
-              seguimiento_post_ritual: false,
-              sorteos_activos: 0,
-            },
-      recalculated_at: new Date().toISOString(),
-    };
+    if (rank === "bronce") bronce++;
+    if (rank === "plata") plata++;
+    if (rank === "oro") oro++;
 
-    const { error: histErr } = await admin
-      .from("cliente_rangos_mensuales")
-      .upsert(payload, { onConflict: "cliente_id,periodo_mes" });
-    if (histErr) throw histErr;
+    // 🔥 BUSCAMOS CLIENTE POR NOMBRE
+    const { data: cliente } = await admin
+      .from("crm_clientes")
+      .select("id, nombre")
+      .ilike("nombre", `%${nombre}%`)
+      .maybeSingle();
 
-    const { error: updErr } = await admin
+    if (!cliente) continue;
+
+    // 🔥 ACTUALIZAMOS CLIENTE
+    await admin
       .from("crm_clientes")
       .update({
         rango_actual: rank,
-        rango_gasto_mes_anterior: Number(info.total.toFixed(2)),
-        rango_compras_mes_anterior: info.purchases,
+        rango_gasto_mes_anterior: Number(total.toFixed(2)),
         rango_actual_desde: currentMonthStart.toISOString().slice(0, 10),
         rango_actual_hasta: nextMonthStart.toISOString().slice(0, 10),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", clienteId);
-    if (updErr) throw updErr;
-    updated += 1;
+      .eq("id", cliente.id);
+
+    updated++;
   }
 
   return {
     ok: true,
-    periodo_actual: currentMonthStart.toISOString().slice(0, 10),
-    calculado_desde: prevMonthStart.toISOString().slice(0, 10),
     clientes_actualizados: updated,
     rangos: { bronce, plata, oro },
   };
@@ -180,14 +110,12 @@ async function runRecalc() {
 
 export async function POST(req: Request) {
   try {
-    const worker = await workerFromReq(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!['admin','central'].includes(String(worker.role || ''))) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-    }
     const result = await runRecalc();
     return NextResponse.json(result);
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "ERR" },
+      { status: 500 }
+    );
   }
 }
