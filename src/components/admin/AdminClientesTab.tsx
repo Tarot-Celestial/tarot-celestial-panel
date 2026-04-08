@@ -255,6 +255,9 @@ export default function AdminClientesTab({
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [data, setData] = useState<ApiPayload | null>(null);
+  const [rankSummary, setRankSummary] = useState<any>(null);
+  const [rankLoading, setRankLoading] = useState(false);
+  const [rankMsg, setRankMsg] = useState("");
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
 
@@ -303,6 +306,55 @@ export default function AdminClientesTab({
     return token;
   }
 
+  async function loadRankSummary(silent = false) {
+    try {
+      if (!silent) {
+        setRankLoading(true);
+        setRankMsg("");
+      }
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const res = await fetch("/api/admin/client-ranks/summary", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || res.status}`);
+      setRankSummary(j.summary || null);
+      if (!silent) setRankMsg("✅ Rangos mensuales actualizados.");
+    } catch (e: any) {
+      if (!silent) setRankMsg(`❌ ${e?.message || "Error cargando rangos"}`);
+    } finally {
+      if (!silent) setRankLoading(false);
+    }
+  }
+
+  async function recalculateRanks() {
+    try {
+      setRankLoading(true);
+      setRankMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const res = await fetch("/api/admin/client-ranks/recalculate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || res.status}`);
+      setRankSummary({
+        totalConRango: Number(j?.clientes_actualizados || 0),
+        bronce: Number(j?.rangos?.bronce || 0),
+        plata: Number(j?.rangos?.plata || 0),
+        oro: Number(j?.rangos?.oro || 0),
+      });
+      setRankMsg(`✅ Rangos recalculados para ${Number(j?.clientes_actualizados || 0)} clientes.`);
+    } catch (e: any) {
+      setRankMsg(`❌ ${e?.message || "Error recalculando rangos"}`);
+    } finally {
+      setRankLoading(false);
+    }
+  }
+
   async function loadAlerts(silent = false) {
     if (loading && !silent) return;
 
@@ -337,7 +389,11 @@ export default function AdminClientesTab({
 
   useEffect(() => {
     loadAlerts(false);
-    const timer = setInterval(() => loadAlerts(true), 30000);
+    loadRankSummary(true);
+    const timer = setInterval(() => {
+      loadAlerts(true);
+      loadRankSummary(true);
+    }, 30000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -410,6 +466,34 @@ export default function AdminClientesTab({
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
+      <div
+        className="tc-card"
+        style={{
+          borderRadius: 24,
+          border: "1px solid rgba(255,215,120,.10)",
+          background: "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
+          boxShadow: "0 20px 50px rgba(0,0,0,.18)",
+        }}
+      >
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title">🏅 Rangos mensuales</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>Se calculan con el gasto del mes anterior y determinan los beneficios del mes actual.</div>
+          </div>
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <button className="tc-btn" onClick={() => loadRankSummary(false)} disabled={rankLoading}>{rankLoading ? "Cargando…" : "Actualizar"}</button>
+            <button className="tc-btn tc-btn-gold" onClick={recalculateRanks} disabled={rankLoading}>{rankLoading ? "Recalculando…" : "Recalcular"}</button>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12, marginTop: 14 }}>
+          <KpiCard title="Bronce" value={String(Number(rankSummary?.bronce || 0))} hint="Clientes con alguna compra" accent="rgba(214,156,110,.28)" />
+          <KpiCard title="Plata" value={String(Number(rankSummary?.plata || 0))} hint="Clientes desde 100€" accent="rgba(196,210,255,.28)" />
+          <KpiCard title="Oro" value={String(Number(rankSummary?.oro || 0))} hint="Clientes desde 500€" accent="rgba(255,215,120,.28)" />
+          <KpiCard title="Con rango" value={String(Number(rankSummary?.totalConRango || 0))} hint="Mes actual asignado" accent="rgba(181,156,255,.28)" />
+        </div>
+        {rankMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{rankMsg}</div> : null}
+      </div>
+
       <div
         className="tc-card"
         style={{

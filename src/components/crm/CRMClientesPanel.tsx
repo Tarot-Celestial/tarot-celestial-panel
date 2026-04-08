@@ -58,6 +58,80 @@ function eur(n: any) {
   const x = Number(n) || 0;
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
+function rankMeta(rank: string | null | undefined) {
+  const r = String(rank || "").toLowerCase();
+  if (r === "oro") {
+    return {
+      icon: "🥇",
+      label: "Oro",
+      chipBg: "rgba(255,215,120,.18)",
+      chipBorder: "1px solid rgba(255,215,120,.32)",
+      cardBg: "linear-gradient(135deg, rgba(255,215,120,.18), rgba(255,255,255,.03))",
+      cardBorder: "1px solid rgba(255,215,120,.28)",
+      perks: [
+        "12 min GRATIS con cada nueva tarotista",
+        "+12 min permanentes en compras a precio regular",
+        "3 pases gratis al mes de 7 minutos",
+        "Participación automática en sorteos activos",
+        "Seguimiento energético 1 mes post rituales",
+      ],
+    };
+  }
+  if (r === "plata") {
+    return {
+      icon: "🥈",
+      label: "Plata",
+      chipBg: "rgba(196,210,255,.18)",
+      chipBorder: "1px solid rgba(196,210,255,.30)",
+      cardBg: "linear-gradient(135deg, rgba(196,210,255,.16), rgba(255,255,255,.03))",
+      cardBorder: "1px solid rgba(196,210,255,.26)",
+      perks: [
+        "10 min GRATIS con cada nueva tarotista",
+        "+10 min permanentes en compras a precio regular",
+        "3 pases gratis al mes de 7 minutos",
+        "Seguimiento energético 1 mes post rituales",
+      ],
+    };
+  }
+  if (r === "bronce") {
+    return {
+      icon: "🥉",
+      label: "Bronce",
+      chipBg: "rgba(214,156,110,.18)",
+      chipBorder: "1px solid rgba(214,156,110,.30)",
+      cardBg: "linear-gradient(135deg, rgba(214,156,110,.16), rgba(255,255,255,.03))",
+      cardBorder: "1px solid rgba(214,156,110,.26)",
+      perks: ["3 pases gratis al mes de 7 minutos"],
+    };
+  }
+  return {
+    icon: "▫️",
+    label: "Sin rango",
+    chipBg: "rgba(255,255,255,.08)",
+    chipBorder: "1px solid rgba(255,255,255,.12)",
+    cardBg: "rgba(255,255,255,.03)",
+    cardBorder: "1px solid rgba(255,255,255,.08)",
+    perks: ["Sin compras el mes anterior"],
+  };
+}
+
+function rankChip(rank: string | null | undefined) {
+  const meta = rankMeta(rank);
+  return (
+    <span
+      className="tc-chip"
+      style={{
+        background: meta.chipBg,
+        border: meta.chipBorder,
+        color: "white",
+        fontWeight: 800,
+      }}
+    >
+      {meta.icon} {meta.label}
+    </span>
+  );
+}
+
 
 type CRMClientesPanelProps = {
   mode?: "admin" | "central";
@@ -82,6 +156,9 @@ export default function CRMClientesPanel({
   const [crmCreateLoading, setCrmCreateLoading] = useState(false);
   const [crmCreateMsg, setCrmCreateMsg] = useState("");
   const [mostrarNuevoCliente, setMostrarNuevoCliente] = useState(false);
+  const [crmRankSummary, setCrmRankSummary] = useState<any>(null);
+  const [crmRankLoading, setCrmRankLoading] = useState(false);
+  const [crmRankMsg, setCrmRankMsg] = useState("");
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
@@ -166,6 +243,64 @@ export default function CRMClientesPanel({
       return "";
     }
     return token;
+  }
+
+  async function loadRankSummary(silent = false) {
+    try {
+      if (!silent) {
+        setCrmRankLoading(true);
+        setCrmRankMsg("");
+      }
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const r = await fetch("/api/admin/client-ranks/summary", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      setCrmRankSummary(j?.summary || null);
+      if (!silent) setCrmRankMsg("✅ Rangos mensuales cargados.");
+    } catch (e: any) {
+      if (!silent) setCrmRankMsg(`❌ ${e?.message || "Error cargando rangos"}`);
+    } finally {
+      if (!silent) setCrmRankLoading(false);
+    }
+  }
+
+  async function recalculateClientRanks() {
+    try {
+      setCrmRankLoading(true);
+      setCrmRankMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const r = await fetch("/api/admin/client-ranks/recalculate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      const rangos = j?.rangos || {};
+      setCrmRankSummary({
+        totalConRango: Number(j?.clientes_actualizados || 0),
+        bronce: Number(rangos?.bronce || 0),
+        plata: Number(rangos?.plata || 0),
+        oro: Number(rangos?.oro || 0),
+        gastoMesAnterior: Number(j?.gastoMesAnterior || 0),
+        comprasMesAnterior: Number(j?.comprasMesAnterior || 0),
+      });
+      setCrmRankMsg(`✅ Rangos recalculados. ${Number(j?.clientes_actualizados || 0)} clientes actualizados.`);
+      if (crmQuery.trim() || crmPhoneFilter.trim() || crmTagFilter.trim() || crmCountryFilter.trim()) {
+        await searchCRM(true);
+      }
+      if (crmClienteSelId || crmClienteFicha?.id) {
+        await openCRMFicha(String(crmClienteSelId || crmClienteFicha?.id || ""));
+      }
+    } catch (e: any) {
+      setCrmRankMsg(`❌ ${e?.message || "Error recalculando rangos"}`);
+    } finally {
+      setCrmRankLoading(false);
+    }
   }
 
   function sortNotes(rows: any[]) {
@@ -370,8 +505,12 @@ export default function CRMClientesPanel({
     loadCRMEtiquetas();
     loadCRMTarotistas();
     loadFreshLeads();
+    loadRankSummary(true);
 
-    const interval = window.setInterval(() => loadFreshLeads(true), 20000);
+    const interval = window.setInterval(() => {
+      loadFreshLeads(true);
+      loadRankSummary(true);
+    }, 20000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -472,7 +611,7 @@ export default function CRMClientesPanel({
     }
   }
 
-  async function searchCRM() {
+  async function searchCRM(silent = false) {
     const q = crmQuery.trim();
     const telefono = crmPhoneFilter.trim();
     const etiqueta = crmTagFilter.trim();
@@ -485,8 +624,10 @@ export default function CRMClientesPanel({
     }
 
     try {
-      setCrmLoading(true);
-      setCrmMsg("");
+      if (!silent) {
+        setCrmLoading(true);
+        setCrmMsg("");
+      }
 
       const token = await getTokenOrLogin();
       if (!token) return;
@@ -514,7 +655,7 @@ export default function CRMClientesPanel({
       setCrmRows([]);
       setCrmMsg(`❌ ${e?.message || "Error"}`);
     } finally {
-      setCrmLoading(false);
+      if (!silent) setCrmLoading(false);
     }
   }
 
@@ -1417,6 +1558,43 @@ export default function CRMClientesPanel({
         </div>
       </div>
 
+      <div
+        className="tc-card"
+        style={{
+          borderRadius: 22,
+          border: "1px solid rgba(255,215,120,.16)",
+          background:
+            "radial-gradient(circle at top right, rgba(255,215,120,.16), transparent 24%), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
+        }}
+      >
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title">🏅 Rangos mensuales de clientes</div>
+            <div className="tc-sub" style={{ marginTop: 6, maxWidth: 820 }}>
+              El rango del mes actual se calcula automáticamente usando el gasto del mes anterior. Bronce con cualquier compra, Plata desde 100€ y Oro desde 500€.
+            </div>
+          </div>
+
+          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <button className="tc-btn" onClick={() => loadRankSummary(false)} disabled={crmRankLoading}>
+              {crmRankLoading ? "Cargando…" : "Actualizar rangos"}
+            </button>
+            <button className="tc-btn tc-btn-gold" onClick={recalculateClientRanks} disabled={crmRankLoading}>
+              {crmRankLoading ? "Recalculando…" : "Recalcular ahora"}
+            </button>
+          </div>
+        </div>
+
+        <div className="tc-grid-4" style={{ marginTop: 14 }}>
+          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(214,156,110,.12)", border: "1px solid rgba(214,156,110,.22)" }}><span>🥉 Bronce</span><b>{Number(crmRankSummary?.bronce || 0)}</b></div>
+          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(196,210,255,.12)", border: "1px solid rgba(196,210,255,.22)" }}><span>🥈 Plata</span><b>{Number(crmRankSummary?.plata || 0)}</b></div>
+          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(255,215,120,.12)", border: "1px solid rgba(255,215,120,.22)" }}><span>🥇 Oro</span><b>{Number(crmRankSummary?.oro || 0)}</b></div>
+          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(181,156,255,.12)", border: "1px solid rgba(181,156,255,.22)" }}><span>Total con rango</span><b>{Number(crmRankSummary?.totalConRango || 0)}</b></div>
+        </div>
+
+        <div className="tc-sub" style={{ marginTop: 12 }}>{crmRankMsg || "Puedes recalcular manualmente tras cerrar mes o después de cargas históricas."}</div>
+      </div>
+
       <div className="crm-master-detail">
         <div style={{ display: "grid", gap: 16 }}>
       <div className="tc-card">
@@ -1862,9 +2040,39 @@ export default function CRMClientesPanel({
 
                 <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 12, gap: 8, flexWrap: "wrap" }}>
                   <div className="tc-sub">ID cliente: {crmClienteFicha?.id || crmClienteSelId || "—"}</div>
-                  <button className="tc-btn tc-btn-gold" onClick={() => setCrmRegistrarOpen(true)} disabled={!crmClienteSelId && !crmClienteFicha?.id}>
-                    Registrar llamada
-                  </button>
+                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    {rankChip(crmClienteFicha?.rango_actual)}
+                    <button className="tc-btn tc-btn-gold" onClick={() => setCrmRegistrarOpen(true)} disabled={!crmClienteSelId && !crmClienteFicha?.id}>
+                      Registrar llamada
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: rankMeta(crmClienteFicha?.rango_actual).cardBg, border: rankMeta(crmClienteFicha?.rango_actual).cardBorder }}>
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title" style={{ fontSize: 16 }}>🏅 Rango mensual del cliente</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Se calcula con el gasto del mes anterior y aplica durante el mes actual.
+                    </div>
+                  </div>
+                  {rankChip(crmClienteFicha?.rango_actual)}
+                </div>
+
+                <div className="tc-grid-4" style={{ marginTop: 12 }}>
+                  <div><div className="tc-sub">Gasto mes anterior</div><div style={{ fontWeight: 900, marginTop: 6 }}>{eur(crmClienteFicha?.rango_gasto_mes_anterior || 0)}</div></div>
+                  <div><div className="tc-sub">Compras mes anterior</div><div style={{ fontWeight: 900, marginTop: 6 }}>{Number(crmClienteFicha?.rango_compras_mes_anterior || 0)}</div></div>
+                  <div><div className="tc-sub">Vigente desde</div><div style={{ fontWeight: 900, marginTop: 6 }}>{crmClienteFicha?.rango_actual_desde || "—"}</div></div>
+                  <div><div className="tc-sub">Vigente hasta</div><div style={{ fontWeight: 900, marginTop: 6 }}>{crmClienteFicha?.rango_actual_hasta || "—"}</div></div>
+                </div>
+
+                <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+                  {rankMeta(crmClienteFicha?.rango_actual).perks.map((perk: string) => (
+                    <div key={perk} className="tc-sub" style={{ padding: "10px 12px", borderRadius: 12, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)" }}>
+                      ✨ {perk}
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -2065,6 +2273,7 @@ export default function CRMClientesPanel({
                 <th>Teléfono</th>
                 <th>País</th>
                 <th>Etiquetas</th>
+                <th>Rango</th>
                 <th>Min free</th>
                 <th>Min normales</th>
                 <th>Deuda</th>
@@ -2084,6 +2293,7 @@ export default function CRMClientesPanel({
                     <td>{r.telefono || "—"}</td>
                     <td>{r.pais || "—"}</td>
                     <td>{etiquetasTexto || "—"}</td>
+                    <td>{rankChip(r.rango_actual)}</td>
                     <td>{r.minutos_free_pendientes ?? 0}</td>
                     <td>{r.minutos_normales_pendientes ?? 0}</td>
                     <td>{eur(r.deuda_pendiente || 0)}</td>
@@ -2094,7 +2304,7 @@ export default function CRMClientesPanel({
 
               {crmRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="tc-muted">Sin resultados.</td>
+                  <td colSpan={9} className="tc-muted">Sin resultados.</td>
                 </tr>
               )}
             </tbody>
