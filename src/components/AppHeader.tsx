@@ -41,6 +41,7 @@ export default function AppHeader() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const lastLeadToastIdRef = useRef("");
+  const [leadPopup, setLeadPopup] = useState<HeaderNotif | null>(null);
 
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
@@ -136,6 +137,9 @@ export default function AppHeader() {
           tone: "warning",
           duration: 6500,
         });
+        if (["admin", "central"].includes(String(role || ""))) {
+          setLeadPopup(latestUnreadLead);
+        }
       }
     } catch {
       setNotifications([]);
@@ -147,7 +151,43 @@ export default function AppHeader() {
     loadNotifications();
     const i = setInterval(loadNotifications, 15000);
     return () => clearInterval(i);
-  }, [notifUserId]);
+  }, [notifUserId, role]);
+
+  useEffect(() => {
+    if (!notifUserId || !["admin", "central"].includes(String(role || ""))) return;
+
+    const channel = sb
+      .channel(`header-notifications-${notifUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${notifUserId}`,
+        },
+        (payload: any) => {
+          const notif = payload?.new || {};
+          if (String(notif?.kind || "") === "lead" || /lead de facebook/i.test(String(notif?.title || ""))) {
+            if (String(notif?.id || "") === String(lastLeadToastIdRef.current || "")) return;
+            lastLeadToastIdRef.current = String(notif?.id || "");
+            setNotifications((prev) => [notif, ...prev].slice(0, 20));
+            setLeadPopup(notif);
+            tcToast({
+              title: notif?.title || "🔥 Nuevo lead",
+              description: notif?.message || "Ha entrado un lead nuevo y conviene llamarlo cuanto antes.",
+              tone: "warning",
+              duration: 6500,
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+  }, [notifUserId, role]);
 
   async function markAsRead(id: string) {
     try {
@@ -344,6 +384,20 @@ export default function AppHeader() {
           </div>
         </div>
       </div>
+
+      {["admin", "central"].includes(String(role || "")) && leadPopup ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(0,0,0,0.52)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
+          <div style={{ width: "min(92vw, 520px)", borderRadius: 24, border: "1px solid rgba(255,255,255,0.14)", background: "linear-gradient(180deg, rgba(28,18,44,0.98), rgba(15,10,28,0.98))", boxShadow: "0 28px 80px rgba(0,0,0,.45)", padding: 22 }}>
+            <div style={{ fontSize: 28, fontWeight: 900 }}>🔥 Nuevo lead</div>
+            <div className="tc-sub" style={{ marginTop: 10, fontSize: 15 }}>Ha entrado un lead nuevo en captación. Conviene llamarlo ahora mismo.</div>
+            {leadPopup?.message ? <div style={{ marginTop: 14, fontWeight: 700 }}>{leadPopup.message}</div> : null}
+            <div className="tc-row" style={{ marginTop: 18, gap: 10, flexWrap: "wrap" }}>
+              <button className="tc-btn" onClick={() => { if (leadPopup?.id) markAsRead(String(leadPopup.id)); setLeadPopup(null); }}>Cerrar</button>
+              <button className="tc-btn tc-btn-ok" onClick={() => { window.dispatchEvent(new CustomEvent("tc-open-captacion")); if (leadPopup?.id) markAsRead(String(leadPopup.id)); setLeadPopup(null); }}>Ir a captación</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <TCToaster />
     </>

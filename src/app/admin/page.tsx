@@ -12,7 +12,8 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import DiarioPanel from "@/components/diario/DiarioPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
-import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, ShieldCheck, Users, Wallet } from "lucide-react";
+import CaptacionPanel from "@/components/captacion/CaptacionPanel";
+import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -27,6 +28,7 @@ const ADMIN_NAV = [
   { key: "checklists", icon: CheckSquare, label: "Checklists", kicker: "Plantillas y tareas" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
   { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
   { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día" },
@@ -96,6 +98,7 @@ type TabKey =
   | "checklists"
   | "clientes"
   | "crm"
+  | "captacion"
   | "rendimiento"
   | "reservas"
   | "diario"
@@ -246,6 +249,12 @@ export default function Admin() {
       localStorage.setItem("tc_month_admin", month);
     } catch {}
   }, [month]);
+
+  useEffect(() => {
+    const openCaptacion = () => setTab("captacion");
+    window.addEventListener("tc-open-captacion", openCaptacion as EventListener);
+    return () => window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
+  }, []);
 
   useEffect(() => {
   (async () => {

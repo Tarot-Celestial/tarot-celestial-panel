@@ -8,8 +8,9 @@ import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
+import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
-import { BarChart3, CalendarDays, CheckSquare, Headphones, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
+import { BarChart3, CalendarDays, CheckSquare, Headphones, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -18,6 +19,7 @@ const CENTRAL_NAV = [
   { key: "llamadas", icon: Phone, label: "Llamadas", kicker: "Pendientes del día" },
   { key: "chat", icon: MessageSquare, label: "Chat", kicker: "Tarotistas ↔ centrales" },
   { key: "crm", icon: Headphones, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
   { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda operativa" },
   { key: "habituales", icon: Star, label: "Habituales", kicker: "Clientes recientes" },
@@ -26,7 +28,7 @@ const CENTRAL_NAV = [
   { key: "ranking", icon: BarChart3, label: "Ranking", kicker: "Resultados y equipos" },
 ] as const;
 
-type TabKey = "equipo" | "llamadas" | "crm" | "rendimiento" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
+type TabKey = "equipo" | "llamadas" | "crm" | "captacion" | "rendimiento" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
 
 function monthKeyNow() {
   const d = new Date();
@@ -228,6 +230,12 @@ export default function Central() {
   // ✅ NUEVO: abrir chat directamente con tarotista
   const [newChatWorkerId, setNewChatWorkerId] = useState<string>("");
   const [newChatMsg, setNewChatMsg] = useState<string>("");
+
+  useEffect(() => {
+    const openCaptacion = () => setTab("captacion");
+    window.addEventListener("tc-open-captacion", openCaptacion as EventListener);
+    return () => window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -1480,6 +1488,7 @@ export default function Central() {
           )}
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
+          {tab === "captacion" && <CaptacionPanel mode="central" />}
           {tab === "rendimiento" && <RendimientoPanel mode="central" />}
           {tab === "reservas" && <ReservasPanel mode="central" />}
           {tab === "habituales" && <HabitualesPanel mode="central" />}
