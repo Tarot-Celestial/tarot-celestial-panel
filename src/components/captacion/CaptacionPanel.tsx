@@ -5,50 +5,33 @@ import { useEffect, useState } from "react";
 type Lead = {
   id: string;
   estado: string;
+  next_contact_at?: string;
   cliente?: {
     nombre?: string;
     telefono?: string;
   };
 };
 
-export default function CaptacionPanel({ mode }: { mode?: string }) {
+export default function CaptacionPanel() {
   const [items, setItems] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(false);
   const [view, setView] = useState<"pendientes" | "todos">("pendientes");
 
   async function load() {
-    try {
-      setLoading(true);
-
-      const res = await fetch(`/api/captacion/list?scope=${view}`, {
-        cache: "no-store",
-      });
-
-      const json = await res.json();
-
-      if (json.ok) {
-        setItems(json.items || []);
-      }
-    } catch (e) {
-      console.error("Error captación", e);
-    } finally {
-      setLoading(false);
-    }
+    const res = await fetch(`/api/captacion/list?scope=${view}`, {
+      cache: "no-store",
+    });
+    const json = await res.json();
+    if (json.ok) setItems(json.items || []);
   }
 
   async function act(id: string, action: string) {
-    try {
-      await fetch("/api/captacion/action", {
-        method: "POST",
-        body: JSON.stringify({ lead_id: id, action }),
-        headers: { "Content-Type": "application/json" },
-      });
+    await fetch("/api/captacion/action", {
+      method: "POST",
+      body: JSON.stringify({ lead_id: id, action }),
+      headers: { "Content-Type": "application/json" },
+    });
 
-      // 🔥 desaparecer instantáneo
-      setItems((prev) => prev.filter((l) => l.id !== id));
-    } catch (e) {
-      console.error("Error acción", e);
-    }
+    setItems((prev) => prev.filter((l) => l.id !== id));
   }
 
   useEffect(() => {
@@ -56,15 +39,23 @@ export default function CaptacionPanel({ mode }: { mode?: string }) {
   }, [view]);
 
   return (
-    <div style={{ padding: 20 }}>
-      <h2 style={{ fontSize: 24, fontWeight: "bold" }}>Captación</h2>
+    <div style={{ padding: 24 }}>
+      <h2 style={{ fontSize: 28, fontWeight: 800 }}>🔥 Captación</h2>
 
-      {/* 🔥 FILTROS */}
-      <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+      {/* FILTROS */}
+      <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
         <button
           onClick={() => setView("pendientes")}
           style={{
-            fontWeight: view === "pendientes" ? "bold" : "normal",
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: "none",
+            background:
+              view === "pendientes"
+                ? "linear-gradient(135deg,#8b5cf6,#6366f1)"
+                : "rgba(255,255,255,0.1)",
+            color: "white",
+            fontWeight: 600,
           }}
         >
           🔥 Pendientes
@@ -73,59 +64,124 @@ export default function CaptacionPanel({ mode }: { mode?: string }) {
         <button
           onClick={() => setView("todos")}
           style={{
-            fontWeight: view === "todos" ? "bold" : "normal",
+            padding: "8px 14px",
+            borderRadius: 10,
+            border: "none",
+            background:
+              view === "todos"
+                ? "linear-gradient(135deg,#8b5cf6,#6366f1)"
+                : "rgba(255,255,255,0.1)",
+            color: "white",
+            fontWeight: 600,
           }}
         >
           📋 Todos
         </button>
       </div>
 
-      {loading && <p>Cargando...</p>}
+      {/* LISTA */}
+      <div style={{ marginTop: 20, display: "grid", gap: 14 }}>
+        {items.map((lead) => {
+          const urgent =
+            lead.next_contact_at &&
+            new Date(lead.next_contact_at).getTime() < Date.now();
 
-      {!loading && !items.length && (
-        <p style={{ opacity: 0.6, marginTop: 10 }}>
-          No hay leads en esta vista
-        </p>
-      )}
+          return (
+            <div
+              key={lead.id}
+              style={{
+                borderRadius: 16,
+                padding: 16,
+                background: urgent
+                  ? "rgba(255,80,80,0.15)"
+                  : "rgba(255,255,255,0.04)",
+                border: urgent
+                  ? "1px solid rgba(255,80,80,0.4)"
+                  : "1px solid rgba(255,255,255,0.08)",
+                boxShadow: urgent
+                  ? "0 0 20px rgba(255,80,80,0.2)"
+                  : "none",
+              }}
+            >
+              {/* INFO */}
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                {lead.cliente?.nombre || "Lead sin nombre"}
+              </div>
 
-      <div style={{ marginTop: 20, display: "grid", gap: 12 }}>
-        {items.map((lead) => (
-          <div
-            key={lead.id}
-            style={{
-              border: "1px solid rgba(255,255,255,0.1)",
-              padding: 16,
-              borderRadius: 12,
-              background: "rgba(255,255,255,0.03)",
-            }}
-          >
-            <div style={{ fontWeight: "bold", fontSize: 16 }}>
-              {lead.cliente?.nombre || "Lead sin nombre"}
+              <div style={{ opacity: 0.6, marginTop: 4 }}>
+                {lead.cliente?.telefono || "Sin teléfono"}
+              </div>
+
+              {urgent && (
+                <div style={{ color: "#ff6b6b", marginTop: 6 }}>
+                  ⚠️ Llamar YA
+                </div>
+              )}
+
+              {/* BOTONES */}
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  onClick={() => act(lead.id, "contactado")}
+                  style={{
+                    background: "#22c55e",
+                    color: "white",
+                    border: "none",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                  }}
+                >
+                  ✅ Contactado
+                </button>
+
+                <button
+                  onClick={() => act(lead.id, "no_responde")}
+                  style={{
+                    background: "#f59e0b",
+                    color: "white",
+                    border: "none",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                  }}
+                >
+                  📞 No responde
+                </button>
+
+                <button
+                  onClick={() => act(lead.id, "no_interesado")}
+                  style={{
+                    background: "#6366f1",
+                    color: "white",
+                    border: "none",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                  }}
+                >
+                  🙅 No interesado
+                </button>
+
+                <button
+                  onClick={() => act(lead.id, "numero_invalido")}
+                  style={{
+                    background: "#ef4444",
+                    color: "white",
+                    border: "none",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                  }}
+                >
+                  ❌ Número inválido
+                </button>
+              </div>
             </div>
-
-            <div style={{ opacity: 0.7, marginTop: 4 }}>
-              {lead.cliente?.telefono || "Sin teléfono"}
-            </div>
-
-            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={() => act(lead.id, "contactado")}>
-                ✅ Contactado
-              </button>
-
-              <button onClick={() => act(lead.id, "no_responde")}>
-                📞 No responde
-              </button>
-
-              <button onClick={() => act(lead.id, "no_interesado")}>
-                🙅 No interesado
-              </button>
-
-              <button onClick={() => act(lead.id, "numero_invalido")}>
-                ❌ Número inválido
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
