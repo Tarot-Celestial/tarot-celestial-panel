@@ -1658,7 +1658,7 @@ export default function CRMClientesPanel({
         </div>
 
         <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
-          <button className="tc-btn tc-btn-gold" onClick={searchCRM} disabled={crmLoading}>
+          <button className="tc-btn tc-btn-gold" onClick={() => searchCRM()} disabled={crmLoading}>
             {crmLoading ? "Buscando…" : "Buscar"}
           </button>
         </div>
