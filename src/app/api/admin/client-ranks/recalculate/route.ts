@@ -84,8 +84,13 @@ async function runRecalc() {
 
   const { data: clientes, error: cliErr } = await admin
     .from("crm_clientes")
-    .select("id, nombre, apellido");
+    .select("id, nombre, apellido, rango_actual");
   if (cliErr) throw cliErr;
+
+  const prevRanks = new Map<string, string | null>();
+  for (const c of clientes || []) {
+    prevRanks.set(String(c.id), c?.rango_actual ? String(c.rango_actual) : null);
+  }
 
   const clienteByNormalized = new Map<string, string>();
   for (const c of clientes || []) {
@@ -197,6 +202,15 @@ async function runRecalc() {
       })
       .eq("id", clienteId);
     if (updErr) throw updErr;
+
+    const previousRank = prevRanks.get(clienteId) || null;
+    if (previousRank !== rank) {
+      const clientRow = (clientes || []).find((x: any) => String(x.id) === clienteId);
+      const clientName = [clientRow?.nombre, clientRow?.apellido].filter(Boolean).join(" ").trim() || `Cliente ${clienteId}`;
+      await notifyRankChange(admin, { clienteId, clientName, rank, previousRank });
+      prevRanks.set(clienteId, rank);
+    }
+
     updated += 1;
   }
 

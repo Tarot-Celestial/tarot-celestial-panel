@@ -141,6 +141,19 @@ export default function AppHeader() {
           setLeadPopup(latestUnreadLead);
         }
       }
+
+      const latestUnreadRank = notifData.find(
+        (n: any) => !n?.read && String(n?.kind || "") === "rank_upgrade"
+      );
+      if (latestUnreadRank?.id && String(latestUnreadRank.id) !== String((window as any).__lastRankToastId || "")) {
+        (window as any).__lastRankToastId = String(latestUnreadRank.id);
+        tcToast({
+          title: latestUnreadRank.title || "🏅 Cambio de rango",
+          description: latestUnreadRank.message || "Un cliente ha cambiado de rango.",
+          tone: "success",
+          duration: 7000,
+        });
+      }
     } catch {
       setNotifications([]);
     }
@@ -168,16 +181,27 @@ export default function AppHeader() {
         },
         (payload: any) => {
           const notif = payload?.new || {};
+          setNotifications((prev) => [notif, ...prev].slice(0, 20));
+
           if (String(notif?.kind || "") === "lead" || /lead de facebook/i.test(String(notif?.title || ""))) {
             if (String(notif?.id || "") === String(lastLeadToastIdRef.current || "")) return;
             lastLeadToastIdRef.current = String(notif?.id || "");
-            setNotifications((prev) => [notif, ...prev].slice(0, 20));
             setLeadPopup(notif);
             tcToast({
               title: notif?.title || "🔥 Nuevo lead",
               description: notif?.message || "Ha entrado un lead nuevo y conviene llamarlo cuanto antes.",
               tone: "warning",
               duration: 6500,
+            });
+            return;
+          }
+
+          if (String(notif?.kind || "") === "rank_upgrade") {
+            tcToast({
+              title: notif?.title || "🏅 Cambio de rango",
+              description: notif?.message || "Un cliente ha cambiado de rango.",
+              tone: "success",
+              duration: 7000,
             });
           }
         }

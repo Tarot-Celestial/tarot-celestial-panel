@@ -98,9 +98,8 @@ export async function GET(req: NextRequest) {
       query = query.not("estado", "in", '("contactado","no_interesado","numero_invalido","perdido")');
     }
 
-    if (String(worker.role) === "central") {
-      query = query.or(`assigned_worker_id.eq.${worker.id},assigned_worker_id.is.null`);
-    }
+    // En este panel interno tanto admin como central deben ver todos los leads.
+    // La asignación se usa para seguimiento, no para restringir la lectura.
 
     const { data, error } = await query;
     if (error) throw error;
