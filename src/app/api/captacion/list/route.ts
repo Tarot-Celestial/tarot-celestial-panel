@@ -56,6 +56,7 @@ export async function GET(req: NextRequest) {
     const scope = String(searchParams.get("scope") || "pendientes").trim();
 
     const admin = adminClient();
+
     let query = admin
       .from("captacion_leads")
       .select(`
@@ -94,22 +95,40 @@ export async function GET(req: NextRequest) {
       .order("next_contact_at", { ascending: true, nullsFirst: false })
       .order("created_at", { ascending: false });
 
+    // 🔥 FILTRO CORRECTO (MUY IMPORTANTE)
     if (scope === "pendientes") {
-      query = query.not("estado", "in", '("contactado","no_interesado","numero_invalido","perdido")');
+      query = query.in("estado", ["nuevo", "reintento_2", "reintento_3"]);
     }
-
-    // En este panel interno tanto admin como central deben ver todos los leads.
-    // La asignación se usa para seguimiento, no para restringir la lectura.
 
     const { data, error } = await query;
     if (error) throw error;
 
     const now = Date.now();
+
     const items = (data || []).map((item: any) => {
-      const nextTs = item?.next_contact_at ? new Date(item.next_contact_at).getTime() : null;
-      const isClosed = ["contactado", "no_interesado", "numero_invalido", "perdido"].includes(String(item?.estado || ""));
-      const overdueMinutes = !isClosed && Number.isFinite(nextTs) ? Math.max(0, Math.floor((now - Number(nextTs)) / 60000)) : 0;
-      const priority = isClosed ? "closed" : overdueMinutes >= 60 ? "critical" : overdueMinutes > 0 ? "high" : String(item?.estado || "") === "nuevo" ? "high" : "normal";
+      const nextTs = item?.next_contact_at
+        ? new Date(item.next_contact_at).getTime()
+        : null;
+
+      const isClosed = ["contactado", "no_interesado", "numero_invalido", "perdido"].includes(
+        String(item?.estado || "")
+      );
+
+      const overdueMinutes =
+        !isClosed && Number.isFinite(nextTs)
+          ? Math.max(0, Math.floor((now - Number(nextTs)) / 60000))
+          : 0;
+
+      const priority = isClosed
+        ? "closed"
+        : overdueMinutes >= 60
+        ? "critical"
+        : overdueMinutes > 0
+        ? "high"
+        : String(item?.estado || "") === "nuevo"
+        ? "high"
+        : "normal";
+
       return {
         ...item,
         overdue_minutes: overdueMinutes,
