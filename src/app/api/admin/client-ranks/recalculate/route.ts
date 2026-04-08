@@ -54,7 +54,7 @@ async function runRecalc() {
   for (const row of rows || []) {
     const fecha = new Date(row.fecha_hora);
 
-    if (fecha >= prevMonthStart && fecha < currentMonthStart) {
+    if (fecha >= currentMonthStart && fecha < nextMonthStart) {
       const nombre = (row.cliente_nombre || "").toLowerCase().trim();
       if (!nombre) continue;
 
