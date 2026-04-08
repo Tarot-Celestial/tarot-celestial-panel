@@ -98,7 +98,7 @@ export async function POST(req: Request) {
       } else if (intento === 3) {
         estado = "reintento_3";
         const d = new Date(now);
-        d.setDate(d.getDate() + 2);
+        d.setDate(d.getDate() + 1);
         nextContactAt = d.toISOString();
       } else {
         estado = "perdido";
@@ -139,24 +139,52 @@ export async function POST(req: Request) {
       .single();
     if (updErr) throw updErr;
 
+    let message = "✅ Lead actualizado";
+
     if (lead.cliente_id) {
-      const noteLines = [
-        `Seguimiento captación: ${estado}`,
-        `Intento: ${intento}/${Number(lead.max_intentos || 3)}`,
-        String(note || "").trim() ? `Nota: ${String(note).trim()}` : null,
-        `Gestionado por: ${worker.display_name || worker.email || worker.id}`,
-      ].filter(Boolean).join("\n");
+      const authorName = String(worker.display_name || worker.email || "Captación").trim() || "Captación";
+      let crmLeadStatus = null as string | null;
+      let noteText = "";
+
+      if (action === "contactado") {
+        crmLeadStatus = "contactado";
+        noteText = `✅ Lead contactado el ${now.toLocaleString("es-ES")} por ${authorName}.${String(note || "").trim() ? `\nNota: ${String(note).trim()}` : ""}`;
+        message = "✅ Lead marcado como contactado y retirado de captación.";
+      } else if (action === "no_responde") {
+        crmLeadStatus = estado;
+        noteText = `📞 Lead sin respuesta. Programado ${estado === "reintento_2" ? "2º" : estado === "reintento_3" ? "3º" : "último"} intento para ${nextContactAt ? new Date(nextContactAt).toLocaleString("es-ES") : "cierre"}.${String(note || "").trim() ? `\nNota: ${String(note).trim()}` : ""}`;
+        message = nextContactAt ? `📅 Siguiente llamada programada para ${new Date(nextContactAt).toLocaleDateString("es-ES")}.` : "⌛ Lead cerrado tras agotar intentos.";
+      } else if (action === "no_interesado") {
+        crmLeadStatus = "no_interesado";
+        noteText = `🙅 El cliente indica que no le interesa continuar.${String(note || "").trim() ? `\nNota: ${String(note).trim()}` : ""}`;
+        message = "🙅 Lead cerrado como no interesado y anotado en CRM.";
+      } else if (action === "numero_invalido") {
+        crmLeadStatus = "numero_invalido";
+        noteText = `❌ Número inválido detectado en captación.${String(note || "").trim() ? `\nNota: ${String(note).trim()}` : ""}`;
+        message = "❌ Lead cerrado como número inválido y anotado en CRM.";
+      }
+
+      try {
+        await admin
+          .from("crm_clientes")
+          .update({
+            lead_status: crmLeadStatus,
+            lead_contacted_at: action === "contactado" ? now.toISOString() : undefined,
+            updated_at: now.toISOString(),
+          })
+          .eq("id", lead.cliente_id);
+      } catch {}
 
       await tryInsertClientNote(admin, {
         cliente_id: lead.cliente_id,
-        texto: noteLines,
-        author_name: worker.display_name || "Captación",
+        texto: noteText,
+        author_name: authorName,
         author_email: worker.email || "captacion@tarotcelestial.local",
         is_pinned: false,
       });
     }
 
-    return NextResponse.json({ ok: true, item: updated });
+    return NextResponse.json({ ok: true, item: updated, message });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err?.message || "ERR" }, { status: 500 });
   }

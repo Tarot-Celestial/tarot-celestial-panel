@@ -141,6 +141,12 @@ export default function CaptacionPanel({ mode }: { mode?: "admin" | "central" | 
     return { open, due, won, lost };
   }, [items]);
 
+  function openCliente(clienteId: string) {
+    const id = String(clienteId || "").trim();
+    if (!id) return;
+    window.dispatchEvent(new CustomEvent("captacion-open-cliente", { detail: { id } }));
+  }
+
   async function act(leadId: string, action: "contactado" | "no_responde" | "no_interesado" | "numero_invalido") {
     try {
       setBusyId(leadId);
@@ -154,6 +160,7 @@ export default function CaptacionPanel({ mode }: { mode?: "admin" | "central" | 
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar el lead");
       setNotes((prev) => ({ ...prev, [leadId]: "" }));
+      setMsg(String(json?.message || "✅ Lead actualizado"));
       await load(false);
     } catch (e: any) {
       setMsg(e?.message || "Error actualizando lead");
@@ -248,6 +255,7 @@ export default function CaptacionPanel({ mode }: { mode?: "admin" | "central" | 
                 </div>
 
                 <div className="tc-row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+                  <button className="tc-btn" disabled={!lead?.cliente_id} onClick={() => openCliente(String(lead?.cliente_id || ""))}>👁️ Abrir cliente</button>
                   <a className="tc-btn" href={lead?.cliente?.telefono ? `tel:${lead.cliente.telefono}` : undefined} style={{ textDecoration: "none", opacity: lead?.cliente?.telefono ? 1 : 0.5, pointerEvents: lead?.cliente?.telefono ? "auto" : "none" }}>
                     📲 Llamar
                   </a>

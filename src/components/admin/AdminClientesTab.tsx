@@ -40,6 +40,18 @@ type ApiPayload = {
   error?: string;
 };
 
+
+
+type RankClient = {
+  id: string;
+  nombre?: string | null;
+  apellido?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+  rango_actual?: string | null;
+  rango_gasto_mes_anterior?: number | null;
+  rango_compras_mes_anterior?: number | null;
+};
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -95,23 +107,30 @@ function KpiCard({
   value,
   hint,
   accent,
+  onClick,
+  active = false,
 }: {
   title: string;
   value: string;
   hint: string;
   accent: string;
+  onClick?: () => void;
+  active?: boolean;
 }) {
   return (
     <div
+      onClick={onClick}
       style={{
         position: "relative",
         overflow: "hidden",
         borderRadius: 20,
-        border: "1px solid rgba(255,255,255,.10)",
+        border: active ? `1px solid ${accent}` : "1px solid rgba(255,255,255,.10)",
         background:
           "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
         boxShadow: "0 20px 50px rgba(0,0,0,.18)",
         padding: 18,
+        cursor: onClick ? "pointer" : "default",
+        transform: active ? "translateY(-1px)" : "none",
       }}
     >
       <div
@@ -260,6 +279,10 @@ export default function AdminClientesTab({
   const [rankMsg, setRankMsg] = useState("");
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
+  const [rankFilter, setRankFilter] = useState<"bronce" | "plata" | "oro" | null>(null);
+  const [rankClients, setRankClients] = useState<RankClient[]>([]);
+  const [rankClientsLoading, setRankClientsLoading] = useState(false);
+  const [rankClientsMsg, setRankClientsMsg] = useState("");
 
 
   useEffect(() => {
@@ -353,6 +376,35 @@ export default function AdminClientesTab({
     } finally {
       setRankLoading(false);
     }
+  }
+
+  async function openRankClients(rank: "bronce" | "plata" | "oro") {
+    try {
+      setRankClientsLoading(true);
+      setRankClientsMsg("");
+      setRankFilter(rank);
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const res = await fetch(`/api/admin/client-ranks/by-rank?rank=${encodeURIComponent(rank)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const j = await safeJson(res);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || res.status}`);
+      setRankClients(Array.isArray(j?.clientes) ? j.clientes : []);
+      setRankClientsMsg(`Mostrando ${Array.isArray(j?.clientes) ? j.clientes.length : 0} cliente(s) ${rank}.`);
+    } catch (e: any) {
+      setRankClients([]);
+      setRankClientsMsg(`❌ ${e?.message || "Error cargando clientes del rango"}`);
+    } finally {
+      setRankClientsLoading(false);
+    }
+  }
+
+  function closeRankClients() {
+    setRankFilter(null);
+    setRankClients([]);
+    setRankClientsMsg("");
   }
 
   async function loadAlerts(silent = false) {
@@ -486,12 +538,48 @@ export default function AdminClientesTab({
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12, marginTop: 14 }}>
-          <KpiCard title="Bronce" value={String(Number(rankSummary?.bronce || 0))} hint="Clientes con alguna compra" accent="rgba(214,156,110,.28)" />
-          <KpiCard title="Plata" value={String(Number(rankSummary?.plata || 0))} hint="Clientes desde 100€" accent="rgba(196,210,255,.28)" />
-          <KpiCard title="Oro" value={String(Number(rankSummary?.oro || 0))} hint="Clientes desde 500€" accent="rgba(255,215,120,.28)" />
+          <KpiCard title="Bronce" value={String(Number(rankSummary?.bronce || 0))} hint="Clientes con alguna compra" accent="rgba(214,156,110,.28)" onClick={() => openRankClients("bronce")} active={rankFilter === "bronce"} />
+          <KpiCard title="Plata" value={String(Number(rankSummary?.plata || 0))} hint="Clientes desde 100€" accent="rgba(196,210,255,.28)" onClick={() => openRankClients("plata")} active={rankFilter === "plata"} />
+          <KpiCard title="Oro" value={String(Number(rankSummary?.oro || 0))} hint="Clientes desde 500€" accent="rgba(255,215,120,.28)" onClick={() => openRankClients("oro")} active={rankFilter === "oro"} />
           <KpiCard title="Con rango" value={String(Number(rankSummary?.totalConRango || 0))} hint="Mes actual asignado" accent="rgba(181,156,255,.28)" />
         </div>
         {rankMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{rankMsg}</div> : null}
+
+        {rankFilter ? (
+          <div style={{ marginTop: 14, borderRadius: 20, border: "1px solid rgba(255,255,255,.10)", background: "rgba(255,255,255,.03)", padding: 14 }}>
+            <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div className="tc-title" style={{ fontSize: 18 }}>Clientes {String(rankFilter).charAt(0).toUpperCase() + String(rankFilter).slice(1)}</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>Pulsa en revisar para abrir la ficha del CRM.</div>
+              </div>
+              <div className="tc-row" style={{ gap: 8 }}>
+                <button className="tc-btn" onClick={() => openRankClients(rankFilter)} disabled={rankClientsLoading}>{rankClientsLoading ? "Cargando…" : "Actualizar"}</button>
+                <button className="tc-btn" onClick={closeRankClients}>Cerrar</button>
+              </div>
+            </div>
+            {rankClientsMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{rankClientsMsg}</div> : null}
+            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+              {!rankClientsLoading && !rankClients.length ? (
+                <div className="tc-sub">No hay clientes en este rango ahora mismo.</div>
+              ) : null}
+              {rankClients.map((client: RankClient) => (
+                <div key={client.id} style={{ borderRadius: 16, border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.025)", padding: 12, display: "grid", gap: 8 }}>
+                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontWeight: 900 }}>{[client.nombre, client.apellido].filter(Boolean).join(" ").trim() || client.email || client.telefono || client.id}</div>
+                      <div className="tc-sub" style={{ marginTop: 4 }}>{[client.telefono, client.email].filter(Boolean).join(" · ") || "Sin contacto"}</div>
+                    </div>
+                    <button className="tc-btn tc-btn-gold" onClick={() => onReviewClient?.(client.id)}>Revisar CRM</button>
+                  </div>
+                  <div className="tc-row tc-sub" style={{ gap: 12, flexWrap: "wrap" }}>
+                    <span>Gasto: <b>{eur(client.rango_gasto_mes_anterior || 0)}</b></span>
+                    <span>Compras: <b>{Number(client.rango_compras_mes_anterior || 0)}</b></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div

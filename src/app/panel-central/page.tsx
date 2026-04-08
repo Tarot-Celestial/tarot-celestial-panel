@@ -1163,6 +1163,20 @@ export default function Central() {
   }
 
 
+  useEffect(() => {
+    function onOpenFromCaptacion(e: any) {
+      const id = String(e?.detail?.id || "").trim();
+      if (!id) return;
+      setTab("crm" as any);
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id } }));
+      }, 250);
+    }
+
+    window.addEventListener("captacion-open-cliente", onOpenFromCaptacion);
+    return () => window.removeEventListener("captacion-open-cliente", onOpenFromCaptacion);
+  }, []);
+
   function openReservaFromPopup(reserva: any) {
     setTab("reservas" as any);
     window.setTimeout(() => {
