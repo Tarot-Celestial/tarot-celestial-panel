@@ -7,7 +7,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export async function POST(req) {
+export async function POST(req: Request) {
   const { lead_id, action } = await req.json();
 
   const { data: lead } = await supabase
