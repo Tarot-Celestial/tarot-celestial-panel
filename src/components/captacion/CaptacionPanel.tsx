@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-export default function CaptacionPanel() {
+export default function CaptacionPanel({ mode }: { mode?: string }) {
   const [items, setItems] = useState<any[]>([]);
 
   async function load() {
