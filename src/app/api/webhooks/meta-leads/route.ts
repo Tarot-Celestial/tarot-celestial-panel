@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
     // Crear cliente directamente
     const { data: cliente, error } = await supabase
-      .from("clientes")
+      .from("crm_clientes")
       .insert([
         {
           nombre,
