@@ -4,10 +4,8 @@ import { supabase } from "@/lib/supabaseClient";
 function normalizarTelefono(tel: string | null) {
   if (!tel) return null;
 
-  // quitar espacios, guiones, etc
   let limpio = tel.replace(/\D/g, "");
 
-  // si empieza sin +, asumimos España
   if (!limpio.startsWith("34") && limpio.length === 9) {
     limpio = "34" + limpio;
   }
@@ -23,19 +21,18 @@ export async function POST(req: NextRequest) {
 
     if (!telefono && !email) {
       return NextResponse.json(
-        { ok: false, error: "Datos insuficientes" },
+        { ok: false, error: "Lead sin datos útiles" },
         { status: 400 }
       );
     }
 
-    const telefono_normalizado = normalizarTelefono(telefono);
+    // 🔥 SOLO UNA DECLARACIÓN (let)
+    let telefono_normalizado = normalizarTelefono(telefono);
 
-   let telefono_normalizado = normalizarTelefono(telefono);
-
-  // 🔥 fallback si no hay teléfono
-  if (!telefono_normalizado) {
-  telefono_normalizado = "sin_telefono_" + Date.now();
-  }
+    // 🔥 fallback si no hay teléfono
+    if (!telefono_normalizado) {
+      telefono_normalizado = "sin_telefono_" + Date.now();
+    }
 
     const { data: cliente, error } = await supabase
       .from("crm_clientes")
@@ -43,7 +40,7 @@ export async function POST(req: NextRequest) {
         {
           nombre,
           telefono,
-          telefono_normalizado, // 🔥 CLAVE
+          telefono_normalizado,
           email,
           origen: origen || "facebook_ads",
         },
@@ -56,7 +53,7 @@ export async function POST(req: NextRequest) {
     await supabase.from("notificaciones").insert([
       {
         tipo: "nuevo_lead",
-        mensaje: `Nuevo lead: ${nombre || telefono}`,
+        mensaje: `Nuevo lead: ${nombre || telefono || email}`,
         leido: false,
         referencia_id: cliente.id,
       },
