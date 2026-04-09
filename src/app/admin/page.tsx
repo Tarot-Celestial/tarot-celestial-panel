@@ -190,11 +190,11 @@ export default function Admin() {
         .lt("created_at", end);
 
       const { count: captadas } = await sb
-        .from("captacion_leads")
-        .select("*", { count: "exact", head: true })
-        .neq("estado", "no_contesta")
-        .gte("created_at", start)
-        .lt("created_at", end);
+  .from("captacion_leads")
+  .select("*", { count: "exact", head: true })
+  .eq("estado", "captado")
+  .gte("closed_at", start)
+  .lt("closed_at", end);
 
       const { data: rend } = await sb
         .from("rendimiento_llamadas")
