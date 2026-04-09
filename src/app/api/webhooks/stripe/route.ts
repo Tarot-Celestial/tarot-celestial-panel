@@ -16,7 +16,7 @@ export async function POST(req: Request) {
   const rawBody = await req.text();
 
   try {
-    const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"), { apiVersion: "2024-06-20" });
+    const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"), { apiVersion: "2023-10-16" });
     const signature = headers().get("stripe-signature");
     if (!signature) {
       return NextResponse.json({ ok: false, error: "MISSING_STRIPE_SIGNATURE" }, { status: 400 });
