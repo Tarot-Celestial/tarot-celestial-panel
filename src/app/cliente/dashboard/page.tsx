@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Crown, Gift, Mail, Phone, PhoneCall, ShieldAlert, Sparkles, Star, TimerReset, WandSparkles, ShoppingBag, ChevronRight } from "lucide-react";
+import { BellRing, Crown, Gift, Mail, Phone, PhoneCall, ShieldAlert, Sparkles, Star, TimerReset, WandSparkles, ShoppingBag, ChevronRight, Smartphone, Send } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
@@ -103,6 +103,13 @@ function getRankBadge(rango: string | null | undefined) {
   return { label: "Bronce", emoji: "🥉" };
 }
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
 export default function ClienteDashboardPage() {
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [historial, setHistorial] = useState<Historial[]>([]);
@@ -120,6 +127,11 @@ export default function ClienteDashboardPage() {
   const [redeeming, setRedeeming] = useState(false);
   const [buyingPackId, setBuyingPackId] = useState("");
   const [msg, setMsg] = useState("");
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
+    typeof window === "undefined" || !("Notification" in window) ? "unsupported" : Notification.permission
+  );
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
 
   const loadData = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -199,6 +211,24 @@ export default function ClienteDashboardPage() {
       if (channel) sb.removeChannel(channel);
     };
   }, [cliente?.id, loadData]);
+
+  useEffect(() => {
+    async function checkPush() {
+      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+        setPushPermission("unsupported");
+        return;
+      }
+      setPushPermission(Notification.permission);
+      try {
+        const reg = await navigator.serviceWorker.getRegistration("/");
+        const sub = await reg?.pushManager.getSubscription();
+        setPushEnabled(Boolean(sub));
+      } catch {
+        setPushEnabled(false);
+      }
+    }
+    checkPush();
+  }, []);
 
   const nombre = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
   const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
@@ -339,6 +369,78 @@ export default function ClienteDashboardPage() {
     setNotificaciones((prev) => prev.map((n) => (!id || n.id === id ? { ...n, leida: true } : n)));
   }
 
+  async function enablePushNotifications() {
+    try {
+      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+        throw new Error("Tu dispositivo no soporta notificaciones web.");
+      }
+      setPushBusy(true);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+
+      let permission = Notification.permission;
+      if (permission !== "granted") {
+        permission = await Notification.requestPermission();
+      }
+      setPushPermission(permission);
+      if (permission !== "granted") {
+        throw new Error("Necesitas aceptar el permiso de notificaciones en tu navegador.");
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""),
+        }));
+
+      const res = await fetch("/api/cliente/push/register", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(subscription),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No hemos podido activar las notificaciones.");
+      setPushEnabled(true);
+      setMsg("🔔 Notificaciones activadas en este dispositivo.");
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido activar las notificaciones.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function sendPushTest() {
+    try {
+      setPushBusy(true);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/push/test", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No hemos podido enviar la notificación de prueba.");
+      setMsg("✅ Te hemos enviado una notificación de prueba.");
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido enviar la notificación de prueba.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
   if (loading) {
     return (
       <ClienteLayout title="Cargando tu panel..." subtitle="Estamos preparando tu área personal." summaryItems={[]}>
@@ -471,6 +573,41 @@ export default function ClienteDashboardPage() {
                 <button className="tc-btn tc-btn-gold" onClick={trackCallAndOpen}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><PhoneCall size={16} /> Abrir llamada</span>
                 </button>
+              </div>
+            </section>
+
+            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Notificaciones en tu móvil</div>
+                <div className="tc-panel-sub">Actívalas una sola vez en este dispositivo y luego podrás recibir avisos aunque no estés dentro del panel.</div>
+              </div>
+              <div className="tc-callout-box" style={{ alignItems: "center" }}>
+                <div>
+                  <div className="tc-list-item-title">
+                    {pushPermission === "unsupported"
+                      ? "Este dispositivo no soporta web push"
+                      : pushEnabled
+                      ? "Notificaciones activas"
+                      : pushPermission === "granted"
+                      ? "Permiso concedido · falta registrar el dispositivo"
+                      : "Activa las notificaciones"}
+                  </div>
+                  <div className="tc-list-item-sub">
+                    {pushPermission === "unsupported"
+                      ? "Prueba desde Safari/Chrome actualizados y con HTTPS real."
+                      : pushEnabled
+                      ? "Ya podemos enviarte recordatorios de minutos, promociones, nuevas tarotistas y avisos del oráculo."
+                      : "Te recomendamos activarlas en el móvil para recibir avisos incluso cuando no estés dentro de la web."}
+                  </div>
+                </div>
+                <div className="tc-row" style={{ gap: 10, flexWrap: "wrap" }}>
+                  <button className="tc-btn tc-btn-gold" disabled={pushBusy || pushPermission === "unsupported"} onClick={enablePushNotifications}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Smartphone size={16} /> {pushEnabled ? "Volver a registrar" : "Activar notificaciones"}</span>
+                  </button>
+                  <button className="tc-btn" disabled={pushBusy || !pushEnabled} onClick={sendPushTest}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Send size={16} /> Enviar prueba</span>
+                  </button>
+                </div>
               </div>
             </section>
 
