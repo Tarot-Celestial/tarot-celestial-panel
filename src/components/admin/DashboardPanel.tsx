@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { BellRing, Send } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
 
@@ -55,6 +56,10 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [reservas, setReservas] = useState<any[]>([]);
   const [diarioRows, setDiarioRows] = useState<any[]>([]);
   const [clientAccess, setClientAccess] = useState<any>(null);
+  const [pushTitle, setPushTitle] = useState("Aviso Tarot Celestial");
+  const [pushBody, setPushBody] = useState("");
+  const [pushSending, setPushSending] = useState(false);
+  const [pushMsg, setPushMsg] = useState("");
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -237,6 +242,43 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       .slice(0, 5);
   }, [statsRows]);
 
+
+  async function sendClientPush() {
+    try {
+      const title = String(pushTitle || "").trim();
+      const body = String(pushBody || "").trim();
+      if (!title || !body) throw new Error("Escribe título y mensaje antes de enviar.");
+
+      setPushSending(true);
+      setPushMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const res = await fetch("/api/admin/client-push/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title, body, url: "/cliente/dashboard", save_internal: true }),
+      });
+      const json = await safeJson(res);
+      if (!json?._ok || !json?.ok) throw new Error(json?.error || `HTTP ${json?._status || 500}`);
+
+      const sent = Number(json?.sent || 0);
+      const total = Number(json?.total || 0);
+      setPushMsg(`✅ Notificación enviada. ${sent}/${total} dispositivos recibieron el envío.`);
+      setPushBody("");
+      tcToast({ title: "Notificación enviada", description: `${sent}/${total} dispositivos`, tone: "success" });
+    } catch (e: any) {
+      const errorText = String(e?.message || "No se pudo enviar la notificación");
+      setPushMsg(`❌ ${errorText}`);
+      tcToast({ title: "Error enviando push", description: errorText, tone: "error" });
+    } finally {
+      setPushSending(false);
+    }
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div
@@ -271,6 +313,42 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
         <DashKpi label="Tarotistas con datos" value={String(statsRows.length)} />
         <DashKpi label="Clientes online" value={String(clientAccess?.totals?.online_now || 0)} />
         <DashKpi label="Accesos hoy" value={String(clientAccess?.totals?.active_today || 0)} />
+      </div>
+
+
+      <div className="tc-card" style={{ borderRadius: 24 }}>
+        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <div className="tc-title" style={{ fontSize: 16 }}>🔔 Enviar notificación a clientes</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>Envía un texto push a todos los clientes que ya tengan activadas las notificaciones en su dispositivo.</div>
+          </div>
+          <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><BellRing size={14} /> Push manual</div>
+        </div>
+        <div className="tc-hr" />
+        <div style={{ display: "grid", gap: 10 }}>
+          <input
+            className="tc-input"
+            value={pushTitle}
+            onChange={(e) => setPushTitle(e.target.value)}
+            placeholder="Título de la notificación"
+            style={{ maxWidth: 520 }}
+          />
+          <textarea
+            className="tc-textarea"
+            value={pushBody}
+            onChange={(e) => setPushBody(e.target.value)}
+            placeholder="Escribe el mensaje que verán los clientes..."
+            rows={4}
+            style={{ minHeight: 110 }}
+          />
+          <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div className="tc-sub">También se guarda en el historial interno de notificaciones del cliente.</div>
+            <button className="tc-btn tc-btn-gold" onClick={sendClientPush} disabled={pushSending || !pushTitle.trim() || !pushBody.trim()}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Send size={15} /> {pushSending ? "Enviando..." : "Enviar notificación"}</span>
+            </button>
+          </div>
+          {pushMsg ? <div className="tc-sub" style={{ color: pushMsg.startsWith("✅") ? "#9ee6b3" : "#ff9baa" }}>{pushMsg}</div> : null}
+        </div>
       </div>
 
       <div className="tc-card" style={{ borderRadius: 24 }}>

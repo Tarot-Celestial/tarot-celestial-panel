@@ -18,15 +18,17 @@ type Props = {
 };
 
 export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: Props) {
+  const recompensasUnicas = Array.from(new Map((recompensas || []).map((item) => [`${item.nombre}::${item.puntos_coste}::${item.minutos_otorgados}`, item])).values());
+
   return (
     <div className="tc-card tc-golden-panel" style={{ display: "grid", gap: 14 }}>
       <div style={{ display: "grid", gap: 6 }}>
         <div className="tc-panel-title">Canjear puntos por minutos</div>
-        <div className="tc-panel-sub">Los minutos canjeados se guardan como minutos free pendientes en tu ficha.</div>
+        <div className="tc-panel-sub">Canjea tus puntos por minutos y se añadirán automáticamente a tu saldo disponible.</div>
       </div>
 
       <div className="tc-list-card">
-        {recompensas.map((item) => {
+        {recompensasUnicas.map((item) => {
           const disabled = loading || puntos < Number(item.puntos_coste || 0);
           return (
             <div
@@ -40,7 +42,7 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
                   <div className="tc-list-item-title">{item.nombre}</div>
                 </div>
                 <div className="tc-list-item-sub">
-                  {item.puntos_coste} puntos · {item.minutos_otorgados} minutos free
+                  {item.puntos_coste} puntos · {item.minutos_otorgados} minutos
                 </div>
               </div>
               <button className="tc-btn tc-btn-gold" disabled={disabled} onClick={() => onRedeem(item.id)}>

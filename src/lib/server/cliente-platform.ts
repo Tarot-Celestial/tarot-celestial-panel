@@ -42,7 +42,7 @@ export const CLIENTE_PACKS: ClientePack[] = [
     id: "pack_60_mas_20",
     nombre: "60 + 20 minutos de regalo",
     descripcion: "Pack premium con bonus extra dentro de la app.",
-    priceUsd: 24,
+    priceUsd: 44,
     totalMinutes: 80,
     bonusMinutes: 20,
     highlight: true,

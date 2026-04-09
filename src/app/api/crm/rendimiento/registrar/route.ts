@@ -67,7 +67,7 @@ function codigoText(mins: number, code: string | null) {
 }
 
 function pointsFromAmount(amount: number) {
-  return Math.max(0, Math.floor(Number(amount || 0)));
+  return Math.max(0, Math.floor(Number(amount || 0) * 10));
 }
 
 function buildNota({ clienteCompra, usoTipo, importe, formaPago, guardadosFree, guardadosNormales, resumenCodigo, tarotistaNombre, nextFree, nextNormales }: any) {

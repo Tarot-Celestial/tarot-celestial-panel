@@ -1,7 +1,8 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { useMemo, useState } from "react";
+import { BellRing, Smartphone } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 type Cliente = {
   nombre?: string | null;
@@ -14,6 +15,10 @@ type Props = {
   open: boolean;
   cliente: Cliente | null;
   saving: boolean;
+  pushEnabled: boolean;
+  pushBusy: boolean;
+  pushPermission: NotificationPermission | "unsupported";
+  onEnablePush: () => Promise<void>;
   onSave: (payload: {
     nombre: string;
     apellido: string;
@@ -23,7 +28,7 @@ type Props = {
   }) => Promise<void>;
 };
 
-export default function OnboardingModal({ open, cliente, saving, onSave }: Props) {
+export default function OnboardingModal({ open, cliente, saving, pushEnabled, pushBusy, pushPermission, onEnablePush, onSave }: Props) {
   const [step, setStep] = useState(0);
   const [confirmNombre, setConfirmNombre] = useState<boolean | null>(null);
   const [confirmEmail, setConfirmEmail] = useState<boolean | null>(null);
@@ -34,6 +39,13 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
   const [fechaNacimiento, setFechaNacimiento] = useState(cliente?.fecha_nacimiento || "");
   const [msg, setMsg] = useState("");
 
+  useEffect(() => {
+    setNombre(cliente?.nombre || "");
+    setApellido(cliente?.apellido || "");
+    setEmail(cliente?.email || "");
+    setFechaNacimiento(cliente?.fecha_nacimiento || "");
+  }, [cliente?.apellido, cliente?.email, cliente?.fecha_nacimiento, cliente?.nombre]);
+
   const nombreCompleto = useMemo(() => [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim(), [cliente]);
 
   if (!open || !cliente) return null;
@@ -41,6 +53,10 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
   async function finish() {
     if (!nombre.trim()) {
       setMsg("Necesitamos al menos tu nombre para continuar.");
+      return;
+    }
+    if (!pushEnabled) {
+      setMsg("Activa las notificaciones para terminar el acceso al panel.");
       return;
     }
     setMsg("");
@@ -180,22 +196,52 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
           </div>
         ) : null}
 
+        {step === 3 ? (
+          <div style={{ display: "grid", gap: 14 }}>
+            <div className="tc-title" style={{ fontSize: 18 }}>Activa las notificaciones para terminar</div>
+            <div className="tc-card" style={{ padding: 16, display: "grid", gap: 10 }}>
+              <div className="tc-row" style={{ gap: 10, alignItems: "flex-start" }}>
+                <BellRing size={18} style={{ color: "var(--tc-gold-2)", marginTop: 2 }} />
+                <div>
+                  <div className="tc-list-item-title">
+                    {pushPermission === "unsupported"
+                      ? "Este dispositivo no soporta notificaciones web"
+                      : pushEnabled
+                      ? "Notificaciones activadas"
+                      : "Activa las notificaciones en este dispositivo"}
+                  </div>
+                  <div className="tc-list-item-sub" style={{ marginTop: 4 }}>
+                    {pushPermission === "unsupported"
+                      ? "Prueba desde Chrome o Safari actualizados y con HTTPS real."
+                      : pushEnabled
+                      ? "Perfecto. Ya podremos avisarte de promociones, minutos, novedades y mensajes importantes."
+                      : "Es necesario activarlas para terminar el acceso al panel y recibir avisos importantes."}
+                  </div>
+                </div>
+              </div>
+              <button className="tc-btn tc-btn-gold" disabled={pushBusy || pushPermission === "unsupported" || pushEnabled} onClick={onEnablePush}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Smartphone size={16} /> {pushEnabled ? "Notificaciones activadas" : pushBusy ? "Activando..." : "Activar notificaciones"}</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {msg ? <div style={{ color: "#ff9baa", fontSize: 13 }}>{msg}</div> : null}
 
         <div className="tc-row" style={{ justifyContent: "space-between" }}>
-          <div className="tc-sub">Paso {step + 1} de 3</div>
+          <div className="tc-sub">Paso {step + 1} de 4</div>
           <div className="tc-row">
             {step > 0 ? (
-              <button className="tc-btn" disabled={saving} onClick={() => setStep((s) => Math.max(0, s - 1))}>
+              <button className="tc-btn" disabled={saving || pushBusy} onClick={() => setStep((s) => Math.max(0, s - 1))}>
                 Atrás
               </button>
             ) : null}
-            {step < 2 ? (
-              <button className="tc-btn tc-btn-gold" disabled={saving} onClick={() => setStep((s) => Math.min(2, s + 1))}>
+            {step < 3 ? (
+              <button className="tc-btn tc-btn-gold" disabled={saving || pushBusy} onClick={() => setStep((s) => Math.min(3, s + 1))}>
                 Siguiente
               </button>
             ) : (
-              <button className="tc-btn tc-btn-gold" disabled={saving} onClick={finish}>
+              <button className="tc-btn tc-btn-gold" disabled={saving || pushBusy || !pushEnabled} onClick={finish}>
                 {saving ? "Guardando..." : "Entrar al panel"}
               </button>
             )}

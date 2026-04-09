@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { CLIENTE_PACKS, getCallTarget, toNum, touchClientActivity } from "@/lib/server/cliente-platform";
+import { CLIENTE_PACKS, computeCurrentRankFromSpend, currentRankBenefits, getCallTarget, monthRange, toNum, touchClientActivity } from "@/lib/server/cliente-platform";
 
 export const runtime = "nodejs";
 
@@ -54,13 +54,10 @@ function rankMeta(rank: string | null | undefined) {
   };
 }
 
-function buildRankProgress(cliente: any) {
-  const gasto = toNum(cliente?.rango_gasto_mes_anterior);
-  const compras = toNum(cliente?.rango_compras_mes_anterior);
-  const rank = String(
-    cliente?.rango_actual ||
-      (gasto >= 500 ? "oro" : gasto >= 100 ? "plata" : gasto > 0 || compras > 0 ? "bronce" : "sin_rango")
-  ).toLowerCase();
+function buildRankProgress(monthlySpend: number, monthlyPurchases: number, currentRank: string | null | undefined) {
+  const gasto = toNum(monthlySpend);
+  const compras = Math.max(0, Math.floor(toNum(monthlyPurchases)));
+  const rank = String(currentRank || computeCurrentRankFromSpend(gasto, compras) || "sin_rango").toLowerCase();
 
   if (rank === "oro") {
     return {
@@ -70,7 +67,7 @@ function buildRankProgress(cliente: any) {
       current_value: gasto,
       next_rank: null,
       next_label: null,
-      next_target: 500,
+      next_target: null,
       remaining_to_next: 0,
       status_text: "Ya disfrutas del rango más alto.",
       monthly_requirement_text: `Este mes llevas ${gasto.toFixed(2)} USD acumulados dentro del panel y mantienes Oro.`,
@@ -95,20 +92,24 @@ function buildRankProgress(cliente: any) {
     };
   }
 
-  const base = compras > 0 ? Math.max(gasto, 1) : gasto;
   const target = 100;
-  const pct = Math.max(0, Math.min(100, (base / target) * 100));
-  const remaining = Math.max(0, target - base);
+  const pct = Math.max(0, Math.min(100, (gasto / target) * 100));
+  const remaining = Math.max(0, target - gasto);
   return {
     current_rank: rank === "sin_rango" ? "sin_rango" : "bronce",
     current_label: rank === "sin_rango" ? "Sin rango" : "Bronce",
     progress_percent: Number(pct.toFixed(1)),
-    current_value: Number(base.toFixed(2)),
+    current_value: gasto,
     next_rank: "plata",
     next_label: "Plata",
     next_target: target,
     remaining_to_next: Number(remaining.toFixed(2)),
-    status_text: compras <= 0 ? "Con una compra mensual dentro del panel entrarás en Bronce." : `Te faltan ${remaining.toFixed(2)} USD de gasto mensual para subir a Plata.`,
+    status_text:
+      compras <= 0
+        ? "Con una compra mensual dentro del panel entrarás en Bronce."
+        : remaining > 0
+        ? `Te faltan ${remaining.toFixed(2)} USD de gasto mensual para subir a Plata.`
+        : "Ya cumples objetivo de Plata.",
     monthly_requirement_text:
       compras <= 0
         ? "Haz una compra desde la app para activar Bronce y comenzar a sumar ventajas."
@@ -191,7 +192,8 @@ export async function GET(req: Request) {
     const cliente = welcomeState.cliente;
     const minutosTotales = toNum(cliente.minutos_free_pendientes) + toNum(cliente.minutos_normales_pendientes);
 
-    const [{ data: historial }, { data: recompensas }, { data: llamadas }, { data: notificaciones }] = await Promise.all([
+    const { start, end } = monthRange(new Date());
+    const [{ data: historial }, { data: recompensas }, { data: llamadas }, { data: notificaciones }, { data: pagosMes }] = await Promise.all([
       gate.admin
         .from("cliente_puntos_historial")
         .select("id, tipo, puntos, descripcion, created_at")
@@ -215,6 +217,13 @@ export async function GET(req: Request) {
         .eq("cliente_id", cliente.id)
         .order("created_at", { ascending: false })
         .limit(8),
+      gate.admin
+        .from("crm_cliente_pagos")
+        .select("importe, estado, created_at")
+        .eq("cliente_id", cliente.id)
+        .eq("estado", "completed")
+        .gte("created_at", start.toISOString())
+        .lt("created_at", end.toISOString()),
     ]);
 
     const lastTarotistas = Array.from(
@@ -228,19 +237,57 @@ export async function GET(req: Request) {
       ).values()
     ).slice(0, 3);
 
-    const rank = rankMeta(cliente?.rango_actual);
-    const rankProgress = buildRankProgress(cliente);
+    const monthlySpend = (pagosMes || []).reduce((acc: number, row: any) => acc + toNum(row?.importe), 0);
+    const monthlyPurchases = (pagosMes || []).length;
+    const liveRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+    const clienteConRank = {
+      ...cliente,
+      rango_actual: liveRank,
+      rango_gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
+      rango_compras_mes_anterior: monthlyPurchases,
+    };
+
+    if (
+      String(cliente?.rango_actual || "") !== String(liveRank || "") ||
+      toNum(cliente?.rango_gasto_mes_anterior) !== Number(monthlySpend.toFixed(2)) ||
+      toNum(cliente?.rango_compras_mes_anterior) !== monthlyPurchases
+    ) {
+      await gate.admin
+        .from("crm_clientes")
+        .update({
+          rango_actual: liveRank,
+          rango_gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
+          rango_compras_mes_anterior: monthlyPurchases,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", cliente.id);
+
+      await gate.admin.from("cliente_rangos_mensuales").upsert({
+        cliente_id: cliente.id,
+        periodo_mes: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-01`,
+        calculado_desde_mes: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-01`,
+        gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
+        compras_mes_anterior: monthlyPurchases,
+        rango: liveRank,
+        beneficios: currentRankBenefits(liveRank),
+        recalculated_at: new Date().toISOString(),
+      }, { onConflict: "cliente_id,periodo_mes" });
+    }
+
+    const rank = rankMeta(clienteConRank?.rango_actual);
+    const rankProgress = buildRankProgress(monthlySpend, monthlyPurchases, clienteConRank?.rango_actual);
     const callTarget = getCallTarget(cliente?.telefono_normalizado || cliente?.telefono);
+    const recompensasUnicas = Array.from(new Map((recompensas || []).map((item: any) => [`${item?.nombre || ""}::${item?.puntos_coste || 0}::${item?.minutos_otorgados || 0}`, item])).values());
 
     return NextResponse.json({
       ok: true,
       cliente: {
-        ...cliente,
+        ...clienteConRank,
         minutos_totales: minutosTotales,
         puntos: toNum(cliente.puntos),
       },
       historial: historial || [],
-      recompensas: recompensas || [],
+      recompensas: recompensasUnicas,
       last_tarotistas: lastTarotistas,
       rank_info: rank,
       rank_progress: rankProgress,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Crown, Gift, Mail, Phone, PhoneCall, ShieldAlert, Sparkles, Star, TimerReset, WandSparkles, ShoppingBag, ChevronRight, Smartphone, Send } from "lucide-react";
+import { BellRing, Crown, Gift, Mail, Phone, PhoneCall, ShieldAlert, Sparkles, Star, TimerReset, WandSparkles, ShoppingBag, ChevronRight } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
@@ -233,8 +233,6 @@ export default function ClienteDashboardPage() {
   const nombre = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
   const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
   const rankBadge = getRankBadge(rankInfo?.label || cliente?.rango_actual);
-  const freeMinutes = Number(cliente?.minutos_free_pendientes || 0);
-  const normalMinutes = Number(cliente?.minutos_normales_pendientes || 0);
   const totalMinutes = Number(cliente?.minutos_totales || 0);
   const totalPoints = Number(cliente?.puntos || 0);
   const unreadNotifs = notificaciones.filter((item) => !item.leida).length;
@@ -242,8 +240,8 @@ export default function ClienteDashboardPage() {
   const summaryItems = useMemo(
     () => [
       { label: "Rango actual", value: `${rankBadge.emoji} ${rankBadge.label}`, meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes" },
-      { label: "Puntos disponibles", value: String(totalPoints), meta: "Cada compra suma 10 puntos por cada dólar" },
-      { label: "Minutos disponibles", value: String(totalMinutes), meta: "Tú ves el total · el sistema guarda free y normales por separado" },
+      { label: "Puntos disponibles", value: String(totalPoints), meta: "Cada compra suma 10 puntos por cada euro o dólar" },
+      { label: "Minutos disponibles", value: String(totalMinutes), meta: "Tu saldo disponible ahora mismo" },
       { label: "Notificaciones", value: String(unreadNotifs), meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día" },
     ],
     [rankBadge.emoji, rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs]
@@ -300,7 +298,7 @@ export default function ClienteDashboardPage() {
       });
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No hemos podido canjear tus puntos");
-      setMsg("✅ Canje realizado. Tus minutos free ya están actualizados.");
+      setMsg("✅ Canje realizado. Tus minutos ya están actualizados.");
       await loadData();
     } catch (e: any) {
       setMsg(e?.message || "No hemos podido canjear tus puntos");
@@ -417,29 +415,6 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function sendPushTest() {
-    try {
-      setPushBusy(true);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const res = await fetch("/api/cliente/push/test", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error || "No hemos podido enviar la notificación de prueba.");
-      setMsg("✅ Te hemos enviado una notificación de prueba.");
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido enviar la notificación de prueba.");
-    } finally {
-      setPushBusy(false);
-    }
-  }
 
   if (loading) {
     return (
@@ -475,12 +450,12 @@ export default function ClienteDashboardPage() {
                 <div className="tc-mini-stat">
                   <div className="tc-kpi-label">Puntos acumulados</div>
                   <strong>{totalPoints}</strong>
-                  <div className="tc-kpi-meta">Cada compra suma puntos para tus próximos canjes.</div>
+                  <div className="tc-kpi-meta">Cada euro o dólar sumado te acerca a tus próximos canjes.</div>
                 </div>
                 <div className="tc-mini-stat">
                   <div className="tc-kpi-label">Minutos disponibles</div>
                   <strong>{totalMinutes}</strong>
-                  <div className="tc-kpi-meta">Detalle interno: {freeMinutes} free · {normalMinutes} normales</div>
+                  <div className="tc-kpi-meta">Todo tu saldo disponible para consultar cuando quieras.</div>
                 </div>
               </div>
 
@@ -488,7 +463,7 @@ export default function ClienteDashboardPage() {
                 <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div style={{ display: "grid", gap: 5 }}>
                     <div className="tc-panel-title" style={{ fontSize: 18 }}>Progreso de rango</div>
-                    <div className="tc-panel-sub">El rango se actualiza con tus compras activas del mes dentro del panel.</div>
+                    <div className="tc-panel-sub">Tu rango se sincroniza automáticamente con tus compras confirmadas del mes.</div>
                   </div>
                   {rankProgress?.next_label ? <div className="tc-chip">Siguiente: {rankProgress.next_label}</div> : null}
                 </div>
@@ -528,7 +503,7 @@ export default function ClienteDashboardPage() {
                       {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
                     </div>
                     <div className="tc-pack-price">${pack.priceUsd.toFixed(2)} USD</div>
-                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales · mitad free / mitad normales</div>
+                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales disponibles para tu cuenta</div>
                     <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
                       {buyingPackId === pack.id ? "Conectando con Stripe..." : "Comprar ahora"}
                     </button>
@@ -573,41 +548,6 @@ export default function ClienteDashboardPage() {
                 <button className="tc-btn tc-btn-gold" onClick={trackCallAndOpen}>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><PhoneCall size={16} /> Abrir llamada</span>
                 </button>
-              </div>
-            </section>
-
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Notificaciones en tu móvil</div>
-                <div className="tc-panel-sub">Actívalas una sola vez en este dispositivo y luego podrás recibir avisos aunque no estés dentro del panel.</div>
-              </div>
-              <div className="tc-callout-box" style={{ alignItems: "center" }}>
-                <div>
-                  <div className="tc-list-item-title">
-                    {pushPermission === "unsupported"
-                      ? "Este dispositivo no soporta web push"
-                      : pushEnabled
-                      ? "Notificaciones activas"
-                      : pushPermission === "granted"
-                      ? "Permiso concedido · falta registrar el dispositivo"
-                      : "Activa las notificaciones"}
-                  </div>
-                  <div className="tc-list-item-sub">
-                    {pushPermission === "unsupported"
-                      ? "Prueba desde Safari/Chrome actualizados y con HTTPS real."
-                      : pushEnabled
-                      ? "Ya podemos enviarte recordatorios de minutos, promociones, nuevas tarotistas y avisos del oráculo."
-                      : "Te recomendamos activarlas en el móvil para recibir avisos incluso cuando no estés dentro de la web."}
-                  </div>
-                </div>
-                <div className="tc-row" style={{ gap: 10, flexWrap: "wrap" }}>
-                  <button className="tc-btn tc-btn-gold" disabled={pushBusy || pushPermission === "unsupported"} onClick={enablePushNotifications}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Smartphone size={16} /> {pushEnabled ? "Volver a registrar" : "Activar notificaciones"}</span>
-                  </button>
-                  <button className="tc-btn" disabled={pushBusy || !pushEnabled} onClick={sendPushTest}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Send size={16} /> Enviar prueba</span>
-                  </button>
-                </div>
               </div>
             </section>
 
@@ -728,6 +668,10 @@ export default function ClienteDashboardPage() {
         open={Boolean(cliente && !cliente.onboarding_completado)}
         cliente={cliente}
         saving={savingOnboarding}
+        pushEnabled={pushEnabled}
+        pushBusy={pushBusy}
+        pushPermission={pushPermission}
+        onEnablePush={enablePushNotifications}
         onSave={saveOnboarding}
       />
       <BonusBienvenidaModal open={showWelcomeGift} minutes={welcomeGiftMinutes} onClose={() => setShowWelcomeGift(false)} />

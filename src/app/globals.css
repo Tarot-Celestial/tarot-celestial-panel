@@ -650,3 +650,12 @@ a{ color: inherit; text-decoration: none; }
 }
 .tc-oracle-compose{ display:grid; gap:12px; }
 .tc-textarea{ min-height: 120px; resize: vertical; }
+
+
+.tc-country-select, .tc-country-select option{
+  background: #14111a;
+  color: #ffffff;
+}
+.tc-country-select option{
+  color-scheme: dark;
+}
