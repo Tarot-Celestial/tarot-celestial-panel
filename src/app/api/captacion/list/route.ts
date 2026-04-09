@@ -22,39 +22,10 @@ export async function GET(req: NextRequest) {
   let query = supabase
     .from("captacion_leads")
     .select(`
-      id,
-      cliente_id,
-      estado,
-      intento_actual,
-      max_intentos,
-      next_contact_at,
-      last_contact_at,
-      contacted_at,
-      closed_at,
-      last_result,
-      campaign_name,
-      form_name,
-      origen,
-      assigned_worker_id,
-      assigned_role,
-      notas,
-      created_at,
-      updated_at,
-      cliente:crm_clientes(
-        id,
-        nombre,
-        apellido,
-        telefono,
-        email,
-        origen,
-        estado,
-        lead_status,
-        lead_campaign_name,
-        lead_form_name,
-        created_at
-      )
+      *,
+      cliente:crm_clientes(*)
     `)
-    .order("next_contact_at", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (scope === "pendientes") {
     query = query.not(
