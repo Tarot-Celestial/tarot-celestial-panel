@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -32,7 +33,6 @@ function norm(value: unknown) {
 function computeWorkflowState(item: AnyRow) {
   const estado = norm(item?.estado);
 
-  // 🔥 SOLO manda captacion_leads.estado (la fuente real)
   if (estado === "pendiente_free") return "pendiente_free";
   if (estado === "hizo_free" || estado === "recontacto") return "hizo_free";
   if (estado === "no_contesta") return "no_contesta";
@@ -167,11 +167,21 @@ export async function GET(req: NextRequest) {
       return bCreated - aCreated;
     });
 
-    return NextResponse.json({ ok: true, items });
+    return new NextResponse(JSON.stringify({ ok: true, items }), {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      },
+    });
+
   } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message || "ERR_CAPTACION_LIST" },
-      { status: 500 }
+    return new NextResponse(
+      JSON.stringify({ ok: false, error: err?.message || "ERR_CAPTACION_LIST" }),
+      {
+        status: 500,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      }
     );
   }
 }
