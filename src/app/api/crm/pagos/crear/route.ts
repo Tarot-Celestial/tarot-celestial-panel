@@ -3,6 +3,9 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
+// 🔥 CONFIGURACIÓN GLOBAL
+const PUNTOS_POR_EURO = 10;
+
 function getEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -17,8 +20,9 @@ function adminClient() {
   );
 }
 
+// 🔥 AQUÍ ESTABA EL BUG
 function pointsFromAmount(amount: number) {
-  return Math.max(0, Math.floor(Number(amount || 0)));
+  return Math.max(0, Math.floor(Number(amount || 0) * PUNTOS_POR_EURO));
 }
 
 async function uidFromBearer(req: Request) {
@@ -57,6 +61,7 @@ async function workerFromReq(req: Request) {
 export async function POST(req: Request) {
   try {
     const worker = await workerFromReq(req);
+
     if (!worker) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
@@ -117,8 +122,10 @@ export async function POST(req: Request) {
 
     if (error) throw error;
 
+    // 🔥 SUMA DE PUNTOS CORRECTA
     if (String(estado) === "completed") {
       const puntosGanados = pointsFromAmount(importe);
+
       if (puntosGanados > 0) {
         const { data: clienteActual } = await admin
           .from("crm_clientes")
@@ -127,6 +134,8 @@ export async function POST(req: Request) {
           .maybeSingle();
 
         const puntosActuales = Number(clienteActual?.puntos || 0);
+
+        // 🔒 protección básica
         await admin
           .from("crm_clientes")
           .update({
@@ -139,7 +148,7 @@ export async function POST(req: Request) {
           cliente_id,
           tipo: "ganado",
           puntos: puntosGanados,
-          descripcion: `Compra registrada por ${importe.toFixed(2)} € vía ${metodo}.`,
+          descripcion: `Compra de ${importe.toFixed(2)}€ → +${puntosGanados} puntos.`,
         });
       }
     }
@@ -149,6 +158,7 @@ export async function POST(req: Request) {
       pago,
       msg: "Pago creado correctamente",
     });
+
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "ERR" },
