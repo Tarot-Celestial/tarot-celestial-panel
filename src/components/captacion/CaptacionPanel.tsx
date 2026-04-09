@@ -46,7 +46,9 @@ function fullName(lead: Lead) {
     .filter(Boolean)
     .join(" ")
     .trim();
-  return nombre || "Lead sin nombre";
+  if (nombre) return nombre;
+  const fallback = String((lead as any)?.nombre_completo || (lead as any)?.nombre || "").trim();
+  return fallback || "Lead sin nombre";
 }
 
 function fmtDate(value?: string | null) {
@@ -359,7 +361,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           </div>
         </div>
 
-        {msg ? <div style={{ marginTop: 14, color: "#ffb4b4" }}>{msg}</div> : null}
+        {msg ? <div style={{ marginTop: 14, color: "#ffb4b4", fontWeight: 700 }}>⚠️ {msg}</div> : null}
       </div>
 
       <div style={{ marginTop: 18, display: "grid", gap: 14 }}>
@@ -407,8 +409,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
                   <div style={{ fontSize: 18, fontWeight: 800 }}>{full}</div>
 
                   <div style={{ marginTop: 6, opacity: 0.78 }}>
-                    {lead.cliente?.telefono || "Sin teléfono"}
-                    {lead.cliente?.email ? ` · ${lead.cliente.email}` : ""}
+                    {lead.cliente?.telefono || (lead as any)?.telefono || "Sin teléfono"}
+                    {(lead.cliente?.email || (lead as any)?.email) ? ` · ${lead.cliente?.email || (lead as any)?.email}` : ""}
                   </div>
 
                   <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -426,17 +428,17 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
                 </div>
               </div>
 
-              {(lead.campaign_name || lead.form_name || lead.origen || lead.cliente?.origen) ? (
+              {(lead.campaign_name || lead.form_name || lead.origen || lead.cliente?.origen || (lead as any)?.assigned_work) ? (
                 <div style={{ marginTop: 12, opacity: 0.64 }}>
-                  {[lead.campaign_name, lead.form_name, lead.origen || lead.cliente?.origen].filter(Boolean).join(" · ")}
+                  {[lead.campaign_name, lead.form_name, lead.origen || lead.cliente?.origen, (lead as any)?.assigned_work ? `Asignado: ${(lead as any).assigned_work}` : null].filter(Boolean).join(" · ")}
                 </div>
               ) : null}
 
               <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={() => openClient(lead)} style={buttonStyle("rgba(255,255,255,0.10)")}>👤 Abrir ficha</button>
 
-                <a href={lead.cliente?.telefono ? `tel:${lead.cliente.telefono}` : undefined} style={{ textDecoration: "none" }}>
-                  <button disabled={!lead.cliente?.telefono} style={buttonStyle("#0ea5e9", !lead.cliente?.telefono)}>📞 Llamar</button>
+                <a href={(lead.cliente?.telefono || (lead as any)?.telefono) ? `tel:${lead.cliente?.telefono || (lead as any)?.telefono}` : undefined} style={{ textDecoration: "none" }}>
+                  <button disabled={!(lead.cliente?.telefono || (lead as any)?.telefono)} style={buttonStyle("#0ea5e9", !(lead.cliente?.telefono || (lead as any)?.telefono))}>📞 Llamar</button>
                 </a>
 
                 <button disabled={busyId === lead.id} onClick={() => act(lead.id, "contactado")} style={buttonStyle("#22c55e", busyId === lead.id)}>✅ Contactado</button>
