@@ -79,7 +79,7 @@ async function fetchLeadRowsWithClientJoin() {
       form_name,
       origen,
       notas,
-      assigned_work,
+      assigned_worker_id,
       created_at,
       updated_at,
       cliente:crm_clientes(
@@ -106,7 +106,7 @@ async function fetchLeadRowsFallback() {
   const { data, error } = await supabase
     .from("captacion_leads")
     .select(
-      "id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_work, created_at, updated_at"
+      "id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, created_at, updated_at"
     )
     .order("created_at", { ascending: false });
 
