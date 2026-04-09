@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "@supabase/supabase-js";
+import { NextRequest, NextResponse } from "next/server"; // ✅ CORRECTO
 import { createClient } from "@supabase/supabase-js";
 
 function env(name: string) {
@@ -15,7 +15,6 @@ const supabase = createClient(
   env("SUPABASE_SERVICE_ROLE_KEY")
 );
 
-// 🔥 estados cerrados (solo estos se excluyen)
 const CLOSED_STATUSES = new Set([
   "contactado",
   "no_interesado",
@@ -23,7 +22,6 @@ const CLOSED_STATUSES = new Set([
   "perdido",
 ]);
 
-// 🔥 estados válidos abiertos (para normalizar)
 const OPEN_STATUSES = new Set([
   "nuevo",
   "reintento_2",
@@ -83,14 +81,12 @@ export async function GET(req: NextRequest) {
 
     let items = Array.isArray(data) ? data : [];
 
-    // 🔥 NORMALIZACIÓN CLAVE (esto arregla TODO)
+    // 🔥 NORMALIZACIÓN
     items = items.map((item: any) => {
       let estado = String(item?.estado || "").toLowerCase().trim();
 
-      // 👉 si no tiene estado → es nuevo
       if (!estado) estado = "nuevo";
 
-      // 👉 si viene raro (ej: nuevo_lead)
       if (!OPEN_STATUSES.has(estado) && !CLOSED_STATUSES.has(estado)) {
         estado = "nuevo";
       }
@@ -101,14 +97,13 @@ export async function GET(req: NextRequest) {
       };
     });
 
-    // 🔥 FILTRO ROBUSTO
     if (scope === "pendientes") {
       items = items.filter(
         (item: any) => !CLOSED_STATUSES.has(item.estado)
       );
     }
 
-    // 🔥 ORDEN TIPO CALL CENTER
+    // 🔥 ORDEN PRO
     items.sort((a: any, b: any) => {
       const now = Date.now();
 
@@ -122,13 +117,10 @@ export async function GET(req: NextRequest) {
       const aDue = aNext && aNext <= now ? 1 : 0;
       const bDue = bNext && bNext <= now ? 1 : 0;
 
-      // primero los que toca llamar
       if (aDue !== bDue) return bDue - aDue;
 
-      // luego por fecha de contacto
       if (aNext !== bNext) return aNext - bNext;
 
-      // luego por antigüedad
       const aCreated = a?.created_at
         ? new Date(a.created_at).getTime()
         : 0;
