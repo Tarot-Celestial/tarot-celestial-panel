@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -72,13 +73,27 @@ export default function ClienteLoginPage() {
 
   return (
     <div className="tc-wrap" style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
-      <div className="tc-container" style={{ maxWidth: 520 }}>
-        <div className="tc-card" style={{ display: "grid", gap: 18, padding: 24 }}>
-          <div style={{ display: "grid", gap: 6 }}>
+      <div className="tc-container" style={{ maxWidth: 560 }}>
+        <div className="tc-card" style={{ display: "grid", gap: 20, padding: 28 }}>
+          <div style={{ display: "grid", gap: 12, justifyItems: "center", textAlign: "center" }}>
+            <div
+              style={{
+                width: 92,
+                height: 92,
+                borderRadius: 28,
+                padding: 14,
+                display: "grid",
+                placeItems: "center",
+                background: "rgba(255,255,255,.04)",
+                border: "1px solid rgba(255,255,255,.08)",
+              }}
+            >
+              <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={64} height={64} style={{ width: "100%", height: "100%", objectFit: "contain" }} priority />
+            </div>
             <div className="tc-chip" style={{ width: "fit-content" }}>Nuevo panel</div>
             <div className="tc-title" style={{ fontSize: 32 }}>Área cliente Tarot Celestial</div>
-            <div className="tc-muted">
-              Entra con tu número de teléfono y recibe tu código de acceso por SMS.
+            <div className="tc-muted" style={{ maxWidth: 420 }}>
+              Entra con tu número de teléfono para consultar tu rango, tus minutos, tus puntos y tus últimas consultas.
             </div>
           </div>
 
