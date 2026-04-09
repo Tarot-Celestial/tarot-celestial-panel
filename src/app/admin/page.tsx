@@ -173,9 +173,7 @@ export default function Admin() {
   const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
   const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
   const [heroVipCount, setHeroVipCount] = useState(0);
-  const [heroLeadsMonth, setHeroLeadsMonth] = useState(0);
-  const [heroCaptadasMonth, setHeroCaptadasMonth] = useState(0);
-  const [heroFacturacionMonth, setHeroFacturacionMonth] = useState(0);
+  const [heroMetrics, setHeroMetrics] = useState<any>({ leads_mes: 0, captadas_mes: 0, facturacion_mes: 0 });
 
   const pollRef = useRef<any>(null);
   const lastMonthRef = useRef<string>("");
@@ -697,8 +695,9 @@ export default function Admin() {
         fetch(`/api/admin/crm/clientes-alertas`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`/api/admin/dashboard?month=${encodeURIComponent(month)}`, {
+        fetch(`/api/admin/dashboard?month=${encodeURIComponent(month)}&t=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
         }),
       ]);
 
@@ -711,6 +710,7 @@ export default function Admin() {
       if (!statsJ?._ok || !statsJ?.ok) throw new Error(statsJ?.error || `HTTP ${statsJ?._status}`);
       if (!rankJ?._ok || !rankJ?.ok) throw new Error(rankJ?.error || `HTTP ${rankJ?._status}`);
       if (!invJ?._ok || !invJ?.ok) throw new Error(invJ?.error || `HTTP ${invJ?._status}`);
+      if (!heroJ?._ok || !heroJ?.ok) throw new Error(heroJ?.error || `HTTP ${heroJ?._status}`);
 
       setStatsTotals(statsJ.totals || null);
       setStatsRows(statsJ.rows || []);
@@ -718,17 +718,17 @@ export default function Admin() {
       setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
       setInvoices(invJ.invoices || []);
       setHeroVipCount(Number(vipJ?.summary?.clientesVip || 0));
-      setHeroLeadsMonth(Number(heroJ?.leads_mes || 0));
-      setHeroCaptadasMonth(Number(heroJ?.captadas_mes || 0));
-      setHeroFacturacionMonth(Number(heroJ?.facturacion_mes || 0));
+      setHeroMetrics({
+        leads_mes: Number(heroJ?.leads_mes || 0),
+        captadas_mes: Number(heroJ?.captadas_mes || 0),
+        facturacion_mes: Number(heroJ?.facturacion_mes || 0),
+      });
 
       if (!silent) setStatsMsg("✅ Estadísticas cargadas.");
     } catch (e: any) {
       if (!silent) setStatsMsg(`❌ ${e?.message || "Error"}`);
       setHeroVipCount(0);
-      setHeroLeadsMonth(0);
-      setHeroCaptadasMonth(0);
-      setHeroFacturacionMonth(0);
+      setHeroMetrics({ leads_mes: 0, captadas_mes: 0, facturacion_mes: 0 });
     } finally {
       if (!silent) setStatsLoading(false);
     }
@@ -1275,12 +1275,10 @@ export default function Admin() {
       minutes_per_worker: workers ? minutes / workers : 0,
       captadas_per_100_min: minutes ? (captadas / minutes) * 100 : 0,
       factura_media: workers ? invoiceTotal / workers : 0,
-      revenue_total: Number(heroFacturacionMonth || statsTotals?.revenue_total || 0),
+      revenue_total: Number(statsTotals?.revenue_total || 0),
       vip_count: heroVipCount,
-      leads_month: heroLeadsMonth,
-      captadas_month: heroCaptadasMonth,
     };
-  }, [invoices, statsRows, statsTotals, heroVipCount, heroLeadsMonth, heroCaptadasMonth, heroFacturacionMonth]);
+  }, [invoices, statsRows, statsTotals, heroVipCount]);
 
   const attSummary = useMemo(() => {
     const online = (attOnline || []).length;
@@ -1414,18 +1412,18 @@ export default function Admin() {
               </div>
               <div className="tc-kpi-panel">
                 <div className="tc-kpi-label">Captadas mes</div>
-                <div className="tc-kpi-value">{String(statsComputed.captadas_month || 0)}</div>
-                <div className="tc-kpi-note">Leads de Facebook marcados como captados este mes</div>
+                <div className="tc-kpi-value">{String(heroMetrics.captadas_mes || 0)}</div>
+                <div className="tc-kpi-note">Leads de Facebook convertidos este mes</div>
               </div>
               <div className="tc-kpi-panel">
                 <div className="tc-kpi-label">Leads este mes</div>
-                <div className="tc-kpi-value">{String(statsComputed.leads_month || 0)}</div>
+                <div className="tc-kpi-value">{String(heroMetrics.leads_mes || 0)}</div>
                 <div className="tc-kpi-note">Total de leads entrados este mes</div>
               </div>
               <div className="tc-kpi-panel">
                 <div className="tc-kpi-label">Facturación</div>
-                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{eur(statsComputed.revenue_total || 0)}</div>
-                <div className="tc-kpi-note">Importe total desde rendimiento de llamadas</div>
+                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{eur(heroMetrics.facturacion_mes || 0)}</div>
+                <div className="tc-kpi-note">Total desde rendimiento de llamadas</div>
               </div>
             </div>
           </section>
