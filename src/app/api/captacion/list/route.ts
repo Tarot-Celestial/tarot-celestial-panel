@@ -31,31 +31,16 @@ function norm(value: unknown) {
 
 function computeWorkflowState(item: AnyRow) {
   const estado = norm(item?.estado);
-  const crmLead = norm(item?.cliente?.lead_status);
-  const last = norm(item?.last_result);
-  const intento = Number(item?.intento_actual || 1);
 
-  // IMPORTANTE: si captacion_leads ya tiene un estado, ese manda.
-  // No dejamos que CRM o last_result pisen el estado real del lead.
-  if (estado === "captado") return "captado";
-  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)) return estado;
+  // 🔥 SOLO manda captacion_leads.estado (la fuente real)
   if (estado === "pendiente_free") return "pendiente_free";
-  if (["hizo_free", "recontacto"].includes(estado)) return estado;
-  if (["no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(estado)) return "no_contesta";
-  if (estado === "nuevo") return "nuevo";
+  if (estado === "hizo_free" || estado === "recontacto") return "hizo_free";
+  if (estado === "no_contesta") return "no_contesta";
+  if (estado === "captado") return "captado";
 
-  // Solo hacemos fallback si estado viene vacío o nulo.
-  if (crmLead === "captado") return "captado";
-  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(crmLead)) return crmLead;
-  if (crmLead === "pendiente_free") return "pendiente_free";
-  if (["hizo_free", "recontacto"].includes(crmLead)) return crmLead;
-  if (["no_contesta", "sin_respuesta"].includes(crmLead)) return "no_contesta";
-
-  if (last === "captado") return "captado";
-  if (last === "no_contesta") return "no_contesta";
-  if (last === "no_interesado") return "no_interesado";
-
-  if (intento > 1 && !item?.closed_at) return "no_contesta";
+  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)) {
+    return "cerrado";
+  }
 
   return "nuevo";
 }
