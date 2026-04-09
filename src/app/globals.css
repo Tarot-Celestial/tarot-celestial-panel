@@ -480,6 +480,42 @@ a{ color: inherit; text-decoration: none; }
 }
 .tc-login-logo{ width: 96px; height: 96px; border-radius: 28px; display:grid; place-items:center; padding: 12px; background: rgba(255,255,255,0.06); border: 1px solid rgba(244,216,159,0.18); }
 .tc-login-logo img{ filter: drop-shadow(0 0 24px rgba(244,216,159,0.34)); }
+
+.tc-country-select-wrap{ position:relative; }
+.tc-country-select{
+  appearance:none;
+  -webkit-appearance:none;
+  padding-right:40px;
+}
+.tc-country-select-icon{
+  position:absolute;
+  right:14px;
+  top:50%;
+  transform:translateY(-50%);
+  pointer-events:none;
+  color:rgba(255,255,255,.62);
+}
+.tc-phone-field{
+  display:grid;
+  grid-template-columns:auto 1fr;
+  gap:10px;
+  align-items:center;
+}
+.tc-phone-prefix{
+  min-width:78px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.05);
+  font-weight:800;
+  text-align:center;
+}
+.tc-phone-input{ min-width:0; }
+@media (max-width: 520px){
+  .tc-phone-field{ grid-template-columns:1fr; }
+  .tc-phone-prefix{ width:fit-content; }
+}
+
 .tc-profile-grid{ display:grid; grid-template-columns: 1fr .95fr; gap:16px; }
 @media (max-width: 940px){ .tc-profile-grid{ grid-template-columns: 1fr; } }
 
