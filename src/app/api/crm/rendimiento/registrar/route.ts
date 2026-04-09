@@ -66,6 +66,10 @@ function codigoText(mins: number, code: string | null) {
   return `${mins} ${String(code).toLowerCase()}`;
 }
 
+function pointsFromAmount(amount: number) {
+  return Math.max(0, Math.floor(Number(amount || 0)));
+}
+
 function buildNota({ clienteCompra, usoTipo, importe, formaPago, guardadosFree, guardadosNormales, resumenCodigo, tarotistaNombre, nextFree, nextNormales }: any) {
   if (!clienteCompra && usoTipo === "7free") {
     return `Cliente usa 7 free con ${tarotistaNombre || "tarotista sin indicar"}.`;
@@ -118,7 +122,7 @@ export async function POST(req: Request) {
     const admin = adminClient();
     const { data: cliente, error: clienteError } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, minutos_free_pendientes, minutos_normales_pendientes")
+.select("id, nombre, apellido, telefono, minutos_free_pendientes, minutos_normales_pendientes, puntos")
       .eq("id", clienteId)
       .maybeSingle();
     if (clienteError) throw clienteError;
@@ -211,6 +215,27 @@ export async function POST(req: Request) {
       is_pinned: false,
     });
     if (noteError) throw noteError;
+
+    if (clienteCompra && importe > 0) {
+      const puntosGanados = pointsFromAmount(importe);
+      if (puntosGanados > 0) {
+        const puntosActuales = Number((cliente as any)?.puntos || 0);
+        await admin
+          .from("crm_clientes")
+          .update({
+            puntos: puntosActuales + puntosGanados,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", clienteId);
+
+        await admin.from("cliente_puntos_historial").insert({
+          cliente_id: clienteId,
+          tipo: "ganado",
+          puntos: puntosGanados,
+          descripcion: `Compra registrada desde rendimiento por ${importe.toFixed(2)} € vía ${formaPago || "sin método"}.`,
+        });
+      }
+    }
 
     return NextResponse.json({ ok: true, data: inserted, message: "✅ Llamada registrada correctamente" });
   } catch (e: any) {

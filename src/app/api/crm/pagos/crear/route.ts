@@ -17,6 +17,10 @@ function adminClient() {
   );
 }
 
+function pointsFromAmount(amount: number) {
+  return Math.max(0, Math.floor(Number(amount || 0)));
+}
+
 async function uidFromBearer(req: Request) {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -112,6 +116,33 @@ export async function POST(req: Request) {
       .single();
 
     if (error) throw error;
+
+    if (String(estado) === "completed") {
+      const puntosGanados = pointsFromAmount(importe);
+      if (puntosGanados > 0) {
+        const { data: clienteActual } = await admin
+          .from("crm_clientes")
+          .select("id, puntos")
+          .eq("id", cliente_id)
+          .maybeSingle();
+
+        const puntosActuales = Number(clienteActual?.puntos || 0);
+        await admin
+          .from("crm_clientes")
+          .update({
+            puntos: puntosActuales + puntosGanados,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", cliente_id);
+
+        await admin.from("cliente_puntos_historial").insert({
+          cliente_id,
+          tipo: "ganado",
+          puntos: puntosGanados,
+          descripcion: `Compra registrada por ${importe.toFixed(2)} € vía ${metodo}.`,
+        });
+      }
+    }
 
     return NextResponse.json({
       ok: true,
