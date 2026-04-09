@@ -88,7 +88,7 @@ export default function ClienteLoginPage() {
                 border: "1px solid rgba(255,255,255,.08)",
               }}
             >
-              <Image src="/nuevo-logo-tarot.png" alt="Tarot Celestial" width={64} height={64} style={{ width: "100%", height: "100%", objectFit: "contain" }} priority />
+              <Image src="nuevo-logo-tarot.png" alt="Tarot Celestial" width={64} height={64} style={{ width: "100%", height: "100%", objectFit: "contain" }} priority />
             </div>
             <div className="tc-chip" style={{ width: "fit-content" }}>Nuevo panel</div>
             <div className="tc-title" style={{ fontSize: 32 }}>Área cliente Tarot Celestial</div>
