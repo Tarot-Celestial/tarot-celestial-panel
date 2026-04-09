@@ -14,54 +14,43 @@ const supabase = createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("SUPABASE_SER
   auth: { persistSession: false },
 });
 
-const CLOSED_STATUSES = new Set(["contactado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"]);
-const OPEN_STATUSES = new Set(["nuevo", "reintento_2", "reintento_3", "pendiente", "pending"]);
-
 type AnyRow = Record<string, any>;
 
-function normalizeState(raw: unknown, item: AnyRow) {
-  const estado = String(raw || "").toLowerCase().trim();
-  const crmStatus = String(item?.cliente?.lead_status || "").toLowerCase().trim();
-  const lastResult = String(item?.last_result || "").toLowerCase().trim();
+const CLOSED_STATES = new Set(["captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"]);
 
-  if (item?.closed_at || item?.contacted_at) {
-    if (["contactado", "no_interesado", "numero_invalido", "perdido"].includes(estado)) return estado;
-    if (["contactado", "no_interesado", "numero_invalido", "perdido"].includes(crmStatus)) return crmStatus;
-    if (lastResult === "contactado") return "contactado";
-    return "perdido";
-  }
+function norm(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
 
-  if (CLOSED_STATUSES.has(estado) || OPEN_STATUSES.has(estado)) {
-    if (estado === "pendiente" || estado === "pending") return "nuevo";
-    return estado;
-  }
+function computeWorkflowState(item: AnyRow) {
+  const estado = norm(item?.estado);
+  const crmLead = norm(item?.cliente?.lead_status);
+  const last = norm(item?.last_result);
+  const intento = Number(item?.intento_actual || 1);
 
-  if (["seguimiento", "sin_respuesta"].includes(crmStatus)) {
-    const intento = Number(item?.intento_actual || 1);
-    if (intento >= 3) return "reintento_3";
-    if (intento >= 2) return "reintento_2";
-    return "nuevo";
-  }
+  if (estado === "captado" || crmLead === "captado" || last === "captado") return "captado";
+  if (["no_interesado", "numero_invalido", "perdido"].includes(estado)) return estado;
+  if (["no_interesado", "numero_invalido", "perdido"].includes(crmLead)) return crmLead;
 
-  if (["contactado", "no_interesado", "numero_invalido", "perdido"].includes(crmStatus)) {
-    return crmStatus;
-  }
+  if (estado === "pendiente_free" || crmLead === "pendiente_free") return "pendiente_free";
+  if (["hizo_free", "recontacto"].includes(estado)) return estado;
+  if (["hizo_free", "recontacto"].includes(crmLead)) return crmLead;
 
-  return "nuevo";
+  if (["no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(estado)) return "no_contesta";
+  if (["no_contesta", "sin_respuesta"].includes(crmLead)) return "no_contesta";
+  if (last === "no_contesta") return "no_contesta";
+  if (intento > 1 && !item?.closed_at) return "no_contesta";
+
+  if (estado === "nuevo" || !estado) return "nuevo";
+  return estado;
 }
 
 function isClosed(item: AnyRow) {
-  const estado = String(item?.estado || "").toLowerCase().trim();
-  const crmStatus = String(item?.cliente?.lead_status || "").toLowerCase().trim();
-  return Boolean(
-    item?.closed_at ||
-      item?.contacted_at ||
-      CLOSED_STATUSES.has(estado) ||
-      ["contactado", "no_interesado", "numero_invalido", "sin_respuesta", "perdido", "cerrado", "finalizado"].includes(crmStatus)
-  );
+  const state = computeWorkflowState(item);
+  return Boolean(item?.closed_at || CLOSED_STATES.has(state));
 }
 
-async function fetchLeadRowsWithClientJoin() {
+async function fetchWithJoin() {
   const { data, error } = await supabase
     .from("captacion_leads")
     .select(`
@@ -80,6 +69,7 @@ async function fetchLeadRowsWithClientJoin() {
       origen,
       notas,
       assigned_worker_id,
+      assigned_role,
       created_at,
       updated_at,
       cliente:crm_clientes(
@@ -89,74 +79,73 @@ async function fetchLeadRowsWithClientJoin() {
         telefono,
         email,
         origen,
-        estado,
         lead_status,
+        lead_contacted_at,
         lead_campaign_name,
         lead_form_name,
         created_at
       )
     `)
     .order("created_at", { ascending: false });
-
   if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
 
-async function fetchLeadRowsFallback() {
+async function fetchFallback() {
   const { data, error } = await supabase
     .from("captacion_leads")
-    .select(
-      "id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, created_at, updated_at"
-    )
+    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at")
     .order("created_at", { ascending: false });
-
   if (error) throw error;
 
   const rows = Array.isArray(data) ? data : [];
-  const clienteIds = Array.from(new Set(rows.map((row: AnyRow) => String(row?.cliente_id || "").trim()).filter(Boolean)));
+  const clienteIds = Array.from(new Set(rows.map((x: AnyRow) => String(x?.cliente_id || "").trim()).filter(Boolean)));
   if (!clienteIds.length) return rows;
 
-  const { data: clientes } = await supabase
+  const { data: clientes, error: clientesErr } = await supabase
     .from("crm_clientes")
-    .select("id, nombre, apellido, telefono, email, origen, estado, lead_status, lead_campaign_name, lead_form_name, created_at")
+    .select("id, nombre, apellido, telefono, email, origen, lead_status, lead_contacted_at, lead_campaign_name, lead_form_name, created_at")
     .in("id", clienteIds);
+  if (clientesErr) throw clientesErr;
 
-  const byId = new Map((Array.isArray(clientes) ? clientes : []).map((c: AnyRow) => [String(c.id), c]));
+  const byId = new Map((clientes || []).map((c: AnyRow) => [String(c.id), c]));
   return rows.map((row: AnyRow) => ({ ...row, cliente: byId.get(String(row?.cliente_id || "")) || null }));
 }
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const scope = String(searchParams.get("scope") || "pendientes").trim().toLowerCase();
+    const scope = norm(searchParams.get("scope") || "pendientes");
 
-    let rawItems: AnyRow[] = [];
+    let raw: AnyRow[] = [];
     try {
-      rawItems = await fetchLeadRowsWithClientJoin();
+      raw = await fetchWithJoin();
     } catch {
-      rawItems = await fetchLeadRowsFallback();
+      raw = await fetchFallback();
     }
 
-    let items = rawItems.map((item: AnyRow) => ({
+    let items = raw.map((item) => ({
       ...item,
-      estado: normalizeState(item?.estado, item),
+      workflow_state: computeWorkflowState(item),
+      is_closed: isClosed(item),
     }));
 
     if (scope === "pendientes") {
-      items = items.filter((item: AnyRow) => !isClosed(item));
+      items = items.filter((item) => !item.is_closed);
+    } else if (scope === "cerrados") {
+      items = items.filter((item) => item.is_closed);
     }
 
-    items.sort((a: AnyRow, b: AnyRow) => {
-      const now = Date.now();
-      const aNext = a?.next_contact_at ? new Date(a.next_contact_at).getTime() : 0;
-      const bNext = b?.next_contact_at ? new Date(b.next_contact_at).getTime() : 0;
-      const aDue = aNext && aNext <= now ? 1 : 0;
-      const bDue = bNext && bNext <= now ? 1 : 0;
-      if (aDue !== bDue) return bDue - aDue;
+    items.sort((a, b) => {
+      const aNext = a?.next_contact_at ? new Date(a.next_contact_at).getTime() : Number.MAX_SAFE_INTEGER;
+      const bNext = b?.next_contact_at ? new Date(b.next_contact_at).getTime() : Number.MAX_SAFE_INTEGER;
+      const aDue = Number.isFinite(aNext) && aNext <= Date.now() ? 0 : 1;
+      const bDue = Number.isFinite(bNext) && bNext <= Date.now() ? 0 : 1;
+      if (aDue !== bDue) return aDue - bDue;
       if (aNext !== bNext) return aNext - bNext;
       const aCreated = a?.created_at ? new Date(a.created_at).getTime() : 0;
       const bCreated = b?.created_at ? new Date(b.created_at).getTime() : 0;
-      return aCreated - bCreated;
+      return bCreated - aCreated;
     });
 
     return NextResponse.json({ ok: true, items });

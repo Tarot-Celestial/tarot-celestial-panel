@@ -307,6 +307,49 @@ async function insertNotifications(args: {
   }
 }
 
+
+async function upsertCaptacionLead(args: {
+  clienteId: string;
+  origen: string;
+  campaignName?: string | null;
+  formName?: string | null;
+}) {
+  const admin = supabaseAdmin();
+  const openStates = ["nuevo", "no_contesta", "pendiente_free", "hizo_free", "recontacto"];
+
+  const { data: existing } = await admin
+    .from("captacion_leads")
+    .select("id")
+    .eq("cliente_id", args.clienteId)
+    .in("estado", openStates)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const payload = {
+    cliente_id: args.clienteId,
+    estado: "nuevo",
+    intento_actual: 1,
+    max_intentos: 3,
+    next_contact_at: new Date().toISOString(),
+    campaign_name: args.campaignName || null,
+    form_name: args.formName || null,
+    origen: args.origen,
+    closed_at: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existing?.id) {
+    const { error } = await admin.from("captacion_leads").update(payload).eq("id", existing.id);
+    if (error) throw error;
+    return existing.id;
+  }
+
+  const { data, error } = await admin.from("captacion_leads").insert(payload).select("id").single();
+  if (error) throw error;
+  return data?.id || null;
+}
+
 async function tryInsertLeadLog(args: {
   clienteId: string;
   leadgenId?: string | null;
@@ -439,6 +482,13 @@ export async function ingestMetaLead(lead: MetaLeadPayload, options: IngestOptio
   });
 
   await insertClientNote(String(cliente.id), note);
+  await upsertCaptacionLead({
+    clienteId: String(cliente.id),
+    origen: sourceLabel,
+    campaignName: sanitizeText(lead?.campaign_name),
+    formName: sanitizeText(lead?.form_name),
+  });
+
   await insertNotifications({
     clienteId: String(cliente.id),
     fullName,

@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       .from("captacion_leads")
       .select("id")
       .eq("cliente_id", cliente.id)
-      .in("estado", ["nuevo", "reintento_2", "reintento_3"])
+      .in("estado", ["nuevo", "no_contesta", "pendiente_free", "hizo_free", "recontacto"])
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -191,7 +191,9 @@ export async function POST(req: NextRequest) {
         .update({
           estado: "nuevo",
           intento_actual: 1,
+          max_intentos: 3,
           next_contact_at: new Date().toISOString(),
+          closed_at: null,
           campaign_name: campaignName,
           form_name: formName,
           origen,
@@ -205,6 +207,7 @@ export async function POST(req: NextRequest) {
         intento_actual: 1,
         max_intentos: 3,
         next_contact_at: new Date().toISOString(),
+        closed_at: null,
         campaign_name: campaignName,
         form_name: formName,
         origen,
