@@ -175,6 +175,49 @@ export default function Admin() {
   const [heroVipCount, setHeroVipCount] = useState(0);
   const [heroMetrics, setHeroMetrics] = useState<any>({ leads_mes: 0, captadas_mes: 0, facturacion_mes: 0 });
 
+
+  async function loadHeroMetricsDirect() {
+    try {
+      const start = `${month}-01`;
+      const endDate = new Date(start);
+      endDate.setMonth(endDate.getMonth() + 1);
+      const end = endDate.toISOString().slice(0, 10);
+
+      const { count: leads } = await sb
+        .from("captacion_leads")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", start)
+        .lt("created_at", end);
+
+      const { count: captadas } = await sb
+        .from("captacion_leads")
+        .select("*", { count: "exact", head: true })
+        .neq("estado", "no_contesta")
+        .gte("created_at", start)
+        .lt("created_at", end);
+
+      const { data: rend } = await sb
+        .from("rendimiento_llamadas")
+        .select("importe, created_at")
+        .gte("created_at", start)
+        .lt("created_at", end);
+
+      const facturacion = (rend || []).reduce(
+        (acc, r) => acc + Number(r.importe || 0),
+        0
+      );
+
+      setHeroMetrics({
+        leads_mes: leads || 0,
+        captadas_mes: captadas || 0,
+        facturacion_mes: facturacion || 0,
+      });
+
+    } catch (err) {
+      console.error("Hero metrics error:", err);
+    }
+  }
+
   const pollRef = useRef<any>(null);
   const lastMonthRef = useRef<string>("");
 
@@ -294,6 +337,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (!ok) return;
+    loadHeroMetricsDirect();
 
     loadLatestCrmCloseNotif(true);
 
@@ -3068,3 +3112,4 @@ function ChecklistRow({
     </div>
   );
 }
+
