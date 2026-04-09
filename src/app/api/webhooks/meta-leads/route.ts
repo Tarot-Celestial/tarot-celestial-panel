@@ -161,6 +161,20 @@ export async function POST(req: NextRequest) {
       cliente = data;
     }
 
+    // Intentamos dejar también el CRM en modo lead nuevo, pero sin romper si esas columnas no existen.
+    try {
+      await admin
+        .from("crm_clientes")
+        .update({
+          lead_status: "nuevo",
+          lead_contacted_at: null,
+          lead_campaign_name: campaignName,
+          lead_form_name: formName,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", cliente.id);
+    } catch {}
+
     await tryInsertClientNote(admin, {
       cliente_id: cliente.id,
       texto: [
@@ -193,6 +207,9 @@ export async function POST(req: NextRequest) {
           intento_actual: 1,
           max_intentos: 3,
           next_contact_at: new Date().toISOString(),
+          contacted_at: null,
+          last_contact_at: null,
+          last_result: null,
           closed_at: null,
           campaign_name: campaignName,
           form_name: formName,
@@ -207,6 +224,9 @@ export async function POST(req: NextRequest) {
         intento_actual: 1,
         max_intentos: 3,
         next_contact_at: new Date().toISOString(),
+        contacted_at: null,
+        last_contact_at: null,
+        last_result: null,
         closed_at: null,
         campaign_name: campaignName,
         form_name: formName,

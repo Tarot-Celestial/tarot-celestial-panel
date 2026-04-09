@@ -182,6 +182,7 @@ async function upsertClient(args: {
     lead_ad_name: args.adName || null,
     leadgen_id: args.leadgenId || null,
     lead_created_at: args.metaCreatedAt || null,
+    lead_contacted_at: null,
   };
 
   if (existing?.id) {
@@ -307,7 +308,6 @@ async function insertNotifications(args: {
   }
 }
 
-
 async function upsertCaptacionLead(args: {
   clienteId: string;
   origen: string;
@@ -332,6 +332,9 @@ async function upsertCaptacionLead(args: {
     intento_actual: 1,
     max_intentos: 3,
     next_contact_at: new Date().toISOString(),
+    contacted_at: null,
+    last_contact_at: null,
+    last_result: null,
     campaign_name: args.campaignName || null,
     form_name: args.formName || null,
     origen: args.origen,

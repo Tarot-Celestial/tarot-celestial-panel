@@ -35,26 +35,35 @@ function computeWorkflowState(item: AnyRow) {
   const last = norm(item?.last_result);
   const intento = Number(item?.intento_actual || 1);
 
-  if (estado === "captado" || crmLead === "captado" || last === "captado") return "captado";
-  if (["no_interesado", "numero_invalido", "perdido"].includes(estado)) return estado;
-  if (["no_interesado", "numero_invalido", "perdido"].includes(crmLead)) return crmLead;
-
-  if (estado === "pendiente_free" || crmLead === "pendiente_free") return "pendiente_free";
+  // IMPORTANTE: si captacion_leads ya tiene un estado, ese manda.
+  // No dejamos que CRM o last_result pisen el estado real del lead.
+  if (estado === "captado") return "captado";
+  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)) return estado;
+  if (estado === "pendiente_free") return "pendiente_free";
   if (["hizo_free", "recontacto"].includes(estado)) return estado;
-  if (["hizo_free", "recontacto"].includes(crmLead)) return crmLead;
-
   if (["no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(estado)) return "no_contesta";
+  if (estado === "nuevo") return "nuevo";
+
+  // Solo hacemos fallback si estado viene vacío o nulo.
+  if (crmLead === "captado") return "captado";
+  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(crmLead)) return crmLead;
+  if (crmLead === "pendiente_free") return "pendiente_free";
+  if (["hizo_free", "recontacto"].includes(crmLead)) return crmLead;
   if (["no_contesta", "sin_respuesta"].includes(crmLead)) return "no_contesta";
+
+  if (last === "captado") return "captado";
   if (last === "no_contesta") return "no_contesta";
+  if (last === "no_interesado") return "no_interesado";
+
   if (intento > 1 && !item?.closed_at) return "no_contesta";
 
-  if (estado === "nuevo" || !estado) return "nuevo";
-  return estado;
+  return "nuevo";
 }
 
 function isClosed(item: AnyRow) {
+  const estado = norm(item?.estado);
   const state = computeWorkflowState(item);
-  return Boolean(item?.closed_at || CLOSED_STATES.has(state));
+  return Boolean(item?.closed_at || CLOSED_STATES.has(estado || state));
 }
 
 async function fetchWithJoin() {
