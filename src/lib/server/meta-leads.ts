@@ -343,10 +343,17 @@ async function upsertCaptacionLead(args: {
   };
 
   if (existing?.id) {
-    const { error } = await admin.from("captacion_leads").update(payload).eq("id", existing.id);
-    if (error) throw error;
-    return existing.id;
-  }
+  const { error } = await admin.from("captacion_leads").update({
+    // 🔥 NO tocamos estado ni flujo
+    updated_at: new Date().toISOString(),
+    campaign_name: args.campaignName || null,
+    form_name: args.formName || null,
+    origen: args.origen,
+  }).eq("id", existing.id);
+
+  if (error) throw error;
+  return existing.id;
+}
 
   const { data, error } = await admin.from("captacion_leads").insert(payload).select("id").single();
   if (error) throw error;
