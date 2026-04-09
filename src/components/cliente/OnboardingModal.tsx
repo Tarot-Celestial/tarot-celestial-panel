@@ -57,7 +57,7 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
     width: "min(720px, 96vw)",
     borderRadius: 22,
     border: "1px solid rgba(255,255,255,0.14)",
-    background: "linear-gradient(180deg, rgba(16,11,28,0.98), rgba(11,7,20,0.98))",
+    background: "linear-gradient(180deg, rgba(23,18,14,0.98), rgba(10,9,14,0.98))",
     boxShadow: "0 24px 90px rgba(0,0,0,0.55)",
     padding: 24,
     display: "grid",
@@ -79,9 +79,9 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
     >
       <div style={cardStyle}>
         <div style={{ display: "grid", gap: 6 }}>
-          <div className="tc-chip" style={{ width: "fit-content" }}>Bienvenida</div>
+          <div className="tc-chip" style={{ width: "fit-content", borderColor: "rgba(244,216,159,0.18)", background: "rgba(244,216,159,0.08)" }}>Bienvenida</div>
           <div className="tc-title" style={{ fontSize: 26 }}>
-            Hola, bienvenido al panel cliente de Tarot Celestial
+            Hola, bienvenido al panel cliente de Tarot Celestial ✨
           </div>
           <div className="tc-muted">
             Antes de continuar vamos a comprobar unos datos para dejar tu área personal correcta.

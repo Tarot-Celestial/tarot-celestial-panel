@@ -1,6 +1,6 @@
 "use client";
 
-import { Gift } from "lucide-react";
+import { Gift, Sparkles } from "lucide-react";
 
 type Props = {
   open: boolean;
@@ -16,44 +16,45 @@ export default function BonusBienvenidaModal({ open, minutes = 10, onClose }: Pr
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(5,8,18,.72)",
+        background: "rgba(5,8,18,.76)",
         display: "grid",
         placeItems: "center",
         zIndex: 90,
         padding: 16,
+        backdropFilter: "blur(8px)",
       }}
     >
       <div
-        className="tc-card"
+        className="tc-card tc-golden-panel"
         style={{
-          width: "min(560px, 100%)",
+          width: "min(580px, 100%)",
           display: "grid",
           gap: 18,
-          padding: 24,
+          padding: 28,
           textAlign: "center",
-          background:
-            "radial-gradient(circle at top, rgba(215,181,109,.22), transparent 28%), linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04))",
-          border: "1px solid rgba(215,181,109,.28)",
           boxShadow: "0 26px 80px rgba(0,0,0,.48)",
         }}
       >
         <div
           style={{
-            width: 74,
-            height: 74,
+            width: 82,
+            height: 82,
             margin: "0 auto",
-            borderRadius: 24,
+            borderRadius: 28,
             display: "grid",
             placeItems: "center",
             background: "rgba(215,181,109,.18)",
             border: "1px solid rgba(215,181,109,.28)",
           }}
         >
-          <Gift size={34} />
+          <Gift size={36} />
         </div>
         <div style={{ display: "grid", gap: 8 }}>
-          <div className="tc-title" style={{ fontSize: 30 }}>Felicidades</div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Acabas de ganar {minutes} minutos gratis de consulta.</div>
+          <div className="tc-chip" style={{ width: "fit-content", margin: "0 auto", display: "inline-flex", gap: 8, alignItems: "center" }}>
+            <Sparkles size={14} /> Regalo de bienvenida
+          </div>
+          <div className="tc-title" style={{ fontSize: 32 }}>Felicidades</div>
+          <div style={{ fontSize: 19, fontWeight: 800 }}>Acabas de ganar {minutes} minutos gratis de consulta.</div>
           <div className="tc-muted">
             Ya los hemos añadido a tus minutos free pendientes para que puedas disfrutarlos en tu próxima consulta.
           </div>

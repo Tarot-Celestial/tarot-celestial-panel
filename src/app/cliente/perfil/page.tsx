@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, Mail, Phone, ShieldCheck } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
@@ -170,19 +171,44 @@ export default function ClientePerfilPage() {
   }
 
   return (
-    <ClienteLayout title="Perfil" subtitle="Revisa y actualiza tus datos personales cuando lo necesites.">
+    <ClienteLayout
+      title="Tu perfil"
+      subtitle="Aquí puedes revisar y actualizar los datos de tu cuenta para que todo en tu panel esté siempre correcto."
+      summaryItems={[
+        { label: "Teléfono actual", value: currentPhone || "—", meta: "Acceso principal al panel" },
+        { label: "Email", value: email || "No añadido", meta: "Para promociones y regalos" },
+        { label: "Nacimiento", value: fechaNacimiento || "Pendiente", meta: "Nos ayuda con tu regalo de cumpleaños" },
+      ]}
+    >
       {loading ? (
         <div className="tc-card">Cargando...</div>
       ) : (
-        <div className="tc-grid-2">
-          <div className="tc-card" style={{ display: "grid", gap: 12 }}>
-            <div className="tc-title" style={{ fontSize: 22 }}>Tus datos</div>
-            <div style={{ display: "grid", gap: 10 }}>
-              <input className="tc-input" placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
-              <input className="tc-input" placeholder="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} />
-              <input className="tc-input" placeholder="E-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <input className="tc-input" type="date" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} />
+        <div className="tc-profile-grid">
+          <div className="tc-card tc-golden-panel" style={{ display: "grid", gap: 16 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div className="tc-panel-title">Tus datos personales</div>
+              <div className="tc-panel-sub">Mantén tu nombre, email y fecha de nacimiento al día para disfrutar mejor de todas tus ventajas.</div>
             </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <label style={{ display: "grid", gap: 7 }}>
+                <span className="tc-sub">Nombre</span>
+                <input className="tc-input" placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
+              </label>
+              <label style={{ display: "grid", gap: 7 }}>
+                <span className="tc-sub">Apellido</span>
+                <input className="tc-input" placeholder="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} />
+              </label>
+              <label style={{ display: "grid", gap: 7 }}>
+                <span className="tc-sub">E-mail</span>
+                <input className="tc-input" placeholder="E-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              </label>
+              <label style={{ display: "grid", gap: 7 }}>
+                <span className="tc-sub">Fecha de nacimiento</span>
+                <input className="tc-input" type="date" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} />
+              </label>
+            </div>
+
             <div className="tc-row">
               <button className="tc-btn tc-btn-gold" disabled={saving} onClick={saveProfile}>
                 {saving ? "Guardando..." : "Guardar cambios"}
@@ -190,24 +216,61 @@ export default function ClientePerfilPage() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gap: 14 }}>
-            <div className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div className="tc-title" style={{ fontSize: 22 }}>Teléfono de acceso</div>
-              <div className="tc-muted">Tu teléfono actual es {currentPhone || "—"}</div>
-              <input
-                className="tc-input"
-                placeholder="Nuevo teléfono con prefijo"
-                value={telefonoNuevo}
-                onChange={(e) => setTelefonoNuevo(e.target.value)}
-              />
-              {phoneStep === "code" ? (
+          <div style={{ display: "grid", gap: 16 }}>
+            <div className="tc-card" style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Seguridad y acceso</div>
+                <div className="tc-panel-sub">Si cambias de teléfono, primero tendrás que verificarlo por SMS.</div>
+              </div>
+
+              <div className="tc-list-card">
+                <div className="tc-list-item">
+                  <div className="tc-row"><Phone size={16} /> <span className="tc-list-item-title">{currentPhone || "—"}</span></div>
+                  <div className="tc-list-item-sub">Teléfono actual de acceso</div>
+                </div>
+                <div className="tc-list-item">
+                  <div className="tc-row"><Mail size={16} /> <span className="tc-list-item-title">{email || "No añadido"}</span></div>
+                  <div className="tc-list-item-sub">Email actual</div>
+                </div>
+                <div className="tc-list-item">
+                  <div className="tc-row"><CalendarDays size={16} /> <span className="tc-list-item-title">{fechaNacimiento || "Pendiente"}</span></div>
+                  <div className="tc-list-item-sub">Fecha de nacimiento</div>
+                </div>
+                <div className="tc-list-item">
+                  <div className="tc-row"><ShieldCheck size={16} /> <span className="tc-list-item-title">{cliente?.onboarding_completado ? "Perfil validado" : "Pendiente de completar"}</span></div>
+                  <div className="tc-list-item-sub">Estado del onboarding</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Cambiar teléfono</div>
+                <div className="tc-panel-sub">Actualiza tu número y confírmalo con un código para mantener tu acceso seguro.</div>
+              </div>
+
+              <label style={{ display: "grid", gap: 7 }}>
+                <span className="tc-sub">Nuevo teléfono</span>
                 <input
                   className="tc-input"
-                  placeholder="Código recibido por SMS"
-                  value={telefonoCode}
-                  onChange={(e) => setTelefonoCode(e.target.value)}
+                  placeholder="Nuevo teléfono con prefijo"
+                  value={telefonoNuevo}
+                  onChange={(e) => setTelefonoNuevo(e.target.value)}
                 />
+              </label>
+
+              {phoneStep === "code" ? (
+                <label style={{ display: "grid", gap: 7 }}>
+                  <span className="tc-sub">Código recibido</span>
+                  <input
+                    className="tc-input"
+                    placeholder="Código recibido por SMS"
+                    value={telefonoCode}
+                    onChange={(e) => setTelefonoCode(e.target.value)}
+                  />
+                </label>
               ) : null}
+
               <div className="tc-row">
                 {phoneStep === "idle" ? (
                   <button className="tc-btn tc-btn-purple" disabled={changingPhone} onClick={startPhoneChange}>

@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { LockKeyhole, Sparkles, Star, TimerReset } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -72,36 +73,48 @@ export default function ClienteLoginPage() {
   }
 
   return (
-    <div className="tc-wrap" style={{ minHeight: "100vh", display: "grid", placeItems: "center" }}>
-      <div className="tc-container" style={{ maxWidth: 560 }}>
-        <div className="tc-card" style={{ display: "grid", gap: 20, padding: 28 }}>
-          <div style={{ display: "grid", gap: 12, justifyItems: "center", textAlign: "center" }}>
-            <div
-              style={{
-                width: 92,
-                height: 92,
-                borderRadius: 28,
-                padding: 14,
-                display: "grid",
-                placeItems: "center",
-                background: "rgba(255,255,255,.04)",
-                border: "1px solid rgba(255,255,255,.08)",
-              }}
-            >
-              <Image src="Nuevo-logo-tarot.png" alt="Tarot Celestial" width={64} height={64} style={{ width: "100%", height: "100%", objectFit: "contain" }} priority />
+    <div className="tc-login-shell">
+      <div className="tc-login-card">
+        <section className="tc-login-showcase">
+          <div style={{ display: "grid", gap: 22 }}>
+            <div className="tc-login-logo">
+              <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={72} height={72} priority style={{ width: "100%", height: "100%", objectFit: "contain" }} />
             </div>
-            <div className="tc-chip" style={{ width: "fit-content" }}>Nuevo panel</div>
-            <div className="tc-title" style={{ fontSize: 32 }}>Área cliente Tarot Celestial</div>
-            <div className="tc-muted" style={{ maxWidth: 420 }}>
-              Entra con tu número de teléfono para consultar tu rango, tus minutos, tus puntos y tus últimas consultas.
+            <div style={{ display: "grid", gap: 10 }}>
+              <div className="tc-chip" style={{ width: "fit-content" }}>Nuevo panel cliente</div>
+              <div className="tc-brand-title" style={{ maxWidth: 520 }}>Tu espacio privado de Tarot Celestial</div>
+              <div className="tc-brand-copy">
+                Consulta en segundos tu rango, tus puntos, tus minutos disponibles y tus últimas consultas con un diseño más claro, moderno y cómodo.
+              </div>
             </div>
           </div>
 
-          <div className="tc-hr" />
+          <div className="tc-login-features">
+            <div className="tc-login-feature">
+              <div className="tc-row" style={{ gap: 10 }}><Star size={16} style={{ color: "var(--tc-gold-2)" }} /><strong>Ventajas visibles</strong></div>
+              <div className="tc-list-item-sub">Tu rango y todos sus beneficios siempre a la vista.</div>
+            </div>
+            <div className="tc-login-feature">
+              <div className="tc-row" style={{ gap: 10 }}><TimerReset size={16} style={{ color: "var(--tc-gold-2)" }} /><strong>Minutos y puntos</strong></div>
+              <div className="tc-list-item-sub">Controla cuánto tienes disponible y canjea minutos gratis cuando quieras.</div>
+            </div>
+            <div className="tc-login-feature">
+              <div className="tc-row" style={{ gap: 10 }}><Sparkles size={16} style={{ color: "var(--tc-gold-2)" }} /><strong>Experiencia premium</strong></div>
+              <div className="tc-list-item-sub">Un acceso sencillo con tu teléfono para entrar a tu panel personal.</div>
+            </div>
+          </div>
+        </section>
+
+        <section className="tc-login-form">
+          <div style={{ display: "grid", gap: 8 }}>
+            <div className="tc-row" style={{ gap: 8, color: "var(--tc-gold-2)" }}><LockKeyhole size={16} /> Acceso seguro</div>
+            <div className="tc-panel-title" style={{ fontSize: 30 }}>Entrar al panel</div>
+            <div className="tc-panel-sub">Usa tu número de teléfono para acceder a tu área de cliente.</div>
+          </div>
 
           {step === "phone" ? (
-            <div style={{ display: "grid", gap: 12 }}>
-              <label style={{ display: "grid", gap: 6 }}>
+            <div style={{ display: "grid", gap: 14 }}>
+              <label style={{ display: "grid", gap: 7 }}>
                 <span className="tc-sub">Teléfono</span>
                 <input
                   className="tc-input"
@@ -115,11 +128,11 @@ export default function ClienteLoginPage() {
               </button>
             </div>
           ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              <div className="tc-card" style={{ padding: 14 }}>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div className="tc-card tc-golden-panel" style={{ padding: 14 }}>
                 Código enviado a <strong>{phone}</strong>
               </div>
-              <label style={{ display: "grid", gap: 6 }}>
+              <label style={{ display: "grid", gap: 7 }}>
                 <span className="tc-sub">Código SMS</span>
                 <input
                   className="tc-input"
@@ -139,8 +152,8 @@ export default function ClienteLoginPage() {
             </div>
           )}
 
-          {msg ? <div className="tc-muted">{msg}</div> : null}
-        </div>
+          {msg ? <div className="tc-card">{msg}</div> : null}
+        </section>
       </div>
     </div>
   );

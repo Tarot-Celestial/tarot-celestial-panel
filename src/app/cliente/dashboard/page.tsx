@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Gift, Mail, Phone, Sparkles, Star, TimerReset } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Crown, Gift, Mail, Phone, Sparkles, Star, TimerReset, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
@@ -63,18 +63,18 @@ type RankProgress = {
   monthly_requirement_text?: string;
 };
 
-function rangeAccent(rango: string | null | undefined) {
-  const key = String(rango || "bronce").toLowerCase();
-  if (key === "oro") return "rgba(215,181,109,0.18)";
-  if (key === "plata") return "rgba(180,190,220,0.18)";
-  return "rgba(196,140,84,0.16)";
-}
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+}
+
+function getRankBadge(rango: string | null | undefined) {
+  const key = String(rango || "bronce").toLowerCase();
+  if (key === "oro") return { label: "Oro", emoji: "🥇" };
+  if (key === "plata") return { label: "Plata", emoji: "🥈" };
+  return { label: "Bronce", emoji: "🥉" };
 }
 
 export default function ClienteDashboardPage() {
@@ -155,6 +155,20 @@ export default function ClienteDashboardPage() {
 
   const nombre = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
   const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
+  const rankBadge = getRankBadge(rankInfo?.label || cliente?.rango_actual);
+  const freeMinutes = Number(cliente?.minutos_free_pendientes || 0);
+  const normalMinutes = Number(cliente?.minutos_normales_pendientes || 0);
+  const totalMinutes = Number(cliente?.minutos_totales || 0);
+  const totalPoints = Number(cliente?.puntos || 0);
+
+  const summaryItems = useMemo(
+    () => [
+      { label: "Rango actual", value: `${rankBadge.emoji} ${rankBadge.label}`, meta: rankProgress?.monthly_requirement_text || "Se calcula con el gasto del mes anterior" },
+      { label: "Puntos disponibles", value: String(totalPoints), meta: "Puedes canjearlos por minutos gratis" },
+      { label: "Minutos disponibles", value: String(totalMinutes), meta: `${freeMinutes} free · ${normalMinutes} normales` },
+    ],
+    [freeMinutes, normalMinutes, rankBadge.emoji, rankBadge.label, rankProgress?.monthly_requirement_text, totalMinutes, totalPoints]
+  );
 
   async function saveOnboarding(payload: {
     nombre: string;
@@ -218,7 +232,7 @@ export default function ClienteDashboardPage() {
 
   if (loading) {
     return (
-      <ClienteLayout title="Cargando tu panel..." subtitle="Estamos preparando tu área personal.">
+      <ClienteLayout title="Cargando tu panel..." subtitle="Estamos preparando tu área personal." summaryItems={[]}>
         <div className="tc-card">Cargando...</div>
       </ClienteLayout>
     );
@@ -226,123 +240,161 @@ export default function ClienteDashboardPage() {
 
   return (
     <>
-      <ClienteLayout title={`Hola ${nombre}`} subtitle="Aquí puedes consultar tu rango, tus puntos y tus minutos disponibles.">
-        {msg ? <div className="tc-card">{msg}</div> : null}
+      <ClienteLayout
+        title={`Hola ${nombre}`}
+        subtitle="Tu panel cliente está pensado para que veas de un vistazo tus minutos, tus puntos, tu progreso y tus beneficios activos."
+        summaryItems={summaryItems}
+      >
+        {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
 
-        <div className="tc-grid-2">
-          <div style={{ display: "grid", gap: 14 }}>
-            <div className="tc-card" style={{ display: "grid", gap: 14 }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title" style={{ fontSize: 22 }}>Tu estado actual</div>
-                  <div className="tc-muted">Información general de tu cuenta</div>
+        <div className="tc-dashboard-grid">
+          <div className="tc-stack">
+            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 16 }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Tu estado actual</div>
+                  <div className="tc-panel-sub">Tu actividad, tus minutos y tus ventajas, todo reunido aquí.</div>
                 </div>
-                <div className="tc-chip" style={{ background: rangeAccent(cliente?.rango_actual) }}>
-                  Rango {rankInfo?.label || "Bronce"}
+                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <Crown size={14} /> {rankBadge.emoji} Rango {rankBadge.label}
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
-                <div className="tc-card" style={{ padding: 16 }}>
-                  <div className="tc-sub">Puntos acumulados</div>
-                  <div style={{ fontSize: 30, fontWeight: 900, marginTop: 6 }}>{Number(cliente?.puntos || 0)}</div>
+              <div className="tc-status-grid">
+                <div className="tc-mini-stat">
+                  <div className="tc-kpi-label">Puntos acumulados</div>
+                  <strong>{totalPoints}</strong>
+                  <div className="tc-kpi-meta">Cada compra suma puntos para tus próximos canjes.</div>
                 </div>
-                <div className="tc-card" style={{ padding: 16 }}>
-                  <div className="tc-sub">Minutos disponibles</div>
-                  <div style={{ fontSize: 30, fontWeight: 900, marginTop: 6 }}>{Number(cliente?.minutos_totales || 0)}</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    {Number(cliente?.minutos_free_pendientes || 0)} free · {Number(cliente?.minutos_normales_pendientes || 0)} normales
+                <div className="tc-mini-stat">
+                  <div className="tc-kpi-label">Minutos disponibles</div>
+                  <strong>{totalMinutes}</strong>
+                  <div className="tc-kpi-meta">{freeMinutes} free · {normalMinutes} normales</div>
+                </div>
+              </div>
+
+              <div className="tc-rank-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ display: "grid", gap: 5 }}>
+                    <div className="tc-panel-title" style={{ fontSize: 18 }}>Progreso de rango</div>
+                    <div className="tc-panel-sub">El rango se calcula con el gasto del mes anterior.</div>
                   </div>
+                  {rankProgress?.next_label ? <div className="tc-chip">Siguiente: {rankProgress.next_label}</div> : null}
                 </div>
-              </div>
-
-              <div className="tc-card" style={{ padding: 16, display: "grid", gap: 12 }}>
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title" style={{ fontSize: 18 }}>Progreso de rango</div>
-                    <div className="tc-muted">El rango se calcula con el gasto del mes anterior.</div>
+                <div style={{ marginTop: 14 }} className="tc-progress-track">
+                  <div className="tc-progress-fill" style={{ width: `${progressPercent}%` }} />
+                </div>
+                <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 12, gap: 10 }}>
+                  <div className="tc-panel-sub">{rankProgress?.status_text || "Sigue comprando para desbloquear más ventajas."}</div>
+                  {rankProgress?.next_target ? <div className="tc-panel-sub">Objetivo: {Number(rankProgress.next_target).toFixed(0)}€</div> : null}
+                </div>
+                {rankProgress?.remaining_to_next ? (
+                  <div style={{ marginTop: 8, fontWeight: 800 }}>
+                    Te faltan {Number(rankProgress.remaining_to_next || 0).toFixed(0)}€ para el siguiente rango.
                   </div>
-                  {rankProgress?.next_label ? <div className="tc-chip">Objetivo: {rankProgress.next_label}</div> : null}
-                </div>
-                <div style={{ height: 14, borderRadius: 999, background: "rgba(255,255,255,.08)", overflow: "hidden" }}>
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${progressPercent}%`,
-                      borderRadius: 999,
-                      background: "linear-gradient(90deg, rgba(181,156,255,.95), rgba(215,181,109,.95))",
-                    }}
-                  />
-                </div>
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div className="tc-sub">{rankProgress?.monthly_requirement_text || "—"}</div>
-                  {rankProgress?.next_target ? (
-                    <div className="tc-sub">
-                      Objetivo siguiente: <b>{Number(rankProgress.next_target || 0).toFixed(0)}€</b>
-                    </div>
-                  ) : null}
-                </div>
-                {rankProgress?.status_text ? <div style={{ fontWeight: 700 }}>{rankProgress.status_text}</div> : null}
+                ) : null}
               </div>
+            </section>
 
-              <div className="tc-card" style={{ padding: 16 }}>
-                <div className="tc-title" style={{ fontSize: 18, marginBottom: 10 }}>Ventajas de tu rango</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {(rankInfo?.benefits || []).map((item) => (
-                    <div key={item} className="tc-row" style={{ gap: 8, alignItems: "flex-start" }}>
-                      <Star size={15} style={{ marginTop: 2 }} />
-                      <span>{item}</span>
-                    </div>
-                  ))}
-                  <div className="tc-row" style={{ gap: 8, alignItems: "flex-start" }}>
-                    <Sparkles size={15} style={{ marginTop: 2 }} />
-                    <span>Mientras más avanzas, más beneficios desbloqueas.</span>
+            <section className="tc-card" style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Ventajas de tu rango</div>
+                <div className="tc-panel-sub">Estos son los beneficios que ya tienes desbloqueados en tu cuenta.</div>
+              </div>
+              <div className="tc-benefits-grid">
+                {(rankInfo?.benefits || []).map((item) => (
+                  <div key={item} className="tc-benefit-item">
+                    <Star size={16} style={{ marginTop: 2, color: "var(--tc-gold-2)", flex: "0 0 auto" }} />
+                    <span>{item}</span>
                   </div>
+                ))}
+                <div className="tc-benefit-item">
+                  <Sparkles size={16} style={{ marginTop: 2, color: "var(--tc-gold-2)", flex: "0 0 auto" }} />
+                  <span>Mientras más avanzas, más beneficios desbloqueas.</span>
                 </div>
               </div>
-            </div>
+            </section>
 
-            <CanjePuntos puntos={Number(cliente?.puntos || 0)} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} />
+            <CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} />
           </div>
 
-          <div style={{ display: "grid", gap: 14 }}>
-            <div className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div className="tc-title" style={{ fontSize: 20 }}>Tu perfil rápido</div>
-              <div className="tc-row" style={{ gap: 10 }}><Phone size={16} /> {cliente?.telefono || cliente?.telefono_normalizado || "—"}</div>
-              <div className="tc-row" style={{ gap: 10 }}><Mail size={16} /> {cliente?.email || "No añadido"}</div>
-              <div className="tc-row" style={{ gap: 10 }}><Gift size={16} /> {cliente?.fecha_nacimiento || "Sin fecha de nacimiento"}</div>
-              <div className="tc-row" style={{ gap: 10 }}><TimerReset size={16} /> Onboarding {cliente?.onboarding_completado ? "completado" : "pendiente"}</div>
-            </div>
+          <div className="tc-stack">
+            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Tu perfil rápido</div>
+                <div className="tc-panel-sub">Tus datos clave y el estado de tu cuenta cliente.</div>
+              </div>
+              <div className="tc-list-card">
+                <div className="tc-list-item">
+                  <div className="tc-row"><Phone size={16} /> <span className="tc-list-item-title">{cliente?.telefono || cliente?.telefono_normalizado || "—"}</span></div>
+                  <div className="tc-list-item-sub">Teléfono de acceso al panel</div>
+                </div>
+                <div className="tc-list-item">
+                  <div className="tc-row"><Mail size={16} /> <span className="tc-list-item-title">{cliente?.email || "No añadido"}</span></div>
+                  <div className="tc-list-item-sub">Email para promociones y novedades</div>
+                </div>
+                <div className="tc-list-item">
+                  <div className="tc-row"><Gift size={16} /> <span className="tc-list-item-title">{cliente?.fecha_nacimiento || "Sin fecha de nacimiento"}</span></div>
+                  <div className="tc-list-item-sub">Tu regalo de cumpleaños depende de este dato</div>
+                </div>
+                <div className="tc-list-item">
+                  <div className="tc-row"><TimerReset size={16} /> <span className="tc-list-item-title">{cliente?.onboarding_completado ? "Perfil verificado" : "Pendiente de completar"}</span></div>
+                  <div className="tc-list-item-sub">Puedes actualizar estos datos desde tu perfil</div>
+                </div>
+              </div>
+            </section>
 
-            <div className="tc-card" style={{ display: "grid", gap: 10 }}>
-              <div className="tc-title" style={{ fontSize: 20 }}>Tus 3 últimas tarotistas</div>
+            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Tus 3 últimas tarotistas</div>
+                <div className="tc-panel-sub">Consultas recientes registradas en el sistema.</div>
+              </div>
               {lastTarotistas.length === 0 ? (
-                <div className="tc-muted">Todavía no tenemos consultas registradas en rendimiento para mostrarte aquí.</div>
+                <div className="tc-empty-state">Todavía no tenemos consultas registradas en rendimiento para mostrarte aquí.</div>
               ) : (
-                lastTarotistas.map((item, index) => (
-                  <div key={`${item.nombre}-${index}`} className="tc-card" style={{ padding: 12 }}>
-                    <div style={{ fontWeight: 800 }}>{item.nombre}</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>Último contacto: {formatDate(item.fecha_hora)}</div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="tc-card" style={{ display: "grid", gap: 10 }}>
-              <div className="tc-title" style={{ fontSize: 20 }}>Últimos movimientos de puntos</div>
-              {historial.length === 0 ? (
-                <div className="tc-muted">Todavía no tienes movimientos de puntos registrados.</div>
-              ) : (
-                historial.map((item) => (
-                  <div key={item.id} className="tc-card" style={{ padding: 12 }}>
-                    <div style={{ fontWeight: 800 }}>{item.descripcion || item.tipo || "Movimiento"}</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      {item.tipo === "canjeado" ? "-" : "+"}{Number(item.puntos || 0)} puntos · {formatDate(item.created_at)}
+                <div className="tc-list-card">
+                  {lastTarotistas.map((item, index) => (
+                    <div key={`${item.nombre}-${index}`} className="tc-list-item">
+                      <div className="tc-list-item-title">{item.nombre}</div>
+                      <div className="tc-list-item-sub">Último contacto: {formatDate(item.fecha_hora)}</div>
                     </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
-            </div>
+            </section>
+
+            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Últimos movimientos de puntos</div>
+                <div className="tc-panel-sub">Compras y canjes recientes de tu cuenta.</div>
+              </div>
+              {historial.length === 0 ? (
+                <div className="tc-empty-state">Todavía no tienes movimientos de puntos registrados.</div>
+              ) : (
+                <div className="tc-list-card">
+                  {historial.map((item) => (
+                    <div key={item.id} className="tc-list-item">
+                      <div className="tc-list-item-title">{item.descripcion || item.tipo || "Movimiento"}</div>
+                      <div className="tc-list-item-sub">
+                        {item.tipo === "canjeado" ? "-" : "+"}{Number(item.puntos || 0)} puntos · {formatDate(item.created_at)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 10 }}>
+              <div className="tc-row" style={{ gap: 10, alignItems: "flex-start" }}>
+                <WandSparkles size={18} style={{ color: "var(--tc-gold-2)", marginTop: 2 }} />
+                <div>
+                  <div className="tc-list-item-title">Consejo del panel</div>
+                  <div className="tc-list-item-sub" style={{ marginTop: 4 }}>
+                    Consulta tus puntos antes de comprar: puede que ya tengas suficientes para desbloquear minutos gratis.
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         </div>
       </ClienteLayout>

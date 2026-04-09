@@ -1,5 +1,7 @@
 "use client";
 
+import { Gift, Sparkles } from "lucide-react";
+
 type Recompensa = {
   id: string;
   nombre: string;
@@ -17,30 +19,27 @@ type Props = {
 
 export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: Props) {
   return (
-    <div className="tc-card" style={{ display: "grid", gap: 12 }}>
-      <div>
-        <div className="tc-title" style={{ fontSize: 20 }}>Canjear puntos por minutos</div>
-        <div className="tc-muted">Los minutos canjeados se guardan como minutos free pendientes en tu ficha.</div>
+    <div className="tc-card tc-golden-panel" style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "grid", gap: 6 }}>
+        <div className="tc-panel-title">Canjear puntos por minutos</div>
+        <div className="tc-panel-sub">Los minutos canjeados se guardan como minutos free pendientes en tu ficha.</div>
       </div>
 
-      <div style={{ display: "grid", gap: 10 }}>
+      <div className="tc-list-card">
         {recompensas.map((item) => {
           const disabled = loading || puntos < Number(item.puntos_coste || 0);
           return (
             <div
               key={item.id}
-              className="tc-card"
-              style={{
-                padding: 14,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 12,
-              }}
+              className="tc-list-item"
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}
             >
               <div style={{ display: "grid", gap: 4 }}>
-                <div style={{ fontWeight: 800 }}>{item.nombre}</div>
-                <div className="tc-muted">
+                <div className="tc-row" style={{ gap: 8 }}>
+                  <Gift size={16} style={{ color: "var(--tc-gold-2)" }} />
+                  <div className="tc-list-item-title">{item.nombre}</div>
+                </div>
+                <div className="tc-list-item-sub">
                   {item.puntos_coste} puntos · {item.minutos_otorgados} minutos free
                 </div>
               </div>
@@ -50,6 +49,10 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
             </div>
           );
         })}
+      </div>
+
+      <div className="tc-row" style={{ gap: 8, color: "rgba(255,255,255,0.7)", fontSize: 13 }}>
+        <Sparkles size={14} style={{ color: "var(--tc-gold-2)" }} /> Tu saldo actual es de <strong>{puntos}</strong> puntos.
       </div>
     </div>
   );
