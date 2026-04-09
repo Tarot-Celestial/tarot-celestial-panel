@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "PACK_NO_ENCONTRADO", packs: CLIENTE_PACKS }, { status: 400 });
     }
 
-    const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"), { apiVersion: "2024-06-20" });
+    const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"), { apiVersion: "2023-10-16" });
     const baseUrl = getBaseUrl(req);
     const customerName = [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente Tarot Celestial";
 
