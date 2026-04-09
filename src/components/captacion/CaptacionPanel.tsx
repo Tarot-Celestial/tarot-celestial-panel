@@ -294,7 +294,11 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   useEffect(() => {
     const channel = sb
       .channel(`captacion-live-${view}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => load(false))
+      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => {
+  setTimeout(() => {
+    load(false);
+  }, 500);
+})
       .subscribe();
     return () => {
       sb.removeChannel(channel);
