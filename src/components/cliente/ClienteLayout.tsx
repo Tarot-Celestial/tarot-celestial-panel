@@ -44,7 +44,7 @@ export default function ClienteLayout({ title, subtitle, children }: Props) {
                     padding: 8,
                   }}
                 >
-                  <Image src="/nuevo-logo-tarot.png" alt="Tarot Celestial" width={42} height={42} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                  <Image src="nuevo-logo-tarot.png" alt="Tarot Celestial" width={42} height={42} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
                 </div>
                 <div>
                   <div className="tc-title" style={{ fontSize: 24 }}>Área de cliente</div>
