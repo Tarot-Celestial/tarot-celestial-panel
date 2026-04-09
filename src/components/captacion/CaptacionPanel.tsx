@@ -261,7 +261,6 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         throw new Error(json?.error || "No se pudo actualizar el lead");
       }
       setMsg(json?.message || "Lead actualizado");
-      await load(false);
     } catch (e: any) {
       setItems(prevItems);
       setMsg(e?.message || "Error actualizando lead");
