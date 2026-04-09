@@ -114,7 +114,9 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     try {
       if (showSpinner) setLoading(true);
       setMsg("");
-      const res = await fetch(`/api/captacion/list?scope=${view}`, { cache: "no-store" });
+      const res = await fetch(`/api/captacion/list?scope=${view}&t=${Date.now()}`, {
+  cache: "no-store",
+});
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar captación");
       setItems(Array.isArray(json.items) ? json.items : []);
