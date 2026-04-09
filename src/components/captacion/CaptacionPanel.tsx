@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
 type Lead = {
   id: string;
@@ -33,6 +34,8 @@ type Lead = {
     created_at?: string | null;
   } | null;
 };
+
+const sb = supabaseBrowser();
 
 type Props = {
   onOpenClient?: (clienteId: string) => void;
@@ -195,10 +198,16 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       setBusyId(id);
       setMsg("");
 
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+
       const res = await fetch("/api/captacion/action", {
         method: "POST",
         body: JSON.stringify({ lead_id: id, action }),
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
 
       const json = await res.json().catch(() => null);
@@ -212,6 +221,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       } else {
         await load(false);
       }
+
+      if (json?.message) setMsg(json.message);
     } catch (e: any) {
       setMsg(e?.message || "Error actualizando lead");
     } finally {
@@ -228,8 +239,9 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       return;
     }
 
-    // Fallback si aún no has conectado la apertura real desde el padre
-    window.open(`/admin?tab=crm&cliente_id=${id}`, "_blank");
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("captacion-open-cliente", { detail: { id } }));
+    }
   }
 
   useEffect(() => {

@@ -1502,7 +1502,16 @@ export default function Central() {
           )}
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
-          {tab === "captacion" && <CaptacionPanel />}
+          {tab === "captacion" && (
+            <CaptacionPanel
+              onOpenClient={(clienteId) => {
+                setTab("crm" as any);
+                window.setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: String(clienteId) } }));
+                }, 250);
+              }}
+            />
+          )}
           {tab === "rendimiento" && <RendimientoPanel mode="central" />}
           {tab === "reservas" && <ReservasPanel mode="central" />}
           {tab === "habituales" && <HabitualesPanel mode="central" />}

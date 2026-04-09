@@ -2580,7 +2580,16 @@ export default function Admin() {
             <CRMClientesPanel mode="admin" />
           )}
 
-          {tab === "captacion" && <CaptacionPanel />}
+          {tab === "captacion" && (
+            <CaptacionPanel
+              onOpenClient={(clienteId) => {
+                setTab("crm" as any);
+                window.setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: String(clienteId) } }));
+                }, 250);
+              }}
+            />
+          )}
           {tab === "rendimiento" && <RendimientoPanel mode="admin" />}
           {tab === "reservas" && <ReservasPanel mode="admin" />}
           {tab === "diario" && <DiarioPanel />}
