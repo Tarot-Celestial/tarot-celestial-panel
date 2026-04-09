@@ -126,9 +126,125 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   }
 
   async function act(id: string, action: "no_contesta" | "pendiente_free" | "hizo_free" | "recontacto" | "captado" | "no_interesado" | "reabrir") {
+    const prevItems = items;
+
     try {
       setBusyId(id);
       setMsg("");
+
+      setItems((current) =>
+        current.map((lead) => {
+          if (lead.id !== id) return lead;
+
+          const nowIso = new Date().toISOString();
+          const currentAttempt = Math.max(1, Number(lead.intento_actual || 1));
+          const maxAttempts = Math.max(3, Number(lead.max_intentos || 3));
+
+          if (action === "no_contesta") {
+            const nextAttempt = currentAttempt + 1;
+            const shouldClose = nextAttempt > maxAttempts;
+            return {
+              ...lead,
+              estado: shouldClose ? "no_interesado" : "no_contesta",
+              workflow_state: shouldClose ? "no_interesado" : "no_contesta",
+              intento_actual: shouldClose ? maxAttempts : nextAttempt,
+              next_contact_at: shouldClose ? nowIso : lead.next_contact_at,
+              contacted_at: null,
+              closed_at: shouldClose ? nowIso : null,
+              last_result: "no_contesta",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          if (action === "pendiente_free") {
+            return {
+              ...lead,
+              estado: "pendiente_free",
+              workflow_state: "pendiente_free",
+              contacted_at: nowIso,
+              closed_at: null,
+              last_result: "pendiente_free",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          if (action === "hizo_free") {
+            return {
+              ...lead,
+              estado: "hizo_free",
+              workflow_state: "hizo_free",
+              contacted_at: nowIso,
+              closed_at: null,
+              intento_actual: 1,
+              max_intentos: 3,
+              last_result: "hizo_free",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          if (action === "recontacto") {
+            const nextAttempt = currentAttempt + 1;
+            const shouldClose = nextAttempt > maxAttempts;
+            return {
+              ...lead,
+              estado: shouldClose ? "no_interesado" : "recontacto",
+              workflow_state: shouldClose ? "no_interesado" : "recontacto",
+              intento_actual: shouldClose ? maxAttempts : nextAttempt,
+              contacted_at: nowIso,
+              closed_at: shouldClose ? nowIso : null,
+              last_result: "recontacto",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          if (action === "captado") {
+            return {
+              ...lead,
+              estado: "captado",
+              workflow_state: "captado",
+              contacted_at: nowIso,
+              closed_at: nowIso,
+              last_result: "captado",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          if (action === "no_interesado") {
+            return {
+              ...lead,
+              estado: "no_interesado",
+              workflow_state: "no_interesado",
+              closed_at: nowIso,
+              last_result: "no_interesado",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          if (action === "reabrir") {
+            return {
+              ...lead,
+              estado: "nuevo",
+              workflow_state: "nuevo",
+              closed_at: null,
+              contacted_at: null,
+              intento_actual: 1,
+              max_intentos: 3,
+              last_result: "reabrir",
+              updated_at: nowIso,
+              last_contact_at: nowIso,
+            };
+          }
+
+          return lead;
+        })
+      );
+
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       const res = await fetch("/api/captacion/action", {
@@ -140,10 +256,14 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         body: JSON.stringify({ lead_id: id, action }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar el lead");
+      if (!res.ok || !json?.ok) {
+        setItems(prevItems);
+        throw new Error(json?.error || "No se pudo actualizar el lead");
+      }
       setMsg(json?.message || "Lead actualizado");
       await load(false);
     } catch (e: any) {
+      setItems(prevItems);
       setMsg(e?.message || "Error actualizando lead");
     } finally {
       setBusyId("");
