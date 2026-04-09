@@ -85,7 +85,7 @@ function stateLabel(s?: string | null) {
   if (x === "no_interesado") return "🙅 No interesado";
   if (x === "numero_invalido") return "❌ Número inválido";
   if (x === "perdido") return "⌛ Perdido";
-  return x;
+  return x || "—";
 }
 
 function stateStyle(s?: string | null) {
@@ -179,7 +179,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         cache: "no-store",
       });
 
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
 
       if (!res.ok || !json?.ok) {
         throw new Error(json?.error || "No se pudo cargar captación");
@@ -216,7 +216,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         throw new Error(json?.error || "No se pudo actualizar el lead");
       }
 
-      if (action === "contactado" || action === "no_interesado" || action === "numero_invalido") {
+      if (json?.closed || action === "contactado" || action === "no_interesado" || action === "numero_invalido") {
         setItems((prev) => prev.filter((l) => l.id !== id));
       } else {
         await load(false);
@@ -253,19 +253,32 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     return () => clearInterval(t);
   }, [view]);
 
+  useEffect(() => {
+    const channel = sb
+      .channel(`captacion-live-${view}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "captacion_leads" },
+        () => {
+          load(false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      sb.removeChannel(channel);
+    };
+  }, [view]);
+
   const stats = useMemo(() => {
-    const open = items.filter((x) =>
-      !["contactado", "no_interesado", "numero_invalido", "perdido"].includes(String(x.estado || ""))
-    ).length;
+    const open = items.filter((x) => !["contactado", "no_interesado", "numero_invalido", "perdido"].includes(String(x.estado || "").toLowerCase())).length;
 
     const urgent = items.filter((x) => {
       const meta = priorityMeta(x);
       return meta.tone === "high" || meta.tone === "critical";
     }).length;
 
-    const retry = items.filter((x) =>
-      ["reintento_2", "reintento_3"].includes(String(x.estado || ""))
-    ).length;
+    const retry = items.filter((x) => ["reintento_2", "reintento_3"].includes(String(x.estado || "").toLowerCase())).length;
 
     const nowCalls = items.filter((x) => {
       if (!x.next_contact_at) return true;
@@ -303,54 +316,15 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => setView("pendientes")}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background:
-                  view === "pendientes"
-                    ? "linear-gradient(135deg,#8b5cf6,#6366f1)"
-                    : "rgba(255,255,255,0.08)",
-                color: "white",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
+            <button onClick={() => setView("pendientes")} style={{ ...buttonStyle(view === "pendientes" ? "linear-gradient(135deg,#8b5cf6,#6366f1)" : "rgba(255,255,255,0.08)"), padding: "10px 14px" }}>
               🔥 Pendientes
             </button>
 
-            <button
-              onClick={() => setView("todos")}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background:
-                  view === "todos"
-                    ? "linear-gradient(135deg,#8b5cf6,#6366f1)"
-                    : "rgba(255,255,255,0.08)",
-                color: "white",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
+            <button onClick={() => setView("todos")} style={{ ...buttonStyle(view === "todos" ? "linear-gradient(135deg,#8b5cf6,#6366f1)" : "rgba(255,255,255,0.08)"), padding: "10px 14px" }}>
               📋 Todos
             </button>
 
-            <button
-              onClick={() => load(true)}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: "rgba(255,255,255,0.08)",
-                color: "white",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
+            <button onClick={() => load(true)} style={{ ...buttonStyle("rgba(255,255,255,0.08)"), padding: "10px 14px" }}>
               {loading ? "Cargando…" : "Actualizar"}
             </button>
           </div>
@@ -385,11 +359,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           </div>
         </div>
 
-        {msg ? (
-          <div style={{ marginTop: 14, color: "#ffb4b4" }}>
-            {msg}
-          </div>
-        ) : null}
+        {msg ? <div style={{ marginTop: 14, color: "#ffb4b4" }}>{msg}</div> : null}
       </div>
 
       <div style={{ marginTop: 18, display: "grid", gap: 14 }}>
@@ -434,9 +404,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>
-                    {full}
-                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{full}</div>
 
                   <div style={{ marginTop: 6, opacity: 0.78 }}>
                     {lead.cliente?.telefono || "Sin teléfono"}
@@ -444,102 +412,37 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
                   </div>
 
                   <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span style={chipStyle(meta.badgeColor)}>
-                      {meta.badge}
-                    </span>
-
-                    <span style={chipStyle(stateStyle(lead.estado).background, stateStyle(lead.estado).color, stateStyle(lead.estado).border)}>
-                      {stateLabel(lead.estado)}
-                    </span>
-
-                    <span style={chipStyle("rgba(255,255,255,0.08)")}>
-                      Intento {lead.intento_actual || 1}/{lead.max_intentos || 3}
-                    </span>
+                    <span style={chipStyle(meta.badgeColor)}>{meta.badge}</span>
+                    <span style={chipStyle(stateStyle(lead.estado).background, stateStyle(lead.estado).color, stateStyle(lead.estado).border)}>{stateLabel(lead.estado)}</span>
+                    <span style={chipStyle("rgba(255,255,255,0.08)")}>Intento {lead.intento_actual || 1}/{lead.max_intentos || 3}</span>
                   </div>
                 </div>
 
                 <div style={{ minWidth: 260 }}>
-                  <div style={{ opacity: 0.72 }}>
-                    Entrada: <b>{fmtDate(lead.created_at)}</b>
-                  </div>
-                  <div style={{ opacity: 0.72, marginTop: 6 }}>
-                    Próximo contacto: <b>{fmtDate(lead.next_contact_at)}</b>
-                  </div>
-                  <div style={{ opacity: 0.72, marginTop: 6 }}>
-                    Tiempo desde entrada: <b>{sinceCreated}</b>
-                  </div>
-                  <div style={{ opacity: 0.72, marginTop: 6 }}>
-                    Vencimiento contacto: <b>{nextContactIn}</b>
-                  </div>
+                  <div style={{ opacity: 0.72 }}>Entrada: <b>{fmtDate(lead.created_at)}</b></div>
+                  <div style={{ opacity: 0.72, marginTop: 6 }}>Próximo contacto: <b>{fmtDate(lead.next_contact_at)}</b></div>
+                  <div style={{ opacity: 0.72, marginTop: 6 }}>Tiempo desde entrada: <b>{sinceCreated}</b></div>
+                  <div style={{ opacity: 0.72, marginTop: 6 }}>Vencimiento contacto: <b>{nextContactIn}</b></div>
                 </div>
               </div>
 
               {(lead.campaign_name || lead.form_name || lead.origen || lead.cliente?.origen) ? (
                 <div style={{ marginTop: 12, opacity: 0.64 }}>
-                  {[lead.campaign_name, lead.form_name, lead.origen || lead.cliente?.origen]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  {[lead.campaign_name, lead.form_name, lead.origen || lead.cliente?.origen].filter(Boolean).join(" · ")}
                 </div>
               ) : null}
 
-              <div
-                style={{
-                  marginTop: 14,
-                  display: "flex",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  onClick={() => openClient(lead)}
-                  style={buttonStyle("rgba(255,255,255,0.10)")}
-                >
-                  👤 Abrir ficha
-                </button>
+              <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={() => openClient(lead)} style={buttonStyle("rgba(255,255,255,0.10)")}>👤 Abrir ficha</button>
 
-                <a
-                  href={lead.cliente?.telefono ? `tel:${lead.cliente.telefono}` : undefined}
-                  style={{ textDecoration: "none" }}
-                >
-                  <button
-                    disabled={!lead.cliente?.telefono}
-                    style={buttonStyle("#0ea5e9", !lead.cliente?.telefono)}
-                  >
-                    📞 Llamar
-                  </button>
+                <a href={lead.cliente?.telefono ? `tel:${lead.cliente.telefono}` : undefined} style={{ textDecoration: "none" }}>
+                  <button disabled={!lead.cliente?.telefono} style={buttonStyle("#0ea5e9", !lead.cliente?.telefono)}>📞 Llamar</button>
                 </a>
 
-                <button
-                  disabled={busyId === lead.id}
-                  onClick={() => act(lead.id, "contactado")}
-                  style={buttonStyle("#22c55e", busyId === lead.id)}
-                >
-                  ✅ Contactado
-                </button>
-
-                <button
-                  disabled={busyId === lead.id}
-                  onClick={() => act(lead.id, "no_responde")}
-                  style={buttonStyle("#f59e0b", busyId === lead.id)}
-                >
-                  📞 No responde
-                </button>
-
-                <button
-                  disabled={busyId === lead.id}
-                  onClick={() => act(lead.id, "no_interesado")}
-                  style={buttonStyle("#6366f1", busyId === lead.id)}
-                >
-                  🙅 No interesado
-                </button>
-
-                <button
-                  disabled={busyId === lead.id}
-                  onClick={() => act(lead.id, "numero_invalido")}
-                  style={buttonStyle("#ef4444", busyId === lead.id)}
-                >
-                  ❌ Número inválido
-                </button>
+                <button disabled={busyId === lead.id} onClick={() => act(lead.id, "contactado")} style={buttonStyle("#22c55e", busyId === lead.id)}>✅ Contactado</button>
+                <button disabled={busyId === lead.id} onClick={() => act(lead.id, "no_responde")} style={buttonStyle("#f59e0b", busyId === lead.id)}>📞 No responde</button>
+                <button disabled={busyId === lead.id} onClick={() => act(lead.id, "no_interesado")} style={buttonStyle("#6366f1", busyId === lead.id)}>🙅 No interesado</button>
+                <button disabled={busyId === lead.id} onClick={() => act(lead.id, "numero_invalido")} style={buttonStyle("#ef4444", busyId === lead.id)}>❌ Número inválido</button>
               </div>
             </div>
           );
@@ -573,11 +476,7 @@ function kpiValueStyle(): React.CSSProperties {
   };
 }
 
-function chipStyle(
-  background: string,
-  color = "white",
-  border = "1px solid rgba(255,255,255,0.08)"
-): React.CSSProperties {
+function chipStyle(background: string, color = "white", border = "1px solid rgba(255,255,255,0.08)"): React.CSSProperties {
   return {
     display: "inline-flex",
     alignItems: "center",
