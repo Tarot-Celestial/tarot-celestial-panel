@@ -54,6 +54,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [statsTotals, setStatsTotals] = useState<any>(null);
   const [reservas, setReservas] = useState<any[]>([]);
   const [diarioRows, setDiarioRows] = useState<any[]>([]);
+  const [clientAccess, setClientAccess] = useState<any>(null);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -75,7 +76,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const [invRes, statsRes, reservasRes, diarioRes] = await Promise.all([
+      const [invRes, statsRes, reservasRes, diarioRes, accessRes] = await Promise.all([
         fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
@@ -92,23 +93,30 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
+        fetch("/api/admin/client-access/summary", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
       ]);
 
       const invJ = await safeJson(invRes);
       const statsJ = await safeJson(statsRes);
       const reservasJ = await safeJson(reservasRes);
       const diarioJ = await safeJson(diarioRes);
+      const accessJ = await safeJson(accessRes);
 
       if (!invJ?._ok || !invJ?.ok) throw new Error(invJ?.error || `HTTP ${invJ?._status}`);
       if (!statsJ?._ok || !statsJ?.ok) throw new Error(statsJ?.error || `HTTP ${statsJ?._status}`);
       if (!reservasJ?._ok || !reservasJ?.ok) throw new Error(reservasJ?.error || `HTTP ${reservasJ?._status}`);
       if (!diarioJ?._ok || !diarioJ?.ok) throw new Error(diarioJ?.error || `HTTP ${diarioJ?._status}`);
+      if (!accessJ?._ok || !accessJ?.ok) throw new Error(accessJ?.error || `HTTP ${accessJ?._status}`);
 
       setInvoices(Array.isArray(invJ.invoices) ? invJ.invoices : []);
       setStatsRows(Array.isArray(statsJ.rows) ? statsJ.rows : []);
       setStatsTotals(statsJ.totals || null);
       setReservas(Array.isArray(reservasJ.reservas) ? reservasJ.reservas : []);
       setDiarioRows(Array.isArray(diarioJ.rows) ? diarioJ.rows : []);
+      setClientAccess(accessJ || null);
 
       if (!silent) setMsg("✅ Dashboard actualizado");
     } catch (e: any) {
@@ -121,6 +129,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       setStatsTotals(null);
       setReservas([]);
       setDiarioRows([]);
+      setClientAccess(null);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -260,6 +269,8 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
         <DashKpi label="Clientes hoy" value={String(diarioRows.length)} />
         <DashKpi label="Reservas pendientes" value={String(pendientes)} />
         <DashKpi label="Tarotistas con datos" value={String(statsRows.length)} />
+        <DashKpi label="Clientes online" value={String(clientAccess?.totals?.online_now || 0)} />
+        <DashKpi label="Accesos hoy" value={String(clientAccess?.totals?.active_today || 0)} />
       </div>
 
       <div className="tc-card" style={{ borderRadius: 24 }}>
@@ -297,6 +308,32 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
               <div className="tc-sub" style={{ marginTop: 8 }}>{a.description}</div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="tc-card" style={{ borderRadius: 24 }}>
+        <div className="tc-title" style={{ fontSize: 16 }}>👁️ Actividad panel cliente</div>
+        <div className="tc-sub" style={{ marginTop: 6 }}>Control de accesos, actividad reciente y clientes conectados en este momento.</div>
+        <div className="tc-hr" />
+        <div className="tc-grid-4">
+          <DashKpi label="Online ahora" value={String(clientAccess?.totals?.online_now || 0)} highlight />
+          <DashKpi label="Activos hoy" value={String(clientAccess?.totals?.active_today || 0)} />
+          <DashKpi label="Inactivos 7d" value={String(clientAccess?.totals?.inactive_7d || 0)} />
+          <DashKpi label="Accesos totales" value={String(clientAccess?.totals?.total_accesses || 0)} />
+        </div>
+        <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+          {(clientAccess?.latest || []).slice(0, 6).map((row: any) => (
+            <div key={row.id} style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 16, padding: 12, background: "rgba(255,255,255,.03)" }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 800 }}>{[row?.nombre, row?.apellido].filter(Boolean).join(" ").trim() || "Cliente"}</div>
+                <div className="tc-chip">{row?.ultima_actividad_at && Date.now() - new Date(row.ultima_actividad_at).getTime() <= 180000 ? "Online" : "Offline"}</div>
+              </div>
+              <div className="tc-sub" style={{ marginTop: 6 }}>
+                Último acceso: {row?.ultimo_acceso_at ? new Date(row.ultimo_acceso_at).toLocaleString("es-ES") : "—"} · Actividad: {row?.ultima_actividad_at ? new Date(row.ultima_actividad_at).toLocaleString("es-ES") : "—"}
+              </div>
+            </div>
+          ))}
+          {!clientAccess?.latest?.length ? <div className="tc-sub">Todavía no hay actividad de clientes para mostrar.</div> : null}
         </div>
       </div>
 

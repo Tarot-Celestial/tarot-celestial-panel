@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Crown, Gift, Mail, Phone, Sparkles, Star, TimerReset, WandSparkles } from "lucide-react";
+import { BellRing, Crown, Gift, Mail, Phone, PhoneCall, ShieldAlert, Sparkles, Star, TimerReset, WandSparkles, ShoppingBag, ChevronRight } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
@@ -63,6 +63,32 @@ type RankProgress = {
   monthly_requirement_text?: string;
 };
 
+type ClienteNotif = {
+  id: string;
+  titulo?: string | null;
+  mensaje?: string | null;
+  tipo?: string | null;
+  leida?: boolean | null;
+  created_at?: string | null;
+};
+
+type ClientePack = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  priceUsd: number;
+  totalMinutes: number;
+  bonusMinutes: number;
+  highlight?: boolean;
+};
+
+type CallTarget = {
+  market: string;
+  label: string;
+  displayNumber: string;
+  telHref: string;
+};
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -84,11 +110,15 @@ export default function ClienteDashboardPage() {
   const [lastTarotistas, setLastTarotistas] = useState<LastTarotista[]>([]);
   const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
+  const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
+  const [packs, setPacks] = useState<ClientePack[]>([]);
+  const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
   const [loading, setLoading] = useState(true);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
+  const [buyingPackId, setBuyingPackId] = useState("");
   const [msg, setMsg] = useState("");
 
   const loadData = useCallback(async () => {
@@ -117,6 +147,9 @@ export default function ClienteDashboardPage() {
     setLastTarotistas(Array.isArray(json.last_tarotistas) ? json.last_tarotistas : []);
     setRankInfo(json.rank_info || null);
     setRankProgress(json.rank_progress || null);
+    setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
+    setPacks(Array.isArray(json.packs) ? json.packs : []);
+    setCallTarget(json.call_target || null);
     if (json.welcome_gift?.granted) {
       setWelcomeGiftMinutes(Number(json.welcome_gift?.minutes || 10));
       setShowWelcomeGift(true);
@@ -126,6 +159,20 @@ export default function ClienteDashboardPage() {
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    if (checkout === "ok") {
+      setMsg("✅ Pago completado. En unos segundos verás tus minutos y puntos actualizados.");
+      window.history.replaceState({}, "", "/cliente/dashboard");
+      window.setTimeout(() => loadData(), 1200);
+    }
+    if (checkout === "cancelled") {
+      setMsg("Has cancelado el pago. Puedes volver a intentarlo cuando quieras.");
+      window.history.replaceState({}, "", "/cliente/dashboard");
+    }
   }, [loadData]);
 
   useEffect(() => {
@@ -160,14 +207,16 @@ export default function ClienteDashboardPage() {
   const normalMinutes = Number(cliente?.minutos_normales_pendientes || 0);
   const totalMinutes = Number(cliente?.minutos_totales || 0);
   const totalPoints = Number(cliente?.puntos || 0);
+  const unreadNotifs = notificaciones.filter((item) => !item.leida).length;
 
   const summaryItems = useMemo(
     () => [
-      { label: "Rango actual", value: `${rankBadge.emoji} ${rankBadge.label}`, meta: rankProgress?.monthly_requirement_text || "Se calcula con el gasto del mes anterior" },
-      { label: "Puntos disponibles", value: String(totalPoints), meta: "Puedes canjearlos por minutos gratis" },
-      { label: "Minutos disponibles", value: String(totalMinutes), meta: `${freeMinutes} free · ${normalMinutes} normales` },
+      { label: "Rango actual", value: `${rankBadge.emoji} ${rankBadge.label}`, meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes" },
+      { label: "Puntos disponibles", value: String(totalPoints), meta: "Cada compra suma 10 puntos por cada dólar" },
+      { label: "Minutos disponibles", value: String(totalMinutes), meta: "Tú ves el total · el sistema guarda free y normales por separado" },
+      { label: "Notificaciones", value: String(unreadNotifs), meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día" },
     ],
-    [freeMinutes, normalMinutes, rankBadge.emoji, rankBadge.label, rankProgress?.monthly_requirement_text, totalMinutes, totalPoints]
+    [rankBadge.emoji, rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs]
   );
 
   async function saveOnboarding(payload: {
@@ -230,6 +279,66 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  async function buyPack(packId: string) {
+    try {
+      setBuyingPackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/pagos/checkout", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingPackId("");
+    }
+  }
+
+  async function trackCallAndOpen() {
+    if (!callTarget) return;
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) {
+        await fetch("/api/cliente/call-click", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ destino: callTarget.displayNumber, mercado: callTarget.market }),
+        }).catch(() => null);
+      }
+    } finally {
+      window.location.href = callTarget.telHref;
+    }
+  }
+
+  async function markNotifRead(id?: string) {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    await fetch("/api/cliente/notificaciones/read", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(id ? { id } : {}),
+    }).catch(() => null);
+    setNotificaciones((prev) => prev.map((n) => (!id || n.id === id ? { ...n, leida: true } : n)));
+  }
+
   if (loading) {
     return (
       <ClienteLayout title="Cargando tu panel..." subtitle="Estamos preparando tu área personal." summaryItems={[]}>
@@ -242,7 +351,7 @@ export default function ClienteDashboardPage() {
     <>
       <ClienteLayout
         title={`Hola ${nombre}`}
-        subtitle="Tu panel cliente está pensado para que veas de un vistazo tus minutos, tus puntos, tu progreso y tus beneficios activos."
+        subtitle="Tu panel cliente reúne compra, minutos, llamadas, puntos, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
         summaryItems={summaryItems}
       >
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
@@ -269,7 +378,7 @@ export default function ClienteDashboardPage() {
                 <div className="tc-mini-stat">
                   <div className="tc-kpi-label">Minutos disponibles</div>
                   <strong>{totalMinutes}</strong>
-                  <div className="tc-kpi-meta">{freeMinutes} free · {normalMinutes} normales</div>
+                  <div className="tc-kpi-meta">Detalle interno: {freeMinutes} free · {normalMinutes} normales</div>
                 </div>
               </div>
 
@@ -277,7 +386,7 @@ export default function ClienteDashboardPage() {
                 <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
                   <div style={{ display: "grid", gap: 5 }}>
                     <div className="tc-panel-title" style={{ fontSize: 18 }}>Progreso de rango</div>
-                    <div className="tc-panel-sub">El rango se calcula con el gasto del mes anterior.</div>
+                    <div className="tc-panel-sub">El rango se actualiza con tus compras activas del mes dentro del panel.</div>
                   </div>
                   {rankProgress?.next_label ? <div className="tc-chip">Siguiente: {rankProgress.next_label}</div> : null}
                 </div>
@@ -286,13 +395,43 @@ export default function ClienteDashboardPage() {
                 </div>
                 <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 12, gap: 10 }}>
                   <div className="tc-panel-sub">{rankProgress?.status_text || "Sigue comprando para desbloquear más ventajas."}</div>
-                  {rankProgress?.next_target ? <div className="tc-panel-sub">Objetivo: {Number(rankProgress.next_target).toFixed(0)}€</div> : null}
+                  {rankProgress?.next_target ? <div className="tc-panel-sub">Objetivo: {Number(rankProgress.next_target).toFixed(0)} USD</div> : null}
                 </div>
                 {rankProgress?.remaining_to_next ? (
                   <div style={{ marginTop: 8, fontWeight: 800 }}>
-                    Te faltan {Number(rankProgress.remaining_to_next || 0).toFixed(0)}€ para el siguiente rango.
+                    Te faltan {Number(rankProgress.remaining_to_next || 0).toFixed(0)} USD para el siguiente rango.
                   </div>
                 ) : null}
+              </div>
+            </section>
+
+            <section className="tc-card tc-purchase-panel">
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Comprar minutos desde la app</div>
+                  <div className="tc-panel-sub">Pagas por Stripe y el sistema añade minutos, puntos, rango e historial automáticamente.</div>
+                </div>
+                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <ShoppingBag size={14} /> Precio app
+                </div>
+              </div>
+              <div className="tc-pack-grid">
+                {packs.map((pack) => (
+                  <div key={pack.id} className={`tc-pack-card ${pack.highlight ? "tc-pack-card-highlight" : ""}`}>
+                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div>
+                        <div className="tc-list-item-title">{pack.nombre}</div>
+                        <div className="tc-list-item-sub">{pack.descripcion}</div>
+                      </div>
+                      {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
+                    </div>
+                    <div className="tc-pack-price">${pack.priceUsd.toFixed(2)} USD</div>
+                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales · mitad free / mitad normales</div>
+                    <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
+                      {buyingPackId === pack.id ? "Conectando con Stripe..." : "Comprar ahora"}
+                    </button>
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -319,6 +458,50 @@ export default function ClienteDashboardPage() {
           </div>
 
           <div className="tc-stack">
+            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-panel-title">Llamar ahora</div>
+                <div className="tc-panel-sub">Tu acceso directo cambia según el país del teléfono de tu cuenta.</div>
+              </div>
+              <div className="tc-callout-box">
+                <div>
+                  <div className="tc-list-item-title">{callTarget?.label || "Soporte"}</div>
+                  <div className="tc-list-item-sub">{callTarget?.displayNumber || "Sin número disponible"}</div>
+                </div>
+                <button className="tc-btn tc-btn-gold" onClick={trackCallAndOpen}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><PhoneCall size={16} /> Abrir llamada</span>
+                </button>
+              </div>
+            </section>
+
+            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Tus notificaciones</div>
+                  <div className="tc-panel-sub">Ideas, avisos y movimientos importantes de tu cuenta.</div>
+                </div>
+                {unreadNotifs > 0 ? <button className="tc-btn" onClick={() => markNotifRead()}>Marcar todo leído</button> : null}
+              </div>
+              {notificaciones.length === 0 ? (
+                <div className="tc-empty-state">Aún no tienes notificaciones internas.</div>
+              ) : (
+                <div className="tc-list-card">
+                  {notificaciones.slice(0, 6).map((item) => (
+                    <button key={item.id} className={`tc-notif-card ${item.leida ? "" : "tc-notif-card-unread"}`} onClick={() => markNotifRead(item.id)}>
+                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
+                        <div>
+                          <div className="tc-list-item-title">{item.titulo || "Notificación"}</div>
+                          <div className="tc-list-item-sub">{item.mensaje || ""}</div>
+                        </div>
+                        {!item.leida ? <BellRing size={15} style={{ color: "var(--tc-gold-2)" }} /> : null}
+                      </div>
+                      <div className="tc-list-item-sub" style={{ marginTop: 8 }}>{formatDate(item.created_at)}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
             <section className="tc-card" style={{ display: "grid", gap: 12 }}>
               <div style={{ display: "grid", gap: 6 }}>
                 <div className="tc-panel-title">Tu perfil rápido</div>
@@ -384,16 +567,21 @@ export default function ClienteDashboardPage() {
               )}
             </section>
 
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 10 }}>
+            <section className="tc-card tc-oracle-cta" style={{ display: "grid", gap: 10 }}>
               <div className="tc-row" style={{ gap: 10, alignItems: "flex-start" }}>
                 <WandSparkles size={18} style={{ color: "var(--tc-gold-2)", marginTop: 2 }} />
                 <div>
-                  <div className="tc-list-item-title">Consejo del panel</div>
+                  <div className="tc-list-item-title">Nuevo: Oráculo diario con chat</div>
                   <div className="tc-list-item-sub" style={{ marginTop: 4 }}>
-                    Consulta tus puntos antes de comprar: puede que ya tengas suficientes para desbloquear minutos gratis.
+                    Escoge amor, dinero, energía o general y recibe una lectura del día con la opción de preguntar más.
                   </div>
                 </div>
               </div>
+              <a className="tc-btn tc-btn-gold" href="/cliente/oraculo">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  Abrir oráculo <ChevronRight size={16} />
+                </span>
+              </a>
             </section>
           </div>
         </div>

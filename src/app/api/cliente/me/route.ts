@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
+import { CLIENTE_PACKS, getCallTarget, toNum, touchClientActivity } from "@/lib/server/cliente-platform";
 
 export const runtime = "nodejs";
 
@@ -12,11 +13,6 @@ type ClienteRow = Record<string, any> & {
   minutos_normales_pendientes?: number | null;
   regalo_bienvenida_otorgado?: boolean | null;
 };
-
-function toNum(value: unknown): number {
-  const n = Number(value || 0);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function rankMeta(rank: string | null | undefined) {
   const key = String(rank || "").toLowerCase();
@@ -54,16 +50,17 @@ function rankMeta(rank: string | null | undefined) {
     min: 1,
     nextRank: "plata",
     nextTarget: 100,
-    benefits: [
-      "3 pases GRATIS cada mes de 7 minutos",
-    ],
+    benefits: ["3 pases GRATIS cada mes de 7 minutos"],
   };
 }
 
 function buildRankProgress(cliente: any) {
   const gasto = toNum(cliente?.rango_gasto_mes_anterior);
   const compras = toNum(cliente?.rango_compras_mes_anterior);
-  const rank = String(cliente?.rango_actual || (gasto >= 500 ? "oro" : gasto >= 100 ? "plata" : gasto > 0 || compras > 0 ? "bronce" : "sin_rango")).toLowerCase();
+  const rank = String(
+    cliente?.rango_actual ||
+      (gasto >= 500 ? "oro" : gasto >= 100 ? "plata" : gasto > 0 || compras > 0 ? "bronce" : "sin_rango")
+  ).toLowerCase();
 
   if (rank === "oro") {
     return {
@@ -76,7 +73,7 @@ function buildRankProgress(cliente: any) {
       next_target: 500,
       remaining_to_next: 0,
       status_text: "Ya disfrutas del rango más alto.",
-      monthly_requirement_text: `El mes anterior acumulaste ${gasto.toFixed(2)}€ y mantienes Oro este mes.`,
+      monthly_requirement_text: `Este mes llevas ${gasto.toFixed(2)} USD acumulados dentro del panel y mantienes Oro.`,
     };
   }
 
@@ -93,8 +90,8 @@ function buildRankProgress(cliente: any) {
       next_label: "Oro",
       next_target: target,
       remaining_to_next: Number(remaining.toFixed(2)),
-      status_text: remaining > 0 ? `Te faltan ${remaining.toFixed(2)}€ de gasto mensual para llegar a Oro.` : "Ya cumples objetivo de Oro.",
-      monthly_requirement_text: `Tu rango actual se basa en ${gasto.toFixed(2)}€ gastados el mes anterior.`,
+      status_text: remaining > 0 ? `Te faltan ${remaining.toFixed(2)} USD de gasto mensual para llegar a Oro.` : "Ya cumples objetivo de Oro.",
+      monthly_requirement_text: `Tu progreso actual se calcula con ${gasto.toFixed(2)} USD gastados este mes dentro del panel.`,
     };
   }
 
@@ -111,10 +108,11 @@ function buildRankProgress(cliente: any) {
     next_label: "Plata",
     next_target: target,
     remaining_to_next: Number(remaining.toFixed(2)),
-    status_text: compras <= 0 ? "Con una compra mensual entrarás en Bronce." : `Te faltan ${remaining.toFixed(2)}€ de gasto mensual para subir a Plata.`,
-    monthly_requirement_text: compras <= 0
-      ? "Haz una compra este mes para activar Bronce en el siguiente cálculo."
-      : `Tu rango actual se basa en ${gasto.toFixed(2)}€ y ${compras} compra(s) del mes anterior.`,
+    status_text: compras <= 0 ? "Con una compra mensual dentro del panel entrarás en Bronce." : `Te faltan ${remaining.toFixed(2)} USD de gasto mensual para subir a Plata.`,
+    monthly_requirement_text:
+      compras <= 0
+        ? "Haz una compra desde la app para activar Bronce y comenzar a sumar ventajas."
+        : `Tu rango actual refleja ${gasto.toFixed(2)} USD y ${compras} compra(s) en el mes.`,
   };
 }
 
@@ -157,6 +155,15 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
     descripcion: "Felicidades, acabas de ganar 10 minutos gratis de consulta.",
   });
 
+  await gate.admin.from("cliente_notificaciones").insert({
+    cliente_id: cliente.id,
+    tipo: "welcome_gift",
+    titulo: "Has recibido 10 minutos gratis",
+    mensaje: "Felicidades, acabas de ganar 10 minutos gratis de consulta.",
+    leida: false,
+    created_at: nowIso,
+  });
+
   return {
     cliente: updated as ClienteRow,
     welcomeGift: {
@@ -178,11 +185,13 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
 
+    await touchClientActivity(gate.admin, gate.cliente.id, { access: false });
+
     const welcomeState = await maybeGrantWelcomeGift(gate as any);
     const cliente = welcomeState.cliente;
     const minutosTotales = toNum(cliente.minutos_free_pendientes) + toNum(cliente.minutos_normales_pendientes);
 
-    const [{ data: historial }, { data: recompensas }, { data: llamadas }] = await Promise.all([
+    const [{ data: historial }, { data: recompensas }, { data: llamadas }, { data: notificaciones }] = await Promise.all([
       gate.admin
         .from("cliente_puntos_historial")
         .select("id, tipo, puntos, descripcion, created_at")
@@ -200,6 +209,12 @@ export async function GET(req: Request) {
         .eq("cliente_id", cliente.id)
         .order("fecha_hora", { ascending: false })
         .limit(15),
+      gate.admin
+        .from("cliente_notificaciones")
+        .select("id, titulo, mensaje, tipo, leida, created_at")
+        .eq("cliente_id", cliente.id)
+        .order("created_at", { ascending: false })
+        .limit(8),
     ]);
 
     const lastTarotistas = Array.from(
@@ -215,6 +230,7 @@ export async function GET(req: Request) {
 
     const rank = rankMeta(cliente?.rango_actual);
     const rankProgress = buildRankProgress(cliente);
+    const callTarget = getCallTarget(cliente?.telefono_normalizado || cliente?.telefono);
 
     return NextResponse.json({
       ok: true,
@@ -229,6 +245,9 @@ export async function GET(req: Request) {
       rank_info: rank,
       rank_progress: rankProgress,
       welcome_gift: welcomeState.welcomeGift,
+      cliente_notificaciones: notificaciones || [],
+      call_target: callTarget,
+      packs: CLIENTE_PACKS,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ME" }, { status: 500 });

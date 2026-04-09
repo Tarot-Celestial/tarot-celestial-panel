@@ -3,9 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronRight, LogOut, Sparkles, UserCircle2 } from "lucide-react";
+import { BellRing, ChevronRight, LogOut, Sparkles, UserCircle2, WandSparkles } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 
 const sb = supabaseBrowser();
 
@@ -26,6 +26,39 @@ type Props = {
 export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    let timer: any = null;
+    let cancelled = false;
+
+    async function ping(access = false) {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || cancelled) return;
+      await fetch("/api/cliente/activity/ping", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ access }),
+      }).catch(() => null);
+    }
+
+    const accessKey = `tc_cliente_access_logged_${new Date().toISOString().slice(0, 10)}`;
+    const shouldCountAccess = typeof window !== "undefined" && !window.sessionStorage.getItem(accessKey);
+    if (shouldCountAccess) {
+      window.sessionStorage.setItem(accessKey, "1");
+    }
+
+    ping(shouldCountAccess);
+    timer = window.setInterval(() => ping(false), 60000);
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [pathname]);
 
   async function logout() {
     await sb.auth.signOut();
@@ -50,13 +83,18 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               </div>
 
               <div className="tc-chip" style={{ width: "fit-content", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Sparkles size={14} /> Tu espacio privado para consultar puntos, minutos y ventajas
+                <Sparkles size={14} /> Tu espacio privado para consultar puntos, minutos, compras y ventajas
               </div>
             </div>
 
             <div className="tc-nav">
               <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
                 Inicio
+              </Link>
+              <Link className={`tc-nav-link ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  <WandSparkles size={16} /> Oráculo
+                </span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/perfil" ? "tc-nav-link-active" : ""}`} href="/cliente/perfil">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
@@ -87,6 +125,8 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
             <span>Diseñado para que tengas todo claro, rápido y en un solo lugar.</span>
             <ChevronRight size={15} />
             <span>Panel privado</span>
+            <ChevronRight size={15} />
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><BellRing size={14} /> acceso protegido</span>
           </div>
         </section>
 
