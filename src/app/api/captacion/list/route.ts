@@ -62,8 +62,10 @@ function computeWorkflowState(item: AnyRow) {
 
 function isClosed(item: AnyRow) {
   const estado = norm(item?.estado);
-  const state = computeWorkflowState(item);
-  return Boolean(item?.closed_at || CLOSED_STATES.has(estado || state));
+  return Boolean(
+    item?.closed_at ||
+    ["captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)
+  );
 }
 
 async function fetchWithJoin() {
