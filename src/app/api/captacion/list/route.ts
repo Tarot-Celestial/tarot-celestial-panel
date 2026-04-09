@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "@supabase/supabase-js";
 import { createClient } from "@supabase/supabase-js";
 
 function env(name: string) {
@@ -15,12 +15,27 @@ const supabase = createClient(
   env("SUPABASE_SERVICE_ROLE_KEY")
 );
 
-const CLOSED_STATUSES = new Set(["contactado", "no_interesado", "numero_invalido", "perdido"]);
+// 🔥 estados cerrados (solo estos se excluyen)
+const CLOSED_STATUSES = new Set([
+  "contactado",
+  "no_interesado",
+  "numero_invalido",
+  "perdido",
+]);
+
+// 🔥 estados válidos abiertos (para normalizar)
+const OPEN_STATUSES = new Set([
+  "nuevo",
+  "reintento_2",
+  "reintento_3",
+]);
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const scope = String(searchParams.get("scope") || "pendientes").trim().toLowerCase();
+    const scope = String(searchParams.get("scope") || "pendientes")
+      .trim()
+      .toLowerCase();
 
     const { data, error } = await supabase
       .from("captacion_leads")
@@ -60,28 +75,75 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false });
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
     }
 
     let items = Array.isArray(data) ? data : [];
 
-    // Filtro en servidor para evitar inconsistencias del operador SQL .not(... in ...)
+    // 🔥 NORMALIZACIÓN CLAVE (esto arregla TODO)
+    items = items.map((item: any) => {
+      let estado = String(item?.estado || "").toLowerCase().trim();
+
+      // 👉 si no tiene estado → es nuevo
+      if (!estado) estado = "nuevo";
+
+      // 👉 si viene raro (ej: nuevo_lead)
+      if (!OPEN_STATUSES.has(estado) && !CLOSED_STATUSES.has(estado)) {
+        estado = "nuevo";
+      }
+
+      return {
+        ...item,
+        estado,
+      };
+    });
+
+    // 🔥 FILTRO ROBUSTO
     if (scope === "pendientes") {
-      items = items.filter((item: any) => !CLOSED_STATUSES.has(String(item?.estado || "").toLowerCase()));
+      items = items.filter(
+        (item: any) => !CLOSED_STATUSES.has(item.estado)
+      );
     }
 
-    // Orden útil para call-center: primero vencidos / toca llamar, luego más antiguos
+    // 🔥 ORDEN TIPO CALL CENTER
     items.sort((a: any, b: any) => {
-      const aNext = a?.next_contact_at ? new Date(a.next_contact_at).getTime() : 0;
-      const bNext = b?.next_contact_at ? new Date(b.next_contact_at).getTime() : 0;
-      const aCreated = a?.created_at ? new Date(a.created_at).getTime() : 0;
-      const bCreated = b?.created_at ? new Date(b.created_at).getTime() : 0;
+      const now = Date.now();
+
+      const aNext = a?.next_contact_at
+        ? new Date(a.next_contact_at).getTime()
+        : 0;
+      const bNext = b?.next_contact_at
+        ? new Date(b.next_contact_at).getTime()
+        : 0;
+
+      const aDue = aNext && aNext <= now ? 1 : 0;
+      const bDue = bNext && bNext <= now ? 1 : 0;
+
+      // primero los que toca llamar
+      if (aDue !== bDue) return bDue - aDue;
+
+      // luego por fecha de contacto
       if (aNext !== bNext) return aNext - bNext;
+
+      // luego por antigüedad
+      const aCreated = a?.created_at
+        ? new Date(a.created_at).getTime()
+        : 0;
+      const bCreated = b?.created_at
+        ? new Date(b.created_at).getTime()
+        : 0;
+
       return aCreated - bCreated;
     });
 
     return NextResponse.json({ ok: true, items });
   } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err?.message || "ERR" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: err?.message || "ERR" },
+      { status: 500 }
+    );
   }
 }
