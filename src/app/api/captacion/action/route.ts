@@ -175,6 +175,8 @@ export async function POST(req: Request) {
       patch.contacted_at = nowIso;
       patch.closed_at = nowIso;
       patch.next_contact_at = nowIso;
+      patch.intento_actual = currentAttempt;
+      patch.max_intentos = maxAttempts;
       crmPatch.lead_status = "captado";
       crmPatch.lead_contacted_at = nowIso;
       message = "💰 Cliente marcado como captado.";
@@ -182,6 +184,8 @@ export async function POST(req: Request) {
       patch.estado = "no_interesado";
       patch.closed_at = nowIso;
       patch.next_contact_at = nowIso;
+      patch.intento_actual = currentAttempt;
+      patch.max_intentos = maxAttempts;
       crmPatch.lead_status = "no_interesado";
       message = "🙅 Lead cerrado como no interesado.";
     } else if (action === "reabrir") {
@@ -197,7 +201,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "ACCION_INVALIDA" }, { status: 400 });
     }
 
-    const { error: updErr } = await admin.from("captacion_leads").update(patch).eq("id", leadId);
+    const { data: updatedLead, error: updErr } = await admin
+      .from("captacion_leads")
+      .update(patch)
+      .eq("id", leadId)
+      .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result")
+      .single();
+
     if (updErr) throw updErr;
 
     const clienteId = String(lead.cliente_id || "").trim();
@@ -208,8 +218,8 @@ export async function POST(req: Request) {
       } catch {}
 
       const noteText = noteForAction(action, who, nowIso, {
-        intento_actual: patch.intento_actual ?? currentAttempt,
-        next_contact_at: patch.next_contact_at,
+        intento_actual: updatedLead?.intento_actual ?? patch.intento_actual ?? currentAttempt,
+        next_contact_at: updatedLead?.next_contact_at ?? patch.next_contact_at,
       });
 
       await appendCrmNote(admin, clienteId, {
@@ -222,13 +232,13 @@ export async function POST(req: Request) {
       });
     }
 
-    const finalState = String(patch.estado || lead.estado || "nuevo");
+    const finalState = String(updatedLead?.estado || patch.estado || lead.estado || "nuevo");
     return NextResponse.json({
       ok: true,
       message,
       estado: finalState,
-      intento_actual: patch.intento_actual ?? currentAttempt,
-      next_contact_at: patch.next_contact_at ?? lead.next_contact_at,
+      intento_actual: updatedLead?.intento_actual ?? patch.intento_actual ?? currentAttempt,
+      next_contact_at: updatedLead?.next_contact_at ?? patch.next_contact_at ?? lead.next_contact_at,
       closed: ["captado", "no_interesado", "numero_invalido", "perdido"].includes(finalState),
     });
   } catch (error: any) {
