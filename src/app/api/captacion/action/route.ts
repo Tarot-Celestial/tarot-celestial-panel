@@ -202,13 +202,16 @@ export async function POST(req: Request) {
     }
 
     const { data: updatedLead, error: updErr } = await admin
-      .from("captacion_leads")
-      .update(patch)
-      .eq("id", leadId)
-      .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result")
-      .single();
+  .from("captacion_leads")
+  .update(patch)
+  .eq("id", leadId.trim())
+  .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result")
+  .maybeSingle();
 
-    if (updErr) throw updErr;
+if (updErr || !updatedLead) {
+  console.error("ERROR UPDATE CAPTACION:", updErr);
+  throw new Error("NO_SE_GUARDO_EL_ESTADO");
+}
 
     const clienteId = String(lead.cliente_id || "").trim();
     if (clienteId) {
