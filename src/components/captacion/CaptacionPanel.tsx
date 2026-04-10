@@ -29,7 +29,21 @@ type Lead = {
     email?: string | null;
     origen?: string | null;
     lead_status?: string | null;
+    onboarding_completado?: boolean | null;
+    ultimo_acceso_at?: string | null;
+    ultima_actividad_at?: string | null;
+    total_accesos?: number | null;
   } | null;
+};
+
+type WebFilter = "todos" | "registrados" | "no_registrados";
+
+type RegistrationMeta = {
+  registered: boolean;
+  onboardingDone: boolean;
+  accessCount: number;
+  lastAccessAt: string | null;
+  lastActivityAt: string | null;
 };
 
 const sb = supabaseBrowser();
@@ -102,6 +116,48 @@ function cardTone(lead: Lead) {
   return { bg: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)" };
 }
 
+function registrationMeta(lead: Lead): RegistrationMeta {
+  const accessCount = Math.max(0, Number(lead.cliente?.total_accesos || 0));
+  const lastAccessAt = lead.cliente?.ultimo_acceso_at || null;
+  const lastActivityAt = lead.cliente?.ultima_actividad_at || null;
+  const onboardingDone = Boolean(lead.cliente?.onboarding_completado);
+  const registered = onboardingDone || accessCount > 0 || Boolean(lastAccessAt) || Boolean(lastActivityAt);
+
+  return {
+    registered,
+    onboardingDone,
+    accessCount,
+    lastAccessAt,
+    lastActivityAt,
+  };
+}
+
+function registrationBadge(lead: Lead) {
+  const meta = registrationMeta(lead);
+  if (!meta.registered) {
+    return {
+      label: "No registrado web",
+      bg: "rgba(239,68,68,.14)",
+      border: "1px solid rgba(239,68,68,.28)",
+      color: "#ffc1c1",
+    };
+  }
+  if (!meta.onboardingDone) {
+    return {
+      label: "Registrado · onboarding pendiente",
+      bg: "rgba(245,158,11,.14)",
+      border: "1px solid rgba(245,158,11,.28)",
+      color: "#ffe2a8",
+    };
+  }
+  return {
+    label: "Registrado web",
+    bg: "rgba(34,197,94,.14)",
+    border: "1px solid rgba(34,197,94,.28)",
+    color: "#bbf7d0",
+  };
+}
+
 export default function CaptacionPanel({ onOpenClient }: Props) {
   const [items, setItems] = useState<Lead[]>([]);
   const [view, setView] = useState<"pendientes" | "todos" | "cerrados">("pendientes");
@@ -109,6 +165,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [msg, setMsg] = useState("");
+  const [webFilter, setWebFilter] = useState<WebFilter>("todos");
 
   async function load(showSpinner = false) {
     try {
@@ -334,6 +391,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       hoy: pendientesHoy,
       nuevos: filtered.filter((x) => workflowState(x) === "nuevo").length,
       postFree: filtered.filter((x) => workflowState(x) === "hizo_free").length,
+      registrados: filtered.filter((x) => registrationMeta(x).registered).length,
+      noRegistrados: filtered.filter((x) => !registrationMeta(x).registered).length,
     };
   }, [filtered]);
 
@@ -361,20 +420,27 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           </div>
         </div>
 
-        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 12 }}>
+        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 12 }}>
           <div style={kpiStyle}><div style={kpiLabel}>En vista</div><div style={kpiValue}>{stats.total}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Llamar hoy</div><div style={kpiValue}>{stats.hoy}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Nuevos</div><div style={kpiValue}>{stats.nuevos}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Post-free</div><div style={kpiValue}>{stats.postFree}</div></div>
+          <div style={{ ...kpiStyle, cursor: "pointer", border: webFilter === "registrados" ? "1px solid rgba(34,197,94,.35)" : kpiStyle.border }} onClick={() => setWebFilter((current) => current === "registrados" ? "todos" : "registrados")}><div style={kpiLabel}>Registrados web</div><div style={kpiValue}>{stats.registrados}</div></div>
+          <div style={{ ...kpiStyle, cursor: "pointer", border: webFilter === "no_registrados" ? "1px solid rgba(239,68,68,.35)" : kpiStyle.border }} onClick={() => setWebFilter((current) => current === "no_registrados" ? "todos" : "no_registrados")}><div style={kpiLabel}>Sin registrar</div><div style={kpiValue}>{stats.noRegistrados}</div></div>
         </div>
 
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 12, alignItems: "center" }}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar por nombre, teléfono, email o campaña"
             style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,.10)", background: "rgba(255,255,255,.04)", color: "white", padding: "12px 14px", outline: "none" }}
           />
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button onClick={() => setWebFilter("todos")} style={buttonStyle(webFilter === "todos" ? "linear-gradient(135deg,#334155,#1f2937)" : "rgba(255,255,255,.08)")}>Todos</button>
+            <button onClick={() => setWebFilter("registrados")} style={buttonStyle(webFilter === "registrados" ? "linear-gradient(135deg,#16a34a,#15803d)" : "rgba(255,255,255,.08)")}>Registrados web</button>
+            <button onClick={() => setWebFilter("no_registrados")} style={buttonStyle(webFilter === "no_registrados" ? "linear-gradient(135deg,#dc2626,#b91c1c)" : "rgba(255,255,255,.08)")}>No registrados</button>
+          </div>
         </div>
 
         {msg ? <div style={{ marginTop: 14, color: "#c8f7d0", fontWeight: 700 }}>{msg}</div> : null}
@@ -425,6 +491,8 @@ function LeadCard({
   const tone = cardTone(lead);
   const phase = workflowState(lead);
   const disabled = busyId === lead.id;
+  const reg = registrationMeta(lead);
+  const regBadge = registrationBadge(lead);
 
   return (
     <div style={{ borderRadius: 18, padding: 14, background: tone.bg, border: tone.border }}>
@@ -433,13 +501,19 @@ function LeadCard({
           <div style={{ fontSize: 17, fontWeight: 800 }}>{fullName(lead)}</div>
           <div style={{ marginTop: 5, opacity: 0.78, fontSize: 13 }}>{phone(lead)}{lead.cliente?.email ? ` · ${lead.cliente.email}` : ""}</div>
         </div>
-        <span style={{ ...chipPill, background: chip.bg, border: chip.border }}>{chip.label}</span>
+        <div style={{ display: "grid", gap: 8, justifyItems: "end" }}>
+          <span style={{ ...chipPill, background: chip.bg, border: chip.border }}>{chip.label}</span>
+          <span style={{ ...chipPill, background: regBadge.bg, border: regBadge.border, color: regBadge.color }}>{regBadge.label}</span>
+        </div>
       </div>
 
       <div style={{ marginTop: 12, display: "grid", gap: 6, fontSize: 12, opacity: 0.8 }}>
         <div>Entrada: <b>{fmtDate(lead.created_at)}</b></div>
         <div>Próxima gestión: <b>{fmtDate(lead.next_contact_at)}</b> · {relativeDue(lead.next_contact_at)}</div>
         <div>Intentos: <b>{Math.max(1, Number(lead.intento_actual || 1))}/{Math.max(3, Number(lead.max_intentos || 3))}</b></div>
+        <div>Web: <b>{reg.registered ? "Sí" : "No"}</b>{reg.registered ? ` · accesos ${reg.accessCount}` : " · sin acceso detectado"}</div>
+        {reg.lastAccessAt ? <div>Último acceso panel: <b>{fmtDate(reg.lastAccessAt)}</b></div> : null}
+        {reg.registered && !reg.lastAccessAt && reg.lastActivityAt ? <div>Actividad panel: <b>{fmtDate(reg.lastActivityAt)}</b></div> : null}
         {(lead.campaign_name || lead.form_name || lead.origen) ? <div>{[lead.campaign_name, lead.form_name, lead.origen].filter(Boolean).join(" · ")}</div> : null}
       </div>
 
