@@ -52,6 +52,15 @@ function normalizePhoneDigits(v: any) {
   return String(v || "").replace(/\D/g, "").trim();
 }
 
+function getClientWebMeta(cliente: any) {
+  const onboardingDone = Boolean(cliente?.onboarding_completado);
+  const accessCount = Math.max(0, Number(cliente?.total_accesos || 0));
+  const lastAccessAt = cliente?.ultimo_acceso_at || null;
+  const lastActivityAt = cliente?.ultima_actividad_at || null;
+  const registered = Boolean(onboardingDone || accessCount > 0 || lastAccessAt || lastActivityAt);
+  return { registered, onboardingDone, accessCount, lastAccessAt, lastActivityAt };
+}
+
 async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
   if (!clientesBase?.length) return [];
 
@@ -95,6 +104,7 @@ export async function GET(req: Request) {
     const telefono = String(searchParams.get("telefono") || "").trim();
     const etiqueta = String(searchParams.get("etiqueta") || searchParams.get("tag") || "").trim();
     const pais = String(searchParams.get("pais") || "").trim();
+    const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
     const telefonoDigits = normalizePhoneDigits(telefono);
     const admin = adminClient();
 
@@ -156,6 +166,17 @@ export async function GET(req: Request) {
     if (etiqueta) {
       const etLower = etiqueta.toLowerCase();
       clientes = clientes.filter((c: any) => Array.isArray(c.etiquetas) && c.etiquetas.some((x: any) => String(x || "").toLowerCase().includes(etLower)));
+    }
+
+    if (webFilter === "registrados") {
+      clientes = clientes.filter((c: any) => getClientWebMeta(c).registered);
+    } else if (webFilter === "no_registrados") {
+      clientes = clientes.filter((c: any) => !getClientWebMeta(c).registered);
+    } else if (webFilter === "onboarding_pendiente") {
+      clientes = clientes.filter((c: any) => {
+        const meta = getClientWebMeta(c);
+        return meta.registered && !meta.onboardingDone;
+      });
     }
 
     return NextResponse.json({ ok: true, clientes: clientes.slice(0, 300) });

@@ -133,6 +133,36 @@ function rankChip(rank: string | null | undefined) {
 }
 
 
+function clientWebMeta(cliente: any) {
+  const onboardingDone = Boolean(cliente?.onboarding_completado);
+  const accessCount = Math.max(0, Number(cliente?.total_accesos || 0));
+  const lastAccessAt = cliente?.ultimo_acceso_at || null;
+  const lastActivityAt = cliente?.ultima_actividad_at || null;
+  const registered = Boolean(onboardingDone || accessCount > 0 || lastAccessAt || lastActivityAt);
+  return { registered, onboardingDone, accessCount, lastAccessAt, lastActivityAt };
+}
+
+function clientWebBadge(cliente: any) {
+  const meta = clientWebMeta(cliente);
+  if (meta.onboardingDone) return { label: "🟢 Web activa", bg: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.35)", color: "#dcfce7" };
+  if (meta.registered) return { label: "🟡 Web pendiente", bg: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.35)", color: "#fde68a" };
+  return { label: "🔴 No registrado", bg: "rgba(239,68,68,.16)", border: "1px solid rgba(239,68,68,.30)", color: "#fecaca" };
+}
+
+function formatWebDateTime(v?: string | null) {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+
 type CRMClientesPanelProps = {
   mode?: "admin" | "central";
   showImportButton?: boolean;
@@ -146,6 +176,7 @@ export default function CRMClientesPanel({
   const [crmTagFilter, setCrmTagFilter] = useState("");
   const [crmPhoneFilter, setCrmPhoneFilter] = useState("");
   const [crmCountryFilter, setCrmCountryFilter] = useState("");
+  const [crmWebFilter, setCrmWebFilter] = useState<"todos" | "registrados" | "no_registrados" | "onboarding_pendiente">("todos");
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
   const [crmFreshLeads, setCrmFreshLeads] = useState<any[]>([]);
@@ -290,9 +321,7 @@ export default function CRMClientesPanel({
         comprasMesAnterior: Number(j?.comprasMesAnterior || 0),
       });
       setCrmRankMsg(`✅ Rangos recalculados. ${Number(j?.clientes_actualizados || 0)} clientes actualizados.`);
-      if (crmQuery.trim() || crmPhoneFilter.trim() || crmTagFilter.trim() || crmCountryFilter.trim()) {
-        await searchCRM(true);
-      }
+      await searchCRM(true);
       if (crmClienteSelId || crmClienteFicha?.id) {
         await openCRMFicha(String(crmClienteSelId || crmClienteFicha?.id || ""));
       }
@@ -506,6 +535,7 @@ export default function CRMClientesPanel({
     loadCRMTarotistas();
     loadFreshLeads();
     loadRankSummary(true);
+    searchCRM(true);
 
     const interval = window.setInterval(() => {
       loadFreshLeads(true);
@@ -617,12 +647,6 @@ export default function CRMClientesPanel({
     const etiqueta = crmTagFilter.trim();
     const pais = crmCountryFilter.trim();
 
-    if (!q && !telefono && !etiqueta && !pais) {
-      setCrmMsg("⚠️ Escribe al menos un filtro");
-      setCrmRows([]);
-      return;
-    }
-
     try {
       if (!silent) {
         setCrmLoading(true);
@@ -640,6 +664,7 @@ export default function CRMClientesPanel({
         params.set("tag", etiqueta);
       }
       if (pais) params.set("pais", pais);
+      if (crmWebFilter !== "todos") params.set("web_filter", crmWebFilter);
 
       const r = await fetch(`/api/crm/clientes/buscar?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -776,6 +801,7 @@ export default function CRMClientesPanel({
     setCrmTagFilter("");
     setCrmPhoneFilter("");
     setCrmCountryFilter("");
+    setCrmWebFilter("todos");
     setCrmRows([]);
     setCrmMsg("");
   }
@@ -1445,6 +1471,21 @@ export default function CRMClientesPanel({
     }
   }
 
+  const crmWebSummary = (() => {
+    const rows = crmRows || [];
+    const registered = rows.filter((row: any) => clientWebMeta(row).registered).length;
+    const onboardingPending = rows.filter((row: any) => {
+      const meta = clientWebMeta(row);
+      return meta.registered && !meta.onboardingDone;
+    }).length;
+    return {
+      total: rows.length,
+      registered,
+      notRegistered: Math.max(0, rows.length - registered),
+      onboardingPending,
+    };
+  })();
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div
@@ -1602,7 +1643,7 @@ export default function CRMClientesPanel({
           <div>
             <div className="tc-title">👥 CRM</div>
             <div className="tc-sub">
-              Busca clientes por nombre, teléfono, país o etiqueta
+              Busca clientes por nombre, teléfono, país o etiqueta y detecta quién ya usa la web
             </div>
           </div>
 
@@ -1657,9 +1698,23 @@ export default function CRMClientesPanel({
           </div>
         </div>
 
+        <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 10 }}>
+          <KpiCard title="Clientes cargados" value={String(crmWebSummary.total)} hint="Base visible en CRM" accent="rgba(181,156,255,.75)" />
+          <KpiCard title="Registrados web" value={String(crmWebSummary.registered)} hint="Han entrado al panel" accent="rgba(34,197,94,.75)" active={crmWebFilter === "registrados"} onClick={() => setCrmWebFilter((v) => v === "registrados" ? "todos" : "registrados")} />
+          <KpiCard title="No registrados" value={String(crmWebSummary.notRegistered)} hint="Clientes a insistir" accent="rgba(239,68,68,.75)" active={crmWebFilter === "no_registrados"} onClick={() => setCrmWebFilter((v) => v === "no_registrados" ? "todos" : "no_registrados")} />
+          <KpiCard title="Onboarding pendiente" value={String(crmWebSummary.onboardingPending)} hint="Entraron pero no cerraron" accent="rgba(245,158,11,.75)" active={crmWebFilter === "onboarding_pendiente"} onClick={() => setCrmWebFilter((v) => v === "onboarding_pendiente" ? "todos" : "onboarding_pendiente")} />
+        </div>
+
+        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          <button className={`tc-btn ${crmWebFilter === "todos" ? "tc-btn-gold" : ""}`} onClick={() => setCrmWebFilter("todos")}>Todos</button>
+          <button className={`tc-btn ${crmWebFilter === "registrados" ? "tc-btn-gold" : ""}`} onClick={() => setCrmWebFilter("registrados")}>Registrados web</button>
+          <button className={`tc-btn ${crmWebFilter === "no_registrados" ? "tc-btn-gold" : ""}`} onClick={() => setCrmWebFilter("no_registrados")}>No registrados</button>
+          <button className={`tc-btn ${crmWebFilter === "onboarding_pendiente" ? "tc-btn-gold" : ""}`} onClick={() => setCrmWebFilter("onboarding_pendiente")}>Onboarding pendiente</button>
+        </div>
+
         <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
           <button className="tc-btn tc-btn-gold" onClick={() => searchCRM()} disabled={crmLoading}>
-            {crmLoading ? "Buscando…" : "Buscar"}
+            {crmLoading ? "Cargando…" : "Cargar CRM"}
           </button>
         </div>
 
@@ -2273,6 +2328,7 @@ export default function CRMClientesPanel({
                 <th>Teléfono</th>
                 <th>País</th>
                 <th>Etiquetas</th>
+                <th>Estado web</th>
                 <th>Rango</th>
                 <th>Min free</th>
                 <th>Min normales</th>
@@ -2287,12 +2343,26 @@ export default function CRMClientesPanel({
                   ? etiquetas.map((x: any) => typeof x === "string" ? x : x?.nombre || x?.label || x?.name || x?.tag || "").filter(Boolean).join(", ")
                   : "";
 
+                const webMeta = clientWebMeta(r);
+                const webBadge = clientWebBadge(r);
+
                 return (
                   <tr key={r.id}>
                     <td><b>{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</b></td>
                     <td>{r.telefono || "—"}</td>
                     <td>{r.pais || "—"}</td>
                     <td>{etiquetasTexto || "—"}</td>
+                    <td>
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <span className="tc-chip" style={{ background: webBadge.bg, border: webBadge.border, color: webBadge.color, width: "fit-content" }}>
+                          {webBadge.label}
+                        </span>
+                        <span className="tc-sub">
+                          {webMeta.lastAccessAt ? `Último acceso: ${formatWebDateTime(webMeta.lastAccessAt)}` : webMeta.lastActivityAt ? `Actividad: ${formatWebDateTime(webMeta.lastActivityAt)}` : "Sin acceso detectado"}
+                        </span>
+                        <span className="tc-sub">Accesos: {webMeta.accessCount}</span>
+                      </div>
+                    </td>
                     <td>{rankChip(r.rango_actual)}</td>
                     <td>{r.minutos_free_pendientes ?? 0}</td>
                     <td>{r.minutos_normales_pendientes ?? 0}</td>
@@ -2304,7 +2374,7 @@ export default function CRMClientesPanel({
 
               {crmRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="tc-muted">Sin resultados.</td>
+                  <td colSpan={10} className="tc-muted">Sin resultados.</td>
                 </tr>
               )}
             </tbody>

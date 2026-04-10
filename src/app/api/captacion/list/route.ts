@@ -86,10 +86,6 @@ async function fetchWithJoin() {
         lead_contacted_at,
         lead_campaign_name,
         lead_form_name,
-        onboarding_completado,
-        ultimo_acceso_at,
-        ultima_actividad_at,
-        total_accesos,
         created_at
       )
     `)
@@ -117,7 +113,7 @@ async function fetchFallback() {
 
   const { data: clientes, error: clientesErr } = await supabase
     .from("crm_clientes")
-    .select("id, nombre, apellido, telefono, email, origen, lead_status, lead_contacted_at, lead_campaign_name, lead_form_name, onboarding_completado, ultimo_acceso_at, ultima_actividad_at, total_accesos, created_at")
+    .select("id, nombre, apellido, telefono, email, origen, lead_status, lead_contacted_at, lead_campaign_name, lead_form_name, created_at")
     .in("id", clienteIds);
 
   if (clientesErr) throw clientesErr;
