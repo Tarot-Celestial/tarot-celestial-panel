@@ -11,6 +11,7 @@ import ReservasPanel from "@/components/reservas/ReservasPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import DiarioPanel from "@/components/diario/DiarioPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
+import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
@@ -28,6 +29,7 @@ const ADMIN_NAV = [
   { key: "checklists", icon: CheckSquare, label: "Checklists", kicker: "Plantillas y tareas" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago" },
   { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
   { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
@@ -98,6 +100,7 @@ type TabKey =
   | "checklists"
   | "clientes"
   | "crm"
+  | "chat"
   | "captacion"
   | "rendimiento"
   | "reservas"
@@ -2636,6 +2639,8 @@ export default function Admin() {
           {tab === "crm" && (
             <CRMClientesPanel mode="admin" />
           )}
+
+          {tab === "chat" && <AdminChatPanel />}
 
           {tab === "captacion" && (
             <CaptacionPanel
