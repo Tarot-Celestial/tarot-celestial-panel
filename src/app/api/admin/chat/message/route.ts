@@ -22,8 +22,15 @@ export async function POST(req: Request) {
     if (threadErr) throw threadErr;
     if (!thread) return NextResponse.json({ ok: false, error: "THREAD_NOT_FOUND" }, { status: 404 });
 
-    const senderName = String(gate.me?.display_name || gate.me?.worker?.display_name || gate.me?.user?.email || "Admin");
-    const senderWorkerId = String(gate.me?.id || gate.me?.worker?.id || "").trim() || null;
+    const senderName =
+  (gate.me as any)?.display_name ||
+  (gate.me as any)?.worker?.display_name ||
+  (gate.me as any)?.email ||
+  "Admin";
+    const senderWorkerId =
+  (gate.me as any)?.id ||
+  (gate.me as any)?.worker?.id ||
+  null;
 
     const { data: inserted, error: insertErr } = await admin
       .from("cliente_chat_messages")
