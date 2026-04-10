@@ -1473,7 +1473,8 @@ export default function CRMClientesPanel({
   }
 
   const crmWebSummary = (() => {
-    const rows = crmRows || [];
+    const rowsAll = crmRows || [];
+    const rows = rowsAll.filter((c:any) => (c.tags || "").toLowerCase().includes("cliente"));
     const registered = rows.filter((row: any) => clientWebMeta(row).registered).length;
     const onboardingPending = rows.filter((row: any) => {
       const meta = clientWebMeta(row);
