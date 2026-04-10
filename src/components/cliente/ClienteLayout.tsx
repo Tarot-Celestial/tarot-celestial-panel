@@ -96,11 +96,6 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
                   <WandSparkles size={16} /> Oráculo
                 </span>
               </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/chat" ? "tc-nav-link-active" : ""}`} href="/cliente/chat">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <Sparkles size={16} /> Chat
-                </span>
-              </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/perfil" ? "tc-nav-link-active" : ""}`} href="/cliente/perfil">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                   <UserCircle2 size={16} /> Perfil
