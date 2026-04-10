@@ -1,5 +1,6 @@
 "use client";
 
+import KpiCard from "@/components/ui/KpiCard";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
