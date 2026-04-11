@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { getClientChatCredits, addClientChatCredits } from "@/lib/server/chat-platform";
+import { getClientChatCredits, addClientChatCredits, getChatWorkerStatusMeta } from "@/lib/server/chat-platform";
 
 export const runtime = "nodejs";
 
 async function getOrCreateThread(admin: any, clienteId: string, workerId: string) {
-  // 1. Buscar existente
   const { data: existing, error: existingErr } = await admin
     .from("cliente_chat_threads")
     .select("*")
@@ -19,7 +18,6 @@ async function getOrCreateThread(admin: any, clienteId: string, workerId: string
   if (existingErr) throw existingErr;
   if (existing?.id) return existing;
 
-  // 2. Intentar crear
   const currentBalance = await getClientChatCredits(admin, clienteId);
 
   const { data: created, error: createErr } = await admin
@@ -38,7 +36,6 @@ async function getOrCreateThread(admin: any, clienteId: string, workerId: string
     .select("*")
     .single();
 
-  // 🔥 SI FALLA POR DUPLICADO → RECUPERAR
   if (createErr) {
     if (createErr.message?.includes("duplicate key")) {
       const { data: retry, error: retryErr } = await admin
@@ -99,14 +96,23 @@ export async function GET(req: Request) {
       thread = await getOrCreateThread(admin, gate.cliente.id, workerId);
     }
 
-    const [workerRes, messages, balance] = await Promise.all([
+    const [workerRes, statusRes, messages, balance] = await Promise.all([
       admin.from("workers").select("id, display_name, team").eq("id", thread.tarotista_worker_id).maybeSingle(),
+      admin
+        .from("cliente_chat_tarotistas")
+        .select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message")
+        .eq("worker_id", thread.tarotista_worker_id)
+        .maybeSingle(),
       readMessages(admin, thread.id),
       getClientChatCredits(admin, gate.cliente.id),
     ]);
 
     if (workerRes.error) throw workerRes.error;
+    if (statusRes.error) throw statusRes.error;
+
     const worker = workerRes.data || null;
+    const status = statusRes.data || null;
+    const statusMeta = getChatWorkerStatusMeta(status);
 
     const nextBalance = Math.max(0, Number(thread?.creditos_restantes || balance || 0));
     if (nextBalance !== Number(thread?.creditos_restantes || 0)) {
@@ -118,8 +124,12 @@ export async function GET(req: Request) {
       ok: true,
       thread: {
         ...thread,
-        tarotista_display_name: worker?.display_name || "Tarotista",
+        tarotista_display_name: status?.visible_name || worker?.display_name || "Tarotista",
         tarotista_team: worker?.team || null,
+        tarotista_status_key: statusMeta?.key || "desconectada",
+        tarotista_status_label: statusMeta?.label || "Desconectada",
+        tarotista_status_color: statusMeta?.color || "#cbd5e1",
+        tarotista_welcome_message: status?.welcome_message || null,
         creditos_restantes: nextBalance,
       },
       messages,
@@ -177,7 +187,10 @@ export async function POST(req: Request) {
       nextBalance = ledger.balance;
     }
 
-    const senderName = [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() || gate.cliente?.nombre || "Cliente";
+    const senderName =
+      [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() ||
+      gate.cliente?.nombre ||
+      "Cliente";
     const nowIso = new Date().toISOString();
 
     const { data: inserted, error: insertErr } = await admin
@@ -211,7 +224,13 @@ export async function POST(req: Request) {
       .update({ is_busy: true, updated_at: nowIso })
       .eq("worker_id", thread.tarotista_worker_id);
 
-    return NextResponse.json({ ok: true, thread_id: thread.id, message: inserted, creditos_restantes: nextBalance, free_consulta_usada: true });
+    return NextResponse.json({
+      ok: true,
+      thread_id: thread.id,
+      message: inserted,
+      creditos_restantes: nextBalance,
+      free_consulta_usada: true,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_CHAT_THREAD_POST" }, { status: 500 });
   }
