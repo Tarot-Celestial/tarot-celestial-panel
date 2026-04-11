@@ -288,3 +288,18 @@ export default function AdminChatPanel() {
     </div>
   );
 }
+
+// 🔥 NUEVO CONTROL PRO
+async function marcarComoPregunta(messageId: string) {
+  await fetch('/api/chat/marcar-pregunta', {
+    method: 'POST',
+    body: JSON.stringify({ messageId })
+  });
+}
+
+async function marcarComoRespuesta(messageId: string) {
+  await fetch('/api/chat/marcar-respuesta', {
+    method: 'POST',
+    body: JSON.stringify({ messageId })
+  });
+}
