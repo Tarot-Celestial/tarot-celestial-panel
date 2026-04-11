@@ -32,6 +32,7 @@ export async function GET(req: Request) {
         .from("cliente_chat_threads")
         .select("id, tarotista_worker_id, estado, free_consulta_usada, creditos_restantes, last_message_at, last_message_preview")
         .eq("cliente_id", gate.cliente.id)
+        .neq("estado", "closed")
         .order("last_message_at", { ascending: false }),
     ]);
 

@@ -14,7 +14,12 @@ export async function GET(req: Request) {
     const [workersRes, statusRes, threadsRes, creditsRes] = await Promise.all([
       admin.from("workers").select("id, display_name, role, team, is_active").eq("role", "tarotista").eq("is_active", true).order("display_name", { ascending: true }),
       admin.from("cliente_chat_tarotistas").select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at"),
-      admin.from("cliente_chat_threads").select("id, cliente_id, tarotista_worker_id, estado, free_consulta_usada, free_reply_used, creditos_restantes, last_message_at, last_message_preview, created_at").order("last_message_at", { ascending: false }).limit(500),
+      admin
+        .from("cliente_chat_threads")
+        .select("id, cliente_id, tarotista_worker_id, estado, free_consulta_usada, free_reply_used, creditos_restantes, last_message_at, last_message_preview, created_at")
+        .neq("estado", "closed")
+        .order("last_message_at", { ascending: false })
+        .limit(500),
       admin.from("cliente_chat_creditos").select("cliente_id, saldo_resultante, created_at").order("created_at", { ascending: false }).limit(1000),
     ]);
     if (workersRes.error) throw workersRes.error;

@@ -10,6 +10,7 @@ async function getOrCreateThread(admin: any, clienteId: string, workerId: string
     .select("*")
     .eq("cliente_id", clienteId)
     .eq("tarotista_worker_id", workerId)
+    .neq("estado", "closed")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

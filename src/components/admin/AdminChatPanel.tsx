@@ -1,9 +1,10 @@
+
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import KpiCard from "@/components/ui/KpiCard";
-import { MessageSquare, RefreshCw, Search, Send, Sparkles, UserRound, Wallet } from "lucide-react";
+import { MessageSquare, RefreshCw, Search, Send, Sparkles, UserRound, Wallet, XCircle } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -56,6 +57,18 @@ function getMarkedState(message: any) {
   return "normal";
 }
 
+function initials(name?: string | null) {
+  const text = String(name || "TC").trim();
+  return (
+    text
+      .split(" ")
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() || "")
+      .join("") || "TC"
+  );
+}
+
 export default function AdminChatPanel() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -70,6 +83,7 @@ export default function AdminChatPanel() {
   const [paymentPack, setPaymentPack] = useState("chat_pack_12");
   const [threadSearch, setThreadSearch] = useState("");
   const [savingWorkerId, setSavingWorkerId] = useState<string>("");
+  const [closingThreadId, setClosingThreadId] = useState<string>("");
   const [workerDrafts, setWorkerDrafts] = useState<Record<string, { visible_name: string; welcome_message: string }>>({});
 
   const selectedThread = useMemo(
@@ -99,7 +113,10 @@ export default function AdminChatPanel() {
     try {
       setLoading(true);
       const token = await getToken();
-      const res = await fetch("/api/admin/chat/overview", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const res = await fetch("/api/admin/chat/overview", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el módulo de chat");
       setSummary(json.summary || {});
@@ -137,7 +154,10 @@ export default function AdminChatPanel() {
     }
     try {
       const token = await getToken();
-      const res = await fetch(`/api/admin/chat/thread?thread_id=${encodeURIComponent(selectedThreadId)}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const res = await fetch(`/api/admin/chat/thread?thread_id=${encodeURIComponent(selectedThreadId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.ok) {
         setSelectedMessages(Array.isArray(json.messages) ? json.messages : []);
@@ -182,10 +202,14 @@ export default function AdminChatPanel() {
     if (!draft) return;
     try {
       setSavingWorkerId(workerId);
-      await setWorkerStatus(workerId, {
-        visible_name: draft.visible_name,
-        welcome_message: draft.welcome_message,
-      }, "✅ Nombre visible y bienvenida guardados.");
+      await setWorkerStatus(
+        workerId,
+        {
+          visible_name: draft.visible_name,
+          welcome_message: draft.welcome_message,
+        },
+        "✅ Nombre visible y bienvenida guardados."
+      );
     } finally {
       setSavingWorkerId("");
     }
@@ -266,7 +290,12 @@ export default function AdminChatPanel() {
       const res = await fetch("/api/admin/chat/payment-link", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ cliente_id: selectedThread.cliente_id, thread_id: selectedThread.id, pack_id: paymentPack, send_to_thread: true }),
+        body: JSON.stringify({
+          cliente_id: selectedThread.cliente_id,
+          thread_id: selectedThread.id,
+          pack_id: paymentPack,
+          send_to_thread: true,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo crear el enlace");
@@ -275,6 +304,28 @@ export default function AdminChatPanel() {
       await loadOverview(true);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function closeConversation(threadId: string) {
+    try {
+      setClosingThreadId(threadId);
+      const token = await getToken();
+      const res = await fetch("/api/admin/chat/close-thread", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: threadId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cerrar la conversación");
+      setMsg("✅ Conversación cerrada.");
+      setSelectedThreadId("");
+      setSelectedMessages([]);
+      await loadOverview(false);
+    } catch (e: any) {
+      setMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setClosingThreadId("");
     }
   }
 
@@ -294,7 +345,7 @@ export default function AdminChatPanel() {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(5,minmax(0,1fr))", gap: 10 }}>
+      <div className="admin-chat-kpis">
         <KpiCard title="Hilos totales" value={String(summary.total_threads || 0)} hint="Histórico visible" accent="rgba(181,156,255,.75)" />
         <KpiCard title="Chats abiertos" value={String(summary.open_threads || 0)} hint="Conversaciones activas" accent="rgba(59,130,246,.75)" />
         <KpiCard title="Pendientes de pago" value={String(summary.pending_payment || 0)} hint="Sin créditos tras la free" accent="rgba(245,158,11,.75)" />
@@ -303,12 +354,14 @@ export default function AdminChatPanel() {
       </div>
 
       <div className="tc-card" style={{ padding: 12, background: "rgba(255,255,255,.035)" }}>
-        <div className="tc-sub" style={{ fontSize: 13 }}>{msg || "Consejo operativo: marca manualmente qué mensaje cuenta como pregunta real para tener control comercial y evitar cobros automáticos injustos."}</div>
+        <div className="tc-sub" style={{ fontSize: 13 }}>
+          {msg || "Consejo operativo: marca manualmente qué mensaje cuenta como pregunta real para tener control comercial y evitar cobros automáticos injustos."}
+        </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "380px 360px minmax(0,1fr)", gap: 16, alignItems: "start" }}>
-        <section className="tc-card" style={{ display: "grid", gap: 12, maxHeight: 900, overflow: "auto" }}>
-          <div className="tc-row" style={{ justifyContent: "space-between" }}>
+      <div className="admin-chat-grid">
+        <section className="tc-card admin-column">
+          <div className="column-head">
             <div>
               <div className="tc-title" style={{ fontSize: 16 }}>Tarotistas</div>
               <div className="tc-sub">Edita nombre visible, mensaje de bienvenida y estado.</div>
@@ -316,114 +369,146 @@ export default function AdminChatPanel() {
             <span className="tc-chip">{tarotistas.length} visibles</span>
           </div>
 
-          {tarotistas.map((worker: any) => {
-            const draft = workerDrafts[String(worker.id)] || { visible_name: worker.display_name || "", welcome_message: worker.welcome_message || "" };
-            return (
-              <div key={worker.id} className="tc-card" style={{ padding: 14, display: "grid", gap: 10, background: worker.status_bg, border: worker.status_border }}>
-                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <div style={{ fontWeight: 900, fontSize: 15 }}>{worker.display_name}</div>
-                    <div className="tc-sub">Equipo {worker.team || "—"} · {worker.open_threads || 0} chats abiertos</div>
+          <div className="admin-scroll">
+            {tarotistas.map((worker: any) => {
+              const draft = workerDrafts[String(worker.id)] || {
+                visible_name: worker.display_name || "",
+                welcome_message: worker.welcome_message || "",
+              };
+              return (
+                <div
+                  key={worker.id}
+                  className="worker-admin-card"
+                  style={{ background: worker.status_bg, border: worker.status_border }}
+                >
+                  <div className="worker-admin-top">
+                    <div className="avatar-line">
+                      <div className="admin-avatar">{initials(worker.display_name)}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 15 }}>{worker.display_name}</div>
+                        <div className="tc-sub">Equipo {worker.team || "—"} · {worker.open_threads || 0} chats abiertos</div>
+                      </div>
+                    </div>
+                    <span className="tc-chip" style={chipStyle(worker.status_key)}>{worker.status_label}</span>
                   </div>
-                  <span className="tc-chip" style={chipStyle(worker.status_key)}>{worker.status_label}</span>
-                </div>
 
-                <div style={{ display: "grid", gap: 8 }}>
-                  <input
-                    className="tc-input"
-                    placeholder="Nombre visible para cliente"
-                    value={draft.visible_name}
-                    onChange={(e) => setWorkerDrafts((prev) => ({ ...prev, [worker.id]: { ...draft, visible_name: e.target.value } }))}
-                  />
-                  <textarea
-                    className="tc-textarea"
-                    placeholder="Mensaje de bienvenida"
-                    style={{ minHeight: 90, resize: "vertical" }}
-                    value={draft.welcome_message}
-                    onChange={(e) => setWorkerDrafts((prev) => ({ ...prev, [worker.id]: { ...draft, welcome_message: e.target.value } }))}
-                  />
-                </div>
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <input
+                      className="tc-input"
+                      placeholder="Nombre visible para cliente"
+                      value={draft.visible_name}
+                      onChange={(e) =>
+                        setWorkerDrafts((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...draft, visible_name: e.target.value },
+                        }))
+                      }
+                    />
+                    <textarea
+                      className="tc-textarea"
+                      placeholder="Mensaje de bienvenida"
+                      style={{ minHeight: 88, resize: "vertical" }}
+                      value={draft.welcome_message}
+                      onChange={(e) =>
+                        setWorkerDrafts((prev) => ({
+                          ...prev,
+                          [worker.id]: { ...draft, welcome_message: e.target.value },
+                        }))
+                      }
+                    />
+                  </div>
 
-                <div className="tc-row" style={{ gap: 8 }}>
-                  <button className="tc-btn tc-btn-ok" onClick={() => setWorkerStatus(worker.id, { is_online: true, chat_enabled: true, is_busy: false }, "✅ Tarotista marcada como libre.")}>Libre</button>
-                  <button className="tc-btn tc-btn-gold" onClick={() => setWorkerStatus(worker.id, { is_online: true, chat_enabled: true, is_busy: true }, "✅ Tarotista marcada como ocupada.")}>Ocupada</button>
-                  <button className="tc-btn" onClick={() => setWorkerStatus(worker.id, { is_online: false, chat_enabled: false, is_busy: false }, "✅ Tarotista ocultada del chat.")}>Offline</button>
-                </div>
+                  <div className="action-wrap">
+                    <button className="tc-btn tc-btn-ok" onClick={() => setWorkerStatus(worker.id, { is_online: true, chat_enabled: true, is_busy: false }, "✅ Tarotista marcada como libre.")}>Libre</button>
+                    <button className="tc-btn tc-btn-gold" onClick={() => setWorkerStatus(worker.id, { is_online: true, chat_enabled: true, is_busy: true }, "✅ Tarotista marcada como ocupada.")}>Ocupada</button>
+                    <button className="tc-btn" onClick={() => setWorkerStatus(worker.id, { is_online: false, chat_enabled: false, is_busy: false }, "✅ Tarotista ocultada del chat.")}>Offline</button>
+                  </div>
 
-                <button className="tc-btn tc-btn-purple" disabled={savingWorkerId === String(worker.id)} onClick={() => saveWorkerProfile(String(worker.id))}>
-                  {savingWorkerId === String(worker.id) ? "Guardando…" : "Guardar nombre y bienvenida"}
-                </button>
-              </div>
-            );
-          })}
+                  <button className="tc-btn tc-btn-purple" disabled={savingWorkerId === String(worker.id)} onClick={() => saveWorkerProfile(String(worker.id))}>
+                    {savingWorkerId === String(worker.id) ? "Guardando…" : "Guardar nombre y bienvenida"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </section>
 
-        <section className="tc-card" style={{ display: "grid", gap: 12, maxHeight: 900, overflow: "auto" }}>
+        <section className="tc-card admin-column">
           <div style={{ display: "grid", gap: 10 }}>
-            <div>
-              <div className="tc-title" style={{ fontSize: 16 }}>Conversaciones</div>
-              <div className="tc-sub">Lista limpia con búsqueda rápida y señales comerciales.</div>
+            <div className="column-head">
+              <div>
+                <div className="tc-title" style={{ fontSize: 16 }}>Conversaciones</div>
+                <div className="tc-sub">Lista limpia con búsqueda rápida y señales comerciales.</div>
+              </div>
+              <span className="tc-chip">{filteredThreads.length}</span>
             </div>
             <div style={{ position: "relative" }}>
               <Search size={16} style={{ position: "absolute", left: 12, top: 12, opacity: 0.7 }} />
-              <input className="tc-input" style={{ paddingLeft: 36 }} placeholder="Buscar por cliente, teléfono, email o tarotista" value={threadSearch} onChange={(e) => setThreadSearch(e.target.value)} />
+              <input
+                className="tc-input"
+                style={{ paddingLeft: 36 }}
+                placeholder="Buscar por cliente, teléfono, email o tarotista"
+                value={threadSearch}
+                onChange={(e) => setThreadSearch(e.target.value)}
+              />
             </div>
           </div>
 
-          {filteredThreads.map((thread: any) => {
-            const active = String(thread.id) === String(selectedThreadId);
-            return (
-              <button
-                key={thread.id}
-                className="tc-card tc-click"
-                onClick={() => setSelectedThreadId(String(thread.id))}
-                style={{
-                  textAlign: "left",
-                  padding: 14,
-                  border: active ? "1px solid rgba(181,156,255,.45)" : "1px solid rgba(255,255,255,.08)",
-                  background: active ? "rgba(181,156,255,.12)" : "rgba(255,255,255,.03)",
-                  display: "grid",
-                  gap: 8,
-                }}
-              >
-                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={{ display: "grid", gap: 4 }}>
-                    <div style={{ fontWeight: 900 }}>{thread.cliente_nombre}</div>
-                    <div className="tc-sub">{thread.cliente_telefono || "Sin teléfono"}</div>
+          <div className="admin-scroll">
+            {filteredThreads.map((thread: any) => {
+              const active = String(thread.id) === String(selectedThreadId);
+              return (
+                <button
+                  key={thread.id}
+                  className={`thread-card ${active ? "thread-card-active" : ""}`}
+                  onClick={() => setSelectedThreadId(String(thread.id))}
+                  type="button"
+                >
+                  <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                      <div style={{ fontWeight: 900 }}>{thread.cliente_nombre}</div>
+                      <div className="tc-sub">{thread.cliente_telefono || "Sin teléfono"}</div>
+                    </div>
+                    <span className="tc-chip">{thread.creditos_cliente || 0} créditos</span>
                   </div>
-                  <span className="tc-chip">{thread.creditos_cliente || 0} créditos</span>
-                </div>
-                <div className="tc-sub">Tarotista: {thread.tarotista_display_name || "—"}</div>
-                <div style={{ fontSize: 13, lineHeight: 1.45 }}>{thread.last_message_preview || "Sin mensajes"}</div>
-                <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                  <span className="tc-chip">{thread.free_consulta_usada ? "Free usada" : "Free disponible"}</span>
-                  <span className="tc-sub">{fmt(thread.last_message_at)}</span>
-                </div>
-              </button>
-            );
-          })}
-
-          {!filteredThreads.length ? <div className="tc-sub">No hay conversaciones que coincidan con la búsqueda.</div> : null}
+                  <div className="tc-sub">Tarotista: {thread.tarotista_display_name || "—"}</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95 }}>
+                    {thread.last_message_preview || "Sin mensajes"}
+                  </div>
+                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <span className="tc-chip">{thread.free_consulta_usada ? "Free usada" : "Free disponible"}</span>
+                    <span className="tc-sub">{fmt(thread.last_message_at)}</span>
+                  </div>
+                </button>
+              );
+            })}
+            {!filteredThreads.length ? <div className="tc-sub">No hay conversaciones que coincidan con la búsqueda.</div> : null}
+          </div>
         </section>
 
-        <section className="tc-card" style={{ minHeight: 760, display: "grid", gridTemplateRows: "auto auto 1fr auto", gap: 12 }}>
+        <section className="tc-card detail-column">
           {!selectedThread ? (
             <div className="tc-sub">Selecciona una conversación para verla en detalle.</div>
           ) : (
             <>
               <div style={{ display: "grid", gap: 10 }}>
-                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 20 }}>{selectedThread.cliente_nombre}</div>
                     <div className="tc-sub">{selectedThread.cliente_telefono || "Sin teléfono"} · {selectedThread.cliente_email || "Sin email"}</div>
                   </div>
-                  <div className="tc-row" style={{ gap: 8 }}>
+                  <div className="action-wrap">
                     <span className="tc-chip"><Wallet size={13} style={{ marginRight: 6 }} /> {selectedThread.creditos_cliente || 0} créditos</span>
                     <span className="tc-chip"><UserRound size={13} style={{ marginRight: 6 }} /> {selectedThread.tarotista_display_name || "Tarotista"}</span>
+                    <button className="tc-btn" disabled={closingThreadId === selectedThread.id} onClick={() => closeConversation(selectedThread.id)}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <XCircle size={14} /> {closingThreadId === selectedThread.id ? "Cerrando…" : "Cerrar conversación"}
+                      </span>
+                    </button>
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 10 }}>
+                <div className="detail-stats">
                   <div className="tc-card" style={{ padding: 12 }}>
                     <div className="tc-sub">Free</div>
                     <div className="tc-title">{selectedThread.free_consulta_usada ? "Usada" : "Disponible"}</div>
@@ -443,7 +528,7 @@ export default function AdminChatPanel() {
                 </div>
               </div>
 
-              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <div className="action-wrap">
                 <input className="tc-input" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} style={{ width: 110 }} />
                 <button className="tc-btn tc-btn-ok" onClick={() => adjustCredits(Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>+ créditos</button>
                 <button className="tc-btn" onClick={() => adjustCredits(-Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>- créditos</button>
@@ -452,19 +537,21 @@ export default function AdminChatPanel() {
                   <option value="chat_pack_12">Pack 12 créditos</option>
                   <option value="chat_pack_25">Pack 25 créditos</option>
                 </select>
-                <button className="tc-btn tc-btn-gold" onClick={sendPaymentLink}><Sparkles size={14} style={{ marginRight: 6 }} /> Enviar enlace</button>
+                <button className="tc-btn tc-btn-gold" onClick={sendPaymentLink}>
+                  <Sparkles size={14} style={{ marginRight: 6 }} /> Enviar enlace
+                </button>
               </div>
 
-              <div style={{ minHeight: 360, maxHeight: 480, overflow: "auto", padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)", display: "grid", gap: 12 }}>
+              <div className="messages-admin">
                 {selectedMessages.map((item: any) => {
                   const bubble = bubbleStyle(item.sender_type);
                   const markedState = getMarkedState(item);
                   return (
                     <div key={item.id} style={{ display: "grid", gap: 6, justifyItems: bubble.justifySelf === "end" ? "end" : "start" }}>
                       <div className="tc-sub">{item.sender_display_name || item.sender_type}</div>
-                      <div style={{ ...bubble, maxWidth: "82%", borderRadius: 18, padding: 12 }}>
+                      <div style={{ ...bubble, maxWidth: "86%", borderRadius: 18, padding: 12 }}>
                         <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{item.body}</div>
-                        <div className="tc-row" style={{ marginTop: 10, justifyContent: "space-between" }}>
+                        <div className="tc-row" style={{ marginTop: 10, justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                           <div className="tc-sub">{fmt(item.created_at)}</div>
                           <div className="tc-row" style={{ gap: 6 }}>
                             {markedState === "pregunta" ? <span className="tc-chip">Pregunta real</span> : null}
@@ -472,7 +559,7 @@ export default function AdminChatPanel() {
                           </div>
                         </div>
                       </div>
-                      <div className="tc-row" style={{ gap: 6 }}>
+                      <div className="action-wrap">
                         <button className="tc-btn" onClick={() => markMessage(item.id, "pregunta")}>Marcar pregunta</button>
                         <button className="tc-btn" onClick={() => markMessage(item.id, "respuesta")}>Marcar respuesta</button>
                         <button className="tc-btn" onClick={() => markMessage(item.id, "clear")}>Quitar marca</button>
@@ -491,7 +578,7 @@ export default function AdminChatPanel() {
                   placeholder="Escribe la respuesta desde admin o envía directamente un texto de cierre / seguimiento…"
                   style={{ minHeight: 110, resize: "vertical" }}
                 />
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div className="tc-sub" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                     <MessageSquare size={14} /> Todo queda centralizado en el hilo.
                   </div>
@@ -504,16 +591,132 @@ export default function AdminChatPanel() {
           )}
         </section>
       </div>
+
+      <style jsx>{`
+        .admin-chat-kpis {
+          display: grid;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .admin-chat-grid {
+          display: grid;
+          grid-template-columns: minmax(300px, 360px) minmax(300px, 360px) minmax(0, 1fr);
+          gap: 16px;
+          align-items: start;
+        }
+        .admin-column,
+        .detail-column {
+          display: grid;
+          gap: 12px;
+          min-height: 860px;
+        }
+        .admin-scroll {
+          display: grid;
+          gap: 12px;
+          max-height: 760px;
+          overflow: auto;
+          padding-right: 4px;
+        }
+        .column-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .worker-admin-card,
+        .thread-card {
+          display: grid;
+          gap: 10px;
+          padding: 14px;
+          border-radius: 20px;
+          transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+        }
+        .worker-admin-card:hover,
+        .thread-card:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 18px 40px rgba(0,0,0,.16);
+        }
+        .thread-card {
+          text-align: left;
+          border: 1px solid rgba(255,255,255,.08);
+          background: rgba(255,255,255,.03);
+        }
+        .thread-card-active {
+          border-color: rgba(181,156,255,.45);
+          background: rgba(181,156,255,.12);
+        }
+        .worker-admin-top,
+        .avatar-line,
+        .action-wrap {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .worker-admin-top {
+          justify-content: space-between;
+          align-items: flex-start;
+        }
+        .admin-avatar {
+          width: 42px;
+          height: 42px;
+          border-radius: 999px;
+          display: grid;
+          place-items: center;
+          font-weight: 900;
+          color: #fff7ed;
+          background: radial-gradient(circle at top, rgba(215,181,109,.88), rgba(107,33,168,.9));
+        }
+        .detail-stats {
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 10px;
+        }
+        .messages-admin {
+          min-height: 360px;
+          max-height: 480px;
+          overflow: auto;
+          padding: 12px;
+          border-radius: 18px;
+          background: rgba(255,255,255,.03);
+          border: 1px solid rgba(255,255,255,.06);
+          display: grid;
+          gap: 12px;
+        }
+        @media (max-width: 1380px) {
+          .admin-chat-grid {
+            grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
+          }
+          .detail-column {
+            grid-column: 1 / -1;
+          }
+        }
+        @media (max-width: 980px) {
+          .admin-chat-kpis {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          .admin-chat-grid {
+            grid-template-columns: 1fr;
+          }
+          .admin-column,
+          .detail-column {
+            min-height: auto;
+          }
+          .admin-scroll,
+          .messages-admin {
+            max-height: none;
+          }
+          .detail-stats {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+        }
+        @media (max-width: 640px) {
+          .admin-chat-kpis,
+          .detail-stats {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </div>
   );
-}
-
-
-// 🔥 PATCH PRO: cerrar conversación
-async function cerrarConversacion(threadId: string) {
-  await fetch("/api/admin/chat/close-thread", {
-    method: "POST",
-    body: JSON.stringify({ threadId }),
-  });
-  location.reload();
 }
