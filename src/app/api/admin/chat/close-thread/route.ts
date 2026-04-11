@@ -1,4 +1,3 @@
-
 import { createClient } from "@/lib/supabaseServer";
 import { NextResponse } from "next/server";
 
