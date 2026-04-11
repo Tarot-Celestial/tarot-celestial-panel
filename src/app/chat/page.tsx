@@ -134,94 +134,61 @@ export default function ClienteChatPage() {
     }
   }
 
-  const activeTarotista = tarotistas.find((item: any) => String(item.id) === String(selectedWorkerId)) || null;
+  const activeTarotista =
+  tarotistas.find((item: any) => String(item.id) === String(selectedWorkerId)) || null;
 
-  return (
+return (
   <ClienteLayout
     title="Consultas por chat"
     eyebrow="Tarot Celestial · Chat"
     subtitle="Elige una tarotista disponible, envía tu primera consulta gratis y continúa la conversación con créditos cuando quieras profundizar."
     summaryItems={summaryItems}
   >
-      <div className="tc-grid" style={{ display: "grid", gap: 18 }}>
-        {msg ? <div className="tc-card"><div className="tc-sub">{msg}</div></div> : null}
+    <div className="tc-grid" style={{ display: "grid", gap: 18 }}>
+      {msg ? (
+        <div className="tc-card">
+          <div className="tc-sub">{msg}</div>
+        </div>
+      ) : null}
 
-        <section className="tc-card">
-          <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <div className="tc-title">Tarotistas disponibles</div>
-              <div className="tc-sub">Verde = libre · naranja = ocupada · gris = desconectada.</div>
-            </div>
-            <div className="tc-chip">Cliente: {cliente?.nombre || "—"}</div>
-          </div>
+      {/* LISTA TAROTISTAS */}
+      <section className="tc-card">
+        <div className="tc-title">Tarotistas disponibles</div>
 
-          <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
-            {(tarotistas || []).map((worker: any) => {
-              const active = String(worker.id) === String(selectedWorkerId);
-              const disabled = worker.status_key === "desconectada";
-              return (
-                <button
-                  key={worker.id}
-                  className="tc-card tc-click"
-                  onClick={() => !disabled && setSelectedWorkerId(String(worker.id))}
-                  style={{
-                    textAlign: "left",
-                    padding: 16,
-                    opacity: disabled ? 0.7 : 1,
-                    border: active ? worker.status_border : "1px solid rgba(255,255,255,.08)",
-                    background: active ? worker.status_bg : "rgba(255,255,255,.03)",
-                  }}
-                >
-                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
-                    <div style={{ fontWeight: 800 }}>{worker.display_name}</div>
-                    <span className="tc-chip" style={{ background: worker.status_bg, border: worker.status_border, color: worker.status_color }}>{worker.status_label}</span>
-                  </div>
-                  <div className="tc-sub" style={{ marginTop: 8 }}>Equipo {worker.team || "—"}</div>
-                  <div className="tc-sub" style={{ marginTop: 8 }}>{worker.welcome_message || "Pulsa para abrir tu hilo privado con esta tarotista."}</div>
-                  <div style={{ marginTop: 12, fontWeight: 700 }}>{disabled ? "No disponible ahora" : worker.current_thread_id ? "Continuar chat" : "Entrar al chat"}</div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
+        <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+          {(tarotistas || []).map((worker: any) => (
+            <button
+              key={worker.id}
+              onClick={() => setSelectedWorkerId(String(worker.id))}
+              className="tc-card"
+            >
+              {worker.display_name}
+            </button>
+          ))}
+        </div>
+      </section>
 
-        <section className="tc-card" style={{ minHeight: 520, display: "grid", gridTemplateRows: "auto auto 1fr auto", gap: 14 }}>
-          <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div>
-              <div className="tc-title">{activeTarotista?.display_name || "Selecciona una tarotista"}</div>
-              <div className="tc-sub">{activeTarotista?.status_label || "Sin estado"} · Último mensaje {fmt(thread?.last_message_at)}</div>
-            </div>
-            <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <span className="tc-chip">Créditos: {creditos}</span>
-              <span className="tc-chip">Consulta gratis: {thread?.free_consulta_usada ? "usada" : "disponible"}</span>
-            </div>
-          </div>
+      {/* CHAT */}
+      <section className="tc-card">
+        <div className="tc-title">
+          {activeTarotista?.display_name || "Selecciona una tarotista"}
+        </div>
 
-          <div className="tc-sub">Primer flujo recomendado: escribe una sola consulta clara. La primera respuesta es gratis. Después la tarotista o admin te pasará un enlace de pago para seguir.</div>
+        <div style={{ marginTop: 16 }}>
+          {(messages || []).map((m: any) => (
+            <div key={m.id}>{m.body}</div>
+          ))}
+        </div>
 
-          <div style={{ minHeight: 260, maxHeight: 420, overflow: "auto", display: "grid", gap: 10, padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.06)" }}>
-            {loading ? <div className="tc-sub">Cargando chat…</div> : null}
-            {!loading && messages.map((item: any) => {
-              const mine = item.sender_type === "cliente";
-              return (
-                <div key={item.id} style={{ justifySelf: mine ? "end" : "start", maxWidth: "80%" }}>
-                  <div className="tc-sub" style={{ marginBottom: 4 }}>{item.sender_display_name || item.sender_type}</div>
-                  <div style={{ padding: "10px 12px", borderRadius: 14, background: mine ? "rgba(181,156,255,.14)" : "rgba(255,255,255,.08)", border: mine ? "1px solid rgba(181,156,255,.28)" : "1px solid rgba(255,255,255,.10)" }}>{item.body}</div>
-                  <div className="tc-sub" style={{ marginTop: 4 }}>{fmt(item.created_at)}</div>
-                </div>
-              );
-            })}
-            {!loading && !messages.length ? <div className="tc-sub">Todavía no hay mensajes. Abre una tarotista y escribe tu primera consulta gratis.</div> : null}
-          </div>
+        <textarea
+          value={composer}
+          onChange={(e) => setComposer(e.target.value)}
+        />
 
-          <div style={{ display: "grid", gap: 8 }}>
-            <textarea className="tc-input" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Escribe aquí tu consulta…" style={{ width: "100%", minHeight: 110, resize: "vertical" }} />
-            <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div className="tc-sub">Consejo: sé directa en tu primera pregunta para aprovechar mejor la respuesta gratis.</div>
-              <button className="tc-btn tc-btn-purple" onClick={sendMessage} disabled={sending || !selectedWorkerId || activeTarotista?.status_key === "desconectada"}>{sending ? "Enviando…" : "Enviar consulta"}</button>
-            </div>
-          </div>
-        </section>
-      </div>
-  );
-}
+        <button onClick={sendMessage}>
+          Enviar
+        </button>
+      </section>
+    </div>
+  </ClienteLayout>
+);
