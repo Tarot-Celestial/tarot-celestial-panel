@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { clientFromRequest } from "@/lib/server/auth-cliente";
+import { clientFromRequest, normalizePhone } from "@/lib/server/auth-cliente";
 
 export const runtime = "nodejs";
 
@@ -26,11 +26,16 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+    const telefono = cleanText(body?.telefono);
+    const telefonoNormalizado = normalizePhone(telefono);
 
     const patch = {
       nombre: cleanText(body?.nombre),
       apellido: cleanText(body?.apellido),
+      telefono,
+      telefono_normalizado: telefonoNormalizado || null,
       email: cleanText(body?.email),
+      pais: cleanText(body?.pais),
       fecha_nacimiento: cleanDate(body?.fecha_nacimiento),
       onboarding_completado: Boolean(body?.onboarding_completado),
       updated_at: new Date().toISOString(),

@@ -8,6 +8,14 @@ function lastPreview(text: any) {
   return String(text || "").trim().slice(0, 140) || null;
 }
 
+function parseWorkerPresentation(status: any) {
+  const rawWelcome = String(status?.welcome_message || "").trim();
+  const lower = rawWelcome.toLowerCase();
+  const away = lower.startsWith("[vuelvo]") || lower.startsWith("[break]") || lower.includes("vuelvo en 5");
+  const cleanWelcome = rawWelcome.replace(/^\[(vuelvo|break)\]\s*/i, "").trim() || null;
+  return { away, cleanWelcome };
+}
+
 export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
@@ -27,6 +35,8 @@ export async function GET(req: Request) {
       admin
         .from("cliente_chat_tarotistas")
         .select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at")
+        .eq("is_online", true)
+        .neq("chat_enabled", false)
         .order("updated_at", { ascending: false }),
       admin
         .from("cliente_chat_threads")
@@ -41,9 +51,7 @@ export async function GET(req: Request) {
     if (threadsErr) throw threadsErr;
 
     const statusByWorker = new Map<string, any>();
-    for (const row of statusRows || []) {
-      statusByWorker.set(String(row.worker_id), row);
-    }
+    for (const row of statusRows || []) statusByWorker.set(String(row.worker_id), row);
 
     const threadByWorker = new Map<string, any>();
     for (const row of threads || []) {
@@ -53,37 +61,58 @@ export async function GET(req: Request) {
 
     const balance = await getClientChatCredits(admin, gate.cliente.id);
 
-    const tarotistas = (workers || []).map((worker: any) => {
-      const status = statusByWorker.get(String(worker.id)) || null;
-      const meta = getChatWorkerStatusMeta(status);
-      const thread = threadByWorker.get(String(worker.id)) || null;
-      return {
-        id: String(worker.id),
-        display_name: status?.visible_name || worker.display_name || "Tarotista",
-        team: worker.team || null,
-        status_key: meta.key,
-        status_label: meta.label,
-        status_color: meta.color,
-        status_bg: meta.bg,
-        status_border: meta.border,
-        chat_enabled: status?.chat_enabled !== false,
-        is_online: Boolean(status?.is_online),
-        is_busy: Boolean(status?.is_busy),
-        welcome_message: status?.welcome_message || null,
-        current_thread_id: thread?.id ? String(thread.id) : null,
-        current_thread_state: thread?.estado || null,
-        current_thread_last_message_at: thread?.last_message_at || null,
-        current_thread_last_message_preview: lastPreview(thread?.last_message_preview),
-        free_consulta_usada: Boolean(thread?.free_consulta_usada),
-        creditos_restantes: Math.max(0, Number(thread?.creditos_restantes || balance || 0)),
-      };
-    });
+    const tarotistas = (workers || [])
+      .map((worker: any) => {
+        const status = statusByWorker.get(String(worker.id)) || null;
+        if (!status || status?.chat_enabled === false || !status?.is_online) return null;
+        const baseMeta = getChatWorkerStatusMeta(status);
+        const thread = threadByWorker.get(String(worker.id)) || null;
+        const presentation = parseWorkerPresentation(status);
+        const finalMeta = presentation.away
+          ? {
+              key: "vuelvo",
+              label: "Vuelvo en 5 min",
+              color: "#c084fc",
+              bg: "rgba(168,85,247,.16)",
+              border: "1px solid rgba(168,85,247,.34)",
+            }
+          : baseMeta;
+
+        return {
+          id: String(worker.id),
+          display_name: status?.visible_name || worker.display_name || "Tarotista",
+          team: worker.team || null,
+          status_key: finalMeta.key,
+          status_label: finalMeta.label,
+          status_color: finalMeta.color,
+          status_bg: finalMeta.bg,
+          status_border: finalMeta.border,
+          chat_enabled: status?.chat_enabled !== false,
+          is_online: Boolean(status?.is_online),
+          is_busy: Boolean(status?.is_busy),
+          welcome_message: presentation.cleanWelcome,
+          current_thread_id: thread?.id ? String(thread.id) : null,
+          current_thread_state: thread?.estado || null,
+          current_thread_last_message_at: thread?.last_message_at || null,
+          current_thread_last_message_preview: lastPreview(thread?.last_message_preview),
+          free_consulta_usada: Boolean(thread?.free_consulta_usada),
+          creditos_restantes: Math.max(0, Number(thread?.creditos_restantes || balance || 0)),
+        };
+      })
+      .filter(Boolean);
 
     return NextResponse.json({
       ok: true,
       cliente: {
         id: gate.cliente.id,
-        nombre: [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() || gate.cliente?.nombre || "Cliente",
+        nombre: gate.cliente?.nombre || "",
+        apellido: gate.cliente?.apellido || "",
+        telefono: gate.cliente?.telefono || gate.cliente?.telefono_normalizado || "",
+        email: gate.cliente?.email || gate.email || "",
+        pais: gate.cliente?.pais || "",
+        fecha_nacimiento: gate.cliente?.fecha_nacimiento || "",
+        onboarding_completado: Boolean(gate.cliente?.onboarding_completado),
+        nombre_completo: [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() || gate.cliente?.nombre || "Cliente",
       },
       creditos_disponibles: balance,
       tarotistas,
