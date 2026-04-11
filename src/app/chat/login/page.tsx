@@ -15,7 +15,10 @@ export default function ChatLoginPage() {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const normalizedEmail = useMemo(() => String(email || "").trim().toLowerCase(), [email]);
+  const normalizedEmail = useMemo(
+    () => String(email || "").trim().toLowerCase(),
+    [email]
+  );
 
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => {
@@ -23,7 +26,8 @@ export default function ChatLoginPage() {
     });
   }, [router]);
 
-  async function handleAuth() {
+  // 🔐 LOGIN
+  async function handleLogin() {
     if (!normalizedEmail || !password) {
       setMsg("Introduce e-mail y contraseña.");
       return;
@@ -33,54 +37,64 @@ export default function ChatLoginPage() {
       setLoading(true);
       setMsg("");
 
-      // 1. intentar login
-      const { error: loginError } = await sb.auth.signInWithPassword({
+      const { error } = await sb.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
 
-      if (!loginError) {
-        router.replace("/chat");
+      if (error) {
+        setMsg("Usuario no encontrado o contraseña incorrecta.");
         return;
       }
 
-      // 2. si falla → crear usuario
-      const { data, error: signUpError } = await sb.auth.signUp({
-  email: normalizedEmail,
-  password,
-  options: {
-    data: {
-      email_confirmed: true
+      router.replace("/chat");
+    } catch (e: any) {
+      setMsg(e?.message || "Error al iniciar sesión.");
+    } finally {
+      setLoading(false);
     }
   }
-});
-      if (data?.user && !data.session) {
-  // usuario creado pero requiere confirmación → forzamos login igualmente
-  const { error: loginAfter } = await sb.auth.signInWithPassword({
-    email: normalizedEmail,
-    password,
-  });
 
-  if (loginAfter) throw loginAfter;
+  // 🆕 REGISTRO (SIN EMAIL, SIN BLOQUEOS)
+  async function handleRegister() {
+    if (!normalizedEmail || !password) {
+      setMsg("Introduce e-mail y contraseña.");
+      return;
+    }
 
-  router.replace("/chat");
-  return;
-}
+    try {
+      setLoading(true);
+      setMsg("");
 
-      if (signUpError) throw signUpError;
+      const res = await fetch("/api/chat/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: normalizedEmail,
+          password,
+        }),
+      });
 
-      // 3. login después de registro
-      const { error: loginAfter } = await sb.auth.signInWithPassword({
+      const json = await res.json().catch(() => null);
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "No se pudo crear la cuenta.");
+      }
+
+      // login automático
+      const { error } = await sb.auth.signInWithPassword({
         email: normalizedEmail,
         password,
       });
 
-      if (loginAfter) throw loginAfter;
+      if (error) throw error;
 
       router.replace("/chat");
 
     } catch (e: any) {
-      setMsg(e?.message || "Error en login");
+      setMsg(e?.message || "Error al crear la cuenta.");
     } finally {
       setLoading(false);
     }
@@ -91,11 +105,21 @@ export default function ChatLoginPage() {
       <div className="chat-login-card">
         <div className="chat-login-hero">
           <div className="chat-logo-wrap">
-            <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={84} height={84} priority />
+            <Image
+              src="/Nuevo-logo-tarot.png"
+              alt="Tarot Celestial"
+              width={84}
+              height={84}
+              priority
+            />
           </div>
-          <div className="chat-login-badge"><Sparkles size={14} /> Acceso privado al chat</div>
+          <div className="chat-login-badge">
+            <Sparkles size={14} /> Acceso privado al chat
+          </div>
           <h1>Accede a tu consulta</h1>
-          <p>Introduce tu e-mail y contraseña. Si es tu primera vez, crearemos tu cuenta automáticamente.</p>
+          <p>
+            Entra con tu e-mail y contraseña. Si es tu primera vez, crea tu cuenta en segundos.
+          </p>
         </div>
 
         <div className="chat-login-form">
@@ -125,8 +149,12 @@ export default function ChatLoginPage() {
             </div>
           </label>
 
-          <button className="primary-btn" disabled={loading} onClick={handleAuth}>
-            {loading ? "Entrando…" : "Entrar / Registrarse"}
+          <button className="primary-btn" disabled={loading} onClick={handleLogin}>
+            {loading ? "Entrando…" : "Entrar"}
+          </button>
+
+          <button className="ghost-btn" disabled={loading} onClick={handleRegister}>
+            Crear cuenta
           </button>
 
           {msg ? <div className="hint-card">{msg}</div> : null}
@@ -134,18 +162,69 @@ export default function ChatLoginPage() {
       </div>
 
       <style jsx>{`
-        .chat-login-shell{min-height:100vh;display:grid;place-items:center;padding:24px;background:#020617;color:#fff;}
-        .chat-login-card{width:min(900px,100%);display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:24px;border-radius:24px;background:rgba(255,255,255,.04);}
+        .chat-login-shell{
+          min-height:100vh;
+          display:grid;
+          place-items:center;
+          padding:24px;
+          background:#020617;
+          color:#fff;
+        }
+        .chat-login-card{
+          width:min(900px,100%);
+          display:grid;
+          grid-template-columns:1fr 1fr;
+          gap:24px;
+          padding:24px;
+          border-radius:24px;
+          background:rgba(255,255,255,.04);
+        }
         .chat-login-hero{display:grid;gap:14px;}
         .chat-logo-wrap{width:80px;height:80px;}
         h1{font-size:32px;}
         .chat-login-form{display:grid;gap:14px;}
         .field{display:grid;gap:6px;}
-        .field-wrap{display:flex;align-items:center;gap:8px;padding:10px;border-radius:12px;background:#111;}
-        .field-wrap input{flex:1;background:transparent;border:none;color:#fff;outline:none;}
-        .primary-btn{height:44px;border-radius:12px;border:none;background:#8b5cf6;color:#fff;font-weight:700;}
-        .hint-card{padding:10px;border-radius:10px;background:#222;}
-        @media(max-width:840px){.chat-login-card{grid-template-columns:1fr;}}
+        .field-wrap{
+          display:flex;
+          align-items:center;
+          gap:8px;
+          padding:10px;
+          border-radius:12px;
+          background:#111;
+        }
+        .field-wrap input{
+          flex:1;
+          background:transparent;
+          border:none;
+          color:#fff;
+          outline:none;
+        }
+        .primary-btn{
+          height:44px;
+          border-radius:12px;
+          border:none;
+          background:#8b5cf6;
+          color:#fff;
+          font-weight:700;
+        }
+        .ghost-btn{
+          height:44px;
+          border-radius:12px;
+          border:1px solid rgba(255,255,255,.2);
+          background:transparent;
+          color:#fff;
+          font-weight:700;
+        }
+        .hint-card{
+          padding:10px;
+          border-radius:10px;
+          background:#222;
+        }
+        @media(max-width:840px){
+          .chat-login-card{
+            grid-template-columns:1fr;
+          }
+        }
       `}</style>
     </div>
   );
