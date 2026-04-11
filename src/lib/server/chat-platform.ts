@@ -128,13 +128,14 @@ export async function puedeHablar(
 ) {
   const { data, error } = await admin
     .from("cliente_chat_messages")
-    .select("id")
-    .eq("cliente_id", cliente_id)
-    .eq("is_pregunta", true);
+    .select("id, meta, sender_cliente_id")
+    .eq("sender_cliente_id", cliente_id)
+    .eq("sender_type", "cliente")
+    .limit(500);
 
   if (error) throw error;
 
-  const preguntas = data?.length || 0;
+  const preguntas = (data || []).filter((item: any) => Boolean(item?.meta?.is_pregunta)).length;
 
   if (preguntas >= 1 && creditos <= 0) {
     return false;

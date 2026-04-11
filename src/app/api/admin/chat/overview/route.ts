@@ -82,7 +82,7 @@ export async function GET(req: Request) {
         cliente_nombre: [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || cliente?.nombre || "Cliente",
         cliente_telefono: cliente?.telefono || cliente?.telefono_normalizado || "",
         cliente_email: cliente?.email || null,
-        tarotista_display_name: workerById.get(String(thread.tarotista_worker_id))?.display_name || "Tarotista",
+        tarotista_display_name: statusByWorker.get(String(thread.tarotista_worker_id))?.visible_name || workerById.get(String(thread.tarotista_worker_id))?.display_name || "Tarotista",
         creditos_cliente: creditByCliente.get(String(thread.cliente_id)) || Math.max(0, Number(thread.creditos_restantes || 0)),
         last_sender_type: last?.sender_type || null,
         last_sender_display_name: last?.sender_display_name || null,
