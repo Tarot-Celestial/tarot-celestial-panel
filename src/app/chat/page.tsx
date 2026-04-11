@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, LogOut, Lock, Send, Sparkles, Wallet } from "lucide-react";
+import { ChevronLeft, LogOut, Lock, Send, Sparkles, Wallet, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -28,9 +28,15 @@ function fmt(v?: string | null) {
 }
 
 function statusChip(worker: any) {
-  if (worker?.status_key === "libre") return { label: "Libre", dot: "#4ade80", soft: "rgba(34,197,94,.14)" };
-  if (worker?.status_key === "ocupada") return { label: "Ocupada", dot: "#fb923c", soft: "rgba(249,115,22,.14)" };
-  if (worker?.status_key === "desconectada") return { label: "Desconectada", dot: "#94a3b8", soft: "rgba(148,163,184,.16)" };
+  if (worker?.status_key === "libre") {
+    return { label: "Libre", dot: "#4ade80", soft: "rgba(34,197,94,.14)" };
+  }
+  if (worker?.status_key === "ocupada") {
+    return { label: "Ocupada", dot: "#fb923c", soft: "rgba(249,115,22,.14)" };
+  }
+  if (worker?.status_key === "desconectada") {
+    return { label: "Desconectada", dot: "#94a3b8", soft: "rgba(148,163,184,.16)" };
+  }
   return { label: "Vuelvo en 5 min", dot: "#c084fc", soft: "rgba(168,85,247,.16)" };
 }
 
@@ -78,28 +84,34 @@ export default function ChatPage() {
     pais: COUNTRY_OPTIONS[0],
     fecha_nacimiento: "",
   });
-  const [sessionStartedAt, setSessionStartedAt] = useState<string>(new Date().toISOString());
+
+  // mejoras pro
+  const [confirmWorker, setConfirmWorker] = useState<any>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const typingTimeoutRef = useRef<any>(null);
+  const prevMessageCountRef = useRef(0);
 
   const activeTarotista = useMemo(
     () => tarotistas.find((item: any) => String(item.id) === String(selectedWorkerId)) || null,
     [tarotistas, selectedWorkerId]
   );
 
+  // solo últimos 5 mensajes para no hacer la experiencia pesada
   const visibleMessages = useMemo(() => {
-    if (!sessionStartedAt) return [];
-    const since = new Date(sessionStartedAt).getTime();
-    return (messages || []).filter((m: any) => {
-      const time = new Date(m?.created_at || 0).getTime();
-      return Number.isFinite(time) ? time >= since : false;
-    });
-  }, [messages, sessionStartedAt]);
+    return (messages || []).slice(-5);
+  }, [messages]);
 
   const summaryItems = useMemo(
     () => [
       { label: "Créditos", value: String(creditos) },
       { label: "Tarotistas", value: String(tarotistas.length) },
-      { label: "Gratis", value: thread?.free_consulta_usada ? "Usada" : "Disponible" },
+      {
+        label: "Gratis",
+        value: thread?.free_consulta_usada ? "Usada" : "Disponible",
+      },
     ],
     [creditos, tarotistas.length, thread?.free_consulta_usada]
   );
@@ -137,14 +149,19 @@ export default function ChatPage() {
     });
     setShowWelcome(!isOnboardingComplete(nextCliente));
     setCreditos(Number(json.creditos_disponibles || 0));
+
     const nextTarotistas = Array.isArray(json.tarotistas) ? json.tarotistas : [];
     setTarotistas(nextTarotistas);
 
+    // preselecciona una, pero NO entra directo al chat
     if (!selectedWorkerId && nextTarotistas[0]?.id) {
       setSelectedWorkerId(String(nextTarotistas[0].id));
     }
 
-    if (selectedWorkerId && !nextTarotistas.some((item: any) => String(item.id) === String(selectedWorkerId))) {
+    if (
+      selectedWorkerId &&
+      !nextTarotistas.some((item: any) => String(item.id) === String(selectedWorkerId))
+    ) {
       setSelectedWorkerId(String(nextTarotistas[0]?.id || ""));
       setThread(null);
       setMessages([]);
@@ -158,6 +175,7 @@ export default function ChatPage() {
     if (!selectedWorkerId) {
       setThread(null);
       setMessages([]);
+      prevMessageCountRef.current = 0;
       return;
     }
 
@@ -165,10 +183,13 @@ export default function ChatPage() {
     const token = data.session?.access_token;
     if (!token) return;
 
-    const res = await fetch(`/api/cliente/chat/thread?worker_id=${encodeURIComponent(selectedWorkerId)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
+    const res = await fetch(
+      `/api/cliente/chat/thread?worker_id=${encodeURIComponent(selectedWorkerId)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      }
+    );
     const json = await res.json().catch(() => null);
 
     if (!res.ok || !json?.ok) {
@@ -176,9 +197,30 @@ export default function ChatPage() {
       return;
     }
 
+    const nextMessages = Array.isArray(json.messages) ? json.messages : [];
+    const hadMessagesBefore = prevMessageCountRef.current;
+    const hasNewWorkerMessage =
+      nextMessages.length > hadMessagesBefore &&
+      nextMessages[nextMessages.length - 1]?.sender_type !== "cliente";
+
     setThread(json.thread || null);
-    setMessages(Array.isArray(json.messages) ? json.messages : []);
     setCreditos(Number(json.creditos_disponibles || 0));
+
+    if (hasNewWorkerMessage) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      setIsTyping(true);
+      typingTimeoutRef.current = setTimeout(() => {
+        setMessages(nextMessages);
+        setIsTyping(false);
+        prevMessageCountRef.current = nextMessages.length;
+      }, 900);
+      return;
+    }
+
+    setMessages(nextMessages);
+    prevMessageCountRef.current = nextMessages.length;
   }, [selectedWorkerId]);
 
   useEffect(() => {
@@ -186,19 +228,39 @@ export default function ChatPage() {
   }, [loadTarotistas]);
 
   useEffect(() => {
-    if (!selectedWorkerId) return;
+    if (!selectedWorkerId || mobileView !== "chat") return;
+
     loadThread();
     const id = window.setInterval(() => {
       loadThread();
       loadTarotistas();
     }, 7000);
+
     return () => window.clearInterval(id);
-  }, [selectedWorkerId, loadThread, loadTarotistas]);
+  }, [selectedWorkerId, mobileView, loadThread, loadTarotistas]);
 
   useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [visibleMessages]);
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    if (nearBottom || autoScroll) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [visibleMessages, isTyping, autoScroll]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+      setAutoScroll(nearBottom);
+    };
+
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -216,12 +278,19 @@ export default function ChatPage() {
     }
   }, [loadTarotistas, loadThread]);
 
-  function openWorker(workerId: string) {
-    setSelectedWorkerId(workerId);
-    setSessionStartedAt(new Date().toISOString());
-    setMessages([]);
+  function openWorker(worker: any) {
+    setConfirmWorker(worker);
+  }
+
+  function confirmEnterChat() {
+    if (!confirmWorker?.id) return;
+
+    setSelectedWorkerId(String(confirmWorker.id));
     setThread(null);
+    setMessages([]);
+    prevMessageCountRef.current = 0;
     setMobileView("chat");
+    setConfirmWorker(null);
   }
 
   async function saveWelcome() {
@@ -244,12 +313,17 @@ export default function ChatPage() {
 
       const res = await fetch("/api/cliente/perfil", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({ ...welcomeForm, onboarding_completado: true }),
       });
       const json = await res.json().catch(() => null);
 
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo guardar tu bienvenida.");
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "No se pudo guardar tu bienvenida.");
+      }
 
       setCliente(json.cliente || null);
       setShowWelcome(false);
@@ -279,8 +353,15 @@ export default function ChatPage() {
 
       const res = await fetch("/api/cliente/chat/thread", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ worker_id: selectedWorkerId, thread_id: thread?.id || null, body: text }),
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          worker_id: selectedWorkerId,
+          thread_id: thread?.id || null,
+          body: text,
+        }),
       });
       const json = await res.json().catch(() => null);
 
@@ -289,9 +370,12 @@ export default function ChatPage() {
         return;
       }
 
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo enviar el mensaje.");
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "No se pudo enviar el mensaje.");
+      }
 
       setComposer("");
+      setAutoScroll(true);
       await loadThread();
       await loadTarotistas();
     } catch (e: any) {
@@ -310,7 +394,13 @@ export default function ChatPage() {
       <div className="chat-topbar">
         <div className="brand-block">
           <div className="brand-logo">
-            <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={52} height={52} priority />
+            <Image
+              src="/Nuevo-logo-tarot.png"
+              alt="Tarot Celestial"
+              width={52}
+              height={52}
+              priority
+            />
           </div>
           <div>
             <div className="brand-over">Tarot Celestial · Chat Privado</div>
@@ -356,12 +446,18 @@ export default function ChatPage() {
                     key={worker.id}
                     type="button"
                     className={`worker-card ${active ? "worker-card-active" : ""}`}
-                    onClick={() => openWorker(String(worker.id))}
+                    onClick={() => openWorker(worker)}
                   >
                     <div className="worker-card-head">
                       <div className="worker-avatar">{initials(worker.display_name)}</div>
-                      <div className="worker-status-pill" style={{ color: chip.dot, background: chip.soft }}>
-                        <span className="worker-status-dot" style={{ background: chip.dot }} />
+                      <div
+                        className="worker-status-pill"
+                        style={{ color: chip.dot, background: chip.soft }}
+                      >
+                        <span
+                          className="worker-status-dot"
+                          style={{ background: chip.dot }}
+                        />
                         {chip.label}
                       </div>
                     </div>
@@ -370,7 +466,8 @@ export default function ChatPage() {
                     <div className="worker-team">Equipo {worker.team || "Tarot Celestial"}</div>
 
                     <div className="worker-copy">
-                      {worker.welcome_message || "Consulta amor, trabajo, bloqueos, energía y decisiones importantes."}
+                      {worker.welcome_message ||
+                        "Consulta amor, trabajo, bloqueos, energía y decisiones importantes."}
                     </div>
 
                     <div className="worker-footer">
@@ -400,9 +497,11 @@ export default function ChatPage() {
                 <ChevronLeft size={16} />
               </button>
 
-              <div className="hero-avatar">{initials(activeTarotista?.display_name || thread?.tarotista_display_name)}</div>
+              <div className="hero-avatar">
+                {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
+              </div>
 
-              <div>
+              <div className="conversation-title-wrap">
                 <div className="panel-title">
                   {activeTarotista?.display_name || thread?.tarotista_display_name || "Elige una tarotista"}
                 </div>
@@ -425,7 +524,9 @@ export default function ChatPage() {
             {!activeTarotista ? (
               <div className="empty-chat-box">
                 <div className="empty-chat-title">Selecciona una tarotista</div>
-                <div className="panel-sub">Al abrir el chat verás solo la sesión actual, limpia y enfocada.</div>
+                <div className="panel-sub">
+                  Al abrir el chat verás los últimos mensajes recientes con esa tarotista.
+                </div>
               </div>
             ) : !visibleMessages.length ? (
               <div className="empty-chat-box">
@@ -438,22 +539,40 @@ export default function ChatPage() {
                 </div>
               </div>
             ) : (
-              visibleMessages.map((m: any) => {
-                const mine = m.sender_type === "cliente";
-                return (
-                  <div key={m.id} className={`bubble-row ${mine ? "bubble-row-mine" : ""}`}>
-                    {!mine ? (
-                      <div className="bubble-mini-avatar">
-                        {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
+              <>
+                {visibleMessages.map((m: any) => {
+                  const mine = m.sender_type === "cliente";
+                  return (
+                    <div key={m.id} className={`bubble-row ${mine ? "bubble-row-mine" : ""}`}>
+                      {!mine ? (
+                        <div className="bubble-mini-avatar">
+                          {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
+                        </div>
+                      ) : null}
+
+                      <div className={`bubble ${mine ? "bubble-mine" : "bubble-worker"}`}>
+                        <div>{m.body}</div>
+                        <div className="bubble-time">{fmt(m.created_at)}</div>
                       </div>
-                    ) : null}
-                    <div className={`bubble ${mine ? "bubble-mine" : "bubble-worker"}`}>
-                      <div>{m.body}</div>
-                      <div className="bubble-time">{fmt(m.created_at)}</div>
+                    </div>
+                  );
+                })}
+
+                {isTyping ? (
+                  <div className="bubble-row">
+                    <div className="bubble-mini-avatar">
+                      {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
+                    </div>
+                    <div className="bubble bubble-worker typing-bubble">
+                      <div className="typing-dots">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
                     </div>
                   </div>
-                );
-              })
+                ) : null}
+              </>
             )}
           </div>
 
@@ -468,7 +587,10 @@ export default function ChatPage() {
                     Tu consulta gratis ya se ha usado. Compra créditos para seguir con tu lectura.
                   </div>
                 </div>
-                <button className="pay-btn" onClick={() => (window.location.href = "/checkout/chat")}>
+                <button
+                  className="pay-btn"
+                  onClick={() => (window.location.href = "/checkout/chat")}
+                >
                   <Wallet size={15} /> Comprar créditos
                 </button>
               </div>
@@ -503,30 +625,58 @@ export default function ChatPage() {
           <div className="welcome-modal">
             <div className="welcome-head">
               <div className="brand-logo small">
-                <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={42} height={42} />
+                <Image
+                  src="/Nuevo-logo-tarot.png"
+                  alt="Tarot Celestial"
+                  width={42}
+                  height={42}
+                />
               </div>
               <div>
                 <div className="panel-title">Bienvenida a tu chat privado</div>
-                <div className="panel-sub">Antes de empezar, necesitamos tus datos básicos una sola vez.</div>
+                <div className="panel-sub">
+                  Antes de empezar, necesitamos tus datos básicos una sola vez.
+                </div>
               </div>
             </div>
 
             <div className="welcome-grid">
               <label>
                 <span>Nombre</span>
-                <input value={welcomeForm.nombre} onChange={(e) => setWelcomeForm((p) => ({ ...p, nombre: e.target.value }))} />
+                <input
+                  value={welcomeForm.nombre}
+                  onChange={(e) =>
+                    setWelcomeForm((p) => ({ ...p, nombre: e.target.value }))
+                  }
+                />
               </label>
               <label>
                 <span>Teléfono</span>
-                <input value={welcomeForm.telefono} onChange={(e) => setWelcomeForm((p) => ({ ...p, telefono: e.target.value }))} />
+                <input
+                  value={welcomeForm.telefono}
+                  onChange={(e) =>
+                    setWelcomeForm((p) => ({ ...p, telefono: e.target.value }))
+                  }
+                />
               </label>
               <label>
                 <span>E-mail</span>
-                <input type="email" value={welcomeForm.email} onChange={(e) => setWelcomeForm((p) => ({ ...p, email: e.target.value }))} />
+                <input
+                  type="email"
+                  value={welcomeForm.email}
+                  onChange={(e) =>
+                    setWelcomeForm((p) => ({ ...p, email: e.target.value }))
+                  }
+                />
               </label>
               <label>
                 <span>País</span>
-                <select value={welcomeForm.pais} onChange={(e) => setWelcomeForm((p) => ({ ...p, pais: e.target.value }))}>
+                <select
+                  value={welcomeForm.pais}
+                  onChange={(e) =>
+                    setWelcomeForm((p) => ({ ...p, pais: e.target.value }))
+                  }
+                >
                   {COUNTRY_OPTIONS.map((c) => (
                     <option key={c} value={c}>
                       {c}
@@ -539,14 +689,54 @@ export default function ChatPage() {
                 <input
                   type="date"
                   value={welcomeForm.fecha_nacimiento}
-                  onChange={(e) => setWelcomeForm((p) => ({ ...p, fecha_nacimiento: e.target.value }))}
+                  onChange={(e) =>
+                    setWelcomeForm((p) => ({
+                      ...p,
+                      fecha_nacimiento: e.target.value,
+                    }))
+                  }
                 />
               </label>
             </div>
 
-            <button className="send-btn wide" disabled={savingWelcome} onClick={saveWelcome}>
+            <button
+              className="send-btn wide"
+              disabled={savingWelcome}
+              onClick={saveWelcome}
+            >
               {savingWelcome ? "Guardando…" : "Entrar al chat"}
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmWorker ? (
+        <div className="modal-overlay">
+          <div className="confirm-modal">
+            <button className="confirm-close" onClick={() => setConfirmWorker(null)}>
+              <X size={16} />
+            </button>
+
+            <div className="confirm-avatar">
+              {initials(confirmWorker?.display_name)}
+            </div>
+
+            <div className="confirm-title">
+              ¿Quieres entrar al chat con {confirmWorker?.display_name}?
+            </div>
+
+            <div className="confirm-sub">
+              Verás los últimos mensajes recientes y continuarás tu consulta en una sesión privada.
+            </div>
+
+            <div className="confirm-actions">
+              <button className="confirm-secondary" onClick={() => setConfirmWorker(null)}>
+                Cancelar
+              </button>
+              <button className="confirm-primary" onClick={confirmEnterChat}>
+                Entrar al chat
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -723,6 +913,10 @@ export default function ChatPage() {
           color: rgba(255, 255, 255, 0.7);
         }
 
+        .conversation-title-wrap {
+          min-width: 0;
+        }
+
         .workers-grid {
           padding: 16px;
           display: grid;
@@ -763,7 +957,8 @@ export default function ChatPage() {
         .worker-avatar,
         .hero-avatar,
         .bubble-mini-avatar,
-        .hero-avatar-large {
+        .hero-avatar-large,
+        .confirm-avatar {
           display: grid;
           place-items: center;
           border-radius: 999px;
@@ -779,7 +974,8 @@ export default function ChatPage() {
           font-size: 18px;
         }
 
-        .hero-avatar-large {
+        .hero-avatar-large,
+        .confirm-avatar {
           width: 66px;
           height: 66px;
           font-size: 20px;
@@ -934,6 +1130,44 @@ export default function ChatPage() {
           color: rgba(255, 255, 255, 0.58);
         }
 
+        .typing-bubble {
+          min-width: 74px;
+        }
+
+        .typing-dots {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          min-height: 18px;
+        }
+
+        .typing-dots span {
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: rgba(255,255,255,.8);
+          animation: blink 1.2s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(2) {
+          animation-delay: .15s;
+        }
+
+        .typing-dots span:nth-child(3) {
+          animation-delay: .3s;
+        }
+
+        @keyframes blink {
+          0%, 80%, 100% {
+            opacity: .25;
+            transform: translateY(0);
+          }
+          40% {
+            opacity: 1;
+            transform: translateY(-2px);
+          }
+        }
+
         .composer-shell {
           padding: 16px;
           border-top: 1px solid rgba(255, 255, 255, 0.06);
@@ -945,6 +1179,7 @@ export default function ChatPage() {
         .composer {
           width: 100%;
           min-height: 110px;
+          max-height: 160px;
           padding: 16px;
           border-radius: 20px;
           border: 1px solid rgba(255, 255, 255, 0.08);
@@ -979,6 +1214,7 @@ export default function ChatPage() {
           font-weight: 900;
           display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 8px;
           cursor: pointer;
         }
@@ -1018,7 +1254,8 @@ export default function ChatPage() {
           z-index: 50;
         }
 
-        .welcome-modal {
+        .welcome-modal,
+        .confirm-modal {
           width: min(720px, 100%);
           padding: 22px;
           border-radius: 28px;
@@ -1027,12 +1264,66 @@ export default function ChatPage() {
           display: grid;
           gap: 18px;
           box-shadow: 0 32px 90px rgba(0, 0, 0, 0.38);
+          position: relative;
         }
 
         .welcome-head {
           display: flex;
           gap: 14px;
           align-items: center;
+        }
+
+        .confirm-title {
+          font-size: 24px;
+          font-weight: 900;
+          text-align: center;
+        }
+
+        .confirm-sub {
+          text-align: center;
+          color: rgba(255,255,255,.72);
+          line-height: 1.6;
+        }
+
+        .confirm-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+        }
+
+        .confirm-primary,
+        .confirm-secondary {
+          height: 50px;
+          border-radius: 16px;
+          border: none;
+          font-weight: 900;
+          cursor: pointer;
+        }
+
+        .confirm-primary {
+          background: linear-gradient(135deg, #d7b56d, #8b5cf6);
+          color: #fff;
+        }
+
+        .confirm-secondary {
+          background: rgba(255,255,255,.06);
+          color: #fff;
+          border: 1px solid rgba(255,255,255,.1);
+        }
+
+        .confirm-close {
+          position: absolute;
+          right: 16px;
+          top: 16px;
+          width: 36px;
+          height: 36px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,.1);
+          background: rgba(255,255,255,.05);
+          color: #fff;
+          cursor: pointer;
+          display: grid;
+          place-items: center;
         }
 
         .welcome-grid {
@@ -1127,7 +1418,8 @@ export default function ChatPage() {
             min-width: unset;
           }
 
-          .welcome-grid {
+          .welcome-grid,
+          .confirm-actions {
             grid-template-columns: 1fr;
           }
         }
