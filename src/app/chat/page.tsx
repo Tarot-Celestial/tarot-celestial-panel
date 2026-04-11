@@ -217,6 +217,5 @@ export default function ClienteChatPage() {
           </div>
         </section>
       </div>
-    </div>
   );
 }
