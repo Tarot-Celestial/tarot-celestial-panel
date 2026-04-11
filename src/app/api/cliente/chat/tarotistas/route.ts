@@ -25,33 +25,31 @@ export async function GET(req: Request) {
 
     const admin = gate.admin;
 
-    const [{ data: workers, error: workersErr }, { data: statusRows, error: statusErr }, { data: threads, error: threadsErr }] = await Promise.all([
-      admin
-        .from("workers")
-        .select("id, display_name, team, role, is_active")
-        .eq("role", "tarotista")
-        .eq("is_active", true)
-        .order("display_name", { ascending: true }),
-      admin
-        .from("cliente_chat_tarotistas")
-        .select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at")
-        .eq("is_online", true)
-        .neq("chat_enabled", false)
-        .order("updated_at", { ascending: false }),
-      admin
-        .from("cliente_chat_threads")
-        .select("id, tarotista_worker_id, estado, free_consulta_usada, creditos_restantes, last_message_at, last_message_preview")
-        .eq("cliente_id", gate.cliente.id)
-        .neq("estado", "closed")
-        .order("last_message_at", { ascending: false }),
-    ]);
+    const [{ data: statusRows, error: statusErr }, { data: threads, error: threadsErr }, { data: workers, error: workersErr }] =
+      await Promise.all([
+        admin
+          .from("cliente_chat_tarotistas")
+          .select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at")
+          .neq("chat_enabled", false)
+          .order("updated_at", { ascending: false }),
+        admin
+          .from("cliente_chat_threads")
+          .select("id, tarotista_worker_id, estado, free_consulta_usada, creditos_restantes, last_message_at, last_message_preview")
+          .eq("cliente_id", gate.cliente.id)
+          .neq("estado", "closed")
+          .order("last_message_at", { ascending: false }),
+        admin
+          .from("workers")
+          .select("id, display_name, team, role, is_active")
+          .order("display_name", { ascending: true }),
+      ]);
 
-    if (workersErr) throw workersErr;
     if (statusErr) throw statusErr;
     if (threadsErr) throw threadsErr;
+    if (workersErr) throw workersErr;
 
-    const statusByWorker = new Map<string, any>();
-    for (const row of statusRows || []) statusByWorker.set(String(row.worker_id), row);
+    const workerById = new Map<string, any>();
+    for (const worker of workers || []) workerById.set(String(worker.id), worker);
 
     const threadByWorker = new Map<string, any>();
     for (const row of threads || []) {
@@ -61,13 +59,20 @@ export async function GET(req: Request) {
 
     const balance = await getClientChatCredits(admin, gate.cliente.id);
 
-    const tarotistas = (workers || [])
-      .map((worker: any) => {
-        const status = statusByWorker.get(String(worker.id)) || null;
-        if (!status || status?.chat_enabled === false || !status?.is_online) return null;
-        const baseMeta = getChatWorkerStatusMeta(status);
-        const thread = threadByWorker.get(String(worker.id)) || null;
+    const tarotistas = (statusRows || [])
+      .map((status: any) => {
+        const workerId = String(status.worker_id || "");
+        if (!workerId) return null;
+
+        const worker = workerById.get(workerId) || null;
+        const isTarotistaRole = !worker?.role || worker?.role === "tarotista";
+        const isActiveWorker = worker?.is_active !== false;
+
+        if (!isTarotistaRole || !isActiveWorker) return null;
+
+        const thread = threadByWorker.get(workerId) || null;
         const presentation = parseWorkerPresentation(status);
+        const baseMeta = getChatWorkerStatusMeta(status);
         const finalMeta = presentation.away
           ? {
               key: "vuelvo",
@@ -79,9 +84,9 @@ export async function GET(req: Request) {
           : baseMeta;
 
         return {
-          id: String(worker.id),
-          display_name: status?.visible_name || worker.display_name || "Tarotista",
-          team: worker.team || null,
+          id: workerId,
+          display_name: status?.visible_name || worker?.display_name || "Tarotista",
+          team: worker?.team || null,
           status_key: finalMeta.key,
           status_label: finalMeta.label,
           status_color: finalMeta.color,
@@ -112,7 +117,10 @@ export async function GET(req: Request) {
         pais: gate.cliente?.pais || "",
         fecha_nacimiento: gate.cliente?.fecha_nacimiento || "",
         onboarding_completado: Boolean(gate.cliente?.onboarding_completado),
-        nombre_completo: [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() || gate.cliente?.nombre || "Cliente",
+        nombre_completo:
+          [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() ||
+          gate.cliente?.nombre ||
+          "Cliente",
       },
       creditos_disponibles: balance,
       tarotistas,
