@@ -5,6 +5,7 @@ import { getClientChatCredits, addClientChatCredits } from "@/lib/server/chat-pl
 export const runtime = "nodejs";
 
 async function getOrCreateThread(admin: any, clienteId: string, workerId: string) {
+  // 1. Buscar existente
   const { data: existing, error: existingErr } = await admin
     .from("cliente_chat_threads")
     .select("*")
@@ -14,9 +15,11 @@ async function getOrCreateThread(admin: any, clienteId: string, workerId: string
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+
   if (existingErr) throw existingErr;
   if (existing?.id) return existing;
 
+  // 2. Intentar crear
   const currentBalance = await getClientChatCredits(admin, clienteId);
 
   const { data: created, error: createErr } = await admin
@@ -34,7 +37,27 @@ async function getOrCreateThread(admin: any, clienteId: string, workerId: string
     })
     .select("*")
     .single();
-  if (createErr) throw createErr;
+
+  // 🔥 SI FALLA POR DUPLICADO → RECUPERAR
+  if (createErr) {
+    if (createErr.message?.includes("duplicate key")) {
+      const { data: retry, error: retryErr } = await admin
+        .from("cliente_chat_threads")
+        .select("*")
+        .eq("cliente_id", clienteId)
+        .eq("tarotista_worker_id", workerId)
+        .neq("estado", "closed")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (retryErr) throw retryErr;
+      if (retry?.id) return retry;
+    }
+
+    throw createErr;
+  }
+
   return created;
 }
 
