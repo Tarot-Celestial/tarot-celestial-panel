@@ -192,3 +192,4 @@ return (
     </div>
   </ClienteLayout>
 );
+}
