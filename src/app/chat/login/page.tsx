@@ -45,10 +45,27 @@ export default function ChatLoginPage() {
       }
 
       // 2. si falla → crear usuario
-      const { error: signUpError } = await sb.auth.signUp({
-        email: normalizedEmail,
-        password,
-      });
+      const { data, error: signUpError } = await sb.auth.signUp({
+  email: normalizedEmail,
+  password,
+  options: {
+    data: {
+      email_confirmed: true
+    }
+  }
+});
+      if (data?.user && !data.session) {
+  // usuario creado pero requiere confirmación → forzamos login igualmente
+  const { error: loginAfter } = await sb.auth.signInWithPassword({
+    email: normalizedEmail,
+    password,
+  });
+
+  if (loginAfter) throw loginAfter;
+
+  router.replace("/chat");
+  return;
+}
 
       if (signUpError) throw signUpError;
 
