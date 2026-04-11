@@ -121,17 +121,24 @@ export async function addClientChatCredits(admin: any, payload: {
 }
 
 // 🔥 CONTROL DE PREGUNTAS PRO
-export async function puedeHablar(cliente_id: string, creditos: number) {
-  const { data } = await supabase
-    .from('cliente_chat_messages')
-    .select('id')
-    .eq('cliente_id', cliente_id)
-    .eq('is_pregunta', true);
+export async function puedeHablar(
+  admin: any,
+  cliente_id: string,
+  creditos: number
+) {
+  const { data, error } = await admin
+    .from("cliente_chat_messages")
+    .select("id")
+    .eq("cliente_id", cliente_id)
+    .eq("is_pregunta", true);
+
+  if (error) throw error;
 
   const preguntas = data?.length || 0;
 
   if (preguntas >= 1 && creditos <= 0) {
     return false;
   }
+
   return true;
 }
