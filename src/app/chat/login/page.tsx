@@ -32,7 +32,7 @@ export default function ChatLoginPage() {
     try {
       setLoading(true);
       setMsg("");
-      cconst { error } = await sb.auth.signInWithOtp({
+      const { error } = await sb.auth.signInWithOtp({
   email: normalizedEmail,
   options: {
     shouldCreateUser: true,
