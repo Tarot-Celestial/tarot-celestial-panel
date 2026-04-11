@@ -5,19 +5,43 @@ import { getClientChatCredits, addClientChatCredits, getChatWorkerStatusMeta } f
 export const runtime = "nodejs";
 
 async function getOrCreateThread(admin: any, clienteId: string, workerId: string) {
-  const { data: existing, error: existingErr } = await admin
+  // 1) Buscar cualquier hilo de esa pareja, abierto o cerrado
+  const { data: existingAny, error: existingAnyErr } = await admin
     .from("cliente_chat_threads")
     .select("*")
     .eq("cliente_id", clienteId)
     .eq("tarotista_worker_id", workerId)
-    .neq("estado", "closed")
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  if (existingErr) throw existingErr;
-  if (existing?.id) return existing;
+  if (existingAnyErr) throw existingAnyErr;
 
+  // 2) Si existe y está cerrado, lo reabrimos
+  if (existingAny?.id) {
+    if (existingAny.estado === "closed") {
+      const currentBalance = await getClientChatCredits(admin, clienteId);
+
+      const { data: reopened, error: reopenErr } = await admin
+        .from("cliente_chat_threads")
+        .update({
+          estado: "open",
+          creditos_restantes: currentBalance,
+          last_message_at: new Date().toISOString(),
+        })
+        .eq("id", existingAny.id)
+        .select("*")
+        .single();
+
+      if (reopenErr) throw reopenErr;
+      return reopened;
+    }
+
+    // 3) Si ya estaba abierto, devolvemos ese
+    return existingAny;
+  }
+
+  // 4) Si no existe ninguno, crear nuevo
   const currentBalance = await getClientChatCredits(admin, clienteId);
 
   const { data: created, error: createErr } = await admin
@@ -37,13 +61,13 @@ async function getOrCreateThread(admin: any, clienteId: string, workerId: string
     .single();
 
   if (createErr) {
-    if (createErr.message?.includes("duplicate key")) {
+    // Si hay carrera y otra petición lo creó, lo recuperamos
+    if (createErr.code === "23505" || createErr.message?.includes("duplicate key")) {
       const { data: retry, error: retryErr } = await admin
         .from("cliente_chat_threads")
         .select("*")
         .eq("cliente_id", clienteId)
         .eq("tarotista_worker_id", workerId)
-        .neq("estado", "closed")
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
