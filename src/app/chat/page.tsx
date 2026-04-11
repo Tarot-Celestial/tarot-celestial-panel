@@ -288,7 +288,7 @@ export default function ChatPage() {
 
       {msg ? <div className="flash-box">{msg}</div> : null}
 
-      <div className="chat-layout">
+      <div className="chat-layout" style={{ height: "100%" }}>
         <section className={`workers-panel ${mobileView === "chat" ? "mobile-hide" : ""}`}>
           <div className="panel-head">
             <div>
@@ -426,7 +426,7 @@ export default function ChatPage() {
       ) : null}
 
       <style jsx>{`
-        .chat-page-shell{min-height:100vh;padding:18px;background:radial-gradient(circle at top, rgba(107,33,168,.24), rgba(2,6,23,1) 45%), #020617;color:#fff;display:grid;gap:16px;}
+        .chat-page-shell{height:100vh;overflow:hidden;padding:0;background:#020617;color:#fff;display:flex;flex-direction:column;}
         .chat-loading{min-height:100vh;display:grid;place-items:center;background:#020617;color:#fff;font-size:16px;}
         .chat-topbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:18px 20px;border-radius:24px;border:1px solid rgba(255,255,255,.08);background:rgba(8,11,26,.76);backdrop-filter:blur(18px);}
         .brand-block{display:flex;align-items:center;gap:14px;min-width:0;}
@@ -441,8 +441,8 @@ export default function ChatPage() {
         .summary-pill strong{font-size:18px;}
         .logout-btn{cursor:pointer;background:rgba(255,255,255,.06);}
         .flash-box{padding:14px 16px;border-radius:18px;border:1px solid rgba(215,181,109,.18);background:rgba(215,181,109,.1);}
-        .chat-layout{display:grid;grid-template-columns:420px minmax(0,1fr);gap:16px;min-height:calc(100vh - 170px);}
-        .workers-panel,.conversation-panel{display:grid;border-radius:28px;border:1px solid rgba(255,255,255,.08);background:rgba(8,11,26,.78);backdrop-filter:blur(18px);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,.28);}
+        .chat-layout{flex:1;display:flex;overflow:hidden;}
+        .workers-panel,.conversation-panel{display:flex;flex-direction:column;overflow:hidden;border-radius:0;border:none;background:#020617;}
         .workers-panel{grid-template-rows:auto 1fr;}
         .conversation-panel{grid-template-rows:auto 1fr auto;}
         .panel-head{display:flex;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.06);background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01));}
@@ -466,7 +466,7 @@ export default function ChatPage() {
         .conversation-head{align-items:center;}
         .conversation-ident{display:flex;align-items:center;gap:12px;min-width:0;}
         .back-btn{width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);color:#fff;display:none;place-items:center;cursor:pointer;}
-        .messages-surface{padding:18px;overflow:auto;display:grid;gap:14px;background:linear-gradient(180deg, rgba(255,255,255,.015), transparent);}
+        .messages-surface{flex:1;overflow-y:auto;padding:16px;}
         .empty-chat-box,.empty-box{border-radius:22px;border:1px dashed rgba(255,255,255,.14);background:rgba(255,255,255,.03);padding:22px;display:grid;place-items:center;text-align:center;gap:8px;color:rgba(255,255,255,.74);min-height:180px;}
         .empty-chat-title{font-size:20px;font-weight:900;}
         .bubble-row{display:flex;gap:10px;align-items:flex-end;}
@@ -475,7 +475,7 @@ export default function ChatPage() {
         .bubble-worker{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);}
         .bubble-mine{background:linear-gradient(135deg, rgba(139,92,246,.9), rgba(107,33,168,.88));border:1px solid rgba(168,85,247,.32);}
         .bubble-time{font-size:11px;color:rgba(255,255,255,.58);}
-        .composer-shell{padding:16px;border-top:1px solid rgba(255,255,255,.06);display:grid;gap:12px;background:rgba(255,255,255,.02);}
+        .composer-shell{border-top:1px solid rgba(255,255,255,.06);background:#020617;padding:12px;}
         .composer{width:100%;min-height:120px;padding:16px;border-radius:22px;border:1px solid rgba(255,255,255,.08);background:rgba(2,6,23,.72);color:#fff;resize:none;outline:none;}
         .composer-footer{display:flex;justify-content:space-between;gap:12px;align-items:center;}
         .composer-hint{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,.68);}
@@ -492,7 +492,11 @@ export default function ChatPage() {
         .welcome-grid span{font-size:13px;color:rgba(255,255,255,.72);}
         .welcome-grid input,.welcome-grid select{height:50px;border-radius:16px;border:1px solid rgba(255,255,255,.08);background:rgba(2,6,23,.72);color:#fff;padding:0 14px;outline:none;}
         @media (max-width: 1100px){.chat-layout{grid-template-columns:360px minmax(0,1fr);}.workers-grid{grid-template-columns:1fr 1fr;}}
-        @media (max-width: 860px){.chat-topbar{grid-template-columns:1fr;}.topbar-actions{justify-content:flex-start;}.chat-layout{grid-template-columns:1fr;min-height:auto;}.workers-panel,.conversation-panel{min-height:calc(100vh - 230px);} .mobile-hide{display:none;} .mobile-hide-chat{display:none;} .back-btn{display:grid;} .workers-grid{grid-template-columns:1fr 1fr;} .summary-pill{min-width:unset;} .welcome-grid{grid-template-columns:1fr;} }
+        @media (max-width: 860px){.chat-topbar{grid-template-columns:1fr;}.topbar-actions{justify-content:flex-start;}.chat-layout{grid-template-columns:1fr;min-height:auto;}.workers-panel,.conversation-panel{height:100%;}.mobile-hide{display:none;}
+
+.mobile-hide-chat{
+  display:none;
+} .mobile-hide{display:none;} .mobile-hide-chat{display:none;} .back-btn{display:grid;} .workers-grid{grid-template-columns:1fr 1fr;} .summary-pill{min-width:unset;} .welcome-grid{grid-template-columns:1fr;} }
         @media (max-width: 560px){.chat-page-shell{padding:10px;} .brand-title{font-size:20px;} .workers-grid{grid-template-columns:1fr;} .worker-square{aspect-ratio:auto;min-height:220px;} .panel-head,.messages-surface,.composer-shell{padding:14px;} .bubble{max-width:88%;} .summary-pill{width:calc(50% - 5px);} .locked-banner,.composer-footer{flex-direction:column;align-items:stretch;} }
       `}</style>
     </div>
