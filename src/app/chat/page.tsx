@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import ClienteLayout from "@/components/cliente/ClienteLayout";
 
 const sb = supabaseBrowser();
 
@@ -130,12 +131,12 @@ export default function ClienteChatPage() {
   const activeTarotista = tarotistas.find((item: any) => String(item.id) === String(selectedWorkerId)) || null;
 
   return (
-    <div
-      title="Consultas por chat"
-      eyebrow="Tarot Celestial · Chat"
-      subtitle="Elige una tarotista disponible, envía tu primera consulta gratis y continúa la conversación con créditos cuando quieras profundizar."
-      summaryItems={summaryItems}
-    >
+    <ClienteLayout
+  title="Consultas por chat"
+  eyebrow="Tarot Celestial · Chat"
+  subtitle="Elige una tarotista disponible, envía tu primera consulta gratis y continúa la conversación con créditos cuando quieras profundizar."
+  summaryItems={summaryItems}
+>
       <div className="tc-grid" style={{ display: "grid", gap: 18 }}>
         {msg ? <div className="tc-card"><div className="tc-sub">{msg}</div></div> : null}
 
