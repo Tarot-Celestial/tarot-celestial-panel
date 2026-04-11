@@ -32,10 +32,13 @@ export default function ChatLoginPage() {
     try {
       setLoading(true);
       setMsg("");
-      const { error } = await sb.auth.signInWithOtp({
-        email: normalizedEmail,
-        options: { shouldCreateUser: true },
-      });
+      cconst { error } = await sb.auth.signInWithOtp({
+  email: normalizedEmail,
+  options: {
+    shouldCreateUser: true,
+    emailRedirectTo: window.location.origin + "/chat"
+  }
+});
       if (error) throw error;
       setStep("otp");
       setMsg("Te hemos enviado un código a tu e-mail.");
