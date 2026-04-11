@@ -507,3 +507,13 @@ export default function AdminChatPanel() {
     </div>
   );
 }
+
+
+// 🔥 PATCH PRO: cerrar conversación
+async function cerrarConversacion(threadId: string) {
+  await fetch("/api/admin/chat/close-thread", {
+    method: "POST",
+    body: JSON.stringify({ threadId }),
+  });
+  location.reload();
+}
