@@ -85,17 +85,23 @@ export default function ClienteChatPage() {
   }, [selectedWorkerId, loadThread]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("checkout") === "ok") {
-      setMsg("✅ Pago completado. Tus créditos de chat se actualizarán en unos segundos.");
-      window.history.replaceState({}, "", "/cliente/chat");
-      window.setTimeout(() => { loadTarotistas(); loadThread(); }, 1200);
-    }
-    if (params.get("checkout") === "cancelled") {
-      setMsg("Has cancelado el pago del chat. Puedes volver a intentarlo cuando quieras.");
-      window.history.replaceState({}, "", "/cliente/chat");
-    }
-  }, [loadTarotistas, loadThread]);
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get("checkout") === "ok") {
+    setMsg("✅ Pago completado. Tus créditos de chat se actualizarán en unos segundos.");
+    window.history.replaceState({}, "", "/chat");
+
+    window.setTimeout(() => {
+      loadTarotistas();
+      loadThread();
+    }, 1200);
+  }
+
+  if (params.get("checkout") === "cancelled") {
+    setMsg("Has cancelado el pago del chat. Puedes volver a intentarlo cuando quieras.");
+    window.history.replaceState({}, "", "/chat");
+  }
+}, [loadTarotistas, loadThread]);
 
   async function sendMessage() {
     const text = composer.trim();
