@@ -16,12 +16,14 @@ function normalizeEmail(email: string | null | undefined): string {
 
 function guessNameFromEmail(email: string | null | undefined): string {
   const local = normalizeEmail(email).split("@")[0] || "Cliente";
-  return local
-    .replace(/[._-]+/g, " ")
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ") || "Cliente";
+  return (
+    local
+      .replace(/[._-]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") || "Cliente"
+  );
 }
 
 export function adminClient() {
@@ -32,7 +34,11 @@ export function adminClient() {
   );
 }
 
-export async function authUserFromBearer(req: Request): Promise<{ uid: string | null; phone: string | null; email: string | null }> {
+export async function authUserFromBearer(req: Request): Promise<{
+  uid: string | null;
+  phone: string | null;
+  email: string | null;
+}> {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
@@ -57,44 +63,58 @@ export async function authUserFromBearer(req: Request): Promise<{ uid: string | 
 
 export async function clientFromRequest(req: Request) {
   const { uid, phone, email } = await authUserFromBearer(req);
+
   if (!uid || (!phone && !email)) {
     return { uid, phone, email, cliente: null as any, admin: null as any };
   }
 
   const admin = adminClient();
+
   const normalizedPhone = normalizePhone(phone);
   const normalizedEmail = normalizeEmail(email);
 
   let cliente: any = null;
 
+  // 🔍 Buscar por teléfono
   if (normalizedPhone) {
     const { data, error } = await admin
       .from("crm_clientes")
       .select("*")
       .eq("telefono_normalizado", normalizedPhone)
       .maybeSingle();
+
     if (error) throw error;
     cliente = data || null;
   }
 
+  // 🔍 Buscar por email
   if (!cliente && normalizedEmail) {
     const { data, error } = await admin
       .from("crm_clientes")
       .select("*")
       .ilike("email", normalizedEmail)
       .maybeSingle();
+
     if (error) throw error;
     cliente = data || null;
   }
 
+  // 🆕 CREAR CLIENTE (FIX DEFINITIVO)
   if (!cliente && normalizedEmail) {
     const nowIso = new Date().toISOString();
+
+    // 🔥 CLAVE: NUNCA NULL
+    const telefonoFinal = normalizedPhone || "000000000";
+
     const { data, error } = await admin
       .from("crm_clientes")
       .insert({
         nombre: guessNameFromEmail(normalizedEmail),
-        telefono: normalizedPhone || null,
-        telefono_normalizado: normalizedPhone || null,
+
+        // 🔥 AQUÍ ESTABA EL BUG
+        telefono: telefonoFinal,
+        telefono_normalizado: telefonoFinal,
+
         email: normalizedEmail,
         origen: "chat_email",
         onboarding_completado: false,
@@ -102,9 +122,17 @@ export async function clientFromRequest(req: Request) {
       })
       .select("*")
       .maybeSingle();
+
     if (error) throw error;
+
     cliente = data || null;
   }
 
-  return { uid, phone, email: normalizedEmail || null, cliente, admin };
+  return {
+    uid,
+    phone,
+    email: normalizedEmail || null,
+    cliente,
+    admin,
+  };
 }
