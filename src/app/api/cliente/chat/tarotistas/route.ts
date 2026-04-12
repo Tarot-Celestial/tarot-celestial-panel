@@ -11,23 +11,30 @@ function lastPreview(text: any) {
 function parseWorkerPresentation(status: any) {
   const rawWelcome = String(status?.welcome_message || "").trim();
   const lower = rawWelcome.toLowerCase();
-  const away = lower.startsWith("[vuelvo]") || lower.startsWith("[break]") || lower.includes("vuelvo en 5");
-  const cleanWelcome = rawWelcome.replace(/^\[(vuelvo|break)\]\s*/i, "").trim() || null;
+  const away =
+    lower.startsWith("[vuelvo]") ||
+    lower.startsWith("[break]") ||
+    lower.includes("vuelvo en 5");
+
+  const cleanWelcome = rawWelcome
+    .replace(/^\[(vuelvo|break)\]\s*/i, "")
+    .trim() || null;
+
   return { away, cleanWelcome };
 }
 
 export async function GET(req: Request) {
-    try {
+  try {
     const gate = await clientFromRequest(req);
 
-    // 🔐 solo validamos usuario
+    // 🔐 solo usuario logueado
     if (!gate.uid) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
 
     const admin = gate.admin;
 
-    // 🚨 cliente aún no creado → onboarding obligatorio
+    // 🚨 onboarding obligatorio si no hay cliente
     if (!gate.cliente) {
       return NextResponse.json({
         ok: true,
@@ -38,37 +45,70 @@ export async function GET(req: Request) {
       });
     }
 
-    // 👇 A PARTIR DE AQUÍ DEJAS TU CÓDIGO TAL CUAL
+    // ✅ QUERIES (AQUÍ ESTABA TU ERROR)
+    const [
+      { data: statusRows, error: statusErr },
+      { data: threads, error: threadsErr },
+      { data: workers, error: workersErr }
+    ] = await Promise.all([
+      admin
+        .from("cliente_chat_tarotistas")
+        .select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at")
+        .neq("chat_enabled", false)
+        .order("updated_at", { ascending: false }),
 
+      admin
+        .from("cliente_chat_threads")
+        .select("id, tarotista_worker_id, estado, free_consulta_usada, creditos_restantes, last_message_at, last_message_preview")
+        .eq("cliente_id", gate.cliente.id)
+        .neq("estado", "closed")
+        .order("last_message_at", { ascending: false }),
+
+      admin
+        .from("workers")
+        .select("id, display_name, team, role, is_active")
+        .order("display_name", { ascending: true }),
+    ]);
+
+    // ✅ VALIDACIONES
     if (statusErr) throw statusErr;
     if (threadsErr) throw threadsErr;
     if (workersErr) throw workersErr;
 
+    // 🔧 MAPAS
     const workerById = new Map<string, any>();
-    for (const worker of workers || []) workerById.set(String(worker.id), worker);
+    for (const worker of workers || []) {
+      workerById.set(String(worker.id), worker);
+    }
 
     const threadByWorker = new Map<string, any>();
     for (const row of threads || []) {
       const key = String(row.tarotista_worker_id || "");
-      if (key && !threadByWorker.has(key)) threadByWorker.set(key, row);
+      if (key && !threadByWorker.has(key)) {
+        threadByWorker.set(key, row);
+      }
     }
 
     const balance = await getClientChatCredits(admin, gate.cliente.id);
 
+    // 🔮 TAROTISTAS
     const tarotistas = (statusRows || [])
       .map((status: any) => {
         const workerId = String(status.worker_id || "");
         if (!workerId) return null;
 
         const worker = workerById.get(workerId) || null;
+
         const isTarotistaRole = !worker?.role || worker?.role === "tarotista";
         const isActiveWorker = worker?.is_active !== false;
 
         if (!isTarotistaRole || !isActiveWorker) return null;
 
         const thread = threadByWorker.get(workerId) || null;
+
         const presentation = parseWorkerPresentation(status);
         const baseMeta = getChatWorkerStatusMeta(status);
+
         const finalMeta = presentation.away
           ? {
               key: "vuelvo",
@@ -92,12 +132,17 @@ export async function GET(req: Request) {
           is_online: Boolean(status?.is_online),
           is_busy: Boolean(status?.is_busy),
           welcome_message: presentation.cleanWelcome,
+
           current_thread_id: thread?.id ? String(thread.id) : null,
           current_thread_state: thread?.estado || null,
           current_thread_last_message_at: thread?.last_message_at || null,
           current_thread_last_message_preview: lastPreview(thread?.last_message_preview),
+
           free_consulta_usada: Boolean(thread?.free_consulta_usada),
-          creditos_restantes: Math.max(0, Number(thread?.creditos_restantes || balance || 0)),
+          creditos_restantes: Math.max(
+            0,
+            Number(thread?.creditos_restantes || balance || 0)
+          ),
         };
       })
       .filter(Boolean);
@@ -114,14 +159,21 @@ export async function GET(req: Request) {
         fecha_nacimiento: gate.cliente?.fecha_nacimiento || "",
         onboarding_completado: Boolean(gate.cliente?.onboarding_completado),
         nombre_completo:
-          [gate.cliente?.nombre, gate.cliente?.apellido].filter(Boolean).join(" ").trim() ||
+          [gate.cliente?.nombre, gate.cliente?.apellido]
+            .filter(Boolean)
+            .join(" ")
+            .trim() ||
           gate.cliente?.nombre ||
           "Cliente",
       },
       creditos_disponibles: balance,
       tarotistas,
     });
+
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_CHAT_TAROTISTAS" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "ERR_CLIENTE_CHAT_TAROTISTAS" },
+      { status: 500 }
+    );
   }
 }
