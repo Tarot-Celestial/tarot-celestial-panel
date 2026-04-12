@@ -17,30 +17,29 @@ function parseWorkerPresentation(status: any) {
 }
 
 export async function GET(req: Request) {
+  export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
-   if (!gate.uid || !gate.cliente) {
+
+    // 🔐 solo validamos usuario
+    if (!gate.uid) {
+      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    }
 
     const admin = gate.admin;
 
-    const [{ data: statusRows, error: statusErr }, { data: threads, error: threadsErr }, { data: workers, error: workersErr }] =
-      await Promise.all([
-        admin
-          .from("cliente_chat_tarotistas")
-          .select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at")
-          .neq("chat_enabled", false)
-          .order("updated_at", { ascending: false }),
-        admin
-          .from("cliente_chat_threads")
-          .select("id, tarotista_worker_id, estado, free_consulta_usada, creditos_restantes, last_message_at, last_message_preview")
-          .eq("cliente_id", gate.cliente.id)
-          .neq("estado", "closed")
-          .order("last_message_at", { ascending: false }),
-        admin
-          .from("workers")
-          .select("id, display_name, team, role, is_active")
-          .order("display_name", { ascending: true }),
-      ]);
+    // 🚨 cliente aún no creado → onboarding obligatorio
+    if (!gate.cliente) {
+      return NextResponse.json({
+        ok: true,
+        cliente: null,
+        creditos_disponibles: 0,
+        tarotistas: [],
+        onboarding_required: true,
+      });
+    }
+
+    // 👇 A PARTIR DE AQUÍ DEJAS TU CÓDIGO TAL CUAL
 
     if (statusErr) throw statusErr;
     if (threadsErr) throw threadsErr;
