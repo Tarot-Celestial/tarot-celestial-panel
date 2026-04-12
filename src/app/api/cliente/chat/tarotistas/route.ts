@@ -19,9 +19,7 @@ function parseWorkerPresentation(status: any) {
 export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.cliente) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    }
+   if (!gate.uid || !gate.cliente) {
 
     const admin = gate.admin;
 
