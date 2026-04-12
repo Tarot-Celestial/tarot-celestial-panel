@@ -17,8 +17,7 @@ function parseWorkerPresentation(status: any) {
 }
 
 export async function GET(req: Request) {
-  export async function GET(req: Request) {
-  try {
+    try {
     const gate = await clientFromRequest(req);
 
     // 🔐 solo validamos usuario
