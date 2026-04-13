@@ -651,8 +651,11 @@ export default function CRMClientesPanel({
   }
 
   async function openRankClients(rank: "bronce" | "plata" | "oro") {
-    setCrmRankFilter(rank);
-    await searchCRM(false, rank);
+  setCrmRankFilter(rank);
+
+  // 🔥 FORZAR que no use filtros anteriores mal guardados
+  await searchCRM(false, rank || "");
+}
     try {
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {}
@@ -687,11 +690,17 @@ export default function CRMClientesPanel({
       }
       if (pais) params.set("pais", pais);
       if (crmWebFilter !== "todos") params.set("web_filter", crmWebFilter);
-      if (forcedRank) params.set("rango", forcedRank);
-
-      const r = await fetch(`/api/crm/clientes/buscar?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      if (forcedRank !== undefined && forcedRank !== null) {
+  if (forcedRank !== "") {
+    params.set("rango", forcedRank);
+  }
+}
+      const url = `/api/crm/clientes/buscar?${params.toString()}`;
+console.log("URL CRM 👉", url);
+      
+      const r = await fetch(url, {
+  headers: { Authorization: `Bearer ${token}` },
+});
 
       const j = await safeJson(r);
 
