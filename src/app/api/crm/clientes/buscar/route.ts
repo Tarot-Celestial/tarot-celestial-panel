@@ -107,7 +107,7 @@ export async function GET(req: Request) {
       .order("nombre", { ascending: true })
       .limit(1000);
 
-    // 🔥 aplicar filtro de IDs
+    // aplicar filtro por IDs
     if (clienteIdsFiltro) {
       query = query.in("id", clienteIdsFiltro);
     }
@@ -144,9 +144,45 @@ export async function GET(req: Request) {
     const { data, error } = await query;
     if (error) throw error;
 
+    let clientes = data || [];
+
+    // 🔥 AÑADIR ETIQUETAS PARA UI
+    const ids = clientes.map((c: any) => c.id);
+
+    if (ids.length) {
+      const { data: rels } = await admin
+        .from("crm_cliente_etiquetas")
+        .select("cliente_id, etiqueta_id")
+        .in("cliente_id", ids);
+
+      const { data: etiquetasData } = await admin
+        .from("crm_etiquetas")
+        .select("id, nombre");
+
+      const etiquetaMap = new Map(
+        (etiquetasData || []).map((e: any) => [e.id, e.nombre])
+      );
+
+      const byCliente = new Map<string, string[]>();
+
+      for (const r of rels || []) {
+        const cid = String(r.cliente_id);
+        const nombre = etiquetaMap.get(r.etiqueta_id);
+        if (!nombre) continue;
+
+        if (!byCliente.has(cid)) byCliente.set(cid, []);
+        byCliente.get(cid).push(nombre);
+      }
+
+      clientes = clientes.map((c: any) => ({
+        ...c,
+        etiquetas: byCliente.get(String(c.id)) || [],
+      }));
+    }
+
     return NextResponse.json({
       ok: true,
-      clientes: data || [],
+      clientes,
     });
   } catch (e: any) {
     console.error("🔥 CRM ERROR:", e);
