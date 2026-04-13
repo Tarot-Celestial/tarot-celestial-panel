@@ -92,7 +92,6 @@ async function hydrateCurrentRanks(admin: any, clientesBase: any[]) {
     if (!key) continue;
 
     const prev = byCliente.get(key);
-
     const prevTs = new Date(prev?.recalculated_at || 0).getTime();
     const nextTs = new Date(row?.recalculated_at || 0).getTime();
 
@@ -108,6 +107,10 @@ async function hydrateCurrentRanks(admin: any, clientesBase: any[]) {
     return {
       ...c,
       rango_actual: rankRow?.rango || null,
+      rango_gasto_mes_anterior: Number(rankRow?.gasto_mes_anterior || 0),
+      rango_compras_mes_anterior: Number(rankRow?.compras_mes_anterior || 0),
+      rango_actual_desde: rankRow?.calculado_desde_mes || null,
+      rango_periodo_mes: rankRow?.periodo_mes || null,
     };
   });
 }
@@ -116,8 +119,9 @@ async function attachEtiquetas(admin: any, clientesBase: any[]) {
   if (!clientesBase?.length) return [];
 
   const ids = clientesBase.map((c: any) => c?.id).filter(Boolean);
-  if (!ids.length)
+  if (!ids.length) {
     return clientesBase.map((c: any) => ({ ...c, etiquetas: [] }));
+  }
 
   const { data, error } = await admin
     .from("crm_cliente_etiquetas")
@@ -126,29 +130,36 @@ async function attachEtiquetas(admin: any, clientesBase: any[]) {
 
   if (error) throw error;
 
-  const byCliente = new Map();
+  const byCliente = new Map<string, string[]>();
 
   for (const rel of data || []) {
-    const id = rel?.cliente_id;
-    const nombre = rel?.crm_etiquetas?.nombre;
+    const id = String(rel?.cliente_id || "");
+    if (!id) continue;
 
-    if (!id || !nombre) continue;
+    const raw = rel?.crm_etiquetas;
+    const etiquetas = Array.isArray(raw) ? raw : raw ? [raw] : [];
 
-    if (!byCliente.has(id)) byCliente.set(id, []);
-    byCliente.get(id).push(nombre);
+    for (const et of etiquetas) {
+      const nombre = String(et?.nombre || "").trim();
+      if (!nombre) continue;
+      const prev = byCliente.get(id) || [];
+      prev.push(nombre);
+      byCliente.set(id, prev);
+    }
   }
 
   return clientesBase.map((c: any) => ({
     ...c,
-    etiquetas: byCliente.get(c.id) || [],
+    etiquetas: Array.from(new Set(byCliente.get(String(c.id || "")) || [])),
   }));
 }
 
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
-    if (!worker)
+    if (!worker) {
       return NextResponse.json({ ok: false }, { status: 401 });
+    }
 
     if (!["admin", "central"].includes(String(worker.role))) {
       return NextResponse.json({ ok: false }, { status: 403 });
@@ -156,15 +167,21 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
 
-    const q = searchParams.get("q") || "";
-    const telefono = searchParams.get("telefono") || "";
-    const pais = searchParams.get("pais") || "";
+    const q = String(searchParams.get("q") || "").trim();
+    const telefono = String(searchParams.get("telefono") || "").trim();
+    const telefonoDigits = normalizePhoneDigits(telefono);
+    const pais = String(searchParams.get("pais") || "").trim();
+    const etiqueta = String(
+      searchParams.get("etiqueta") || searchParams.get("tag") || ""
+    ).trim();
+    const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
+
     const rangoRaw = searchParams.get("rango");
     const rango = ["bronce", "plata", "oro", "sin_rango"].includes(
-  String(rangoRaw || "").toLowerCase()
-)
-  ? String(rangoRaw).toLowerCase()
-  : "";
+      String(rangoRaw || "").toLowerCase()
+    )
+      ? String(rangoRaw).toLowerCase()
+      : "";
 
     const admin = adminClient();
 
@@ -172,18 +189,29 @@ export async function GET(req: Request) {
       .from("crm_clientes")
       .select("*")
       .order("nombre", { ascending: true })
-      .limit(300);
+      .limit(1000);
 
-    // 🔥 SOLO filtra si hay búsqueda
     if (q) {
-  const safeQ = q.replace(/[%]/g, ""); // evita romper ilike
-  query = query.or(
-    `nombre.ilike.%${safeQ}%,apellido.ilike.%${safeQ}%,email.ilike.%${safeQ}%`
-  );
-}
+      const safeQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
+      const qDigits = normalizePhoneDigits(safeQ);
+      const orParts = [
+        `nombre.ilike.%${safeQ}%`,
+        `apellido.ilike.%${safeQ}%`,
+        `email.ilike.%${safeQ}%`,
+      ];
+      if (qDigits) {
+        orParts.push(`telefono.ilike.%${qDigits}%`);
+        orParts.push(`telefono_normalizado.ilike.%${qDigits}%`);
+      }
+      query = query.or(orParts.join(","));
+    }
 
     if (telefono) {
-      query = query.ilike("telefono", `%${telefono}%`);
+      const phoneOrParts = [`telefono.ilike.%${telefono}%`];
+      if (telefonoDigits) {
+        phoneOrParts.push(`telefono_normalizado.ilike.%${telefonoDigits}%`);
+      }
+      query = query.or(phoneOrParts.join(","));
     }
 
     if (pais) {
@@ -192,19 +220,37 @@ export async function GET(req: Request) {
 
     const { data, error } = await query;
     if (error) {
-  console.error("SUPABASE ERROR:", error);
-  throw error;
-}
+      console.error("SUPABASE ERROR /crm/clientes/buscar:", error);
+      throw error;
+    }
 
     let clientes = await hydrateCurrentRanks(admin, data || []);
     clientes = await attachEtiquetas(admin, clientes);
 
-    // 🔥 FILTRO POR RANGO (CLAVE)
+    if (etiqueta) {
+      const etLower = etiqueta.toLowerCase();
+      clientes = clientes.filter((c: any) =>
+        Array.isArray(c?.etiquetas) &&
+        c.etiquetas.some((x: any) => String(x || "").toLowerCase() === etLower)
+      );
+    }
+
     if (rango) {
       clientes = clientes.filter((c: any) => {
         const r = String(c?.rango_actual || "").toLowerCase();
         if (rango === "sin_rango") return !r;
         return r === rango;
+      });
+    }
+
+    if (webFilter === "registrados") {
+      clientes = clientes.filter((c: any) => getClientWebMeta(c).registered);
+    } else if (webFilter === "no_registrados") {
+      clientes = clientes.filter((c: any) => !getClientWebMeta(c).registered);
+    } else if (webFilter === "onboarding_pendiente") {
+      clientes = clientes.filter((c: any) => {
+        const meta = getClientWebMeta(c);
+        return meta.registered && !meta.onboardingDone;
       });
     }
 
@@ -214,7 +260,7 @@ export async function GET(req: Request) {
     });
   } catch (e: any) {
     return NextResponse.json(
-      { ok: false, error: e?.message },
+      { ok: false, error: e?.message || "ERR" },
       { status: 500 }
     );
   }
