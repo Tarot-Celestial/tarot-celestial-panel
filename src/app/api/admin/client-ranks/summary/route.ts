@@ -49,6 +49,41 @@ function firstDayOfMonthUTC(date: Date) {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
 }
 
+async function buildSummaryFromMonthlyTable(admin: ReturnType<typeof adminClient>, period: string) {
+  const { data, error } = await admin
+    .from("cliente_rangos_mensuales")
+    .select("cliente_id, rango, gasto_mes_anterior, compras_mes_anterior, recalculated_at")
+    .eq("periodo_mes", period)
+    .order("recalculated_at", { ascending: false });
+  if (error) throw error;
+
+  if (!(data || []).length) return null;
+
+  const seen = new Set<string>();
+  const counts = { bronce: 0, plata: 0, oro: 0 };
+  let gasto = 0;
+  let compras = 0;
+
+  for (const row of data || []) {
+    const clienteId = String(row?.cliente_id || "");
+    if (!clienteId || seen.has(clienteId)) continue;
+    seen.add(clienteId);
+    const rank = String(row?.rango || "").toLowerCase();
+    if (rank in counts) counts[rank as keyof typeof counts] += 1;
+    gasto += Number(row?.gasto_mes_anterior || 0);
+    compras += Number(row?.compras_mes_anterior || 0);
+  }
+
+  return {
+    totalConRango: seen.size,
+    bronce: counts.bronce,
+    plata: counts.plata,
+    oro: counts.oro,
+    gastoMesAnterior: Number(gasto.toFixed(2)),
+    comprasMesAnterior: compras,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -59,6 +94,11 @@ export async function GET(req: Request) {
 
     const admin = adminClient();
     const period = firstDayOfMonthUTC(new Date()).toISOString().slice(0, 10);
+
+    const monthlySummary = await buildSummaryFromMonthlyTable(admin, period);
+    if (monthlySummary) {
+      return NextResponse.json({ ok: true, period, source: "cliente_rangos_mensuales", summary: monthlySummary });
+    }
 
     const { data: rows, error } = await admin
       .from("crm_clientes")
@@ -80,6 +120,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       period,
+      source: "crm_clientes",
       summary: {
         totalConRango: (rows || []).length,
         bronce: counts.bronce,

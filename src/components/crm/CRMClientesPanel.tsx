@@ -191,6 +191,7 @@ export default function CRMClientesPanel({
   const [crmRankSummary, setCrmRankSummary] = useState<any>(null);
   const [crmRankLoading, setCrmRankLoading] = useState(false);
   const [crmRankMsg, setCrmRankMsg] = useState("");
+  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">("");
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
@@ -642,7 +643,27 @@ export default function CRMClientesPanel({
     }
   }
 
-  async function searchCRM(silent = false) {
+  function rankLabel(rank: "" | "bronce" | "plata" | "oro") {
+    if (rank === "oro") return "Oro";
+    if (rank === "plata") return "Plata";
+    if (rank === "bronce") return "Bronce";
+    return "Todos";
+  }
+
+  async function openRankClients(rank: "bronce" | "plata" | "oro") {
+    setCrmRankFilter(rank);
+    await searchCRM(false, rank);
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {}
+  }
+
+  async function clearRankClientsFilter() {
+    setCrmRankFilter("");
+    await searchCRM(false, "");
+  }
+
+  async function searchCRM(silent = false, forcedRank: "" | "bronce" | "plata" | "oro" = crmRankFilter) {
     const q = crmQuery.trim();
     const telefono = crmPhoneFilter.trim();
     const etiqueta = crmTagFilter.trim();
@@ -666,6 +687,7 @@ export default function CRMClientesPanel({
       }
       if (pais) params.set("pais", pais);
       if (crmWebFilter !== "todos") params.set("web_filter", crmWebFilter);
+      if (forcedRank) params.set("rango", forcedRank);
 
       const r = await fetch(`/api/crm/clientes/buscar?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -1629,9 +1651,30 @@ export default function CRMClientesPanel({
         </div>
 
         <div className="tc-grid-4" style={{ marginTop: 14 }}>
-          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(214,156,110,.12)", border: "1px solid rgba(214,156,110,.22)" }}><span>🥉 Bronce</span><b>{Number(crmRankSummary?.bronce || 0)}</b></div>
-          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(196,210,255,.12)", border: "1px solid rgba(196,210,255,.22)" }}><span>🥈 Plata</span><b>{Number(crmRankSummary?.plata || 0)}</b></div>
-          <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(255,215,120,.12)", border: "1px solid rgba(255,215,120,.22)" }}><span>🥇 Oro</span><b>{Number(crmRankSummary?.oro || 0)}</b></div>
+          <button
+            type="button"
+            className="tc-chip"
+            onClick={() => openRankClients("bronce")}
+            style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", width: "100%", textAlign: "left", cursor: "pointer", background: crmRankFilter === "bronce" ? "rgba(214,156,110,.24)" : "rgba(214,156,110,.12)", border: crmRankFilter === "bronce" ? "1px solid rgba(214,156,110,.46)" : "1px solid rgba(214,156,110,.22)" }}
+          >
+            <span>🥉 Bronce</span><b>{Number(crmRankSummary?.bronce || 0)}</b>
+          </button>
+          <button
+            type="button"
+            className="tc-chip"
+            onClick={() => openRankClients("plata")}
+            style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", width: "100%", textAlign: "left", cursor: "pointer", background: crmRankFilter === "plata" ? "rgba(196,210,255,.24)" : "rgba(196,210,255,.12)", border: crmRankFilter === "plata" ? "1px solid rgba(196,210,255,.46)" : "1px solid rgba(196,210,255,.22)" }}
+          >
+            <span>🥈 Plata</span><b>{Number(crmRankSummary?.plata || 0)}</b>
+          </button>
+          <button
+            type="button"
+            className="tc-chip"
+            onClick={() => openRankClients("oro")}
+            style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", width: "100%", textAlign: "left", cursor: "pointer", background: crmRankFilter === "oro" ? "rgba(255,215,120,.24)" : "rgba(255,215,120,.12)", border: crmRankFilter === "oro" ? "1px solid rgba(255,215,120,.46)" : "1px solid rgba(255,215,120,.22)" }}
+          >
+            <span>🥇 Oro</span><b>{Number(crmRankSummary?.oro || 0)}</b>
+          </button>
           <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(181,156,255,.12)", border: "1px solid rgba(181,156,255,.22)" }}><span>Total con rango</span><b>{Number(crmRankSummary?.totalConRango || 0)}</b></div>
         </div>
 
@@ -2321,6 +2364,18 @@ export default function CRMClientesPanel({
         </div>
 
         <div className="tc-hr" />
+
+        {crmRankFilter ? (
+          <div className="tc-card" style={{ marginBottom: 12, padding: 14, borderRadius: 18, background: "rgba(255,255,255,.04)", border: "1px solid rgba(255,255,255,.08)" }}>
+            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div>
+                <div className="tc-title" style={{ fontSize: 18 }}>Vista de rango: {rankLabel(crmRankFilter)}</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>Aquí tienes todos los clientes del rango seleccionado.</div>
+              </div>
+              <button className="tc-btn" onClick={clearRankClientsFilter} disabled={crmLoading}>Quitar filtro de rango</button>
+            </div>
+          </div>
+        ) : null}
 
         <div style={{ overflowX: "auto" }}>
           <table className="tc-table">

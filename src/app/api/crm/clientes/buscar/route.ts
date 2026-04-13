@@ -52,6 +52,10 @@ function normalizePhoneDigits(v: any) {
   return String(v || "").replace(/\D/g, "").trim();
 }
 
+function currentRankPeriodStart(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0)).toISOString().slice(0, 10);
+}
+
 function getClientWebMeta(cliente: any) {
   const onboardingDone = Boolean(cliente?.onboarding_completado);
   const accessCount = Math.max(0, Number(cliente?.total_accesos || 0));
@@ -59,6 +63,44 @@ function getClientWebMeta(cliente: any) {
   const lastActivityAt = cliente?.ultima_actividad_at || null;
   const registered = Boolean(onboardingDone || accessCount > 0 || lastAccessAt || lastActivityAt);
   return { registered, onboardingDone, accessCount, lastAccessAt, lastActivityAt };
+}
+
+async function hydrateCurrentRanks(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
+  if (!clientesBase?.length) return clientesBase || [];
+
+  const ids = clientesBase.map((c: any) => c?.id).filter(Boolean);
+  if (!ids.length) return clientesBase;
+
+  const periodoMes = currentRankPeriodStart();
+  const { data, error } = await admin
+    .from("cliente_rangos_mensuales")
+    .select("cliente_id, rango, gasto_mes_anterior, compras_mes_anterior, recalculated_at, calculado_desde_mes, periodo_mes")
+    .eq("periodo_mes", periodoMes)
+    .in("cliente_id", ids);
+  if (error) throw error;
+
+  const byCliente = new Map<string, any>();
+  for (const row of data || []) {
+    const key = String(row?.cliente_id || "");
+    if (!key) continue;
+    const prev = byCliente.get(key);
+    const prevTs = String(prev?.recalculated_at || prev?.updated_at || "");
+    const nextTs = String(row?.recalculated_at || row?.updated_at || "");
+    if (!prev || nextTs >= prevTs) byCliente.set(key, row);
+  }
+
+  return (clientesBase || []).map((c: any) => {
+    const rankRow = byCliente.get(String(c?.id || ""));
+    if (!rankRow) return c;
+    return {
+      ...c,
+      rango_actual: rankRow?.rango || c?.rango_actual || null,
+      rango_gasto_mes_anterior: Number(rankRow?.gasto_mes_anterior ?? c?.rango_gasto_mes_anterior ?? 0),
+      rango_compras_mes_anterior: Number(rankRow?.compras_mes_anterior ?? c?.rango_compras_mes_anterior ?? 0),
+      rango_actual_desde: rankRow?.calculado_desde_mes || c?.rango_actual_desde || null,
+      rango_periodo_mes: rankRow?.periodo_mes || null,
+    };
+  });
 }
 
 async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
@@ -104,6 +146,7 @@ export async function GET(req: Request) {
     const telefono = String(searchParams.get("telefono") || "").trim();
     const etiqueta = String(searchParams.get("etiqueta") || searchParams.get("tag") || "").trim();
     const pais = String(searchParams.get("pais") || "").trim();
+    const rango = String(searchParams.get("rango") || "").trim().toLowerCase();
     const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
     const telefonoDigits = normalizePhoneDigits(telefono);
     const admin = adminClient();
@@ -162,10 +205,19 @@ export async function GET(req: Request) {
     const { data, error } = await query;
     if (error) throw error;
 
-    let clientes = await attachEtiquetas(admin, data || []);
+    let clientes = await hydrateCurrentRanks(admin, data || []);
+    clientes = await attachEtiquetas(admin, clientes || []);
     if (etiqueta) {
       const etLower = etiqueta.toLowerCase();
       clientes = clientes.filter((c: any) => Array.isArray(c.etiquetas) && c.etiquetas.some((x: any) => String(x || "").toLowerCase().includes(etLower)));
+    }
+
+    if (rango && ["bronce", "plata", "oro", "sin_rango"].includes(rango)) {
+      clientes = clientes.filter((c: any) => {
+        const rank = String(c?.rango_actual || "").trim().toLowerCase();
+        if (rango === "sin_rango") return !rank;
+        return rank === rango;
+      });
     }
 
     if (webFilter === "registrados") {
