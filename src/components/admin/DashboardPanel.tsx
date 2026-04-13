@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { BellRing, Send } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
