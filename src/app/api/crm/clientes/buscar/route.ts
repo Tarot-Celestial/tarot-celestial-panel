@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -53,7 +52,9 @@ function normalizePhoneDigits(v: any) {
 }
 
 function currentRankPeriodStart(date = new Date()) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1))
+    .toISOString()
+    .slice(0, 10);
 }
 
 function getClientWebMeta(cliente: any) {
@@ -61,11 +62,13 @@ function getClientWebMeta(cliente: any) {
   const accessCount = Math.max(0, Number(cliente?.total_accesos || 0));
   const lastAccessAt = cliente?.ultimo_acceso_at || null;
   const lastActivityAt = cliente?.ultima_actividad_at || null;
-  const registered = Boolean(onboardingDone || accessCount > 0 || lastAccessAt || lastActivityAt);
-  return { registered, onboardingDone, accessCount, lastAccessAt, lastActivityAt };
+  const registered = Boolean(
+    onboardingDone || accessCount > 0 || lastAccessAt || lastActivityAt
+  );
+  return { registered, onboardingDone };
 }
 
-async function hydrateCurrentRanks(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
+async function hydrateCurrentRanks(admin: any, clientesBase: any[]) {
   if (!clientesBase?.length) return clientesBase || [];
 
   const ids = clientesBase.map((c: any) => c?.id).filter(Boolean);
@@ -74,165 +77,136 @@ async function hydrateCurrentRanks(admin: ReturnType<typeof adminClient>, client
   const periodoMes = currentRankPeriodStart();
   const { data, error } = await admin
     .from("cliente_rangos_mensuales")
-    .select("cliente_id, rango, gasto_mes_anterior, compras_mes_anterior, recalculated_at, calculado_desde_mes, periodo_mes")
+    .select(
+      "cliente_id, rango, gasto_mes_anterior, compras_mes_anterior, recalculated_at, calculado_desde_mes, periodo_mes"
+    )
     .eq("periodo_mes", periodoMes)
     .in("cliente_id", ids);
+
   if (error) throw error;
 
   const byCliente = new Map<string, any>();
+
   for (const row of data || []) {
     const key = String(row?.cliente_id || "");
     if (!key) continue;
+
     const prev = byCliente.get(key);
-    const prevTs = String(prev?.recalculated_at || "");
-    const nextTs = String(row?.recalculated_at || "");
-    if (!prev || nextTs >= prevTs) byCliente.set(key, row);
+
+    const prevTs = new Date(prev?.recalculated_at || 0).getTime();
+    const nextTs = new Date(row?.recalculated_at || 0).getTime();
+
+    if (!prev || nextTs >= prevTs) {
+      byCliente.set(key, row);
+    }
   }
 
-  return (clientesBase || []).map((c: any) => {
+  return clientesBase.map((c: any) => {
     const rankRow = byCliente.get(String(c?.id || ""));
     if (!rankRow) return c;
+
     return {
       ...c,
-      rango_actual: rankRow?.rango || c?.rango_actual || null,
-      rango_gasto_mes_anterior: Number(rankRow?.gasto_mes_anterior ?? c?.rango_gasto_mes_anterior ?? 0),
-      rango_compras_mes_anterior: Number(rankRow?.compras_mes_anterior ?? c?.rango_compras_mes_anterior ?? 0),
-      rango_actual_desde: rankRow?.calculado_desde_mes || c?.rango_actual_desde || null,
-      rango_periodo_mes: rankRow?.periodo_mes || null,
+      rango_actual: rankRow?.rango || null,
     };
   });
 }
 
-async function attachEtiquetas(admin: ReturnType<typeof adminClient>, clientesBase: any[]) {
+async function attachEtiquetas(admin: any, clientesBase: any[]) {
   if (!clientesBase?.length) return [];
 
   const ids = clientesBase.map((c: any) => c?.id).filter(Boolean);
-  if (!ids.length) return clientesBase.map((c: any) => ({ ...c, etiquetas: [] }));
+  if (!ids.length)
+    return clientesBase.map((c: any) => ({ ...c, etiquetas: [] }));
 
-  const { data: rels, error } = await admin
+  const { data, error } = await admin
     .from("crm_cliente_etiquetas")
-    .select(`cliente_id, crm_etiquetas ( id, nombre )`)
+    .select(`cliente_id, crm_etiquetas ( nombre )`)
     .in("cliente_id", ids);
+
   if (error) throw error;
 
-  const byClienteId = new Map<string | number, string[]>();
-  for (const rel of rels || []) {
-    const clienteId = rel?.cliente_id;
-    const raw = rel?.crm_etiquetas;
-    const arr = Array.isArray(raw) ? raw : raw ? [raw] : [];
-    for (const et of arr) {
-      const nombre = et?.nombre;
-      if (!clienteId || !nombre) continue;
-      byClienteId.set(clienteId, [...(byClienteId.get(clienteId) || []), String(nombre)]);
-    }
+  const byCliente = new Map();
+
+  for (const rel of data || []) {
+    const id = rel?.cliente_id;
+    const nombre = rel?.crm_etiquetas?.nombre;
+
+    if (!id || !nombre) continue;
+
+    if (!byCliente.has(id)) byCliente.set(id, []);
+    byCliente.get(id).push(nombre);
   }
 
   return clientesBase.map((c: any) => ({
     ...c,
-    etiquetas: Array.from(new Set(byClienteId.get(c.id) || [])),
+    etiquetas: byCliente.get(c.id) || [],
   }));
 }
 
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!["admin", "central"].includes(String(worker.role || ""))) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!worker)
+      return NextResponse.json({ ok: false }, { status: 401 });
+
+    if (!["admin", "central"].includes(String(worker.role))) {
+      return NextResponse.json({ ok: false }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
-    const q = String(searchParams.get("q") || "").trim();
-    const telefono = String(searchParams.get("telefono") || "").trim();
-    const etiqueta = String(searchParams.get("etiqueta") || searchParams.get("tag") || "").trim();
-    const pais = String(searchParams.get("pais") || "").trim();
-    const rango = String(searchParams.get("rango") || "").trim().toLowerCase();
-    const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
-    const telefonoDigits = normalizePhoneDigits(telefono);
+
+    const q = searchParams.get("q") || "";
+    const telefono = searchParams.get("telefono") || "";
+    const pais = searchParams.get("pais") || "";
+    const rango = (searchParams.get("rango") || "").toLowerCase();
+
     const admin = adminClient();
 
-    let forcedIds: string[] | null = null;
-    if (etiqueta) {
-      const { data: tags, error: tagsErr } = await admin
-        .from("crm_etiquetas")
-        .select("id, nombre")
-        .ilike("nombre", `%${etiqueta}%`)
-        .limit(200);
-      if (tagsErr) throw tagsErr;
+    let query = admin
+      .from("crm_clientes")
+      .select("*")
+      .order("nombre", { ascending: true })
+      .limit(1000);
 
-      const tagIds = (tags || []).map((t: any) => t.id).filter(Boolean);
-      if (!tagIds.length) return NextResponse.json({ ok: true, clientes: [] });
-
-      const { data: rels, error: relErr } = await admin
-        .from("crm_cliente_etiquetas")
-        .select("cliente_id")
-        .in("etiqueta_id", tagIds)
-        .limit(5000);
-      if (relErr) throw relErr;
-
-      forcedIds = Array.from(new Set((rels || []).map((r: any) => String(r.cliente_id || "")).filter(Boolean)));
-      if (!forcedIds.length) return NextResponse.json({ ok: true, clientes: [] });
-    }
-
-    let query = admin.from("crm_clientes").select("*").order("nombre", { ascending: true }).limit(1000);
-
-    if (forcedIds) query = query.in("id", forcedIds);
-
+    // 🔥 SOLO filtra si hay búsqueda
     if (q) {
-      const qEsc = q.replace(/,/g, " ").trim();
-      const qDigits = normalizePhoneDigits(qEsc);
-      const orParts = [
-        `nombre.ilike.%${qEsc}%`,
-        `apellido.ilike.%${qEsc}%`,
-        `email.ilike.%${qEsc}%`,
-      ];
-      if (qDigits) {
-        orParts.push(`telefono.ilike.%${qDigits}%`);
-        orParts.push(`telefono_normalizado.ilike.%${qDigits}%`);
-      }
-      query = query.or(orParts.join(","));
+      query = query.or(
+        `nombre.ilike.%${q}%,apellido.ilike.%${q}%,email.ilike.%${q}%`
+      );
     }
 
     if (telefono) {
-      query = query.or([
-        `telefono.ilike.%${telefono}%`,
-        `telefono_normalizado.ilike.%${telefonoDigits}%`,
-      ].join(","));
+      query = query.ilike("telefono", `%${telefono}%`);
     }
 
-    if (pais) query = query.ilike("pais", `%${pais}%`);
+    if (pais) {
+      query = query.ilike("pais", `%${pais}%`);
+    }
 
     const { data, error } = await query;
     if (error) throw error;
 
     let clientes = await hydrateCurrentRanks(admin, data || []);
-    clientes = await attachEtiquetas(admin, clientes || []);
-    if (etiqueta) {
-      const etLower = etiqueta.toLowerCase();
-      clientes = clientes.filter((c: any) => Array.isArray(c.etiquetas) && c.etiquetas.some((x: any) => String(x || "").toLowerCase().includes(etLower)));
-    }
+    clientes = await attachEtiquetas(admin, clientes);
 
-    if (rango && ["bronce", "plata", "oro", "sin_rango"].includes(rango)) {
+    // 🔥 FILTRO POR RANGO (CLAVE)
+    if (rango) {
       clientes = clientes.filter((c: any) => {
-        const rank = String(c?.rango_actual || "").trim().toLowerCase();
-        if (rango === "sin_rango") return !rank;
-        return rank === rango;
+        const r = String(c?.rango_actual || "").toLowerCase();
+        if (rango === "sin_rango") return !r;
+        return r === rango;
       });
     }
 
-    if (webFilter === "registrados") {
-      clientes = clientes.filter((c: any) => getClientWebMeta(c).registered);
-    } else if (webFilter === "no_registrados") {
-      clientes = clientes.filter((c: any) => !getClientWebMeta(c).registered);
-    } else if (webFilter === "onboarding_pendiente") {
-      clientes = clientes.filter((c: any) => {
-        const meta = getClientWebMeta(c);
-        return meta.registered && !meta.onboardingDone;
-      });
-    }
-
-    return NextResponse.json({ ok: true, clientes: clientes.slice(0, 300) });
+    return NextResponse.json({
+      ok: true,
+      clientes: clientes.slice(0, 300),
+    });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message },
+      { status: 500 }
+    );
   }
 }
