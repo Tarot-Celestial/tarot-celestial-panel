@@ -180,11 +180,7 @@ const nextMonthStart = firstDayOfMonth(now);
     if (rank === "oro") oro += 1;
     gastoMesAnterior += info.total;
     comprasMesAnterior += info.compras;
-
-    const payload = {
-      cliente_id: clienteId,
-     const periodoActual = firstDayOfMonth(now);
-
+    
 const payload = {
   cliente_id: clienteId,
   periodo_mes: periodoActual.toISOString().slice(0, 10), // abril
