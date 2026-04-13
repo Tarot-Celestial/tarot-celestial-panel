@@ -103,8 +103,10 @@ function normalizeName(v: any) {
 async function runRecalc() {
   const admin = adminClient();
   const now = new Date();
-  const currentMonthStart = firstDayOfMonth(now);
-  const nextMonthStart = addMonths(currentMonthStart, 1);
+  // 🔥 mes anterior
+const prevMonth = addMonths(now, -1);
+const currentMonthStart = firstDayOfMonth(prevMonth);
+const nextMonthStart = firstDayOfMonth(now);
 
   const { data: rows, error } = await admin
     .from("rendimiento_llamadas")
@@ -181,8 +183,9 @@ async function runRecalc() {
 
     const payload = {
       cliente_id: clienteId,
-      periodo_mes: currentMonthStart.toISOString().slice(0, 10),
-      calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10),
+      const periodoActual = firstDayOfMonth(now);
+      periodo_mes: periodoActual.toISOString().slice(0, 10), // abril
+      calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10), // marzo
       gasto_mes_anterior: Number(info.total.toFixed(2)),
       compras_mes_anterior: info.compras,
       rango: rank,
