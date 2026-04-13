@@ -262,27 +262,8 @@ export async function applyClientPurchase(
   const monthlyPurchases = (monthPayments || []).length;
   const nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
 
-  await admin
-    .from("crm_clientes")
-    .update({
-      rango_actual: nextRank,
-      rango_gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
-      rango_compras_mes_anterior: monthlyPurchases,
-      updated_at: nowIso,
-    })
-    .eq("id", params.clienteId);
-
-  const periodoMes = `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-01`;
-  await admin.from("cliente_rangos_mensuales").upsert({
-    cliente_id: params.clienteId,
-    periodo_mes: periodoMes,
-    calculado_desde_mes: periodoMes,
-    gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
-    compras_mes_anterior: monthlyPurchases,
-    rango: nextRank,
-    beneficios: currentRankBenefits(nextRank),
-    recalculated_at: nowIso,
-  }, { onConflict: "cliente_id,periodo_mes" });
+  // No persistimos aquí el rango CRM para no sobrescribir el recálculo manual del panel.
+  // El rango puede seguir mostrándose en vivo en la experiencia cliente sin tocar los KPIs de CRM.
 
   const nombre = [clienteActual?.nombre, clienteActual?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
 

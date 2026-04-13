@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { getClientChatCredits, addClientChatCredits, getChatWorkerStatusMeta } from "@/lib/server/chat-platform";
+import { getClientChatCredits, getChatWorkerStatusMeta } from "@/lib/server/chat-platform";
 
 export const runtime = "nodejs";
 
@@ -195,20 +195,10 @@ export async function POST(req: Request) {
 
     const currentBalance = await getClientChatCredits(admin, gate.cliente.id);
     const freeUsed = Boolean(thread?.free_consulta_usada);
-    let nextBalance = currentBalance;
+    const nextBalance = currentBalance;
 
-    if (freeUsed) {
-      if (currentBalance <= 0) {
-        return NextResponse.json({ ok: false, error: "NO_CREDITOS", need_payment: true, thread_id: thread.id }, { status: 402 });
-      }
-      const ledger = await addClientChatCredits(admin, {
-        clienteId: gate.cliente.id,
-        threadId: thread.id,
-        amount: -1,
-        type: "consume",
-        notes: "Consumo de 1 crédito por mensaje del cliente",
-      });
-      nextBalance = ledger.balance;
+    if (freeUsed && currentBalance <= 0) {
+      return NextResponse.json({ ok: false, error: "NO_CREDITOS", need_payment: true, thread_id: thread.id }, { status: 402 });
     }
 
     const senderName =
@@ -235,7 +225,7 @@ export async function POST(req: Request) {
       .from("cliente_chat_threads")
       .update({
         estado: "open",
-        free_consulta_usada: true,
+        free_consulta_usada: Boolean(thread?.free_consulta_usada),
         creditos_restantes: nextBalance,
         last_message_at: nowIso,
         last_message_preview: text.slice(0, 140),
@@ -253,7 +243,7 @@ export async function POST(req: Request) {
       thread_id: thread.id,
       message: inserted,
       creditos_restantes: nextBalance,
-      free_consulta_usada: true,
+      free_consulta_usada: Boolean(thread?.free_consulta_usada),
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_CHAT_THREAD_POST" }, { status: 500 });

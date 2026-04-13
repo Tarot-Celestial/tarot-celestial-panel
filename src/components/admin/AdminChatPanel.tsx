@@ -1,10 +1,9 @@
-
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bell, CreditCard, MessageSquare, RefreshCw, Search, Send, Sparkles, UserRound, Volume2, Wallet, XCircle } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import KpiCard from "@/components/ui/KpiCard";
-import { MessageSquare, RefreshCw, Search, Send, Sparkles, UserRound, Wallet, XCircle } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -20,34 +19,15 @@ function fmt(v?: string | null) {
   return d.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
 }
 
-function bubbleStyle(kind: string) {
-  if (kind === "cliente") {
-    return {
-      background: "rgba(255,255,255,.07)",
-      border: "1px solid rgba(255,255,255,.10)",
-      justifySelf: "start" as const,
-    };
-  }
-
-  if (kind === "admin") {
-    return {
-      background: "rgba(215,181,109,.16)",
-      border: "1px solid rgba(215,181,109,.28)",
-      justifySelf: "end" as const,
-    };
-  }
-
-  return {
-    background: "rgba(139,92,246,.16)",
-    border: "1px solid rgba(139,92,246,.28)",
-    justifySelf: "end" as const,
-  };
+function initials(name?: string | null) {
+  const text = String(name || "TC").trim();
+  return text.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || "").join("") || "TC";
 }
 
-function chipStyle(kind: string) {
-  if (kind === "libre") return { background: "rgba(34,197,94,.14)", border: "1px solid rgba(34,197,94,.34)", color: "#dcfce7" };
-  if (kind === "ocupada") return { background: "rgba(249,115,22,.14)", border: "1px solid rgba(249,115,22,.34)", color: "#fed7aa" };
-  return { background: "rgba(148,163,184,.12)", border: "1px solid rgba(148,163,184,.24)", color: "#e2e8f0" };
+function bubbleClass(kind: string) {
+  if (kind === "cliente") return "client";
+  if (kind === "admin") return "admin";
+  return "reader";
 }
 
 function getMarkedState(message: any) {
@@ -57,16 +37,29 @@ function getMarkedState(message: any) {
   return "normal";
 }
 
-function initials(name?: string | null) {
-  const text = String(name || "TC").trim();
-  return (
-    text
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() || "")
-      .join("") || "TC"
-  );
+function statusClass(kind: string) {
+  if (kind === "libre") return "ok";
+  if (kind === "ocupada") return "busy";
+  return "off";
+}
+
+function beep() {
+  try {
+    const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.value = 0.02;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+  } catch {
+    // noop
+  }
 }
 
 export default function AdminChatPanel() {
@@ -75,38 +68,36 @@ export default function AdminChatPanel() {
   const [summary, setSummary] = useState<any>({ total_threads: 0, open_threads: 0, pending_payment: 0, tarotistas_online: 0, tarotistas_busy: 0 });
   const [tarotistas, setTarotistas] = useState<any[]>([]);
   const [threads, setThreads] = useState<any[]>([]);
-  const [selectedThreadId, setSelectedThreadId] = useState<string>("");
+  const [selectedThreadId, setSelectedThreadId] = useState("");
   const [selectedMessages, setSelectedMessages] = useState<any[]>([]);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [creditAmount, setCreditAmount] = useState("5");
   const [paymentPack, setPaymentPack] = useState("chat_pack_12");
   const [threadSearch, setThreadSearch] = useState("");
-  const [savingWorkerId, setSavingWorkerId] = useState<string>("");
-  const [closingThreadId, setClosingThreadId] = useState<string>("");
+  const [savingWorkerId, setSavingWorkerId] = useState("");
+  const [closingThreadId, setClosingThreadId] = useState("");
   const [workerDrafts, setWorkerDrafts] = useState<Record<string, { visible_name: string; welcome_message: string }>>({});
+  const [mobileTab, setMobileTab] = useState<"threads" | "detail" | "workers">("threads");
+  const [notifyEnabled, setNotifyEnabled] = useState(false);
+  const previousLastMessageRef = useRef<string>("");
+  const messagesBoxRef = useRef<HTMLDivElement | null>(null);
 
   const selectedThread = useMemo(
-    () => threads.find((t) => String(t.id) === String(selectedThreadId)) || null,
+    () => threads.find((t: any) => String(t.id) === String(selectedThreadId)) || null,
     [threads, selectedThreadId]
   );
 
   const filteredThreads = useMemo(() => {
     const q = threadSearch.trim().toLowerCase();
     if (!q) return threads;
-    return threads.filter((thread: any) => {
-      const haystack = [
-        thread.cliente_nombre,
-        thread.cliente_telefono,
-        thread.cliente_email,
-        thread.tarotista_display_name,
-        thread.last_message_preview,
-      ]
+    return threads.filter((thread: any) =>
+      [thread.cliente_nombre, thread.cliente_telefono, thread.cliente_email, thread.tarotista_display_name, thread.last_message_preview]
         .filter(Boolean)
         .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
-    });
+        .toLowerCase()
+        .includes(q)
+    );
   }, [threadSearch, threads]);
 
   const loadOverview = useCallback(async (keepSelection = true) => {
@@ -119,9 +110,11 @@ export default function AdminChatPanel() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el módulo de chat");
+
+      const nextThreads = Array.isArray(json.threads) ? json.threads : [];
       setSummary(json.summary || {});
       setTarotistas(Array.isArray(json.tarotistas) ? json.tarotistas : []);
-      setThreads(Array.isArray(json.threads) ? json.threads : []);
+      setThreads(nextThreads);
       setWorkerDrafts((prev) => {
         const next = { ...prev };
         for (const worker of json.tarotistas || []) {
@@ -133,11 +126,21 @@ export default function AdminChatPanel() {
         return next;
       });
 
+      const newest = nextThreads[0]?.last_message_at ? String(nextThreads[0].last_message_at) : "";
+      if (notifyEnabled && previousLastMessageRef.current && newest && newest !== previousLastMessageRef.current) {
+        beep();
+        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+          new Notification("Nuevo mensaje en el chat", {
+            body: `${nextThreads[0]?.cliente_nombre || "Cliente"}: ${nextThreads[0]?.last_message_preview || "Mensaje nuevo"}`,
+          });
+        }
+      }
+      previousLastMessageRef.current = newest;
+
       if (!keepSelection || !selectedThreadId) {
-        setSelectedThreadId(String(json?.threads?.[0]?.id || ""));
-      } else {
-        const exists = (json.threads || []).some((t: any) => String(t.id) === String(selectedThreadId));
-        if (!exists) setSelectedThreadId(String(json?.threads?.[0]?.id || ""));
+        setSelectedThreadId(String(nextThreads[0]?.id || ""));
+      } else if (!nextThreads.some((t: any) => String(t.id) === String(selectedThreadId))) {
+        setSelectedThreadId(String(nextThreads[0]?.id || ""));
       }
       setMsg("");
     } catch (e: any) {
@@ -145,7 +148,7 @@ export default function AdminChatPanel() {
     } finally {
       setLoading(false);
     }
-  }, [selectedThreadId]);
+  }, [notifyEnabled, selectedThreadId]);
 
   const loadMessages = useCallback(async () => {
     if (!selectedThreadId) {
@@ -180,6 +183,27 @@ export default function AdminChatPanel() {
     return () => window.clearInterval(id);
   }, [loadMessages, selectedThreadId]);
 
+  useEffect(() => {
+    const box = messagesBoxRef.current;
+    if (!box) return;
+    box.scrollTop = box.scrollHeight;
+  }, [selectedMessages]);
+
+  async function enableNotifications() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setMsg("⚠️ Este dispositivo no soporta notificaciones del navegador.");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      setNotifyEnabled(true);
+      setMsg("✅ Avisos activados. También sonará un aviso cuando entren mensajes nuevos.");
+      beep();
+      return;
+    }
+    setMsg("⚠️ No se pudieron activar las notificaciones del navegador.");
+  }
+
   async function setWorkerStatus(workerId: string, patch: any, successMessage?: string) {
     try {
       const token = await getToken();
@@ -202,14 +226,7 @@ export default function AdminChatPanel() {
     if (!draft) return;
     try {
       setSavingWorkerId(workerId);
-      await setWorkerStatus(
-        workerId,
-        {
-          visible_name: draft.visible_name,
-          welcome_message: draft.welcome_message,
-        },
-        "✅ Nombre visible y bienvenida guardados."
-      );
+      await setWorkerStatus(workerId, { visible_name: draft.visible_name, welcome_message: draft.welcome_message }, "✅ Perfil de tarotista guardado.");
     } finally {
       setSavingWorkerId("");
     }
@@ -226,13 +243,10 @@ export default function AdminChatPanel() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo marcar el mensaje");
       await loadMessages();
-      setMsg(
-        mode === "pregunta"
-          ? "✅ Mensaje marcado como pregunta real."
-          : mode === "respuesta"
-          ? "✅ Mensaje marcado como respuesta."
-          : "✅ Marca eliminada."
-      );
+      await loadOverview(true);
+      if (mode === "pregunta") setMsg("✅ Marcado como pregunta real. Solo ahora cuenta en créditos.");
+      if (mode === "respuesta") setMsg("✅ Marcado como respuesta.");
+      if (mode === "clear") setMsg("✅ Marca eliminada y saldo corregido si hacía falta.");
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -290,12 +304,7 @@ export default function AdminChatPanel() {
       const res = await fetch("/api/admin/chat/payment-link", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cliente_id: selectedThread.cliente_id,
-          thread_id: selectedThread.id,
-          pack_id: paymentPack,
-          send_to_thread: true,
-        }),
+        body: JSON.stringify({ cliente_id: selectedThread.cliente_id, thread_id: selectedThread.id, pack_id: paymentPack, send_to_thread: true }),
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo crear el enlace");
@@ -331,391 +340,234 @@ export default function AdminChatPanel() {
 
   return (
     <div className="tc-card" style={{ display: "grid", gap: 18 }}>
-      <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-        <div style={{ display: "grid", gap: 8 }}>
+      <div className="topbar">
+        <div>
           <div className="tc-title" style={{ fontSize: 22 }}>💬 Chat profesional</div>
-          <div className="tc-sub" style={{ fontSize: 13 }}>
-            Gestión visual de tarotistas, hilos, cobros y marcado manual de preguntas reales desde un panel mucho más limpio.
-          </div>
+          <div className="tc-sub" style={{ fontSize: 13 }}>Más cómodo para móvil, con envío de pagos, marcado manual de preguntas y aviso de nuevos mensajes.</div>
         </div>
-        <button className="tc-btn tc-btn-gold" onClick={() => loadOverview(true)} disabled={loading}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <RefreshCw size={15} /> {loading ? "Cargando…" : "Refrescar"}
-          </span>
-        </button>
+        <div className="toolbar">
+          <button className="tc-btn" onClick={enableNotifications}><Bell size={14} /> Avisos</button>
+          <button className="tc-btn" onClick={() => { setNotifyEnabled(true); beep(); }}><Volume2 size={14} /> Probar sonido</button>
+          <button className="tc-btn tc-btn-gold" onClick={() => loadOverview(true)} disabled={loading}><RefreshCw size={14} /> {loading ? "Cargando…" : "Refrescar"}</button>
+        </div>
       </div>
 
       <div className="admin-chat-kpis">
         <KpiCard title="Hilos totales" value={String(summary.total_threads || 0)} hint="Histórico visible" accent="rgba(181,156,255,.75)" />
         <KpiCard title="Chats abiertos" value={String(summary.open_threads || 0)} hint="Conversaciones activas" accent="rgba(59,130,246,.75)" />
-        <KpiCard title="Pendientes de pago" value={String(summary.pending_payment || 0)} hint="Sin créditos tras la free" accent="rgba(245,158,11,.75)" />
-        <KpiCard title="Tarotistas online" value={String(summary.tarotistas_online || 0)} hint="Visibles al cliente" accent="rgba(34,197,94,.75)" />
-        <KpiCard title="Tarotistas ocupadas" value={String(summary.tarotistas_busy || 0)} hint="Con hilos en curso" accent="rgba(249,115,22,.75)" />
+        <KpiCard title="Pendientes de pago" value={String(summary.pending_payment || 0)} hint="Sin créditos tras la gratuita" accent="rgba(245,158,11,.75)" />
+        <KpiCard title="Tarotistas online" value={String(summary.tarotistas_online || 0)} hint="Disponibles al cliente" accent="rgba(34,197,94,.75)" />
+        <KpiCard title="Tarotistas ocupadas" value={String(summary.tarotistas_busy || 0)} hint="Con hilo activo" accent="rgba(249,115,22,.75)" />
       </div>
 
       <div className="tc-card" style={{ padding: 12, background: "rgba(255,255,255,.035)" }}>
         <div className="tc-sub" style={{ fontSize: 13 }}>
-          {msg || "Consejo operativo: marca manualmente qué mensaje cuenta como pregunta real para tener control comercial y evitar cobros automáticos injustos."}
+          {msg || "Los créditos ya no bajan al escribir por defecto: solo cuentan cuando marcas manualmente el mensaje del cliente como pregunta real."}
         </div>
       </div>
 
+      <div className="mobile-tabs">
+        <button className={mobileTab === "threads" ? "tc-btn tc-btn-gold" : "tc-btn"} onClick={() => setMobileTab("threads")}>Chats</button>
+        <button className={mobileTab === "detail" ? "tc-btn tc-btn-gold" : "tc-btn"} onClick={() => setMobileTab("detail")}>Detalle</button>
+        <button className={mobileTab === "workers" ? "tc-btn tc-btn-gold" : "tc-btn"} onClick={() => setMobileTab("workers")}>Tarotistas</button>
+      </div>
+
       <div className="admin-chat-grid">
-        <section className="tc-card admin-column">
-          <div className="column-head">
-            <div>
-              <div className="tc-title" style={{ fontSize: 16 }}>Tarotistas</div>
-              <div className="tc-sub">Edita nombre visible, mensaje de bienvenida y estado.</div>
-            </div>
-            <span className="tc-chip">{tarotistas.length} visibles</span>
-          </div>
-
-          <div className="admin-scroll">
-            {tarotistas.map((worker: any) => {
-              const draft = workerDrafts[String(worker.id)] || {
-                visible_name: worker.display_name || "",
-                welcome_message: worker.welcome_message || "",
-              };
-              return (
-                <div
-                  key={worker.id}
-                  className="worker-admin-card"
-                  style={{ background: worker.status_bg, border: worker.status_border }}
-                >
-                  <div className="worker-admin-top">
-                    <div className="avatar-line">
-                      <div className="admin-avatar">{initials(worker.display_name)}</div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 15 }}>{worker.display_name}</div>
-                        <div className="tc-sub">Equipo {worker.team || "—"} · {worker.open_threads || 0} chats abiertos</div>
-                      </div>
-                    </div>
-                    <span className="tc-chip" style={chipStyle(worker.status_key)}>{worker.status_label}</span>
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8 }}>
-                    <input
-                      className="tc-input"
-                      placeholder="Nombre visible para cliente"
-                      value={draft.visible_name}
-                      onChange={(e) =>
-                        setWorkerDrafts((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...draft, visible_name: e.target.value },
-                        }))
-                      }
-                    />
-                    <textarea
-                      className="tc-textarea"
-                      placeholder="Mensaje de bienvenida"
-                      style={{ minHeight: 88, resize: "vertical" }}
-                      value={draft.welcome_message}
-                      onChange={(e) =>
-                        setWorkerDrafts((prev) => ({
-                          ...prev,
-                          [worker.id]: { ...draft, welcome_message: e.target.value },
-                        }))
-                      }
-                    />
-                  </div>
-
-                  <div className="action-wrap">
-                    <button className="tc-btn tc-btn-ok" onClick={() => setWorkerStatus(worker.id, { is_online: true, chat_enabled: true, is_busy: false }, "✅ Tarotista marcada como libre.")}>Libre</button>
-                    <button className="tc-btn tc-btn-gold" onClick={() => setWorkerStatus(worker.id, { is_online: true, chat_enabled: true, is_busy: true }, "✅ Tarotista marcada como ocupada.")}>Ocupada</button>
-                    <button className="tc-btn" onClick={() => setWorkerStatus(worker.id, { is_online: false, chat_enabled: false, is_busy: false }, "✅ Tarotista ocultada del chat.")}>Offline</button>
-                  </div>
-
-                  <button className="tc-btn tc-btn-purple" disabled={savingWorkerId === String(worker.id)} onClick={() => saveWorkerProfile(String(worker.id))}>
-                    {savingWorkerId === String(worker.id) ? "Guardando…" : "Guardar nombre y bienvenida"}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="tc-card admin-column">
-          <div style={{ display: "grid", gap: 10 }}>
+        <section className={`admin-column ${mobileTab !== "threads" ? "mobile-hidden" : ""}`}>
+          <div className="column-card">
             <div className="column-head">
               <div>
-                <div className="tc-title" style={{ fontSize: 16 }}>Conversaciones</div>
-                <div className="tc-sub">Lista limpia con búsqueda rápida y señales comerciales.</div>
+                <div className="tc-title" style={{ fontSize: 18 }}>Chats</div>
+                <div className="tc-sub">Elige un hilo para responder.</div>
               </div>
-              <span className="tc-chip">{filteredThreads.length}</span>
             </div>
-            <div style={{ position: "relative" }}>
-              <Search size={16} style={{ position: "absolute", left: 12, top: 12, opacity: 0.7 }} />
-              <input
-                className="tc-input"
-                style={{ paddingLeft: 36 }}
-                placeholder="Buscar por cliente, teléfono, email o tarotista"
-                value={threadSearch}
-                onChange={(e) => setThreadSearch(e.target.value)}
-              />
+            <div className="search-wrap">
+              <Search size={15} />
+              <input value={threadSearch} onChange={(e) => setThreadSearch(e.target.value)} placeholder="Buscar cliente, tarotista o texto…" />
             </div>
-          </div>
-
-          <div className="admin-scroll">
-            {filteredThreads.map((thread: any) => {
-              const active = String(thread.id) === String(selectedThreadId);
-              return (
-                <button
-                  key={thread.id}
-                  className={`thread-card ${active ? "thread-card-active" : ""}`}
-                  onClick={() => setSelectedThreadId(String(thread.id))}
-                  type="button"
-                >
-                  <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-                      <div style={{ fontWeight: 900 }}>{thread.cliente_nombre}</div>
-                      <div className="tc-sub">{thread.cliente_telefono || "Sin teléfono"}</div>
+            <div className="admin-scroll">
+              {filteredThreads.map((thread: any) => (
+                <button key={thread.id} className={`thread-card ${selectedThreadId === String(thread.id) ? "thread-card-active" : ""}`} onClick={() => { setSelectedThreadId(String(thread.id)); setMobileTab("detail"); }}>
+                  <div className="row-between">
+                    <div>
+                      <div className="thread-title">{thread.cliente_nombre}</div>
+                      <div className="tc-sub">{thread.tarotista_display_name} · {fmt(thread.last_message_at)}</div>
                     </div>
-                    <span className="tc-chip">{thread.creditos_cliente || 0} créditos</span>
+                    <span className="tc-chip"><Wallet size={13} style={{ marginRight: 6 }} /> {thread.creditos_cliente || 0}</span>
                   </div>
-                  <div className="tc-sub">Tarotista: {thread.tarotista_display_name || "—"}</div>
-                  <div style={{ fontSize: 13, lineHeight: 1.45, opacity: 0.95 }}>
-                    {thread.last_message_preview || "Sin mensajes"}
-                  </div>
-                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                    <span className="tc-chip">{thread.free_consulta_usada ? "Free usada" : "Free disponible"}</span>
-                    <span className="tc-sub">{fmt(thread.last_message_at)}</span>
-                  </div>
+                  <div className="thread-preview">{thread.last_message_preview || "Sin mensajes todavía."}</div>
                 </button>
-              );
-            })}
-            {!filteredThreads.length ? <div className="tc-sub">No hay conversaciones que coincidan con la búsqueda.</div> : null}
+              ))}
+              {!filteredThreads.length ? <div className="tc-sub">No hay hilos con esos filtros.</div> : null}
+            </div>
           </div>
         </section>
 
-        <section className="tc-card detail-column">
-          {!selectedThread ? (
-            <div className="tc-sub">Selecciona una conversación para verla en detalle.</div>
-          ) : (
-            <>
-              <div style={{ display: "grid", gap: 10 }}>
-                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <section className={`detail-column ${mobileTab !== "detail" ? "mobile-hidden" : ""}`}>
+          <div className="column-card detail-stretch">
+            {!selectedThread ? (
+              <div className="empty-state"><MessageSquare size={18} /> Selecciona un chat para contestar.</div>
+            ) : (
+              <>
+                <div className="row-between gap-wrap">
                   <div>
                     <div className="tc-title" style={{ fontSize: 20 }}>{selectedThread.cliente_nombre}</div>
                     <div className="tc-sub">{selectedThread.cliente_telefono || "Sin teléfono"} · {selectedThread.cliente_email || "Sin email"}</div>
                   </div>
-                  <div className="action-wrap">
+                  <div className="toolbar">
                     <span className="tc-chip"><Wallet size={13} style={{ marginRight: 6 }} /> {selectedThread.creditos_cliente || 0} créditos</span>
                     <span className="tc-chip"><UserRound size={13} style={{ marginRight: 6 }} /> {selectedThread.tarotista_display_name || "Tarotista"}</span>
-                    <button className="tc-btn" disabled={closingThreadId === selectedThread.id} onClick={() => closeConversation(selectedThread.id)}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <XCircle size={14} /> {closingThreadId === selectedThread.id ? "Cerrando…" : "Cerrar conversación"}
-                      </span>
-                    </button>
+                    <button className="tc-btn" disabled={closingThreadId === selectedThread.id} onClick={() => closeConversation(selectedThread.id)}><XCircle size={14} /> {closingThreadId === selectedThread.id ? "Cerrando…" : "Cerrar"}</button>
                   </div>
                 </div>
 
                 <div className="detail-stats">
-                  <div className="tc-card" style={{ padding: 12 }}>
-                    <div className="tc-sub">Free</div>
-                    <div className="tc-title">{selectedThread.free_consulta_usada ? "Usada" : "Disponible"}</div>
-                  </div>
-                  <div className="tc-card" style={{ padding: 12 }}>
-                    <div className="tc-sub">Estado</div>
-                    <div className="tc-title">{selectedThread.estado || "open"}</div>
-                  </div>
-                  <div className="tc-card" style={{ padding: 12 }}>
-                    <div className="tc-sub">Último mensaje</div>
-                    <div className="tc-title">{fmt(selectedThread.last_message_at)}</div>
-                  </div>
-                  <div className="tc-card" style={{ padding: 12 }}>
-                    <div className="tc-sub">Hilo</div>
-                    <div className="tc-title">Fijo con tarotista</div>
-                  </div>
+                  <div className="mini-box"><span>Free</span><b>{selectedThread.free_consulta_usada ? "Usada" : "Disponible"}</b></div>
+                  <div className="mini-box"><span>Estado</span><b>{selectedThread.estado || "open"}</b></div>
+                  <div className="mini-box"><span>Último mensaje</span><b>{fmt(selectedThread.last_message_at)}</b></div>
+                  <div className="mini-box"><span>Hilo</span><b>Fijo con tarotista</b></div>
                 </div>
-              </div>
 
-              <div className="action-wrap">
-                <input className="tc-input" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} style={{ width: 110 }} />
-                <button className="tc-btn tc-btn-ok" onClick={() => adjustCredits(Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>+ créditos</button>
-                <button className="tc-btn" onClick={() => adjustCredits(-Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>- créditos</button>
-                <select className="tc-select" value={paymentPack} onChange={(e) => setPaymentPack(e.target.value)} style={{ width: 180 }}>
-                  <option value="chat_pack_5">Pack 5 créditos</option>
-                  <option value="chat_pack_12">Pack 12 créditos</option>
-                  <option value="chat_pack_25">Pack 25 créditos</option>
-                </select>
-                <button className="tc-btn tc-btn-gold" onClick={sendPaymentLink}>
-                  <Sparkles size={14} style={{ marginRight: 6 }} /> Enviar enlace
-                </button>
-              </div>
+                <div className="quick-actions">
+                  <input className="tc-input" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} style={{ width: 110 }} />
+                  <button className="tc-btn tc-btn-ok" onClick={() => adjustCredits(Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>+ créditos</button>
+                  <button className="tc-btn" onClick={() => adjustCredits(-Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>- créditos</button>
+                  <select className="tc-select" value={paymentPack} onChange={(e) => setPaymentPack(e.target.value)} style={{ width: 180 }}>
+                    <option value="chat_pack_5">Pack 5 créditos</option>
+                    <option value="chat_pack_12">Pack 12 créditos</option>
+                    <option value="chat_pack_25">Pack 25 créditos</option>
+                  </select>
+                  <button className="tc-btn tc-btn-gold" onClick={sendPaymentLink}><CreditCard size={14} /> Enviar enlace y precios</button>
+                </div>
 
-              <div className="messages-admin">
-                {selectedMessages.map((item: any) => {
-                  const bubble = bubbleStyle(item.sender_type);
-                  const markedState = getMarkedState(item);
-                  return (
-                    <div key={item.id} style={{ display: "grid", gap: 6, justifyItems: bubble.justifySelf === "end" ? "end" : "start" }}>
-                      <div className="tc-sub">{item.sender_display_name || item.sender_type}</div>
-                      <div style={{ ...bubble, maxWidth: "86%", borderRadius: 18, padding: 12 }}>
-                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{item.body}</div>
-                        <div className="tc-row" style={{ marginTop: 10, justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                          <div className="tc-sub">{fmt(item.created_at)}</div>
-                          <div className="tc-row" style={{ gap: 6 }}>
-                            {markedState === "pregunta" ? <span className="tc-chip">Pregunta real</span> : null}
-                            {markedState === "respuesta" ? <span className="tc-chip">Respuesta</span> : null}
+                <div className="messages-admin" ref={messagesBoxRef}>
+                  {selectedMessages.map((item: any) => {
+                    const mark = getMarkedState(item);
+                    return (
+                      <div key={item.id} className={`bubble-row ${bubbleClass(item.sender_type)}`}>
+                        <div className="bubble-head">{item.sender_display_name || item.sender_type}</div>
+                        <div className={`bubble ${bubbleClass(item.sender_type)}`}>
+                          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{item.body}</div>
+                          <div className="bubble-meta">
+                            <span>{fmt(item.created_at)}</span>
+                            <div className="toolbar" style={{ gap: 6 }}>
+                              {mark === "pregunta" ? <span className="tc-chip">Pregunta real</span> : null}
+                              {mark === "respuesta" ? <span className="tc-chip">Respuesta</span> : null}
+                            </div>
                           </div>
                         </div>
+                        <div className="toolbar">
+                          <button className="tc-btn" onClick={() => markMessage(item.id, "pregunta")}>Marcar pregunta</button>
+                          <button className="tc-btn" onClick={() => markMessage(item.id, "respuesta")}>Marcar respuesta</button>
+                          <button className="tc-btn" onClick={() => markMessage(item.id, "clear")}>Quitar marca</button>
+                        </div>
                       </div>
-                      <div className="action-wrap">
-                        <button className="tc-btn" onClick={() => markMessage(item.id, "pregunta")}>Marcar pregunta</button>
-                        <button className="tc-btn" onClick={() => markMessage(item.id, "respuesta")}>Marcar respuesta</button>
-                        <button className="tc-btn" onClick={() => markMessage(item.id, "clear")}>Quitar marca</button>
-                      </div>
-                    </div>
-                  );
-                })}
-                {!selectedMessages.length && <div className="tc-sub">Sin mensajes todavía.</div>}
-              </div>
-
-              <div style={{ display: "grid", gap: 8 }}>
-                <textarea
-                  className="tc-textarea"
-                  value={composer}
-                  onChange={(e) => setComposer(e.target.value)}
-                  placeholder="Escribe la respuesta desde admin o envía directamente un texto de cierre / seguimiento…"
-                  style={{ minHeight: 110, resize: "vertical" }}
-                />
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div className="tc-sub" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                    <MessageSquare size={14} /> Todo queda centralizado en el hilo.
-                  </div>
-                  <button className="tc-btn tc-btn-purple" onClick={() => sendMessage("text")} disabled={sending}>
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Send size={14} /> {sending ? "Enviando…" : "Enviar respuesta"}</span>
-                  </button>
+                    );
+                  })}
+                  {!selectedMessages.length ? <div className="tc-sub">Sin mensajes todavía.</div> : null}
                 </div>
+
+                <div style={{ display: "grid", gap: 8 }}>
+                  <textarea className="tc-textarea" value={composer} onChange={(e) => setComposer(e.target.value)} placeholder="Escribe la respuesta o pega aquí el texto con precios y enlace de pago…" style={{ minHeight: 110, resize: "vertical" }} />
+                  <div className="row-between gap-wrap">
+                    <div className="tc-sub" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Sparkles size={14} /> Todo queda centralizado en el hilo.</div>
+                    <button className="tc-btn tc-btn-purple" onClick={() => sendMessage("text")} disabled={sending}><Send size={14} /> {sending ? "Enviando…" : "Enviar respuesta"}</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+
+        <section className={`admin-column ${mobileTab !== "workers" ? "mobile-hidden" : ""}`}>
+          <div className="column-card">
+            <div className="column-head">
+              <div>
+                <div className="tc-title" style={{ fontSize: 18 }}>Tarotistas</div>
+                <div className="tc-sub">Estado y presentación visibles para el cliente.</div>
               </div>
-            </>
-          )}
+            </div>
+            <div className="admin-scroll">
+              {tarotistas.map((worker: any) => {
+                const draft = workerDrafts[String(worker.id)] || { visible_name: worker.display_name || "", welcome_message: worker.welcome_message || "" };
+                return (
+                  <div key={worker.id} className="worker-admin-card">
+                    <div className="row-between gap-wrap">
+                      <div className="avatar-line">
+                        <div className="admin-avatar">{initials(worker.display_name)}</div>
+                        <div>
+                          <div className="thread-title">{worker.display_name}</div>
+                          <div className="tc-sub">{worker.team || "Sin equipo"}</div>
+                        </div>
+                      </div>
+                      <span className={`status-dot ${statusClass(worker.status_key)}`}>{worker.status_label}</span>
+                    </div>
+
+                    <div className="toolbar">
+                      <button className="tc-btn tc-btn-ok" onClick={() => setWorkerStatus(worker.id, { is_online: true, is_busy: false, chat_enabled: true }, "✅ Tarotista marcada como libre.")}>Libre</button>
+                      <button className="tc-btn" onClick={() => setWorkerStatus(worker.id, { is_online: true, is_busy: true, chat_enabled: true }, "✅ Tarotista marcada como ocupada.")}>Ocupada</button>
+                      <button className="tc-btn" onClick={() => setWorkerStatus(worker.id, { is_online: false, is_busy: false, chat_enabled: false }, "✅ Tarotista desconectada.")}>Offline</button>
+                    </div>
+
+                    <input className="tc-input" value={draft.visible_name} onChange={(e) => setWorkerDrafts((prev) => ({ ...prev, [worker.id]: { ...draft, visible_name: e.target.value } }))} placeholder="Nombre visible" />
+                    <textarea className="tc-textarea" value={draft.welcome_message} onChange={(e) => setWorkerDrafts((prev) => ({ ...prev, [worker.id]: { ...draft, welcome_message: e.target.value } }))} placeholder="Descripción / bienvenida" style={{ minHeight: 90 }} />
+                    <button className="tc-btn tc-btn-gold" onClick={() => saveWorkerProfile(worker.id)} disabled={savingWorkerId === worker.id}>{savingWorkerId === worker.id ? "Guardando…" : "Guardar perfil"}</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </section>
       </div>
 
       <style jsx>{`
-        .admin-chat-kpis {
-          display: grid;
-          grid-template-columns: repeat(5, minmax(0, 1fr));
-          gap: 10px;
+        .topbar,.toolbar,.row-between,.gap-wrap,.avatar-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+        .topbar,.row-between{justify-content:space-between;align-items:flex-start;}
+        .admin-chat-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;}
+        .mobile-tabs{display:none;gap:8px;}
+        .admin-chat-grid{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr) minmax(300px,360px);gap:16px;align-items:start;}
+        .column-card{display:grid;gap:12px;padding:14px;border-radius:22px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);}
+        .admin-column,.detail-column{display:grid;gap:12px;min-height:820px;}
+        .detail-stretch{min-height:100%;align-content:start;}
+        .admin-scroll{display:grid;gap:12px;max-height:760px;overflow:auto;padding-right:4px;}
+        .search-wrap{display:flex;align-items:center;gap:8px;padding:0 12px;height:46px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);}
+        .search-wrap input{flex:1;background:transparent;border:none;color:#fff;outline:none;}
+        .thread-card,.worker-admin-card{display:grid;gap:10px;padding:14px;border-radius:20px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);text-align:left;}
+        .thread-card-active{border-color:rgba(181,156,255,.45);background:rgba(181,156,255,.12);}
+        .thread-title{font-weight:900;font-size:17px;}
+        .thread-preview{color:#e2e8f0;line-height:1.5;}
+        .empty-state{min-height:180px;display:grid;place-items:center;text-align:center;color:#cbd5e1;border-radius:18px;border:1px dashed rgba(255,255,255,.12);}
+        .detail-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+        .mini-box{padding:12px;border-radius:18px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);display:grid;gap:6px;}
+        .mini-box span{font-size:12px;color:#cbd5e1;}
+        .mini-box b{font-size:18px;}
+        .quick-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+        .messages-admin{min-height:360px;max-height:480px;overflow:auto;padding:12px;border-radius:18px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);display:grid;gap:12px;}
+        .bubble-row{display:grid;gap:6px;}
+        .bubble-row.client{justify-items:start;}
+        .bubble-row.admin,.bubble-row.reader{justify-items:end;}
+        .bubble-head{font-size:12px;color:#cbd5e1;}
+        .bubble{max-width:86%;border-radius:18px;padding:12px;display:grid;gap:10px;}
+        .bubble.client{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.10);}
+        .bubble.admin{background:rgba(215,181,109,.16);border:1px solid rgba(215,181,109,.28);}
+        .bubble.reader{background:rgba(139,92,246,.16);border:1px solid rgba(139,92,246,.28);}
+        .bubble-meta{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12px;color:#cbd5e1;}
+        .admin-avatar{width:42px;height:42px;border-radius:999px;display:grid;place-items:center;font-weight:900;color:#fff7ed;background:radial-gradient(circle at top, rgba(215,181,109,.88), rgba(107,33,168,.9));}
+        .status-dot{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border-radius:999px;font-size:12px;border:1px solid rgba(255,255,255,.08);}
+        .status-dot.ok{background:rgba(34,197,94,.14);color:#dcfce7;}
+        .status-dot.busy{background:rgba(249,115,22,.14);color:#fed7aa;}
+        .status-dot.off{background:rgba(148,163,184,.12);color:#e2e8f0;}
+        @media (max-width: 1380px){.admin-chat-grid{grid-template-columns:minmax(300px,360px) minmax(0,1fr);} .admin-column:last-child{grid-column:1/-1;} }
+        @media (max-width: 980px){
+          .admin-chat-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+          .admin-chat-grid{grid-template-columns:1fr;}
+          .mobile-tabs{display:flex;}
+          .admin-column,.detail-column{min-height:auto;}
+          .admin-scroll,.messages-admin{max-height:none;}
+          .detail-stats{grid-template-columns:repeat(2,minmax(0,1fr));}
+          .mobile-hidden{display:none;}
         }
-        .admin-chat-grid {
-          display: grid;
-          grid-template-columns: minmax(300px, 360px) minmax(300px, 360px) minmax(0, 1fr);
-          gap: 16px;
-          align-items: start;
-        }
-        .admin-column,
-        .detail-column {
-          display: grid;
-          gap: 12px;
-          min-height: 860px;
-        }
-        .admin-scroll {
-          display: grid;
-          gap: 12px;
-          max-height: 760px;
-          overflow: auto;
-          padding-right: 4px;
-        }
-        .column-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
-        }
-        .worker-admin-card,
-        .thread-card {
-          display: grid;
-          gap: 10px;
-          padding: 14px;
-          border-radius: 20px;
-          transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
-        }
-        .worker-admin-card:hover,
-        .thread-card:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 18px 40px rgba(0,0,0,.16);
-        }
-        .thread-card {
-          text-align: left;
-          border: 1px solid rgba(255,255,255,.08);
-          background: rgba(255,255,255,.03);
-        }
-        .thread-card-active {
-          border-color: rgba(181,156,255,.45);
-          background: rgba(181,156,255,.12);
-        }
-        .worker-admin-top,
-        .avatar-line,
-        .action-wrap {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          flex-wrap: wrap;
-        }
-        .worker-admin-top {
-          justify-content: space-between;
-          align-items: flex-start;
-        }
-        .admin-avatar {
-          width: 42px;
-          height: 42px;
-          border-radius: 999px;
-          display: grid;
-          place-items: center;
-          font-weight: 900;
-          color: #fff7ed;
-          background: radial-gradient(circle at top, rgba(215,181,109,.88), rgba(107,33,168,.9));
-        }
-        .detail-stats {
-          display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
-          gap: 10px;
-        }
-        .messages-admin {
-          min-height: 360px;
-          max-height: 480px;
-          overflow: auto;
-          padding: 12px;
-          border-radius: 18px;
-          background: rgba(255,255,255,.03);
-          border: 1px solid rgba(255,255,255,.06);
-          display: grid;
-          gap: 12px;
-        }
-        @media (max-width: 1380px) {
-          .admin-chat-grid {
-            grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.1fr);
-          }
-          .detail-column {
-            grid-column: 1 / -1;
-          }
-        }
-        @media (max-width: 980px) {
-          .admin-chat-kpis {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-          .admin-chat-grid {
-            grid-template-columns: 1fr;
-          }
-          .admin-column,
-          .detail-column {
-            min-height: auto;
-          }
-          .admin-scroll,
-          .messages-admin {
-            max-height: none;
-          }
-          .detail-stats {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-        }
-        @media (max-width: 640px) {
-          .admin-chat-kpis,
-          .detail-stats {
-            grid-template-columns: 1fr;
-          }
-        }
+        @media (max-width: 640px){.admin-chat-kpis,.detail-stats{grid-template-columns:1fr;}.quick-actions{display:grid;grid-template-columns:1fr 1fr;}.quick-actions :global(select), .quick-actions :global(input){width:100% !important;grid-column:1/-1;}}
       `}</style>
     </div>
   );

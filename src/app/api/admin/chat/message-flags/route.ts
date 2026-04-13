@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { gateCentralOrAdmin } from "@/lib/gate";
+import { addClientChatCredits, getClientChatCredits } from "@/lib/server/chat-platform";
 
 export const runtime = "nodejs";
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
     const admin = supabaseAdmin();
     const { data: message, error: readErr } = await admin
       .from("cliente_chat_messages")
-      .select("id, meta")
+      .select("id, thread_id, sender_type, sender_cliente_id, meta")
       .eq("id", messageId)
       .maybeSingle();
 
@@ -28,16 +29,76 @@ export async function POST(req: Request) {
     if (!message) return NextResponse.json({ ok: false, error: "MESSAGE_NOT_FOUND" }, { status: 404 });
 
     const currentMeta = message?.meta && typeof message.meta === "object" ? message.meta : {};
+    const wasPregunta = Boolean(currentMeta?.is_pregunta);
+    const wasRespuesta = Boolean(currentMeta?.is_respuesta);
+
     const nextMeta: Record<string, any> = {
       ...currentMeta,
       is_pregunta: mode === "pregunta",
       is_respuesta: mode === "respuesta",
       flagged_at: new Date().toISOString(),
+      flagged_by: (gate.me as any)?.id || null,
     };
 
     if (mode === "clear") {
       nextMeta.is_pregunta = false;
       nextMeta.is_respuesta = false;
+    }
+
+    let balance: number | null = null;
+    let threadPatch: Record<string, any> | null = null;
+
+    if (message.sender_type === "cliente" && message.thread_id && message.sender_cliente_id) {
+      const { data: thread, error: threadErr } = await admin
+        .from("cliente_chat_threads")
+        .select("id, cliente_id, free_consulta_usada, creditos_restantes")
+        .eq("id", message.thread_id)
+        .maybeSingle();
+      if (threadErr) throw threadErr;
+
+      if (thread) {
+        const freeUsed = Boolean(thread.free_consulta_usada);
+
+        if (!wasPregunta && mode === "pregunta") {
+          if (!freeUsed) {
+            threadPatch = {
+              ...(threadPatch || {}),
+              free_consulta_usada: true,
+            };
+            balance = await getClientChatCredits(admin, String(thread.cliente_id));
+          } else {
+            const result = await addClientChatCredits(admin, {
+              clienteId: String(thread.cliente_id),
+              threadId: String(thread.id),
+              amount: -1,
+              type: "consume",
+              notes: "Descuento manual por mensaje marcado como pregunta",
+              meta: { message_id: message.id, source: "admin_mark_question" },
+            });
+            balance = result.balance;
+            threadPatch = {
+              ...(threadPatch || {}),
+              creditos_restantes: result.balance,
+            };
+          }
+        }
+
+        if (wasPregunta && mode !== "pregunta") {
+          const result = await addClientChatCredits(admin, {
+            clienteId: String(thread.cliente_id),
+            threadId: String(thread.id),
+            amount: 1,
+            type: "refund",
+            notes: "Reversión manual al quitar la marca de pregunta",
+            meta: { message_id: message.id, source: "admin_unmark_question" },
+          });
+          balance = result.balance;
+          threadPatch = {
+            ...(threadPatch || {}),
+            creditos_restantes: result.balance,
+          };
+        }
+      }
     }
 
     const { data, error } = await admin
@@ -48,7 +109,26 @@ export async function POST(req: Request) {
       .single();
 
     if (error) throw error;
-    return NextResponse.json({ ok: true, message: data });
+
+    if (threadPatch && message.thread_id) {
+      const finalPatch = {
+        ...threadPatch,
+        updated_at: new Date().toISOString(),
+      };
+      await admin.from("cliente_chat_threads").update(finalPatch).eq("id", message.thread_id);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      message: data,
+      balance,
+      state: {
+        wasPregunta,
+        wasRespuesta,
+        isPregunta: Boolean(nextMeta.is_pregunta),
+        isRespuesta: Boolean(nextMeta.is_respuesta),
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_ADMIN_CHAT_MESSAGE_FLAGS" }, { status: 500 });
   }

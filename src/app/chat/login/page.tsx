@@ -3,22 +3,36 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Mail, Lock, Sparkles } from "lucide-react";
+import { Globe2, Lock, Mail, Phone, Sparkles, User2 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
 
+const COUNTRY_OPTIONS = [
+  "España",
+  "Puerto Rico",
+  "Estados Unidos",
+  "México",
+  "Argentina",
+  "Colombia",
+  "Chile",
+  "Perú",
+  "República Dominicana",
+  "Venezuela",
+];
+
 export default function ChatLoginPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nombre, setNombre] = useState("");
+  const [pais, setPais] = useState(COUNTRY_OPTIONS[0]);
+  const [telefono, setTelefono] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const normalizedEmail = useMemo(
-    () => String(email || "").trim().toLowerCase(),
-    [email]
-  );
+  const normalizedEmail = useMemo(() => String(email || "").trim().toLowerCase(), [email]);
 
   useEffect(() => {
     sb.auth.getSession().then(({ data }) => {
@@ -26,7 +40,6 @@ export default function ChatLoginPage() {
     });
   }, [router]);
 
-  // 🔐 LOGIN
   async function handleLogin() {
     if (!normalizedEmail || !password) {
       setMsg("Introduce e-mail y contraseña.");
@@ -36,17 +49,11 @@ export default function ChatLoginPage() {
     try {
       setLoading(true);
       setMsg("");
-
-      const { error } = await sb.auth.signInWithPassword({
-        email: normalizedEmail,
-        password,
-      });
-
+      const { error } = await sb.auth.signInWithPassword({ email: normalizedEmail, password });
       if (error) {
         setMsg("Usuario no encontrado o contraseña incorrecta.");
         return;
       }
-
       router.replace("/chat");
     } catch (e: any) {
       setMsg(e?.message || "Error al iniciar sesión.");
@@ -55,10 +62,9 @@ export default function ChatLoginPage() {
     }
   }
 
-  // 🆕 REGISTRO (SIN EMAIL, SIN BLOQUEOS)
   async function handleRegister() {
-    if (!normalizedEmail || !password) {
-      setMsg("Introduce e-mail y contraseña.");
+    if (!nombre.trim() || !normalizedEmail || !password || !pais.trim() || !telefono.trim()) {
+      setMsg("Para crear la cuenta necesitamos nombre, e-mail, país, teléfono y contraseña.");
       return;
     }
 
@@ -68,31 +74,22 @@ export default function ChatLoginPage() {
 
       const res = await fetch("/api/chat/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          nombre: nombre.trim(),
           email: normalizedEmail,
           password,
+          pais: pais.trim(),
+          telefono: telefono.trim(),
         }),
       });
 
       const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo crear la cuenta.");
 
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "No se pudo crear la cuenta.");
-      }
-
-      // login automático
-      const { error } = await sb.auth.signInWithPassword({
-        email: normalizedEmail,
-        password,
-      });
-
+      const { error } = await sb.auth.signInWithPassword({ email: normalizedEmail, password });
       if (error) throw error;
-
       router.replace("/chat");
-
     } catch (e: any) {
       setMsg(e?.message || "Error al crear la cuenta.");
     } finally {
@@ -103,36 +100,72 @@ export default function ChatLoginPage() {
   return (
     <div className="chat-login-shell">
       <div className="chat-login-card">
-        <div className="chat-login-hero">
+        <section className="chat-login-hero">
           <div className="chat-logo-wrap">
-            <Image
-              src="/Nuevo-logo-tarot.png"
-              alt="Tarot Celestial"
-              width={84}
-              height={84}
-              priority
-            />
+            <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={88} height={88} priority />
           </div>
           <div className="chat-login-badge">
-            <Sparkles size={14} /> Acceso privado al chat
+            <Sparkles size={14} /> Tarot Celestial · Chat privado
           </div>
-          <h1>Accede a tu consulta</h1>
+          <h1>Consulta por chat con tu tarotista</h1>
           <p>
-            Entra con tu e-mail y contraseña. Si es tu primera vez, crea tu cuenta en segundos.
+            Entra con tu cuenta o crea una nueva para acceder al panel de tarotistas, retomar conversaciones y comprar créditos cuando los necesites.
           </p>
-        </div>
+          <div className="chat-login-benefits">
+            <div className="benefit">✅ Registro rápido con nombre, país y teléfono</div>
+            <div className="benefit">✅ Acceso desde móvil tipo WhatsApp</div>
+            <div className="benefit">✅ Historial corto y limpio por tarotista</div>
+          </div>
+        </section>
 
-        <div className="chat-login-form">
+        <section className="chat-login-form">
+          <div className="switcher">
+            <button className={mode === "login" ? "switcher-btn active" : "switcher-btn"} onClick={() => setMode("login")}>
+              Iniciar sesión
+            </button>
+            <button className={mode === "register" ? "switcher-btn active" : "switcher-btn"} onClick={() => setMode("register")}>
+              Crear cuenta
+            </button>
+          </div>
+
+          {mode === "register" ? (
+            <>
+              <label className="field">
+                <span>Nombre</span>
+                <div className="field-wrap">
+                  <User2 size={16} />
+                  <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Tu nombre" />
+                </div>
+              </label>
+
+              <div className="grid-2">
+                <label className="field">
+                  <span>País</span>
+                  <div className="field-wrap">
+                    <Globe2 size={16} />
+                    <select value={pais} onChange={(e) => setPais(e.target.value)}>
+                      {COUNTRY_OPTIONS.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </div>
+                </label>
+                <label className="field">
+                  <span>Teléfono</span>
+                  <div className="field-wrap">
+                    <Phone size={16} />
+                    <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="600123123" />
+                  </div>
+                </label>
+              </div>
+            </>
+          ) : null}
+
           <label className="field">
             <span>E-mail</span>
             <div className="field-wrap">
               <Mail size={16} />
-              <input
-                type="email"
-                placeholder="tu@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+              <input type="email" placeholder="tu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
             </div>
           </label>
 
@@ -140,91 +173,40 @@ export default function ChatLoginPage() {
             <span>Contraseña</span>
             <div className="field-wrap">
               <Lock size={16} />
-              <input
-                type="password"
-                placeholder="Tu contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
+              <input type="password" placeholder="Tu contraseña" value={password} onChange={(e) => setPassword(e.target.value)} />
             </div>
           </label>
 
-          <button className="primary-btn" disabled={loading} onClick={handleLogin}>
-            {loading ? "Entrando…" : "Entrar"}
-          </button>
-
-          <button className="ghost-btn" disabled={loading} onClick={handleRegister}>
-            Crear cuenta
+          <button className="primary-btn" disabled={loading} onClick={mode === "login" ? handleLogin : handleRegister}>
+            {loading ? (mode === "login" ? "Entrando…" : "Creando cuenta…") : mode === "login" ? "Entrar" : "Crear cuenta"}
           </button>
 
           {msg ? <div className="hint-card">{msg}</div> : null}
-        </div>
+        </section>
       </div>
 
       <style jsx>{`
-        .chat-login-shell{
-          min-height:100vh;
-          display:grid;
-          place-items:center;
-          padding:24px;
-          background:#020617;
-          color:#fff;
-        }
-        .chat-login-card{
-          width:min(900px,100%);
-          display:grid;
-          grid-template-columns:1fr 1fr;
-          gap:24px;
-          padding:24px;
-          border-radius:24px;
-          background:rgba(255,255,255,.04);
-        }
-        .chat-login-hero{display:grid;gap:14px;}
-        .chat-logo-wrap{width:80px;height:80px;}
-        h1{font-size:32px;}
-        .chat-login-form{display:grid;gap:14px;}
+        .chat-login-shell{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at top, rgba(124,58,237,.16), transparent 22%), #020617;color:#fff;}
+        .chat-login-card{width:min(980px,100%);display:grid;grid-template-columns:1.05fr .95fr;gap:24px;padding:24px;border-radius:28px;background:rgba(15,23,42,.92);border:1px solid rgba(255,255,255,.08);box-shadow:0 30px 80px rgba(0,0,0,.35);}
+        .chat-login-hero,.chat-login-form{display:grid;gap:14px;align-content:start;}
+        .chat-logo-wrap{width:88px;height:88px;}
+        .chat-login-badge{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(139,92,246,.18);border:1px solid rgba(139,92,246,.28);width:max-content;color:#f5f3ff;font-size:13px;}
+        h1{font-size:34px;line-height:1.05;margin:0;}
+        p{color:#cbd5e1;line-height:1.6;margin:0;}
+        .chat-login-benefits{display:grid;gap:10px;margin-top:8px;}
+        .benefit{padding:12px 14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);color:#e5e7eb;}
+        .switcher{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px;border-radius:16px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);}
+        .switcher-btn{height:46px;border:none;border-radius:12px;background:transparent;color:#cbd5e1;font-weight:800;cursor:pointer;}
+        .switcher-btn.active{background:linear-gradient(135deg, rgba(139,92,246,.95), rgba(124,58,237,.95));color:#fff;}
         .field{display:grid;gap:6px;}
-        .field-wrap{
-          display:flex;
-          align-items:center;
-          gap:8px;
-          padding:10px;
-          border-radius:12px;
-          background:#111;
-        }
-        .field-wrap input{
-          flex:1;
-          background:transparent;
-          border:none;
-          color:#fff;
-          outline:none;
-        }
-        .primary-btn{
-          height:44px;
-          border-radius:12px;
-          border:none;
-          background:#8b5cf6;
-          color:#fff;
-          font-weight:700;
-        }
-        .ghost-btn{
-          height:44px;
-          border-radius:12px;
-          border:1px solid rgba(255,255,255,.2);
-          background:transparent;
-          color:#fff;
-          font-weight:700;
-        }
-        .hint-card{
-          padding:10px;
-          border-radius:10px;
-          background:#222;
-        }
-        @media(max-width:840px){
-          .chat-login-card{
-            grid-template-columns:1fr;
-          }
-        }
+        .field span{font-size:13px;color:#cbd5e1;}
+        .field-wrap{display:flex;align-items:center;gap:10px;padding:0 14px;height:52px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);}
+        .field-wrap input,.field-wrap select{flex:1;background:transparent;border:none;color:#fff;outline:none;font-size:15px;}
+        .field-wrap select option{color:#0f172a;}
+        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+        .primary-btn{height:50px;border-radius:14px;border:none;background:linear-gradient(135deg, #8b5cf6, #6d28d9);color:#fff;font-weight:800;font-size:15px;cursor:pointer;}
+        .hint-card{padding:12px 14px;border-radius:14px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.18);color:#fee2e2;}
+        @media (max-width: 880px){.chat-login-card{grid-template-columns:1fr;}.grid-2{grid-template-columns:1fr;}}
       `}</style>
     </div>
   );

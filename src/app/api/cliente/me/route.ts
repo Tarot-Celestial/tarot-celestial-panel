@@ -247,32 +247,8 @@ export async function GET(req: Request) {
       rango_compras_mes_anterior: monthlyPurchases,
     };
 
-    if (
-      String(cliente?.rango_actual || "") !== String(liveRank || "") ||
-      toNum(cliente?.rango_gasto_mes_anterior) !== Number(monthlySpend.toFixed(2)) ||
-      toNum(cliente?.rango_compras_mes_anterior) !== monthlyPurchases
-    ) {
-      await gate.admin
-        .from("crm_clientes")
-        .update({
-          rango_actual: liveRank,
-          rango_gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
-          rango_compras_mes_anterior: monthlyPurchases,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", cliente.id);
-
-      await gate.admin.from("cliente_rangos_mensuales").upsert({
-        cliente_id: cliente.id,
-        periodo_mes: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-01`,
-        calculado_desde_mes: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-01`,
-        gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
-        compras_mes_anterior: monthlyPurchases,
-        rango: liveRank,
-        beneficios: currentRankBenefits(liveRank),
-        recalculated_at: new Date().toISOString(),
-      }, { onConflict: "cliente_id,periodo_mes" });
-    }
+    // No persistimos aquí el rango CRM para no machacar el recálculo manual del panel.
+    // El dashboard cliente usa el rango en vivo solo para esta respuesta.
 
     const rank = rankMeta(clienteConRank?.rango_actual);
     const rankProgress = buildRankProgress(monthlySpend, monthlyPurchases, clienteConRank?.rango_actual);

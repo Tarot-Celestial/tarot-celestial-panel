@@ -1,8 +1,7 @@
 "use client";
 
-import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronLeft, LogOut, Lock, Send, Sparkles, Wallet, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronRight, Lock, LogOut, Send, Sparkles, Wallet, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -24,26 +23,20 @@ function fmt(v?: string | null) {
   if (!v) return "—";
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+  return d.toLocaleString("es-ES", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
 
-function statusChip(worker: any) {
-  if (worker?.status_key === "libre") {
-    return { label: "Libre", dot: "#4ade80", soft: "rgba(34,197,94,.14)" };
-  }
-  if (worker?.status_key === "ocupada") {
-    return { label: "Ocupada", dot: "#fb923c", soft: "rgba(249,115,22,.14)" };
-  }
-  if (worker?.status_key === "desconectada") {
-    return { label: "Desconectada", dot: "#94a3b8", soft: "rgba(148,163,184,.16)" };
-  }
-  return { label: "Vuelvo en 5 min", dot: "#c084fc", soft: "rgba(168,85,247,.16)" };
+function statusMeta(worker: any) {
+  if (worker?.status_key === "libre") return { label: "Libre", dot: "#4ade80", bg: "rgba(34,197,94,.14)" };
+  if (worker?.status_key === "ocupada") return { label: "Ocupada", dot: "#fb923c", bg: "rgba(249,115,22,.14)" };
+  if (worker?.status_key === "vuelvo") return { label: "Vuelvo enseguida", dot: "#c084fc", bg: "rgba(168,85,247,.16)" };
+  return { label: "Desconectada", dot: "#94a3b8", bg: "rgba(148,163,184,.16)" };
 }
 
 function initials(name?: string | null) {
-  const text = String(name || "T").trim();
   return (
-    text
+    String(name || "T")
+      .trim()
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
@@ -53,14 +46,7 @@ function initials(name?: string | null) {
 }
 
 function isOnboardingComplete(cliente: any) {
-  return Boolean(
-    cliente?.onboarding_completado &&
-      cliente?.nombre &&
-      cliente?.telefono &&
-      cliente?.email &&
-      cliente?.pais &&
-      cliente?.fecha_nacimiento
-  );
+  return Boolean(cliente?.onboarding_completado && cliente?.nombre && cliente?.telefono && cliente?.email && cliente?.pais);
 }
 
 export default function ChatPage() {
@@ -74,22 +60,12 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<any[]>([]);
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
-  const [mobileView, setMobileView] = useState<"workers" | "chat">("workers");
   const [showWelcome, setShowWelcome] = useState(false);
   const [savingWelcome, setSavingWelcome] = useState(false);
-  const [welcomeForm, setWelcomeForm] = useState({
-    nombre: "",
-    telefono: "",
-    email: "",
-    pais: COUNTRY_OPTIONS[0],
-    fecha_nacimiento: "",
-  });
-
-  // mejoras pro
+  const [welcomeForm, setWelcomeForm] = useState({ nombre: "", telefono: "", email: "", pais: COUNTRY_OPTIONS[0], fecha_nacimiento: "" });
   const [confirmWorker, setConfirmWorker] = useState<any>(null);
+  const [mobileView, setMobileView] = useState<"workers" | "chat">("workers");
   const [isTyping, setIsTyping] = useState(false);
-  const [autoScroll, setAutoScroll] = useState(true);
-
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const typingTimeoutRef = useRef<any>(null);
   const prevMessageCountRef = useRef(0);
@@ -99,22 +75,11 @@ export default function ChatPage() {
     [tarotistas, selectedWorkerId]
   );
 
-  // solo últimos 5 mensajes para no hacer la experiencia pesada
   const visibleMessages = useMemo(() => {
-    return (messages || []).slice(-5);
-  }, [messages]);
-
-  const summaryItems = useMemo(
-    () => [
-      { label: "Créditos", value: String(creditos) },
-      { label: "Tarotistas", value: String(tarotistas.length) },
-      {
-        label: "Gratis",
-        value: thread?.free_consulta_usada ? "Usada" : "Disponible",
-      },
-    ],
-    [creditos, tarotistas.length, thread?.free_consulta_usada]
-  );
+    if (!thread?.id) return [];
+    const limit = messages.length > 4 ? 4 : messages.length;
+    return messages.slice(-limit);
+  }, [messages, thread?.id]);
 
   const locked = Boolean(thread?.free_consulta_usada) && creditos <= 0;
 
@@ -131,9 +96,8 @@ export default function ChatPage() {
       cache: "no-store",
     });
     const json = await res.json().catch(() => null);
-
     if (!res.ok || !json?.ok) {
-      setMsg(json?.error || "No se pudo cargar el chat.");
+      setMsg(json?.error || "No se pudo cargar el panel.");
       setBooting(false);
       return;
     }
@@ -149,25 +113,17 @@ export default function ChatPage() {
     });
     setShowWelcome(!isOnboardingComplete(nextCliente));
     setCreditos(Number(json.creditos_disponibles || 0));
-
     const nextTarotistas = Array.isArray(json.tarotistas) ? json.tarotistas : [];
     setTarotistas(nextTarotistas);
-
-    // preselecciona una, pero NO entra directo al chat
     if (!selectedWorkerId && nextTarotistas[0]?.id) {
       setSelectedWorkerId(String(nextTarotistas[0].id));
     }
-
-    if (
-      selectedWorkerId &&
-      !nextTarotistas.some((item: any) => String(item.id) === String(selectedWorkerId))
-    ) {
-      setSelectedWorkerId(String(nextTarotistas[0]?.id || ""));
+    if (selectedWorkerId && !nextTarotistas.some((item: any) => String(item.id) === String(selectedWorkerId))) {
+      setSelectedWorkerId("");
       setThread(null);
       setMessages([]);
       setMobileView("workers");
     }
-
     setBooting(false);
   }, [selectedWorkerId]);
 
@@ -183,33 +139,24 @@ export default function ChatPage() {
     const token = data.session?.access_token;
     if (!token) return;
 
-    const res = await fetch(
-      `/api/cliente/chat/thread?worker_id=${encodeURIComponent(selectedWorkerId)}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      }
-    );
+    const res = await fetch(`/api/cliente/chat/thread?worker_id=${encodeURIComponent(selectedWorkerId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
     const json = await res.json().catch(() => null);
-
     if (!res.ok || !json?.ok) {
       setMsg(json?.error || "No se pudo abrir el chat.");
       return;
     }
 
     const nextMessages = Array.isArray(json.messages) ? json.messages : [];
-    const hadMessagesBefore = prevMessageCountRef.current;
-    const hasNewWorkerMessage =
-      nextMessages.length > hadMessagesBefore &&
-      nextMessages[nextMessages.length - 1]?.sender_type !== "cliente";
+    const hasNewWorkerMessage = nextMessages.length > prevMessageCountRef.current && nextMessages[nextMessages.length - 1]?.sender_type !== "cliente";
 
     setThread(json.thread || null);
     setCreditos(Number(json.creditos_disponibles || 0));
 
     if (hasNewWorkerMessage) {
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current);
-      }
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       setIsTyping(true);
       typingTimeoutRef.current = setTimeout(() => {
         setMessages(nextMessages);
@@ -229,109 +176,99 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!selectedWorkerId || mobileView !== "chat") return;
-
     loadThread();
     const id = window.setInterval(() => {
       loadThread();
       loadTarotistas();
     }, 7000);
-
     return () => window.clearInterval(id);
   }, [selectedWorkerId, mobileView, loadThread, loadTarotistas]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [visibleMessages, isTyping]);
 
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    if (nearBottom || autoScroll) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [visibleMessages, isTyping, autoScroll]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const handleScroll = () => {
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-      setAutoScroll(nearBottom);
-    };
-
-    el.addEventListener("scroll", handleScroll);
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("checkout") === "ok") {
-      setMsg("✅ Pago completado. Tus créditos del chat se están actualizando.");
-      window.history.replaceState({}, "", "/chat");
-      window.setTimeout(() => {
-        loadTarotistas();
-        loadThread();
-      }, 800);
-    }
-    if (params.get("checkout") === "cancelled") {
-      setMsg("Has cancelado el pago del chat.");
-      window.history.replaceState({}, "", "/chat");
-    }
-  }, [loadTarotistas, loadThread]);
-
-  function openWorker(worker: any) {
-    setConfirmWorker(worker);
-  }
-
-  function confirmEnterChat() {
-    if (!confirmWorker?.id) return;
-
-    setSelectedWorkerId(String(confirmWorker.id));
+  async function openWorker(worker: any) {
+    setConfirmWorker(null);
+    setSelectedWorkerId(String(worker.id));
+    setMobileView("chat");
     setThread(null);
     setMessages([]);
     prevMessageCountRef.current = 0;
-    setMobileView("chat");
-    setConfirmWorker(null);
+    await loadThread();
   }
 
   async function saveWelcome() {
-    if (
-      !welcomeForm.nombre.trim() ||
-      !welcomeForm.telefono.trim() ||
-      !welcomeForm.email.trim() ||
-      !welcomeForm.pais.trim() ||
-      !welcomeForm.fecha_nacimiento.trim()
-    ) {
-      setMsg("Completa nombre, teléfono, e-mail, país y fecha de nacimiento para entrar al chat.");
-      return;
-    }
-
     try {
       setSavingWelcome(true);
+      setMsg("");
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return;
+      if (!token) {
+        window.location.href = "/chat/login";
+        return;
+      }
 
       const res = await fetch("/api/cliente/perfil", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ...welcomeForm, onboarding_completado: true }),
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: welcomeForm.nombre,
+          telefono: welcomeForm.telefono,
+          email: welcomeForm.email,
+          pais: welcomeForm.pais,
+          fecha_nacimiento: welcomeForm.fecha_nacimiento,
+          onboarding_completado: true,
+        }),
       });
       const json = await res.json().catch(() => null);
-
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "No se pudo guardar tu bienvenida.");
-      }
-
-      setCliente(json.cliente || null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo guardar tu perfil.");
       setShowWelcome(false);
-      setMsg("✨ Bienvenida completa. Ya puedes iniciar tu consulta.");
+      await loadTarotistas();
     } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error"}`);
+      setMsg(e?.message || "No se pudo guardar tu perfil.");
     } finally {
       setSavingWelcome(false);
+    }
+  }
+
+  async function sendMessage() {
+    if (!composer.trim() || !selectedWorkerId) return;
+    try {
+      setSending(true);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) {
+        window.location.href = "/chat/login";
+        return;
+      }
+
+      const body = composer.trim();
+      setComposer("");
+      const res = await fetch("/api/cliente/chat/thread", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ worker_id: selectedWorkerId, thread_id: thread?.id || undefined, body }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        setComposer(body);
+        if (json?.need_payment) {
+          setMsg("Te has quedado sin créditos. Compra más para seguir la consulta.");
+        } else {
+          throw new Error(json?.error || "No se pudo enviar el mensaje.");
+        }
+        return;
+      }
+      await loadThread();
+      await loadTarotistas();
+    } catch (e: any) {
+      setMsg(e?.message || "No se pudo enviar el mensaje.");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -340,1119 +277,269 @@ export default function ChatPage() {
     window.location.href = "/chat/login";
   }
 
-  async function sendMessage() {
-    const text = composer.trim();
-    if (!text || !selectedWorkerId) return;
-
-    try {
-      setSending(true);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/cliente/chat/thread", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          worker_id: selectedWorkerId,
-          thread_id: thread?.id || null,
-          body: text,
-        }),
-      });
-      const json = await res.json().catch(() => null);
-
-      if (res.status === 402 || json?.need_payment) {
-        setMsg("Tu consulta gratis ya se ha usado. Necesitas créditos para seguir escribiendo.");
-        return;
-      }
-
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || "No se pudo enviar el mensaje.");
-      }
-
-      setComposer("");
-      setAutoScroll(true);
-      await loadThread();
-      await loadTarotistas();
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setSending(false);
-    }
-  }
-
   if (booting) {
-    return <div className="chat-loading">Cargando tu espacio de chat…</div>;
+    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", color: "#fff", background: "#020617" }}>Cargando panel de chat…</div>;
   }
 
   return (
-    <div className="chat-page-shell">
-      <div className="chat-topbar">
-        <div className="brand-block">
-          <div className="brand-logo">
-            <Image
-              src="/Nuevo-logo-tarot.png"
-              alt="Tarot Celestial"
-              width={52}
-              height={52}
-              priority
-            />
-          </div>
-          <div>
-            <div className="brand-over">Tarot Celestial · Chat Privado</div>
-            <div className="brand-title">Consulta por chat con una experiencia premium</div>
-          </div>
+    <div className="chat-shell">
+      <header className="chat-header">
+        <div>
+          <div className="eyebrow">Tarot Celestial · chat privado</div>
+          <h1>{mobileView === "chat" && activeTarotista ? activeTarotista.display_name : `Hola${cliente?.nombre ? `, ${cliente.nombre}` : ""}`}</h1>
+          <p>
+            {mobileView === "chat" && activeTarotista
+              ? `Consulta con ${activeTarotista.display_name}. Mostramos solo los últimos mensajes para que el chat sea ágil y cómodo.`
+              : "Elige tu tarotista disponible y entra al chat en un solo toque."}
+          </p>
         </div>
-
-        <div className="topbar-actions">
-          {summaryItems.map((item) => (
-            <div key={item.label} className="summary-pill">
-              <span>{item.label}</span>
-              <strong>{item.value}</strong>
-            </div>
-          ))}
-          <button className="logout-btn" onClick={logout}>
-            <LogOut size={15} /> Salir
-          </button>
+        <div className="header-actions">
+          <span className="header-chip"><Wallet size={14} /> {creditos} créditos</span>
+          <button className="ghost-btn" onClick={logout}><LogOut size={14} /> Salir</button>
         </div>
-      </div>
+      </header>
 
-      {msg ? <div className="flash-box">{msg}</div> : null}
+      {msg ? <div className="notice">{msg}</div> : null}
 
       <div className="chat-layout">
-        <section className={`workers-panel ${mobileView === "chat" ? "mobile-hide" : ""}`}>
+        <section className={`workers-panel ${mobileView === "chat" ? "mobile-hidden" : ""}`}>
           <div className="panel-head">
             <div>
-              <div className="panel-title">Tarotistas disponibles</div>
-              <div className="panel-sub">
-                Elige tu tarotista y entra en una consulta privada, cómoda y enfocada.
-              </div>
+              <div className="panel-title">Tarotistas</div>
+              <div className="panel-sub">Solo se puede entrar con tarotistas libres.</div>
             </div>
-            <span className="count-chip">{tarotistas.length}</span>
           </div>
 
           <div className="workers-grid">
-            {tarotistas.length ? (
-              tarotistas.map((worker: any) => {
-                const chip = statusChip(worker);
-                const active = String(worker.id) === String(selectedWorkerId);
-
-                return (
-                  <button
-                    key={worker.id}
-                    type="button"
-                    className={`worker-card ${active ? "worker-card-active" : ""}`}
-                    onClick={() => openWorker(worker)}
-                  >
-                    <div className="worker-card-head">
-                      <div className="worker-avatar">{initials(worker.display_name)}</div>
-                      <div
-                        className="worker-status-pill"
-                        style={{ color: chip.dot, background: chip.soft }}
-                      >
-                        <span
-                          className="worker-status-dot"
-                          style={{ background: chip.dot }}
-                        />
-                        {chip.label}
-                      </div>
+            {tarotistas.map((worker: any) => {
+              const status = statusMeta(worker);
+              const isAvailable = worker?.status_key === "libre";
+              const hasHistory = Boolean(worker?.current_thread_id);
+              return (
+                <button
+                  key={worker.id}
+                  className={`worker-card ${selectedWorkerId === String(worker.id) ? "active" : ""}`}
+                  onClick={() => isAvailable && setConfirmWorker(worker)}
+                  disabled={!isAvailable}
+                >
+                  <div className="worker-top">
+                    <div className="avatar">{initials(worker.display_name)}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="worker-name">{worker.display_name}</div>
+                      <div className="worker-role">{worker.team ? `Especialidad: ${worker.team}` : "Tarotista disponible"}</div>
                     </div>
+                    <span className="status-pill" style={{ background: status.bg }}>
+                      <span className="dot" style={{ background: status.dot }} />
+                      {status.label}
+                    </span>
+                  </div>
 
-                    <div className="worker-name">{worker.display_name}</div>
-                    <div className="worker-team">Equipo {worker.team || "Tarot Celestial"}</div>
+                  <div className="worker-copy">
+                    {worker.welcome_message || "Consulta privada por chat. Respuestas claras, cómodas y sin esperas innecesarias."}
+                  </div>
 
-                    <div className="worker-copy">
-                      {worker.welcome_message ||
-                        "Consulta amor, trabajo, bloqueos, energía y decisiones importantes."}
+                  <div className="worker-footer">
+                    <span className="soft-chip">{hasHistory ? "Ya hablaste con ella" : "Nueva consulta"}</span>
+                    <span className="soft-chip">{hasHistory && worker.current_thread_last_message_at ? `Último chat ${fmt(worker.current_thread_last_message_at)}` : "Acceso inmediato"}</span>
+                  </div>
+
+                  {hasHistory ? (
+                    <div className="preview-box">
+                      <div className="preview-title">Último mensaje</div>
+                      <div className="preview-copy">{worker.current_thread_last_message_preview || "Retoma la consulta donde la dejaste."}</div>
                     </div>
+                  ) : null}
 
-                    <div className="worker-footer">
-                      <span className="worker-mini-text">
-                        {worker.current_thread_last_message_preview || "Sesión disponible ahora"}
-                      </span>
-                      <span className="worker-open">Abrir chat</span>
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="empty-box">
-                <div className="empty-chat-title">No vemos tarotistas activas</div>
-                <div className="panel-sub">
-                  Revisa el estado en admin o espera unos segundos para que el estado de conexión se refresque.
-                </div>
-              </div>
-            )}
+                  <div className="enter-row">
+                    <span>{isAvailable ? "Entrar al chat" : worker.status_key === "ocupada" ? "Ahora está ocupada" : "No disponible"}</span>
+                    <ChevronRight size={16} />
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </section>
 
-        <section className={`conversation-panel ${mobileView === "workers" ? "mobile-hide-chat" : ""}`}>
-          <div className="panel-head conversation-head">
-            <div className="conversation-ident">
-              <button className="back-btn" onClick={() => setMobileView("workers")}>
-                <ChevronLeft size={16} />
-              </button>
-
-              <div className="hero-avatar">
-                {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
-              </div>
-
-              <div className="conversation-title-wrap">
-                <div className="panel-title">
-                  {activeTarotista?.display_name || thread?.tarotista_display_name || "Elige una tarotista"}
-                </div>
-                <div className="panel-sub">
-                  {activeTarotista?.welcome_message ||
-                    thread?.tarotista_welcome_message ||
-                    "Tu espacio de consulta se abre limpio y privado en cada sesión."}
+        <section className={`chat-panel ${mobileView === "workers" ? "mobile-chat-hidden" : ""}`}>
+          {mobileView === "chat" && activeTarotista ? (
+            <>
+              <div className="chat-topbar">
+                <button className="back-btn" onClick={() => setMobileView("workers")}><ArrowLeft size={16} /> Volver al inicio</button>
+                <div>
+                  <div className="panel-title">{activeTarotista.display_name}</div>
+                  <div className="panel-sub">{statusMeta(activeTarotista).label} · {thread?.free_consulta_usada ? "La pregunta gratis ya está usada" : "Tu primera pregunta marcada será gratuita"}</div>
                 </div>
               </div>
-            </div>
 
-            {activeTarotista ? (
-              <span className="status-badge" style={{ color: statusChip(activeTarotista).dot }}>
-                {statusChip(activeTarotista).label}
-              </span>
-            ) : null}
-          </div>
+              <div className="chat-welcome">
+                <Sparkles size={16} />
+                {activeTarotista.welcome_message || thread?.tarotista_welcome_message || "Haz tu consulta con calma. Este chat está optimizado para leer solo lo importante."}
+              </div>
 
-          <div className="messages-surface" ref={scrollRef}>
-            {!activeTarotista ? (
-              <div className="empty-chat-box">
-                <div className="empty-chat-title">Selecciona una tarotista</div>
-                <div className="panel-sub">
-                  Al abrir el chat verás los últimos mensajes recientes con esa tarotista.
-                </div>
+              <div className="thread-summary">
+                <div className="summary-card"><span>Créditos</span><b>{creditos}</b></div>
+                <div className="summary-card"><span>Consulta gratis</span><b>{thread?.free_consulta_usada ? "Usada" : "Disponible"}</b></div>
+                <div className="summary-card"><span>Vista</span><b>{visibleMessages.length ? `${visibleMessages.length} mensajes` : "Nuevo chat"}</b></div>
               </div>
-            ) : !visibleMessages.length ? (
-              <div className="empty-chat-box">
-                <div className="hero-avatar hero-avatar-large">
-                  {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
-                </div>
-                <div className="empty-chat-title">Todo listo para empezar</div>
-                <div className="panel-sub">
-                  Escribe tu primera pregunta. Tu primer intercambio es gratuito y después podrás continuar con créditos.
-                </div>
-              </div>
-            ) : (
-              <>
-                {visibleMessages.map((m: any) => {
-                  const mine = m.sender_type === "cliente";
+
+              <div className="messages-box" ref={scrollRef}>
+                {visibleMessages.length ? (
+                  <div className="timeline-tip">Mostramos los últimos {visibleMessages.length} mensajes para que el chat sea más cómodo.</div>
+                ) : (
+                  <div className="empty-chat">Aún no hay mensajes. Escribe la primera consulta para empezar.</div>
+                )}
+
+                {visibleMessages.map((item: any) => {
+                  const mine = item.sender_type === "cliente";
                   return (
-                    <div key={m.id} className={`bubble-row ${mine ? "bubble-row-mine" : ""}`}>
-                      {!mine ? (
-                        <div className="bubble-mini-avatar">
-                          {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
-                        </div>
-                      ) : null}
-
-                      <div className={`bubble ${mine ? "bubble-mine" : "bubble-worker"}`}>
-                        <div>{m.body}</div>
-                        <div className="bubble-time">{fmt(m.created_at)}</div>
+                    <div key={item.id} className={`bubble-wrap ${mine ? "mine" : "theirs"}`}>
+                      <div className={`bubble ${mine ? "mine" : "theirs"}`}>
+                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{item.body}</div>
+                        <div className="bubble-time">{fmt(item.created_at)}</div>
                       </div>
                     </div>
                   );
                 })}
 
-                {isTyping ? (
-                  <div className="bubble-row">
-                    <div className="bubble-mini-avatar">
-                      {initials(activeTarotista?.display_name || thread?.tarotista_display_name)}
-                    </div>
-                    <div className="bubble bubble-worker typing-bubble">
-                      <div className="typing-dots">
-                        <span />
-                        <span />
-                        <span />
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
+                {isTyping ? <div className="typing">La tarotista está escribiendo…</div> : null}
+              </div>
 
-          <div className="composer-shell">
-            {locked ? (
-              <div className="locked-banner">
-                <div>
-                  <div className="locked-title">
-                    <Lock size={16} /> Activa tu sesión para continuar
+              {locked ? (
+                <div className="paywall-box">
+                  <div>
+                    <div className="panel-title" style={{ fontSize: 18 }}>Te has quedado sin créditos</div>
+                    <div className="panel-sub">Tu tarotista podrá enviarte un enlace de pago para seguir la consulta sin salir del chat.</div>
                   </div>
-                  <div className="panel-sub">
-                    Tu consulta gratis ya se ha usado. Compra créditos para seguir con tu lectura.
-                  </div>
+                  <button className="pay-btn"><Lock size={14} /> Esperando enlace de pago</button>
                 </div>
-                <button
-                  className="pay-btn"
-                  onClick={() => (window.location.href = "/checkout/chat")}
-                >
-                  <Wallet size={15} /> Comprar créditos
+              ) : null}
+
+              <div className="composer-box">
+                <textarea
+                  value={composer}
+                  onChange={(e) => setComposer(e.target.value)}
+                  placeholder={thread?.free_consulta_usada ? "Escribe tu siguiente mensaje…" : "Escribe tu primera consulta…"}
+                  className="composer"
+                />
+                <button className="send-btn" disabled={sending || !composer.trim()} onClick={sendMessage}>
+                  <Send size={15} /> {sending ? "Enviando…" : "Enviar"}
                 </button>
               </div>
-            ) : null}
-
-            <textarea
-              className="composer"
-              value={composer}
-              onChange={(e) => setComposer(e.target.value)}
-              placeholder={locked ? "Necesitas créditos para seguir" : "Escribe aquí tu pregunta…"}
-              disabled={locked || !activeTarotista || showWelcome}
-            />
-
-            <div className="composer-footer">
-              <div className="composer-hint">
-                <Sparkles size={14} /> Consulta privada, elegante y separada de tu panel cliente
+            </>
+          ) : (
+            <div className="chat-placeholder">
+              <Sparkles size={18} />
+              <div>
+                <div className="panel-title">Selecciona una tarotista</div>
+                <div className="panel-sub">Verás una confirmación antes de entrar al chat.</div>
               </div>
-              <button
-                className="send-btn"
-                onClick={sendMessage}
-                disabled={sending || locked || !activeTarotista || showWelcome}
-              >
-                <Send size={15} /> {sending ? "Enviando…" : "Enviar mensaje"}
-              </button>
             </div>
-          </div>
+          )}
         </section>
       </div>
 
-      {showWelcome ? (
-        <div className="modal-overlay">
-          <div className="welcome-modal">
-            <div className="welcome-head">
-              <div className="brand-logo small">
-                <Image
-                  src="/Nuevo-logo-tarot.png"
-                  alt="Tarot Celestial"
-                  width={42}
-                  height={42}
-                />
-              </div>
-              <div>
-                <div className="panel-title">Bienvenida a tu chat privado</div>
-                <div className="panel-sub">
-                  Antes de empezar, necesitamos tus datos básicos una sola vez.
-                </div>
-              </div>
+      {confirmWorker ? (
+        <div className="overlay" onClick={() => setConfirmWorker(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setConfirmWorker(null)}><X size={16} /></button>
+            <div className="panel-title">¿Entrar al chat con {confirmWorker.display_name}?</div>
+            <div className="panel-sub" style={{ marginTop: 8 }}>
+              {confirmWorker.welcome_message || "Entrarás directamente al hilo privado con esta tarotista."}
             </div>
-
-            <div className="welcome-grid">
-              <label>
-                <span>Nombre</span>
-                <input
-                  value={welcomeForm.nombre}
-                  onChange={(e) =>
-                    setWelcomeForm((p) => ({ ...p, nombre: e.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                <span>Teléfono</span>
-                <input
-                  value={welcomeForm.telefono}
-                  onChange={(e) =>
-                    setWelcomeForm((p) => ({ ...p, telefono: e.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                <span>E-mail</span>
-                <input
-                  type="email"
-                  value={welcomeForm.email}
-                  onChange={(e) =>
-                    setWelcomeForm((p) => ({ ...p, email: e.target.value }))
-                  }
-                />
-              </label>
-              <label>
-                <span>País</span>
-                <select
-                  value={welcomeForm.pais}
-                  onChange={(e) =>
-                    setWelcomeForm((p) => ({ ...p, pais: e.target.value }))
-                  }
-                >
-                  {COUNTRY_OPTIONS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="full">
-                <span>Fecha de nacimiento</span>
-                <input
-                  type="date"
-                  value={welcomeForm.fecha_nacimiento}
-                  onChange={(e) =>
-                    setWelcomeForm((p) => ({
-                      ...p,
-                      fecha_nacimiento: e.target.value,
-                    }))
-                  }
-                />
-              </label>
+            <div className="confirm-row">
+              <button className="ghost-btn" onClick={() => setConfirmWorker(null)}>Cancelar</button>
+              <button className="send-btn" onClick={() => openWorker(confirmWorker)}>Sí, entrar</button>
             </div>
-
-            <button
-              className="send-btn wide"
-              disabled={savingWelcome}
-              onClick={saveWelcome}
-            >
-              {savingWelcome ? "Guardando…" : "Entrar al chat"}
-            </button>
           </div>
         </div>
       ) : null}
 
-      {confirmWorker ? (
-        <div className="modal-overlay">
-          <div className="confirm-modal">
-            <button className="confirm-close" onClick={() => setConfirmWorker(null)}>
-              <X size={16} />
+      {showWelcome ? (
+        <div className="overlay" onClick={() => {}}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="panel-title">Completa tu acceso</div>
+            <div className="panel-sub" style={{ marginTop: 8 }}>Necesitamos tus datos básicos para terminar de activar el chat.</div>
+            <div className="form-grid">
+              <input className="input" placeholder="Nombre" value={welcomeForm.nombre} onChange={(e) => setWelcomeForm((p) => ({ ...p, nombre: e.target.value }))} />
+              <input className="input" placeholder="Teléfono" value={welcomeForm.telefono} onChange={(e) => setWelcomeForm((p) => ({ ...p, telefono: e.target.value }))} />
+              <input className="input" placeholder="E-mail" value={welcomeForm.email} onChange={(e) => setWelcomeForm((p) => ({ ...p, email: e.target.value }))} />
+              <select className="input" value={welcomeForm.pais} onChange={(e) => setWelcomeForm((p) => ({ ...p, pais: e.target.value }))}>
+                {COUNTRY_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+              <input className="input" type="date" value={welcomeForm.fecha_nacimiento} onChange={(e) => setWelcomeForm((p) => ({ ...p, fecha_nacimiento: e.target.value }))} />
+            </div>
+            <button className="send-btn" style={{ width: "100%" }} onClick={saveWelcome} disabled={savingWelcome}>
+              <CheckCircle2 size={16} /> {savingWelcome ? "Guardando…" : "Entrar al panel"}
             </button>
-
-            <div className="confirm-avatar">
-              {initials(confirmWorker?.display_name)}
-            </div>
-
-            <div className="confirm-title">
-              ¿Quieres entrar al chat con {confirmWorker?.display_name}?
-            </div>
-
-            <div className="confirm-sub">
-              Verás los últimos mensajes recientes y continuarás tu consulta en una sesión privada.
-            </div>
-
-            <div className="confirm-actions">
-              <button className="confirm-secondary" onClick={() => setConfirmWorker(null)}>
-                Cancelar
-              </button>
-              <button className="confirm-primary" onClick={confirmEnterChat}>
-                Entrar al chat
-              </button>
-            </div>
           </div>
         </div>
       ) : null}
 
       <style jsx>{`
-        .chat-page-shell {
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at top, rgba(139, 92, 246, 0.22), transparent 35%),
-            linear-gradient(180deg, #0b1120 0%, #020617 100%);
-          color: #fff;
-          display: flex;
-          flex-direction: column;
-          padding: 18px;
-          gap: 16px;
-          overflow: hidden;
-        }
-
-        .chat-loading {
-          min-height: 100vh;
-          display: grid;
-          place-items: center;
-          background: #020617;
-          color: #fff;
-          font-size: 16px;
-        }
-
-        .chat-topbar {
-          display: grid;
-          grid-template-columns: minmax(0, 1fr) auto;
-          gap: 16px;
-          align-items: center;
-          padding: 18px 20px;
-          border-radius: 24px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(8, 11, 26, 0.72);
-          backdrop-filter: blur(18px);
-          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
-        }
-
-        .brand-block {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          min-width: 0;
-        }
-
-        .brand-logo {
-          width: 58px;
-          height: 58px;
-          border-radius: 18px;
-          display: grid;
-          place-items: center;
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
-          overflow: hidden;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
-        }
-
-        .brand-logo.small {
-          width: 52px;
-          height: 52px;
-          border-radius: 16px;
-        }
-
-        .brand-over {
-          font-size: 12px;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: #d7b56d;
-        }
-
-        .brand-title {
-          font-size: 24px;
-          line-height: 1.08;
-          font-weight: 900;
-        }
-
-        .topbar-actions {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-          justify-content: flex-end;
-        }
-
-        .summary-pill,
-        .logout-btn,
-        .status-badge,
-        .count-chip,
-        .pay-btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          padding: 11px 14px;
-          border-radius: 999px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.05);
-          color: #fff;
-        }
-
-        .summary-pill {
-          flex-direction: column;
-          align-items: flex-start;
-          justify-content: center;
-          min-width: 112px;
-          border-radius: 18px;
-          padding: 12px 14px;
-        }
-
-        .summary-pill span {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.62);
-        }
-
-        .summary-pill strong {
-          font-size: 18px;
-          line-height: 1;
-        }
-
-        .logout-btn,
-        .pay-btn {
-          cursor: pointer;
-          font-weight: 800;
-        }
-
-        .flash-box {
-          padding: 14px 16px;
-          border-radius: 18px;
-          border: 1px solid rgba(215, 181, 109, 0.18);
-          background: rgba(215, 181, 109, 0.1);
-          backdrop-filter: blur(12px);
-        }
-
-        .chat-layout {
-          flex: 1;
-          display: grid;
-          grid-template-columns: 360px minmax(0, 1fr);
-          gap: 16px;
-          min-height: 0;
-        }
-
-        .workers-panel,
-        .conversation-panel {
-          min-height: 0;
-          display: flex;
-          flex-direction: column;
-          border-radius: 28px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(8, 11, 26, 0.78);
-          backdrop-filter: blur(18px);
-          overflow: hidden;
-          box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
-        }
-
-        .panel-head {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-          padding: 18px 20px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
-        }
-
-        .panel-title {
-          font-size: 22px;
-          font-weight: 900;
-          line-height: 1.05;
-        }
-
-        .panel-sub {
-          font-size: 13px;
-          line-height: 1.55;
-          color: rgba(255, 255, 255, 0.7);
-        }
-
-        .conversation-title-wrap {
-          min-width: 0;
-        }
-
-        .workers-grid {
-          padding: 16px;
-          display: grid;
-          gap: 14px;
-          overflow-y: auto;
-          align-content: start;
-        }
-
-        .worker-card {
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 24px;
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
-          padding: 16px;
-          text-align: left;
-          display: grid;
-          gap: 12px;
-          cursor: pointer;
-          transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-        }
-
-        .worker-card:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-        }
-
-        .worker-card-active {
-          border-color: rgba(215, 181, 109, 0.42);
-          box-shadow: 0 0 0 1px rgba(215, 181, 109, 0.18) inset;
-        }
-
-        .worker-card-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 12px;
-        }
-
-        .worker-avatar,
-        .hero-avatar,
-        .bubble-mini-avatar,
-        .hero-avatar-large,
-        .confirm-avatar {
-          display: grid;
-          place-items: center;
-          border-radius: 999px;
-          font-weight: 900;
-          color: #fff7ed;
-          background: radial-gradient(circle at top, rgba(215, 181, 109, 0.9), rgba(107, 33, 168, 0.94));
-        }
-
-        .worker-avatar,
-        .hero-avatar {
-          width: 56px;
-          height: 56px;
-          font-size: 18px;
-        }
-
-        .hero-avatar-large,
-        .confirm-avatar {
-          width: 66px;
-          height: 66px;
-          font-size: 20px;
-          margin-bottom: 10px;
-        }
-
-        .bubble-mini-avatar {
-          width: 34px;
-          height: 34px;
-          font-size: 12px;
-          flex: 0 0 auto;
-        }
-
-        .worker-status-pill {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          border-radius: 999px;
-          padding: 8px 12px;
-          font-size: 12px;
-          font-weight: 800;
-        }
-
-        .worker-status-dot {
-          width: 8px;
-          height: 8px;
-          border-radius: 999px;
-          display: inline-block;
-        }
-
-        .worker-name {
-          font-size: 20px;
-          font-weight: 900;
-          line-height: 1.05;
-        }
-
-        .worker-team {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.58);
-          margin-top: -4px;
-        }
-
-        .worker-copy {
-          font-size: 13px;
-          line-height: 1.6;
-          color: rgba(255, 255, 255, 0.76);
-        }
-
-        .worker-footer {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-        }
-
-        .worker-mini-text {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.56);
-        }
-
-        .worker-open {
-          font-size: 12px;
-          font-weight: 900;
-          color: #d7b56d;
-        }
-
-        .conversation-head {
-          align-items: center;
-        }
-
-        .conversation-ident {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          min-width: 0;
-        }
-
-        .back-btn {
-          width: 38px;
-          height: 38px;
-          border-radius: 12px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(255, 255, 255, 0.04);
-          color: #fff;
-          display: none;
-          place-items: center;
-          cursor: pointer;
-        }
-
-        .messages-surface {
-          flex: 1;
-          min-height: 0;
-          overflow-y: auto;
-          padding: 18px;
-          display: grid;
-          gap: 14px;
-          background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent);
-        }
-
-        .empty-chat-box,
-        .empty-box {
-          min-height: 220px;
-          border-radius: 22px;
-          border: 1px dashed rgba(255, 255, 255, 0.14);
-          background: rgba(255, 255, 255, 0.03);
-          padding: 22px;
-          display: grid;
-          place-items: center;
-          text-align: center;
-          gap: 8px;
-          color: rgba(255, 255, 255, 0.74);
-        }
-
-        .empty-chat-title {
-          font-size: 20px;
-          font-weight: 900;
-        }
-
-        .bubble-row {
-          display: flex;
-          gap: 10px;
-          align-items: flex-end;
-        }
-
-        .bubble-row-mine {
-          justify-content: flex-end;
-        }
-
-        .bubble {
-          max-width: min(78%, 620px);
-          padding: 14px 16px;
-          border-radius: 20px;
-          display: grid;
-          gap: 8px;
-          font-size: 14px;
-          line-height: 1.6;
-          box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
-        }
-
-        .bubble-worker {
-          background: rgba(255, 255, 255, 0.06);
-          border: 1px solid rgba(255, 255, 255, 0.09);
-        }
-
-        .bubble-mine {
-          background: linear-gradient(135deg, rgba(139, 92, 246, 0.92), rgba(107, 33, 168, 0.92));
-          border: 1px solid rgba(168, 85, 247, 0.28);
-        }
-
-        .bubble-time {
-          font-size: 11px;
-          color: rgba(255, 255, 255, 0.58);
-        }
-
-        .typing-bubble {
-          min-width: 74px;
-        }
-
-        .typing-dots {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          min-height: 18px;
-        }
-
-        .typing-dots span {
-          width: 7px;
-          height: 7px;
-          border-radius: 999px;
-          background: rgba(255,255,255,.8);
-          animation: blink 1.2s infinite ease-in-out;
-        }
-
-        .typing-dots span:nth-child(2) {
-          animation-delay: .15s;
-        }
-
-        .typing-dots span:nth-child(3) {
-          animation-delay: .3s;
-        }
-
-        @keyframes blink {
-          0%, 80%, 100% {
-            opacity: .25;
-            transform: translateY(0);
-          }
-          40% {
-            opacity: 1;
-            transform: translateY(-2px);
-          }
-        }
-
-        .composer-shell {
-          padding: 16px;
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
-          display: grid;
-          gap: 12px;
-          background: rgba(255, 255, 255, 0.02);
-        }
-
-        .composer {
-          width: 100%;
-          min-height: 110px;
-          max-height: 160px;
-          padding: 16px;
-          border-radius: 20px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(2, 6, 23, 0.72);
-          color: #fff;
-          resize: none;
-          outline: none;
-        }
-
-        .composer-footer {
-          display: flex;
-          justify-content: space-between;
-          gap: 12px;
-          align-items: center;
-        }
-
-        .composer-hint {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.68);
-        }
-
-        .send-btn {
-          height: 50px;
-          padding: 0 18px;
-          border: none;
-          border-radius: 16px;
-          background: linear-gradient(135deg, #d7b56d, #8b5cf6);
-          color: #fff;
-          font-weight: 900;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          cursor: pointer;
-        }
-
-        .send-btn.wide {
-          width: 100%;
-          justify-content: center;
-        }
-
-        .locked-banner {
-          display: flex;
-          justify-content: space-between;
-          gap: 14px;
-          align-items: center;
-          padding: 14px 16px;
-          border-radius: 18px;
-          border: 1px solid rgba(215, 181, 109, 0.24);
-          background: rgba(215, 181, 109, 0.12);
-        }
-
-        .locked-title {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          font-size: 15px;
-          font-weight: 900;
-        }
-
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(2, 6, 23, 0.72);
-          backdrop-filter: blur(10px);
-          display: grid;
-          place-items: center;
-          padding: 18px;
-          z-index: 50;
-        }
-
-        .welcome-modal,
-        .confirm-modal {
-          width: min(720px, 100%);
-          padding: 22px;
-          border-radius: 28px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(10, 14, 29, 0.94);
-          display: grid;
-          gap: 18px;
-          box-shadow: 0 32px 90px rgba(0, 0, 0, 0.38);
-          position: relative;
-        }
-
-        .welcome-head {
-          display: flex;
-          gap: 14px;
-          align-items: center;
-        }
-
-        .confirm-title {
-          font-size: 24px;
-          font-weight: 900;
-          text-align: center;
-        }
-
-        .confirm-sub {
-          text-align: center;
-          color: rgba(255,255,255,.72);
-          line-height: 1.6;
-        }
-
-        .confirm-actions {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-        }
-
-        .confirm-primary,
-        .confirm-secondary {
-          height: 50px;
-          border-radius: 16px;
-          border: none;
-          font-weight: 900;
-          cursor: pointer;
-        }
-
-        .confirm-primary {
-          background: linear-gradient(135deg, #d7b56d, #8b5cf6);
-          color: #fff;
-        }
-
-        .confirm-secondary {
-          background: rgba(255,255,255,.06);
-          color: #fff;
-          border: 1px solid rgba(255,255,255,.1);
-        }
-
-        .confirm-close {
-          position: absolute;
-          right: 16px;
-          top: 16px;
-          width: 36px;
-          height: 36px;
-          border-radius: 12px;
-          border: 1px solid rgba(255,255,255,.1);
-          background: rgba(255,255,255,.05);
-          color: #fff;
-          cursor: pointer;
-          display: grid;
-          place-items: center;
-        }
-
-        .welcome-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 14px;
-        }
-
-        .welcome-grid label {
-          display: grid;
-          gap: 8px;
-        }
-
-        .welcome-grid label.full {
-          grid-column: 1 / -1;
-        }
-
-        .welcome-grid span {
-          font-size: 13px;
-          color: rgba(255, 255, 255, 0.72);
-        }
-
-        .welcome-grid input,
-        .welcome-grid select {
-          height: 50px;
-          border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          background: rgba(2, 6, 23, 0.72);
-          color: #fff;
-          padding: 0 14px;
-          outline: none;
-        }
-
-        @media (max-width: 980px) {
-          .chat-layout {
-            grid-template-columns: 320px minmax(0, 1fr);
-          }
-
-          .brand-title {
-            font-size: 22px;
-          }
-        }
-
-        @media (max-width: 860px) {
-          .chat-page-shell {
-            padding: 0;
-            gap: 0;
-          }
-
-          .chat-topbar {
-            border-radius: 0;
-            border-left: none;
-            border-right: none;
-            border-top: none;
-            padding: 14px;
-            grid-template-columns: 1fr;
-          }
-
-          .topbar-actions {
-            justify-content: flex-start;
-          }
-
-          .chat-layout {
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-          }
-
-          .workers-panel,
-          .conversation-panel {
-            width: 100%;
-            height: 100%;
-            border-radius: 0;
-            border-left: none;
-            border-right: none;
-            border-bottom: none;
-          }
-
-          .mobile-hide {
-            display: none;
-          }
-
-          .mobile-hide-chat {
-            display: none;
-          }
-
-          .back-btn {
-            display: grid;
-          }
-
-          .summary-pill {
-            min-width: unset;
-          }
-
-          .welcome-grid,
-          .confirm-actions {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        @media (max-width: 560px) {
-          .brand-title {
-            font-size: 20px;
-          }
-
-          .workers-grid {
-            padding: 12px;
-          }
-
-          .panel-head,
-          .messages-surface,
-          .composer-shell {
-            padding: 14px;
-          }
-
-          .bubble {
-            max-width: 88%;
-          }
-
-          .summary-pill {
-            width: calc(50% - 5px);
-          }
-
-          .locked-banner,
-          .composer-footer,
-          .worker-footer {
-            flex-direction: column;
-            align-items: stretch;
-          }
+        .chat-shell{min-height:100vh;padding:18px;background:radial-gradient(circle at top, rgba(124,58,237,.14), transparent 18%), #020617;color:#fff;display:grid;gap:16px;}
+        .chat-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;padding:18px 20px;border-radius:24px;background:rgba(15,23,42,.88);border:1px solid rgba(255,255,255,.07);}
+        .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#c4b5fd;margin-bottom:6px;}
+        h1{margin:0;font-size:34px;line-height:1.05;}
+        p{margin:6px 0 0;color:#cbd5e1;max-width:780px;}
+        .header-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+        .header-chip,.ghost-btn,.soft-chip,.status-pill{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:10px 14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#fff;}
+        .ghost-btn{cursor:pointer;}
+        .notice{padding:12px 14px;border-radius:18px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.2);color:#fee2e2;}
+        .chat-layout{display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:16px;align-items:start;}
+        .workers-panel,.chat-panel{padding:16px;border-radius:24px;background:rgba(15,23,42,.88);border:1px solid rgba(255,255,255,.07);display:grid;gap:14px;min-height:72vh;}
+        .panel-head,.chat-topbar{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
+        .panel-title{font-weight:900;font-size:22px;}
+        .panel-sub{color:#cbd5e1;line-height:1.5;}
+        .workers-grid{display:grid;gap:12px;align-content:start;max-height:calc(72vh - 50px);overflow:auto;padding-right:4px;}
+        .worker-card{display:grid;gap:12px;text-align:left;padding:16px;border-radius:22px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);color:#fff;cursor:pointer;transition:transform .18s ease,border-color .18s ease,opacity .18s ease;}
+        .worker-card:hover{transform:translateY(-1px);border-color:rgba(196,181,253,.28);}
+        .worker-card:disabled{opacity:.56;cursor:not-allowed;}
+        .worker-card.active{border-color:rgba(196,181,253,.55);background:rgba(139,92,246,.10);}
+        .worker-top{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;}
+        .avatar{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg, rgba(139,92,246,.95), rgba(217,70,239,.75));font-weight:900;}
+        .worker-name{font-weight:900;font-size:18px;}
+        .worker-role{color:#cbd5e1;font-size:13px;}
+        .worker-copy{color:#e2e8f0;line-height:1.55;}
+        .worker-footer{display:flex;gap:8px;flex-wrap:wrap;}
+        .soft-chip{padding:8px 12px;font-size:12px;color:#e2e8f0;background:rgba(255,255,255,.04);}
+        .preview-box{padding:12px 14px;border-radius:16px;background:rgba(2,6,23,.42);border:1px solid rgba(255,255,255,.06);}
+        .preview-title{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#c4b5fd;margin-bottom:6px;}
+        .preview-copy{color:#cbd5e1;line-height:1.5;}
+        .enter-row{display:flex;justify-content:space-between;align-items:center;color:#f5f3ff;font-weight:700;}
+        .status-pill{font-size:12px;padding:8px 12px;}
+        .dot{width:8px;height:8px;border-radius:999px;display:inline-block;}
+        .chat-topbar{padding-bottom:4px;border-bottom:1px solid rgba(255,255,255,.06);}
+        .back-btn{display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 14px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#fff;cursor:pointer;}
+        .chat-welcome,.chat-placeholder,.timeline-tip,.typing,.empty-chat,.paywall-box{padding:14px 16px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);display:flex;gap:10px;align-items:flex-start;}
+        .thread-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+        .summary-card{padding:14px;border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06);display:grid;gap:6px;}
+        .summary-card span{color:#cbd5e1;font-size:13px;}
+        .summary-card b{font-size:19px;}
+        .messages-box{flex:1;min-height:330px;max-height:54vh;overflow:auto;padding:14px;border-radius:22px;background:linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.07);display:grid;gap:12px;align-content:start;}
+        .bubble-wrap{display:grid;}
+        .bubble-wrap.mine{justify-items:end;}
+        .bubble-wrap.theirs{justify-items:start;}
+        .bubble{max-width:min(88%,520px);padding:12px 14px;border-radius:20px;display:grid;gap:8px;}
+        .bubble.mine{background:linear-gradient(135deg, rgba(139,92,246,.92), rgba(124,58,237,.82));}
+        .bubble.theirs{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);}
+        .bubble-time{font-size:11px;color:#e2e8f0;opacity:.86;justify-self:end;}
+        .paywall-box{justify-content:space-between;flex-wrap:wrap;}
+        .pay-btn,.send-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;padding:0 18px;border:none;border-radius:16px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;font-weight:800;cursor:pointer;}
+        .composer-box{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end;}
+        .composer{min-height:104px;padding:14px 16px;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#fff;resize:none;outline:none;}
+        .overlay{position:fixed;inset:0;background:rgba(2,6,23,.7);display:grid;place-items:center;padding:18px;z-index:40;}
+        .modal-card{width:min(520px,100%);padding:22px;border-radius:24px;background:#0f172a;border:1px solid rgba(255,255,255,.09);display:grid;gap:14px;position:relative;}
+        .modal-close{position:absolute;top:12px;right:12px;width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#fff;cursor:pointer;display:grid;place-items:center;}
+        .confirm-row{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;}
+        .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+        .input{height:48px;padding:0 14px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#fff;outline:none;}
+        .chat-placeholder{height:100%;justify-content:center;align-items:center;}
+        @media (max-width: 980px){
+          .chat-layout{grid-template-columns:1fr;}
+          .thread-summary,.form-grid,.composer-box{grid-template-columns:1fr;}
+          .workers-panel.mobile-hidden,.chat-panel.mobile-chat-hidden{display:none;}
+          h1{font-size:28px;}
+          .messages-box{max-height:none;min-height:300px;}
         }
       `}</style>
     </div>
