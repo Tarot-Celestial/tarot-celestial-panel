@@ -693,7 +693,7 @@ export default function CRMClientesPanel({
       if (forcedRank && ["bronce", "plata", "oro"].includes(forcedRank)) {
   params.set("rango", forcedRank);
 }
-}
+      
       const url = `/api/crm/clientes/buscar?${params.toString()}`;
 console.log("URL CRM 👉", url);
       
