@@ -5,10 +5,7 @@ export const runtime = "nodejs";
 
 function getEnv(name: string) {
   const v = process.env[name];
-  if (!v) {
-    console.error("❌ ENV FALTANTE:", name);
-    throw new Error(`Missing env var: ${name}`);
-  }
+  if (!v) throw new Error(`Missing env var: ${name}`);
   return v;
 }
 
@@ -21,99 +18,138 @@ function adminClient() {
 }
 
 async function uidFromBearer(req: Request) {
-  try {
-    const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
 
-    const auth = req.headers.get("authorization") || "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const sb = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
 
-    if (!token) {
-      console.error("❌ SIN TOKEN");
-      return null;
-    }
-
-    const sb = createClient(url, anon, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-
-    const { data, error } = await sb.auth.getUser();
-
-    if (error) {
-      console.error("❌ ERROR AUTH:", error);
-      return null;
-    }
-
-    return data.user?.id || null;
-  } catch (e) {
-    console.error("❌ uidFromBearer ERROR:", e);
-    return null;
-  }
+  const { data } = await sb.auth.getUser();
+  return data.user?.id || null;
 }
 
 async function workerFromReq(req: Request) {
-  try {
-    const uid = await uidFromBearer(req);
-    if (!uid) return null;
+  const uid = await uidFromBearer(req);
+  if (!uid) return null;
 
-    const admin = adminClient();
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("workers")
+    .select("id, role")
+    .eq("user_id", uid)
+    .maybeSingle();
 
-    const { data, error } = await admin
-      .from("workers")
-      .select("id, role")
-      .eq("user_id", uid)
-      .maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
 
-    if (error) {
-      console.error("❌ ERROR WORKER:", error);
-      throw error;
-    }
-
-    return data || null;
-  } catch (e) {
-    console.error("❌ workerFromReq ERROR:", e);
-    throw e;
-  }
+function normalizePhoneDigits(v: any) {
+  return String(v || "").replace(/\D/g, "").trim();
 }
 
 export async function GET(req: Request) {
   try {
-    console.log("🚀 CRM API HIT");
-
     const worker = await workerFromReq(req);
-
     if (!worker) {
-      console.log("❌ NO WORKER");
       return NextResponse.json({ ok: false }, { status: 401 });
     }
 
     if (!["admin", "central"].includes(String(worker.role))) {
-      console.log("❌ NO PERMISOS");
       return NextResponse.json({ ok: false }, { status: 403 });
     }
 
+    const { searchParams } = new URL(req.url);
+
+    const q = String(searchParams.get("q") || "").trim();
+    const telefono = String(searchParams.get("telefono") || "").trim();
+    const telefonoDigits = normalizePhoneDigits(telefono);
+    const pais = String(searchParams.get("pais") || "").trim();
+    const etiqueta = String(
+      searchParams.get("etiqueta") || searchParams.get("tag") || ""
+    ).trim().toLowerCase();
+
     const admin = adminClient();
 
-    const { data, error } = await admin
-      .from("crm_clientes")
-      .select("*")
-      .limit(10);
+    let clienteIdsFiltro: string[] | null = null;
 
-    if (error) {
-      console.error("❌ SUPABASE ERROR:", error);
-      throw error;
+    // 🔥 FILTRO REAL POR ETIQUETA (EN BD)
+    if (etiqueta) {
+      const { data: etiquetasData } = await admin
+        .from("crm_etiquetas")
+        .select("id")
+        .ilike("nombre", etiqueta);
+
+      const idsEtiqueta = (etiquetasData || []).map((e: any) => e.id);
+
+      if (!idsEtiqueta.length) {
+        return NextResponse.json({ ok: true, clientes: [] });
+      }
+
+      const { data: rels } = await admin
+        .from("crm_cliente_etiquetas")
+        .select("cliente_id")
+        .in("etiqueta_id", idsEtiqueta);
+
+      clienteIdsFiltro = (rels || []).map((r: any) => r.cliente_id);
+
+      if (!clienteIdsFiltro.length) {
+        return NextResponse.json({ ok: true, clientes: [] });
+      }
     }
 
-    console.log("✅ CLIENTES OK:", data?.length);
+    let query = admin
+      .from("crm_clientes")
+      .select("*")
+      .order("nombre", { ascending: true })
+      .limit(1000);
+
+    // 🔥 aplicar filtro de IDs
+    if (clienteIdsFiltro) {
+      query = query.in("id", clienteIdsFiltro);
+    }
+
+    if (q) {
+      const safeQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
+      const qDigits = normalizePhoneDigits(safeQ);
+
+      const orParts = [
+        `nombre.ilike.%${safeQ}%`,
+        `apellido.ilike.%${safeQ}%`,
+        `email.ilike.%${safeQ}%`,
+      ];
+
+      if (qDigits) {
+        orParts.push(`telefono.ilike.%${qDigits}%`);
+      }
+
+      query = query.or(orParts.join(","));
+    }
+
+    if (telefono) {
+      const phoneOrParts = [`telefono.ilike.%${telefono}%`];
+      if (telefonoDigits) {
+        phoneOrParts.push(`telefono.ilike.%${telefonoDigits}%`);
+      }
+      query = query.or(phoneOrParts.join(","));
+    }
+
+    if (pais) {
+      query = query.ilike("pais", `%${pais}%`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
 
     return NextResponse.json({
       ok: true,
       clientes: data || [],
     });
-
   } catch (e: any) {
-    console.error("🔥 ERROR REAL:", e);
-
+    console.error("🔥 CRM ERROR:", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "ERR" },
       { status: 500 }
