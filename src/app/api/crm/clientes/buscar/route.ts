@@ -115,45 +115,6 @@ async function hydrateCurrentRanks(admin: any, clientesBase: any[]) {
   });
 }
 
-async function attachEtiquetas(admin: any, clientesBase: any[]) {
-  if (!clientesBase?.length) return [];
-
-  const ids = clientesBase.map((c: any) => c?.id).filter(Boolean);
-  if (!ids.length) {
-    return clientesBase.map((c: any) => ({ ...c, etiquetas: [] }));
-  }
-
-  const { data, error } = await admin
-    .from("crm_cliente_etiquetas")
-    .select(`cliente_id, crm_etiquetas ( nombre )`)
-    .in("cliente_id", ids);
-
-  if (error) throw error;
-
-  const byCliente = new Map<string, string[]>();
-
-  for (const rel of data || []) {
-    const id = String(rel?.cliente_id || "");
-    if (!id) continue;
-
-    const raw = rel?.crm_etiquetas;
-    const etiquetas = Array.isArray(raw) ? raw : raw ? [raw] : [];
-
-    for (const et of etiquetas) {
-      const nombre = String(et?.nombre || "").trim();
-      if (!nombre) continue;
-      const prev = byCliente.get(id) || [];
-      prev.push(nombre);
-      byCliente.set(id, prev);
-    }
-  }
-
-  return clientesBase.map((c: any) => ({
-    ...c,
-    etiquetas: Array.from(new Set(byCliente.get(String(c.id || "")) || [])),
-  }));
-}
-
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -173,8 +134,11 @@ export async function GET(req: Request) {
     const pais = String(searchParams.get("pais") || "").trim();
     const etiqueta = String(
       searchParams.get("etiqueta") || searchParams.get("tag") || ""
-    ).trim();
-    const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
+    ).trim().toLowerCase();
+
+    const webFilter = String(searchParams.get("web_filter") || "todos")
+      .trim()
+      .toLowerCase();
 
     const rangoRaw = searchParams.get("rango");
     const rango = ["bronce", "plata", "oro", "sin_rango"].includes(
@@ -194,15 +158,18 @@ export async function GET(req: Request) {
     if (q) {
       const safeQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
       const qDigits = normalizePhoneDigits(safeQ);
+
       const orParts = [
         `nombre.ilike.%${safeQ}%`,
         `apellido.ilike.%${safeQ}%`,
         `email.ilike.%${safeQ}%`,
       ];
+
       if (qDigits) {
         orParts.push(`telefono.ilike.%${qDigits}%`);
         orParts.push(`telefono_normalizado.ilike.%${qDigits}%`);
       }
+
       query = query.or(orParts.join(","));
     }
 
@@ -219,19 +186,32 @@ export async function GET(req: Request) {
     }
 
     const { data, error } = await query;
-    if (error) {
-      console.error("SUPABASE ERROR /crm/clientes/buscar:", error);
-      throw error;
-    }
+    if (error) throw error;
 
     let clientes = await hydrateCurrentRanks(admin, data || []);
-    clientes = await attachEtiquetas(admin, clientes);
 
+    // 🔥 NUEVO SISTEMA DE ETIQUETAS (SIN JOIN QUE ROMPE)
     if (etiqueta) {
-      const etLower = etiqueta.toLowerCase();
+      const { data: rels } = await admin
+        .from("crm_cliente_etiquetas")
+        .select("cliente_id, etiqueta_id");
+
+      const { data: etiquetas } = await admin
+        .from("crm_etiquetas")
+        .select("id, nombre");
+
+      const etiquetaIds = (etiquetas || [])
+        .filter((e: any) => String(e.nombre).toLowerCase() === etiqueta)
+        .map((e: any) => e.id);
+
+      const clientesIds = new Set(
+        (rels || [])
+          .filter((r: any) => etiquetaIds.includes(r.etiqueta_id))
+          .map((r: any) => String(r.cliente_id))
+      );
+
       clientes = clientes.filter((c: any) =>
-        Array.isArray(c?.etiquetas) &&
-        c.etiquetas.some((x: any) => String(x || "").toLowerCase() === etLower)
+        clientesIds.has(String(c.id))
       );
     }
 
@@ -259,6 +239,7 @@ export async function GET(req: Request) {
       clientes: clientes.slice(0, 300),
     });
   } catch (e: any) {
+    console.error("🔥 CRM ERROR:", e);
     return NextResponse.json(
       { ok: false, error: e?.message || "ERR" },
       { status: 500 }
