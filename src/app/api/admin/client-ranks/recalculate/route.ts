@@ -183,40 +183,43 @@ const nextMonthStart = firstDayOfMonth(now);
 
     const payload = {
       cliente_id: clienteId,
-      const periodoActual = firstDayOfMonth(now);
-      periodo_mes: periodoActual.toISOString().slice(0, 10), // abril
-      calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10), // marzo
-      gasto_mes_anterior: Number(info.total.toFixed(2)),
-      compras_mes_anterior: info.compras,
-      rango: rank,
-      beneficios: rank === "oro"
-        ? {
-            nuevos_minutos_tarotista: 12,
-            minutos_extra_regulares: 12,
-            pases_gratis_mes: 3,
-            minutos_por_pase: 7,
-            seguimiento_post_ritual: true,
-            sorteos_activos: 1,
-          }
-        : rank === "plata"
-          ? {
-              nuevos_minutos_tarotista: 10,
-              minutos_extra_regulares: 10,
-              pases_gratis_mes: 3,
-              minutos_por_pase: 7,
-              seguimiento_post_ritual: true,
-              sorteos_activos: 0,
-            }
-          : {
-              nuevos_minutos_tarotista: 0,
-              minutos_extra_regulares: 0,
-              pases_gratis_mes: 3,
-              minutos_por_pase: 7,
-              seguimiento_post_ritual: false,
-              sorteos_activos: 0,
-            },
-      recalculated_at: new Date().toISOString(),
-    };
+     const periodoActual = firstDayOfMonth(now);
+
+const payload = {
+  cliente_id: clienteId,
+  periodo_mes: periodoActual.toISOString().slice(0, 10), // abril
+  calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10), // marzo
+  gasto_mes_anterior: Number(info.total.toFixed(2)),
+  compras_mes_anterior: info.compras,
+  rango: rank,
+  beneficios: rank === "oro"
+    ? {
+        nuevos_minutos_tarotista: 12,
+        minutos_extra_regulares: 12,
+        pases_gratis_mes: 3,
+        minutos_por_pase: 7,
+        seguimiento_post_ritual: true,
+        sorteos_activos: 1,
+      }
+    : rank === "plata"
+    ? {
+        nuevos_minutos_tarotista: 10,
+        minutos_extra_regulares: 10,
+        pases_gratis_mes: 3,
+        minutos_por_pase: 7,
+        seguimiento_post_ritual: true,
+        sorteos_activos: 0,
+      }
+    : {
+        nuevos_minutos_tarotista: 0,
+        minutos_extra_regulares: 0,
+        pases_gratis_mes: 3,
+        minutos_por_pase: 7,
+        seguimiento_post_ritual: false,
+        sorteos_activos: 0,
+      },
+  recalculated_at: new Date().toISOString(),
+};
 
     await admin
       .from("cliente_rangos_mensuales")
