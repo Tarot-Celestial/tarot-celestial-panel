@@ -17,6 +17,7 @@ function adminClient() {
     { auth: { persistSession: false } }
   );
 }
+
 async function notifyRankChange(admin: any, params: {
   clienteId: string;
   clientName: string;
@@ -31,10 +32,7 @@ async function notifyRankChange(admin: any, params: {
     oro: 3,
   };
 
-  // ❌ si no hay previo → no notificar (primer cálculo)
   if (!previousRank) return;
-
-  // ❌ si no sube → no notificar
   if (order[rank] <= order[previousRank]) return;
 
   await admin.from("notifications").insert({
@@ -47,6 +45,7 @@ async function notifyRankChange(admin: any, params: {
     created_at: new Date().toISOString(),
   });
 }
+
 async function uidFromBearer(req: Request) {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -66,12 +65,14 @@ async function uidFromBearer(req: Request) {
 async function workerFromReq(req: Request) {
   const uid = await uidFromBearer(req);
   if (!uid) return null;
+
   const admin = adminClient();
   const { data, error } = await admin
     .from("workers")
     .select("id, role, display_name")
     .eq("user_id", uid)
     .maybeSingle();
+
   if (error) throw error;
   return data || null;
 }
@@ -103,10 +104,14 @@ function normalizeName(v: any) {
 async function runRecalc() {
   const admin = adminClient();
   const now = new Date();
-  // 🔥 mes anterior
-const prevMonth = addMonths(now, -1);
-const currentMonthStart = firstDayOfMonth(prevMonth);
-const nextMonthStart = firstDayOfMonth(now);
+
+  // 🔥 mes anterior para cálculo
+  const prevMonth = addMonths(now, -1);
+  const currentMonthStart = firstDayOfMonth(prevMonth);
+  const nextMonthStart = firstDayOfMonth(now);
+
+  // 🔥 mes actual para guardar rango
+  const periodoActual = firstDayOfMonth(now);
 
   const { data: rows, error } = await admin
     .from("rendimiento_llamadas")
@@ -175,53 +180,29 @@ const nextMonthStart = firstDayOfMonth(now);
   for (const [clienteId, info] of Array.from(gastos.entries())) {
     const rank = calcRank(info.total);
     if (!rank) continue;
-    if (rank === "bronce") bronce += 1;
-    if (rank === "plata") plata += 1;
-    if (rank === "oro") oro += 1;
+
+    if (rank === "bronce") bronce++;
+    if (rank === "plata") plata++;
+    if (rank === "oro") oro++;
+
     gastoMesAnterior += info.total;
     comprasMesAnterior += info.compras;
-    
-const payload = {
-  cliente_id: clienteId,
-  periodo_mes: periodoActual.toISOString().slice(0, 10), // abril
-  calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10), // marzo
-  gasto_mes_anterior: Number(info.total.toFixed(2)),
-  compras_mes_anterior: info.compras,
-  rango: rank,
-  beneficios: rank === "oro"
-    ? {
-        nuevos_minutos_tarotista: 12,
-        minutos_extra_regulares: 12,
-        pases_gratis_mes: 3,
-        minutos_por_pase: 7,
-        seguimiento_post_ritual: true,
-        sorteos_activos: 1,
-      }
-    : rank === "plata"
-    ? {
-        nuevos_minutos_tarotista: 10,
-        minutos_extra_regulares: 10,
-        pases_gratis_mes: 3,
-        minutos_por_pase: 7,
-        seguimiento_post_ritual: true,
-        sorteos_activos: 0,
-      }
-    : {
-        nuevos_minutos_tarotista: 0,
-        minutos_extra_regulares: 0,
-        pases_gratis_mes: 3,
-        minutos_por_pase: 7,
-        seguimiento_post_ritual: false,
-        sorteos_activos: 0,
-      },
-  recalculated_at: new Date().toISOString(),
-};
+
+    const payload = {
+      cliente_id: clienteId,
+      periodo_mes: periodoActual.toISOString().slice(0, 10),
+      calculado_desde_mes: currentMonthStart.toISOString().slice(0, 10),
+      gasto_mes_anterior: Number(info.total.toFixed(2)),
+      compras_mes_anterior: info.compras,
+      rango: rank,
+      recalculated_at: new Date().toISOString(),
+    };
 
     await admin
       .from("cliente_rangos_mensuales")
       .upsert(payload, { onConflict: "cliente_id,periodo_mes" });
 
-    const { error: updErr } = await admin
+    await admin
       .from("crm_clientes")
       .update({
         rango_actual: rank,
@@ -232,23 +213,19 @@ const payload = {
         updated_at: new Date().toISOString(),
       })
       .eq("id", clienteId);
-    if (updErr) throw updErr;
 
     const previousRank = prevRanks.get(clienteId) || null;
     if (previousRank !== rank) {
       const clientRow = (clientes || []).find((x: any) => String(x.id) === clienteId);
       const clientName = [clientRow?.nombre, clientRow?.apellido].filter(Boolean).join(" ").trim() || `Cliente ${clienteId}`;
       await notifyRankChange(admin, { clienteId, clientName, rank, previousRank });
-      prevRanks.set(clienteId, rank);
     }
 
-    updated += 1;
+    updated++;
   }
 
   return {
     ok: true,
-    periodo_actual: currentMonthStart.toISOString().slice(0, 10),
-    calculado_desde: currentMonthStart.toISOString().slice(0, 10),
     clientes_actualizados: updated,
     gastoMesAnterior: Number(gastoMesAnterior.toFixed(2)),
     comprasMesAnterior,
@@ -259,10 +236,12 @@ const payload = {
 export async function POST(req: Request) {
   try {
     const worker = await workerFromReq(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!worker) return NextResponse.json({ ok: false }, { status: 401 });
+
     if (!["admin", "central"].includes(String(worker.role || ""))) {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      return NextResponse.json({ ok: false }, { status: 403 });
     }
+
     const result = await runRecalc();
     return NextResponse.json(result);
   } catch (e: any) {
