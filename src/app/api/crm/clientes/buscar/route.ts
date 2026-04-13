@@ -39,7 +39,7 @@ async function workerFromReq(req: Request) {
   const admin = adminClient();
   const { data, error } = await admin
     .from("workers")
-    .select("id, user_id, display_name, role, team, state")
+    .select("id, role")
     .eq("user_id", uid)
     .maybeSingle();
 
@@ -62,9 +62,11 @@ function getClientWebMeta(cliente: any) {
   const accessCount = Math.max(0, Number(cliente?.total_accesos || 0));
   const lastAccessAt = cliente?.ultimo_acceso_at || null;
   const lastActivityAt = cliente?.ultima_actividad_at || null;
+
   const registered = Boolean(
     onboardingDone || accessCount > 0 || lastAccessAt || lastActivityAt
   );
+
   return { registered, onboardingDone };
 }
 
@@ -75,52 +77,30 @@ async function hydrateCurrentRanks(admin: any, clientesBase: any[]) {
   if (!ids.length) return clientesBase;
 
   const periodoMes = currentRankPeriodStart();
+
   const { data, error } = await admin
     .from("cliente_rangos_mensuales")
-    .select(
-      "cliente_id, rango, gasto_mes_anterior, compras_mes_anterior, recalculated_at, calculado_desde_mes, periodo_mes"
-    )
+    .select("cliente_id, rango")
     .eq("periodo_mes", periodoMes)
     .in("cliente_id", ids);
 
   if (error) throw error;
 
   const byCliente = new Map<string, any>();
-
   for (const row of data || []) {
-    const key = String(row?.cliente_id || "");
-    if (!key) continue;
-
-    const prev = byCliente.get(key);
-    const prevTs = new Date(prev?.recalculated_at || 0).getTime();
-    const nextTs = new Date(row?.recalculated_at || 0).getTime();
-
-    if (!prev || nextTs >= prevTs) {
-      byCliente.set(key, row);
-    }
+    byCliente.set(String(row.cliente_id), row.rango);
   }
 
-  return clientesBase.map((c: any) => {
-    const rankRow = byCliente.get(String(c?.id || ""));
-    if (!rankRow) return c;
-
-    return {
-      ...c,
-      rango_actual: rankRow?.rango || null,
-      rango_gasto_mes_anterior: Number(rankRow?.gasto_mes_anterior || 0),
-      rango_compras_mes_anterior: Number(rankRow?.compras_mes_anterior || 0),
-      rango_actual_desde: rankRow?.calculado_desde_mes || null,
-      rango_periodo_mes: rankRow?.periodo_mes || null,
-    };
-  });
+  return clientesBase.map((c: any) => ({
+    ...c,
+    rango_actual: byCliente.get(String(c.id)) || null,
+  }));
 }
 
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
-    if (!worker) {
-      return NextResponse.json({ ok: false }, { status: 401 });
-    }
+    if (!worker) return NextResponse.json({ ok: false }, { status: 401 });
 
     if (!["admin", "central"].includes(String(worker.role))) {
       return NextResponse.json({ ok: false }, { status: 403 });
@@ -136,16 +116,14 @@ export async function GET(req: Request) {
       searchParams.get("etiqueta") || searchParams.get("tag") || ""
     ).trim().toLowerCase();
 
-    const webFilter = String(searchParams.get("web_filter") || "todos")
-      .trim()
-      .toLowerCase();
-
     const rangoRaw = searchParams.get("rango");
     const rango = ["bronce", "plata", "oro", "sin_rango"].includes(
       String(rangoRaw || "").toLowerCase()
     )
       ? String(rangoRaw).toLowerCase()
       : "";
+
+    const webFilter = String(searchParams.get("web_filter") || "todos").toLowerCase();
 
     const admin = adminClient();
 
@@ -167,18 +145,13 @@ export async function GET(req: Request) {
 
       if (qDigits) {
         orParts.push(`telefono.ilike.%${qDigits}%`);
-        orParts.push(`telefono_normalizado.ilike.%${qDigits}%`);
       }
 
       query = query.or(orParts.join(","));
     }
 
     if (telefono) {
-      const phoneOrParts = [`telefono.ilike.%${telefono}%`];
-      if (telefonoDigits) {
-        phoneOrParts.push(`telefono_normalizado.ilike.%${telefonoDigits}%`);
-      }
-      query = query.or(phoneOrParts.join(","));
+      query = query.ilike("telefono", `%${telefono}%`);
     }
 
     if (pais) {
@@ -190,29 +163,32 @@ export async function GET(req: Request) {
 
     let clientes = await hydrateCurrentRanks(admin, data || []);
 
-    // 🔥 NUEVO SISTEMA DE ETIQUETAS (SIN JOIN QUE ROMPE)
+    // 🔥 FILTRO ETIQUETA (CORRECTO Y OPTIMIZADO)
     if (etiqueta) {
-      const { data: rels } = await admin
-        .from("crm_cliente_etiquetas")
-        .select("cliente_id, etiqueta_id");
-
-      const { data: etiquetas } = await admin
+      const { data: etiquetaRow, error: e1 } = await admin
         .from("crm_etiquetas")
-        .select("id, nombre");
+        .select("id")
+        .ilike("nombre", etiqueta)
+        .maybeSingle();
 
-      const etiquetaIds = (etiquetas || [])
-        .filter((e: any) => String(e.nombre).toLowerCase() === etiqueta)
-        .map((e: any) => e.id);
+      if (e1) throw e1;
 
-      const clientesIds = new Set(
-        (rels || [])
-          .filter((r: any) => etiquetaIds.includes(r.etiqueta_id))
-          .map((r: any) => String(r.cliente_id))
-      );
+      if (!etiquetaRow) {
+        clientes = [];
+      } else {
+        const { data: rels, error: e2 } = await admin
+          .from("crm_cliente_etiquetas")
+          .select("cliente_id")
+          .eq("etiqueta_id", etiquetaRow.id);
 
-      clientes = clientes.filter((c: any) =>
-        clientesIds.has(String(c.id))
-      );
+        if (e2) throw e2;
+
+        const ids = new Set((rels || []).map((r: any) => String(r.cliente_id)));
+
+        clientes = clientes.filter((c: any) =>
+          ids.has(String(c.id))
+        );
+      }
     }
 
     if (rango) {
@@ -227,17 +203,13 @@ export async function GET(req: Request) {
       clientes = clientes.filter((c: any) => getClientWebMeta(c).registered);
     } else if (webFilter === "no_registrados") {
       clientes = clientes.filter((c: any) => !getClientWebMeta(c).registered);
-    } else if (webFilter === "onboarding_pendiente") {
-      clientes = clientes.filter((c: any) => {
-        const meta = getClientWebMeta(c);
-        return meta.registered && !meta.onboardingDone;
-      });
     }
 
     return NextResponse.json({
       ok: true,
       clientes: clientes.slice(0, 300),
     });
+
   } catch (e: any) {
     console.error("🔥 CRM ERROR:", e);
     return NextResponse.json(
