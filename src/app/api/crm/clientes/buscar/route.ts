@@ -170,9 +170,14 @@ export async function GET(req: Request) {
         const nombre = etiquetaMap.get(r.etiqueta_id);
         if (!nombre) continue;
 
-        if (!byCliente.has(cid)) byCliente.set(cid, []);
-        byCliente.get(cid).push(nombre);
-      }
+        if (!byCliente.has(cid)) {
+  byCliente.set(cid, []);
+}
+
+const arr = byCliente.get(cid);
+if (arr) {
+  arr.push(nombre);
+}
 
       clientes = clientes.map((c: any) => ({
         ...c,
