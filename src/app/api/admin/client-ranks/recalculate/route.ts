@@ -141,6 +141,13 @@ async function runRecalc() {
 
   for (const row of rows || []) {
     const fecha = new Date(row.fecha_hora);
+
+if (isNaN(fecha.getTime())) {
+  console.log("❌ FECHA INVALIDA", row.fecha_hora);
+  continue;
+}
+
+console.log("FECHA OK 👉", fecha, "RANGO 👉", currentMonthStart, nextMonthStart);
     if (!(fecha >= currentMonthStart && fecha < nextMonthStart)) continue;
 
     const importe = Number(row.importe || 0);
