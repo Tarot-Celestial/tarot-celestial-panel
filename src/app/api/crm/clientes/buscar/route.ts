@@ -84,8 +84,8 @@ async function hydrateCurrentRanks(admin: ReturnType<typeof adminClient>, client
     const key = String(row?.cliente_id || "");
     if (!key) continue;
     const prev = byCliente.get(key);
-    const prevTs = String(prev?.recalculated_at || prev?.updated_at || "");
-    const nextTs = String(row?.recalculated_at || row?.updated_at || "");
+    const prevTs = String(prev?.recalculated_at || "");
+    const nextTs = String(row?.recalculated_at || "");
     if (!prev || nextTs >= prevTs) byCliente.set(key, row);
   }
 
