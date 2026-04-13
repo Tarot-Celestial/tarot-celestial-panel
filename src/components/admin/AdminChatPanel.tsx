@@ -83,6 +83,18 @@ export default function AdminChatPanel() {
   const previousLastMessageRef = useRef<string>("");
   const messagesBoxRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    try {
+      setNotifyEnabled(window.localStorage.getItem("admin_chat_notify_enabled") === "1");
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("admin_chat_notify_enabled", notifyEnabled ? "1" : "0");
+    } catch {}
+  }, [notifyEnabled]);
+
   const selectedThread = useMemo(
     () => threads.find((t: any) => String(t.id) === String(selectedThreadId)) || null,
     [threads, selectedThreadId]
@@ -197,7 +209,7 @@ export default function AdminChatPanel() {
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
       setNotifyEnabled(true);
-      setMsg("✅ Avisos activados. También sonará un aviso cuando entren mensajes nuevos.");
+      setMsg("✅ Avisos activados. Recibirás aviso del navegador y sonido cuando entren mensajes nuevos mientras el navegador siga abierto.");
       beep();
       return;
     }
@@ -346,7 +358,7 @@ export default function AdminChatPanel() {
           <div className="tc-sub" style={{ fontSize: 13 }}>Más cómodo para móvil, con envío de pagos, marcado manual de preguntas y aviso de nuevos mensajes.</div>
         </div>
         <div className="toolbar">
-          <button className="tc-btn" onClick={enableNotifications}><Bell size={14} /> Avisos</button>
+          <button className="tc-btn" onClick={enableNotifications}><Bell size={14} /> {notifyEnabled ? "Avisos activos" : "Activar avisos"}</button>
           <button className="tc-btn" onClick={() => { setNotifyEnabled(true); beep(); }}><Volume2 size={14} /> Probar sonido</button>
           <button className="tc-btn tc-btn-gold" onClick={() => loadOverview(true)} disabled={loading}><RefreshCw size={14} /> {loading ? "Cargando…" : "Refrescar"}</button>
         </div>
@@ -362,7 +374,7 @@ export default function AdminChatPanel() {
 
       <div className="tc-card" style={{ padding: 12, background: "rgba(255,255,255,.035)" }}>
         <div className="tc-sub" style={{ fontSize: 13 }}>
-          {msg || "Los créditos ya no bajan al escribir por defecto: solo cuentan cuando marcas manualmente el mensaje del cliente como pregunta real."}
+          {msg || "Los avisos del chat funcionan con notificación del navegador + sonido. Sin una suscripción push específica de admin no pueden llegar con el navegador totalmente cerrado."}
         </div>
       </div>
 
