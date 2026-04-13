@@ -653,8 +653,8 @@ export default function CRMClientesPanel({
   async function openRankClients(rank: "bronce" | "plata" | "oro") {
   setCrmRankFilter(rank);
 
-  // 🔥 FORZAR rango limpio sin basura previa
-  await searchCRM(false, rank);
+  // 🔥 FORZAR que no use filtros anteriores mal guardados
+  await searchCRM(false, rank || "");
 
   try {
     window.scrollTo({ top: 0, behavior: "smooth" });
