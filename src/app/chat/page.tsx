@@ -3,21 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CheckCircle2, ChevronRight, ExternalLink, Lock, LogOut, Send, Sparkles, Wallet, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { COUNTRY_OPTIONS, DEFAULT_COUNTRY_CODE, buildInternationalPhone, formatCountryOptionLabel, getCountryByCode, getCountryByLabelOrCode, splitPhoneByCountry } from "@/lib/countries";
 
 const sb = supabaseBrowser();
-
-const COUNTRY_OPTIONS = [
-  "España",
-  "Puerto Rico",
-  "Estados Unidos",
-  "México",
-  "Argentina",
-  "Colombia",
-  "Chile",
-  "Perú",
-  "República Dominicana",
-  "Venezuela",
-];
 
 function normalizePaymentMeta(item: any) {
   const meta = item?.meta || {};
@@ -76,7 +64,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [savingWelcome, setSavingWelcome] = useState(false);
-  const [welcomeForm, setWelcomeForm] = useState({ nombre: "", telefono: "", email: "", pais: COUNTRY_OPTIONS[0], fecha_nacimiento: "" });
+  const [welcomeForm, setWelcomeForm] = useState({ nombre: "", telefono: "", email: "", countryCode: DEFAULT_COUNTRY_CODE, fecha_nacimiento: "" });
   const [confirmWorker, setConfirmWorker] = useState<any>(null);
   const [mobileView, setMobileView] = useState<"workers" | "chat">("workers");
   const [isTyping, setIsTyping] = useState(false);
@@ -88,6 +76,8 @@ export default function ChatPage() {
     () => tarotistas.find((item: any) => String(item.id) === String(selectedWorkerId)) || null,
     [tarotistas, selectedWorkerId]
   );
+
+  const welcomeCountry = useMemo(() => getCountryByCode(welcomeForm.countryCode), [welcomeForm.countryCode]);
 
   const visibleMessages = useMemo(() => {
     if (!thread?.id) return [];
@@ -119,11 +109,12 @@ export default function ChatPage() {
 
     const nextCliente = json.cliente || null;
     setCliente(nextCliente);
+    const phoneSplit = splitPhoneByCountry(nextCliente?.telefono, nextCliente?.pais);
     setWelcomeForm({
       nombre: nextCliente?.nombre || "",
-      telefono: nextCliente?.telefono || "",
+      telefono: phoneSplit.localPhone || "",
       email: nextCliente?.email || data.session?.user?.email || "",
-      pais: nextCliente?.pais || COUNTRY_OPTIONS[0],
+      countryCode: getCountryByLabelOrCode(nextCliente?.pais || phoneSplit.country.code).code,
       fecha_nacimiento: nextCliente?.fecha_nacimiento || "",
     });
     setShowWelcome(!isOnboardingComplete(nextCliente));
@@ -231,9 +222,9 @@ export default function ChatPage() {
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           nombre: welcomeForm.nombre,
-          telefono: welcomeForm.telefono,
+          telefono: buildInternationalPhone(welcomeCountry, welcomeForm.telefono),
           email: welcomeForm.email,
-          pais: welcomeForm.pais,
+          pais: welcomeCountry.label,
           fecha_nacimiento: welcomeForm.fecha_nacimiento,
           onboarding_completado: true,
         }),
@@ -537,11 +528,14 @@ export default function ChatPage() {
             <div className="panel-sub" style={{ marginTop: 8 }}>Necesitamos tus datos básicos para terminar de activar el chat.</div>
             <div className="form-grid">
               <input className="input" placeholder="Nombre" value={welcomeForm.nombre} onChange={(e) => setWelcomeForm((p) => ({ ...p, nombre: e.target.value }))} />
-              <input className="input" placeholder="Teléfono" value={welcomeForm.telefono} onChange={(e) => setWelcomeForm((p) => ({ ...p, telefono: e.target.value }))} />
               <input className="input" placeholder="E-mail" value={welcomeForm.email} onChange={(e) => setWelcomeForm((p) => ({ ...p, email: e.target.value }))} />
-              <select className="input" value={welcomeForm.pais} onChange={(e) => setWelcomeForm((p) => ({ ...p, pais: e.target.value }))}>
-                {COUNTRY_OPTIONS.map((item) => <option key={item} value={item}>{item}</option>)}
+              <select className="input" value={welcomeForm.countryCode} onChange={(e) => setWelcomeForm((p) => ({ ...p, countryCode: e.target.value }))}>
+                {COUNTRY_OPTIONS.map((item) => <option key={item.code} value={item.code}>{formatCountryOptionLabel(item)}</option>)}
               </select>
+              <div className="phone-field">
+                <span className="phone-prefix">{welcomeCountry.dialCode}</span>
+                <input className="input phone-input" placeholder={welcomeCountry.hint || "600123123"} value={welcomeForm.telefono} onChange={(e) => setWelcomeForm((p) => ({ ...p, telefono: e.target.value }))} />
+              </div>
               <input className="input" type="date" value={welcomeForm.fecha_nacimiento} onChange={(e) => setWelcomeForm((p) => ({ ...p, fecha_nacimiento: e.target.value }))} />
             </div>
             <button className="send-btn" style={{ width: "100%" }} onClick={saveWelcome} disabled={savingWelcome}>
@@ -574,6 +568,9 @@ export default function ChatPage() {
         .worker-top{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;}
         .avatar{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg, rgba(139,92,246,.95), rgba(217,70,239,.75));font-weight:900;}
         .worker-name{font-weight:900;font-size:18px;}
+        .phone-field{display:grid;grid-template-columns:110px minmax(0,1fr);gap:10px;align-items:center;}
+        .phone-prefix{height:48px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);font-weight:800;color:#f8fafc;}
+        .phone-input{min-width:0;}
         .worker-role{color:#cbd5e1;font-size:13px;}
         .worker-copy{color:#e2e8f0;line-height:1.55;}
         .worker-footer{display:flex;gap:8px;flex-wrap:wrap;}
@@ -627,6 +624,7 @@ export default function ChatPage() {
           .chat-layout{grid-template-columns:1fr;}
           .thread-summary,.form-grid,.composer-box{grid-template-columns:1fr;}
           .workers-panel.mobile-hidden,.chat-panel.mobile-chat-hidden{display:none;}
+          .phone-field{grid-template-columns:1fr;}
           h1{font-size:28px;}
           .messages-box{max-height:none;min-height:300px;}
           .payment-option{flex-direction:column;align-items:flex-start;}

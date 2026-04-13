@@ -5,21 +5,9 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Globe2, Lock, Mail, Phone, Sparkles, User2 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { COUNTRY_OPTIONS, DEFAULT_COUNTRY_CODE, buildInternationalPhone, formatCountryOptionLabel, getCountryByCode, guessDefaultCountry, normalizeLocalPhone } from "@/lib/countries";
 
 const sb = supabaseBrowser();
-
-const COUNTRY_OPTIONS = [
-  "España",
-  "Puerto Rico",
-  "Estados Unidos",
-  "México",
-  "Argentina",
-  "Colombia",
-  "Chile",
-  "Perú",
-  "República Dominicana",
-  "Venezuela",
-];
 
 export default function ChatLoginPage() {
   const router = useRouter();
@@ -27,14 +15,18 @@ export default function ChatLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [nombre, setNombre] = useState("");
-  const [pais, setPais] = useState(COUNTRY_OPTIONS[0]);
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [telefono, setTelefono] = useState("");
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
 
   const normalizedEmail = useMemo(() => String(email || "").trim().toLowerCase(), [email]);
+  const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
+  const telefonoInternacional = useMemo(() => buildInternationalPhone(selectedCountry, telefono), [selectedCountry, telefono]);
+  const telefonoPlaceholder = useMemo(() => selectedCountry.hint || "600123123", [selectedCountry]);
 
   useEffect(() => {
+    setCountryCode(guessDefaultCountry().code);
     sb.auth.getSession().then(({ data }) => {
       if (data.session?.user?.email) router.replace("/chat");
     });
@@ -63,7 +55,7 @@ export default function ChatLoginPage() {
   }
 
   async function handleRegister() {
-    if (!nombre.trim() || !normalizedEmail || !password || !pais.trim() || !telefono.trim()) {
+    if (!nombre.trim() || !normalizedEmail || !password || !selectedCountry.label.trim() || !normalizeLocalPhone(telefono)) {
       setMsg("Para crear la cuenta necesitamos nombre, e-mail, país, teléfono y contraseña.");
       return;
     }
@@ -79,8 +71,8 @@ export default function ChatLoginPage() {
           nombre: nombre.trim(),
           email: normalizedEmail,
           password,
-          pais: pais.trim(),
-          telefono: telefono.trim(),
+          pais: selectedCountry.label,
+          telefono: telefonoInternacional,
         }),
       });
 
@@ -113,8 +105,8 @@ export default function ChatLoginPage() {
           </p>
           <div className="chat-login-benefits">
             <div className="benefit">✅ Registro rápido con nombre, país y teléfono</div>
+            <div className="benefit">✅ Códigos internacionales para todos los países</div>
             <div className="benefit">✅ Acceso desde móvil tipo WhatsApp</div>
-            <div className="benefit">✅ Historial corto y limpio por tarotista</div>
           </div>
         </section>
 
@@ -138,26 +130,28 @@ export default function ChatLoginPage() {
                 </div>
               </label>
 
-              <div className="grid-2">
-                <label className="field">
-                  <span>País</span>
-                  <div className="field-wrap">
-                    <Globe2 size={16} />
-                    <select value={pais} onChange={(e) => setPais(e.target.value)}>
-                      {COUNTRY_OPTIONS.map((item) => (
-                        <option key={item} value={item}>{item}</option>
-                      ))}
-                    </select>
-                  </div>
-                </label>
-                <label className="field">
-                  <span>Teléfono</span>
-                  <div className="field-wrap">
+              <label className="field">
+                <span>País</span>
+                <div className="field-wrap">
+                  <Globe2 size={16} />
+                  <select value={countryCode} onChange={(e) => setCountryCode(e.target.value)}>
+                    {COUNTRY_OPTIONS.map((item) => (
+                      <option key={item.code} value={item.code}>{formatCountryOptionLabel(item)}</option>
+                    ))}
+                  </select>
+                </div>
+              </label>
+
+              <label className="field">
+                <span>Teléfono</span>
+                <div className="phone-row">
+                  <div className="phone-prefix">{selectedCountry.dialCode}</div>
+                  <div className="field-wrap phone-input-wrap">
                     <Phone size={16} />
-                    <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="600123123" />
+                    <input value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder={telefonoPlaceholder} inputMode="tel" autoComplete="tel-national" />
                   </div>
-                </label>
-              </div>
+                </div>
+              </label>
             </>
           ) : null}
 
@@ -201,12 +195,14 @@ export default function ChatLoginPage() {
         .field{display:grid;gap:6px;}
         .field span{font-size:13px;color:#cbd5e1;}
         .field-wrap{display:flex;align-items:center;gap:10px;padding:0 14px;height:52px;border-radius:14px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);}
-        .field-wrap input,.field-wrap select{flex:1;background:transparent;border:none;color:#fff;outline:none;font-size:15px;}
+        .field-wrap input,.field-wrap select{flex:1;background:transparent;border:none;color:#fff;outline:none;font-size:15px;min-width:0;}
         .field-wrap select option{color:#0f172a;}
-        .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+        .phone-row{display:grid;grid-template-columns:120px minmax(0,1fr);gap:10px;}
+        .phone-prefix{height:52px;border-radius:14px;display:grid;place-items:center;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);font-weight:800;color:#f8fafc;}
+        .phone-input-wrap{width:100%;}
         .primary-btn{height:50px;border-radius:14px;border:none;background:linear-gradient(135deg, #8b5cf6, #6d28d9);color:#fff;font-weight:800;font-size:15px;cursor:pointer;}
         .hint-card{padding:12px 14px;border-radius:14px;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.18);color:#fee2e2;}
-        @media (max-width: 880px){.chat-login-card{grid-template-columns:1fr;}.grid-2{grid-template-columns:1fr;}}
+        @media (max-width: 880px){.chat-login-card{grid-template-columns:1fr;}.phone-row{grid-template-columns:1fr;}}
       `}</style>
     </div>
   );
