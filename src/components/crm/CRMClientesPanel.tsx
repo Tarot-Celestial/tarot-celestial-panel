@@ -653,13 +653,13 @@ export default function CRMClientesPanel({
   async function openRankClients(rank: "bronce" | "plata" | "oro") {
   setCrmRankFilter(rank);
 
-  // 🔥 FORZAR que no use filtros anteriores mal guardados
-  await searchCRM(false, rank || "");
+  // 🔥 FORZAR rango limpio sin basura previa
+  await searchCRM(false, rank);
+
+  try {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  } catch {}
 }
-    try {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch {}
-  }
 
   async function clearRankClientsFilter() {
     setCrmRankFilter("");
@@ -690,10 +690,9 @@ export default function CRMClientesPanel({
       }
       if (pais) params.set("pais", pais);
       if (crmWebFilter !== "todos") params.set("web_filter", crmWebFilter);
-      if (forcedRank !== undefined && forcedRank !== null) {
-  if (forcedRank !== "") {
-    params.set("rango", forcedRank);
-  }
+      if (forcedRank && ["bronce", "plata", "oro"].includes(forcedRank)) {
+  params.set("rango", forcedRank);
+}
 }
       const url = `/api/crm/clientes/buscar?${params.toString()}`;
 console.log("URL CRM 👉", url);
