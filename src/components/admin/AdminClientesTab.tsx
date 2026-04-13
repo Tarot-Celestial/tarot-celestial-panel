@@ -344,7 +344,7 @@ export default function AdminClientesTab({
       const j = await safeJson(res);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || res.status}`);
       setRankSummary(j.summary || null);
-      if (!silent) setRankMsg("✅ Rangos mensuales actualizados.");
+      if (!silent) setRankMsg("✅ Rangos de los últimos 30 días actualizados.");
     } catch (e: any) {
       if (!silent) setRankMsg(`❌ ${e?.message || "Error cargando rangos"}`);
     } finally {
@@ -530,7 +530,7 @@ export default function AdminClientesTab({
         <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
             <div className="tc-title">🏅 Rangos mensuales</div>
-            <div className="tc-sub" style={{ marginTop: 6 }}>Se calculan con el gasto del mes anterior y determinan los beneficios del mes actual.</div>
+            <div className="tc-sub" style={{ marginTop: 6 }}>Se calculan con el gasto acumulado de los últimos 30 días y reflejan el estado real del cliente.</div>
           </div>
           <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
             <button className="tc-btn" onClick={() => loadRankSummary(false)} disabled={rankLoading}>{rankLoading ? "Cargando…" : "Actualizar"}</button>
@@ -538,10 +538,10 @@ export default function AdminClientesTab({
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12, marginTop: 14 }}>
-          <KpiCard title="Bronce" value={String(Number(rankSummary?.bronce || 0))} hint="Clientes con alguna compra" accent="rgba(214,156,110,.28)" onClick={() => openRankClients("bronce")} active={rankFilter === "bronce"} />
-          <KpiCard title="Plata" value={String(Number(rankSummary?.plata || 0))} hint="Clientes desde 100€" accent="rgba(196,210,255,.28)" onClick={() => openRankClients("plata")} active={rankFilter === "plata"} />
-          <KpiCard title="Oro" value={String(Number(rankSummary?.oro || 0))} hint="Clientes desde 500€" accent="rgba(255,215,120,.28)" onClick={() => openRankClients("oro")} active={rankFilter === "oro"} />
-          <KpiCard title="Con rango" value={String(Number(rankSummary?.totalConRango || 0))} hint="Mes actual asignado" accent="rgba(181,156,255,.28)" />
+          <KpiCard title="Bronce" value={String(Number(rankSummary?.bronce || 0))} hint="Clientes con gasto en 30 días" accent="rgba(214,156,110,.28)" onClick={() => openRankClients("bronce")} active={rankFilter === "bronce"} />
+          <KpiCard title="Plata" value={String(Number(rankSummary?.plata || 0))} hint="Desde 100€ en 30 días" accent="rgba(196,210,255,.28)" onClick={() => openRankClients("plata")} active={rankFilter === "plata"} />
+          <KpiCard title="Oro" value={String(Number(rankSummary?.oro || 0))} hint="Desde 500€ en 30 días" accent="rgba(255,215,120,.28)" onClick={() => openRankClients("oro")} active={rankFilter === "oro"} />
+          <KpiCard title="Con rango" value={String(Number(rankSummary?.totalConRango || 0))} hint="Ventana 30 días" accent="rgba(181,156,255,.28)" />
         </div>
         {rankMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{rankMsg}</div> : null}
 
@@ -598,7 +598,7 @@ export default function AdminClientesTab({
           <div>
             <div className="tc-title" style={{ fontSize: 22 }}>💎 Clientes</div>
             <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
-              Centro de alertas premium del CRM. Aquí tienes bonos por facturación, detección VIP e inactividad por falta de pagos completed.
+              Centro de alertas premium del CRM. Aquí tienes bonos por gasto reciente, detección VIP e inactividad real del cliente.
             </div>
             <div className="tc-sub" style={{ marginTop: 8, opacity: 0.82 }}>
               Última actualización: <b>{lastUpdated ? formatDateTime(lastUpdated) : "—"}</b>

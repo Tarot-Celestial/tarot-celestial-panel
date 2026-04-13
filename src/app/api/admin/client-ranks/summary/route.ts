@@ -11,24 +11,21 @@ function getEnv(name: string) {
 }
 
 function adminClient() {
-  return createClient(
-    getEnv("NEXT_PUBLIC_SUPABASE_URL"),
-    getEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    { auth: { persistSession: false } }
-  );
+  return createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false },
+  });
 }
 
 async function uidFromBearer(req: Request) {
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return null;
-  const sb = createClient(url, anon, {
+  const sb = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data } = await sb.auth.getUser();
+  const { data, error } = await sb.auth.getUser();
+  if (error) throw error;
   return data.user?.id || null;
 }
 
@@ -36,52 +33,25 @@ async function workerFromReq(req: Request) {
   const uid = await uidFromBearer(req);
   if (!uid) return null;
   const admin = adminClient();
-  const { data, error } = await admin
-    .from("workers")
-    .select("id, role")
-    .eq("user_id", uid)
-    .maybeSingle();
+  const { data, error } = await admin.from("workers").select("id, role").eq("user_id", uid).maybeSingle();
   if (error) throw error;
   return data || null;
 }
 
-function firstDayOfMonthUTC(date: Date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1, 0, 0, 0, 0));
+function normalizeName(v: any) {
+  return String(v || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-async function buildSummaryFromMonthlyTable(admin: ReturnType<typeof adminClient>, period: string) {
-  const { data, error } = await admin
-    .from("cliente_rangos_mensuales")
-    .select("cliente_id, rango, gasto_mes_anterior, compras_mes_anterior, recalculated_at")
-    .eq("periodo_mes", period)
-    .order("recalculated_at", { ascending: false });
-  if (error) throw error;
-
-  if (!(data || []).length) return null;
-
-  const seen = new Set<string>();
-  const counts = { bronce: 0, plata: 0, oro: 0 };
-  let gasto = 0;
-  let compras = 0;
-
-  for (const row of data || []) {
-    const clienteId = String(row?.cliente_id || "");
-    if (!clienteId || seen.has(clienteId)) continue;
-    seen.add(clienteId);
-    const rank = String(row?.rango || "").toLowerCase();
-    if (rank in counts) counts[rank as keyof typeof counts] += 1;
-    gasto += Number(row?.gasto_mes_anterior || 0);
-    compras += Number(row?.compras_mes_anterior || 0);
-  }
-
-  return {
-    totalConRango: seen.size,
-    bronce: counts.bronce,
-    plata: counts.plata,
-    oro: counts.oro,
-    gastoMesAnterior: Number(gasto.toFixed(2)),
-    comprasMesAnterior: compras,
-  };
+function calcRank(total: number) {
+  if (total >= 500) return "oro";
+  if (total >= 100) return "plata";
+  if (total > 0) return "bronce";
+  return null;
 }
 
 export async function GET(req: Request) {
@@ -93,41 +63,62 @@ export async function GET(req: Request) {
     }
 
     const admin = adminClient();
-    const period = firstDayOfMonthUTC(new Date()).toISOString().slice(0, 10);
+    const now = new Date();
+    const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const monthlySummary = await buildSummaryFromMonthlyTable(admin, period);
-    if (monthlySummary) {
-      return NextResponse.json({ ok: true, period, source: "cliente_rangos_mensuales", summary: monthlySummary });
+    const [{ data: clientes, error: cliErr }, { data: rows, error: rowsErr }] = await Promise.all([
+      admin.from("crm_clientes").select("id, nombre, apellido"),
+      admin.from("rendimiento_llamadas").select("cliente_id, cliente_nombre, importe, fecha_hora").gte("fecha_hora", since),
+    ]);
+
+    if (cliErr) throw cliErr;
+    if (rowsErr) throw rowsErr;
+
+    const byName = new Map<string, string>();
+    for (const c of clientes || []) {
+      const full = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim();
+      const key1 = normalizeName(full);
+      const key2 = normalizeName(c?.nombre);
+      if (key1) byName.set(key1, String(c.id));
+      if (key2 && !byName.has(key2)) byName.set(key2, String(c.id));
     }
 
-    const { data: rows, error } = await admin
-      .from("crm_clientes")
-      .select("id, rango_actual, rango_gasto_mes_anterior, rango_compras_mes_anterior")
-      .not("rango_actual", "is", null);
-    if (error) throw error;
+    const totals = new Map<string, { total: number; compras: number }>();
+    for (const row of rows || []) {
+      const amount = Number(row?.importe || 0);
+      if (!(amount > 0)) continue;
+      let clienteId = String(row?.cliente_id || "").trim();
+      if (!clienteId) clienteId = byName.get(normalizeName(row?.cliente_nombre)) || "";
+      if (!clienteId) continue;
+      const prev = totals.get(clienteId) || { total: 0, compras: 0 };
+      prev.total += amount;
+      prev.compras += 1;
+      totals.set(clienteId, prev);
+    }
 
     const counts = { bronce: 0, plata: 0, oro: 0 };
-    let gasto = 0;
-    let compras = 0;
+    let compras30d = 0;
+    let gasto30d = 0;
 
-    for (const row of rows || []) {
-      const rank = String(row?.rango_actual || "").toLowerCase();
-      if (rank in counts) counts[rank as keyof typeof counts] += 1;
-      gasto += Number(row?.rango_gasto_mes_anterior || 0);
-      compras += Number(row?.rango_compras_mes_anterior || 0);
+    for (const info of totals.values()) {
+      const rank = calcRank(info.total);
+      if (!rank) continue;
+      counts[rank as keyof typeof counts] += 1;
+      compras30d += info.compras;
+      gasto30d += info.total;
     }
 
     return NextResponse.json({
       ok: true,
-      period,
-      source: "crm_clientes",
+      window_days: 30,
+      source: "rendimiento_llamadas",
       summary: {
-        totalConRango: (rows || []).length,
+        totalConRango: counts.bronce + counts.plata + counts.oro,
         bronce: counts.bronce,
         plata: counts.plata,
         oro: counts.oro,
-        gastoMesAnterior: Number(gasto.toFixed(2)),
-        comprasMesAnterior: compras,
+        gastoMesAnterior: Number(gasto30d.toFixed(2)),
+        comprasMesAnterior: compras30d,
       },
     });
   } catch (e: any) {

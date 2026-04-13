@@ -217,6 +217,7 @@ a{ color: inherit; text-decoration: none; }
   top: 92px;
   display:grid;
   gap: 14px;
+  max-height: calc(100vh - 108px);
 }
 .tc-sidebar-card{
   border: 1px solid rgba(255,255,255,.08);
@@ -224,6 +225,8 @@ a{ color: inherit; text-decoration: none; }
   background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.025));
   box-shadow: 0 24px 70px rgba(0,0,0,.30);
   padding: 14px;
+  max-height: calc(100vh - 108px);
+  overflow: auto;
 }
 .tc-sidebar-title{ font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: rgba(255,255,255,.58); margin-bottom: 10px; }
 .tc-sidebar-nav{ display:grid; gap:8px; }

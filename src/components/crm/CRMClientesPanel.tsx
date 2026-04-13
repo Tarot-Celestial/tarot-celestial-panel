@@ -267,6 +267,7 @@ export default function CRMClientesPanel({
   const [crmUpdatingNote, setCrmUpdatingNote] = useState(false);
   const [crmPinningNoteId, setCrmPinningNoteId] = useState("");
   const [crmRegistrarOpen, setCrmRegistrarOpen] = useState(false);
+  const [crmNotesExpanded, setCrmNotesExpanded] = useState(false);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -293,7 +294,7 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
       setCrmRankSummary(j?.summary || null);
-      if (!silent) setCrmRankMsg("✅ Rangos mensuales cargados.");
+      if (!silent) setCrmRankMsg("✅ Rangos de 30 días cargados.");
     } catch (e: any) {
       if (!silent) setCrmRankMsg(`❌ ${e?.message || "Error cargando rangos"}`);
     } finally {
@@ -879,6 +880,7 @@ console.log("URL CRM 👉", url);
     setCrmUpdatingNote(false);
     setCrmPinningNoteId("");
     setCrmRegistrarOpen(false);
+    setCrmNotesExpanded(false);
     setCrmClienteEtiquetasSel([]);
     setCrmEtiquetasModalFor("");
     setCrmNuevaEtiqueta("");
@@ -937,6 +939,7 @@ console.log("URL CRM 👉", url);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setCrmNotes(sortNotes(Array.isArray(j.notas) ? j.notas : []));
+      setCrmNotesExpanded(false);
     } catch (e) {
       console.error("ERROR CARGANDO NOTAS CLIENTE", e);
       setCrmNotes([]);
@@ -1503,8 +1506,7 @@ console.log("URL CRM 👉", url);
   }
 
   const crmWebSummary = (() => {
-    const rowsAll = crmRows || [];
-    const rows = rowsAll.filter((c:any) => (c.tags || "").toLowerCase().includes("cliente"));
+    const rows = crmRows || [];
     const registered = rows.filter((row: any) => clientWebMeta(row).registered).length;
     const onboardingPending = rows.filter((row: any) => {
       const meta = clientWebMeta(row);
@@ -1517,6 +1519,8 @@ console.log("URL CRM 👉", url);
       onboardingPending,
     };
   })();
+
+  const visibleNotes = crmNotesExpanded ? crmNotes : crmNotes.slice(0, 3);
 
   return (
     <div style={{ display: "grid", gap: 18 }}>
@@ -1544,94 +1548,7 @@ console.log("URL CRM 👉", url);
           </div>
         </div>
       </div>
-
-      <div
-        className="tc-card"
-        style={{
-          borderRadius: 22,
-          border: "1px solid rgba(255,149,92,.18)",
-          background:
-            "radial-gradient(circle at top right, rgba(255,149,92,.16), transparent 24%), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
-        }}
-      >
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div>
-            <div className="tc-title">🔥 Leads calientes de Meta / Facebook</div>
-            <div className="tc-sub" style={{ marginTop: 6, maxWidth: 760 }}>
-              Los leads nuevos entran aquí automáticamente para que el equipo contacte en caliente.
-            </div>
-          </div>
-
-          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <span className="tc-chip">Pendientes: {crmFreshLeads.length}</span>
-            {crmFreshLeadsMsg ? <span className="tc-chip">{crmFreshLeadsMsg}</span> : null}
-            <button className="tc-btn tc-btn-gold" onClick={() => loadFreshLeads()} disabled={crmFreshLeadsLoading}>
-              {crmFreshLeadsLoading ? "Actualizando…" : "Actualizar leads"}
-            </button>
-          </div>
-        </div>
-
-        <div className="tc-hr" />
-
-        <div style={{ display: "grid", gap: 10 }}>
-          {crmFreshLeads.map((lead: any) => {
-            const fullName = String(lead?.nombre_completo || "Lead Facebook").trim();
-            const createdAt = lead?.created_at
-              ? new Date(lead.created_at).toLocaleString("es-ES", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })
-              : "—";
-
-            return (
-              <div
-                key={lead.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr auto",
-                  gap: 12,
-                  alignItems: "center",
-                  border: "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 16,
-                  padding: 14,
-                  background: "rgba(255,255,255,.025)",
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 900 }}>{fullName}</div>
-                    <span className="tc-chip">{lead?.campaign_name || lead?.origen || "facebook_ads"}</span>
-                    {lead?.form_name ? <span className="tc-chip">{lead.form_name}</span> : null}
-                  </div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    {lead?.telefono || "Sin teléfono"}
-                    {lead?.email ? ` · ${lead.email}` : ""}
-                    {createdAt ? ` · entró ${createdAt}` : ""}
-                  </div>
-                </div>
-
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <button className="tc-btn" onClick={() => openCRMFicha(String(lead.id || ""))}>
-                    Abrir ficha
-                  </button>
-                  <button className="tc-btn tc-btn-ok" onClick={() => markLeadAsContacted(String(lead.id || ""))}>
-                    Marcar contactado
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          {!crmFreshLeads.length ? (
-            <div className="tc-sub">No hay leads recientes pendientes en este momento.</div>
-          ) : null}
-        </div>
-      </div>
-
-      <div
+<div
         className="tc-card"
         style={{
           borderRadius: 22,
@@ -1642,9 +1559,9 @@ console.log("URL CRM 👉", url);
       >
         <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
-            <div className="tc-title">🏅 Rangos mensuales de clientes</div>
+            <div className="tc-title">🏅 Rangos dinámicos de clientes</div>
             <div className="tc-sub" style={{ marginTop: 6, maxWidth: 820 }}>
-              El rango del mes actual se calcula automáticamente usando el gasto del mes anterior. Bronce con cualquier compra, Plata desde 100€ y Oro desde 500€.
+              El rango se calcula con el gasto acumulado de los últimos 30 días. Bronce con cualquier compra, Plata desde 100€ y Oro desde 500€.
             </div>
           </div>
 
@@ -1686,7 +1603,7 @@ console.log("URL CRM 👉", url);
           <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(181,156,255,.12)", border: "1px solid rgba(181,156,255,.22)" }}><span>Total con rango</span><b>{Number(crmRankSummary?.totalConRango || 0)}</b></div>
         </div>
 
-        <div className="tc-sub" style={{ marginTop: 12 }}>{crmRankMsg || "Puedes recalcular manualmente tras cerrar mes o después de cargas históricas."}</div>
+        <div className="tc-sub" style={{ marginTop: 12 }}>{crmRankMsg || "Puedes recalcular manualmente para forzar una foto inmediata basada en los últimos 30 días."}</div>
       </div>
 
       <div className="crm-master-detail">
@@ -1732,7 +1649,7 @@ console.log("URL CRM 👉", url);
               className="tc-input"
               value={crmTagFilter}
               onChange={(e) => setCrmTagFilter(e.target.value)}
-              style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
+              style={{ width: "100%", marginTop: 6, colorScheme: "dark", background: "rgba(17,24,39,.96)", color: "#fff", border: "1px solid rgba(255,255,255,.12)" }}
             >
               <option value="">
                 {crmEtiquetasLoading ? "Cargando etiquetas..." : "Todas las etiquetas"}
@@ -1973,7 +1890,7 @@ console.log("URL CRM 👉", url);
                   ) : crmNotes.length === 0 ? (
                     <div className="tc-sub">Todavía no hay notas registradas para este cliente.</div>
                   ) : (
-                    crmNotes.map((n: any) => {
+                    visibleNotes.map((n: any) => {
                       const tone = crmNoteTone(n.texto || "");
                       return (
                       <div
@@ -2047,6 +1964,13 @@ console.log("URL CRM 👉", url);
                     })
                   )}
                 </div>
+                {crmNotes.length > 3 ? (
+                  <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+                    <button className="tc-btn" onClick={() => setCrmNotesExpanded((v) => !v)}>
+                      {crmNotesExpanded ? "Ver menos notas" : `Ver las demás notas (${crmNotes.length - 3})`}
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <div id="crm-reserva-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
@@ -2162,15 +2086,15 @@ console.log("URL CRM 👉", url);
                   <div>
                     <div className="tc-title" style={{ fontSize: 16 }}>🏅 Rango mensual del cliente</div>
                     <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Se calcula con el gasto del mes anterior y aplica durante el mes actual.
+                      Se calcula con el gasto acumulado en los últimos 30 días.
                     </div>
                   </div>
                   {rankChip(crmClienteFicha?.rango_actual)}
                 </div>
 
                 <div className="tc-grid-4" style={{ marginTop: 12 }}>
-                  <div><div className="tc-sub">Gasto mes anterior</div><div style={{ fontWeight: 900, marginTop: 6 }}>{eur(crmClienteFicha?.rango_gasto_mes_anterior || 0)}</div></div>
-                  <div><div className="tc-sub">Compras mes anterior</div><div style={{ fontWeight: 900, marginTop: 6 }}>{Number(crmClienteFicha?.rango_compras_mes_anterior || 0)}</div></div>
+                  <div><div className="tc-sub">Gasto 30 días</div><div style={{ fontWeight: 900, marginTop: 6 }}>{eur(crmClienteFicha?.rango_gasto_mes_anterior || 0)}</div></div>
+                  <div><div className="tc-sub">Compras 30 días</div><div style={{ fontWeight: 900, marginTop: 6 }}>{Number(crmClienteFicha?.rango_compras_mes_anterior || 0)}</div></div>
                   <div><div className="tc-sub">Vigente desde</div><div style={{ fontWeight: 900, marginTop: 6 }}>{crmClienteFicha?.rango_actual_desde || "—"}</div></div>
                   <div><div className="tc-sub">Vigente hasta</div><div style={{ fontWeight: 900, marginTop: 6 }}>{crmClienteFicha?.rango_actual_hasta || "—"}</div></div>
                 </div>
