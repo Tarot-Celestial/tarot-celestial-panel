@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";"use client";
+
 import { useEffect, useMemo, useState } from "react";
 import { BellRing, Send } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -236,12 +238,6 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
     return items;
   }, [reservasProximas, diarioRows, pendientes, statsRows, statsTotals]);
 
-  const topProduccion = useMemo(() => {
-    return [...(statsRows || [])]
-      .sort((a: any, b: any) => (Number(b?.minutes_total) || 0) - (Number(a?.minutes_total) || 0))
-      .slice(0, 5);
-  }, [statsRows]);
-
 
   async function sendClientPush() {
     try {
@@ -294,7 +290,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           <div>
             <div className="tc-title" style={{ fontSize: 26 }}>📊 Dashboard ejecutivo</div>
             <div className="tc-sub" style={{ marginTop: 8, maxWidth: 860 }}>
-              Vista rápida del negocio: facturación del mes, clientes activos hoy, reservas pendientes y tarotistas con mayor producción.
+              Vista rápida del negocio: facturación del mes, clientes activos hoy, reservas pendientes y accesos al panel cliente.
             </div>
           </div>
 
@@ -412,83 +408,6 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
             </div>
           ))}
           {!clientAccess?.latest?.length ? <div className="tc-sub">Todavía no hay actividad de clientes para mostrar.</div> : null}
-        </div>
-      </div>
-
-      <div className="tc-grid-2">
-        <div className="tc-card">
-          <div className="tc-title" style={{ fontSize: 16 }}>⚡ Actividad inmediata</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>Lo próximo que requiere atención.</div>
-          <div className="tc-hr" />
-          <div style={{ display: "grid", gap: 10 }}>
-            {reservasProximas.length === 0 && <div className="tc-sub">No hay reservas próximas pendientes.</div>}
-            {reservasProximas.map((r: any) => {
-              const mins = minsUntil(r?.fecha_reserva);
-              const urgent = mins !== null && mins >= -2 && mins <= 10;
-
-              return (
-                <div
-                  key={r.id}
-                  style={{
-                    border: urgent ? "1px solid rgba(255,90,106,.26)" : "1px solid rgba(255,255,255,.08)",
-                    borderRadius: 16,
-                    padding: 12,
-                    background: urgent ? "rgba(255,90,106,.08)" : "rgba(255,255,255,.03)",
-                    boxShadow: urgent ? "0 10px 28px rgba(255,90,106,.10)" : "none",
-                  }}
-                >
-                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>
-                      {r?.cliente_nombre || "Cliente"}
-                    </div>
-                    {urgent ? <span className="tc-chip" style={{ background: "rgba(255,90,106,.16)", border: "1px solid rgba(255,90,106,.26)" }}>Urgente</span> : null}
-                  </div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    {r?.tarotista_display_name || r?.tarotista_nombre_manual || "Tarotista"} · {r?.fecha_reserva ? new Date(r.fecha_reserva).toLocaleString("es-ES") : "—"}
-                  </div>
-                  {mins !== null ? (
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      {mins >= 0 ? `Empieza en ${mins} min` : `Debía empezar hace ${Math.abs(mins)} min`}
-                    </div>
-                  ) : null}
-                  {!!r?.nota && <div className="tc-sub" style={{ marginTop: 6 }}>{r.nota}</div>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="tc-card">
-          <div className="tc-title" style={{ fontSize: 16 }}>🏆 Top producción del mes</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>Tarotistas con más minutos este mes.</div>
-          <div className="tc-hr" />
-          <div style={{ display: "grid", gap: 10 }}>
-            {topProduccion.length === 0 && <div className="tc-sub">Sin datos de producción todavía.</div>}
-            {topProduccion.map((r: any, idx: number) => (
-              <div
-                key={r.worker_id || idx}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "auto 1fr auto",
-                  gap: 12,
-                  alignItems: "center",
-                  border: "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 16,
-                  padding: 12,
-                  background: "rgba(255,255,255,.03)",
-                }}
-              >
-                <div className="tc-chip">{idx + 1}</div>
-                <div>
-                  <div style={{ fontWeight: 800 }}>{r?.display_name || "Tarotista"}</div>
-                  <div className="tc-sub" style={{ marginTop: 4 }}>
-                    Captadas: {numES(r?.captadas_total || 0)} · Llamadas: {numES(r?.calls_total || 0)}
-                  </div>
-                </div>
-                <div style={{ fontWeight: 900 }}>{numES(r?.minutes_total || 0)} min</div>
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </div>
