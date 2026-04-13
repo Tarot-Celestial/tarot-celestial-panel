@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { addClientChatCredits } from "@/lib/server/chat-platform";
 
 const admin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   { auth: { persistSession: false } }
 );
+
+const WELCOME_CHAT_CREDITS = 2;
+const WELCOME_CHAT_CREDITS_TYPE = "welcome_register";
 
 function normalizePhone(phone: string | null | undefined) {
   return String(phone || "").replace(/\D/g, "");
@@ -84,14 +88,59 @@ export async function POST(req: Request) {
       updated_at: nowIso,
     };
 
-    const query = clienteId
-      ? admin.from("crm_clientes").update(payload).eq("id", clienteId)
-      : admin.from("crm_clientes").insert(payload);
+    let crmClienteId = String(clienteId || "").trim();
 
-    const { error: crmErr } = await query;
-    if (crmErr) throw crmErr;
+    if (crmClienteId) {
+      const { data: updatedCliente, error: crmErr } = await admin
+        .from("crm_clientes")
+        .update(payload)
+        .eq("id", crmClienteId)
+        .select("id")
+        .single();
 
-    return NextResponse.json({ ok: true, user: data.user });
+      if (crmErr) throw crmErr;
+      crmClienteId = String(updatedCliente?.id || crmClienteId);
+    } else {
+      const { data: insertedCliente, error: crmErr } = await admin
+        .from("crm_clientes")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      if (crmErr) throw crmErr;
+      crmClienteId = String(insertedCliente?.id || "").trim();
+    }
+
+    if (crmClienteId) {
+      const { data: existingWelcomeLedger, error: ledgerErr } = await admin
+        .from("cliente_chat_creditos")
+        .select("id")
+        .eq("cliente_id", crmClienteId)
+        .eq("tipo", WELCOME_CHAT_CREDITS_TYPE)
+        .limit(1)
+        .maybeSingle();
+
+      if (ledgerErr) throw ledgerErr;
+
+      if (!existingWelcomeLedger?.id) {
+        await addClientChatCredits(admin, {
+          clienteId: crmClienteId,
+          amount: WELCOME_CHAT_CREDITS,
+          type: WELCOME_CHAT_CREDITS_TYPE,
+          notes: "Créditos de bienvenida por registro en el chat.",
+          meta: {
+            source: "chat_register",
+            email,
+          },
+        });
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      user: data.user,
+      welcome_chat_credits: WELCOME_CHAT_CREDITS,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "No se pudo crear la cuenta." }, { status: 500 });
   }
