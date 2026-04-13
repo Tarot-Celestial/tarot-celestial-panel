@@ -159,7 +159,12 @@ export async function GET(req: Request) {
     const q = searchParams.get("q") || "";
     const telefono = searchParams.get("telefono") || "";
     const pais = searchParams.get("pais") || "";
-    const rango = (searchParams.get("rango") || "").toLowerCase();
+    const rangoRaw = searchParams.get("rango");
+    const rango = ["bronce", "plata", "oro", "sin_rango"].includes(
+  String(rangoRaw || "").toLowerCase()
+)
+  ? String(rangoRaw).toLowerCase()
+  : "";
 
     const admin = adminClient();
 
@@ -167,14 +172,15 @@ export async function GET(req: Request) {
       .from("crm_clientes")
       .select("*")
       .order("nombre", { ascending: true })
-      .limit(1000);
+      .limit(300);
 
     // 🔥 SOLO filtra si hay búsqueda
     if (q) {
-      query = query.or(
-        `nombre.ilike.%${q}%,apellido.ilike.%${q}%,email.ilike.%${q}%`
-      );
-    }
+  const safeQ = q.replace(/[%]/g, ""); // evita romper ilike
+  query = query.or(
+    `nombre.ilike.%${safeQ}%,apellido.ilike.%${safeQ}%,email.ilike.%${safeQ}%`
+  );
+}
 
     if (telefono) {
       query = query.ilike("telefono", `%${telefono}%`);
@@ -185,7 +191,10 @@ export async function GET(req: Request) {
     }
 
     const { data, error } = await query;
-    if (error) throw error;
+    if (error) {
+  console.error("SUPABASE ERROR:", error);
+  throw error;
+}
 
     let clientes = await hydrateCurrentRanks(admin, data || []);
     clientes = await attachEtiquetas(admin, clientes);
