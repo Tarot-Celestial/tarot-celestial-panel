@@ -113,41 +113,58 @@ export default function AdminChatPanel() {
   }, [threadSearch, threads]);
 
   const loadOverview = useCallback(async (keepSelection = true) => {
-    try {
-      setLoading(true);
-      const token = await getToken();
-      const res = await fetch("/api/admin/chat/overview", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el módulo de chat");
+  try {
+    setLoading(true);
+    const token = await getToken();
+    const res = await fetch("/api/admin/chat/overview", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el módulo de chat");
 
-      const nextThreads = Array.isArray(json.threads) ? json.threads : [];
-      setSummary(json.summary || {});
-      setTarotistas(Array.isArray(json.tarotistas) ? json.tarotistas : []);
-      setThreads(nextThreads);
-      setWorkerDrafts((prev) => {
-        const next = { ...prev };
-        for (const worker of json.tarotistas || []) {
-          next[String(worker.id)] = {
-            visible_name: worker.display_name || "",
-            welcome_message: worker.welcome_message || "",
-          };
-        }
-        return next;
-      });
-
-      const newest = nextThreads[0]?.last_message_at ? String(nextThreads[0].last_message_at) : "";
-      if (notifyEnabled && previousLastMessageRef.current && newest && newest !== previousLastMessageRef.current) {
-        beep();
-        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-          new Notification("Nuevo mensaje en el chat", {
-            body: `${nextThreads[0]?.cliente_nombre || "Cliente"}: ${nextThreads[0]?.last_message_preview || "Mensaje nuevo"}`,
-          });
-        }
+    const nextThreads = Array.isArray(json.threads) ? json.threads : [];
+    setSummary(json.summary || {});
+    setTarotistas(Array.isArray(json.tarotistas) ? json.tarotistas : []);
+    setThreads(nextThreads);
+    setWorkerDrafts((prev) => {
+      const next = { ...prev };
+      for (const worker of json.tarotistas || []) {
+        next[String(worker.id)] = {
+          visible_name: worker.display_name || "",
+          welcome_message: worker.welcome_message || "",
+        };
       }
-      previousLastMessageRef.current = newest;
+      return next;
+    });
+
+    const newest = nextThreads[0]?.last_message_at ? String(nextThreads[0].last_message_at) : "";
+    if (notifyEnabled && previousLastMessageRef.current && newest && newest !== previousLastMessageRef.current) {
+      beep();
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        new Notification("Nuevo mensaje en el chat", {
+          body: `${nextThreads[0]?.cliente_nombre || "Cliente"}: ${nextThreads[0]?.last_message_preview || "Mensaje nuevo"}`,
+        });
+      }
+    }
+    previousLastMessageRef.current = newest;
+
+    if (!selectedThreadId) {
+      setSelectedThreadId(String(nextThreads[0]?.id || ""));
+    } else {
+      const stillExists = nextThreads.some((t: any) => String(t.id) === String(selectedThreadId));
+      if (!stillExists) {
+        setSelectedThreadId(String(nextThreads[0]?.id || ""));
+      }
+    }
+
+    setMsg("");
+  } catch (e: any) {
+    setMsg(`❌ ${e?.message || "Error"}`);
+  } finally {
+    setLoading(false);
+  }
+}, [notifyEnabled, selectedThreadId]);
 
       if (!keepSelection || !selectedThreadId) {
         setSelectedThreadId(String(nextThreads[0]?.id || ""));
