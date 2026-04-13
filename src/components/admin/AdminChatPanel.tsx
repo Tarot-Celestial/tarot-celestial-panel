@@ -73,7 +73,7 @@ export default function AdminChatPanel() {
   const [composer, setComposer] = useState("");
   const [sending, setSending] = useState(false);
   const [creditAmount, setCreditAmount] = useState("5");
-  const [paymentPack, setPaymentPack] = useState("chat_pack_12");
+  const [paymentPack, setPaymentPack] = useState("chat_pack_5");
   const [threadSearch, setThreadSearch] = useState("");
   const [savingWorkerId, setSavingWorkerId] = useState("");
   const [closingThreadId, setClosingThreadId] = useState("");
@@ -433,9 +433,9 @@ export default function AdminChatPanel() {
                   <button className="tc-btn tc-btn-ok" onClick={() => adjustCredits(Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>+ créditos</button>
                   <button className="tc-btn" onClick={() => adjustCredits(-Math.max(1, Math.trunc(Number(creditAmount) || 0)))}>- créditos</button>
                   <select className="tc-select" value={paymentPack} onChange={(e) => setPaymentPack(e.target.value)} style={{ width: 180 }}>
-                    <option value="chat_pack_5">Pack 5 créditos</option>
-                    <option value="chat_pack_12">Pack 12 créditos</option>
-                    <option value="chat_pack_25">Pack 25 créditos</option>
+                    <option value="chat_pack_3">3 preguntas · pack rápido</option>
+                    <option value="chat_pack_5">5 preguntas · recomendado</option>
+                    <option value="chat_pack_10">10 preguntas · sesión profunda</option>
                   </select>
                   <button className="tc-btn tc-btn-gold" onClick={sendPaymentLink}><CreditCard size={14} /> Enviar enlace y precios</button>
                 </div>

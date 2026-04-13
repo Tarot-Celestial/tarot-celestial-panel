@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, ChevronRight, Lock, LogOut, Send, Sparkles, Wallet, X } from "lucide-react";
+import { ArrowLeft, CheckCircle2, ChevronRight, ExternalLink, Lock, LogOut, Send, Sparkles, Wallet, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -18,6 +18,20 @@ const COUNTRY_OPTIONS = [
   "República Dominicana",
   "Venezuela",
 ];
+
+function normalizePaymentMeta(item: any) {
+  const meta = item?.meta || {};
+  if (Array.isArray(meta?.options) && meta.options.length) return meta.options;
+  if (meta?.url) {
+    return [{
+      title: meta?.pack_name || "Continuar consulta",
+      price_label: meta?.price_label || "Pagar ahora",
+      url: meta.url,
+      highlight: true,
+    }];
+  }
+  return [];
+}
 
 function fmt(v?: string | null) {
   if (!v) return "—";
@@ -82,6 +96,7 @@ export default function ChatPage() {
   }, [messages, thread?.id]);
 
   const locked = Boolean(thread?.free_consulta_usada) && creditos <= 0;
+  const hasPendingClientMessage = useMemo(() => messages.some((item: any) => item?.pending), [messages]);
 
   const loadTarotistas = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -236,9 +251,27 @@ export default function ChatPage() {
 
   async function sendMessage() {
     if (!composer.trim() || !selectedWorkerId) return;
+
+    const body = composer.trim();
+    const optimisticId = `temp-${Date.now()}`;
+    const optimisticMessage = {
+      id: optimisticId,
+      sender_type: "cliente",
+      sender_display_name: cliente?.nombre || "Tú",
+      body,
+      kind: "text",
+      meta: null,
+      created_at: new Date().toISOString(),
+      pending: true,
+    };
+
     try {
       setSending(true);
       setMsg("");
+      setMessages((prev) => [...prev, optimisticMessage]);
+      prevMessageCountRef.current += 1;
+      setComposer("");
+
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) {
@@ -246,8 +279,6 @@ export default function ChatPage() {
         return;
       }
 
-      const body = composer.trim();
-      setComposer("");
       const res = await fetch("/api/cliente/chat/thread", {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -255,6 +286,8 @@ export default function ChatPage() {
       });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok) {
+        setMessages((prev) => prev.filter((item: any) => item.id !== optimisticId));
+        prevMessageCountRef.current = Math.max(0, prevMessageCountRef.current - 1);
         setComposer(body);
         if (json?.need_payment) {
           setMsg("Te has quedado sin créditos. Compra más para seguir la consulta.");
@@ -263,9 +296,25 @@ export default function ChatPage() {
         }
         return;
       }
+
+      const inserted = json?.message || null;
+      if (inserted) {
+        setMessages((prev) => prev.map((item: any) => (item.id === optimisticId ? inserted : item)));
+      }
+
+      if (json?.thread_id && !thread?.id) {
+        setThread((prev: any) => ({ ...(prev || {}), id: json.thread_id }));
+      }
+      if (typeof json?.creditos_restantes !== "undefined") {
+        setCreditos(Number(json.creditos_restantes || 0));
+      }
+
       await loadThread();
       await loadTarotistas();
     } catch (e: any) {
+      setMessages((prev) => prev.filter((item: any) => item.id !== optimisticId));
+      prevMessageCountRef.current = Math.max(0, prevMessageCountRef.current - 1);
+      setComposer(body);
       setMsg(e?.message || "No se pudo enviar el mensaje.");
     } finally {
       setSending(false);
@@ -391,17 +440,44 @@ export default function ChatPage() {
 
                 {visibleMessages.map((item: any) => {
                   const mine = item.sender_type === "cliente";
+                  const paymentOptions = item.kind === "payment_link" ? normalizePaymentMeta(item) : [];
                   return (
                     <div key={item.id} className={`bubble-wrap ${mine ? "mine" : "theirs"}`}>
-                      <div className={`bubble ${mine ? "mine" : "theirs"}`}>
-                        <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{item.body}</div>
-                        <div className="bubble-time">{fmt(item.created_at)}</div>
+                      <div className={`bubble ${mine ? "mine" : "theirs"} ${item.kind === "payment_link" ? "payment-bubble" : ""} ${item.pending ? "pending" : ""}`}>
+                        {item.kind === "payment_link" && paymentOptions.length ? (
+                          <div className="payment-card">
+                            <div className="payment-eyebrow">Pago seguro</div>
+                            <div className="payment-title">Elige tu pack para seguir la consulta</div>
+                            <div className="payment-copy">Selecciona una opción y entra directamente al pago.</div>
+                            <div className="payment-options">
+                              {paymentOptions.map((option: any, index: number) => (
+                                <a
+                                  key={`${item.id}-${index}`}
+                                  href={option.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className={`payment-option ${option.highlight ? "highlight" : ""}`}
+                                >
+                                  <div>
+                                    <div className="payment-option-title">{option.title}</div>
+                                    <div className="payment-option-price">{option.price_label}</div>
+                                  </div>
+                                  <span className="payment-option-cta">Ir al pago <ExternalLink size={14} /></span>
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{item.body}</div>
+                        )}
+                        <div className="bubble-time">{item.pending ? "Enviando…" : fmt(item.created_at)}</div>
                       </div>
                     </div>
                   );
                 })}
 
                 {isTyping ? <div className="typing">La tarotista está escribiendo…</div> : null}
+                {hasPendingClientMessage ? <div className="typing">Tu mensaje se está enviando…</div> : null}
               </div>
 
               {locked ? (
@@ -410,7 +486,7 @@ export default function ChatPage() {
                     <div className="panel-title" style={{ fontSize: 18 }}>Te has quedado sin créditos</div>
                     <div className="panel-sub">Tu tarotista podrá enviarte un enlace de pago para seguir la consulta sin salir del chat.</div>
                   </div>
-                  <button className="pay-btn"><Lock size={14} /> Esperando enlace de pago</button>
+                  <button className="pay-btn"><Lock size={14} /> Esperando propuesta de pago</button>
                 </div>
               ) : null}
 
@@ -522,6 +598,19 @@ export default function ChatPage() {
         .bubble{max-width:min(88%,520px);padding:12px 14px;border-radius:20px;display:grid;gap:8px;}
         .bubble.mine{background:linear-gradient(135deg, rgba(139,92,246,.92), rgba(124,58,237,.82));}
         .bubble.theirs{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);}
+        .bubble.pending{opacity:.86;}
+        .payment-bubble{background:linear-gradient(180deg, rgba(15,23,42,.96), rgba(30,41,59,.92));border:1px solid rgba(196,181,253,.24);min-width:min(100%,340px);}
+        .payment-card{display:grid;gap:10px;}
+        .payment-eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#c4b5fd;}
+        .payment-title{font-weight:900;font-size:17px;}
+        .payment-copy{color:#cbd5e1;line-height:1.45;}
+        .payment-options{display:grid;gap:10px;}
+        .payment-option{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-radius:18px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.08);color:#fff;text-decoration:none;transition:transform .16s ease,border-color .16s ease,background .16s ease;}
+        .payment-option:hover{transform:translateY(-1px);border-color:rgba(196,181,253,.42);background:rgba(139,92,246,.12);}
+        .payment-option.highlight{border-color:rgba(196,181,253,.45);background:rgba(139,92,246,.16);}
+        .payment-option-title{font-weight:800;font-size:15px;}
+        .payment-option-price{color:#e9d5ff;font-size:14px;margin-top:3px;}
+        .payment-option-cta{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:800;white-space:nowrap;}
         .bubble-time{font-size:11px;color:#e2e8f0;opacity:.86;justify-self:end;}
         .paywall-box{justify-content:space-between;flex-wrap:wrap;}
         .pay-btn,.send-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:46px;padding:0 18px;border:none;border-radius:16px;background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff;font-weight:800;cursor:pointer;}
@@ -540,6 +629,8 @@ export default function ChatPage() {
           .workers-panel.mobile-hidden,.chat-panel.mobile-chat-hidden{display:none;}
           h1{font-size:28px;}
           .messages-box{max-height:none;min-height:300px;}
+          .payment-option{flex-direction:column;align-items:flex-start;}
+          .payment-option-cta{margin-top:4px;}
         }
       `}</style>
     </div>
