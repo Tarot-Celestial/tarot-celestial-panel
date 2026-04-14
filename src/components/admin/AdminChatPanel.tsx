@@ -121,12 +121,16 @@ export default function AdminChatPanel() {
       cache: "no-store",
     });
     const json = await res.json().catch(() => null);
-    if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el módulo de chat");
+    if (!res.ok || !json?.ok) {
+      throw new Error(json?.error || "No se pudo cargar el módulo de chat");
+    }
 
     const nextThreads = Array.isArray(json.threads) ? json.threads : [];
+
     setSummary(json.summary || {});
     setTarotistas(Array.isArray(json.tarotistas) ? json.tarotistas : []);
     setThreads(nextThreads);
+
     setWorkerDrafts((prev) => {
       const next = { ...prev };
       for (const worker of json.tarotistas || []) {
@@ -138,21 +142,40 @@ export default function AdminChatPanel() {
       return next;
     });
 
-    const newest = nextThreads[0]?.last_message_at ? String(nextThreads[0].last_message_at) : "";
-    if (notifyEnabled && previousLastMessageRef.current && newest && newest !== previousLastMessageRef.current) {
+    const newest = nextThreads[0]?.last_message_at
+      ? String(nextThreads[0].last_message_at)
+      : "";
+
+    if (
+      notifyEnabled &&
+      previousLastMessageRef.current &&
+      newest &&
+      newest !== previousLastMessageRef.current
+    ) {
       beep();
-      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+      if (
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
         new Notification("Nuevo mensaje en el chat", {
-          body: `${nextThreads[0]?.cliente_nombre || "Cliente"}: ${nextThreads[0]?.last_message_preview || "Mensaje nuevo"}`,
+          body: `${nextThreads[0]?.cliente_nombre || "Cliente"}: ${
+            nextThreads[0]?.last_message_preview || "Mensaje nuevo"
+          }`,
         });
       }
     }
+
     previousLastMessageRef.current = newest;
 
+    // 🔥 FIX IMPORTANTE (BIEN CERRADO)
     if (!selectedThreadId) {
       setSelectedThreadId(String(nextThreads[0]?.id || ""));
     } else {
-      const stillExists = nextThreads.some((t: any) => String(t.id) === String(selectedThreadId));
+      const stillExists = nextThreads.some(
+        (t: any) => String(t.id) === String(selectedThreadId)
+      );
+
       if (!stillExists) {
         setSelectedThreadId(String(nextThreads[0]?.id || ""));
       }
