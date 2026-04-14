@@ -186,25 +186,12 @@ export default function AdminChatPanel() {
     }
 
     setMsg("");
-  } catch (e: any) {
+  } catch (e) {
     setMsg(`❌ ${e?.message || "Error"}`);
   } finally {
     setLoading(false);
   }
 }, [notifyEnabled, selectedThreadId]);
-
-      if (!keepSelection || !selectedThreadId) {
-        setSelectedThreadId(String(nextThreads[0]?.id || ""));
-      } else if (!nextThreads.some((t: any) => String(t.id) === String(selectedThreadId))) {
-        setSelectedThreadId(String(nextThreads[0]?.id || ""));
-      }
-      setMsg("");
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setLoading(false);
-    }
-  }, [notifyEnabled, selectedThreadId]);
 
   const loadMessages = useCallback(async () => {
     if (!selectedThreadId) {
