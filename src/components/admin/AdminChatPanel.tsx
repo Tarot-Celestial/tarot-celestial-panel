@@ -115,12 +115,15 @@ export default function AdminChatPanel() {
   const loadOverview = useCallback(async (keepSelection = true) => {
   try {
     setLoading(true);
+
     const token = await getToken();
     const res = await fetch("/api/admin/chat/overview", {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
+
     const json = await res.json().catch(() => null);
+
     if (!res.ok || !json?.ok) {
       throw new Error(json?.error || "No se pudo cargar el módulo de chat");
     }
@@ -153,6 +156,7 @@ export default function AdminChatPanel() {
       newest !== previousLastMessageRef.current
     ) {
       beep();
+
       if (
         typeof window !== "undefined" &&
         "Notification" in window &&
@@ -168,7 +172,7 @@ export default function AdminChatPanel() {
 
     previousLastMessageRef.current = newest;
 
-    // 🔥 FIX IMPORTANTE (BIEN CERRADO)
+    // 🔥 FIX CHAT (SIN ROMPER NADA)
     if (!selectedThreadId) {
       setSelectedThreadId(String(nextThreads[0]?.id || ""));
     } else {
