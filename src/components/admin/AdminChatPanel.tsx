@@ -186,11 +186,15 @@ export default function AdminChatPanel() {
     }
 
     setMsg("");
-  } catch (e) {
-    setMsg(`❌ ${e?.message || "Error"}`);
-  } finally {
-    setLoading(false);
+} catch (e) {
+  if (e instanceof Error) {
+    setMsg(`❌ ${e.message}`);
+  } else {
+    setMsg("❌ Error");
   }
+} finally {
+  setLoading(false);
+}
 }, [notifyEnabled, selectedThreadId]);
 
   const loadMessages = useCallback(async () => {
