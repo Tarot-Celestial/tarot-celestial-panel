@@ -3,7 +3,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
-import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
@@ -11,6 +10,7 @@ import HabitualesPanel from "@/components/habituales/HabitualesPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
+import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import { BarChart3, CalendarDays, CheckSquare, Headphones, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -1196,6 +1196,7 @@ export default function Central() {
   return (
     <>
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
+      <PaymentMotivationWatcher mode="central" />
       <AppHeader />
 
       <div className="tc-shell">
@@ -2019,8 +2020,6 @@ export default function Central() {
         </div>
       </main>
     </div>
-
-      <PaymentMotivationWatcher panel="central" enabled={ok} />
 
       {crmCloseNotif && (
         <div

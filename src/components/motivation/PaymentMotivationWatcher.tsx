@@ -1,270 +1,224 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, Sparkles, TrendingUp } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
-const STORAGE_PREFIX = "tc-payment-motivation-seen";
-const POLL_MS = 15000;
-const AUTO_HIDE_MS = 7000;
+const TZ = "Europe/Madrid";
+const POLL_MS = 12000;
+const AUTO_HIDE_MS = 6500;
 
-type PanelMode = "admin" | "central";
+type MotivationMode = "admin" | "central";
 
 type PaymentSnapshot = {
-  ok: boolean;
   day_key: string;
-  count_today: number;
+  count: number;
   latest_payment: {
-    id: string | number;
-    cliente_nombre?: string | null;
-    importe?: number | null;
-    forma_pago?: string | null;
-    fecha_hora?: string | null;
-    telefonista_nombre?: string | null;
-    tarotista_nombre?: string | null;
+    id: string;
+    importe: number;
+    cliente_nombre: string | null;
+    telefonista_nombre: string | null;
+    fecha_hora: string | null;
+    created_at: string | null;
   } | null;
 };
 
-type SeenState = {
-  dayKey: string;
-  count: number;
-  latestId: string;
+type ApiResponse = {
+  ok: boolean;
+  snapshot?: PaymentSnapshot;
+  error?: string;
 };
 
-function madridDayKey() {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Europe/Madrid",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
+type ToastState = {
+  visible: boolean;
+  title: string;
+  message: string;
+  badge: string;
+  count: number;
+  amount: number;
+};
 
-function storageKey(panel: PanelMode, dayKey: string) {
-  return `${STORAGE_PREFIX}:${panel}:${dayKey}`;
-}
-
-function readSeen(panel: PanelMode, dayKey: string): SeenState {
-  if (typeof window === "undefined") return { dayKey, count: 0, latestId: "" };
-  try {
-    const raw = window.localStorage.getItem(storageKey(panel, dayKey));
-    if (!raw) return { dayKey, count: 0, latestId: "" };
-    const parsed = JSON.parse(raw);
-    return {
-      dayKey,
-      count: Number(parsed?.count) || 0,
-      latestId: String(parsed?.latestId || ""),
-    };
-  } catch {
-    return { dayKey, count: 0, latestId: "" };
-  }
-}
-
-function writeSeen(panel: PanelMode, next: SeenState) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey(panel, next.dayKey), JSON.stringify(next));
-  } catch {}
-}
-
-function eur(value: number | null | undefined) {
-  return (Number(value) || 0).toLocaleString("es-ES", {
-    style: "currency",
-    currency: "EUR",
-  });
-}
-
-function buildMotivation(count: number) {
+function motivationCopy(count: number) {
   if (count <= 1) {
     return {
-      badge: "Primer cobro del día",
-      title: "🎉 ¡BRAVO! Ya ha llegado el primero",
-      description: "Primer cobro del día. Vamos con todo 🔥",
+      badge: "PRIMER COBRO",
+      title: "🎉 ¡BRAVO! Ya llegó el primer cobro del día",
+      message: "Vamos a por más. Con foco, ritmo y energía todo se consigue 🔥",
     };
   }
 
   const variants = [
-    `💪 Ya van ${count} cobros hoy. Otro más, sigue así.`,
-    `🚀 ${count} cobros y subiendo. Estás en racha.`,
-    `🔥 ${count} cobros hoy. Hoy estás imparable.`,
-    `✨ ${count} cobros en el día. Con trabajo duro todo se puede lograr.`,
-    `🏆 ${count} cobros hoy. Vamos a por más.`,
+    {
+      badge: `COBRO #${count}`,
+      title: `💪 ¡Muy bien! Ya vais por el cobro nº ${count}`,
+      message: "Buen ritmo. Seguid empujando, que hoy puede ser un día grande.",
+    },
+    {
+      badge: `COBRO #${count}`,
+      title: `🚀 Cobro nº ${count} registrado`,
+      message: "Estáis en racha. Mantened la intensidad y a por el siguiente.",
+    },
+    {
+      badge: `COBRO #${count}`,
+      title: `🔥 Ya va el cobro nº ${count}`,
+      message: "Hoy estáis imparables. Trabajo duro, foco y a seguir sumando.",
+    },
+    {
+      badge: `COBRO #${count}`,
+      title: `✨ Otro cobro más: ${count} en el día`,
+      message: "Excelente dinámica. Cada llamada bien trabajada acerca el siguiente cierre.",
+    },
   ];
 
-  return {
-    badge: `${count} cobros hoy`,
-    title: `🎉 ¡BRAVO! Ya van ${count} cobros del día`,
-    description: variants[(count - 2) % variants.length],
-  };
+  return variants[(count - 2) % variants.length];
 }
 
-async function safeJson(res: Response) {
-  const txt = await res.text();
-  if (!txt) return { ok: false } as any;
-  try {
-    return JSON.parse(txt);
-  } catch {
-    return { ok: false } as any;
-  }
+function safeAmount(v: any) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
-export default function PaymentMotivationWatcher({ panel, enabled = true }: { panel: PanelMode; enabled?: boolean }) {
-  const [popup, setPopup] = useState<PaymentSnapshot | null>(null);
-  const [ready, setReady] = useState(false);
+function money(v: number) {
+  return safeAmount(v).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+}
+
+function storageKey(mode: MotivationMode, dayKey: string) {
+  return `tc_payment_motivation:${mode}:${dayKey}`;
+}
+
+export default function PaymentMotivationWatcher({ mode }: { mode: MotivationMode }) {
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const initializedRef = useRef(false);
+  const activeDayRef = useRef<string>("");
+  const lastSeenCountRef = useRef(0);
+  const dismissTimerRef = useRef<any>(null);
+  const pollTimerRef = useRef<any>(null);
   const busyRef = useRef(false);
-  const pollRef = useRef<any>(null);
-  const dayRef = useRef<string>(madridDayKey());
-  const channelRef = useRef<any>(null);
 
-  const popupText = useMemo(() => buildMotivation(Number(popup?.count_today) || 0), [popup]);
+  const accent = useMemo(() => {
+    return mode === "admin"
+      ? "linear-gradient(135deg, rgba(215,181,109,0.98), rgba(255,132,100,0.98))"
+      : "linear-gradient(135deg, rgba(120,255,190,0.98), rgba(181,156,255,0.98))";
+  }, [mode]);
 
-  async function fetchLatest() {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return null;
+  function hideToast() {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    setToast(null);
+  }
 
-    const dayKey = madridDayKey();
-    const res = await fetch(`/api/motivation/payments/latest?day=${encodeURIComponent(dayKey)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
+  function scheduleHide() {
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    dismissTimerRef.current = setTimeout(() => {
+      setToast(null);
+    }, AUTO_HIDE_MS);
+  }
+
+  function markShown(dayKey: string, count: number) {
+    try {
+      window.localStorage.setItem(storageKey(mode, dayKey), String(count));
+    } catch {}
+  }
+
+  function readShown(dayKey: string) {
+    try {
+      return Number(window.localStorage.getItem(storageKey(mode, dayKey)) || 0) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  function showMotivation(snapshot: PaymentSnapshot) {
+    const count = Number(snapshot?.count || 0);
+    if (!count) return;
+
+    const copy = motivationCopy(count);
+    const amount = safeAmount(snapshot?.latest_payment?.importe);
+
+    setToast({
+      visible: true,
+      title: copy.title,
+      message: copy.message,
+      badge: copy.badge,
+      count,
+      amount,
     });
-
-    const json = (await safeJson(res)) as PaymentSnapshot;
-    if (!json?.ok) return null;
-    return json;
+    scheduleHide();
   }
 
-  function syncSeenDay(dayKey: string) {
-    if (dayRef.current === dayKey) return;
-    dayRef.current = dayKey;
-    writeSeen(panel, { dayKey, count: 0, latestId: "" });
-  }
+  async function loadSnapshot() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) return;
 
-  function handleSnapshot(snapshot: PaymentSnapshot | null, mode: "baseline" | "notify") {
-    if (!snapshot?.ok) return;
-
-    syncSeenDay(snapshot.day_key || madridDayKey());
-
-    const latestId = String(snapshot.latest_payment?.id || "");
-    const countToday = Number(snapshot.count_today) || 0;
-    const seen = readSeen(panel, snapshot.day_key);
-
-    if (mode === "baseline") {
-      writeSeen(panel, {
-        dayKey: snapshot.day_key,
-        count: Math.max(seen.count, countToday),
-        latestId: seen.latestId || latestId,
-      });
-      return;
-    }
-
-    if (!latestId || countToday <= 0) return;
-
-    const shouldPopup = countToday > seen.count && latestId !== seen.latestId;
-
-    writeSeen(panel, {
-      dayKey: snapshot.day_key,
-      count: Math.max(seen.count, countToday),
-      latestId,
-    });
-
-    if (shouldPopup) {
-      setPopup(snapshot);
-    }
-  }
-
-  useEffect(() => {
-    if (!enabled) return;
-    let cancelled = false;
-
-    (async () => {
-      if (busyRef.current) return;
-      busyRef.current = true;
-      try {
-        const snapshot = await fetchLatest();
-        if (!cancelled) {
-          handleSnapshot(snapshot, ready ? "notify" : "baseline");
-          if (!ready) setReady(true);
-        }
-      } catch {
-      } finally {
-        busyRef.current = false;
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, panel, ready]);
-
-  useEffect(() => {
-    if (!enabled || !ready) return;
-
-    const tick = async () => {
-      if (busyRef.current) return;
-      busyRef.current = true;
-      try {
-        const snapshot = await fetchLatest();
-        handleSnapshot(snapshot, "notify");
-      } catch {
-      } finally {
-        busyRef.current = false;
-      }
-    };
-
-    pollRef.current = window.setInterval(tick, POLL_MS);
-
-    if (channelRef.current) {
-      sb.removeChannel(channelRef.current);
-      channelRef.current = null;
-    }
-
-    const channel = sb
-      .channel(`motivation-payments-${panel}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "rendimiento_llamadas",
+      const res = await fetch("/api/motivation/payments/latest", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-store",
         },
-        () => {
-          tick();
-        }
-      )
-      .subscribe();
+        cache: "no-store",
+      });
 
-    channelRef.current = channel;
+      const json = (await res.json().catch(() => null)) as ApiResponse | null;
+      if (!res.ok || !json?.ok || !json.snapshot) return;
 
-    return () => {
-      if (pollRef.current) {
-        window.clearInterval(pollRef.current);
-        pollRef.current = null;
+      const snapshot = json.snapshot;
+      const dayKey = String(snapshot.day_key || "");
+      const count = Number(snapshot.count || 0);
+      const shownCount = readShown(dayKey);
+
+      if (activeDayRef.current !== dayKey) {
+        activeDayRef.current = dayKey;
+        initializedRef.current = false;
+        lastSeenCountRef.current = 0;
       }
-      if (channelRef.current) {
-        sb.removeChannel(channelRef.current);
-        channelRef.current = null;
+
+      if (!initializedRef.current) {
+        initializedRef.current = true;
+        lastSeenCountRef.current = Math.max(count, shownCount);
+        return;
       }
-    };
-  }, [enabled, panel, ready]);
+
+      const baseline = Math.max(lastSeenCountRef.current, shownCount);
+      if (count > baseline) {
+        lastSeenCountRef.current = count;
+        markShown(dayKey, count);
+        showMotivation(snapshot);
+        return;
+      }
+
+      lastSeenCountRef.current = Math.max(baseline, count);
+    } finally {
+      busyRef.current = false;
+    }
+  }
 
   useEffect(() => {
-    if (!popup) return;
-    const timer = window.setTimeout(() => setPopup(null), AUTO_HIDE_MS);
-    return () => window.clearTimeout(timer);
-  }, [popup]);
+    loadSnapshot();
+    pollTimerRef.current = setInterval(loadSnapshot, POLL_MS);
 
-  if (!enabled || !popup) return null;
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+    };
+  }, []);
+
+  if (!toast?.visible) return null;
 
   return (
     <div
       style={{
         position: "fixed",
-        right: 24,
-        bottom: 24,
-        zIndex: 1200,
-        width: "min(420px, calc(100vw - 24px))",
+        top: 18,
+        right: 18,
+        zIndex: 12000,
+        width: "min(420px, calc(100vw - 28px))",
         pointerEvents: "none",
       }}
     >
@@ -272,99 +226,107 @@ export default function PaymentMotivationWatcher({ panel, enabled = true }: { pa
         style={{
           pointerEvents: "auto",
           borderRadius: 24,
-          padding: 18,
-          color: "#fff",
-          background:
-            "radial-gradient(circle at top left, rgba(255,210,84,0.18), transparent 36%), linear-gradient(135deg, rgba(15,23,42,0.96), rgba(31,41,55,0.96))",
-          border: "1px solid rgba(255,255,255,0.14)",
-          boxShadow: "0 24px 70px rgba(0,0,0,0.35)",
-          backdropFilter: "blur(16px)",
+          overflow: "hidden",
+          border: "1px solid rgba(255,255,255,0.16)",
+          background: "rgba(16,18,28,0.96)",
+          boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
+          backdropFilter: "blur(14px)",
+          animation: "tcPaymentToastIn 260ms ease-out",
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 18,
-              background: "linear-gradient(135deg, rgba(255,215,0,0.22), rgba(255,119,0,0.16))",
-              border: "1px solid rgba(255,215,0,0.22)",
-              display: "grid",
-              placeItems: "center",
-              flex: "0 0 auto",
-            }}
-          >
-            <Sparkles size={24} />
-          </div>
+        <div style={{ padding: 1, background: accent }}>
+          <div style={{ height: 4, opacity: 0.95 }} />
+        </div>
 
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
+        <div style={{ padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  fontSize: 11,
+                  fontWeight: 900,
+                  letterSpacing: ".08em",
+                  color: "#111",
+                  background: accent,
+                }}
+              >
+                {toast.badge}
+              </div>
+              <div style={{ color: "#fff", fontSize: 21, lineHeight: 1.15, fontWeight: 900, marginTop: 12 }}>{toast.title}</div>
+              <div style={{ color: "rgba(255,255,255,0.84)", fontSize: 14, lineHeight: 1.5, marginTop: 10 }}>{toast.message}</div>
+            </div>
+
+            <button
+              type="button"
+              onClick={hideToast}
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: 0.3,
-                textTransform: "uppercase",
-                padding: "7px 10px",
+                width: 34,
+                height: 34,
                 borderRadius: 999,
-                background: "rgba(255,255,255,0.08)",
                 border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#fff",
+                cursor: "pointer",
+                fontSize: 18,
+                lineHeight: 1,
               }}
             >
-              <TrendingUp size={14} />
-              {popupText.badge}
-            </div>
+              ×
+            </button>
+          </div>
 
-            <div style={{ marginTop: 12, fontSize: 22, fontWeight: 800, lineHeight: 1.15 }}>{popupText.title}</div>
-            <div style={{ marginTop: 10, color: "rgba(255,255,255,0.8)", fontSize: 14, lineHeight: 1.55 }}>
-              {popupText.description}
-            </div>
-
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+              gap: 10,
+              marginTop: 16,
+            }}
+          >
             <div
               style={{
-                marginTop: 14,
-                display: "grid",
-                gap: 6,
-                padding: 12,
                 borderRadius: 18,
+                padding: 12,
                 background: "rgba(255,255,255,0.05)",
                 border: "1px solid rgba(255,255,255,0.08)",
               }}
             >
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)" }}>
-                Cliente: <b style={{ color: "#fff" }}>{popup.latest_payment?.cliente_nombre || "Cliente"}</b>
-              </div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.72)" }}>
-                Importe: <b style={{ color: "#fff" }}>{eur(popup.latest_payment?.importe)}</b>
-                {popup.latest_payment?.forma_pago ? (
-                  <span style={{ color: "rgba(255,255,255,0.62)" }}> · {popup.latest_payment.forma_pago}</span>
-                ) : null}
-              </div>
+              <div style={{ color: "rgba(255,255,255,0.62)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em" }}>Cobros hoy</div>
+              <div style={{ color: "#fff", fontSize: 24, fontWeight: 900, marginTop: 6 }}>{toast.count}</div>
+            </div>
+
+            <div
+              style={{
+                borderRadius: 18,
+                padding: 12,
+                background: "rgba(255,255,255,0.05)",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div style={{ color: "rgba(255,255,255,0.62)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em" }}>Último cobro</div>
+              <div style={{ color: "#fff", fontSize: 24, fontWeight: 900, marginTop: 6 }}>{money(toast.amount)}</div>
             </div>
           </div>
-
-          <button
-            onClick={() => setPopup(null)}
-            aria-label="Cerrar aviso"
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.05)",
-              color: "#fff",
-              display: "grid",
-              placeItems: "center",
-              cursor: "pointer",
-              flex: "0 0 auto",
-            }}
-          >
-            <X size={16} />
-          </button>
         </div>
       </div>
+
+      <style jsx global>{`
+        @keyframes tcPaymentToastIn {
+          from {
+            opacity: 0;
+            transform: translateY(-10px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+      `}</style>
     </div>
   );
 }

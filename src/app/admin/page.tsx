@@ -11,11 +11,11 @@ import ReservasPanel from "@/components/reservas/ReservasPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import DiarioPanel from "@/components/diario/DiarioPanel";
 import DashboardPanel from "@/components/admin/DashboardPanel";
+import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
-import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 
 const sb = supabaseBrowser();
 
@@ -1392,6 +1392,7 @@ export default function Admin() {
     <>
       <AppHeader />
       <ReservasGlobalWatcher enabled={ok} onGoToReserva={openReservaFromPopup} />
+      <PaymentMotivationWatcher mode="admin" />
 
       <div className="tc-shell">
         <aside className="tc-sidebar">
@@ -2678,8 +2679,6 @@ export default function Admin() {
         </div>
       </main>
     </div>
-
-      <PaymentMotivationWatcher panel="admin" enabled={ok} />
 
       {crmCloseNotif && (
         <div

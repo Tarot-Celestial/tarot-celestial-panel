@@ -1,56 +1,104 @@
 import { NextResponse } from "next/server";
-import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
+import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-function normalizeDay(raw: string | null) {
-  const value = String(raw || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return new Date().toISOString().slice(0, 10);
-  }
+function getEnv(name: string) {
+  const value = process.env[name];
+  if (!value) throw new Error(`Missing env var: ${name}`);
   return value;
+}
+
+function adminClient() {
+  return createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("SUPABASE_SERVICE_ROLE_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+}
+
+async function workerFromReq(req: Request) {
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+
+  const authClient = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+
+  const { data: userRes, error: userError } = await authClient.auth.getUser();
+  if (userError) throw userError;
+  const uid = userRes.user?.id;
+  if (!uid) return null;
+
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("workers")
+    .select("id, user_id, display_name, role")
+    .eq("user_id", uid)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+function normalizeRole(role: any) {
+  return String(role || "").trim().toLowerCase();
+}
+
+function madridDayKey() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 export async function GET(req: Request) {
   try {
-    const me = await workerFromRequest(req);
-    if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!["admin", "central"].includes(String(me.role || ""))) {
+    const worker = await workerFromReq(req);
+    const role = normalizeRole(worker?.role);
+
+    if (!worker) {
+      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    }
+
+    if (role !== "admin" && role !== "central") {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const { searchParams } = new URL(req.url);
-    const day = normalizeDay(searchParams.get("day"));
-    const admin = getAdminClient();
+    const dayKey = madridDayKey();
+    const admin = adminClient();
 
-    const baseQuery = admin
+    const { data, count, error } = await admin
       .from("rendimiento_llamadas")
-      .select("id", { count: "exact", head: true })
-      .eq("fecha", day)
-      .or("cliente_compra_minutos.eq.true,importe.gt.0");
+      .select("id, importe, cliente_nombre, telefonista_nombre, fecha_hora, created_at", { count: "exact" })
+      .eq("fecha", dayKey)
+      .gt("importe", 0)
+      .order("fecha_hora", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
+      .limit(1);
 
-    const latestQuery = admin
-      .from("rendimiento_llamadas")
-      .select("id, cliente_nombre, importe, forma_pago, fecha_hora, telefonista_nombre, tarotista_nombre")
-      .eq("fecha", day)
-      .or("cliente_compra_minutos.eq.true,importe.gt.0")
-      .order("fecha_hora", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    if (error) throw error;
 
-    const [{ count, error: countError }, { data: latestPayment, error: latestError }] = await Promise.all([
-      baseQuery,
-      latestQuery,
-    ]);
-
-    if (countError) throw countError;
-    if (latestError) throw latestError;
+    const latest = Array.isArray(data) && data.length ? data[0] : null;
 
     return NextResponse.json({
       ok: true,
-      day_key: day,
-      count_today: Number(count) || 0,
-      latest_payment: latestPayment || null,
+      snapshot: {
+        day_key: dayKey,
+        count: Number(count || 0),
+        latest_payment: latest
+          ? {
+              id: String(latest.id || ""),
+              importe: Number(latest.importe || 0) || 0,
+              cliente_nombre: latest.cliente_nombre || null,
+              telefonista_nombre: latest.telefonista_nombre || null,
+              fecha_hora: latest.fecha_hora || null,
+              created_at: latest.created_at || null,
+            }
+          : null,
+      },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
