@@ -72,45 +72,46 @@ export default function ClienteLoginPage() {
     } catch {}
   }, [countryCode, hydrated, phoneInput]);
 
-  async function sendOtp() {
-    if (!phone) {
-      setMsg("Introduce un teléfono válido.");
-      return;
-    }
-    try {
-      setLoading(true);
-      setMsg("");
-
-      // 🔥 VALIDAR EN CRM
-const { data: cliente, error: clienteError } = await sb
-  .from("crm_clientes")
-  .select("id")
-  .eq("telefono_normalizado", phone)
-  .maybeSingle();
-
-if (clienteError) throw clienteError;
-
-if (!cliente) {
-  setMsg("❌ Este teléfono no está registrado.");
-  return;
-}
-      
-      const { error } = await sb.auth.signInWithOtp({ phone });
-      if (error) throw error;
-      setStep("otp");
-      setMsg("Te hemos enviado un código por SMS.");
-    } catch (e: any) {
-      setMsg(e?.message || "No se pudo enviar el código.");
-    } finally {
-      setLoading(false);
-    }
+ async function sendOtp() {
+  if (!phone) {
+    setMsg("Introduce un teléfono válido.");
+    return;
   }
 
-  async function verifyOtp() {
-    if (!phone || !token.trim()) {
-      setMsg("Introduce el código que te hemos enviado.");
+  try {
+    setLoading(true);
+    setMsg("");
+
+    // 🔥 LIMPIAR TELÉFONO (clave)
+    const cleanPhone = phone.replace(/\D/g, "");
+
+    // 🔥 VALIDAR EN CRM
+    const { data: cliente, error: clienteError } = await sb
+      .from("crm_clientes")
+      .select("id")
+      .eq("telefono_normalizado", cleanPhone)
+      .maybeSingle();
+
+    if (clienteError) throw clienteError;
+
+    if (!cliente) {
+      setMsg("❌ Este teléfono no está registrado.");
       return;
     }
+
+    // ✅ ENVIAR OTP
+    const { error } = await sb.auth.signInWithOtp({ phone });
+    if (error) throw error;
+
+    setStep("otp");
+    setMsg("Te hemos enviado un código por SMS.");
+
+  } catch (e: any) {
+    setMsg(e?.message || "No se pudo enviar el código.");
+  } finally {
+    setLoading(false);
+  }
+}
     try {
       setLoading(true);
       setMsg("");
