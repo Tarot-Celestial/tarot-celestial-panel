@@ -83,7 +83,7 @@ export default function ClienteLoginPage() {
 
       // 🔥 VALIDAR EN CRM
 const { data: cliente, error: clienteError } = await sb
-  .from("clientes")
+  .from("crm_clientes")
   .select("id")
   .eq("telefono", phone)
   .maybeSingle();
