@@ -89,7 +89,7 @@ export default function ClienteLoginPage() {
     const { data: cliente, error: clienteError } = await sb
       .from("crm_clientes")
       .select("id")
-      .eq("telefono_normalizado", cleanPhone)
+      .eq("telefono", cleanPhone)
       .maybeSingle();
 
     if (clienteError) throw clienteError;
