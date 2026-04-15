@@ -55,10 +55,7 @@ export default function OnboardingModal({ open, cliente, saving, pushEnabled, pu
       setMsg("Necesitamos al menos tu nombre para continuar.");
       return;
     }
-    if (!pushEnabled) {
-      setMsg("Activa las notificaciones para terminar el acceso al panel.");
-      return;
-    }
+
     setMsg("");
     await onSave({
       nombre: nombre.trim(),
@@ -198,7 +195,7 @@ export default function OnboardingModal({ open, cliente, saving, pushEnabled, pu
 
         {step === 3 ? (
           <div style={{ display: "grid", gap: 14 }}>
-            <div className="tc-title" style={{ fontSize: 18 }}>Activa las notificaciones para terminar</div>
+            <div className="tc-title" style={{ fontSize: 18 }}>Activa las notificaciones si quieres</div>
             <div className="tc-card" style={{ padding: 16, display: "grid", gap: 10 }}>
               <div className="tc-row" style={{ gap: 10, alignItems: "flex-start" }}>
                 <BellRing size={18} style={{ color: "var(--tc-gold-2)", marginTop: 2 }} />
@@ -208,20 +205,23 @@ export default function OnboardingModal({ open, cliente, saving, pushEnabled, pu
                       ? "Este dispositivo no soporta notificaciones web"
                       : pushEnabled
                       ? "Notificaciones activadas"
-                      : "Activa las notificaciones en este dispositivo"}
+                      : "Puedes activar las notificaciones en este dispositivo"}
                   </div>
                   <div className="tc-list-item-sub" style={{ marginTop: 4 }}>
                     {pushPermission === "unsupported"
-                      ? "Prueba desde Chrome o Safari actualizados y con HTTPS real."
+                      ? "No pasa nada. Podrás entrar igualmente al panel aunque este dispositivo no las soporte."
                       : pushEnabled
                       ? "Perfecto. Ya podremos avisarte de promociones, minutos, novedades y mensajes importantes."
-                      : "Es necesario activarlas para terminar el acceso al panel y recibir avisos importantes."}
+                      : "Es opcional. Si las activas, recibirás avisos importantes, promociones y novedades directamente en este dispositivo."}
                   </div>
                 </div>
               </div>
-              <button className="tc-btn tc-btn-gold" disabled={pushBusy || pushPermission === "unsupported" || pushEnabled} onClick={onEnablePush}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Smartphone size={16} /> {pushEnabled ? "Notificaciones activadas" : pushBusy ? "Activando..." : "Activar notificaciones"}</span>
-              </button>
+              <div className="tc-row" style={{ gap: 10, flexWrap: "wrap" }}>
+                <button className="tc-btn tc-btn-gold" disabled={pushBusy || pushPermission === "unsupported" || pushEnabled} onClick={onEnablePush}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Smartphone size={16} /> {pushEnabled ? "Notificaciones activadas" : pushBusy ? "Activando..." : "Activar notificaciones"}</span>
+                </button>
+                {!pushEnabled ? <div className="tc-sub">Puedes continuar aunque no las actives.</div> : null}
+              </div>
             </div>
           </div>
         ) : null}
@@ -241,7 +241,7 @@ export default function OnboardingModal({ open, cliente, saving, pushEnabled, pu
                 Siguiente
               </button>
             ) : (
-              <button className="tc-btn tc-btn-gold" disabled={saving || pushBusy || !pushEnabled} onClick={finish}>
+              <button className="tc-btn tc-btn-gold" disabled={saving || pushBusy} onClick={finish}>
                 {saving ? "Guardando..." : "Entrar al panel"}
               </button>
             )}
@@ -251,3 +251,4 @@ export default function OnboardingModal({ open, cliente, saving, pushEnabled, pu
     </div>
   );
 }
+
