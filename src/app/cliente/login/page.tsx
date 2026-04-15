@@ -80,6 +80,21 @@ export default function ClienteLoginPage() {
     try {
       setLoading(true);
       setMsg("");
+
+      // 🔥 VALIDAR EN CRM
+const { data: cliente, error: clienteError } = await sb
+  .from("clientes")
+  .select("id")
+  .eq("telefono", phone)
+  .maybeSingle();
+
+if (clienteError) throw clienteError;
+
+if (!cliente) {
+  setMsg("❌ Este teléfono no está registrado.");
+  return;
+}
+      
       const { error } = await sb.auth.signInWithOtp({ phone });
       if (error) throw error;
       setStep("otp");
