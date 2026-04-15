@@ -15,6 +15,7 @@ import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
+import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 
 const sb = supabaseBrowser();
 
@@ -2677,6 +2678,8 @@ export default function Admin() {
         </div>
       </main>
     </div>
+
+      <PaymentMotivationWatcher panel="admin" enabled={ok} />
 
       {crmCloseNotif && (
         <div

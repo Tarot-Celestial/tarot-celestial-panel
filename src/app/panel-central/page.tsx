@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
@@ -2018,6 +2019,8 @@ export default function Central() {
         </div>
       </main>
     </div>
+
+      <PaymentMotivationWatcher panel="central" enabled={ok} />
 
       {crmCloseNotif && (
         <div
