@@ -29,6 +29,7 @@ export default function ClienteLoginPage() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [hydrated, setHydrated] = useState(false);
+  const [phoneForOtp, setPhoneForOtp] = useState("");
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
   const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
@@ -103,6 +104,7 @@ export default function ClienteLoginPage() {
     const { error } = await sb.auth.signInWithOtp({ phone });
     if (error) throw error;
 
+    setPhoneForOtp(phone);
     setStep("otp");
     setMsg("Te hemos enviado un código por SMS.");
 
@@ -123,7 +125,7 @@ async function verifyOtp() {
     setLoading(true);
     setMsg("");
     const { error } = await sb.auth.verifyOtp({
-      phone,
+      phone: phoneForOtp,
       token: token.trim(),
       type: "sms",
     });
