@@ -112,18 +112,29 @@ export default function ClienteLoginPage() {
     setLoading(false);
   }
 }
-    try {
-      setLoading(true);
-      setMsg("");
-      const { error } = await sb.auth.verifyOtp({ phone, token: token.trim(), type: "sms" });
-      if (error) throw error;
-      router.replace("/cliente/dashboard");
-    } catch (e: any) {
-      setMsg(e?.message || "Código inválido.");
-    } finally {
-      setLoading(false);
-    }
+  
+async function verifyOtp() {
+  if (!phone || !token.trim()) {
+    setMsg("Introduce el código que te hemos enviado.");
+    return;
   }
+
+  try {
+    setLoading(true);
+    setMsg("");
+    const { error } = await sb.auth.verifyOtp({
+      phone,
+      token: token.trim(),
+      type: "sms",
+    });
+    if (error) throw error;
+    router.replace("/cliente/dashboard");
+  } catch (e: any) {
+    setMsg(e?.message || "Código inválido.");
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <div className="tc-login-shell">
