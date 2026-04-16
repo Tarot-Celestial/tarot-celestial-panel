@@ -6,16 +6,14 @@ export function getEnv(name: string): string {
   return value;
 }
 
-// 🔥 NORMALIZADOR PRO (CLAVE)
 export function normalizePhone(phone: string | null | undefined): string {
   const digits = String(phone || "").replace(/\D/g, "");
-
   if (!digits) return "";
-
-  if (digits.startsWith("34")) return `+${digits}`;
-  if (digits.startsWith("1")) return `+${digits}`;
-
   return `+${digits}`;
+}
+
+export function phoneDigits(phone: string | null | undefined): string {
+  return String(phone || "").replace(/\D/g, "");
 }
 
 function normalizeEmail(email: string | null | undefined): string {
@@ -64,15 +62,79 @@ export async function authUserFromBearer(req: Request): Promise<{
 
   const user: any = data.user || null;
 
-  const metadataPhone = normalizePhone(
-    user?.user_metadata?.crm_phone || user?.app_metadata?.crm_phone
-  );
+  const metadataPhone =
+    user?.user_metadata?.crm_phone ||
+    user?.app_metadata?.crm_phone ||
+    null;
+
+  const finalPhone =
+    normalizePhone(user?.phone) ||
+    normalizePhone(metadataPhone) ||
+    null;
 
   return {
     uid: user?.id || null,
-    phone: normalizePhone(user?.phone) || metadataPhone || null,
+    phone: finalPhone,
     email: user?.email || null,
   };
+}
+
+async function findClienteByUserId(admin: ReturnType<typeof adminClient>, uid: string) {
+  const { data, error } = await admin
+    .from("crm_clientes")
+    .select("*")
+    .eq("user_id", uid)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
+}
+
+async function findClienteByPhone(admin: ReturnType<typeof adminClient>, phone: string | null) {
+  const digits = phoneDigits(phone);
+  const plus = normalizePhone(phone);
+
+  if (!digits) return null;
+
+  const candidates = Array.from(
+    new Set([
+      digits,
+      plus,
+      digits.startsWith("34") ? `+${digits}` : "",
+      digits.startsWith("1") ? `+${digits}` : "",
+      plus.startsWith("+34") ? plus.slice(1) : "",
+      plus.startsWith("+1") ? plus.slice(1) : "",
+    ].filter(Boolean))
+  );
+
+  for (const value of candidates) {
+    const { data, error } = await admin
+      .from("crm_clientes")
+      .select("*")
+      .or(`telefono_normalizado.eq.${value},telefono.eq.${value}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data) return data;
+  }
+
+  return null;
+}
+
+async function findClienteByEmail(admin: ReturnType<typeof adminClient>, email: string | null) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+
+  const { data, error } = await admin
+    .from("crm_clientes")
+    .select("*")
+    .ilike("email", normalizedEmail)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data || null;
 }
 
 export async function clientFromRequest(req: Request) {
@@ -85,78 +147,92 @@ export async function clientFromRequest(req: Request) {
   const admin = adminClient();
 
   const normalizedPhone = normalizePhone(phone);
+  const normalizedPhoneDigits = phoneDigits(phone);
   const normalizedEmail = normalizeEmail(email);
 
   let cliente: any = null;
 
-  // 🔍 BUSCAR POR TELÉFONO
-  if (normalizedPhone) {
-    const { data } = await admin
-      .from("crm_clientes")
-      .select("*")
-      .eq("telefono_normalizado", normalizedPhone)
-      .maybeSingle();
+  // 1) primero por user_id
+  cliente = await findClienteByUserId(admin, uid);
 
-    cliente = data || null;
+  // 2) luego por teléfono
+  if (!cliente) {
+    cliente = await findClienteByPhone(admin, normalizedPhone);
   }
 
-  // 🔍 BUSCAR POR EMAIL
+  // 3) luego por email
   if (!cliente && normalizedEmail) {
-    const { data } = await admin
-      .from("crm_clientes")
-      .select("*")
-      .ilike("email", normalizedEmail)
-      .maybeSingle();
-
-    cliente = data || null;
+    cliente = await findClienteByEmail(admin, normalizedEmail);
   }
 
-  // 🔥 AUTO-FIX SI ENCUENTRA PERO ESTÁ MAL FORMATEADO
+  // 4) auto-fix si encontró ficha real
   if (cliente) {
-    const updates: any = {};
-
-    if (cliente.telefono_normalizado !== normalizedPhone && normalizedPhone) {
-      updates.telefono_normalizado = normalizedPhone;
-      updates.telefono = normalizedPhone;
-    }
+    const updates: Record<string, any> = {};
 
     if (!cliente.user_id && uid) {
       updates.user_id = uid;
     }
 
-    if (Object.keys(updates).length > 0) {
-      await admin.from("crm_clientes").update(updates).eq("id", cliente.id);
+    if (normalizedPhone) {
+      const currentNorm = String(cliente.telefono_normalizado || "").trim();
+      const currentTel = String(cliente.telefono || "").trim();
 
-      cliente = {
-        ...cliente,
-        ...updates,
-      };
+      if (!currentNorm || currentNorm !== normalizedPhone) {
+        updates.telefono_normalizado = normalizedPhone;
+      }
+
+      if (!currentTel) {
+        updates.telefono = normalizedPhone;
+      }
     }
+
+    if (!cliente.email && normalizedEmail) {
+      updates.email = normalizedEmail;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      const { data, error } = await admin
+        .from("crm_clientes")
+        .update(updates)
+        .eq("id", cliente.id)
+        .select("*")
+        .maybeSingle();
+
+      if (error) throw error;
+      cliente = data || { ...cliente, ...updates };
+    }
+
+    return {
+      uid,
+      phone: normalizedPhone || null,
+      email: normalizedEmail || null,
+      cliente,
+      admin,
+    };
   }
 
-  // 🆕 CREAR CLIENTE SI NO EXISTE
-  if (!cliente) {
-    const nowIso = new Date().toISOString();
+  // 5) solo crear como último recurso real
+  const nowIso = new Date().toISOString();
+  const telefonoFinal = normalizedPhone || normalizedPhoneDigits || "000000000";
 
-    const telefonoFinal = normalizedPhone || "000000000";
+  const { data, error } = await admin
+    .from("crm_clientes")
+    .insert({
+      nombre: guessNameFromEmail(normalizedEmail),
+      telefono: telefonoFinal,
+      telefono_normalizado: telefonoFinal,
+      email: normalizedEmail || null,
+      origen: "auto_auth",
+      onboarding_completado: false,
+      user_id: uid,
+      updated_at: nowIso,
+    })
+    .select("*")
+    .maybeSingle();
 
-    const { data } = await admin
-      .from("crm_clientes")
-      .insert({
-        nombre: guessNameFromEmail(normalizedEmail),
-        telefono: telefonoFinal,
-        telefono_normalizado: telefonoFinal,
-        email: normalizedEmail,
-        origen: "auto_auth",
-        onboarding_completado: false,
-        user_id: uid, // 🔥 CLAVE
-        updated_at: nowIso,
-      })
-      .select("*")
-      .maybeSingle();
+  if (error) throw error;
 
-    cliente = data || null;
-  }
+  cliente = data || null;
 
   return {
     uid,
