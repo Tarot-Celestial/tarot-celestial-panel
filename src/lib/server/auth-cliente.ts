@@ -29,7 +29,19 @@ function extractPhoneFromInternalClienteEmail(email: string | null | undefined):
   const value = normalizeEmail(email);
   const match = value.match(/^cliente-(\d+)@auth\.tarotcelestial\.local$/);
   if (!match?.[1]) return "";
-  return normalizePhone(match[1]);
+  return match[1];
+}
+
+function guessNameFromEmail(email: string | null | undefined): string {
+  const local = normalizeEmail(email).split("@")[0] || "Cliente";
+  return (
+    local
+      .replace(/[._-]+/g, " ")
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") || "Cliente"
+  );
 }
 
 export function adminClient() {
@@ -64,7 +76,6 @@ export async function authUserFromBearer(req: Request): Promise<{
   if (error) throw error;
 
   const user: any = data.user || null;
-
   const rawEmail = normalizeEmail(user?.email || null);
 
   const metadataPhone =
@@ -79,31 +90,21 @@ export async function authUserFromBearer(req: Request): Promise<{
 
   const phoneFromInternalEmail = extractPhoneFromInternalClienteEmail(rawEmail);
 
-  const finalPhone =
-    normalizePhone(user?.phone) ||
-    normalizePhone(metadataPhone) ||
+  const finalPhoneDigits =
+    phoneDigits(user?.phone) ||
+    phoneDigits(metadataPhone) ||
     phoneFromInternalEmail ||
-    null;
+    "";
 
-  const finalRealEmail = normalizeEmail(metadataEmail || (isInternalClienteAuthEmail(rawEmail) ? "" : rawEmail)) || null;
+  const finalRealEmail =
+    normalizeEmail(metadataEmail || (isInternalClienteAuthEmail(rawEmail) ? "" : rawEmail)) || null;
 
   return {
     uid: user?.id || null,
-    phone: finalPhone,
+    phone: finalPhoneDigits || null,
     email: rawEmail || null,
     realEmail: finalRealEmail,
   };
-}
-
-async function findClienteByUserId(admin: ReturnType<typeof adminClient>, uid: string) {
-  const { data, error } = await admin
-    .from("crm_clientes")
-    .select("*")
-    .eq("user_id", uid)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data || null;
 }
 
 async function findClienteByPhone(admin: ReturnType<typeof adminClient>, phone: string | null) {
@@ -116,7 +117,7 @@ async function findClienteByPhone(admin: ReturnType<typeof adminClient>, phone: 
     .from("crm_clientes")
     .select("*")
     .or(
-      `telefono_normalizado.eq.${plus},telefono_normalizado.eq.${digits},telefono.eq.${digits},telefono.eq.${plus}`
+      `telefono_normalizado.eq.${digits},telefono_normalizado.eq.${plus},telefono.eq.${digits},telefono.eq.${plus}`
     )
     .limit(1)
     .maybeSingle();
@@ -155,45 +156,39 @@ export async function clientFromRequest(req: Request) {
 
   const admin = adminClient();
 
-  const normalizedPhone = normalizePhone(phone);
+  const normalizedPhoneDigits = phoneDigits(phone);
+  const normalizedPhonePlus = normalizePhone(phone);
   const normalizedEmail = normalizeEmail(realEmail);
   const rawEmail = normalizeEmail(email);
 
   let cliente: any = null;
 
-  // 1) Primero por user_id
-  cliente = await findClienteByUserId(admin, uid);
-
-  // 2) Luego por teléfono real
-  if (!cliente && normalizedPhone) {
-    cliente = await findClienteByPhone(admin, normalizedPhone);
+  // 1) Buscar por teléfono
+  if (normalizedPhoneDigits) {
+    cliente = await findClienteByPhone(admin, normalizedPhoneDigits);
   }
 
-  // 3) Luego por email real de CRM
+  // 2) Buscar por email real
   if (!cliente && normalizedEmail) {
     cliente = await findClienteByEmail(admin, normalizedEmail);
   }
 
-  // 4) Solo como último intento, si el email no es interno
+  // 3) Buscar por email auth si no es interno
   if (!cliente && rawEmail && !isInternalClienteAuthEmail(rawEmail)) {
     cliente = await findClienteByEmail(admin, rawEmail);
   }
 
-  // 5) Si encuentra ficha, la repara y vincula
+  // 4) Si encuentra ficha, solo corrige datos útiles
   if (cliente) {
     const updates: Record<string, any> = {};
 
-    if (!cliente.user_id && uid) {
-      updates.user_id = uid;
-    }
-
-    if (normalizedPhone) {
-      if (!cliente.telefono_normalizado || cliente.telefono_normalizado !== normalizedPhone) {
-        updates.telefono_normalizado = normalizedPhone;
+    if (normalizedPhoneDigits) {
+      if (!cliente.telefono_normalizado || String(cliente.telefono_normalizado).trim() !== normalizedPhoneDigits) {
+        updates.telefono_normalizado = normalizedPhoneDigits;
       }
 
       if (!cliente.telefono) {
-        updates.telefono = normalizedPhone;
+        updates.telefono = normalizedPhoneDigits;
       }
     }
 
@@ -215,17 +210,17 @@ export async function clientFromRequest(req: Request) {
 
     return {
       uid,
-      phone: normalizedPhone || null,
+      phone: normalizedPhonePlus || null,
       email: normalizedEmail || rawEmail || null,
       cliente,
       admin,
     };
   }
 
-  // 6) MUY IMPORTANTE: no crear clientes fantasma
+  // 5) NO crear clientes fantasma automáticamente
   return {
     uid,
-    phone: normalizedPhone || null,
+    phone: normalizedPhonePlus || null,
     email: normalizedEmail || rawEmail || null,
     cliente: null as any,
     admin,
