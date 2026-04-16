@@ -260,6 +260,8 @@ export default function ClienteDashboardPage() {
     email: string;
     fecha_nacimiento: string;
     onboarding_completado: boolean;
+    password: string;
+    password_confirm: string;
   }) {
     try {
       setSavingOnboarding(true);

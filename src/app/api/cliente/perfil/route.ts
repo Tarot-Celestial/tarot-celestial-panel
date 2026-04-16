@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest, normalizePhone } from "@/lib/server/auth-cliente";
+import { buildPasswordValidationError, ensureClienteAuthUser } from "@/lib/server/cliente-auth-password";
 
 export const runtime = "nodejs";
 
@@ -26,8 +27,20 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const telefono = cleanText(body?.telefono);
+    const telefono = cleanText(body?.telefono) || gate.cliente?.telefono || gate.phone || null;
     const telefonoNormalizado = normalizePhone(telefono);
+    const password = String(body?.password || "").trim();
+    const passwordConfirm = String(body?.password_confirm || "").trim();
+
+    if (password || passwordConfirm) {
+      if (password !== passwordConfirm) {
+        return NextResponse.json({ ok: false, error: "Las contraseñas no coinciden." }, { status: 400 });
+      }
+      const passwordError = buildPasswordValidationError(password);
+      if (passwordError) {
+        return NextResponse.json({ ok: false, error: passwordError }, { status: 400 });
+      }
+    }
 
     const patch = {
       nombre: cleanText(body?.nombre),
@@ -49,8 +62,26 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) throw error;
+    if (!updated?.id) {
+      return NextResponse.json({ ok: false, error: "NO_SE_HA_PODIDO_ACTUALIZAR" }, { status: 500 });
+    }
 
-    return NextResponse.json({ ok: true, cliente: updated });
+    let authInfo: Record<string, any> | null = null;
+    if (password) {
+      authInfo = await ensureClienteAuthUser(updated as any, password);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      cliente: updated,
+      auth: authInfo
+        ? {
+            alias_email: authInfo.aliasEmail,
+            created: authInfo.created,
+            migrated: authInfo.migrated,
+          }
+        : null,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_PERFIL" }, { status: 500 });
   }
