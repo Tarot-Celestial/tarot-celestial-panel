@@ -96,30 +96,20 @@ async function findClienteByPhone(admin: ReturnType<typeof adminClient>, phone: 
 
   if (!digits) return null;
 
-  const candidates = Array.from(
-    new Set([
-      digits,
-      plus,
-      digits.startsWith("34") ? `+${digits}` : "",
-      digits.startsWith("1") ? `+${digits}` : "",
-      plus.startsWith("+34") ? plus.slice(1) : "",
-      plus.startsWith("+1") ? plus.slice(1) : "",
-    ].filter(Boolean))
-  );
+  const { data, error } = await admin
+    .from("crm_clientes")
+    .select("*")
+    .or(`
+      telefono_normalizado.eq.${plus},
+      telefono_normalizado.eq.${digits},
+      telefono.eq.${digits},
+      telefono.eq.${plus}
+    `)
+    .limit(1)
+    .maybeSingle();
 
-  for (const value of candidates) {
-    const { data, error } = await admin
-      .from("crm_clientes")
-      .select("*")
-      .or(`telefono_normalizado.eq.${value},telefono.eq.${value}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data) return data;
-  }
-
-  return null;
+  if (error) throw error;
+  return data || null;
 }
 
 async function findClienteByEmail(admin: ReturnType<typeof adminClient>, email: string | null) {
@@ -152,20 +142,20 @@ export async function clientFromRequest(req: Request) {
 
   let cliente: any = null;
 
-  // 1) primero por user_id
+  // 1) Buscar por user_id
   cliente = await findClienteByUserId(admin, uid);
 
-  // 2) luego por teléfono
+  // 2) Buscar por teléfono
   if (!cliente) {
     cliente = await findClienteByPhone(admin, normalizedPhone);
   }
 
-  // 3) luego por email
+  // 3) Buscar por email
   if (!cliente && normalizedEmail) {
     cliente = await findClienteByEmail(admin, normalizedEmail);
   }
 
-  // 4) auto-fix si encontró ficha real
+  // 🔥 FIX: actualizar datos sin romper cliente
   if (cliente) {
     const updates: Record<string, any> = {};
 
@@ -173,26 +163,12 @@ export async function clientFromRequest(req: Request) {
       updates.user_id = uid;
     }
 
-   // 🔥 BUSCAR POR TELÉFONO (COMPATIBLE ANTIGUO + NUEVO)
-if (normalizedPhone) {
-  const digits = normalizedPhone.replace("+", "");
+    if (normalizedPhone) {
+      if (!cliente.telefono_normalizado || cliente.telefono_normalizado !== normalizedPhone) {
+        updates.telefono_normalizado = normalizedPhone;
+      }
 
-  const { data } = await admin
-    .from("crm_clientes")
-    .select("*")
-    .or(`
-      telefono_normalizado.eq.${normalizedPhone},
-      telefono_normalizado.eq.${digits},
-      telefono.eq.${digits},
-      telefono.eq.${normalizedPhone}
-    `)
-    .limit(1)
-    .maybeSingle();
-
-  cliente = data || null;
-}
-
-      if (!currentTel) {
+      if (!cliente.telefono) {
         updates.telefono = normalizedPhone;
       }
     }
@@ -222,7 +198,7 @@ if (normalizedPhone) {
     };
   }
 
-  // 5) solo crear como último recurso real
+  // 🆕 SOLO crear si no existe de verdad
   const nowIso = new Date().toISOString();
   const telefonoFinal = normalizedPhone || normalizedPhoneDigits || "000000000";
 
