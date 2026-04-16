@@ -665,15 +665,11 @@ export default function ClienteDashboardPage() {
       </ClienteLayout>
 
       <OnboardingModal
-        open={Boolean(cliente && !cliente.onboarding_completado)}
-        cliente={cliente}
-        saving={savingOnboarding}
-        pushEnabled={pushEnabled}
-        pushBusy={pushBusy}
-        pushPermission={pushPermission}
-        onEnablePush={enablePushNotifications}
-        onSave={saveOnboarding}
-      />
+  open={showOnboarding}
+  cliente={cliente}
+  saving={savingOnboarding}
+  onSave={handleSaveOnboarding}
+/>
       <BonusBienvenidaModal open={showWelcomeGift} minutes={welcomeGiftMinutes} onClose={() => setShowWelcomeGift(false)} />
     </>
   );
