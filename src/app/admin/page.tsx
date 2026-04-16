@@ -719,6 +719,34 @@ export default function Admin() {
     }
   }
 
+  async function downloadInvoicePdf(invoiceId: string) {
+    if (!invoiceId) return;
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch(`/api/admin/invoices/pdf?invoice_id=${encodeURIComponent(invoiceId)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const html = await r.text();
+      if (!r.ok) throw new Error(html || `HTTP ${r.status}`);
+
+      const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank", "noopener,noreferrer");
+
+      if (!win) {
+        URL.revokeObjectURL(url);
+        throw new Error("BLOQUEO_POPUP");
+      }
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: any) {
+      setSelMsg(`❌ ${e?.message || "No se pudo abrir la factura"}`);
+    }
+  }
+
   async function loadAdminStats(silent = false) {
     if (statsLoading && !silent) return;
     if (!silent) {
@@ -1515,6 +1543,7 @@ export default function Admin() {
                       <th>Estado</th>
                       <th>Aceptación</th>
                       <th>Total</th>
+                      <th>PDF</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1543,11 +1572,23 @@ export default function Admin() {
                           </span>
                         </td>
                         <td><b>{eur(x.total || 0)}</b></td>
+                        <td>
+                          <button
+                            className="tc-btn tc-btn-gold"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadInvoicePdf(x.invoice_id);
+                            }}
+                          >
+                            Descargar
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {(!invoices || invoices.length === 0) && (
                       <tr>
-                        <td colSpan={5} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
+                        <td colSpan={6} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
                       </tr>
                     )}
                   </tbody>
@@ -1571,6 +1612,7 @@ export default function Admin() {
                 {selId && (
                   <div className="tc-row">
                     <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
+                    <button className="tc-btn tc-btn-gold" onClick={() => downloadInvoicePdf(selId)}>Descargar PDF</button>
                     <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
                     <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
                   </div>

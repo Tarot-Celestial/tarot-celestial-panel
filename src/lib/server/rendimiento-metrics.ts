@@ -199,9 +199,16 @@ export function aggregateRendimientoByTarotista(rows: RendimientoRow[], workers:
     const agg = rowsMap.get(resolvedWorkerId);
     const importe = Number(row.importe || 0) || 0;
     const parsed = parseRowBreakdown(row);
-    if (special && parsed.call_fixed === 0) {
+    if (special) {
+      const totalParsedMinutes = Object.values(parsed).reduce((acc, value) => acc + (Number(value || 0) || 0), 0);
       const fallbackCall = Number(row.tiempo || 0) || 0;
-      if (fallbackCall > 0) parsed.call_fixed += fallbackCall;
+      const callMinutes = roundMoney(totalParsedMinutes > 0 ? totalParsedMinutes : fallbackCall);
+      parsed.free = 0;
+      parsed.rueda = 0;
+      parsed.cliente = 0;
+      parsed.repite = 0;
+      parsed.otros = 0;
+      parsed.call_fixed = callMinutes;
     }
 
     const entries = Object.entries(parsed) as Array<[string, number]>;

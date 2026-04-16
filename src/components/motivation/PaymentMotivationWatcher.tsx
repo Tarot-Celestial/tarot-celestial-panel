@@ -6,7 +6,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 const sb = supabaseBrowser();
 const TZ = "Europe/Madrid";
 const POLL_MS = 12000;
-const AUTO_HIDE_MS = 6500;
+const AUTO_HIDE_MS = 9800;
 
 type MotivationMode = "admin" | "central";
 

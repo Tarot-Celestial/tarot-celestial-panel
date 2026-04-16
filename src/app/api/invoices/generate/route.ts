@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin, normalizeMonthKey, roundMoney } from '@/lib/admin/require-admin';
 import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { rateForCode } from '@/lib/server/auth-worker';
 
 export const runtime = 'nodejs';
 
@@ -20,6 +21,10 @@ function lineKindForCode(code: string): string {
   return 'adjustment';
 }
 
+
+function lineRateForCode(code: string): number {
+  return rateForCode(code, code === 'call_fixed');
+}
 function labelForCode(code: string): string {
   if (code === 'call_fixed') return 'Minutos tarifa fija';
   if (code === 'free') return 'Minutos free';
@@ -90,16 +95,23 @@ export async function POST(req: Request) {
 
       const lineRows = Object.entries((totals.by_code || {}) as Record<string, { minutes: number; amount: number }>)
         .filter(([, value]) => Number(value.amount || 0) > 0 || Number(value.minutes || 0) > 0)
-        .map(([code, value]) => ({
-          invoice_id: String((invoice as any).id),
-          kind: lineKindForCode(code),
-          label: labelForCode(code),
-          amount: roundMoney(value.amount),
-          meta: {
-            code,
-            minutes: roundMoney(value.minutes),
-          },
-        }));
+        .map(([code, value]) => {
+          const rate = lineRateForCode(code);
+          const minutes = roundMoney(value.minutes);
+          const amount = roundMoney(minutes * rate);
+
+          return {
+            invoice_id: String((invoice as any).id),
+            kind: lineKindForCode(code),
+            label: labelForCode(code),
+            amount,
+            meta: {
+              code,
+              minutes,
+              rate,
+            },
+          };
+        });
 
       if (lineRows.length === 0) {
         lineRows.push({
