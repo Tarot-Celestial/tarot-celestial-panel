@@ -79,6 +79,8 @@ export async function POST(req: Request) {
             alias_email: authInfo.aliasEmail,
             created: authInfo.created,
             migrated: authInfo.migrated,
+            linked: authInfo.linked,
+            auth_user_id: authInfo.authUserId,
           }
         : null,
     });

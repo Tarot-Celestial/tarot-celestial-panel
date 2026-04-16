@@ -36,6 +36,8 @@ export async function POST(req: Request) {
       alias_email: authState.aliasEmail,
       created: authState.created,
       migrated: authState.migrated,
+      linked: authState.linked,
+      auth_user_id: authState.authUserId,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_PASSWORD_RESET" }, { status: 500 });

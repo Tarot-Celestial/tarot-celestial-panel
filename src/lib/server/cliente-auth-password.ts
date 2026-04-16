@@ -8,6 +8,8 @@ type ClienteLike = {
   email?: string | null;
   nombre?: string | null;
   apellido?: string | null;
+  auth_user_id?: string | null;
+  onboarding_completado?: boolean | null;
 };
 
 function normalizeText(value: unknown): string {
@@ -63,6 +65,19 @@ async function listAllAuthUsers() {
   return users;
 }
 
+async function findClienteById(clienteId: string) {
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("crm_clientes")
+    .select("*")
+    .eq("id", clienteId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data || null) as ClienteLike | null;
+}
+
 export async function findClienteByPhoneForAuth(phoneDigits: string) {
   const admin = adminClient();
   const digits = normalizePhoneDigits(phoneDigits);
@@ -70,41 +85,120 @@ export async function findClienteByPhoneForAuth(phoneDigits: string) {
 
   const { data, error } = await admin
     .from("crm_clientes")
-    .select("id, nombre, apellido, email, telefono, telefono_normalizado, onboarding_completado")
-    .or(`telefono_normalizado.eq.${digits},telefono.eq.${digits},telefono_normalizado.eq.+${digits},telefono.eq.+${digits}`)
+    .select("*")
+    .or(
+      `telefono_normalizado.eq.${digits},telefono.eq.${digits},telefono_normalizado.eq.+${digits},telefono.eq.+${digits}`
+    )
     .limit(1)
     .maybeSingle();
 
   if (error) throw error;
-  return data || null;
+  return (data || null) as ClienteLike | null;
 }
 
-function matchUserByPhoneOrEmail(user: User, phoneDigits: string, realEmail: string) {
-  const email = normalizeEmail(user.email);
-  const phone = normalizePhoneDigits((user as any)?.phone);
-  const metaPhone = normalizePhoneDigits((user.user_metadata as any)?.crm_phone || (user.app_metadata as any)?.crm_phone);
-  const metaEmail = normalizeEmail((user.user_metadata as any)?.crm_email || (user.app_metadata as any)?.crm_email);
-
-  return (
-    email === clienteAuthAliasEmail(phoneDigits) ||
-    (realEmail ? email === realEmail : false) ||
-    (phoneDigits ? phone === phoneDigits : false) ||
-    (phoneDigits ? metaPhone === phoneDigits : false) ||
-    (realEmail ? metaEmail === realEmail : false)
-  );
+function readMeta(user: User, key: string): string {
+  const userMeta = (user.user_metadata || {}) as Record<string, any>;
+  const appMeta = (user.app_metadata || {}) as Record<string, any>;
+  return String(userMeta[key] ?? appMeta[key] ?? "").trim();
 }
 
-export async function ensureClienteAuthUser(cliente: ClienteLike, password?: string | null) {
+function scoreUserMatch(user: User, cliente: ClienteLike, phoneDigits: string, realEmail: string, aliasEmail: string): number {
+  let score = 0;
+
+  if (cliente.auth_user_id && user.id === cliente.auth_user_id) score += 1000;
+  if (normalizeEmail(user.email) === aliasEmail) score += 500;
+  if (realEmail && normalizeEmail(user.email) === realEmail) score += 250;
+  if (normalizePhoneDigits((user as any)?.phone) === phoneDigits) score += 200;
+  if (normalizePhoneDigits(readMeta(user, "crm_phone")) === phoneDigits) score += 150;
+  if (normalizeEmail(readMeta(user, "crm_email")) === realEmail && realEmail) score += 120;
+  if (normalizeText(readMeta(user, "cliente_id")) === normalizeText(cliente.id)) score += 110;
+
+  return score;
+}
+
+function findBestAuthUserMatch(users: User[], cliente: ClienteLike, phoneDigits: string, realEmail: string, aliasEmail: string) {
+  let best: User | null = null;
+  let bestScore = 0;
+
+  for (const user of users) {
+    const score = scoreUserMatch(user, cliente, phoneDigits, realEmail, aliasEmail);
+    if (score > bestScore) {
+      best = user;
+      bestScore = score;
+    }
+  }
+
+  return bestScore > 0 ? best : null;
+}
+
+async function tryLinkClienteAuthUser(clienteId: string, authUserId: string) {
   const admin = adminClient();
+  try {
+    const { error } = await admin
+      .from("crm_clientes")
+      .update({ auth_user_id: authUserId, updated_at: new Date().toISOString() })
+      .eq("id", clienteId);
+
+    if (error) {
+      const message = String(error.message || "");
+      if (
+        message.includes("auth_user_id") ||
+        message.includes("column") ||
+        message.includes("schema cache")
+      ) {
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  } catch (e: any) {
+    const message = String(e?.message || "");
+    if (
+      message.includes("auth_user_id") ||
+      message.includes("column") ||
+      message.includes("schema cache")
+    ) {
+      return false;
+    }
+    throw e;
+  }
+}
+
+async function syncClienteIdentityFields(cliente: ClienteLike, phoneDigits: string) {
+  const admin = adminClient();
+  const patch: Record<string, any> = {};
+  const plusPhone = phoneDigits ? `+${phoneDigits}` : "";
+
+  if (phoneDigits && normalizePhoneDigits(cliente.telefono_normalizado) !== phoneDigits) {
+    patch.telefono_normalizado = phoneDigits;
+  }
+
+  if (!normalizeText(cliente.telefono) && plusPhone) {
+    patch.telefono = plusPhone;
+  }
+
+  if (Object.keys(patch).length === 0) return;
+
+  const { error } = await admin.from("crm_clientes").update(patch).eq("id", cliente.id);
+  if (error) throw error;
+}
+
+export async function ensureClienteAuthUser(clienteInput: ClienteLike, password?: string | null) {
+  const admin = adminClient();
+  const cliente = clienteInput?.id ? (await findClienteById(clienteInput.id)) || clienteInput : clienteInput;
   const phoneDigits = normalizePhoneDigits(cliente?.telefono_normalizado || cliente?.telefono);
   if (!phoneDigits) throw new Error("CLIENTE_SIN_TELEFONO");
 
   const aliasEmail = clienteAuthAliasEmail(phoneDigits);
   const realEmail = normalizeEmail(cliente?.email);
-  const displayName = normalizeText([cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ")) || "Cliente Tarot Celestial";
+  const displayName =
+    normalizeText([cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ")) ||
+    "Cliente Tarot Celestial";
+
+  await syncClienteIdentityFields(cliente, phoneDigits);
 
   const users = await listAllAuthUsers();
-  const matched = users.find((user) => matchUserByPhoneOrEmail(user, phoneDigits, realEmail)) || null;
+  const matched = findBestAuthUserMatch(users, cliente, phoneDigits, realEmail, aliasEmail);
 
   const userMetadata = {
     crm_phone: phoneDigits,
@@ -114,40 +208,77 @@ export async function ensureClienteAuthUser(cliente: ClienteLike, password?: str
   };
 
   if (matched?.id) {
-    const updated = await admin.auth.admin.updateUserById(matched.id, {
+    const payload: Record<string, any> = {
       email: aliasEmail,
-      phone: `+${phoneDigits}`,
       email_confirm: true,
-      phone_confirm: true,
-      password: password || undefined,
       user_metadata: userMetadata,
-    });
+    };
 
+    const matchedPhone = normalizePhoneDigits((matched as any)?.phone);
+    if (!matchedPhone || matchedPhone === phoneDigits) {
+      payload.phone = `+${phoneDigits}`;
+      payload.phone_confirm = true;
+    }
+
+    if (password) {
+      payload.password = password;
+    }
+
+    const updated = await admin.auth.admin.updateUserById(matched.id, payload);
     if (updated.error) throw updated.error;
+
+    const linked = await tryLinkClienteAuthUser(cliente.id, matched.id);
 
     return {
       user: updated.data.user,
       aliasEmail,
       migrated: normalizeEmail(matched.email) !== aliasEmail,
       created: false,
+      linked,
+      authUserId: matched.id,
     };
   }
 
-  const created = await admin.auth.admin.createUser({
+  const createPayload: Record<string, any> = {
     email: aliasEmail,
-    phone: `+${phoneDigits}`,
     password: password || randomPassword(),
     email_confirm: true,
-    phone_confirm: true,
     user_metadata: userMetadata,
-  });
+  };
 
-  if (created.error) throw created.error;
+  createPayload.phone = `+${phoneDigits}`;
+  createPayload.phone_confirm = true;
+
+  let created = await admin.auth.admin.createUser(createPayload);
+
+  if (created.error) {
+    const message = String(created.error.message || "").toLowerCase();
+    const phoneConflict =
+      message.includes("phone") ||
+      message.includes("already been registered") ||
+      message.includes("already exists") ||
+      message.includes("duplicate");
+
+    if (!phoneConflict) throw created.error;
+
+    const retryPayload = { ...createPayload };
+    delete retryPayload.phone;
+    delete retryPayload.phone_confirm;
+    created = await admin.auth.admin.createUser(retryPayload);
+    if (created.error) throw created.error;
+  }
+
+  const createdUser = created.data.user;
+  if (!createdUser?.id) throw new Error("AUTH_USER_CREATE_FAILED");
+
+  const linked = await tryLinkClienteAuthUser(cliente.id, createdUser.id);
 
   return {
-    user: created.data.user,
+    user: createdUser,
     aliasEmail,
     migrated: false,
     created: true,
+    linked,
+    authUserId: createdUser.id,
   };
 }

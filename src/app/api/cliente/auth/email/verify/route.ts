@@ -31,6 +31,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
+      action_link: login.actionLink,
       redirect_to: login.actionLink,
       message: "Código validado. Te estamos redirigiendo al panel.",
     });

@@ -24,6 +24,8 @@ export async function POST(req: Request) {
       alias_email: authState.aliasEmail,
       created: authState.created,
       migrated: authState.migrated,
+      linked: authState.linked,
+      auth_user_id: authState.authUserId,
       onboarding_completado: Boolean((cliente as any)?.onboarding_completado),
     });
   } catch (e: any) {
