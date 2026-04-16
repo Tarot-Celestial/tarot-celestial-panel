@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import {
-  checkWhatsappVerification,
   createClienteMagicLinkFromWhatsapp,
   findClienteByPhone,
-  formatE164FromDigits,
   normalizePhone,
+  verifyWhatsappOtpChallenge,
 } from "@/lib/server/cliente-whatsapp-auth";
 
 export const runtime = "nodejs";
@@ -14,8 +13,9 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const phoneDigits = normalizePhone(body?.phone || body?.telefono || "");
     const code = String(body?.code || body?.token || "").trim();
+    const challengeToken = String(body?.challenge_token || "").trim();
 
-    if (!phoneDigits || !code) {
+    if (!phoneDigits || !code || !challengeToken) {
       return NextResponse.json({ ok: false, error: "DATOS_INVALIDOS" }, { status: 400 });
     }
 
@@ -24,11 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
 
-    const phoneE164 = formatE164FromDigits(phoneDigits);
-    const verification = await checkWhatsappVerification(phoneE164, code);
-    if (String(verification?.status || "").toLowerCase() !== "approved") {
-      return NextResponse.json({ ok: false, error: "CODIGO_INVALIDO" }, { status: 401 });
-    }
+    verifyWhatsappOtpChallenge(challengeToken, phoneDigits, code);
 
     const origin = new URL(req.url).origin;
     const login = await createClienteMagicLinkFromWhatsapp(phoneDigits, origin);

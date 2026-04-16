@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
-import { findClienteByPhone, formatE164FromDigits, sendWhatsappVerification } from "@/lib/server/cliente-whatsapp-auth";
+import {
+  createWhatsappOtpChallenge,
+  findClienteByPhone,
+  formatE164FromDigits,
+  generateWhatsappOtpCode,
+  normalizePhone,
+  sendWhatsappVerification,
+} from "@/lib/server/cliente-whatsapp-auth";
 
 export const runtime = "nodejs";
 
-function normalizePhone(phone: string): string {
-  return String(phone || "").replace(/\D/g, "");
-}
-
 export async function POST(req: Request) {
   try {
-    console.log("🔥 WHATSAPP API LLAMADA");
-
     const body = await req.json().catch(() => null);
     const phoneDigits = normalizePhone(body?.phone || body?.telefono || "");
 
@@ -23,21 +24,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
 
+    const code = generateWhatsappOtpCode();
     const phoneE164 = formatE164FromDigits(phoneDigits);
-
-    const verification = await sendWhatsappVerification(phoneE164);
+    const message = await sendWhatsappVerification(phoneE164, code);
+    const challenge_token = createWhatsappOtpChallenge(phoneDigits, code);
 
     return NextResponse.json({
       ok: true,
       channel: "whatsapp",
-      sid: verification?.sid || null,
-      status: verification?.status || null,
+      sid: message?.sid || null,
+      status: message?.status || null,
       phone: phoneE164,
+      challenge_token,
       message: "Te hemos enviado un código por WhatsApp.",
     });
   } catch (e: any) {
-    console.error("❌ WHATSAPP ERROR:", e);
-
     return NextResponse.json(
       { ok: false, error: e?.message || "WHATSAPP_SEND_ERROR" },
       { status: 500 }

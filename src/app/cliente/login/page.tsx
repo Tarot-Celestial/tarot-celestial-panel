@@ -34,6 +34,7 @@ export default function ClienteLoginPage() {
   const [phoneForOtp, setPhoneForOtp] = useState("");
   const [otpChannel, setOtpChannel] = useState<OtpChannel>("sms");
   const [canUseWhatsapp, setCanUseWhatsapp] = useState(false);
+  const [whatsappChallengeToken, setWhatsappChallengeToken] = useState("");
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
   const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
@@ -100,6 +101,7 @@ export default function ClienteLoginPage() {
       setLoading(true);
       setMsg("");
       setCanUseWhatsapp(false);
+      setWhatsappChallengeToken("");
 
       const clienteExists = await validateCliente(phoneDigits);
       if (!clienteExists) {
@@ -150,6 +152,7 @@ export default function ClienteLoginPage() {
       setOtpChannel("whatsapp");
       setStep("otp");
       setCanUseWhatsapp(true);
+      setWhatsappChallengeToken(String(json?.challenge_token || ""));
       setMsg(json?.message || "Te hemos enviado un código por WhatsApp.");
     } catch (e: any) {
       setCanUseWhatsapp(true);
@@ -180,12 +183,17 @@ export default function ClienteLoginPage() {
         return;
       }
 
+      if (!whatsappChallengeToken) {
+        throw new Error("SOLICITA_PRIMERO_EL_CODIGO_WHATSAPP");
+      }
+
       const res = await fetch("/api/cliente/auth/whatsapp/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: phoneForOtp.replace(/\D/g, ""),
           code: token.trim(),
+          challenge_token: whatsappChallengeToken,
         }),
       });
       const json = await res.json().catch(() => null);
