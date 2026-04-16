@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LockKeyhole, ShieldCheck, Sparkles, Star, TimerReset } from "lucide-react";
+import { ChevronDown, LockKeyhole, MessageCircle, ShieldCheck, Sparkles, Star, TimerReset } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
@@ -20,6 +20,8 @@ const sb = supabaseBrowser();
 const STORAGE_COUNTRY_KEY = "tc_cliente_login_country";
 const STORAGE_PHONE_KEY = "tc_cliente_login_phone";
 
+type OtpChannel = "sms" | "whatsapp";
+
 export default function ClienteLoginPage() {
   const router = useRouter();
   const [countryCode, setCountryCode] = useState<string>(DEFAULT_COUNTRY_CODE);
@@ -30,9 +32,12 @@ export default function ClienteLoginPage() {
   const [msg, setMsg] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [phoneForOtp, setPhoneForOtp] = useState("");
+  const [otpChannel, setOtpChannel] = useState<OtpChannel>("sms");
+  const [canUseWhatsapp, setCanUseWhatsapp] = useState(false);
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
   const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
+  const phoneDigits = useMemo(() => phone.replace(/\D/g, ""), [phone]);
 
   useEffect(() => {
     const guessed = guessDefaultCountry();
@@ -49,7 +54,7 @@ export default function ClienteLoginPage() {
     }
 
     sb.auth.getSession().then(({ data }) => {
-      if (data.session?.user?.phone) {
+      if (data.session?.user) {
         router.replace("/cliente/dashboard");
       }
     });
@@ -57,7 +62,7 @@ export default function ClienteLoginPage() {
     const {
       data: { subscription },
     } = sb.auth.onAuthStateChange((event, session) => {
-      if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session?.user?.phone) {
+      if ((event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session?.user) {
         router.replace("/cliente/dashboard");
       }
     });
@@ -73,70 +78,134 @@ export default function ClienteLoginPage() {
     } catch {}
   }, [countryCode, hydrated, phoneInput]);
 
- async function sendOtp() {
-  if (!phone) {
-    setMsg("Introduce un teléfono válido.");
-    return;
-  }
-
-  try {
-    setLoading(true);
-    setMsg("");
-
-    // 🔥 LIMPIAR TELÉFONO (clave)
-    const cleanPhone = phone.replace(/\D/g, "");
-
-    // 🔥 VALIDAR EN CRM
-    const { data: cliente, error: clienteError } = await sb
+  async function validateCliente(phoneDigitsToCheck: string) {
+    const { data: cliente, error } = await sb
       .from("crm_clientes")
       .select("id")
-      .eq("telefono", cleanPhone)
+      .or(`telefono_normalizado.eq.${phoneDigitsToCheck},telefono.eq.${phoneDigitsToCheck}`)
+      .limit(1)
       .maybeSingle();
 
-    if (clienteError) throw clienteError;
+    if (error) throw error;
+    return Boolean(cliente?.id);
+  }
 
-    if (!cliente) {
-      setMsg("❌ Este teléfono no está registrado.");
+  async function sendOtp() {
+    if (!phoneDigits) {
+      setMsg("Introduce un teléfono válido.");
       return;
     }
 
-    // ✅ ENVIAR OTP
-    const { error } = await sb.auth.signInWithOtp({ phone });
-    if (error) throw error;
+    try {
+      setLoading(true);
+      setMsg("");
+      setCanUseWhatsapp(false);
 
-    setPhoneForOtp(phone);
-    setStep("otp");
-    setMsg("Te hemos enviado un código por SMS.");
+      const clienteExists = await validateCliente(phoneDigits);
+      if (!clienteExists) {
+        setMsg("❌ Este teléfono no está registrado.");
+        return;
+      }
 
-  } catch (e: any) {
-    setMsg(e?.message || "No se pudo enviar el código.");
-  } finally {
-    setLoading(false);
-  }
-}
-  
-async function verifyOtp() {
-  if (!phone || !token.trim()) {
-    setMsg("Introduce el código que te hemos enviado.");
-    return;
+      const { error } = await sb.auth.signInWithOtp({ phone });
+      if (error) throw error;
+
+      setPhoneForOtp(phone);
+      setOtpChannel("sms");
+      setStep("otp");
+      setMsg("Te hemos enviado un código por SMS.");
+    } catch (e: any) {
+      setCanUseWhatsapp(true);
+      setMsg(`${e?.message || "No se pudo enviar el código por SMS."} Puedes pedir el acceso por WhatsApp.`);
+    } finally {
+      setLoading(false);
+    }
   }
 
-  try {
-    setLoading(true);
-    setMsg("");
-    const { error } = await sb.auth.verifyOtp({
-      phone: phoneForOtp,
-      token: token.trim(),
-      type: "sms",
-    });
-    if (error) throw error;
-    router.replace("/cliente/dashboard");
-  } catch (e: any) {
-    setMsg(e?.message || "Código inválido.");
-  } finally {
-    setLoading(false);
+  async function sendWhatsappOtp() {
+    if (!phoneDigits) {
+      setMsg("Introduce un teléfono válido.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMsg("");
+
+      const clienteExists = await validateCliente(phoneDigits);
+      if (!clienteExists) {
+        setMsg("❌ Este teléfono no está registrado.");
+        return;
+      }
+
+      const res = await fetch("/api/cliente/auth/whatsapp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneDigits }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "WHATSAPP_SEND_ERROR");
+
+      setPhoneForOtp(phone);
+      setOtpChannel("whatsapp");
+      setStep("otp");
+      setCanUseWhatsapp(true);
+      setMsg(json?.message || "Te hemos enviado un código por WhatsApp.");
+    } catch (e: any) {
+      setCanUseWhatsapp(true);
+      setMsg(e?.message || "No se pudo enviar el código por WhatsApp.");
+    } finally {
+      setLoading(false);
+    }
   }
-}
+
+  async function verifyOtp() {
+    if (!token.trim()) {
+      setMsg("Introduce el código que te hemos enviado.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMsg("");
+
+      if (otpChannel === "sms") {
+        const { error } = await sb.auth.verifyOtp({
+          phone: phoneForOtp,
+          token: token.trim(),
+          type: "sms",
+        });
+        if (error) throw error;
+        router.replace("/cliente/dashboard");
+        return;
+      }
+
+      const res = await fetch("/api/cliente/auth/whatsapp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: phoneForOtp.replace(/\D/g, ""),
+          code: token.trim(),
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok || !json?.redirect_to) {
+        throw new Error(json?.error || "CODIGO_INVALIDO");
+      }
+
+      window.location.href = json.redirect_to;
+    } catch (e: any) {
+      setMsg(e?.message || "Código inválido.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const otpLabel = otpChannel === "whatsapp" ? "Código WhatsApp" : "Código SMS";
+  const otpDescription =
+    otpChannel === "whatsapp"
+      ? `Introduce el código que hemos enviado por WhatsApp a ${phoneForOtp || selectedCountry.dialCode}.`
+      : `Introduce el código que hemos enviado por SMS a ${phoneForOtp || selectedCountry.dialCode}.`;
 
   return (
     <div className="tc-login-shell">
@@ -150,7 +219,7 @@ async function verifyOtp() {
             <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={86} height={86} priority className="tc-logo" />
             <div>
               <h1>Entra a tu área privada</h1>
-              <p>Recibe tu código por SMS y accede en segundos a tus bonos, reservas y consultas.</p>
+              <p>Recibe tu código por SMS y, si ese canal falla, entra con verificación por WhatsApp sin quedarte bloqueada.</p>
             </div>
           </div>
 
@@ -172,8 +241,8 @@ async function verifyOtp() {
             <article>
               <Star size={18} />
               <div>
-                <strong>Cobertura global</strong>
-                <span>Selecciona cualquier país y usa su prefijo internacional.</span>
+                <strong>SMS + WhatsApp</strong>
+                <span>Si el operador bloquea el SMS, tienes acceso alternativo por WhatsApp.</span>
               </div>
             </article>
           </div>
@@ -183,11 +252,7 @@ async function verifyOtp() {
           <div className="tc-login-panel-head">
             <span className="tc-kicker">Bienvenida</span>
             <h2>{step === "phone" ? "Identifícate con tu móvil" : "Confirma el código"}</h2>
-            <p>
-              {step === "phone"
-                ? "Selecciona tu país, escribe tu teléfono y te mandamos un SMS para entrar."
-                : `Introduce el código que hemos enviado a ${phone || selectedCountry.dialCode}.`}
-            </p>
+            <p>{step === "phone" ? "Selecciona tu país, escribe tu teléfono y te mandamos un SMS. Si falla, podrás recibir el acceso por WhatsApp." : otpDescription}</p>
           </div>
 
           {step === "phone" ? (
@@ -224,11 +289,17 @@ async function verifyOtp() {
               <button className="tc-primary-btn" onClick={sendOtp} disabled={loading}>
                 {loading ? "Enviando código…" : "Enviar SMS"}
               </button>
+
+              <button className="tc-whatsapp-btn" onClick={sendWhatsappOtp} disabled={loading}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <MessageCircle size={17} /> {loading ? "Preparando WhatsApp…" : "Recibir código por WhatsApp"}
+                </span>
+              </button>
             </div>
           ) : (
             <div className="tc-form-grid">
               <label className="tc-field">
-                <span>Código SMS</span>
+                <span>{otpLabel}</span>
                 <div className="tc-inline-input">
                   <LockKeyhole size={16} />
                   <input
@@ -246,11 +317,21 @@ async function verifyOtp() {
                 {loading ? "Verificando…" : "Entrar al panel"}
               </button>
 
+              {otpChannel === "sms" || canUseWhatsapp ? (
+                <button className="tc-whatsapp-btn" onClick={sendWhatsappOtp} disabled={loading}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <MessageCircle size={17} /> Reenviar por WhatsApp
+                  </span>
+                </button>
+              ) : null}
+
               <button
                 className="tc-ghost-btn"
                 onClick={() => {
                   setStep("phone");
+                  setToken("");
                   setMsg("");
+                  setOtpChannel("sms");
                 }}
                 disabled={loading}
               >
@@ -524,7 +605,8 @@ async function verifyOtp() {
         }
 
         .tc-primary-btn,
-        .tc-ghost-btn {
+        .tc-ghost-btn,
+        .tc-whatsapp-btn {
           min-height: 56px;
           border-radius: 18px;
           border: none;
@@ -540,8 +622,15 @@ async function verifyOtp() {
           box-shadow: 0 18px 34px rgba(181, 131, 35, 0.26);
         }
 
+        .tc-whatsapp-btn {
+          color: #f0fdf4;
+          background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+          box-shadow: 0 18px 34px rgba(22, 163, 74, 0.22);
+        }
+
         .tc-primary-btn:hover:not(:disabled),
-        .tc-ghost-btn:hover:not(:disabled) {
+        .tc-ghost-btn:hover:not(:disabled),
+        .tc-whatsapp-btn:hover:not(:disabled) {
           transform: translateY(-1px);
         }
 
@@ -552,7 +641,8 @@ async function verifyOtp() {
         }
 
         .tc-primary-btn:disabled,
-        .tc-ghost-btn:disabled {
+        .tc-ghost-btn:disabled,
+        .tc-whatsapp-btn:disabled {
           opacity: 0.65;
           cursor: not-allowed;
           transform: none;

@@ -54,10 +54,13 @@ export async function authUserFromBearer(req: Request): Promise<{
   const { data, error } = await userClient.auth.getUser();
   if (error) throw error;
 
+  const user: any = data.user || null;
+  const metadataPhone = normalizePhone(user?.user_metadata?.crm_phone || user?.app_metadata?.crm_phone);
+
   return {
-    uid: data.user?.id || null,
-    phone: data.user?.phone || null,
-    email: data.user?.email || null,
+    uid: user?.id || null,
+    phone: user?.phone || metadataPhone || null,
+    email: user?.email || null,
   };
 }
 
