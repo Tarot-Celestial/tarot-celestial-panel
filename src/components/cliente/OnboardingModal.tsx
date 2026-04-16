@@ -139,12 +139,13 @@ export default function OnboardingModal({
 
             {confirmNombre === false && (
               <div style={{ display: "grid", gap: 10 }}>
-                <input
-                  className="tc-input"
-                  placeholder="Nombre"
-                  value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
-                />
+               <input
+  className="tc-input"
+  type="text"
+  placeholder="DD/MM/AAAA o YYYY-MM-DD"
+  value={fechaNacimiento}
+  onChange={(e) => setFechaNacimiento(e.target.value)}
+/>
                 <input
                   className="tc-input"
                   placeholder="Apellido"
