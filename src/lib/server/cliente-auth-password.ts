@@ -1,12 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 
+/* =========================================================
+   ENV + CLIENT
+========================================================= */
+
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
   return value;
 }
 
-// ✅ EXPORTADO (ANTES TE FALTABA)
 export function adminSupabase() {
   return createClient(
     requiredEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -20,26 +23,52 @@ export function adminSupabase() {
   );
 }
 
-// ✅ EXPORTADO (ANTES TE FALTABA)
+/* =========================================================
+   HELPERS
+========================================================= */
+
 export function digitsOnly(value: string | null | undefined) {
   return String(value || "").replace(/\D/g, "");
 }
 
-// 🔥 EMAIL CANÓNICO
+// 👉 alias para compatibilidad con tu código existente
+export const normalizePhoneDigits = digitsOnly;
+
+/* =========================================================
+   PASSWORD VALIDATION
+========================================================= */
+
+export function buildPasswordValidationError(password: string, confirm?: string) {
+  if (!password || password.length < 6) {
+    return "PASSWORD_TOO_SHORT";
+  }
+  if (typeof confirm !== "undefined" && password !== confirm) {
+    return "PASSWORDS_DO_NOT_MATCH";
+  }
+  return null;
+}
+
+/* =========================================================
+   EMAIL CANÓNICO
+========================================================= */
+
 export function buildClienteAliasEmail(phone: string | null | undefined) {
   const digits = digitsOnly(phone);
   if (!digits) throw new Error("PHONE_REQUIRED");
   return `cliente-${digits}@auth.tarotcelestial.local`;
 }
 
-// 🔍 BUSCAR CLIENTE
+/* =========================================================
+   CRM LOOKUP
+========================================================= */
+
 export async function findClienteByPhone(phone: string) {
   const sb = adminSupabase();
   const digits = digitsOnly(phone);
 
   const { data, error } = await sb
     .from("crm_clientes")
-    .select("id, telefono, telefono_normalizado, auth_user_id")
+    .select("id, telefono, telefono_normalizado, auth_user_id, email")
     .or(
       [
         `telefono_normalizado.eq.${digits}`,
@@ -55,7 +84,13 @@ export async function findClienteByPhone(phone: string) {
   return data;
 }
 
-// 🔍 BUSCAR USUARIO AUTH POR EMAIL
+// 👉 alias para que no rompa tu código actual
+export const findClienteByPhoneForAuth = findClienteByPhone;
+
+/* =========================================================
+   AUTH LOOKUP
+========================================================= */
+
 export async function findAuthUserByAliasEmail(aliasEmail: string) {
   const sb = adminSupabase();
 
@@ -85,7 +120,10 @@ export async function findAuthUserByAliasEmail(aliasEmail: string) {
   return null;
 }
 
-// 🔥 FUNCIÓN CLAVE (ANTI DUPLICADOS)
+/* =========================================================
+   CORE: ANTI DUPLICADOS
+========================================================= */
+
 export async function ensureClienteAuthUser(params: {
   phone: string;
   password?: string;
@@ -103,7 +141,7 @@ export async function ensureClienteAuthUser(params: {
     throw new Error("CLIENTE_NOT_FOUND");
   }
 
-  // ✅ YA TIENE USER
+  // ✅ YA TIENE AUTH USER
   if (cliente.auth_user_id) {
     if (params.password) {
       await sb.auth.admin.updateUserById(cliente.auth_user_id, {
@@ -113,17 +151,17 @@ export async function ensureClienteAuthUser(params: {
     }
 
     return {
+      ok: true,
       auth_user_id: cliente.auth_user_id,
       alias_email: aliasEmail,
       created: false,
     };
   }
 
-  // 🔍 BUSCAR SI YA EXISTE
+  // 🔍 BUSCAR EXISTENTE
   const existingUser = await findAuthUserByAliasEmail(aliasEmail);
 
   if (existingUser) {
-    // 🔗 LINK
     await sb
       .from("crm_clientes")
       .update({ auth_user_id: existingUser.id })
@@ -137,13 +175,14 @@ export async function ensureClienteAuthUser(params: {
     }
 
     return {
+      ok: true,
       auth_user_id: existingUser.id,
       alias_email: aliasEmail,
       created: false,
     };
   }
 
-  // 🆕 CREAR
+  // 🆕 CREAR NUEVO
   const { data: created, error } = await sb.auth.admin.createUser({
     email: aliasEmail,
     password: params.password || crypto.randomUUID(),
@@ -156,13 +195,13 @@ export async function ensureClienteAuthUser(params: {
 
   if (error) throw error;
 
-  // 🔗 LINK CRM
   await sb
     .from("crm_clientes")
     .update({ auth_user_id: created.user.id })
     .eq("id", cliente.id);
 
   return {
+    ok: true,
     auth_user_id: created.user.id,
     alias_email: aliasEmail,
     created: true,
