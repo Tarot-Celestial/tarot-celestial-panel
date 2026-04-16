@@ -125,6 +125,7 @@ export default function ClienteDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [savingOnboarding, setSavingOnboarding] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [buyingPackId, setBuyingPackId] = useState("");
   const [msg, setMsg] = useState("");
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
@@ -186,6 +187,12 @@ export default function ClienteDashboardPage() {
       window.history.replaceState({}, "", "/cliente/dashboard");
     }
   }, [loadData]);
+
+  useEffect(() => {
+  if (cliente && !cliente.onboarding_completado) {
+    setShowOnboarding(true);
+  }
+}, [cliente]);
 
   useEffect(() => {
     let channel: any = null;
@@ -273,6 +280,7 @@ export default function ClienteDashboardPage() {
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No hemos podido guardar tus datos");
       await loadData();
+      setShowOnboarding(false);
     } catch (e: any) {
       setMsg(e?.message || "No hemos podido guardar tus datos");
     } finally {
@@ -668,7 +676,7 @@ export default function ClienteDashboardPage() {
   open={showOnboarding}
   cliente={cliente}
   saving={savingOnboarding}
-  onSave={handleSaveOnboarding}
+  onSave={saveOnboarding}
 />
       <BonusBienvenidaModal open={showWelcomeGift} minutes={welcomeGiftMinutes} onClose={() => setShowWelcomeGift(false)} />
     </>
