@@ -1,34 +1,71 @@
-import { NextResponse } from "next/server";
-import { findClienteByPhone, formatE164FromDigits, normalizePhone, sendWhatsappVerification } from "@/lib/server/cliente-whatsapp-auth";
+import { createClient } from "@supabase/supabase-js";
+import twilio from "twilio";
 
-export const runtime = "nodejs";
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-export async function POST(req: Request) {
-  try {
-    const body = await req.json().catch(() => null);
-    const phoneDigits = normalizePhone(body?.phone || body?.telefono || "");
+const accountSid = process.env.TWILIO_ACCOUNT_SID!;
+const authToken = process.env.TWILIO_AUTH_TOKEN!;
+const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID!;
 
-    if (!phoneDigits) {
-      return NextResponse.json({ ok: false, error: "TELEFONO_INVALIDO" }, { status: 400 });
-    }
+const client = twilio(accountSid, authToken);
 
-    const cliente = await findClienteByPhone(phoneDigits);
-    if (!cliente?.id) {
-      return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
-    }
+// ----------------------------
+// HELPERS
+// ----------------------------
+export function normalizePhone(phone: string): string {
+  return String(phone || "").replace(/\D/g, "");
+}
 
-    const phoneE164 = formatE164FromDigits(phoneDigits);
-    const verification = await sendWhatsappVerification(phoneE164);
+export function formatE164FromDigits(phone: string): string {
+  if (!phone) return "";
+  if (phone.startsWith("34")) return `+${phone}`;
+  return `+34${phone}`;
+}
 
-    return NextResponse.json({
-      ok: true,
-      channel: "whatsapp",
-      sid: verification?.sid || null,
-      status: verification?.status || null,
-      phone: phoneE164,
-      message: "Te hemos enviado un código por WhatsApp.",
+// ----------------------------
+// DB
+// ----------------------------
+export async function findClienteByPhone(phoneDigits: string) {
+  const { data, error } = await supabase
+    .from("crm_clientes")
+    .select("*")
+    .ilike("telefono", `%${phoneDigits}%`)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
+// ----------------------------
+// WHATSAPP VERIFY (CLAVE)
+// ----------------------------
+export async function sendWhatsappVerification(phone: string) {
+  if (!phone) throw new Error("PHONE_REQUIRED");
+
+  const verification = await client.verify.v2
+    .services(verifyServiceSid)
+    .verifications.create({
+      to: `whatsapp:${phone}`, // 🔥 CLAVE
+      channel: "whatsapp",     // 🔥 CLAVE
     });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "WHATSAPP_SEND_ERROR" }, { status: 500 });
-  }
+
+  return verification;
+}
+
+// ----------------------------
+// VERIFY CODE
+// ----------------------------
+export async function checkWhatsappVerification(phone: string, code: string) {
+  const check = await client.verify.v2
+    .services(verifyServiceSid)
+    .verificationChecks.create({
+      to: `whatsapp:${phone}`,
+      code,
+    });
+
+  return check;
 }
