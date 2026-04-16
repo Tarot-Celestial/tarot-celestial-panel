@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, LockKeyhole, MessageCircle, ShieldCheck, Sparkles, Star, TimerReset } from "lucide-react";
+import { ChevronDown, LockKeyhole, Mail, MessageCircle, ShieldCheck, Sparkles, Star, TimerReset } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
@@ -20,7 +20,7 @@ const sb = supabaseBrowser();
 const STORAGE_COUNTRY_KEY = "tc_cliente_login_country";
 const STORAGE_PHONE_KEY = "tc_cliente_login_phone";
 
-type OtpChannel = "sms" | "whatsapp";
+type OtpChannel = "sms" | "whatsapp" | "email";
 
 export default function ClienteLoginPage() {
   const router = useRouter();
@@ -34,7 +34,8 @@ export default function ClienteLoginPage() {
   const [phoneForOtp, setPhoneForOtp] = useState("");
   const [otpChannel, setOtpChannel] = useState<OtpChannel>("sms");
   const [canUseWhatsapp, setCanUseWhatsapp] = useState(false);
-  const [whatsappChallengeToken, setWhatsappChallengeToken] = useState("");
+  const [canUseEmail, setCanUseEmail] = useState(false);
+  const [fallbackChallengeToken, setFallbackChallengeToken] = useState("");
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
   const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
@@ -101,7 +102,8 @@ export default function ClienteLoginPage() {
       setLoading(true);
       setMsg("");
       setCanUseWhatsapp(false);
-      setWhatsappChallengeToken("");
+      setCanUseEmail(false);
+      setFallbackChallengeToken("");
 
       const clienteExists = await validateCliente(phoneDigits);
       if (!clienteExists) {
@@ -118,7 +120,8 @@ export default function ClienteLoginPage() {
       setMsg("Te hemos enviado un código por SMS.");
     } catch (e: any) {
       setCanUseWhatsapp(true);
-      setMsg(`${e?.message || "No se pudo enviar el código por SMS."} Puedes pedir el acceso por WhatsApp.`);
+      setCanUseEmail(true);
+      setMsg(`${e?.message || "No se pudo enviar el código por SMS."} Puedes pedir el acceso por WhatsApp o e-mail.`);
     } finally {
       setLoading(false);
     }
@@ -152,11 +155,52 @@ export default function ClienteLoginPage() {
       setOtpChannel("whatsapp");
       setStep("otp");
       setCanUseWhatsapp(true);
-      setWhatsappChallengeToken(String(json?.challenge_token || ""));
+      setCanUseEmail(true);
+      setFallbackChallengeToken(String(json?.challenge_token || ""));
       setMsg(json?.message || "Te hemos enviado un código por WhatsApp.");
     } catch (e: any) {
       setCanUseWhatsapp(true);
+      setCanUseEmail(true);
       setMsg(e?.message || "No se pudo enviar el código por WhatsApp.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function sendEmailOtp() {
+    if (!phoneDigits) {
+      setMsg("Introduce un teléfono válido.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setMsg("");
+
+      const clienteExists = await validateCliente(phoneDigits);
+      if (!clienteExists) {
+        setMsg("❌ Este teléfono no está registrado.");
+        return;
+      }
+
+      const res = await fetch("/api/cliente/auth/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneDigits }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "EMAIL_SEND_ERROR");
+
+      setPhoneForOtp(phone);
+      setOtpChannel("email");
+      setStep("otp");
+      setCanUseWhatsapp(true);
+      setCanUseEmail(true);
+      setFallbackChallengeToken(String(json?.challenge_token || ""));
+      setMsg(json?.message || "Te hemos enviado un código por e-mail.");
+    } catch (e: any) {
+      setCanUseEmail(true);
+      setMsg(e?.message || "No se pudo enviar el código por e-mail.");
     } finally {
       setLoading(false);
     }
@@ -183,17 +227,18 @@ export default function ClienteLoginPage() {
         return;
       }
 
-      if (!whatsappChallengeToken) {
-        throw new Error("SOLICITA_PRIMERO_EL_CODIGO_WHATSAPP");
+      if (!fallbackChallengeToken) {
+        throw new Error(otpChannel === "email" ? "SOLICITA_PRIMERO_EL_CODIGO_EMAIL" : "SOLICITA_PRIMERO_EL_CODIGO_WHATSAPP");
       }
 
-      const res = await fetch("/api/cliente/auth/whatsapp/verify", {
+      const verifyUrl = otpChannel === "email" ? "/api/cliente/auth/email/verify" : "/api/cliente/auth/whatsapp/verify";
+      const res = await fetch(verifyUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: phoneForOtp.replace(/\D/g, ""),
           code: token.trim(),
-          challenge_token: whatsappChallengeToken,
+          challenge_token: fallbackChallengeToken,
         }),
       });
       const json = await res.json().catch(() => null);
@@ -209,11 +254,14 @@ export default function ClienteLoginPage() {
     }
   }
 
-  const otpLabel = otpChannel === "whatsapp" ? "Código WhatsApp" : "Código SMS";
+  const otpLabel =
+    otpChannel === "email" ? "Código e-mail" : otpChannel === "whatsapp" ? "Código WhatsApp" : "Código SMS";
   const otpDescription =
-    otpChannel === "whatsapp"
-      ? `Introduce el código que hemos enviado por WhatsApp a ${phoneForOtp || selectedCountry.dialCode}.`
-      : `Introduce el código que hemos enviado por SMS a ${phoneForOtp || selectedCountry.dialCode}.`;
+    otpChannel === "email"
+      ? "Introduce el código que hemos enviado a tu e-mail registrado."
+      : otpChannel === "whatsapp"
+        ? `Introduce el código que hemos enviado por WhatsApp a ${phoneForOtp || selectedCountry.dialCode}.`
+        : `Introduce el código que hemos enviado por SMS a ${phoneForOtp || selectedCountry.dialCode}.`;
 
   return (
     <div className="tc-login-shell">
@@ -227,7 +275,7 @@ export default function ClienteLoginPage() {
             <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={86} height={86} priority className="tc-logo" />
             <div>
               <h1>Entra a tu área privada</h1>
-              <p>Recibe tu código por SMS y, si ese canal falla, entra con verificación por WhatsApp sin quedarte bloqueada.</p>
+              <p>Recibe tu código por SMS y, si ese canal falla, entra por WhatsApp o e-mail sin quedarte bloqueada.</p>
             </div>
           </div>
 
@@ -250,7 +298,7 @@ export default function ClienteLoginPage() {
               <Star size={18} />
               <div>
                 <strong>SMS + WhatsApp</strong>
-                <span>Si el operador bloquea el SMS, tienes acceso alternativo por WhatsApp.</span>
+                <span>Si el operador bloquea el SMS, tienes acceso alternativo por WhatsApp o e-mail.</span>
               </div>
             </article>
           </div>
@@ -260,7 +308,7 @@ export default function ClienteLoginPage() {
           <div className="tc-login-panel-head">
             <span className="tc-kicker">Bienvenida</span>
             <h2>{step === "phone" ? "Identifícate con tu móvil" : "Confirma el código"}</h2>
-            <p>{step === "phone" ? "Selecciona tu país, escribe tu teléfono y te mandamos un SMS. Si falla, podrás recibir el acceso por WhatsApp." : otpDescription}</p>
+            <p>{step === "phone" ? "Selecciona tu país, escribe tu teléfono y te mandamos un SMS. Si falla, podrás recibir el acceso por WhatsApp o e-mail." : otpDescription}</p>
           </div>
 
           {step === "phone" ? (
@@ -303,6 +351,12 @@ export default function ClienteLoginPage() {
                   <MessageCircle size={17} /> {loading ? "Preparando WhatsApp…" : "Recibir código por WhatsApp"}
                 </span>
               </button>
+
+              <button className="tc-email-btn" onClick={sendEmailOtp} disabled={loading}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <Mail size={17} /> {loading ? "Preparando e-mail…" : "Recibir código por e-mail"}
+                </span>
+              </button>
             </div>
           ) : (
             <div className="tc-form-grid">
@@ -333,6 +387,14 @@ export default function ClienteLoginPage() {
                 </button>
               ) : null}
 
+              {otpChannel === "sms" || otpChannel === "whatsapp" || canUseEmail ? (
+                <button className="tc-email-btn" onClick={sendEmailOtp} disabled={loading}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Mail size={17} /> Reenviar por e-mail
+                  </span>
+                </button>
+              ) : null}
+
               <button
                 className="tc-ghost-btn"
                 onClick={() => {
@@ -340,6 +402,7 @@ export default function ClienteLoginPage() {
                   setToken("");
                   setMsg("");
                   setOtpChannel("sms");
+                  setFallbackChallengeToken("");
                 }}
                 disabled={loading}
               >
@@ -614,7 +677,8 @@ export default function ClienteLoginPage() {
 
         .tc-primary-btn,
         .tc-ghost-btn,
-        .tc-whatsapp-btn {
+        .tc-whatsapp-btn,
+        .tc-email-btn {
           min-height: 56px;
           border-radius: 18px;
           border: none;
@@ -630,7 +694,8 @@ export default function ClienteLoginPage() {
           box-shadow: 0 18px 34px rgba(181, 131, 35, 0.26);
         }
 
-        .tc-whatsapp-btn {
+        .tc-whatsapp-btn,
+        .tc-email-btn {
           color: #f0fdf4;
           background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
           box-shadow: 0 18px 34px rgba(22, 163, 74, 0.22);
@@ -638,7 +703,8 @@ export default function ClienteLoginPage() {
 
         .tc-primary-btn:hover:not(:disabled),
         .tc-ghost-btn:hover:not(:disabled),
-        .tc-whatsapp-btn:hover:not(:disabled) {
+        .tc-whatsapp-btn:hover:not(:disabled),
+        .tc-email-btn:hover:not(:disabled) {
           transform: translateY(-1px);
         }
 
@@ -650,7 +716,8 @@ export default function ClienteLoginPage() {
 
         .tc-primary-btn:disabled,
         .tc-ghost-btn:disabled,
-        .tc-whatsapp-btn:disabled {
+        .tc-whatsapp-btn:disabled,
+        .tc-email-btn:disabled {
           opacity: 0.65;
           cursor: not-allowed;
           transform: none;

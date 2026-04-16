@@ -24,10 +24,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
 
-    verifyOtpChallenge(challengeToken, phoneDigits, code, "whatsapp");
+    verifyOtpChallenge(challengeToken, phoneDigits, code, "email");
 
     const origin = new URL(req.url).origin;
-    const login = await createClienteMagicLinkFromChannel(phoneDigits, origin, "whatsapp");
+    const login = await createClienteMagicLinkFromChannel(phoneDigits, origin, "email");
 
     return NextResponse.json({
       ok: true,
@@ -35,6 +35,6 @@ export async function POST(req: Request) {
       message: "Código validado. Te estamos redirigiendo al panel.",
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "WHATSAPP_VERIFY_ERROR" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || "EMAIL_VERIFY_ERROR" }, { status: 500 });
   }
 }

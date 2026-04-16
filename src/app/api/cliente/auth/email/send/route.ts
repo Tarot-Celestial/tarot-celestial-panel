@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import {
   createOtpChallenge,
   findClienteByPhone,
-  formatE164FromDigits,
   generateOtpCode,
+  maskEmail,
+  normalizeEmail,
   normalizePhone,
-  sendWhatsappVerification,
+  sendEmailVerification,
 } from "@/lib/server/cliente-whatsapp-auth";
 
 export const runtime = "nodejs";
@@ -24,24 +25,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
 
+    const email = normalizeEmail((cliente as any)?.email || "");
+    if (!email) {
+      return NextResponse.json({ ok: false, error: "CLIENTE_SIN_EMAIL" }, { status: 400 });
+    }
+
     const code = generateOtpCode();
-    const phoneE164 = formatE164FromDigits(phoneDigits);
-    const message = await sendWhatsappVerification(phoneE164, code);
-    const challenge_token = createOtpChallenge(phoneDigits, code, "whatsapp");
+    const emailResult = await sendEmailVerification(email, code, (cliente as any)?.nombre || null);
+    const challenge_token = createOtpChallenge(phoneDigits, code, "email");
 
     return NextResponse.json({
       ok: true,
-      channel: "whatsapp",
-      sid: message?.sid || null,
-      status: message?.status || null,
-      phone: phoneE164,
+      channel: "email",
+      email: maskEmail(email),
       challenge_token,
-      message: "Te hemos enviado un código por WhatsApp.",
+      provider_id: emailResult?.id || null,
+      message: `Te hemos enviado un código al e-mail ${maskEmail(email)}.`,
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { ok: false, error: e?.message || "WHATSAPP_SEND_ERROR" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: false, error: e?.message || "EMAIL_SEND_ERROR" }, { status: 500 });
   }
 }
