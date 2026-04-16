@@ -287,7 +287,7 @@ export default function ClienteLoginPage() {
                 className="tc-input tc-phone-input"
                 inputMode="tel"
                 autoComplete="tel-national"
-                placeholder={selectedCountry.placeholder || "600123123"}
+                placeholder={selectedCountry.hint || "600123123"}
                 value={phoneInput}
                 onChange={(e) => setPhoneInput(normalizeLocalPhone(e.target.value))}
               />
