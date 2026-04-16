@@ -1,71 +1,46 @@
-import { createClient } from "@supabase/supabase-js";
-import twilio from "twilio";
+import { NextResponse } from "next/server";
+import { findClienteByPhone, formatE164FromDigits, sendWhatsappVerification } from "@/lib/server/cliente-whatsapp-auth";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const runtime = "nodejs";
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID!;
-const authToken = process.env.TWILIO_AUTH_TOKEN!;
-const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID!;
-
-const client = twilio(accountSid, authToken);
-
-// ----------------------------
-// HELPERS
-// ----------------------------
-export function normalizePhone(phone: string): string {
+function normalizePhone(phone: string): string {
   return String(phone || "").replace(/\D/g, "");
 }
 
-export function formatE164FromDigits(phone: string): string {
-  if (!phone) return "";
-  if (phone.startsWith("34")) return `+${phone}`;
-  return `+34${phone}`;
-}
+export async function POST(req: Request) {
+  try {
+    console.log("🔥 WHATSAPP API LLAMADA");
 
-// ----------------------------
-// DB
-// ----------------------------
-export async function findClienteByPhone(phoneDigits: string) {
-  const { data, error } = await supabase
-    .from("crm_clientes")
-    .select("*")
-    .ilike("telefono", `%${phoneDigits}%`)
-    .limit(1)
-    .maybeSingle();
+    const body = await req.json().catch(() => null);
+    const phoneDigits = normalizePhone(body?.phone || body?.telefono || "");
 
-  if (error) throw error;
-  return data;
-}
+    if (!phoneDigits) {
+      return NextResponse.json({ ok: false, error: "TELEFONO_INVALIDO" }, { status: 400 });
+    }
 
-// ----------------------------
-// WHATSAPP VERIFY (CLAVE)
-// ----------------------------
-export async function sendWhatsappVerification(phone: string) {
-  if (!phone) throw new Error("PHONE_REQUIRED");
+    const cliente = await findClienteByPhone(phoneDigits);
+    if (!cliente?.id) {
+      return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+    }
 
-  const verification = await client.verify.v2
-    .services(verifyServiceSid)
-    .verifications.create({
-      to: `whatsapp:${phone}`, // 🔥 CLAVE
-      channel: "whatsapp",     // 🔥 CLAVE
+    const phoneE164 = formatE164FromDigits(phoneDigits);
+
+    const verification = await sendWhatsappVerification(phoneE164);
+
+    return NextResponse.json({
+      ok: true,
+      channel: "whatsapp",
+      sid: verification?.sid || null,
+      status: verification?.status || null,
+      phone: phoneE164,
+      message: "Te hemos enviado un código por WhatsApp.",
     });
+  } catch (e: any) {
+    console.error("❌ WHATSAPP ERROR:", e);
 
-  return verification;
-}
-
-// ----------------------------
-// VERIFY CODE
-// ----------------------------
-export async function checkWhatsappVerification(phone: string, code: string) {
-  const check = await client.verify.v2
-    .services(verifyServiceSid)
-    .verificationChecks.create({
-      to: `whatsapp:${phone}`,
-      code,
-    });
-
-  return check;
+    return NextResponse.json(
+      { ok: false, error: e?.message || "WHATSAPP_SEND_ERROR" },
+      { status: 500 }
+    );
+  }
 }
