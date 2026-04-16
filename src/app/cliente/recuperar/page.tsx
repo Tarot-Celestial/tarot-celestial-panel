@@ -120,7 +120,7 @@ export default function ClienteRecuperarPage() {
               <input
                 className="tc-input tc-phone-input"
                 inputMode="tel"
-                placeholder={selectedCountry.placeholder || "600123123"}
+               placeholder={selectedCountry.placeholder || "600123123"}
                 value={phoneInput}
                 onChange={(e) => setPhoneInput(normalizeLocalPhone(e.target.value))}
               />
