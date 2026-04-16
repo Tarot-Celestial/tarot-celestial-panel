@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+      return NextResponse.json(result);
     }
 
     const token = authHeader.replace("Bearer ", "");
