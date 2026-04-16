@@ -1,7 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BellRing, Crown, Gift, Mail, Phone, PhoneCall, ShieldAlert, Sparkles, Star, TimerReset, WandSparkles, ShoppingBag, ChevronRight } from "lucide-react";
+import {
+  BellRing,
+  Crown,
+  Gift,
+  Mail,
+  Phone,
+  PhoneCall,
+  ShieldAlert,
+  Sparkles,
+  Star,
+  TimerReset,
+  WandSparkles,
+  ShoppingBag,
+  ChevronRight,
+  LockKeyhole,
+} from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
@@ -134,6 +149,13 @@ export default function ClienteDashboardPage() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
 
+  const [checkingPasswordStatus, setCheckingPasswordStatus] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [creatingPassword, setCreatingPassword] = useState(false);
+  const [passwordCreate, setPasswordCreate] = useState("");
+  const [passwordCreateConfirm, setPasswordCreateConfirm] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState("");
+
   const loadData = useCallback(async () => {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
@@ -189,10 +211,49 @@ export default function ClienteDashboardPage() {
   }, [loadData]);
 
   useEffect(() => {
-  if (cliente && !cliente.onboarding_completado) {
-    setShowOnboarding(true);
-  }
-}, [cliente]);
+    if (cliente && !cliente.onboarding_completado) {
+      setShowOnboarding(true);
+    }
+  }, [cliente]);
+
+  useEffect(() => {
+    async function checkPasswordStatus() {
+      try {
+        if (!cliente?.id) return;
+        if (!cliente?.onboarding_completado) return;
+        if (showOnboarding) return;
+
+        setCheckingPasswordStatus(true);
+        setPasswordMsg("");
+
+        const { data } = await sb.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+
+        const res = await fetch("/api/cliente/auth/password/status", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
+
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) return;
+
+        if (!json?.hasPassword) {
+          setShowCreatePassword(true);
+        } else {
+          setShowCreatePassword(false);
+        }
+      } catch {
+      } finally {
+        setCheckingPasswordStatus(false);
+      }
+    }
+
+    checkPasswordStatus();
+  }, [cliente?.id, cliente?.onboarding_completado, showOnboarding]);
 
   useEffect(() => {
     let channel: any = null;
@@ -246,10 +307,26 @@ export default function ClienteDashboardPage() {
 
   const summaryItems = useMemo(
     () => [
-      { label: "Rango actual", value: `${rankBadge.emoji} ${rankBadge.label}`, meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes" },
-      { label: "Puntos disponibles", value: String(totalPoints), meta: "Cada compra suma 10 puntos por cada euro o dólar" },
-      { label: "Minutos disponibles", value: String(totalMinutes), meta: "Tu saldo disponible ahora mismo" },
-      { label: "Notificaciones", value: String(unreadNotifs), meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día" },
+      {
+        label: "Rango actual",
+        value: `${rankBadge.emoji} ${rankBadge.label}`,
+        meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes",
+      },
+      {
+        label: "Puntos disponibles",
+        value: String(totalPoints),
+        meta: "Cada compra suma 10 puntos por cada euro o dólar",
+      },
+      {
+        label: "Minutos disponibles",
+        value: String(totalMinutes),
+        meta: "Tu saldo disponible ahora mismo",
+      },
+      {
+        label: "Notificaciones",
+        value: String(unreadNotifs),
+        meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día",
+      },
     ],
     [rankBadge.emoji, rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs]
   );
@@ -287,6 +364,55 @@ export default function ClienteDashboardPage() {
       setMsg(e?.message || "No hemos podido guardar tus datos");
     } finally {
       setSavingOnboarding(false);
+    }
+  }
+
+  async function createPasswordNow() {
+    try {
+      const pass = String(passwordCreate || "").trim();
+      const confirm = String(passwordCreateConfirm || "").trim();
+
+      if (!pass || pass.length < 6) {
+        throw new Error("La contraseña debe tener al menos 6 caracteres.");
+      }
+      if (pass !== confirm) {
+        throw new Error("Las contraseñas no coinciden.");
+      }
+
+      setCreatingPassword(true);
+      setPasswordMsg("");
+
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+
+      const res = await fetch("/api/cliente/auth/password/create", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          password: pass,
+          password_confirm: confirm,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "No hemos podido guardar tu contraseña.");
+      }
+
+      setPasswordCreate("");
+      setPasswordCreateConfirm("");
+      setShowCreatePassword(false);
+      setPasswordMsg("");
+      setMsg("✅ Contraseña creada correctamente. La próxima vez podrás entrar con teléfono y contraseña.");
+      await loadData();
+    } catch (e: any) {
+      setPasswordMsg(e?.message || "No hemos podido guardar tu contraseña.");
+    } finally {
+      setCreatingPassword(false);
     }
   }
 
@@ -424,7 +550,6 @@ export default function ClienteDashboardPage() {
       setPushBusy(false);
     }
   }
-
 
   if (loading) {
     return (
@@ -675,12 +800,206 @@ export default function ClienteDashboardPage() {
       </ClienteLayout>
 
       <OnboardingModal
-  open={showOnboarding}
-  cliente={cliente}
-  saving={savingOnboarding}
-  onSave={saveOnboarding}
-/>
-      <BonusBienvenidaModal open={showWelcomeGift} minutes={welcomeGiftMinutes} onClose={() => setShowWelcomeGift(false)} />
+        open={showOnboarding}
+        cliente={cliente}
+        saving={savingOnboarding}
+        onSave={saveOnboarding}
+      />
+
+      <BonusBienvenidaModal
+        open={showWelcomeGift}
+        minutes={welcomeGiftMinutes}
+        onClose={() => setShowWelcomeGift(false)}
+      />
+
+      {showCreatePassword && !showOnboarding ? (
+        <>
+          <div className="tc-password-overlay" />
+          <div className="tc-password-modal-wrap">
+            <div className="tc-password-modal">
+              <div className="tc-password-icon">
+                <ShieldAlert size={20} />
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-password-title">Protege tu acceso</div>
+                <div className="tc-password-sub">
+                  Has entrado con código correctamente, pero todavía no tienes una contraseña creada.
+                  Guárdala ahora para poder acceder la próxima vez con tu teléfono y contraseña.
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <label className="tc-password-label">Nueva contraseña</label>
+                <div className="tc-password-input-wrap">
+                  <LockKeyhole size={16} />
+                  <input
+                    className="tc-password-input"
+                    type="password"
+                    placeholder="Escribe tu nueva contraseña"
+                    value={passwordCreate}
+                    onChange={(e) => setPasswordCreate(e.target.value)}
+                    disabled={creatingPassword || checkingPasswordStatus}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <label className="tc-password-label">Confirmar contraseña</label>
+                <div className="tc-password-input-wrap">
+                  <LockKeyhole size={16} />
+                  <input
+                    className="tc-password-input"
+                    type="password"
+                    placeholder="Repite la contraseña"
+                    value={passwordCreateConfirm}
+                    onChange={(e) => setPasswordCreateConfirm(e.target.value)}
+                    disabled={creatingPassword || checkingPasswordStatus}
+                  />
+                </div>
+              </div>
+
+              {passwordMsg ? <div className="tc-password-error">{passwordMsg}</div> : null}
+
+              <button
+                className="tc-password-btn"
+                onClick={createPasswordNow}
+                disabled={creatingPassword || checkingPasswordStatus}
+              >
+                {creatingPassword ? "Guardando contraseña..." : "Guardar contraseña"}
+              </button>
+            </div>
+          </div>
+
+          <style jsx>{`
+            .tc-password-overlay {
+              position: fixed;
+              inset: 0;
+              background: rgba(8, 7, 12, 0.72);
+              backdrop-filter: blur(6px);
+              z-index: 9998;
+            }
+
+            .tc-password-modal-wrap {
+              position: fixed;
+              inset: 0;
+              z-index: 9999;
+              display: grid;
+              place-items: center;
+              padding: 18px;
+            }
+
+            .tc-password-modal {
+              width: min(520px, 100%);
+              border-radius: 24px;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              background:
+                radial-gradient(circle at top, rgba(247, 197, 94, 0.14), transparent 34%),
+                rgba(19, 14, 22, 0.96);
+              box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+              padding: 24px;
+              display: grid;
+              gap: 16px;
+              color: #fff7ea;
+            }
+
+            .tc-password-icon {
+              width: 46px;
+              height: 46px;
+              border-radius: 999px;
+              display: grid;
+              place-items: center;
+              background: rgba(247, 197, 94, 0.14);
+              color: var(--tc-gold-2);
+              border: 1px solid rgba(247, 197, 94, 0.22);
+            }
+
+            .tc-password-title {
+              font-size: 24px;
+              font-weight: 900;
+              line-height: 1.1;
+            }
+
+            .tc-password-sub {
+              color: rgba(255, 247, 234, 0.8);
+              line-height: 1.5;
+            }
+
+            .tc-password-label {
+              font-size: 13px;
+              font-weight: 800;
+              color: rgba(255, 247, 234, 0.84);
+            }
+
+            .tc-password-input-wrap {
+              min-height: 50px;
+              display: grid;
+              grid-template-columns: auto 1fr;
+              gap: 10px;
+              align-items: center;
+              border-radius: 16px;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              background: rgba(255, 255, 255, 0.05);
+              padding: 0 14px;
+            }
+
+            .tc-password-input-wrap :global(svg) {
+              color: rgba(255, 247, 234, 0.65);
+            }
+
+            .tc-password-input {
+              min-width: 0;
+              width: 100%;
+              height: 48px;
+              border: 0;
+              outline: none;
+              background: transparent;
+              color: #fff7ea;
+              font-size: 15px;
+            }
+
+            .tc-password-input::placeholder {
+              color: rgba(255, 247, 234, 0.42);
+            }
+
+            .tc-password-error {
+              border-radius: 14px;
+              padding: 12px 14px;
+              background: rgba(255, 99, 99, 0.12);
+              border: 1px solid rgba(255, 99, 99, 0.22);
+              color: #ffd4d4;
+              line-height: 1.45;
+            }
+
+            .tc-password-btn {
+              min-height: 52px;
+              border: 0;
+              border-radius: 16px;
+              cursor: pointer;
+              font-weight: 900;
+              transition: transform 0.18s ease, opacity 0.18s ease;
+              background: linear-gradient(135deg, #f7c55e, #ffdf9a);
+              color: #24180f;
+            }
+
+            .tc-password-btn:disabled {
+              opacity: 0.7;
+              cursor: not-allowed;
+            }
+
+            @media (max-width: 640px) {
+              .tc-password-modal {
+                padding: 18px;
+                border-radius: 20px;
+              }
+
+              .tc-password-title {
+                font-size: 21px;
+              }
+            }
+          `}</style>
+        </>
+      ) : null}
     </>
   );
 }
