@@ -6,8 +6,16 @@ export function getEnv(name: string): string {
   return value;
 }
 
+// 🔥 NORMALIZADOR PRO (CLAVE)
 export function normalizePhone(phone: string | null | undefined): string {
-  return String(phone || "").replace(/\D/g, "");
+  const digits = String(phone || "").replace(/\D/g, "");
+
+  if (!digits) return "";
+
+  if (digits.startsWith("34")) return `+${digits}`;
+  if (digits.startsWith("1")) return `+${digits}`;
+
+  return `+${digits}`;
 }
 
 function normalizeEmail(email: string | null | undefined): string {
@@ -55,11 +63,14 @@ export async function authUserFromBearer(req: Request): Promise<{
   if (error) throw error;
 
   const user: any = data.user || null;
-  const metadataPhone = normalizePhone(user?.user_metadata?.crm_phone || user?.app_metadata?.crm_phone);
+
+  const metadataPhone = normalizePhone(
+    user?.user_metadata?.crm_phone || user?.app_metadata?.crm_phone
+  );
 
   return {
     uid: user?.id || null,
-    phone: user?.phone || metadataPhone || null,
+    phone: normalizePhone(user?.phone) || metadataPhone || null,
     email: user?.email || null,
   };
 }
@@ -78,62 +89,78 @@ export async function clientFromRequest(req: Request) {
 
   let cliente: any = null;
 
-  // 🔍 Buscar por teléfono
+  // 🔍 BUSCAR POR TELÉFONO
   if (normalizedPhone) {
-    const { data, error } = await admin
+    const { data } = await admin
       .from("crm_clientes")
       .select("*")
       .eq("telefono_normalizado", normalizedPhone)
       .maybeSingle();
 
-    if (error) throw error;
     cliente = data || null;
   }
 
-  // 🔍 Buscar por email
+  // 🔍 BUSCAR POR EMAIL
   if (!cliente && normalizedEmail) {
-    const { data, error } = await admin
+    const { data } = await admin
       .from("crm_clientes")
       .select("*")
       .ilike("email", normalizedEmail)
       .maybeSingle();
 
-    if (error) throw error;
     cliente = data || null;
   }
 
-  // 🆕 CREAR CLIENTE (FIX DEFINITIVO)
-  if (!cliente && normalizedEmail) {
+  // 🔥 AUTO-FIX SI ENCUENTRA PERO ESTÁ MAL FORMATEADO
+  if (cliente) {
+    const updates: any = {};
+
+    if (cliente.telefono_normalizado !== normalizedPhone && normalizedPhone) {
+      updates.telefono_normalizado = normalizedPhone;
+      updates.telefono = normalizedPhone;
+    }
+
+    if (!cliente.user_id && uid) {
+      updates.user_id = uid;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await admin.from("crm_clientes").update(updates).eq("id", cliente.id);
+
+      cliente = {
+        ...cliente,
+        ...updates,
+      };
+    }
+  }
+
+  // 🆕 CREAR CLIENTE SI NO EXISTE
+  if (!cliente) {
     const nowIso = new Date().toISOString();
 
-    // 🔥 CLAVE: NUNCA NULL
     const telefonoFinal = normalizedPhone || "000000000";
 
-    const { data, error } = await admin
+    const { data } = await admin
       .from("crm_clientes")
       .insert({
         nombre: guessNameFromEmail(normalizedEmail),
-
-        // 🔥 AQUÍ ESTABA EL BUG
         telefono: telefonoFinal,
         telefono_normalizado: telefonoFinal,
-
         email: normalizedEmail,
-        origen: "chat_email",
+        origen: "auto_auth",
         onboarding_completado: false,
+        user_id: uid, // 🔥 CLAVE
         updated_at: nowIso,
       })
       .select("*")
       .maybeSingle();
-
-    if (error) throw error;
 
     cliente = data || null;
   }
 
   return {
     uid,
-    phone,
+    phone: normalizedPhone || null,
     email: normalizedEmail || null,
     cliente,
     admin,
