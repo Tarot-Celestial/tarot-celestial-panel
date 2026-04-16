@@ -173,13 +173,24 @@ export async function clientFromRequest(req: Request) {
       updates.user_id = uid;
     }
 
-    if (normalizedPhone) {
-      const currentNorm = String(cliente.telefono_normalizado || "").trim();
-      const currentTel = String(cliente.telefono || "").trim();
+   // 🔥 BUSCAR POR TELÉFONO (COMPATIBLE ANTIGUO + NUEVO)
+if (normalizedPhone) {
+  const digits = normalizedPhone.replace("+", "");
 
-      if (!currentNorm || currentNorm !== normalizedPhone) {
-        updates.telefono_normalizado = normalizedPhone;
-      }
+  const { data } = await admin
+    .from("crm_clientes")
+    .select("*")
+    .or(`
+      telefono_normalizado.eq.${normalizedPhone},
+      telefono_normalizado.eq.${digits},
+      telefono.eq.${digits},
+      telefono.eq.${normalizedPhone}
+    `)
+    .limit(1)
+    .maybeSingle();
+
+  cliente = data || null;
+}
 
       if (!currentTel) {
         updates.telefono = normalizedPhone;
