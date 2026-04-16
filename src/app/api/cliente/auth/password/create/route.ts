@@ -15,27 +15,37 @@ export async function POST(req: NextRequest) {
   try {
     const sb = adminSupabase();
 
+    // 🔐 AUTH HEADER
     const authHeader = req.headers.get("authorization");
     if (!authHeader) {
-      return NextResponse.json(result);
+      return NextResponse.json(
+        { ok: false, error: "NO_AUTH" },
+        { status: 401 }
+      );
     }
 
     const token = authHeader.replace("Bearer ", "");
 
+    // 🔐 USER SESSION
     const {
       data: { user },
       error,
     } = await sb.auth.getUser(token);
 
     if (error || !user) {
-      return NextResponse.json({ ok: false, error: "INVALID_SESSION" }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "INVALID_SESSION" },
+        { status: 401 }
+      );
     }
 
+    // 📥 BODY
     const body = await req.json().catch(() => null);
 
     const password = String(body?.password || "");
     const password_confirm = String(body?.password_confirm || "");
 
+    // 🔒 VALIDACIONES
     if (!isStrongPassword(password)) {
       return NextResponse.json(
         { ok: false, error: "PASSWORD_TOO_SHORT" },
@@ -50,7 +60,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 🔥 sacamos teléfono del metadata (importantísimo)
+    // 📞 TELÉFONO DESDE AUTH
     const phone =
       user.user_metadata?.telefono_normalizado ||
       user.phone ||
@@ -65,16 +75,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 🔥 AQUÍ ESTÁ LA MAGIA (anti-duplicados)
+    // 🔥 ANTI DUPLICADOS + CREACIÓN
     const result = await ensureClienteAuthUser({
       phone: phoneDigits,
       password,
     });
 
-    return NextResponse.json({
-      ok: true,
-      ...result,
-    });
+    // ✅ RESPUESTA LIMPIA (sin duplicar ok)
+    return NextResponse.json(result);
+
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "INTERNAL_ERROR" },
