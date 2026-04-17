@@ -25,16 +25,6 @@ type Props = {
   }) => Promise<void>;
 };
 
-const PASSWORD_HINT = "Mínimo 8 caracteres, con al menos una letra y un número.";
-
-function validatePassword(password: string, confirm: string): string {
-  if (!password) return "Debes crear una contraseña para entrar sin código la próxima vez.";
-  if (password.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return PASSWORD_HINT;
-  if (password !== confirm) return "Las contraseñas no coinciden.";
-  return "";
-}
-
 export default function OnboardingModal({ open, cliente, saving, onSave }: Props) {
   const [step, setStep] = useState(0);
 
@@ -42,9 +32,6 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
   const [apellido, setApellido] = useState(cliente?.apellido || "");
   const [email, setEmail] = useState(cliente?.email || "");
   const [fechaNacimiento, setFechaNacimiento] = useState(cliente?.fecha_nacimiento || "");
-
-  const [password, setPassword] = useState("");
-  const [passwordConfirm, setPasswordConfirm] = useState("");
 
   const [editNombre, setEditNombre] = useState(false);
   const [editEmail, setEditEmail] = useState(false);
@@ -74,23 +61,15 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
       return;
     }
 
-    const passwordError = validatePassword(password, passwordConfirm);
-    if (passwordError) {
-      setMsg(passwordError);
-      return;
-    }
-
     setMsg("");
 
     await onSave({
-      nombre: nombre.trim(),
-      apellido: apellido.trim(),
-      email: email.trim(),
-      fecha_nacimiento: fechaNacimiento.trim(),
-      onboarding_completado: true,
-      password,
-      password_confirm: passwordConfirm,
-    });
+  nombre: nombre.trim(),
+  apellido: apellido.trim(),
+  email: email.trim(),
+  fecha_nacimiento: fechaNacimiento.trim(),
+  onboarding_completado: true,
+});
   }
 
   const cardStyle: CSSProperties = {
@@ -106,7 +85,7 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
 
   function goNext() {
     setMsg("");
-    setStep((prev) => Math.min(prev + 1, 3));
+    setStep((prev) => Math.min(prev + 1, 2));
   }
 
   return (
@@ -235,23 +214,7 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
         )}
 
         {/* STEP 3 */}
-        {step === 3 && (
-          <div style={{ display: "grid", gap: 12 }}>
-            <div className="tc-title">Crea tu contraseña</div>
-            <div className="tc-muted">
-              A partir de ahora entrarás con tu teléfono y esta contraseña.
-            </div>
-
-            <input className="tc-input" type="password" placeholder="Nueva contraseña" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <input className="tc-input" type="password" placeholder="Repite la contraseña" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />
-
-            <div className="tc-muted">{PASSWORD_HINT}</div>
-
-            <button className="tc-btn tc-btn-gold" onClick={finish} disabled={saving}>
-              {saving ? "Guardando..." : "Finalizar"}
-            </button>
-          </div>
-        )}
+      
 
         {msg && <div className="tc-error">{msg}</div>}
       </div>
