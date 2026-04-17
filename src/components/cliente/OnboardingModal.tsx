@@ -42,8 +42,6 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
     setApellido(cliente?.apellido || "");
     setEmail(cliente?.email || "");
     setFechaNacimiento(cliente?.fecha_nacimiento || "");
-    setPassword("");
-    setPasswordConfirm("");
     setMsg("");
     setStep(0);
   }, [cliente, open]);
