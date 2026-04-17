@@ -182,16 +182,20 @@ export default function ClienteLoginPage() {
 
       <style jsx>{`
         .tc-shell {
-          min-height: 100vh;
-          display: grid;
-          place-items: center;
-          background:
-            radial-gradient(circle at top, rgba(247,197,94,0.15), transparent 30%),
-            #0f0b10;
-        }
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+
+  background:
+    radial-gradient(circle at center, rgba(247,197,94,0.12), transparent 40%),
+    linear-gradient(180deg, #0f0b10 0%, #171019 100%);
+}
 
         .tc-card {
-          width: 420px;
+          width: 100%;
+          max-width: 420px;
           padding: 32px;
           border-radius: 24px;
           background: rgba(20,15,25,0.9);
