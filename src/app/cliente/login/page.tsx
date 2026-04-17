@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LockKeyhole, Mail, MessageCircle, ShieldCheck, Smartphone, Sparkles } from "lucide-react";
+import { KeyRound, LockKeyhole } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
@@ -16,41 +16,37 @@ import {
 } from "@/lib/countries";
 
 const sb = supabaseBrowser();
-const STORAGE_COUNTRY_KEY = "tc_cliente_login_country";
-const STORAGE_PHONE_KEY = "tc_cliente_login_phone";
 
 type LoginMode = "password" | "otp";
-type OtpChannel = "sms" | "whatsapp" | "email";
 
 export default function ClienteLoginPage() {
   const router = useRouter();
-  const [countryCode, setCountryCode] = useState<string>(DEFAULT_COUNTRY_CODE);
+
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [phoneInput, setPhoneInput] = useState("");
   const [password, setPassword] = useState("");
-  const [token, setToken] = useState("");
   const [mode, setMode] = useState<LoginMode>("password");
-  const [step, setStep] = useState<"phone" | "otp">("phone");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
-  const [hydrated, setHydrated] = useState(false);
 
-  const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
-  const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
-  const phoneDigits = useMemo(() => phone.replace(/\D/g, ""), [phone]);
+  const selectedCountry = useMemo(
+    () => getCountryByCode(countryCode),
+    [countryCode]
+  );
+
+  const phone = useMemo(
+    () => buildInternationalPhone(selectedCountry, phoneInput),
+    [selectedCountry, phoneInput]
+  );
+
+  const phoneDigits = useMemo(
+    () => phone.replace(/\D/g, ""),
+    [phone]
+  );
 
   useEffect(() => {
     const guessed = guessDefaultCountry();
-
-    try {
-      const savedCountry = window.localStorage.getItem(STORAGE_COUNTRY_KEY);
-      const savedPhone = window.localStorage.getItem(STORAGE_PHONE_KEY);
-      setCountryCode(getCountryByCode(savedCountry || guessed.code).code);
-      if (savedPhone) setPhoneInput(savedPhone);
-    } catch {
-      setCountryCode(guessed.code);
-    } finally {
-      setHydrated(true);
-    }
+    setCountryCode(guessed.code);
 
     sb.auth.getSession().then(({ data }) => {
       if (data.session?.user) router.replace("/cliente/dashboard");
@@ -72,6 +68,7 @@ export default function ClienteLoginPage() {
       });
 
       const json = await res.json();
+
       const { error } = await sb.auth.signInWithPassword({
         email: json.alias_email,
         password,
@@ -88,84 +85,90 @@ export default function ClienteLoginPage() {
   }
 
   return (
-    <main className="tc-login-shell">
-      <section className="tc-login-card">
+    <main className="tc-shell">
+      <section className="tc-card">
 
-        {/* 🔥 LOGO LIMPIO */}
-        <div className="tc-login-brand">
-          <Image
-            src="/Nuevo-logo-tarot.png"
-            alt="Tarot Celestial"
-            width={90}
-            height={90}
-            priority
-          />
+        {/* 🔥 LOGO + BRAND */}
+        <div className="tc-brand">
+          <div className="tc-logo-wrap">
+            <Image
+              src="/Nuevo-logo-tarot.png"
+              alt="Tarot Celestial"
+              width={80}
+              height={80}
+              className="tc-logo"
+              priority
+            />
+          </div>
+
           <div className="tc-chip">Acceso cliente</div>
+
           <h1>Tarot Celestial</h1>
+
           <p>
-            Entra con tu teléfono y contraseña o accede con código si es tu primera vez.
+            Accede con tu teléfono y contraseña o entra con código si es tu primera vez.
           </p>
         </div>
 
-        {/* TABS */}
-        <div className="tc-login-tabs">
+        {/* 🔥 TABS PRO */}
+        <div className="tc-tabs">
           <button
-            className={`tc-login-tab ${mode === "password" ? "active" : ""}`}
+            className={`tc-tab ${mode === "password" ? "active" : ""}`}
             onClick={() => setMode("password")}
           >
             <LockKeyhole size={16} /> Contraseña
           </button>
+
           <button
-            className={`tc-login-tab ${mode === "otp" ? "active" : ""}`}
+            className={`tc-tab ${mode === "otp" ? "active" : ""}`}
             onClick={() => setMode("otp")}
           >
             <KeyRound size={16} /> Código
           </button>
         </div>
 
-        {/* FORM */}
-        <div className="tc-login-form">
-          <label className="tc-label">País</label>
+        {/* 🔥 FORM */}
+        <div className="tc-form">
+          <label>País</label>
           <select
-            className="tc-input"
             value={countryCode}
             onChange={(e) => setCountryCode(e.target.value)}
           >
-            {COUNTRY_OPTIONS.map((option) => (
-              <option key={option.code} value={option.code}>
-                {formatCountryOptionLabel(option)}
+            {COUNTRY_OPTIONS.map((o) => (
+              <option key={o.code} value={o.code}>
+                {formatCountryOptionLabel(o)}
               </option>
             ))}
           </select>
 
-          <label className="tc-label">Teléfono</label>
-          <div className="tc-phone-field">
-            <div className="tc-phone-prefix">{selectedCountry.dialCode}</div>
+          <label>Teléfono</label>
+          <div className="tc-phone">
+            <span>{selectedCountry.dialCode}</span>
             <input
-              className="tc-input"
               placeholder={selectedCountry.hint || "600123123"}
               value={phoneInput}
-              onChange={(e) => setPhoneInput(normalizeLocalPhone(e.target.value))}
+              onChange={(e) =>
+                setPhoneInput(normalizeLocalPhone(e.target.value))
+              }
             />
           </div>
 
           {mode === "password" && (
             <>
-              <label className="tc-label">Contraseña</label>
+              <label>Contraseña</label>
               <input
-                className="tc-input"
                 type="password"
                 placeholder="Tu contraseña"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
 
-              <button className="tc-primary-btn" onClick={loginWithPassword}>
+              <button onClick={loginWithPassword}>
                 {loading ? "Entrando..." : "Entrar"}
               </button>
 
               <button
-                className="tc-secondary-btn"
+                className="secondary"
                 onClick={() => router.push("/cliente/recuperar")}
               >
                 He olvidado mi contraseña
@@ -174,80 +177,126 @@ export default function ClienteLoginPage() {
           )}
         </div>
 
-        {msg && <div className="tc-login-message">{msg}</div>}
+        {msg && <div className="tc-msg">{msg}</div>}
       </section>
 
       <style jsx>{`
-        .tc-login-shell {
+        .tc-shell {
           min-height: 100vh;
           display: grid;
           place-items: center;
-          background: #0f0b10;
+          background:
+            radial-gradient(circle at top, rgba(247,197,94,0.15), transparent 30%),
+            #0f0b10;
         }
 
-        .tc-login-card {
+        .tc-card {
           width: 420px;
-          padding: 30px;
-          border-radius: 20px;
-          background: #1a141d;
-          color: white;
+          padding: 32px;
+          border-radius: 24px;
+          background: rgba(20,15,25,0.9);
+          border: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 30px 80px rgba(0,0,0,0.6);
           display: grid;
           gap: 20px;
+          color: #fff7ea;
         }
 
-        .tc-login-brand {
+        .tc-brand {
           text-align: center;
           display: grid;
           gap: 10px;
           justify-items: center;
         }
 
-        .tc-login-tabs {
+        .tc-logo-wrap {
+          padding: 12px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.05);
+          backdrop-filter: blur(10px);
+        }
+
+        .tc-logo {
+          filter: drop-shadow(0 0 12px rgba(247,197,94,0.4));
+        }
+
+        .tc-chip {
+          font-size: 12px;
+          padding: 6px 12px;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.08);
+        }
+
+        h1 {
+          margin: 0;
+          font-size: 30px;
+        }
+
+        p {
+          font-size: 14px;
+          opacity: 0.8;
+        }
+
+        .tc-tabs {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 10px;
         }
 
-        .tc-login-tab {
-          padding: 10px;
-          border-radius: 10px;
-          background: #2a202d;
+        .tc-tab {
+          padding: 12px;
+          border-radius: 14px;
+          background: rgba(255,255,255,0.05);
         }
 
-        .tc-login-tab.active {
-          background: #f7c55e;
+        .tc-tab.active {
+          background: linear-gradient(135deg, #f7c55e, #ffdf9a);
           color: black;
         }
 
-        .tc-login-form {
+        .tc-form {
           display: grid;
           gap: 10px;
         }
 
-        .tc-input {
-          padding: 10px;
-          border-radius: 10px;
-          background: #2a202d;
+        select,
+        input {
+          width: 100%;
+          padding: 12px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(255,255,255,0.08);
           color: white;
         }
 
-        .tc-primary-btn {
-          background: #f7c55e;
+        .tc-phone {
+          display: flex;
+          gap: 10px;
+        }
+
+        .tc-phone span {
           padding: 12px;
-          border-radius: 10px;
+          border-radius: 12px;
+          background: rgba(255,255,255,0.05);
+        }
+
+        button {
+          padding: 14px;
+          border-radius: 14px;
+          background: linear-gradient(135deg, #f7c55e, #ffdf9a);
           color: black;
+          font-weight: bold;
         }
 
-        .tc-secondary-btn {
-          background: #2a202d;
-          padding: 10px;
-          border-radius: 10px;
+        .secondary {
+          background: rgba(255,255,255,0.08);
+          color: white;
         }
 
-        .tc-login-message {
-          background: #2a202d;
+        .tc-msg {
+          background: rgba(255,255,255,0.08);
           padding: 10px;
-          border-radius: 10px;
+          border-radius: 12px;
         }
       `}</style>
     </main>
