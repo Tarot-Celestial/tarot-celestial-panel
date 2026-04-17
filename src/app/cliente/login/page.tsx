@@ -55,7 +55,6 @@ export default function ClienteLoginPage() {
     });
   }, [router]);
 
-  // LOGIN PASSWORD
   async function loginWithPassword() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
     if (!password.trim()) return setMsg("Escribe tu contraseña.");
@@ -81,13 +80,12 @@ export default function ClienteLoginPage() {
 
       router.replace("/cliente/dashboard");
     } catch (e: any) {
-      setMsg(e.message || "Error al iniciar sesión");
+      setMsg(e.message || "Error");
     } finally {
       setLoading(false);
     }
   }
 
-  // EMAIL CODE
   async function sendEmailCode() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
 
@@ -107,16 +105,13 @@ export default function ClienteLoginPage() {
 
       setChallengeToken(json.challenge_token);
       setStep("otp");
-
-      setMsg("Código enviado a tu email 📩");
     } catch (e: any) {
-      setMsg(e.message || "Error enviando código");
+      setMsg(e.message || "Error");
     } finally {
       setLoading(false);
     }
   }
 
-  // VERIFY EMAIL CODE
   async function verifyEmailCode() {
     if (!token.trim()) return setMsg("Introduce el código.");
 
@@ -150,97 +145,74 @@ export default function ClienteLoginPage() {
     <main className="shell">
       <div className="card">
 
-        {/* BRAND */}
         <div className="brand">
-          <Image
-            src="/Nuevo-logo-tarot.png"
-            alt="logo"
-            width={70}
-            height={70}
-          />
+          <Image src="/Nuevo-logo-tarot.png" alt="logo" width={70} height={70}/>
           <h1>Tarot Celestial</h1>
-          <p>Accede con contraseña o recibe un código por email</p>
+          <p>Accede o recibe un código por email</p>
         </div>
 
-        {/* TABS */}
         <div className="tabs">
-          <button
-            className={mode === "password" ? "active" : ""}
-            onClick={() => { setMode("password"); setStep("phone"); }}
-          >
+          <button className={mode==="password"?"active":""} onClick={()=>{setMode("password");setStep("phone");}}>
             <LockKeyhole size={16}/> Contraseña
           </button>
-
-          <button
-            className={mode === "otp" ? "active" : ""}
-            onClick={() => { setMode("otp"); setStep("phone"); }}
-          >
+          <button className={mode==="otp"?"active":""} onClick={()=>{setMode("otp");setStep("phone");}}>
             <KeyRound size={16}/> Código
           </button>
         </div>
 
-        {/* FORM */}
-        {step === "phone" ? (
+        {step==="phone" ? (
           <div className="form">
 
-            <select value={countryCode} onChange={(e)=>setCountryCode(e.target.value)}>
-              {COUNTRY_OPTIONS.map(o => (
-                <option key={o.code} value={o.code}>
-                  {formatCountryOptionLabel(o)}
-                </option>
-              ))}
-            </select>
+            <div className="field">
+              <select value={countryCode} onChange={(e)=>setCountryCode(e.target.value)}>
+                {COUNTRY_OPTIONS.map(o=>(
+                  <option key={o.code} value={o.code}>
+                    {formatCountryOptionLabel(o)}
+                  </option>
+                ))}
+              </select>
+              <label>País</label>
+            </div>
 
             <div className="phone">
               <span>{selectedCountry.dialCode}</span>
-              <input
-                placeholder={selectedCountry.hint || "600123123"}
-                value={phoneInput}
-                onChange={(e)=>setPhoneInput(normalizeLocalPhone(e.target.value))}
-              />
+              <div className="field">
+                <input
+                  value={phoneInput}
+                  onChange={(e)=>setPhoneInput(normalizeLocalPhone(e.target.value))}
+                />
+                <label>Teléfono</label>
+              </div>
             </div>
 
-            {mode === "password" ? (
+            {mode==="password" ? (
               <>
-                <input
-                  type="password"
-                  placeholder="Contraseña"
-                  value={password}
-                  onChange={(e)=>setPassword(e.target.value)}
-                />
+                <div className="field">
+                  <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)}/>
+                  <label>Contraseña</label>
+                </div>
 
                 <button className="primary" onClick={loginWithPassword}>
                   {loading ? "Entrando..." : "Entrar"}
                 </button>
-
-                <button className="secondary" onClick={()=>router.push("/cliente/recuperar")}>
-                  He olvidado mi contraseña
-                </button>
               </>
-            ) : (
+            ):(
               <button className="primary" onClick={sendEmailCode}>
-                <Mail size={16}/> Enviar código por email
+                <Mail size={16}/> Enviar código
               </button>
             )}
 
           </div>
-        ) : (
+        ):(
           <div className="form">
-
-            <input
-              placeholder="Código"
-              value={token}
-              onChange={(e)=>setToken(e.target.value)}
-            />
+            <div className="field">
+              <input value={token} onChange={(e)=>setToken(e.target.value)}/>
+              <label>Código</label>
+            </div>
 
             <button className="primary" onClick={verifyEmailCode}>
-              {loading ? "Verificando..." : "Verificar"}
+              Verificar
             </button>
-
-            <button className="secondary" onClick={()=>setStep("phone")}>
-              Volver
-            </button>
-
           </div>
         )}
 
@@ -260,24 +232,16 @@ export default function ClienteLoginPage() {
           width:380px;
           padding:30px;
           border-radius:20px;
-          background:#1a141d;
+          background:rgba(30,20,35,0.9);
+          backdrop-filter: blur(10px);
+          box-shadow:0 20px 80px rgba(0,0,0,0.6);
           display:flex;
           flex-direction:column;
           gap:20px;
         }
 
-        .brand {
-          text-align:center;
-        }
-
-        .brand h1 {
-          margin:10px 0 5px;
-        }
-
-        .tabs {
-          display:flex;
-          gap:10px;
-        }
+        .brand {text-align:center;}
+        .tabs {display:flex;gap:10px;}
 
         .tabs button {
           flex:1;
@@ -285,6 +249,7 @@ export default function ClienteLoginPage() {
           border-radius:10px;
           background:#2a202d;
           color:white;
+          transition:.2s;
         }
 
         .tabs .active {
@@ -292,30 +257,48 @@ export default function ClienteLoginPage() {
           color:black;
         }
 
-        .form {
-          display:flex;
-          flex-direction:column;
-          gap:10px;
+        .form {display:flex;flex-direction:column;gap:14px;}
+
+        .field {
+          position:relative;
         }
 
-        select, input {
-          padding:12px;
+        input, select {
+          width:100%;
+          padding:14px;
           border-radius:10px;
           background:#2a202d;
           color:white;
+          border:1px solid transparent;
         }
 
-        select option {
-          background:#1a141d;
+        input:focus, select:focus {
+          border:1px solid #f7c55e;
+          box-shadow:0 0 10px rgba(247,197,94,0.3);
         }
 
-        .phone {
-          display:flex;
-          gap:10px;
+        label {
+          position:absolute;
+          top:50%;
+          left:14px;
+          transform:translateY(-50%);
+          font-size:12px;
+          color:#aaa;
+          pointer-events:none;
+          transition:.2s;
         }
+
+        input:focus + label,
+        input:not(:placeholder-shown) + label {
+          top:-6px;
+          font-size:10px;
+          color:#f7c55e;
+        }
+
+        .phone {display:flex;gap:10px;}
 
         .phone span {
-          padding:12px;
+          padding:14px;
           background:#2a202d;
           border-radius:10px;
         }
@@ -323,15 +306,14 @@ export default function ClienteLoginPage() {
         .primary {
           background:#f7c55e;
           color:black;
-          padding:12px;
+          padding:14px;
           border-radius:10px;
+          font-weight:bold;
+          transition:.2s;
         }
 
-        .secondary {
-          background:#2a202d;
-          color:white;
-          padding:10px;
-          border-radius:10px;
+        .primary:hover {
+          transform:translateY(-2px);
         }
 
         .msg {
