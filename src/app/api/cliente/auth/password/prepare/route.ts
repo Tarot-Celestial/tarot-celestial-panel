@@ -29,11 +29,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // 🔥 IMPORTANTE: pasar SOLO el teléfono (no el objeto cliente)
-    const phoneToUse =
+    const phoneToUse = normalizePhoneDigits(
       cliente.telefono_normalizado ||
       cliente.telefono ||
-      phoneDigits;
+      phoneDigits
+    );
 
     const result = await ensureClienteAuthUser({
       phone: phoneToUse,
@@ -44,11 +44,8 @@ export async function POST(req: Request) {
       alias_email: result.alias_email,
       created: result.created,
       auth_user_id: result.auth_user_id,
-      onboarding_completado: Boolean(
-        (cliente as any)?.onboarding_completado
-      ),
+      onboarding_completado: Boolean((cliente as any)?.onboarding_completado),
     });
-
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "ERR_PASSWORD_PREPARE" },
