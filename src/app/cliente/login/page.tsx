@@ -18,7 +18,6 @@ import {
 const sb = supabaseBrowser();
 
 type LoginMode = "password" | "otp";
-type OtpChannel = "sms" | "whatsapp" | "email";
 
 export default function ClienteLoginPage() {
   const router = useRouter();
@@ -27,6 +26,11 @@ export default function ClienteLoginPage() {
   const [phoneInput, setPhoneInput] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<LoginMode>("password");
+
+  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [token, setToken] = useState("");
+  const [phoneForOtp, setPhoneForOtp] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -51,7 +55,7 @@ export default function ClienteLoginPage() {
     });
   }, [router]);
 
-  // LOGIN PASSWORD
+  // 🔐 LOGIN PASSWORD
   async function loginWithPassword() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
     if (!password.trim()) return setMsg("Escribe tu contraseña.");
@@ -83,38 +87,50 @@ export default function ClienteLoginPage() {
     }
   }
 
-  // OTP
-  async function sendOtp(channel: OtpChannel) {
+  // 📲 ENVIAR OTP
+  async function sendOtp() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
 
     try {
       setLoading(true);
       setMsg("");
 
-      if (channel === "sms") {
-        const { error } = await sb.auth.signInWithOtp({
-          phone: phone,
-        });
-        if (error) throw error;
-      } else {
-        const endpoint =
-          channel === "email"
-            ? "/api/cliente/auth/email/send"
-            : "/api/cliente/auth/whatsapp/send";
+      const { error } = await sb.auth.signInWithOtp({
+        phone: phone,
+      });
 
-        const res = await fetch(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: phoneDigits }),
-        });
+      if (error) throw error;
 
-        const json = await res.json();
-        if (!json?.ok) throw new Error(json?.error || "Error enviando código");
-      }
+      setPhoneForOtp(phone);
+      setStep("otp");
 
-      setMsg("Código enviado correctamente ✅");
+      setMsg("Código enviado ✅");
     } catch (e: any) {
       setMsg(e.message || "Error enviando código");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ✅ VERIFICAR OTP
+  async function verifyOtp() {
+    if (!token.trim()) return setMsg("Introduce el código.");
+
+    try {
+      setLoading(true);
+      setMsg("");
+
+      const { error } = await sb.auth.verifyOtp({
+        phone: phoneForOtp,
+        token: token.trim(),
+        type: "sms",
+      });
+
+      if (error) throw error;
+
+      router.replace("/cliente/dashboard");
+    } catch (e: any) {
+      setMsg(e.message || "Código incorrecto");
     } finally {
       setLoading(false);
     }
@@ -146,7 +162,6 @@ export default function ClienteLoginPage() {
           </p>
         </div>
 
-        {/* TEXTO */}
         <div className="tc-first-access">
           Primer acceso con código
         </div>
@@ -155,94 +170,105 @@ export default function ClienteLoginPage() {
         <div className="tc-tabs">
           <button
             className={`tc-tab ${mode === "password" ? "active" : ""}`}
-            onClick={() => setMode("password")}
+            onClick={() => {
+              setMode("password");
+              setStep("phone");
+            }}
           >
             <LockKeyhole size={16} /> Contraseña
           </button>
 
           <button
             className={`tc-tab ${mode === "otp" ? "active" : ""}`}
-            onClick={() => setMode("otp")}
+            onClick={() => {
+              setMode("otp");
+              setStep("phone");
+            }}
           >
             <KeyRound size={16} /> Código
           </button>
         </div>
 
-        {/* FORM */}
-        <div className="tc-form">
-          <label>País</label>
-          <select
-            value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value)}
-          >
-            {COUNTRY_OPTIONS.map((o) => (
-              <option key={o.code} value={o.code}>
-                {formatCountryOptionLabel(o)}
-              </option>
-            ))}
-          </select>
+        {/* 🔥 FORM DINÁMICO */}
+        {step === "phone" ? (
+          <div className="tc-form">
+            <label>País</label>
+            <select
+              value={countryCode}
+              onChange={(e) => setCountryCode(e.target.value)}
+            >
+              {COUNTRY_OPTIONS.map((o) => (
+                <option key={o.code} value={o.code}>
+                  {formatCountryOptionLabel(o)}
+                </option>
+              ))}
+            </select>
 
-          <label>Teléfono</label>
-          <div className="tc-phone">
-            <span>{selectedCountry.dialCode}</span>
-            <input
-              placeholder={selectedCountry.hint || "600123123"}
-              value={phoneInput}
-              onChange={(e) =>
-                setPhoneInput(normalizeLocalPhone(e.target.value))
-              }
-            />
-          </div>
-
-          {mode === "password" ? (
-            <>
-              <label>Contraseña</label>
+            <label>Teléfono</label>
+            <div className="tc-phone">
+              <span>{selectedCountry.dialCode}</span>
               <input
-                type="password"
-                placeholder="Tu contraseña"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                placeholder={selectedCountry.hint || "600123123"}
+                value={phoneInput}
+                onChange={(e) =>
+                  setPhoneInput(normalizeLocalPhone(e.target.value))
+                }
               />
+            </div>
 
-              <button onClick={loginWithPassword}>
-                {loading ? "Entrando..." : "Entrar"}
-              </button>
+            {mode === "password" ? (
+              <>
+                <label>Contraseña</label>
+                <input
+                  type="password"
+                  placeholder="Tu contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
 
-              <button
-                className="secondary"
-                onClick={() => router.push("/cliente/recuperar")}
-              >
-                He olvidado mi contraseña
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="tc-otp-text">
-                Accede sin contraseña con un código seguro
-              </div>
-
-              <button onClick={() => sendOtp("sms")}>
-                📱 Recibir SMS
-              </button>
-
-              <div className="tc-otp-grid">
-                <button
-                  className="secondary"
-                  onClick={() => sendOtp("whatsapp")}
-                >
-                  💬 WhatsApp
+                <button onClick={loginWithPassword}>
+                  {loading ? "Entrando..." : "Entrar"}
                 </button>
 
                 <button
                   className="secondary"
-                  onClick={() => sendOtp("email")}
+                  onClick={() => router.push("/cliente/recuperar")}
                 >
-                  ✉️ Email
+                  He olvidado mi contraseña
                 </button>
-              </div>
-            </>
-          )}
-        </div>
+              </>
+            ) : (
+              <>
+                <button onClick={sendOtp}>
+                  {loading ? "Enviando..." : "Recibir código SMS"}
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="tc-form">
+            <label>Código</label>
+            <input
+              placeholder="123456"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+
+            <button onClick={verifyOtp}>
+              {loading ? "Verificando..." : "Verificar código"}
+            </button>
+
+            <button
+              className="secondary"
+              onClick={() => {
+                setStep("phone");
+                setToken("");
+              }}
+            >
+              Volver
+            </button>
+          </div>
+        )}
 
         {msg && <div className="tc-msg">{msg}</div>}
       </section>
@@ -265,8 +291,6 @@ export default function ClienteLoginPage() {
           padding: 32px;
           border-radius: 24px;
           background: rgba(20,15,25,0.9);
-          border: 1px solid rgba(255,255,255,0.08);
-          box-shadow: 0 30px 80px rgba(0,0,0,0.6);
           display: grid;
           gap: 20px;
           color: #fff7ea;
@@ -276,36 +300,6 @@ export default function ClienteLoginPage() {
           text-align: center;
           display: grid;
           gap: 10px;
-          justify-items: center;
-        }
-
-        .tc-logo-wrap {
-          padding: 12px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.05);
-        }
-
-        .tc-chip {
-          font-size: 12px;
-          padding: 6px 12px;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.08);
-        }
-
-        h1 {
-          margin: 0;
-          font-size: 30px;
-        }
-
-        p {
-          font-size: 14px;
-          opacity: 0.8;
-        }
-
-        .tc-first-access {
-          text-align: center;
-          font-size: 13px;
-          color: rgba(255,255,255,0.6);
         }
 
         .tc-tabs {
@@ -332,28 +326,15 @@ export default function ClienteLoginPage() {
 
         select,
         input {
-          width: 100%;
           padding: 12px;
           border-radius: 12px;
           background: rgba(255,255,255,0.06);
-          border: 1px solid rgba(255,255,255,0.12);
-          color: #fff7ea;
-        }
-
-        select option {
-          background: #1a141d;
-          color: #fff7ea;
+          color: white;
         }
 
         .tc-phone {
           display: flex;
           gap: 10px;
-        }
-
-        .tc-phone span {
-          padding: 12px;
-          border-radius: 12px;
-          background: rgba(255,255,255,0.05);
         }
 
         button {
@@ -367,18 +348,6 @@ export default function ClienteLoginPage() {
         .secondary {
           background: rgba(255,255,255,0.08);
           color: white;
-        }
-
-        .tc-otp-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
-        }
-
-        .tc-otp-text {
-          text-align: center;
-          font-size: 13px;
-          color: rgba(255,255,255,0.7);
         }
 
         .tc-msg {
