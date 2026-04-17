@@ -18,6 +18,7 @@ import {
 const sb = supabaseBrowser();
 
 type LoginMode = "password" | "otp";
+type OtpChannel = "sms" | "whatsapp" | "email";
 
 export default function ClienteLoginPage() {
   const router = useRouter();
@@ -50,6 +51,7 @@ export default function ClienteLoginPage() {
     });
   }, [router]);
 
+  // LOGIN PASSWORD
   async function loginWithPassword() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
     if (!password.trim()) return setMsg("Escribe tu contraseña.");
@@ -81,6 +83,43 @@ export default function ClienteLoginPage() {
     }
   }
 
+  // OTP
+  async function sendOtp(channel: OtpChannel) {
+    if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
+
+    try {
+      setLoading(true);
+      setMsg("");
+
+      if (channel === "sms") {
+        const { error } = await sb.auth.signInWithOtp({
+          phone: phone,
+        });
+        if (error) throw error;
+      } else {
+        const endpoint =
+          channel === "email"
+            ? "/api/cliente/auth/email/send"
+            : "/api/cliente/auth/whatsapp/send";
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phoneDigits }),
+        });
+
+        const json = await res.json();
+        if (!json?.ok) throw new Error(json?.error || "Error enviando código");
+      }
+
+      setMsg("Código enviado correctamente ✅");
+    } catch (e: any) {
+      setMsg(e.message || "Error enviando código");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="tc-shell">
       <section className="tc-card">
@@ -107,7 +146,7 @@ export default function ClienteLoginPage() {
           </p>
         </div>
 
-        {/* TEXTO NUEVO */}
+        {/* TEXTO */}
         <div className="tc-first-access">
           Primer acceso con código
         </div>
@@ -155,7 +194,7 @@ export default function ClienteLoginPage() {
             />
           </div>
 
-          {mode === "password" && (
+          {mode === "password" ? (
             <>
               <label>Contraseña</label>
               <input
@@ -175,6 +214,32 @@ export default function ClienteLoginPage() {
               >
                 He olvidado mi contraseña
               </button>
+            </>
+          ) : (
+            <>
+              <div className="tc-otp-text">
+                Accede sin contraseña con un código seguro
+              </div>
+
+              <button onClick={() => sendOtp("sms")}>
+                📱 Recibir SMS
+              </button>
+
+              <div className="tc-otp-grid">
+                <button
+                  className="secondary"
+                  onClick={() => sendOtp("whatsapp")}
+                >
+                  💬 WhatsApp
+                </button>
+
+                <button
+                  className="secondary"
+                  onClick={() => sendOtp("email")}
+                >
+                  ✉️ Email
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -220,10 +285,6 @@ export default function ClienteLoginPage() {
           background: rgba(255,255,255,0.05);
         }
 
-        .tc-logo {
-          filter: drop-shadow(0 0 12px rgba(247,197,94,0.4));
-        }
-
         .tc-chip {
           font-size: 12px;
           padding: 6px 12px;
@@ -245,7 +306,6 @@ export default function ClienteLoginPage() {
           text-align: center;
           font-size: 13px;
           color: rgba(255,255,255,0.6);
-          margin: 5px 0;
         }
 
         .tc-tabs {
@@ -278,18 +338,11 @@ export default function ClienteLoginPage() {
           background: rgba(255,255,255,0.06);
           border: 1px solid rgba(255,255,255,0.12);
           color: #fff7ea;
-          outline: none;
         }
 
         select option {
           background: #1a141d;
           color: #fff7ea;
-        }
-
-        input:focus,
-        select:focus {
-          border: 1px solid rgba(247,197,94,0.6);
-          background: rgba(255,255,255,0.08);
         }
 
         .tc-phone {
@@ -309,16 +362,23 @@ export default function ClienteLoginPage() {
           background: linear-gradient(135deg, #f7c55e, #ffdf9a);
           color: black;
           font-weight: bold;
-          transition: 0.2s;
-        }
-
-        button:hover {
-          transform: translateY(-2px);
         }
 
         .secondary {
           background: rgba(255,255,255,0.08);
           color: white;
+        }
+
+        .tc-otp-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+
+        .tc-otp-text {
+          text-align: center;
+          font-size: 13px;
+          color: rgba(255,255,255,0.7);
         }
 
         .tc-msg {
