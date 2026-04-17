@@ -30,9 +30,7 @@ const PASSWORD_HINT = "Mínimo 8 caracteres, con al menos una letra y un número
 function validatePassword(password: string, confirm: string): string {
   if (!password) return "Debes crear una contraseña para entrar sin código la próxima vez.";
   if (password.length < 8) return "La contraseña debe tener al menos 8 caracteres.";
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) {
-    return PASSWORD_HINT;
-  }
+  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return PASSWORD_HINT;
   if (password !== confirm) return "Las contraseñas no coinciden.";
   return "";
 }
@@ -44,6 +42,7 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
   const [apellido, setApellido] = useState(cliente?.apellido || "");
   const [email, setEmail] = useState(cliente?.email || "");
   const [fechaNacimiento, setFechaNacimiento] = useState(cliente?.fecha_nacimiento || "");
+
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
 
@@ -62,7 +61,10 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
     setStep(0);
   }, [cliente, open]);
 
-  const nombreCompleto = useMemo(() => [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim(), [cliente]);
+  const nombreCompleto = useMemo(
+    () => [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim(),
+    [cliente]
+  );
 
   if (!open || !cliente) return null;
 
@@ -126,9 +128,12 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
           <div className="tc-title" style={{ fontSize: 26 }}>
             Bienvenido a Tarot Celestial ✨
           </div>
-          <div className="tc-muted">Vamos a dejar tu acceso listo en menos de un minuto.</div>
+          <div className="tc-muted">
+            Vamos a dejar tu acceso listo en menos de un minuto.
+          </div>
         </div>
 
+        {/* STEP 0 */}
         {step === 0 && (
           <div style={{ display: "grid", gap: 12 }}>
             <div className="tc-title">¿Tu nombre es correcto?</div>
@@ -149,16 +154,15 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
               <>
                 <input className="tc-input" placeholder="Nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} />
                 <input className="tc-input" placeholder="Apellido" value={apellido} onChange={(e) => setApellido(e.target.value)} />
-                <div className="tc-row">
-                  <button className="tc-btn tc-btn-ok" onClick={goNext}>
-                    Guardar y seguir
-                  </button>
-                </div>
+                <button className="tc-btn tc-btn-ok" onClick={goNext}>
+                  Guardar y seguir
+                </button>
               </>
             )}
           </div>
         )}
 
+        {/* STEP 1 */}
         {step === 1 && (
           <div style={{ display: "grid", gap: 12 }}>
             <div className="tc-title">¿Tu e-mail es correcto?</div>
@@ -178,56 +182,78 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
             ) : (
               <>
                 <input className="tc-input" placeholder="tu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
-                <div className="tc-row">
-                  <button className="tc-btn tc-btn-ok" onClick={goNext}>
-                    Guardar y seguir
-                  </button>
-                </div>
+                <button className="tc-btn tc-btn-ok" onClick={goNext}>
+                  Guardar y seguir
+                </button>
               </>
             )}
           </div>
         )}
 
+        {/* STEP 2 PRO */}
         {step === 2 && (
           <div style={{ display: "grid", gap: 12 }}>
             <div className="tc-title">Fecha de nacimiento</div>
-            <input className="tc-input" type="date" value={fechaNacimiento} onChange={(e) => setFechaNacimiento(e.target.value)} />
-            <div className="tc-row">
-              <button className="tc-btn tc-btn-ok" onClick={goNext}>
-                Continuar
-              </button>
-            </div>
+
+            <input
+              className="tc-input"
+              placeholder="DD/MM/YYYY"
+              value={fechaNacimiento}
+              onChange={(e) => {
+                let value = e.target.value.replace(/[^\d]/g, "");
+
+                if (value.length > 8) value = value.slice(0, 8);
+
+                if (value.length >= 5) {
+                  value = `${value.slice(0, 2)}/${value.slice(2, 4)}/${value.slice(4)}`;
+                } else if (value.length >= 3) {
+                  value = `${value.slice(0, 2)}/${value.slice(2)}`;
+                }
+
+                setFechaNacimiento(value);
+              }}
+            />
+
+            <div className="tc-muted">Ejemplo: 07/03/1995</div>
+
+            <button
+              className="tc-btn tc-btn-ok"
+              onClick={() => {
+                const parts = fechaNacimiento.split("/");
+                if (parts.length !== 3) return setMsg("Formato inválido");
+
+                const [dd, mm, yyyy] = parts;
+                if (yyyy.length !== 4) return setMsg("Año inválido");
+
+                setFechaNacimiento(`${yyyy}-${mm}-${dd}`);
+                goNext();
+              }}
+            >
+              Continuar
+            </button>
           </div>
         )}
 
+        {/* STEP 3 */}
         {step === 3 && (
           <div style={{ display: "grid", gap: 12 }}>
             <div className="tc-title">Crea tu contraseña</div>
             <div className="tc-muted">
-              A partir de ahora entrarás con tu teléfono y esta contraseña, sin esperar códigos por SMS.
+              A partir de ahora entrarás con tu teléfono y esta contraseña.
             </div>
-            <input
-              className="tc-input"
-              type="password"
-              placeholder="Nueva contraseña"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <input
-              className="tc-input"
-              type="password"
-              placeholder="Repite la contraseña"
-              value={passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.target.value)}
-            />
+
+            <input className="tc-input" type="password" placeholder="Nueva contraseña" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <input className="tc-input" type="password" placeholder="Repite la contraseña" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />
+
             <div className="tc-muted">{PASSWORD_HINT}</div>
+
             <button className="tc-btn tc-btn-gold" onClick={finish} disabled={saving}>
               {saving ? "Guardando..." : "Finalizar"}
             </button>
           </div>
         )}
 
-        {msg ? <div className="tc-error">{msg}</div> : null}
+        {msg && <div className="tc-error">{msg}</div>}
       </div>
     </div>
   );
