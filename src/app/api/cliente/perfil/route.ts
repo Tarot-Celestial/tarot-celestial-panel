@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest, normalizePhone } from "@/lib/server/auth-cliente";
-import { buildPasswordValidationError, ensureClienteAuthUser } from "@/lib/server/cliente-auth-password";
+import {
+  buildPasswordValidationError,
+  ensureClienteAuthUser,
+} from "@/lib/server/cliente-auth-password";
 
 export const runtime = "nodejs";
 
@@ -19,29 +22,53 @@ function cleanDate(value: unknown): string | null {
 export async function POST(req: Request) {
   try {
     const gate = await clientFromRequest(req);
+
     if (!gate.uid) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+      return NextResponse.json(
+        { ok: false, error: "NO_AUTH" },
+        { status: 401 }
+      );
     }
+
     if (!gate.cliente) {
-      return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+      return NextResponse.json(
+        { ok: false, error: "CLIENTE_NO_ENCONTRADO" },
+        { status: 404 }
+      );
     }
 
     const body = await req.json().catch(() => ({}));
-    const telefono = cleanText(body?.telefono) || gate.cliente?.telefono || gate.phone || null;
+
+    const telefono =
+      cleanText(body?.telefono) ||
+      gate.cliente?.telefono ||
+      gate.phone ||
+      null;
+
     const telefonoNormalizado = normalizePhone(telefono);
+
     const password = String(body?.password || "").trim();
     const passwordConfirm = String(body?.password_confirm || "").trim();
 
+    // 🔒 VALIDACIÓN PASSWORD
     if (password || passwordConfirm) {
       if (password !== passwordConfirm) {
-        return NextResponse.json({ ok: false, error: "Las contraseñas no coinciden." }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, error: "Las contraseñas no coinciden." },
+          { status: 400 }
+        );
       }
+
       const passwordError = buildPasswordValidationError(password);
       if (passwordError) {
-        return NextResponse.json({ ok: false, error: passwordError }, { status: 400 });
+        return NextResponse.json(
+          { ok: false, error: passwordError },
+          { status: 400 }
+        );
       }
     }
 
+    // 🧾 PATCH CRM
     const patch = {
       nombre: cleanText(body?.nombre),
       apellido: cleanText(body?.apellido),
@@ -62,29 +89,52 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error) throw error;
+
     if (!updated?.id) {
-      return NextResponse.json({ ok: false, error: "NO_SE_HA_PODIDO_ACTUALIZAR" }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: "NO_SE_HA_PODIDO_ACTUALIZAR" },
+        { status: 500 }
+      );
     }
 
+    // 🔐 AUTH SYNC
     let authInfo: Record<string, any> | null = null;
+
     if (password) {
-      authInfo = await ensureClienteAuthUser(updated as any, password);
+      const phoneToUse =
+        updated.telefono_normalizado ||
+        updated.telefono;
+
+      if (!phoneToUse) {
+        return NextResponse.json(
+          { ok: false, error: "TELEFONO_NO_VALIDO" },
+          { status: 400 }
+        );
+      }
+
+      authInfo = await ensureClienteAuthUser({
+        phone: phoneToUse,
+        password,
+      });
     }
 
+    // ✅ RESPUESTA FINAL
     return NextResponse.json({
       ok: true,
       cliente: updated,
       auth: authInfo
         ? {
-            alias_email: authInfo.aliasEmail,
+            alias_email: authInfo.alias_email,
             created: authInfo.created,
-            migrated: authInfo.migrated,
-            linked: authInfo.linked,
-            auth_user_id: authInfo.authUserId,
+            auth_user_id: authInfo.auth_user_id,
           }
         : null,
     });
+
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_PERFIL" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: e?.message || "ERR_CLIENTE_PERFIL" },
+      { status: 500 }
+    );
   }
 }
