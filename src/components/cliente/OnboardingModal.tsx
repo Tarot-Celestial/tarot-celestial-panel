@@ -80,9 +80,15 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
   };
 
   function goNext() {
-    setMsg("");
-    setStep((prev) => Math.min(prev + 1, 2));
+  setMsg("");
+
+  if (step === 2) {
+    finish(); // 🔥 TERMINA AQUÍ
+    return;
   }
+
+  setStep((prev) => prev + 1);
+}
 
   return (
     <div
