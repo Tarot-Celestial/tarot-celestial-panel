@@ -1,6 +1,14 @@
+"use server";
+
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { CLIENTE_PACKS, computeCurrentRankFromSpend, currentRankBenefits, getCallTarget, monthRange, toNum, touchClientActivity } from "@/lib/server/cliente-platform";
+import {
+  CLIENTE_PACKS,
+  computeCurrentRankFromSpend,
+  getCallTarget,
+  toNum,
+  touchClientActivity,
+} from "@/lib/server/cliente-platform";
 
 export const runtime = "nodejs";
 
@@ -16,6 +24,7 @@ type ClienteRow = Record<string, any> & {
 
 function rankMeta(rank: string | null | undefined) {
   const key = String(rank || "").toLowerCase();
+
   if (key === "oro") {
     return {
       label: "Oro",
@@ -31,6 +40,7 @@ function rankMeta(rank: string | null | undefined) {
       ],
     };
   }
+
   if (key === "plata") {
     return {
       label: "Plata",
@@ -45,6 +55,7 @@ function rankMeta(rank: string | null | undefined) {
       ],
     };
   }
+
   return {
     label: "Bronce",
     min: 1,
@@ -54,9 +65,9 @@ function rankMeta(rank: string | null | undefined) {
   };
 }
 
-function buildRankProgress(monthlySpend: number, monthlyPurchases: number, currentRank: string | null | undefined) {
-  const gasto = toNum(monthlySpend);
-  const compras = Math.max(0, Math.floor(toNum(monthlyPurchases)));
+function buildRankProgress(last30DaysSpend: number, last30DaysPurchases: number, currentRank: string | null | undefined) {
+  const gasto = toNum(last30DaysSpend);
+  const compras = Math.max(0, Math.floor(toNum(last30DaysPurchases)));
   const rank = String(currentRank || computeCurrentRankFromSpend(gasto, compras) || "sin_rango").toLowerCase();
 
   if (rank === "oro") {
@@ -70,7 +81,7 @@ function buildRankProgress(monthlySpend: number, monthlyPurchases: number, curre
       next_target: null,
       remaining_to_next: 0,
       status_text: "Ya disfrutas del rango más alto.",
-      monthly_requirement_text: `Este mes llevas ${gasto.toFixed(2)} USD acumulados dentro del panel y mantienes Oro.`,
+      monthly_requirement_text: `En los últimos 30 días llevas ${gasto.toFixed(2)} USD acumulados y mantienes Oro.`,
     };
   }
 
@@ -78,6 +89,7 @@ function buildRankProgress(monthlySpend: number, monthlyPurchases: number, curre
     const target = 500;
     const pct = Math.max(0, Math.min(100, (gasto / target) * 100));
     const remaining = Math.max(0, target - gasto);
+
     return {
       current_rank: "plata",
       current_label: "Plata",
@@ -87,14 +99,18 @@ function buildRankProgress(monthlySpend: number, monthlyPurchases: number, curre
       next_label: "Oro",
       next_target: target,
       remaining_to_next: Number(remaining.toFixed(2)),
-      status_text: remaining > 0 ? `Te faltan ${remaining.toFixed(2)} USD de gasto mensual para llegar a Oro.` : "Ya cumples objetivo de Oro.",
-      monthly_requirement_text: `Tu progreso actual se calcula con ${gasto.toFixed(2)} USD gastados este mes dentro del panel.`,
+      status_text:
+        remaining > 0
+          ? `Te faltan ${remaining.toFixed(2)} USD de gasto en los últimos 30 días para llegar a Oro.`
+          : "Ya cumples el objetivo de Oro.",
+      monthly_requirement_text: `Tu progreso actual se calcula con ${gasto.toFixed(2)} USD gastados en los últimos 30 días.`,
     };
   }
 
   const target = 100;
   const pct = Math.max(0, Math.min(100, (gasto / target) * 100));
   const remaining = Math.max(0, target - gasto);
+
   return {
     current_rank: rank === "sin_rango" ? "sin_rango" : "bronce",
     current_label: rank === "sin_rango" ? "Sin rango" : "Bronce",
@@ -106,14 +122,14 @@ function buildRankProgress(monthlySpend: number, monthlyPurchases: number, curre
     remaining_to_next: Number(remaining.toFixed(2)),
     status_text:
       compras <= 0
-        ? "Con una compra mensual dentro del panel entrarás en Bronce."
+        ? "Con una compra dentro del panel entrarás en Bronce."
         : remaining > 0
-        ? `Te faltan ${remaining.toFixed(2)} USD de gasto mensual para subir a Plata.`
-        : "Ya cumples objetivo de Plata.",
+        ? `Te faltan ${remaining.toFixed(2)} USD de gasto en los últimos 30 días para subir a Plata.`
+        : "Ya cumples el objetivo de Plata.",
     monthly_requirement_text:
       compras <= 0
         ? "Haz una compra desde la app para activar Bronce y comenzar a sumar ventajas."
-        : `Tu rango actual refleja ${gasto.toFixed(2)} USD y ${compras} compra(s) en el mes.`,
+        : `Tu rango actual refleja ${gasto.toFixed(2)} USD y ${compras} compra(s) en los últimos 30 días.`,
   };
 }
 
@@ -139,12 +155,14 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
     .maybeSingle();
 
   if (error) throw error;
+
   if (!updated) {
     const { data: refreshed, error: refreshError } = await gate.admin
       .from("crm_clientes")
       .select("*")
       .eq("id", cliente.id)
       .maybeSingle();
+
     if (refreshError) throw refreshError;
     return { cliente: (refreshed || cliente) as ClienteRow, welcomeGift: null as any };
   }
@@ -179,9 +197,11 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
 export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
+
     if (!gate.uid) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
+
     if (!gate.cliente) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
@@ -192,38 +212,50 @@ export async function GET(req: Request) {
     const cliente = welcomeState.cliente;
     const minutosTotales = toNum(cliente.minutos_free_pendientes) + toNum(cliente.minutos_normales_pendientes);
 
-    const { start, end } = monthRange(new Date());
-    const [{ data: historial }, { data: recompensas }, { data: llamadas }, { data: notificaciones }, { data: pagosMes }] = await Promise.all([
+    const now = new Date();
+    const start30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      { data: historial },
+      { data: recompensas },
+      { data: llamadas },
+      { data: notificaciones },
+      { data: pagos30Dias },
+    ] = await Promise.all([
       gate.admin
         .from("cliente_puntos_historial")
         .select("id, tipo, puntos, descripcion, created_at")
         .eq("cliente_id", cliente.id)
         .order("created_at", { ascending: false })
         .limit(10),
+
       gate.admin
         .from("recompensas")
         .select("id, nombre, puntos_coste, minutos_otorgados, activo")
         .eq("activo", true)
         .order("puntos_coste", { ascending: true }),
+
       gate.admin
         .from("rendimiento_llamadas")
         .select("id, fecha_hora, tarotista_nombre, tarotista_manual_call")
         .eq("cliente_id", cliente.id)
         .order("fecha_hora", { ascending: false })
         .limit(15),
+
       gate.admin
         .from("cliente_notificaciones")
         .select("id, titulo, mensaje, tipo, leida, created_at")
         .eq("cliente_id", cliente.id)
         .order("created_at", { ascending: false })
         .limit(8),
+
       gate.admin
         .from("crm_cliente_pagos")
         .select("importe, estado, created_at")
         .eq("cliente_id", cliente.id)
         .eq("estado", "completed")
-        .gte("created_at", start.toISOString())
-        .lt("created_at", end.toISOString()),
+        .gte("created_at", start30.toISOString())
+        .lte("created_at", now.toISOString()),
     ]);
 
     const lastTarotistas = Array.from(
@@ -237,23 +269,38 @@ export async function GET(req: Request) {
       ).values()
     ).slice(0, 3);
 
-    const monthlySpend = (pagosMes || []).reduce((acc: number, row: any) => acc + toNum(row?.importe), 0);
-    const monthlyPurchases = (pagosMes || []).length;
-    const liveRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+    const rolling30Spend = (pagos30Dias || []).reduce(
+      (acc: number, row: any) => acc + toNum(row?.importe),
+      0
+    );
+    const rolling30Purchases = (pagos30Dias || []).length;
+
+    const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
+
     const clienteConRank = {
       ...cliente,
       rango_actual: liveRank,
-      rango_gasto_mes_anterior: Number(monthlySpend.toFixed(2)),
-      rango_compras_mes_anterior: monthlyPurchases,
+      rango_gasto_mes_anterior: Number(rolling30Spend.toFixed(2)),
+      rango_compras_mes_anterior: rolling30Purchases,
     };
 
-    // No persistimos aquí el rango CRM para no machacar el recálculo manual del panel.
-    // El dashboard cliente usa el rango en vivo solo para esta respuesta.
-
     const rank = rankMeta(clienteConRank?.rango_actual);
-    const rankProgress = buildRankProgress(monthlySpend, monthlyPurchases, clienteConRank?.rango_actual);
+    const rankProgress = buildRankProgress(
+      rolling30Spend,
+      rolling30Purchases,
+      clienteConRank?.rango_actual
+    );
+
     const callTarget = getCallTarget(cliente?.telefono_normalizado || cliente?.telefono);
-    const recompensasUnicas = Array.from(new Map((recompensas || []).map((item: any) => [`${item?.nombre || ""}::${item?.puntos_coste || 0}::${item?.minutos_otorgados || 0}`, item])).values());
+
+    const recompensasUnicas = Array.from(
+      new Map(
+        (recompensas || []).map((item: any) => [
+          `${item?.nombre || ""}::${item?.puntos_coste || 0}::${item?.minutos_otorgados || 0}`,
+          item,
+        ])
+      ).values()
+    );
 
     return NextResponse.json({
       ok: true,
