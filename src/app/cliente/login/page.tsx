@@ -39,10 +39,7 @@ export default function ClienteLoginPage() {
     [selectedCountry, phoneInput]
   );
 
-  const phoneDigits = useMemo(
-    () => phone.replace(/\D/g, ""),
-    [phone]
-  );
+  const phoneDigits = useMemo(() => phone.replace(/\D/g, ""), [phone]);
 
   useEffect(() => {
     const guessed = guessDefaultCountry();
@@ -88,7 +85,7 @@ export default function ClienteLoginPage() {
     <main className="tc-shell">
       <section className="tc-card">
 
-        {/* 🔥 LOGO + BRAND */}
+        {/* LOGO */}
         <div className="tc-brand">
           <div className="tc-logo-wrap">
             <Image
@@ -110,7 +107,12 @@ export default function ClienteLoginPage() {
           </p>
         </div>
 
-        {/* 🔥 TABS PRO */}
+        {/* TEXTO NUEVO */}
+        <div className="tc-first-access">
+          Primer acceso con código
+        </div>
+
+        {/* TABS */}
         <div className="tc-tabs">
           <button
             className={`tc-tab ${mode === "password" ? "active" : ""}`}
@@ -127,7 +129,7 @@ export default function ClienteLoginPage() {
           </button>
         </div>
 
-        {/* 🔥 FORM */}
+        {/* FORM */}
         <div className="tc-form">
           <label>País</label>
           <select
@@ -182,16 +184,15 @@ export default function ClienteLoginPage() {
 
       <style jsx>{`
         .tc-shell {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 16px;
-
-  background:
-    radial-gradient(circle at center, rgba(247,197,94,0.12), transparent 40%),
-    linear-gradient(180deg, #0f0b10 0%, #171019 100%);
-}
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 40px 16px;
+          background:
+            radial-gradient(circle at center, rgba(247,197,94,0.12), transparent 40%),
+            linear-gradient(180deg, #0f0b10 0%, #171019 100%);
+        }
 
         .tc-card {
           width: 100%;
@@ -217,7 +218,6 @@ export default function ClienteLoginPage() {
           padding: 12px;
           border-radius: 999px;
           background: rgba(255,255,255,0.05);
-          backdrop-filter: blur(10px);
         }
 
         .tc-logo {
@@ -239,6 +239,13 @@ export default function ClienteLoginPage() {
         p {
           font-size: 14px;
           opacity: 0.8;
+        }
+
+        .tc-first-access {
+          text-align: center;
+          font-size: 13px;
+          color: rgba(255,255,255,0.6);
+          margin: 5px 0;
         }
 
         .tc-tabs {
@@ -268,9 +275,21 @@ export default function ClienteLoginPage() {
           width: 100%;
           padding: 12px;
           border-radius: 12px;
-          background: rgba(255,255,255,0.05);
-          border: 1px solid rgba(255,255,255,0.08);
-          color: white;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.12);
+          color: #fff7ea;
+          outline: none;
+        }
+
+        select option {
+          background: #1a141d;
+          color: #fff7ea;
+        }
+
+        input:focus,
+        select:focus {
+          border: 1px solid rgba(247,197,94,0.6);
+          background: rgba(255,255,255,0.08);
         }
 
         .tc-phone {
@@ -290,6 +309,11 @@ export default function ClienteLoginPage() {
           background: linear-gradient(135deg, #f7c55e, #ffdf9a);
           color: black;
           font-weight: bold;
+          transition: 0.2s;
+        }
+
+        button:hover {
+          transform: translateY(-2px);
         }
 
         .secondary {
