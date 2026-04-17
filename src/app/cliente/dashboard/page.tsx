@@ -332,40 +332,44 @@ export default function ClienteDashboardPage() {
   );
 
   async function saveOnboarding(payload: {
-    nombre: string;
-    apellido: string;
-    email: string;
-    fecha_nacimiento: string;
-    onboarding_completado: boolean;
-    password: string;
-    password_confirm: string;
-  }) {
-    try {
-      setSavingOnboarding(true);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
+  nombre: string;
+  apellido: string;
+  email: string;
+  fecha_nacimiento: string;
+  onboarding_completado: boolean;
+}) {
+  try {
+    setSavingOnboarding(true);
+    setMsg("");
 
-      const res = await fetch("/api/cliente/perfil", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Sesión no válida");
 
-      const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error || "No hemos podido guardar tus datos");
-      await loadData();
-      setShowOnboarding(false);
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido guardar tus datos");
-    } finally {
-      setSavingOnboarding(false);
+    const res = await fetch("/api/cliente/perfil", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!json?.ok) {
+      throw new Error(json?.error || "No hemos podido guardar tus datos");
     }
+
+    await loadData();
+    setShowOnboarding(false);
+
+  } catch (e: any) {
+    setMsg(e?.message || "No hemos podido guardar tus datos");
+  } finally {
+    setSavingOnboarding(false);
   }
+}
 
   async function createPasswordNow() {
     try {
