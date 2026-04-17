@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LockKeyhole } from "lucide-react";
+import { KeyRound, LockKeyhole, Mail } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
@@ -29,7 +29,7 @@ export default function ClienteLoginPage() {
 
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [token, setToken] = useState("");
-  const [phoneForOtp, setPhoneForOtp] = useState("");
+  const [challengeToken, setChallengeToken] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -55,7 +55,7 @@ export default function ClienteLoginPage() {
     });
   }, [router]);
 
-  // 🔐 LOGIN PASSWORD
+  // LOGIN PASSWORD
   async function loginWithPassword() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
     if (!password.trim()) return setMsg("Escribe tu contraseña.");
@@ -87,24 +87,28 @@ export default function ClienteLoginPage() {
     }
   }
 
-  // 📲 ENVIAR OTP
-  async function sendOtp() {
+  // 📩 ENVIAR CÓDIGO EMAIL
+  async function sendEmailCode() {
     if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
 
     try {
       setLoading(true);
       setMsg("");
 
-      const { error } = await sb.auth.signInWithOtp({
-        phone: phone,
+      const res = await fetch("/api/cliente/auth/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneDigits }),
       });
 
-      if (error) throw error;
+      const json = await res.json();
 
-      setPhoneForOtp(phone);
+      if (!res.ok || !json?.ok) throw new Error(json?.error);
+
+      setChallengeToken(json.challenge_token);
       setStep("otp");
 
-      setMsg("Código enviado ✅");
+      setMsg("Código enviado a tu email 📩");
     } catch (e: any) {
       setMsg(e.message || "Error enviando código");
     } finally {
@@ -112,23 +116,29 @@ export default function ClienteLoginPage() {
     }
   }
 
-  // ✅ VERIFICAR OTP
-  async function verifyOtp() {
+  // ✅ VERIFICAR CÓDIGO EMAIL
+  async function verifyEmailCode() {
     if (!token.trim()) return setMsg("Introduce el código.");
 
     try {
       setLoading(true);
       setMsg("");
 
-      const { error } = await sb.auth.verifyOtp({
-        phone: phoneForOtp,
-        token: token.trim(),
-        type: "sms",
+      const res = await fetch("/api/cliente/auth/email/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: phoneDigits,
+          code: token,
+          challenge_token: challengeToken,
+        }),
       });
 
-      if (error) throw error;
+      const json = await res.json();
 
-      router.replace("/cliente/dashboard");
+      if (!res.ok || !json?.ok) throw new Error(json?.error);
+
+      window.location.href = json.action_link;
     } catch (e: any) {
       setMsg(e.message || "Código incorrecto");
     } finally {
@@ -158,12 +168,12 @@ export default function ClienteLoginPage() {
           <h1>Tarot Celestial</h1>
 
           <p>
-            Accede con tu teléfono y contraseña o entra con código si es tu primera vez.
+            Accede con tu contraseña o recibe un código por email.
           </p>
         </div>
 
         <div className="tc-first-access">
-          Primer acceso con código
+          Primer acceso con código por email
         </div>
 
         {/* TABS */}
@@ -189,7 +199,7 @@ export default function ClienteLoginPage() {
           </button>
         </div>
 
-        {/* 🔥 FORM DINÁMICO */}
+        {/* FORM */}
         {step === "phone" ? (
           <div className="tc-form">
             <label>País</label>
@@ -226,44 +236,39 @@ export default function ClienteLoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                 />
 
-                <button onClick={loginWithPassword}>
+                <button className="btn-primary" onClick={loginWithPassword}>
                   {loading ? "Entrando..." : "Entrar"}
                 </button>
 
                 <button
-                  className="secondary"
+                  className="btn-secondary"
                   onClick={() => router.push("/cliente/recuperar")}
                 >
                   He olvidado mi contraseña
                 </button>
               </>
             ) : (
-              <>
-                <button onClick={sendOtp}>
-                  {loading ? "Enviando..." : "Recibir código SMS"}
-                </button>
-              </>
+              <button className="btn-primary" onClick={sendEmailCode}>
+                <Mail size={16} /> Recibir código por email
+              </button>
             )}
           </div>
         ) : (
           <div className="tc-form">
-            <label>Código</label>
+            <label>Código recibido</label>
             <input
               placeholder="123456"
               value={token}
               onChange={(e) => setToken(e.target.value)}
             />
 
-            <button onClick={verifyOtp}>
+            <button className="btn-primary" onClick={verifyEmailCode}>
               {loading ? "Verificando..." : "Verificar código"}
             </button>
 
             <button
-              className="secondary"
-              onClick={() => {
-                setStep("phone");
-                setToken("");
-              }}
+              className="btn-secondary"
+              onClick={() => setStep("phone")}
             >
               Volver
             </button>
@@ -279,81 +284,47 @@ export default function ClienteLoginPage() {
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 40px 16px;
-          background:
-            radial-gradient(circle at center, rgba(247,197,94,0.12), transparent 40%),
-            linear-gradient(180deg, #0f0b10 0%, #171019 100%);
+          background: linear-gradient(180deg, #0f0b10, #171019);
         }
 
         .tc-card {
-          width: 100%;
-          max-width: 420px;
-          padding: 32px;
-          border-radius: 24px;
-          background: rgba(20,15,25,0.9);
+          width: 420px;
+          padding: 30px;
+          border-radius: 20px;
+          background: #1a141d;
+          color: white;
           display: grid;
           gap: 20px;
-          color: #fff7ea;
         }
 
-        .tc-brand {
-          text-align: center;
-          display: grid;
-          gap: 10px;
+        select {
+          background: #1a141d;
+          color: white;
         }
 
-        .tc-tabs {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 10px;
+        select option {
+          background: #1a141d;
+          color: white;
         }
 
-        .tc-tab {
-          padding: 12px;
-          border-radius: 14px;
-          background: rgba(255,255,255,0.05);
-        }
-
-        .tc-tab.active {
+        .btn-primary {
           background: linear-gradient(135deg, #f7c55e, #ffdf9a);
           color: black;
+          padding: 14px;
+          border-radius: 12px;
         }
 
-        .tc-form {
-          display: grid;
-          gap: 10px;
-        }
-
-        select,
-        input {
+        .btn-secondary {
+          background: #2a202d;
+          color: white;
           padding: 12px;
           border-radius: 12px;
-          background: rgba(255,255,255,0.06);
-          color: white;
-        }
-
-        .tc-phone {
-          display: flex;
-          gap: 10px;
-        }
-
-        button {
-          padding: 14px;
-          border-radius: 14px;
-          background: linear-gradient(135deg, #f7c55e, #ffdf9a);
-          color: black;
-          font-weight: bold;
-        }
-
-        .secondary {
-          background: rgba(255,255,255,0.08);
-          color: white;
         }
 
         .tc-msg {
-          background: rgba(255,255,255,0.08);
+          background: #2a202d;
           padding: 10px;
-          border-radius: 12px;
+          border-radius: 10px;
         }
       `}</style>
     </main>
