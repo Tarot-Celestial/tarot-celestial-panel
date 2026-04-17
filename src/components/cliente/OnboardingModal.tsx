@@ -15,14 +15,12 @@ type Props = {
   cliente: Cliente | null;
   saving: boolean;
   onSave: (payload: {
-    nombre: string;
-    apellido: string;
-    email: string;
-    fecha_nacimiento: string;
-    onboarding_completado: boolean;
-    password: string;
-    password_confirm: string;
-  }) => Promise<void>;
+  nombre: string;
+  apellido: string;
+  email: string;
+  fecha_nacimiento: string;
+  onboarding_completado: boolean;
+}) => Promise<void>;
 };
 
 export default function OnboardingModal({ open, cliente, saving, onSave }: Props) {
