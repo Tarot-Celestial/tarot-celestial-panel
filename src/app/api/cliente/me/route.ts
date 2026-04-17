@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
