@@ -147,6 +147,11 @@ export async function ensureClienteAuthUser(params: {
       await sb.auth.admin.updateUserById(cliente.auth_user_id, {
         password: params.password,
         email_confirm: true,
+        user_metadata: {
+          telefono_normalizado: phoneDigits,
+          crm_cliente_id: cliente.id,
+          password_ready: true,
+        },
       });
     }
 
@@ -171,6 +176,12 @@ export async function ensureClienteAuthUser(params: {
       await sb.auth.admin.updateUserById(existingUser.id, {
         password: params.password,
         email_confirm: true,
+        user_metadata: {
+          ...(existingUser.user_metadata || {}),
+          telefono_normalizado: phoneDigits,
+          crm_cliente_id: cliente.id,
+          password_ready: true,
+        },
       });
     }
 
@@ -190,6 +201,7 @@ export async function ensureClienteAuthUser(params: {
     user_metadata: {
       telefono_normalizado: phoneDigits,
       crm_cliente_id: cliente.id,
+      password_ready: Boolean(params.password),
     },
   });
 

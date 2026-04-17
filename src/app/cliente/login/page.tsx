@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, LockKeyhole, Mail } from "lucide-react";
+import { LockKeyhole, Sparkles } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
@@ -17,7 +17,7 @@ import {
 
 const sb = supabaseBrowser();
 
-type LoginMode = "password" | "otp";
+type LoginMode = "password" | "setup";
 
 export default function ClienteLoginPage() {
   const router = useRouter();
@@ -25,25 +25,14 @@ export default function ClienteLoginPage() {
   const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY_CODE);
   const [phoneInput, setPhoneInput] = useState("");
   const [password, setPassword] = useState("");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createPasswordConfirm, setCreatePasswordConfirm] = useState("");
   const [mode, setMode] = useState<LoginMode>("password");
-
-  const [step, setStep] = useState<"phone" | "otp">("phone");
-  const [token, setToken] = useState("");
-  const [challengeToken, setChallengeToken] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
 
-  const selectedCountry = useMemo(
-    () => getCountryByCode(countryCode),
-    [countryCode]
-  );
-
-  const phone = useMemo(
-    () => buildInternationalPhone(selectedCountry, phoneInput),
-    [selectedCountry, phoneInput]
-  );
-
+  const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
+  const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
   const phoneDigits = useMemo(() => phone.replace(/\D/g, ""), [phone]);
 
   useEffect(() => {
@@ -56,8 +45,14 @@ export default function ClienteLoginPage() {
   }, [router]);
 
   async function loginWithPassword() {
-    if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
-    if (!password.trim()) return setMsg("Escribe tu contraseña.");
+    if (!phoneDigits) {
+      setMsg("Introduce un teléfono válido.");
+      return;
+    }
+    if (!password.trim()) {
+      setMsg("Escribe tu contraseña.");
+      return;
+    }
 
     try {
       setLoading(true);
@@ -68,258 +63,476 @@ export default function ClienteLoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: phoneDigits }),
       });
-
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok || !json?.alias_email) {
+        throw new Error(json?.error || "No hemos podido preparar tu acceso.");
+      }
 
       const { error } = await sb.auth.signInWithPassword({
-        email: json.alias_email,
+        email: String(json.alias_email),
         password,
       });
-
       if (error) throw error;
 
       router.replace("/cliente/dashboard");
     } catch (e: any) {
-      setMsg(e.message || "Error");
+      setMsg(e?.message || "No hemos podido iniciar sesión.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function sendEmailCode() {
-    if (!phoneDigits) return setMsg("Introduce un teléfono válido.");
-
-    try {
-      setLoading(true);
-      setMsg("");
-
-      const res = await fetch("/api/cliente/auth/email/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneDigits }),
-      });
-
-      const json = await res.json();
-
-      if (!json?.ok) throw new Error(json?.error);
-
-      setChallengeToken(json.challenge_token);
-      setStep("otp");
-    } catch (e: any) {
-      setMsg(e.message || "Error");
-    } finally {
-      setLoading(false);
+  async function createFirstAccessPassword() {
+    if (!phoneDigits) {
+      setMsg("Introduce un teléfono válido.");
+      return;
     }
-  }
-
-  async function verifyEmailCode() {
-    if (!token.trim()) return setMsg("Introduce el código.");
+    if (!createPassword.trim() || createPassword.length < 6) {
+      setMsg("La nueva contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+    if (createPassword !== createPasswordConfirm) {
+      setMsg("Las contraseñas no coinciden.");
+      return;
+    }
 
     try {
       setLoading(true);
       setMsg("");
 
-      const res = await fetch("/api/cliente/auth/email/verify", {
+      const res = await fetch("/api/cliente/auth/password/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           phone: phoneDigits,
-          code: token,
-          challenge_token: challengeToken,
+          password: createPassword,
+          password_confirm: createPasswordConfirm,
         }),
       });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok || !json?.alias_email) {
+        throw new Error(json?.error || "No hemos podido crear tu acceso.");
+      }
 
-      const json = await res.json();
+      const { error } = await sb.auth.signInWithPassword({
+        email: String(json.alias_email),
+        password: createPassword,
+      });
+      if (error) throw error;
 
-      if (!json?.ok) throw new Error(json?.error);
-
-      window.location.href = json.action_link;
+      router.replace("/cliente/dashboard");
     } catch (e: any) {
-      setMsg(e.message || "Código incorrecto");
+      setMsg(e?.message || "No hemos podido crear tu acceso.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main className="shell">
-      <div className="card">
-
-        <div className="brand">
-          <Image src="/Nuevo-logo-tarot.png" alt="logo" width={70} height={70}/>
+    <main className="tc-shell">
+      <section className="tc-card">
+        <div className="tc-brand">
+          <div className="tc-logo-wrap">
+            <Image
+              src="/Nuevo-logo-tarot.png"
+              alt="Tarot Celestial"
+              width={78}
+              height={78}
+              className="tc-logo"
+              priority
+            />
+          </div>
+          <div className="tc-chip">Acceso cliente</div>
           <h1>Tarot Celestial</h1>
-          <p>Accede o recibe un código por email</p>
+          <p>
+            Accede con tu contraseña o crea tu acceso la primera vez usando solo tu número.
+          </p>
         </div>
 
-        <div className="tabs">
-          <button className={mode==="password"?"active":""} onClick={()=>{setMode("password");setStep("phone");}}>
-            <LockKeyhole size={16}/> Contraseña
+        <div className="tc-tabs" role="tablist" aria-label="Modo de acceso">
+          <button
+            type="button"
+            className={`tc-tab ${mode === "password" ? "active" : ""}`}
+            onClick={() => {
+              setMode("password");
+              setMsg("");
+            }}
+          >
+            <LockKeyhole size={16} /> Ya tengo contraseña
           </button>
-          <button className={mode==="otp"?"active":""} onClick={()=>{setMode("otp");setStep("phone");}}>
-            <KeyRound size={16}/> Código
+          <button
+            type="button"
+            className={`tc-tab ${mode === "setup" ? "active" : ""}`}
+            onClick={() => {
+              setMode("setup");
+              setMsg("");
+            }}
+          >
+            <Sparkles size={16} /> Primer acceso
           </button>
         </div>
 
-        {step==="phone" ? (
-          <div className="form">
-
-            <div className="field">
-              <select value={countryCode} onChange={(e)=>setCountryCode(e.target.value)}>
-                {COUNTRY_OPTIONS.map(o=>(
+        <div className="tc-form">
+          <div className="tc-field">
+            <label className="tc-label">País</label>
+            <div className="tc-select-wrap">
+              <select
+                className="tc-input"
+                value={countryCode}
+                onChange={(e) => setCountryCode(e.target.value)}
+              >
+                {COUNTRY_OPTIONS.map((o) => (
                   <option key={o.code} value={o.code}>
                     {formatCountryOptionLabel(o)}
                   </option>
                 ))}
               </select>
-              <label>País</label>
             </div>
+          </div>
 
-            <div className="phone">
-              <span>{selectedCountry.dialCode}</span>
-              <div className="field">
+          <div className="tc-field">
+            <label className="tc-label">Teléfono</label>
+            <div className="tc-phone-row">
+              <div className="tc-phone-prefix">{selectedCountry.dialCode}</div>
+              <input
+                className="tc-input"
+                inputMode="tel"
+                autoComplete="tel-national"
+                placeholder={selectedCountry.hint || "600123123"}
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(normalizeLocalPhone(e.target.value))}
+              />
+            </div>
+          </div>
+
+          {mode === "password" ? (
+            <>
+              <div className="tc-field">
+                <label className="tc-label">Contraseña</label>
                 <input
-                  value={phoneInput}
-                  onChange={(e)=>setPhoneInput(normalizeLocalPhone(e.target.value))}
+                  className="tc-input"
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Tu contraseña"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                 />
-                <label>Teléfono</label>
               </div>
-            </div>
 
-            {mode==="password" ? (
-              <>
-                <div className="field">
-                  <input type="password" value={password} onChange={(e)=>setPassword(e.target.value)}/>
-                  <label>Contraseña</label>
-                </div>
-
-                <button className="primary" onClick={loginWithPassword}>
-                  {loading ? "Entrando..." : "Entrar"}
-                </button>
-              </>
-            ):(
-              <button className="primary" onClick={sendEmailCode}>
-                <Mail size={16}/> Enviar código
+              <button type="button" className="tc-primary-btn" onClick={loginWithPassword} disabled={loading}>
+                <LockKeyhole size={18} />
+                {loading ? "Entrando..." : "Entrar"}
               </button>
-            )}
 
-          </div>
-        ):(
-          <div className="form">
-            <div className="field">
-              <input value={token} onChange={(e)=>setToken(e.target.value)}/>
-              <label>Código</label>
-            </div>
+              <button
+                type="button"
+                className="tc-secondary-btn"
+                onClick={() => router.push("/cliente/recuperar")}
+                disabled={loading}
+              >
+                He olvidado mi contraseña
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="tc-setup-note">
+                Si es tu primera vez, crea aquí tu contraseña y entrarás directamente al panel.
+              </div>
 
-            <button className="primary" onClick={verifyEmailCode}>
-              Verificar
-            </button>
-          </div>
-        )}
+              <div className="tc-field">
+                <label className="tc-label">Nueva contraseña</label>
+                <input
+                  className="tc-input"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Mínimo 6 caracteres"
+                  value={createPassword}
+                  onChange={(e) => setCreatePassword(e.target.value)}
+                />
+              </div>
 
-        {msg && <div className="msg">{msg}</div>}
-      </div>
+              <div className="tc-field">
+                <label className="tc-label">Repite la contraseña</label>
+                <input
+                  className="tc-input"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Repite la contraseña"
+                  value={createPasswordConfirm}
+                  onChange={(e) => setCreatePasswordConfirm(e.target.value)}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="tc-primary-btn"
+                onClick={createFirstAccessPassword}
+                disabled={loading}
+              >
+                <Sparkles size={18} />
+                {loading ? "Creando acceso..." : "Crear acceso"}
+              </button>
+            </>
+          )}
+        </div>
+
+        {msg ? <div className="tc-msg">{msg}</div> : null}
+      </section>
 
       <style jsx>{`
-        .shell {
-          min-height:100vh;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          background:#0f0b10;
+        .tc-shell {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 32px 16px;
+          background:
+            radial-gradient(circle at 50% 0%, rgba(247, 197, 94, 0.14), transparent 32%),
+            linear-gradient(180deg, #0d0911 0%, #17101b 100%);
         }
 
-        .card {
-          width:380px;
-          padding:30px;
-          border-radius:20px;
-          background:rgba(30,20,35,0.9);
+        .tc-card {
+          width: 100%;
+          max-width: 440px;
+          padding: 30px;
+          border-radius: 28px;
+          border: 1px solid rgba(255,255,255,0.08);
+          background: rgba(24, 18, 30, 0.92);
+          box-shadow: 0 30px 80px rgba(0,0,0,0.55);
+          color: #fff7ea;
+          display: grid;
+          gap: 18px;
           backdrop-filter: blur(10px);
-          box-shadow:0 20px 80px rgba(0,0,0,0.6);
-          display:flex;
-          flex-direction:column;
-          gap:20px;
         }
 
-        .brand {text-align:center;}
-        .tabs {display:flex;gap:10px;}
-
-        .tabs button {
-          flex:1;
-          padding:10px;
-          border-radius:10px;
-          background:#2a202d;
-          color:white;
-          transition:.2s;
+        .tc-brand {
+          display: grid;
+          justify-items: center;
+          text-align: center;
+          gap: 10px;
         }
 
-        .tabs .active {
-          background:#f7c55e;
-          color:black;
+        .tc-logo-wrap {
+          width: 96px;
+          height: 96px;
+          display: grid;
+          place-items: center;
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(247,197,94,0.16), rgba(255,255,255,0.03));
+          border: 1px solid rgba(255,255,255,0.07);
         }
 
-        .form {display:flex;flex-direction:column;gap:14px;}
-
-        .field {
-          position:relative;
+        .tc-logo {
+          object-fit: contain;
+          filter: drop-shadow(0 0 14px rgba(247,197,94,0.28));
         }
 
-        input, select {
-          width:100%;
-          padding:14px;
-          border-radius:10px;
-          background:#2a202d;
-          color:white;
-          border:1px solid transparent;
+        .tc-chip {
+          padding: 7px 14px;
+          border-radius: 999px;
+          font-size: 12px;
+          color: #fff7ea;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.08);
         }
 
-        input:focus, select:focus {
-          border:1px solid #f7c55e;
-          box-shadow:0 0 10px rgba(247,197,94,0.3);
+        h1 {
+          margin: 0;
+          font-size: 26px;
+          line-height: 1.1;
         }
 
-        label {
-          position:absolute;
-          top:50%;
-          left:14px;
-          transform:translateY(-50%);
-          font-size:12px;
-          color:#aaa;
-          pointer-events:none;
-          transition:.2s;
+        p {
+          margin: 0;
+          color: rgba(255,247,234,0.78);
+          line-height: 1.55;
+          font-size: 14px;
         }
 
-        input:focus + label,
-        input:not(:placeholder-shown) + label {
-          top:-6px;
-          font-size:10px;
-          color:#f7c55e;
+        .tc-tabs {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
         }
 
-        .phone {display:flex;gap:10px;}
-
-        .phone span {
-          padding:14px;
-          background:#2a202d;
-          border-radius:10px;
+        .tc-tab {
+          min-height: 48px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          border: 1px solid rgba(255,255,255,0.08);
+          border-radius: 16px;
+          background: rgba(255,255,255,0.05);
+          color: #fff7ea;
+          font-weight: 700;
+          transition: transform .18s ease, background .18s ease, border-color .18s ease;
         }
 
-        .primary {
-          background:#f7c55e;
-          color:black;
-          padding:14px;
-          border-radius:10px;
-          font-weight:bold;
-          transition:.2s;
+        .tc-tab:hover {
+          transform: translateY(-1px);
         }
 
-        .primary:hover {
-          transform:translateY(-2px);
+        .tc-tab.active {
+          background: linear-gradient(135deg, #f7c55e, #ffdf9a);
+          border-color: rgba(247,197,94,0.55);
+          color: #24180f;
+          box-shadow: 0 10px 24px rgba(247,197,94,0.16);
         }
 
-        .msg {
-          background:#2a202d;
-          padding:10px;
-          border-radius:10px;
+        .tc-form {
+          display: grid;
+          gap: 12px;
+        }
+
+        .tc-field {
+          display: grid;
+          gap: 8px;
+        }
+
+        .tc-label {
+          font-size: 13px;
+          font-weight: 700;
+          color: rgba(255,247,234,0.86);
+        }
+
+        .tc-select-wrap {
+          position: relative;
+        }
+
+        .tc-select-wrap::after {
+          content: "";
+          position: absolute;
+          top: 50%;
+          right: 16px;
+          width: 10px;
+          height: 10px;
+          border-right: 2px solid rgba(255,247,234,0.55);
+          border-bottom: 2px solid rgba(255,247,234,0.55);
+          transform: translateY(-65%) rotate(45deg);
+          pointer-events: none;
+        }
+
+        .tc-input {
+          width: 100%;
+          min-height: 50px;
+          padding: 0 14px;
+          border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.06);
+          color: #fff7ea;
+          outline: none;
+          transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+        }
+
+        .tc-input::placeholder {
+          color: rgba(255,247,234,0.35);
+        }
+
+        .tc-input:focus {
+          border-color: rgba(247,197,94,0.55);
+          box-shadow: 0 0 0 3px rgba(247,197,94,0.12);
+          background: rgba(255,255,255,0.08);
+        }
+
+        select.tc-input {
+          appearance: none;
+          -webkit-appearance: none;
+          -moz-appearance: none;
+          padding-right: 42px;
+          background-color: rgba(255,255,255,0.06);
+          color: #fff7ea;
+        }
+
+        select.tc-input option {
+          background: #1b1520;
+          color: #fff7ea;
+        }
+
+        .tc-phone-row {
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 10px;
+        }
+
+        .tc-phone-prefix {
+          min-width: 72px;
+          min-height: 50px;
+          display: grid;
+          place-items: center;
+          padding: 0 16px;
+          border-radius: 16px;
+          border: 1px solid rgba(255,255,255,0.1);
+          background: rgba(255,255,255,0.06);
+          font-weight: 800;
+          color: #fff7ea;
+        }
+
+        .tc-primary-btn,
+        .tc-secondary-btn {
+          min-height: 52px;
+          border: 0;
+          border-radius: 16px;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
+        }
+
+        .tc-primary-btn {
+          background: linear-gradient(135deg, #f7c55e, #ffdf9a);
+          color: #24180f;
+          box-shadow: 0 14px 28px rgba(247,197,94,0.16);
+        }
+
+        .tc-secondary-btn {
+          background: rgba(255,255,255,0.07);
+          color: #fff7ea;
+          border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .tc-primary-btn:hover,
+        .tc-secondary-btn:hover {
+          transform: translateY(-1px);
+        }
+
+        .tc-primary-btn:disabled,
+        .tc-secondary-btn:disabled,
+        .tc-tab:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+          transform: none;
+        }
+
+        .tc-setup-note {
+          border-radius: 16px;
+          padding: 12px 14px;
+          background: rgba(255,255,255,0.05);
+          color: rgba(255,247,234,0.78);
+          line-height: 1.5;
+          font-size: 13px;
+        }
+
+        .tc-msg {
+          border-radius: 16px;
+          padding: 13px 14px;
+          background: rgba(255,255,255,0.06);
+          border: 1px solid rgba(255,255,255,0.08);
+          color: #fff7ea;
+          line-height: 1.45;
+        }
+
+        @media (max-width: 520px) {
+          .tc-card {
+            padding: 22px;
+            border-radius: 22px;
+          }
+
+          .tc-tabs {
+            grid-template-columns: 1fr;
+          }
         }
       `}</style>
     </main>

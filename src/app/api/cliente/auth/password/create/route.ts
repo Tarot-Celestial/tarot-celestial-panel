@@ -14,38 +14,11 @@ function isStrongPassword(password: string) {
 export async function POST(req: NextRequest) {
   try {
     const sb = adminSupabase();
-
-    // 🔐 AUTH HEADER
-    const authHeader = req.headers.get("authorization");
-    if (!authHeader) {
-      return NextResponse.json(
-        { ok: false, error: "NO_AUTH" },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.replace("Bearer ", "");
-
-    // 🔐 USER SESSION
-    const {
-      data: { user },
-      error,
-    } = await sb.auth.getUser(token);
-
-    if (error || !user) {
-      return NextResponse.json(
-        { ok: false, error: "INVALID_SESSION" },
-        { status: 401 }
-      );
-    }
-
-    // 📥 BODY
     const body = await req.json().catch(() => null);
 
     const password = String(body?.password || "");
     const password_confirm = String(body?.password_confirm || "");
 
-    // 🔒 VALIDACIONES
     if (!isStrongPassword(password)) {
       return NextResponse.json(
         { ok: false, error: "PASSWORD_TOO_SHORT" },
@@ -60,13 +33,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 📞 TELÉFONO DESDE AUTH
-    const phone =
-      user.user_metadata?.telefono_normalizado ||
-      user.phone ||
-      "";
+    let phoneDigits = "";
 
-    const phoneDigits = digitsOnly(phone);
+    const authHeader = req.headers.get("authorization");
+    if (authHeader) {
+      const token = authHeader.replace("Bearer ", "");
+      const {
+        data: { user },
+        error,
+      } = await sb.auth.getUser(token);
+
+      if (error || !user) {
+        return NextResponse.json(
+          { ok: false, error: "INVALID_SESSION" },
+          { status: 401 }
+        );
+      }
+
+      const phone = user.user_metadata?.telefono_normalizado || user.phone || "";
+      phoneDigits = digitsOnly(phone);
+    } else {
+      phoneDigits = digitsOnly(body?.phone);
+    }
 
     if (!phoneDigits) {
       return NextResponse.json(
@@ -75,15 +63,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 🔥 ANTI DUPLICADOS + CREACIÓN
     const result = await ensureClienteAuthUser({
       phone: phoneDigits,
       password,
     });
 
-    // ✅ RESPUESTA LIMPIA (sin duplicar ok)
     return NextResponse.json(result);
-
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message || "INTERNAL_ERROR" },
