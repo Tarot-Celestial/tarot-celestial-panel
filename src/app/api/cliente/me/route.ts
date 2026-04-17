@@ -214,47 +214,57 @@ export async function GET(req: Request) {
     const start30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const [
-      { data: historial },
-      { data: recompensas },
-      { data: llamadas },
-      { data: notificaciones },
-      { data: pagos30Dias },
-    ] = await Promise.all([
-      gate.admin
-        .from("cliente_puntos_historial")
-        .select("id, tipo, puntos, descripcion, created_at")
-        .eq("cliente_id", cliente.id)
-        .order("created_at", { ascending: false })
-        .limit(10),
+  { data: historial },
+  { data: recompensas },
+  { data: llamadas },
+  { data: notificaciones },
+  { data: pagos30Dias },
+  { data: llamadas30Dias },
+] = await Promise.all([
+  gate.admin
+    .from("cliente_puntos_historial")
+    .select("id, tipo, puntos, descripcion, created_at")
+    .eq("cliente_id", cliente.id)
+    .order("created_at", { ascending: false })
+    .limit(10),
 
-      gate.admin
-        .from("recompensas")
-        .select("id, nombre, puntos_coste, minutos_otorgados, activo")
-        .eq("activo", true)
-        .order("puntos_coste", { ascending: true }),
+  gate.admin
+    .from("recompensas")
+    .select("id, nombre, puntos_coste, minutos_otorgados, activo")
+    .eq("activo", true)
+    .order("puntos_coste", { ascending: true }),
 
-      gate.admin
-        .from("rendimiento_llamadas")
-        .select("id, fecha_hora, tarotista_nombre, tarotista_manual_call")
-        .eq("cliente_id", cliente.id)
-        .order("fecha_hora", { ascending: false })
-        .limit(15),
+  gate.admin
+    .from("rendimiento_llamadas")
+    .select("id, fecha_hora, tarotista_nombre, tarotista_manual_call")
+    .eq("cliente_id", cliente.id)
+    .order("fecha_hora", { ascending: false })
+    .limit(15),
 
-      gate.admin
-        .from("cliente_notificaciones")
-        .select("id, titulo, mensaje, tipo, leida, created_at")
-        .eq("cliente_id", cliente.id)
-        .order("created_at", { ascending: false })
-        .limit(8),
+  gate.admin
+    .from("cliente_notificaciones")
+    .select("id, titulo, mensaje, tipo, leida, created_at")
+    .eq("cliente_id", cliente.id)
+    .order("created_at", { ascending: false })
+    .limit(8),
 
-      gate.admin
-        .from("crm_cliente_pagos")
-        .select("importe, estado, created_at")
-        .eq("cliente_id", cliente.id)
-        .eq("estado", "completed")
-        .gte("created_at", start30.toISOString())
-        .lte("created_at", now.toISOString()),
-    ]);
+  // 💳 PAGOS APP
+  gate.admin
+    .from("crm_cliente_pagos")
+    .select("importe, estado, created_at")
+    .eq("cliente_id", cliente.id)
+    .eq("estado", "completed")
+    .gte("created_at", start30.toISOString())
+    .lte("created_at", now.toISOString()),
+
+  // 📞 LLAMADAS (AQUÍ ESTÁ LA CLAVE)
+  gate.admin
+    .from("rendimiento_llamadas")
+    .select("importe, created_at")
+    .eq("cliente_id", cliente.id)
+    .gte("created_at", start30.toISOString())
+    .lte("created_at", now.toISOString()),
+]);
 
     const lastTarotistas = Array.from(
       new Map(
@@ -267,11 +277,20 @@ export async function GET(req: Request) {
       ).values()
     ).slice(0, 3);
 
-    const rolling30Spend = (pagos30Dias || []).reduce(
-      (acc: number, row: any) => acc + toNum(row?.importe),
-      0
-    );
-    const rolling30Purchases = (pagos30Dias || []).length;
+    const spendPagos = (pagos30Dias || []).reduce(
+  (acc: number, row: any) => acc + toNum(row?.importe),
+  0
+);
+
+const spendLlamadas = (llamadas30Dias || []).reduce(
+  (acc: number, row: any) => acc + toNum(row?.importe),
+  0
+);
+
+const rolling30Spend = spendPagos + spendLlamadas;
+    
+    const rolling30Purchases =
+  (pagos30Dias?.length || 0) + (llamadas30Dias?.length || 0);
 
     const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
 
