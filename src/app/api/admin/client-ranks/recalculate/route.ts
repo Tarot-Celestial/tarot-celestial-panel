@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,22 +55,6 @@ async function notifyRankChange(admin: any, params: { clienteId: string; clientN
   });
 }
 
-function calcRank(total: number) {
-  if (total >= 500) return "oro";
-  if (total >= 100) return "plata";
-  if (total > 0) return "bronce";
-  return null;
-}
-
-function normalizeName(v: any) {
-  return String(v || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 async function runRecalc() {
   const admin = adminClient();
   const now = new Date();
@@ -77,36 +62,17 @@ async function runRecalc() {
   const nowIso = now.toISOString();
   const sinceIso = sinceDate.toISOString();
 
-  const [{ data: rows, error: rowsErr }, { data: clientes, error: cliErr }] = await Promise.all([
-    admin.from("rendimiento_llamadas").select("cliente_id, cliente_nombre, importe, fecha_hora").gte("fecha_hora", sinceIso),
-    admin.from("crm_clientes").select("id, nombre, apellido, rango_actual"),
-  ]);
-  if (rowsErr) throw rowsErr;
+  const { data: clientes, error: cliErr } = await admin
+    .from("crm_clientes")
+    .select("id, nombre, apellido, rango_actual");
   if (cliErr) throw cliErr;
 
   const prevRanks = new Map<string, string | null>();
-  const byName = new Map<string, string>();
   for (const c of clientes || []) {
     prevRanks.set(String(c.id), c?.rango_actual ? String(c.rango_actual) : null);
-    const full = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim();
-    const key1 = normalizeName(full);
-    const key2 = normalizeName(c?.nombre);
-    if (key1) byName.set(key1, String(c.id));
-    if (key2 && !byName.has(key2)) byName.set(key2, String(c.id));
   }
 
-  const totals = new Map<string, { total: number; compras: number }>();
-  for (const row of rows || []) {
-    const amount = Number(row?.importe || 0);
-    if (!(amount > 0)) continue;
-    let clienteId = String(row?.cliente_id || "").trim();
-    if (!clienteId) clienteId = byName.get(normalizeName(row?.cliente_nombre)) || "";
-    if (!clienteId) continue;
-    const prev = totals.get(clienteId) || { total: 0, compras: 0 };
-    prev.total += amount;
-    prev.compras += 1;
-    totals.set(clienteId, prev);
-  }
+  const totals = await loadRolling30ClientTotals(admin, clientes || [], sinceIso, nowIso);
 
   await admin
     .from("crm_clientes")
@@ -128,7 +94,7 @@ async function runRecalc() {
   let compras30d = 0;
 
   for (const [clienteId, info] of totals.entries()) {
-    const rank = calcRank(info.total);
+    const rank = calcClientRank(info.total);
     if (!rank) continue;
 
     if (rank === "bronce") bronce += 1;

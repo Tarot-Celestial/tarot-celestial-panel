@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -39,22 +40,6 @@ async function workerFromReq(req: Request) {
 
 function normalizePhoneDigits(v: any) {
   return String(v || "").replace(/\D/g, "").trim();
-}
-
-function normalizeName(v: any) {
-  return String(v || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function calcRank(total: number) {
-  if (total >= 500) return "oro";
-  if (total >= 100) return "plata";
-  if (total > 0) return "bronce";
-  return null;
 }
 
 function clientWebMeta(cliente: any) {
@@ -129,12 +114,12 @@ export async function GET(req: Request) {
     const ids = clientes.map((c: any) => String(c.id)).filter(Boolean);
     if (!ids.length) return NextResponse.json({ ok: true, clientes: [] });
 
-    const [{ data: rels }, { data: etiquetasData }, { data: rendimientoRows, error: rendimientoErr }] = await Promise.all([
+    const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [{ data: rels }, { data: etiquetasData }] = await Promise.all([
       admin.from("crm_cliente_etiquetas").select("cliente_id, etiqueta_id").in("cliente_id", ids),
       admin.from("crm_etiquetas").select("id, nombre"),
-      admin.from("rendimiento_llamadas").select("cliente_id, cliente_nombre, importe, fecha_hora").gte("fecha_hora", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()),
     ]);
-    if (rendimientoErr) throw rendimientoErr;
 
     const etiquetaMap = new Map((etiquetasData || []).map((e: any) => [String(e.id), e.nombre]));
     const byCliente = new Map<string, string[]>();
@@ -147,27 +132,7 @@ export async function GET(req: Request) {
       byCliente.set(cid, Array.from(new Set(arr)));
     }
 
-    const nameMap = new Map<string, string>();
-    for (const c of clientes) {
-      const full = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim();
-      const key1 = normalizeName(full);
-      const key2 = normalizeName(c?.nombre);
-      if (key1) nameMap.set(key1, String(c.id));
-      if (key2 && !nameMap.has(key2)) nameMap.set(key2, String(c.id));
-    }
-
-    const totals = new Map<string, { total: number; compras: number }>();
-    for (const row of rendimientoRows || []) {
-      const amount = Number(row?.importe || 0);
-      if (!(amount > 0)) continue;
-      let clienteId = String(row?.cliente_id || "").trim();
-      if (!clienteId) clienteId = nameMap.get(normalizeName(row?.cliente_nombre)) || "";
-      if (!clienteId || !ids.includes(clienteId)) continue;
-      const prev = totals.get(clienteId) || { total: 0, compras: 0 };
-      prev.total += amount;
-      prev.compras += 1;
-      totals.set(clienteId, prev);
-    }
+    const totals = await loadRolling30ClientTotals(admin, clientes, sinceIso, new Date().toISOString());
 
     clientes = clientes
       .map((c: any) => {
@@ -175,7 +140,7 @@ export async function GET(req: Request) {
         return {
           ...c,
           etiquetas: byCliente.get(String(c.id)) || [],
-          rango_actual: calcRank(rankInfo.total),
+          rango_actual: calcClientRank(rankInfo.total),
           rango_gasto_mes_anterior: Number(rankInfo.total.toFixed(2)),
           rango_compras_mes_anterior: rankInfo.compras,
           rango_actual_desde: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),

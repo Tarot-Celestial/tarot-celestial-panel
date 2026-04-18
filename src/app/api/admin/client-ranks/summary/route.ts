@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -38,22 +39,6 @@ async function workerFromReq(req: Request) {
   return data || null;
 }
 
-function normalizeName(v: any) {
-  return String(v || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function calcRank(total: number) {
-  if (total >= 500) return "oro";
-  if (total >= 100) return "plata";
-  if (total > 0) return "bronce";
-  return null;
-}
-
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -66,42 +51,20 @@ export async function GET(req: Request) {
     const now = new Date();
     const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [{ data: clientes, error: cliErr }, { data: rows, error: rowsErr }] = await Promise.all([
-      admin.from("crm_clientes").select("id, nombre, apellido"),
-      admin.from("rendimiento_llamadas").select("cliente_id, cliente_nombre, importe, fecha_hora").gte("fecha_hora", since),
-    ]);
+    const { data: clientes, error: cliErr } = await admin
+      .from("crm_clientes")
+      .select("id, nombre, apellido");
 
     if (cliErr) throw cliErr;
-    if (rowsErr) throw rowsErr;
 
-    const byName = new Map<string, string>();
-    for (const c of clientes || []) {
-      const full = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim();
-      const key1 = normalizeName(full);
-      const key2 = normalizeName(c?.nombre);
-      if (key1) byName.set(key1, String(c.id));
-      if (key2 && !byName.has(key2)) byName.set(key2, String(c.id));
-    }
-
-    const totals = new Map<string, { total: number; compras: number }>();
-    for (const row of rows || []) {
-      const amount = Number(row?.importe || 0);
-      if (!(amount > 0)) continue;
-      let clienteId = String(row?.cliente_id || "").trim();
-      if (!clienteId) clienteId = byName.get(normalizeName(row?.cliente_nombre)) || "";
-      if (!clienteId) continue;
-      const prev = totals.get(clienteId) || { total: 0, compras: 0 };
-      prev.total += amount;
-      prev.compras += 1;
-      totals.set(clienteId, prev);
-    }
+    const totals = await loadRolling30ClientTotals(admin, clientes || [], since, now.toISOString());
 
     const counts = { bronce: 0, plata: 0, oro: 0 };
     let compras30d = 0;
     let gasto30d = 0;
 
     for (const info of totals.values()) {
-      const rank = calcRank(info.total);
+      const rank = calcClientRank(info.total);
       if (!rank) continue;
       counts[rank as keyof typeof counts] += 1;
       compras30d += info.compras;
@@ -111,7 +74,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       window_days: 30,
-      source: "rendimiento_llamadas",
+      source: "crm_cliente_pagos+rendimento_llamadas",
       summary: {
         totalConRango: counts.bronce + counts.plata + counts.oro,
         bronce: counts.bronce,

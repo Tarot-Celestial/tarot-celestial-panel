@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -50,13 +51,6 @@ function mapEtiquetasFromRelations(cliente: any) {
   return Array.from(new Set(etiquetas));
 }
 
-function calcRank(total: number) {
-  if (total >= 500) return "oro";
-  if (total >= 100) return "plata";
-  if (total > 0) return "bronce";
-  return null;
-}
-
 export async function GET(req: Request) {
   try {
     const worker = await workerFromReq(req);
@@ -72,7 +66,7 @@ export async function GET(req: Request) {
     const admin = adminClient();
     const sinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const [{ data, error }, { data: rendimientoRows, error: rendimientoErr }] = await Promise.all([
+    const [{ data, error }, { error: rendimientoErr }] = await Promise.all([
       admin
         .from("crm_clientes")
         .select(`
@@ -86,22 +80,22 @@ export async function GET(req: Request) {
         `)
         .eq("id", id)
         .maybeSingle(),
-      admin.from("rendimiento_llamadas").select("importe, fecha_hora").eq("cliente_id", id).gte("fecha_hora", sinceIso),
+      admin.from("rendimiento_llamadas").select("id").eq("cliente_id", id).limit(1),
     ]);
 
     if (error) throw error;
     if (rendimientoErr) throw rendimientoErr;
     if (!data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
 
-    const total30d = (rendimientoRows || []).reduce((acc: number, row: any) => acc + (Number(row?.importe || 0) > 0 ? Number(row.importe) : 0), 0);
-    const compras30d = (rendimientoRows || []).filter((row: any) => Number(row?.importe || 0) > 0).length;
+    const totals30d = await loadRolling30ClientTotals(admin, [data], sinceIso, new Date().toISOString());
+    const rankInfo = totals30d.get(String(data.id)) || { total: 0, compras: 0 };
 
     const cliente = {
       ...data,
       etiquetas: mapEtiquetasFromRelations(data),
-      rango_actual: calcRank(total30d),
-      rango_gasto_mes_anterior: Number(total30d.toFixed(2)),
-      rango_compras_mes_anterior: compras30d,
+      rango_actual: calcClientRank(rankInfo.total),
+      rango_gasto_mes_anterior: Number((rankInfo.total || 0).toFixed(2)),
+      rango_compras_mes_anterior: Number(rankInfo.compras || 0),
       rango_actual_desde: sinceIso.slice(0, 10),
       rango_actual_hasta: new Date().toISOString().slice(0, 10),
     };
