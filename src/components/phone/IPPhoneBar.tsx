@@ -14,7 +14,8 @@ type SipConfig = {
 
 type SipStatus = "idle" | "connecting" | "registered" | "calling" | "incoming" | "in-call" | "error";
 
-const STORAGE_KEY = "tc-ip-phone-config-v1";
+const STORAGE_KEY = "tc-ip-phone-config-v2";
+const LEGACY_STORAGE_KEY = "tc-ip-phone-config-v1";
 const DEFAULT_CONFIG: SipConfig = {
   server: "",
   domain: "",
@@ -24,18 +25,76 @@ const DEFAULT_CONFIG: SipConfig = {
   autoRegister: true,
 };
 
+function stripProtocol(value: string) {
+  return String(value || "")
+    .trim()
+    .replace(/^sips?:/i, "")
+    .replace(/^wss?:\/\//i, "")
+    .replace(/^\/+/, "")
+    .replace(/\/ws$/i, "")
+    .replace(/\/$/, "");
+}
+
+function normalizeDomain(raw: string) {
+  const value = stripProtocol(raw);
+  if (!value) return "";
+  if (value.includes("@")) {
+    return value.split("@").pop()?.trim() || "";
+  }
+  return value;
+}
+
+function normalizeUsername(raw: string) {
+  return String(raw || "").trim().replace(/^sip:/i, "").replace(/@.*$/, "");
+}
+
+function normalizeServer(raw: string) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/^wss?:\/\//i.test(value)) return value;
+  return `wss://${stripProtocol(value)}`;
+}
+
+function normalizeLoadedConfig(raw: Partial<SipConfig> | null | undefined): SipConfig {
+  const incoming = raw || {};
+  return {
+    server: normalizeServer(String(incoming.server || "")),
+    domain: normalizeDomain(String(incoming.domain || "")),
+    username: normalizeUsername(String(incoming.username || "")),
+    password: String(incoming.password || ""),
+    displayName: String(incoming.displayName || ""),
+    autoRegister: incoming.autoRegister !== false,
+  };
+}
+
+function buildAor(username: string, domain: string) {
+  const safeUser = normalizeUsername(username);
+  const safeDomain = normalizeDomain(domain);
+  if (!safeUser || !safeDomain) return "";
+  return `sip:${safeUser}@${safeDomain}`;
+}
+
 function sanitizeDestination(raw: string, domain: string) {
   const value = String(raw || "").trim();
   if (!value) return "";
   if (value.startsWith("sip:")) return value;
-  if (value.includes("@")) return `sip:${value}`;
-  if (!domain) return value;
-  return `sip:${value}@${domain}`;
+  if (value.includes("@")) return `sip:${value.replace(/^sip:/i, "")}`;
+
+  const safeDomain = normalizeDomain(domain);
+  const normalizedNumber = value.replace(/[^\d+*#]/g, "");
+  if (!safeDomain) return normalizedNumber;
+
+  if (normalizedNumber.startsWith("+")) {
+    return `sip:${normalizedNumber.slice(1)}@${safeDomain}`;
+  }
+
+  return `sip:${normalizedNumber}@${safeDomain}`;
 }
 
 export default function IPPhoneBar() {
   const simpleUserRef = useRef<any>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentSignatureRef = useRef("");
   const [config, setConfig] = useState<SipConfig>(DEFAULT_CONFIG);
   const [destination, setDestination] = useState("");
   const [status, setStatus] = useState<SipStatus>("idle");
@@ -46,12 +105,18 @@ export default function IPPhoneBar() {
   const [onHold, setOnHold] = useState(false);
   const [ready, setReady] = useState(false);
 
+  const normalizedConfig = useMemo(() => normalizeLoadedConfig(config), [config]);
+  const activeAor = useMemo(
+    () => buildAor(normalizedConfig.username, normalizedConfig.domain),
+    [normalizedConfig.username, normalizedConfig.domain],
+  );
+
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        setConfig((prev) => ({ ...prev, ...parsed }));
+        setConfig(normalizeLoadedConfig(parsed));
       }
     } catch {
       // noop
@@ -67,13 +132,32 @@ export default function IPPhoneBar() {
   }, []);
 
   const canConnect = useMemo(() => {
-    return Boolean(config.server && config.domain && config.username && config.password);
-  }, [config]);
+    return Boolean(
+      normalizedConfig.server && normalizedConfig.domain && normalizedConfig.username && normalizedConfig.password,
+    );
+  }, [normalizedConfig]);
+
+  function configSignature() {
+    return JSON.stringify({
+      server: normalizedConfig.server,
+      domain: normalizedConfig.domain,
+      username: normalizedConfig.username,
+      password: normalizedConfig.password,
+      autoRegister: normalizedConfig.autoRegister,
+    });
+  }
 
   function saveConfig() {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-      setMessage("Configuración SIP guardada en este navegador");
+      const safeConfig = normalizeLoadedConfig(config);
+      setConfig(safeConfig);
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(safeConfig));
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      setMessage(
+        safeConfig.username
+          ? `Configuración SIP guardada · usuario activo: ${safeConfig.username}`
+          : "Configuración SIP guardada en este navegador",
+      );
     } catch {
       setMessage("No he podido guardar la configuración SIP");
       setStatus("error");
@@ -86,11 +170,13 @@ export default function IPPhoneBar() {
     const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
     if (!SimpleUser) throw new Error("No he encontrado SimpleUser en sip.js");
 
-    const aor = `sip:${config.username}@${config.domain}`;
+    const aor = buildAor(normalizedConfig.username, normalizedConfig.domain);
+    if (!aor) throw new Error("Falta el AOR SIP válido");
+
     const delegate = {
       onCallCreated: () => {
         setStatus("calling");
-        setMessage("Llamada iniciada");
+        setMessage(`Llamada iniciada desde ${normalizeUsername(normalizedConfig.username)}`);
       },
       onCallAnswered: () => {
         setStatus("in-call");
@@ -98,7 +184,7 @@ export default function IPPhoneBar() {
         setMessage("Llamada conectada");
       },
       onCallHangup: () => {
-        setStatus("registered");
+        setStatus(normalizedConfig.autoRegister ? "registered" : "idle");
         setIncomingFrom("");
         setOnHold(false);
         setMuted(false);
@@ -117,7 +203,7 @@ export default function IPPhoneBar() {
       },
       onRegistered: () => {
         setStatus("registered");
-        setMessage("Extensión SIP registrada");
+        setMessage(`Extensión SIP registrada como ${normalizeUsername(normalizedConfig.username)}`);
       },
       onServerDisconnect: () => {
         setStatus("idle");
@@ -130,9 +216,10 @@ export default function IPPhoneBar() {
     const options = {
       aor,
       userAgentOptions: {
-        authorizationUsername: config.username,
-        authorizationPassword: config.password,
-        displayName: config.displayName || config.username,
+        uri: SIP?.UserAgent?.makeURI ? SIP.UserAgent.makeURI(aor) : undefined,
+        authorizationUsername: normalizeUsername(normalizedConfig.username),
+        authorizationPassword: normalizedConfig.password,
+        displayName: normalizedConfig.displayName || normalizeUsername(normalizedConfig.username),
       },
       media: {
         constraints: { audio: true, video: false },
@@ -141,7 +228,8 @@ export default function IPPhoneBar() {
       delegate,
     };
 
-    return new SimpleUser(config.server, options);
+    currentSignatureRef.current = configSignature();
+    return new SimpleUser(normalizedConfig.server, options);
   }
 
   async function connect() {
@@ -154,17 +242,22 @@ export default function IPPhoneBar() {
 
     try {
       setStatus("connecting");
-      setMessage("Conectando con la central SIP...");
+      setMessage(`Conectando como ${normalizeUsername(normalizedConfig.username)}...`);
+
+      const nextSignature = configSignature();
+      if (simpleUserRef.current && currentSignatureRef.current !== nextSignature) {
+        await disconnect();
+      }
 
       if (!simpleUserRef.current) {
         simpleUserRef.current = await buildClient();
       }
 
       await simpleUserRef.current.connect();
-      if (config.autoRegister) {
+      if (normalizedConfig.autoRegister) {
         await simpleUserRef.current.register();
         setStatus("registered");
-        setMessage("Extensión conectada y registrada");
+        setMessage(`Extensión conectada y registrada como ${normalizeUsername(normalizedConfig.username)}`);
       } else {
         setStatus("idle");
         setMessage("Conectado al servidor SIP");
@@ -198,6 +291,7 @@ export default function IPPhoneBar() {
       // noop
     } finally {
       simpleUserRef.current = null;
+      currentSignatureRef.current = "";
       setStatus("idle");
       setIncomingFrom("");
       setOnHold(false);
@@ -207,7 +301,7 @@ export default function IPPhoneBar() {
   }
 
   async function makeCall() {
-    const target = sanitizeDestination(destination, config.domain);
+    const target = sanitizeDestination(destination, normalizedConfig.domain);
     if (!target) {
       setStatus("error");
       setMessage("Escribe una extensión o destino SIP");
@@ -220,7 +314,7 @@ export default function IPPhoneBar() {
       }
       if (!simpleUserRef.current) return;
       setStatus("calling");
-      setMessage(`Llamando a ${target}...`);
+      setMessage(`Llamando a ${target} desde ${normalizeUsername(normalizedConfig.username)}...`);
       await simpleUserRef.current.call(target);
     } catch (e: any) {
       setStatus("error");
@@ -244,7 +338,7 @@ export default function IPPhoneBar() {
     try {
       if (!simpleUserRef.current) return;
       await simpleUserRef.current.hangup();
-      setStatus("registered");
+      setStatus(normalizedConfig.autoRegister ? "registered" : "idle");
       setOnHold(false);
       setMuted(false);
       setMessage("Llamada colgada");
@@ -312,6 +406,7 @@ export default function IPPhoneBar() {
             </div>
             <div className="tc-sub" style={{ fontSize: 13 }}>
               {message}
+              {activeAor ? ` · ${activeAor}` : ""}
               {incomingFrom ? ` · ${incomingFrom}` : ""}
             </div>
           </div>
@@ -442,4 +537,6 @@ export default function IPPhoneBar() {
       </div>
     </div>
   );
+}
+
 }
