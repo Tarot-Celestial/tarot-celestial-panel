@@ -16,19 +16,21 @@ import { BarChart3, CalendarDays, CheckSquare, Headphones, Megaphone, MessageSqu
 
 const sb = supabaseBrowser();
 
-const CENTRAL_NAV = [
-  { key: "equipo", icon: Users, label: "Equipo", kicker: "Competición en vivo" },
-  { key: "llamadas", icon: Phone, label: "Llamadas", kicker: "Pendientes del día" },
-  { key: "chat", icon: MessageSquare, label: "Chat", kicker: "Tarotistas ↔ centrales" },
-  { key: "crm", icon: Headphones, label: "CRM", kicker: "Fichas y cobros" },
-  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
-  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
-  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda operativa" },
-  { key: "habituales", icon: Star, label: "Habituales", kicker: "Clientes recientes" },
-  { key: "checklist", icon: CheckSquare, label: "Checklist", kicker: "Turno actual" },
-  { key: "incidencias", icon: ShieldCheck, label: "Incidencias", kicker: "Control disciplinario" },
-  { key: "ranking", icon: BarChart3, label: "Ranking", kicker: "Resultados y equipos" },
+const TABS = [
+  "equipo",
+  "crm",
+  "chat",
+  "reservas",
+  "diario",
+  "captacion",
+  "incidencias",
+  "checklist",
+  "llamadas",
+  "rendimiento",
+  "habituales",
 ] as const;
+
+type TabKey = typeof TABS[number];
 
 const TABS = [
   "equipo",
