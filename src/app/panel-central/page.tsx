@@ -30,14 +30,18 @@ const CENTRAL_NAV = [
   { key: "ranking", icon: BarChart3, label: "Ranking", kicker: "Resultados y equipos" },
 ] as const;
 
-type TabKey =
-  | "equipo"
-  | "crm"
-  | "chat"
-  | "reservas"
-  | "diario"
-  | "captacion"
-  | "incidencias";
+const TABS = [
+  "equipo",
+  "crm",
+  "chat",
+  "reservas",
+  "diario",
+  "captacion",
+  "incidencias",
+  "checklist",
+] as const;
+
+type TabKey = typeof TABS[number];
 
 function monthKeyNow() {
   const d = new Date();
@@ -174,15 +178,7 @@ export default function Central() {
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
     if (!requestedTab) return;
-    const allowedTabs = new Set<TabKey>([
-  "equipo",
-  "crm",
-  "chat",
-  "reservas",
-  "diario",
-  "captacion",
-  "incidencias",
-]);
+    const allowedTabs = new Set<TabKey>(TABS);
     if (allowedTabs.has(requestedTab as TabKey)) {
       setTab(requestedTab as TabKey);
     }
