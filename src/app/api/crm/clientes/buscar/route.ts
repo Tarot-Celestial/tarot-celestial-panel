@@ -92,18 +92,35 @@ export async function GET(req: Request) {
     if (clienteIdsFiltro) query = query.in("id", clienteIdsFiltro);
 
     if (q) {
-      const safeQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
-      const qDigits = normalizePhoneDigits(safeQ);
-      const orParts = [`nombre.ilike.%${safeQ}%`, `apellido.ilike.%${safeQ}%`, `email.ilike.%${safeQ}%`];
-      if (qDigits) orParts.push(`telefono.ilike.%${qDigits}%`);
-      query = query.or(orParts.join(","));
-    }
+  const safeQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
+  const qDigits = normalizePhoneDigits(safeQ);
 
-    if (telefono) {
-      const phoneOrParts = [`telefono.ilike.%${telefono}%`];
-      if (telefonoDigits) phoneOrParts.push(`telefono.ilike.%${telefonoDigits}%`);
-      query = query.or(phoneOrParts.join(","));
-    }
+  const parts = safeQ.split(" ").filter(Boolean);
+
+  const orParts: string[] = [
+    `nombre.ilike.%${safeQ}%`,
+    `apellido.ilike.%${safeQ}%`,
+    `email.ilike.%${safeQ}%`,
+  ];
+
+  // 🔥 búsqueda por partes (Juan Pérez)
+  if (parts.length >= 2) {
+    const p1 = parts[0];
+    const p2 = parts[1];
+
+    // nombre + apellido
+    orParts.push(`and(nombre.ilike.%${p1}%,apellido.ilike.%${p2}%)`);
+
+    // apellido + nombre (por si lo escriben al revés)
+    orParts.push(`and(nombre.ilike.%${p2}%,apellido.ilike.%${p1}%)`);
+  }
+
+  if (qDigits) {
+    orParts.push(`telefono.ilike.%${qDigits}%`);
+  }
+
+  query = query.or(orParts.join(","));
+}
 
     if (pais) query = query.ilike("pais", `%${pais}%`);
 
