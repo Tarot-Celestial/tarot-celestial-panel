@@ -1,6 +1,8 @@
 // src/app/panel-central/page.tsx
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
