@@ -38,8 +38,8 @@ async function workerFromReq(req: Request) {
   return data || null;
 }
 
-function normalizePhoneDigits(v: any) {
-  return String(v || "").replace(/\D/g, "").trim();
+function normalizePhoneDigits(phone: string) {
+  return phone.replace(/\D/g, "");
 }
 
 function clientWebMeta(cliente: any) {
@@ -116,8 +116,14 @@ export async function GET(req: Request) {
   }
 
   if (qDigits) {
+  // 🔥 si es un teléfono largo → búsqueda precisa
+  if (qDigits.length >= 7) {
+    orParts.push(`telefono.eq.${qDigits}`);
+  } else {
+    // 🔥 si es corto → permitir parcial
     orParts.push(`telefono.ilike.%${qDigits}%`);
   }
+}
 
   query = query.or(orParts.join(","));
 }
