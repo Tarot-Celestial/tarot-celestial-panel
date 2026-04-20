@@ -26,9 +26,30 @@ const TABS = [
   "incidencias",
   "checklist",
   "llamadas",
+  "rendimiento",
+  "habituales",
 ] as const;
 
 type TabKey = typeof TABS[number];
+
+const CENTRAL_NAV: {
+  key: TabKey;
+  label: string;
+  icon: any;
+  kicker?: string;
+}[] = [
+  { key: "equipo", label: "Equipo", icon: Users },
+  { key: "crm", label: "CRM", icon: Users },
+  { key: "chat", label: "Chat", icon: MessageSquare },
+  { key: "reservas", label: "Reservas", icon: CalendarDays },
+  { key: "diario", label: "Diario", icon: BarChart3 },
+  { key: "captacion", label: "Captación", icon: Megaphone },
+  { key: "incidencias", label: "Incidencias", icon: ShieldCheck },
+  { key: "checklist", label: "Checklist", icon: CheckSquare },
+  { key: "llamadas", label: "Llamadas", icon: Phone },
+  { key: "rendimiento", label: "Rendimiento", icon: BarChart3 },
+  { key: "habituales", label: "Habituales", icon: Star },
+];
 
 function monthKeyNow() {
   const d = new Date();
