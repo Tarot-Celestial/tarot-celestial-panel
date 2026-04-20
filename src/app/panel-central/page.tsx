@@ -30,7 +30,7 @@ const CENTRAL_NAV = [
   { key: "ranking", icon: BarChart3, label: "Ranking", kicker: "Resultados y equipos" },
 ] as const;
 
-type TabKey = "equipo" | "llamadas" | "crm" | "captacion" | "rendimiento" | "reservas" | "habituales" | "incidencias" | "ranking" | "checklist" | "chat";
+type TabKey = "equipo" | "crm" | "chat" | "reservas" | "diario";
 
 function monthKeyNow() {
   const d = new Date();
