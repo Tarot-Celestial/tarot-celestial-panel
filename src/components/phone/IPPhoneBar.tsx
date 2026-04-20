@@ -75,7 +75,6 @@ function buildAor(username: string, domain: string) {
 
   return `sip:${cleanUser}@${cleanDomain}`;
 }
-console.log("AOR FINAL:", aor);
 
 function sanitizeDestination(raw: string, domain: string) {
   const value = String(raw || "").trim();
@@ -175,6 +174,8 @@ export default function IPPhoneBar() {
 
     const aor = buildAor(normalizedConfig.username, normalizedConfig.domain);
     if (!aor) throw new Error("Falta el AOR SIP válido");
+    console.log("AOR FINAL:", aor);
+    console.log("USERNAME:", normalizedConfig.username);
 
     const delegate = {
       onCallCreated: () => {
