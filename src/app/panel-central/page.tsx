@@ -39,6 +39,7 @@ const TABS = [
   "captacion",
   "incidencias",
   "checklist",
+  "llamadas",
 ] as const;
 
 type TabKey = typeof TABS[number];
