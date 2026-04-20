@@ -18,6 +18,7 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
+import { Suspense } from "react";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -145,7 +146,7 @@ function ackStyle(v: any) {
   };
 }
 
-export default function Admin() {
+function AdminPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
@@ -3175,3 +3176,10 @@ function ChecklistRow({
   );
 }
 
+export default function Page() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40 }}>Cargando…</div>}>
+      <AdminPage />
+    </Suspense>
+  );
+}
