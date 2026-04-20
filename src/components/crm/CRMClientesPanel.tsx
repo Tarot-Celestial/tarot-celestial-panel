@@ -2,7 +2,7 @@
 
 import KpiCard from "@/components/ui/KpiCard";
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
@@ -19,6 +19,15 @@ function crmNoteTone(text: string) {
 }
 
 const sb = supabaseBrowser();
+
+function normalizeRankParam(value: string | null | undefined): "" | "bronce" | "plata" | "oro" {
+  const v = String(value || "").trim().toLowerCase();
+  if (["bronce", "bronze", "bronzes"].includes(v)) return "bronce";
+  if (["plata", "silver", "silvers"].includes(v)) return "plata";
+  if (["oro", "gold", "golds"].includes(v)) return "oro";
+  return "";
+}
+
 
 function renderNoteText(text: string) {
   const lines = String(text || "").split(/\n/);
@@ -179,22 +188,6 @@ export default function CRMClientesPanel({
   const [crmPhoneFilter, setCrmPhoneFilter] = useState("");
   const [crmCountryFilter, setCrmCountryFilter] = useState("");
   const [crmWebFilter, setCrmWebFilter] = useState<"todos" | "registrados" | "no_registrados" | "onboarding_pendiente">("todos");
-
-  useEffect(() => {
-    function handleRankFilter(event: Event) {
-      const customEvent = event as CustomEvent<{ rank?: string }>;
-      const rankValue = String(customEvent.detail?.rank || "").trim().toLowerCase();
-      const nextRank: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(rankValue) ? (rankValue as any) : "";
-      if (!nextRank) return;
-      setCrmRankFilter(nextRank);
-      void searchCRM(false, nextRank);
-    }
-
-    window.addEventListener("crm-filter-rank", handleRankFilter as EventListener);
-    return () => {
-      window.removeEventListener("crm-filter-rank", handleRankFilter as EventListener);
-    };
-  }, [crmQuery, crmPhoneFilter, crmTagFilter, crmCountryFilter, crmWebFilter]);
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
   const [crmFreshLeads, setCrmFreshLeads] = useState<any[]>([]);
@@ -208,17 +201,10 @@ export default function CRMClientesPanel({
   const [crmRankSummary, setCrmRankSummary] = useState<any>(null);
   const [crmRankLoading, setCrmRankLoading] = useState(false);
   const [crmRankMsg, setCrmRankMsg] = useState("");
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const initialRankParam = String(searchParams?.get("rango") || "").trim().toLowerCase();
-  const initialRankFilter: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(initialRankParam) ? (initialRankParam as any) : "";
-  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(initialRankFilter);
-
-  useEffect(() => {
-    const rankParam = String(searchParams?.get("rango") || "").trim().toLowerCase();
-    const nextRank: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(rankParam) ? (rankParam as any) : "";
-    setCrmRankFilter(nextRank);
-  }, [searchParams]);
-
+  const rankFromUrl = normalizeRankParam(searchParams?.get("rango"));
+  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(rankFromUrl);
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
@@ -565,9 +551,9 @@ export default function CRMClientesPanel({
     loadCRMTarotistas();
     loadFreshLeads();
     loadRankSummary(true);
-    if (initialRankFilter) {
-      setCrmRankFilter(initialRankFilter);
-      searchCRM(true, initialRankFilter);
+    if (rankFromUrl) {
+      setCrmRankFilter(rankFromUrl);
+      searchCRM(true, rankFromUrl);
     } else {
       searchCRM(true);
     }
@@ -578,6 +564,13 @@ export default function CRMClientesPanel({
     }, 20000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const nextRank = rankFromUrl;
+    if (nextRank === crmRankFilter) return;
+    setCrmRankFilter(nextRank);
+    searchCRM(true, nextRank);
+  }, [rankFromUrl]);
 
   useEffect(() => {
     function onOpenCliente(e: any) {
@@ -687,13 +680,8 @@ export default function CRMClientesPanel({
     setCrmRankFilter(rank);
 
     try {
-      if (typeof window !== "undefined") {
-        const params = new URLSearchParams(window.location.search);
-        params.set("tab", "crm");
-        params.set("rango", rank);
-        const nextUrl = `${window.location.pathname}?${params.toString()}`;
-        window.history.replaceState(null, "", nextUrl);
-      }
+      const basePath = mode === "central" ? "/panel-central" : "/admin";
+      router.replace(`${basePath}?tab=crm&rango=${encodeURIComponent(rank)}`);
     } catch {}
 
     await searchCRM(false, rank || "");
@@ -705,6 +693,12 @@ export default function CRMClientesPanel({
 
   async function clearRankClientsFilter() {
     setCrmRankFilter("");
+
+    try {
+      const basePath = mode === "central" ? "/panel-central" : "/admin";
+      router.replace(`${basePath}?tab=crm`);
+    } catch {}
+
     await searchCRM(false, "");
   }
 

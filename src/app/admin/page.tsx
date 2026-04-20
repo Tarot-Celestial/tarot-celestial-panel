@@ -155,6 +155,21 @@ function AdminPage() {
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
     if (!requestedTab) return;
+
+    const rankAliasMap: Record<string, string> = {
+      bronzes: "bronce",
+      bronze: "bronce",
+      silvers: "plata",
+      silver: "plata",
+      golds: "oro",
+      gold: "oro",
+    };
+
+    if (rankAliasMap[requestedTab]) {
+      setTab("crm");
+      return;
+    }
+
     const allowedTabs = new Set(ADMIN_NAV.map((item) => item.key));
     if (allowedTabs.has(requestedTab as any)) {
       setTab(requestedTab as TabKey);

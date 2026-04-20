@@ -190,27 +190,21 @@ function CentralPage() {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
     if (!requestedTab) return;
 
-    const specialRankTabs: Record<string, "bronce" | "plata" | "oro"> = {
+    const rankAliasMap: Record<string, string> = {
       bronzes: "bronce",
+      bronze: "bronce",
       silvers: "plata",
+      silver: "plata",
       golds: "oro",
+      gold: "oro",
     };
 
-    const allowedTabs = new Set<TabKey>(TABS);
-    if (specialRankTabs[requestedTab]) {
+    if (rankAliasMap[requestedTab]) {
       setTab("crm");
-      if (typeof window !== "undefined") {
-        window.setTimeout(() => {
-          window.dispatchEvent(
-            new CustomEvent("crm-filter-rank", {
-              detail: { rank: specialRankTabs[requestedTab] },
-            })
-          );
-        }, 80);
-      }
       return;
     }
 
+    const allowedTabs = new Set<TabKey>(TABS);
     if (allowedTabs.has(requestedTab as TabKey)) {
       setTab(requestedTab as TabKey);
     }

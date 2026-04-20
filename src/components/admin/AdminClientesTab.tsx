@@ -379,26 +379,8 @@ export default function AdminClientesTab({
   }
 
   async function openRankClients(rank: "bronce" | "plata" | "oro") {
-    try {
-      setRankClientsLoading(true);
-      setRankClientsMsg("");
-      setRankFilter(rank);
-      const token = await getTokenOrLogin();
-      if (!token) return;
-      const res = await fetch(`/api/admin/client-ranks/by-rank?rank=${encodeURIComponent(rank)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || res.status}`);
-      setRankClients(Array.isArray(j?.clientes) ? j.clientes : []);
-      setRankClientsMsg(`Mostrando ${Array.isArray(j?.clientes) ? j.clientes.length : 0} cliente(s) ${rank}.`);
-    } catch (e: any) {
-      setRankClients([]);
-      setRankClientsMsg(`❌ ${e?.message || "Error cargando clientes del rango"}`);
-    } finally {
-      setRankClientsLoading(false);
-    }
+    const target = `/admin?tab=crm&rango=${encodeURIComponent(rank)}`;
+    window.location.href = target;
   }
 
   function closeRankClients() {
