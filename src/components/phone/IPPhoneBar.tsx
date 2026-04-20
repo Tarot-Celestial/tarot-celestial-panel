@@ -172,7 +172,7 @@ export default function IPPhoneBar() {
     const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
     if (!SimpleUser) throw new Error("No he encontrado SimpleUser en sip.js");
 
-    const aor = buildAor(normalizedConfig.username, normalizedConfig.domain);
+    const aor = "sip:1000@sip.clientestarotcelestial.es";
     if (!aor) throw new Error("Falta el AOR SIP válido");
     console.log("AOR FINAL:", aor);
     console.log("USERNAME:", normalizedConfig.username);
@@ -220,11 +220,15 @@ export default function IPPhoneBar() {
     const options = {
       aor,
       userAgentOptions: {
-        uri: SIP?.UserAgent?.makeURI ? SIP.UserAgent.makeURI(aor) : undefined,
-        authorizationUsername: normalizeUsername(normalizedConfig.username),
-        authorizationPassword: normalizedConfig.password,
-        displayName: normalizedConfig.displayName || normalizeUsername(normalizedConfig.username),
-      },
+  uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
+  authorizationUsername: "1000",
+  authorizationPassword: "1234",
+  displayName: "1000",
+},
+      console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
+console.log("FORCED USER:", "1000");
+console.log("FORCED PASS:", "1234");
+    
       media: {
         constraints: { audio: true, video: false },
         remote: { audio: remoteAudioRef.current },
