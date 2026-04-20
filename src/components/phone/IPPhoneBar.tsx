@@ -236,13 +236,6 @@ export default function IPPhoneBar() {
 console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
 console.log("FORCED USER:", "1000");
 console.log("FORCED PASS:", "1234");
-    
-      media: {
-        constraints: { audio: true, video: false },
-        remote: { audio: remoteAudioRef.current },
-      },
-      delegate,
-    };
 
     currentSignatureRef.current = configSignature();
     return new SimpleUser(normalizedConfig.server, options);
