@@ -68,11 +68,14 @@ function normalizeLoadedConfig(raw: Partial<SipConfig> | null | undefined): SipC
 }
 
 function buildAor(username: string, domain: string) {
-  const safeUser = normalizeUsername(username);
-  const safeDomain = normalizeDomain(domain);
-  if (!safeUser || !safeDomain) return "";
-  return `sip:${safeUser}@${safeDomain}`;
+  if (!username || !domain) return null;
+
+  const cleanUser = String(username).trim();
+  const cleanDomain = String(domain).trim();
+
+  return `sip:${cleanUser}@${cleanDomain}`;
 }
+console.log("AOR FINAL:", aor);
 
 function sanitizeDestination(raw: string, domain: string) {
   const value = String(raw || "").trim();
