@@ -222,7 +222,7 @@ export default function IPPhoneBar() {
   userAgentOptions: {
     uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
     authorizationUsername: "1000",
-    authorizationPassword: "1234",
+    authorizationPassword: "123456",
     displayName: "1000",
   },
   media: {
