@@ -539,4 +539,3 @@ export default function IPPhoneBar() {
   );
 }
 
-}
