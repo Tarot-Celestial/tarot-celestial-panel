@@ -217,15 +217,23 @@ export default function IPPhoneBar() {
       },
     };
 
-    const options = {
-      aor,
-      userAgentOptions: {
-  uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
-  authorizationUsername: "1000",
-  authorizationPassword: "1234",
-  displayName: "1000",
-},
-      console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
+   const options = {
+  aor,
+  userAgentOptions: {
+    uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
+    authorizationUsername: "1000",
+    authorizationPassword: "1234",
+    displayName: "1000",
+  },
+  media: {
+    constraints: { audio: true, video: false },
+    remote: { audio: remoteAudioRef.current },
+  },
+  delegate,
+};
+
+// 👇 LOS LOGS VAN AQUÍ (FUERA DEL OBJETO)
+console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
 console.log("FORCED USER:", "1000");
 console.log("FORCED PASS:", "1234");
     
