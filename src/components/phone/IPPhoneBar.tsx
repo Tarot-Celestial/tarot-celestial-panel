@@ -232,7 +232,7 @@ export default function IPPhoneBar() {
   delegate,
 };
 
-// 👇 LOS LOGS VAN AQUÍ (FUERA DEL OBJETO)
+// LOGS (FUERA del objeto, aquí sí)
 console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
 console.log("FORCED USER:", "1000");
 console.log("FORCED PASS:", "1234");
