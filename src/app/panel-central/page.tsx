@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
@@ -159,8 +160,18 @@ type ChatMessage = {
 };
 
 export default function Central() {
+  const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
+
+  useEffect(() => {
+    const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
+    if (!requestedTab) return;
+    const allowedTabs = new Set<TabKey>(["equipo", "crm", "chat", "reservas", "diario"]);
+    if (allowedTabs.has(requestedTab as TabKey)) {
+      setTab(requestedTab as TabKey);
+    }
+  }, [searchParams]);
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
   const [month, setMonth] = useState(monthKeyNow());

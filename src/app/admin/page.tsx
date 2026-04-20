@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
@@ -143,10 +144,20 @@ function ackStyle(v: any) {
 }
 
 export default function Admin() {
+  const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
+    if (!requestedTab) return;
+    const allowedTabs = new Set(ADMIN_NAV.map((item) => item.key));
+    if (allowedTabs.has(requestedTab as any)) {
+      setTab(requestedTab as TabKey);
+    }
+  }, [searchParams]);
 
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string>("");

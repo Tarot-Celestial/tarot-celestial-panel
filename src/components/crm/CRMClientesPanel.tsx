@@ -2,6 +2,7 @@
 
 import KpiCard from "@/components/ui/KpiCard";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
@@ -191,7 +192,10 @@ export default function CRMClientesPanel({
   const [crmRankSummary, setCrmRankSummary] = useState<any>(null);
   const [crmRankLoading, setCrmRankLoading] = useState(false);
   const [crmRankMsg, setCrmRankMsg] = useState("");
-  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">("");
+  const searchParams = useSearchParams();
+  const initialRankParam = String(searchParams?.get("rango") || "").trim().toLowerCase();
+  const initialRankFilter: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(initialRankParam) ? (initialRankParam as any) : "";
+  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(initialRankFilter);
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
@@ -538,7 +542,12 @@ export default function CRMClientesPanel({
     loadCRMTarotistas();
     loadFreshLeads();
     loadRankSummary(true);
-    searchCRM(true);
+    if (initialRankFilter) {
+      setCrmRankFilter(initialRankFilter);
+      searchCRM(true, initialRankFilter);
+    } else {
+      searchCRM(true);
+    }
 
     const interval = window.setInterval(() => {
       loadFreshLeads(true);
@@ -652,15 +661,21 @@ export default function CRMClientesPanel({
   }
 
   async function openRankClients(rank: "bronce" | "plata" | "oro") {
-  setCrmRankFilter(rank);
+    setCrmRankFilter(rank);
 
-  // 🔥 FORZAR que no use filtros anteriores mal guardados
-  await searchCRM(false, rank || "");
+    try {
+      const basePath = mode === "central" ? "/panel-central" : "/admin";
+      const target = `${window.location.origin}${basePath}?tab=crm&rango=${encodeURIComponent(rank)}`;
+      window.open(target, "_blank", "noopener,noreferrer");
+      return;
+    } catch {}
 
-  try {
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  } catch {}
-}
+    await searchCRM(false, rank || "");
+
+    try {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {}
+  }
 
   async function clearRankClientsFilter() {
     setCrmRankFilter("");
