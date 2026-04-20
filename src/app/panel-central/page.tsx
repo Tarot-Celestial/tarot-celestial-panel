@@ -36,7 +36,7 @@ type TabKey =
   | "chat"
   | "reservas"
   | "diario"
-  | "captacion";
+  | "captacion"
   | "incidencias";
 
 function monthKeyNow() {
