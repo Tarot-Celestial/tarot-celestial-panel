@@ -26,22 +26,6 @@ const TABS = [
   "incidencias",
   "checklist",
   "llamadas",
-  "rendimiento",
-  "habituales",
-] as const;
-
-type TabKey = typeof TABS[number];
-
-const TABS = [
-  "equipo",
-  "crm",
-  "chat",
-  "reservas",
-  "diario",
-  "captacion",
-  "incidencias",
-  "checklist",
-  "llamadas",
 ] as const;
 
 type TabKey = typeof TABS[number];
