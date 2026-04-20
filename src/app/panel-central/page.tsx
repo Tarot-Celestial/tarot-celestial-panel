@@ -37,6 +37,7 @@ type TabKey =
   | "reservas"
   | "diario"
   | "captacion";
+  | "incidencias";
 
 function monthKeyNow() {
   const d = new Date();
@@ -180,6 +181,7 @@ export default function Central() {
   "reservas",
   "diario",
   "captacion",
+  "incidencias",
 ]);
     if (allowedTabs.has(requestedTab as TabKey)) {
       setTab(requestedTab as TabKey);
