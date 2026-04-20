@@ -42,6 +42,14 @@ function normalizePhoneDigits(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
+function normalizeSpanishPhone(phone: string) {
+  const digits = normalizePhoneDigits(phone || "");
+  if (!digits) return "";
+  if (digits.startsWith("0034")) return digits.slice(4);
+  if (digits.startsWith("34") && digits.length > 9) return digits.slice(2);
+  return digits;
+}
+
 function clientWebMeta(cliente: any) {
   const onboardingDone = Boolean(cliente?.onboarding_completado);
   const accessCount = Math.max(0, Number(cliente?.total_accesos || 0));
@@ -62,7 +70,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const q = String(searchParams.get("q") || "").trim();
     const telefono = String(searchParams.get("telefono") || "").trim();
-    const telefonoDigits = normalizePhoneDigits(telefono);
+    const telefonoDigits = normalizeSpanishPhone(telefono);
     const pais = String(searchParams.get("pais") || "").trim();
     const etiqueta = String(searchParams.get("etiqueta") || searchParams.get("tag") || "").trim().toLowerCase();
     const rango = String(searchParams.get("rango") || "").trim().toLowerCase();
@@ -91,40 +99,47 @@ export async function GET(req: Request) {
 
     if (clienteIdsFiltro) query = query.in("id", clienteIdsFiltro);
 
-    if (q) {
-  const safeQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
-  const qDigits = normalizePhoneDigits(safeQ);
+    const searchQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
+    const qDigits = normalizeSpanishPhone(searchQ);
+    const qParts = searchQ.split(" ").filter(Boolean);
 
-  const parts = safeQ.split(" ").filter(Boolean);
+    if (qDigits || telefonoDigits) {
+      const phoneSearch = telefonoDigits || qDigits;
+      const phoneCandidates = Array.from(
+        new Set(
+          [
+            phoneSearch,
+            phoneSearch.replace(/^34/, ""),
+            `34${phoneSearch.replace(/^34/, "")}`,
+            `0034${phoneSearch.replace(/^34/, "")}`,
+          ].filter(Boolean)
+        )
+      );
 
-  const orParts: string[] = [
-    `nombre.ilike.%${safeQ}%`,
-    `apellido.ilike.%${safeQ}%`,
-    `email.ilike.%${safeQ}%`,
-  ];
+      const phoneOrParts: string[] = [];
+      for (const candidate of phoneCandidates) {
+        phoneOrParts.push(`telefono_normalizado.eq.${candidate}`);
+        phoneOrParts.push(`telefono.eq.${candidate}`);
+        phoneOrParts.push(`telefono.ilike.%${candidate}%`);
+      }
 
-  // 🔥 búsqueda por partes (Juan Pérez)
-  if (parts.length >= 2) {
-    const p1 = parts[0];
-    const p2 = parts[1];
+      query = query.or(phoneOrParts.join(","));
+    } else if (searchQ) {
+      const orParts: string[] = [
+        `nombre.ilike.%${searchQ}%`,
+        `apellido.ilike.%${searchQ}%`,
+        `email.ilike.%${searchQ}%`,
+      ];
 
-    // nombre + apellido
-    orParts.push(`and(nombre.ilike.%${p1}%,apellido.ilike.%${p2}%)`);
+      if (qParts.length >= 2) {
+        const first = qParts[0];
+        const second = qParts.slice(1).join(" ");
+        orParts.push(`and(nombre.ilike.%${first}%,apellido.ilike.%${second}%)`);
+        orParts.push(`and(nombre.ilike.%${second}%,apellido.ilike.%${first}%)`);
+      }
 
-    // apellido + nombre (por si lo escriben al revés)
-    orParts.push(`and(nombre.ilike.%${p2}%,apellido.ilike.%${p1}%)`);
-  }
-
-  if (qDigits) {
-  // 🔥 quitamos prefijo país si lo meten
-  const normalized = qDigits.replace(/^34/, "");
-
-  // 🔥 buscamos por final del número (lo más fiable)
-  orParts.push(`telefono.ilike.%${normalized}`);
-}
-
-  query = query.or(orParts.join(","));
-}
+      query = query.or(orParts.join(","));
+    }
 
     if (pais) query = query.ilike("pais", `%${pais}%`);
 
