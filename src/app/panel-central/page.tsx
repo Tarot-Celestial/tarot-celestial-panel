@@ -181,7 +181,7 @@ type ChatMessage = {
   created_at?: string | null;
 };
 
-export default function Central() {
+function CentralPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("equipo");
@@ -2181,5 +2181,13 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
         {(!items || items.length === 0) && <div className="tc-sub">Sin datos</div>}
       </div>
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40 }}>Cargando…</div>}>
+      <CentralPage />
+    </Suspense>
   );
 }
