@@ -122,7 +122,6 @@ export async function GET(req: Request) {
   // 🔥 buscamos por final del número (lo más fiable)
   orParts.push(`telefono.ilike.%${normalized}`);
 }
-}
 
   query = query.or(orParts.join(","));
 }
