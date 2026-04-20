@@ -18,7 +18,6 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
-import { Suspense } from "react";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
