@@ -28,6 +28,7 @@ const TABS = [
   "llamadas",
   "rendimiento",
   "habituales",
+  "ranking",
 ] as const;
 
 type TabKey = typeof TABS[number];
