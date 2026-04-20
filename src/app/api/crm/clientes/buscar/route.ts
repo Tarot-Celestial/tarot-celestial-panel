@@ -116,13 +116,12 @@ export async function GET(req: Request) {
   }
 
   if (qDigits) {
-  // 🔥 si es un teléfono largo → búsqueda precisa
-  if (qDigits.length >= 7) {
-    orParts.push(`telefono.eq.${qDigits}`);
-  } else {
-    // 🔥 si es corto → permitir parcial
-    orParts.push(`telefono.ilike.%${qDigits}%`);
-  }
+  // 🔥 quitamos prefijo país si lo meten
+  const normalized = qDigits.replace(/^34/, "");
+
+  // 🔥 buscamos por final del número (lo más fiable)
+  orParts.push(`telefono.ilike.%${normalized}`);
+}
 }
 
   query = query.or(orParts.join(","));
