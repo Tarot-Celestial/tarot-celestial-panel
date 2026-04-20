@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import TCToaster from "@/components/ui/TCToaster";
+import IPPhoneBar from "@/components/phone/IPPhoneBar";
 import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
@@ -294,6 +295,7 @@ export default function AppHeader() {
 
   return (
     <>
+      <IPPhoneBar />
       <div
         style={{
           position: "sticky",
