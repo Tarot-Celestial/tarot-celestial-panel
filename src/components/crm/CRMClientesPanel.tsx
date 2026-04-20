@@ -179,6 +179,22 @@ export default function CRMClientesPanel({
   const [crmPhoneFilter, setCrmPhoneFilter] = useState("");
   const [crmCountryFilter, setCrmCountryFilter] = useState("");
   const [crmWebFilter, setCrmWebFilter] = useState<"todos" | "registrados" | "no_registrados" | "onboarding_pendiente">("todos");
+
+  useEffect(() => {
+    function handleRankFilter(event: Event) {
+      const customEvent = event as CustomEvent<{ rank?: string }>;
+      const rankValue = String(customEvent.detail?.rank || "").trim().toLowerCase();
+      const nextRank: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(rankValue) ? (rankValue as any) : "";
+      if (!nextRank) return;
+      setCrmRankFilter(nextRank);
+      void searchCRM(false, nextRank);
+    }
+
+    window.addEventListener("crm-filter-rank", handleRankFilter as EventListener);
+    return () => {
+      window.removeEventListener("crm-filter-rank", handleRankFilter as EventListener);
+    };
+  }, [crmQuery, crmPhoneFilter, crmTagFilter, crmCountryFilter, crmWebFilter]);
   const [crmLoading, setCrmLoading] = useState(false);
   const [crmRows, setCrmRows] = useState<any[]>([]);
   const [crmFreshLeads, setCrmFreshLeads] = useState<any[]>([]);
@@ -196,6 +212,13 @@ export default function CRMClientesPanel({
   const initialRankParam = String(searchParams?.get("rango") || "").trim().toLowerCase();
   const initialRankFilter: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(initialRankParam) ? (initialRankParam as any) : "";
   const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(initialRankFilter);
+
+  useEffect(() => {
+    const rankParam = String(searchParams?.get("rango") || "").trim().toLowerCase();
+    const nextRank: "" | "bronce" | "plata" | "oro" = ["bronce", "plata", "oro"].includes(rankParam) ? (rankParam as any) : "";
+    setCrmRankFilter(nextRank);
+  }, [searchParams]);
+
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
@@ -664,10 +687,13 @@ export default function CRMClientesPanel({
     setCrmRankFilter(rank);
 
     try {
-      const basePath = mode === "central" ? "/panel-central" : "/admin";
-      const target = `${window.location.origin}${basePath}?tab=crm&rango=${encodeURIComponent(rank)}`;
-      window.open(target, "_blank", "noopener,noreferrer");
-      return;
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        params.set("tab", "crm");
+        params.set("rango", rank);
+        const nextUrl = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState(null, "", nextUrl);
+      }
     } catch {}
 
     await searchCRM(false, rank || "");

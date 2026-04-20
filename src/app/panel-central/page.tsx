@@ -189,7 +189,28 @@ function CentralPage() {
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
     if (!requestedTab) return;
+
+    const specialRankTabs: Record<string, "bronce" | "plata" | "oro"> = {
+      bronzes: "bronce",
+      silvers: "plata",
+      golds: "oro",
+    };
+
     const allowedTabs = new Set<TabKey>(TABS);
+    if (specialRankTabs[requestedTab]) {
+      setTab("crm");
+      if (typeof window !== "undefined") {
+        window.setTimeout(() => {
+          window.dispatchEvent(
+            new CustomEvent("crm-filter-rank", {
+              detail: { rank: specialRankTabs[requestedTab] },
+            })
+          );
+        }, 80);
+      }
+      return;
+    }
+
     if (allowedTabs.has(requestedTab as TabKey)) {
       setTab(requestedTab as TabKey);
     }
