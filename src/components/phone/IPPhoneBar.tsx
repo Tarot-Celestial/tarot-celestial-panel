@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 type SipConfig = {
 server: string;
@@ -74,7 +74,7 @@ simpleUserRef.current = client;
   setMessage("Conectado correctamente");
 } catch (e: any) {
   setStatus("error");
-  setMessage(e.message);
+  setMessage(e?.message || "Error al conectar");
 }
 ```
 
@@ -86,6 +86,7 @@ await simpleUserRef.current?.disconnect();
 } catch {}
 simpleUserRef.current = null;
 setStatus("idle");
+setMessage("Desconectado");
 }
 
 return (
@@ -99,7 +100,7 @@ return (
 
   <div style={{ marginTop: 10 }}>
     <input
-      placeholder="Servidor WSS"
+      placeholder="Servidor WSS (wss://dominio:8089/ws)"
       value={config.server}
       onChange={(e) => setConfig({ ...config, server: e.target.value })}
     />
@@ -107,7 +108,7 @@ return (
 
   <div>
     <input
-      placeholder="Dominio"
+      placeholder="Dominio SIP"
       value={config.domain}
       onChange={(e) => setConfig({ ...config, domain: e.target.value })}
     />
@@ -123,18 +124,20 @@ return (
 
   <div>
     <input
-      placeholder="Password"
       type="password"
+      placeholder="Password"
       value={config.password}
       onChange={(e) => setConfig({ ...config, password: e.target.value })}
     />
   </div>
 
-  <div style={{ marginTop: 10 }}>{message}</div>
+  <div style={{ marginTop: 10 }}>
+    Estado: {status}
+  </div>
+
+  <div>{message}</div>
 </div>
 ```
 
 );
 }
-
-
