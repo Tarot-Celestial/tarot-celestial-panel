@@ -33,7 +33,10 @@ export default function IPPhoneBar() {
 
   async function buildClient() {
     const SIP: any = await import("sip.js");
-    const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
+    const SimpleUser =
+      SIP?.Web?.SimpleUser ||
+      SIP?.SimpleUser ||
+      SIP?.default?.Web?.SimpleUser;
 
     if (!SimpleUser) {
       throw new Error("No se encontró SimpleUser en sip.js");
@@ -46,14 +49,18 @@ export default function IPPhoneBar() {
 
     const options = {
       aor,
+
       userAgentOptions: {
         uri: SIP.UserAgent.makeURI(aor),
+
         authorizationUsername: config.username,
         authorizationPassword: config.password,
+
         transportOptions: {
           server: config.server,
         },
       },
+
       media: {
         constraints: { audio: true, video: false },
         remote: { audio: audioRef.current },
@@ -66,6 +73,7 @@ export default function IPPhoneBar() {
   async function connect() {
     try {
       setStatus("connecting");
+      setMessage("Conectando...");
 
       const client = await buildClient();
       simpleUserRef.current = client;
@@ -74,7 +82,7 @@ export default function IPPhoneBar() {
       await client.register();
 
       setStatus("registered");
-      setMessage("Conectado correctamente");
+      setMessage("Registrado correctamente");
     } catch (e: any) {
       setStatus("error");
       setMessage(e?.message || "Error al conectar");
@@ -84,9 +92,7 @@ export default function IPPhoneBar() {
   async function disconnect() {
     try {
       await simpleUserRef.current?.disconnect();
-    } catch {
-      // noop
-    }
+    } catch {}
 
     simpleUserRef.current = null;
     setStatus("idle");
@@ -106,7 +112,9 @@ export default function IPPhoneBar() {
         <input
           placeholder="Servidor WSS"
           value={config.server}
-          onChange={(e) => setConfig({ ...config, server: e.target.value })}
+          onChange={(e) =>
+            setConfig({ ...config, server: e.target.value })
+          }
         />
       </div>
 
@@ -114,7 +122,9 @@ export default function IPPhoneBar() {
         <input
           placeholder="Dominio"
           value={config.domain}
-          onChange={(e) => setConfig({ ...config, domain: e.target.value })}
+          onChange={(e) =>
+            setConfig({ ...config, domain: e.target.value })
+          }
         />
       </div>
 
@@ -122,7 +132,9 @@ export default function IPPhoneBar() {
         <input
           placeholder="Usuario"
           value={config.username}
-          onChange={(e) => setConfig({ ...config, username: e.target.value })}
+          onChange={(e) =>
+            setConfig({ ...config, username: e.target.value })
+          }
         />
       </div>
 
@@ -131,7 +143,9 @@ export default function IPPhoneBar() {
           type="password"
           placeholder="Password"
           value={config.password}
-          onChange={(e) => setConfig({ ...config, password: e.target.value })}
+          onChange={(e) =>
+            setConfig({ ...config, password: e.target.value })
+          }
         />
       </div>
 
