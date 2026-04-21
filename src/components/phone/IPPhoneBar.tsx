@@ -172,10 +172,181 @@ export default function IPPhoneBar() {
     const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
     if (!SimpleUser) throw new Error("No he encontrado SimpleUser en sip.js");
 
-    const aor = "sip:1000@sip.clientestarotcelestial.es";
-    if (!aor) throw new Error("Falta el AOR SIP válido");
-    console.log("AOR FINAL:", aor);
-    console.log("USERNAME:", normalizedConfig.username);
+    const delegate = {
+      onCallCreated: () => {
+        setStatus("calling");
+        setMessage(`Llamada iniciada desde ${normalizeUsername(normalizedConfig.username)}`);
+      },
+      onCallAnswered: () => {
+        setStatus("in-call");
+        setIncomingFrom("");
+        setMessage("Llamada conectada");
+      },
+      onCallHangup: () => {
+        setStatus(normalizedConfig.autoRegister ? "registered" : "idle");
+        setIncomingFrom("");
+        setOnHold(false);
+        setMuted(false);
+        setMessage("Llamada finalizada");
+      },
+      onCallReceived: async () => {
+        try {
+          const session = simpleUserRef.current?.session;
+          const from = session?.remoteIdentity?.uri?.toString?.() || "Llamada entrante";
+          setIncomingFrom(from);
+        } catch {
+          setIncomingFrom("Llamada entrante");
+        }
+        setStatus("incoming");
+        setMessage("Tienes una llamada entrante");
+      },
+      onRegistered: () => {
+        setStatus("registered");
+        setMessage(`Extensión SIP registrada como ${normalizeUsername(normalizedConfig.username)}`);
+      },
+      onServerDisconnect: () => {
+        setStatus("idle");
+        setOnHold(false);
+        setMuted(false);
+        setMessage("Conexión SIP cerrada");
+      },
+    };
+function normalizeDomain(raw: string) {
+  const value = stripProtocol(raw);
+  if (!value) return "";
+  if (value.includes("@")) {
+    return value.split("@").pop()?.trim() || "";
+  }
+  return value;
+}
+
+function normalizeUsername(raw: string) {
+  return String(raw || "").trim().replace(/^sip:/i, "").replace(/@.*$/, "");
+}
+
+function normalizeServer(raw: string) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (/^wss?:\/\//i.test(value)) return value;
+  return `wss://${stripProtocol(value)}`;
+}
+
+function normalizeLoadedConfig(raw: Partial<SipConfig> | null | undefined): SipConfig {
+  const incoming = raw || {};
+  return {
+    server: normalizeServer(String(incoming.server || "")),
+    domain: normalizeDomain(String(incoming.domain || "")),
+    username: normalizeUsername(String(incoming.username || "")),
+    password: String(incoming.password || ""),
+    displayName: String(incoming.displayName || ""),
+    autoRegister: incoming.autoRegister !== false,
+  };
+}
+
+function buildAor(username: string, domain: string) {
+  if (!username || !domain) return null;
+
+  const cleanUser = String(username).trim();
+  const cleanDomain = String(domain).trim();
+
+  return `sip:${cleanUser}@${cleanDomain}`;
+}
+
+function sanitizeDestination(raw: string, domain: string) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (value.startsWith("sip:")) return value;
+  if (value.includes("@")) return `sip:${value.replace(/^sip:/i, "")}`;
+
+  const safeDomain = normalizeDomain(domain);
+  const normalizedNumber = value.replace(/[^\d+*#]/g, "");
+  if (!safeDomain) return normalizedNumber;
+
+  if (normalizedNumber.startsWith("+")) {
+    return `sip:${normalizedNumber.slice(1)}@${safeDomain}`;
+  }
+
+  return `sip:${normalizedNumber}@${safeDomain}`;
+}
+
+export default function IPPhoneBar() {
+  const simpleUserRef = useRef<any>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const currentSignatureRef = useRef("");
+  const [config, setConfig] = useState<SipConfig>(DEFAULT_CONFIG);
+  const [destination, setDestination] = useState("");
+  const [status, setStatus] = useState<SipStatus>("idle");
+  const [message, setMessage] = useState("Teléfono IP listo para configurar");
+  const [expanded, setExpanded] = useState(false);
+  const [incomingFrom, setIncomingFrom] = useState("");
+  const [muted, setMuted] = useState(false);
+  const [onHold, setOnHold] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  const normalizedConfig = useMemo(() => normalizeLoadedConfig(config), [config]);
+  const activeAor = useMemo(
+    () => buildAor(normalizedConfig.username, normalizedConfig.domain),
+    [normalizedConfig.username, normalizedConfig.domain],
+  );
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setConfig(normalizeLoadedConfig(parsed));
+      }
+    } catch {
+      // noop
+    }
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      void disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const canConnect = useMemo(() => {
+    return Boolean(
+      normalizedConfig.server && normalizedConfig.domain && normalizedConfig.username && normalizedConfig.password,
+    );
+  }, [normalizedConfig]);
+
+  function configSignature() {
+    return JSON.stringify({
+      server: normalizedConfig.server,
+      domain: normalizedConfig.domain,
+      username: normalizedConfig.username,
+      password: normalizedConfig.password,
+      autoRegister: normalizedConfig.autoRegister,
+    });
+  }
+
+  function saveConfig() {
+    try {
+      const safeConfig = normalizeLoadedConfig(config);
+      setConfig(safeConfig);
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(safeConfig));
+      window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+      setMessage(
+        safeConfig.username
+          ? `Configuración SIP guardada · usuario activo: ${safeConfig.username}`
+          : "Configuración SIP guardada en este navegador",
+      );
+    } catch {
+      setMessage("No he podido guardar la configuración SIP");
+      setStatus("error");
+    }
+  }
+
+  async function buildClient() {
+    if (!remoteAudioRef.current) throw new Error("Audio remoto no preparado");
+    const SIP: any = await import("sip.js");
+    const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
+    if (!SimpleUser) throw new Error("No he encontrado SimpleUser en sip.js");
 
     const delegate = {
       onCallCreated: () => {
@@ -218,18 +389,6 @@ export default function IPPhoneBar() {
     };
     // 🔥 FORZAR protocolo SIP en WebSocket (CLAVE)
 
-const options = {
-  aor,
-  userAgentOptions: {
-    uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
-    authorizationUsername: "1000",
-    authorizationPassword: "123456",
-    displayName: "1000",
-
-    transportOptions: {
-      server: "wss://sip.clientestarotcelestial.es:8089/ws",
-    },
-  },
 
   media: {
     constraints: { audio: true, video: false },
@@ -239,14 +398,16 @@ const options = {
   delegate,
 };
 
-// LOGS
-console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
-console.log("FORCED USER:", "1000");
-console.log("FORCED PASS:", "123456");
-
 currentSignatureRef.current = configSignature();
-return new SimpleUser("wss://sip.clientestarotcelestial.es:8089/ws", options);
 }
+  
+  async function connect() {
+    if (!canConnect) {
+      setStatus("error");
+      setMessage("Rellena servidor WSS, dominio, usuario y contraseña SIP");
+      setExpanded(true);
+      return;
+    }
   
   async function connect() {
     if (!canConnect) {
