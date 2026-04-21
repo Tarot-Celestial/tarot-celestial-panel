@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 export default function IPPhoneBar() {
   const simpleUserRef = useRef<any>(null);
@@ -10,14 +10,17 @@ export default function IPPhoneBar() {
   const [status, setStatus] = useState("Offline");
   const [open, setOpen] = useState(false);
 
-  const config = {
+  const [config, setConfig] = useState({
     server: "wss://sip.clientestarotcelestial.es:8089/ws",
     domain: "sip.clientestarotcelestial.es",
-    username: "1000",
-    password: "123456",
-  };
+    username: "",
+    password: "",
+  });
 
-  async function initSip() {
+  // =========================
+  // SIP CONNECT
+  // =========================
+  async function connect() {
     try {
       const SIP: any = await import("sip.js");
       const SimpleUser =
@@ -52,15 +55,32 @@ export default function IPPhoneBar() {
 
       await user.connect();
       await user.register();
+
+      setStatus("🟢 Conectado");
     } catch (e) {
       console.error(e);
-      setStatus("❌ Error SIP");
+      setStatus("❌ Error conexión");
     }
   }
 
+  async function disconnect() {
+    try {
+      await simpleUserRef.current?.disconnect();
+      simpleUserRef.current = null;
+      setStatus("Offline");
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // =========================
+  // CALL
+  // =========================
   async function call() {
     if (!number || !simpleUserRef.current) return;
+
     try {
+      setStatus("📞 Llamando...");
       await simpleUserRef.current.call(`sip:${number}@${config.domain}`);
     } catch (e) {
       console.error(e);
@@ -70,14 +90,16 @@ export default function IPPhoneBar() {
 
   async function hangup() {
     try {
-      if (simpleUserRef.current?.session) {
-        await simpleUserRef.current.hangup();
-      }
+      await simpleUserRef.current?.hangup();
+      setStatus("🔴 Colgado");
     } catch (e) {
       console.error(e);
     }
   }
 
+  // =========================
+  // UI
+  // =========================
   function addDigit(d: string) {
     setNumber((prev) => prev + d);
   }
@@ -86,25 +108,16 @@ export default function IPPhoneBar() {
     setNumber("");
   }
 
-  useEffect(() => {
-    initSip();
-  }, []);
-
   return (
     <>
       <audio ref={audioRef} autoPlay />
 
-      {/* BOTÓN FLOTANTE */}
       {!open && (
-        <button
-          onClick={() => setOpen(true)}
-          style={styles.floatingBtn}
-        >
+        <button onClick={() => setOpen(true)} style={styles.floatingBtn}>
           📞
         </button>
       )}
 
-      {/* PANEL */}
       {open && (
         <div style={styles.container}>
           <div style={styles.header}>
@@ -112,8 +125,38 @@ export default function IPPhoneBar() {
             <button onClick={() => setOpen(false)}>✖</button>
           </div>
 
+          {/* CONFIG */}
+          <div style={styles.config}>
+            <input
+              placeholder="Usuario (1000, 1001...)"
+              value={config.username}
+              onChange={(e) =>
+                setConfig({ ...config, username: e.target.value })
+              }
+            />
+            <input
+              placeholder="Password"
+              type="password"
+              value={config.password}
+              onChange={(e) =>
+                setConfig({ ...config, password: e.target.value })
+              }
+            />
+
+            <div style={{ display: "flex", gap: 5 }}>
+              <button style={styles.connect} onClick={connect}>
+                Conectar
+              </button>
+              <button style={styles.disconnect} onClick={disconnect}>
+                Desconectar
+              </button>
+            </div>
+          </div>
+
+          {/* DISPLAY */}
           <div style={styles.display}>{number || "—"}</div>
 
+          {/* KEYPAD */}
           <div style={styles.keypad}>
             {["1","2","3","4","5","6","7","8","9","*","0","#"].map((d) => (
               <button key={d} style={styles.key} onClick={() => addDigit(d)}>
@@ -122,6 +165,7 @@ export default function IPPhoneBar() {
             ))}
           </div>
 
+          {/* ACTIONS */}
           <div style={styles.actions}>
             <button style={styles.call} onClick={call}>📞</button>
             <button style={styles.hang} onClick={hangup}>❌</button>
@@ -168,6 +212,30 @@ const styles: any = {
     display: "flex",
     justifyContent: "space-between",
     marginBottom: 10,
+  },
+
+  config: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 5,
+    marginBottom: 10,
+  },
+
+  connect: {
+    flex: 1,
+    background: "#00c853",
+    border: "none",
+    borderRadius: 6,
+    height: 35,
+  },
+
+  disconnect: {
+    flex: 1,
+    background: "#555",
+    border: "none",
+    borderRadius: 6,
+    height: 35,
+    color: "white",
   },
 
   display: {
