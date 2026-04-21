@@ -253,7 +253,8 @@ console.log("FORCED PASS:", "123456");
 
 currentSignatureRef.current = configSignature();
 return new SimpleUser("wss://sip.clientestarotcelestial.es:8089/ws", options);
-
+}
+  
   async function connect() {
     if (!canConnect) {
       setStatus("error");
