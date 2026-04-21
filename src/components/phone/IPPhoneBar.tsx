@@ -17,62 +17,86 @@ export default function IPPhoneBar() {
   };
 
   async function initSip() {
-    const SIP: any = await import("sip.js");
-    const SimpleUser =
-      SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
+    try {
+      const SIP: any = await import("sip.js");
+      const SimpleUser =
+        SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
 
-    const aor = `sip:${config.username}@${config.domain}`;
+      if (!SimpleUser) {
+        throw new Error("No se encontró SimpleUser en sip.js");
+      }
 
-    const user = new SimpleUser(config.server, {
-      aor,
-      userAgentOptions: {
-        uri: SIP.UserAgent.makeURI(aor),
-        authorizationUsername: config.username,
-        authorizationPassword: config.password,
-        transportOptions: {
-          server: config.server,
+      const aor = `sip:${config.username}@${config.domain}`;
+
+      const user = new SimpleUser(config.server, {
+        aor,
+        userAgentOptions: {
+          uri: SIP.UserAgent.makeURI(aor),
+          authorizationUsername: config.username,
+          authorizationPassword: config.password,
+          transportOptions: {
+            server: config.server,
+          },
         },
-      },
-      media: {
-        constraints: { audio: true, video: false },
-        remote: { audio: audioRef.current },
-      },
-    });
+        media: {
+          constraints: { audio: true, video: false },
+          remote: { audio: audioRef.current },
+        },
+      });
 
-    simpleUserRef.current = user;
+      user.delegate = {
+        onCallCreated: () => {
+          setStatus("Llamando...");
+        },
+        onCallAnswered: () => {
+          setStatus("En llamada");
+        },
+        onCallHangup: () => {
+          setStatus("Colgado");
+        },
+        onRegistered: () => {
+          setStatus("Registrado ✅");
+        },
+      };
 
-    await user.connect();
-    await user.register();
+      simpleUserRef.current = user;
 
-    setStatus("Conectado");
-  }
+      await user.connect();
+      await user.register();
 
- async function call() {
-  if (!number) return;
-
-  try {
-    if (!simpleUserRef.current) return;
-
-    await simpleUserRef.current.call(`sip:${number}@${config.domain}`);
-  } catch (e) {
-    console.error(e);
-    setStatus("Error al llamar");
-  }
-}
-
- async function hangup() {
-  try {
-    if (!simpleUserRef.current) return;
-
-    if (simpleUserRef.current.session) {
-      await simpleUserRef.current.hangup();
-    } else {
-      setStatus("No hay llamada activa");
+      setStatus("Conectado");
+    } catch (e) {
+      console.error(e);
+      setStatus("Error SIP");
     }
-  } catch (e) {
-    console.error(e);
   }
-}
+
+  async function call() {
+    if (!number) return;
+
+    try {
+      if (!simpleUserRef.current) return;
+
+      await simpleUserRef.current.call(`sip:${number}@${config.domain}`);
+    } catch (e) {
+      console.error(e);
+      setStatus("Error al llamar");
+    }
+  }
+
+  async function hangup() {
+    try {
+      if (!simpleUserRef.current) return;
+
+      if (simpleUserRef.current.session) {
+        await simpleUserRef.current.hangup();
+      } else {
+        setStatus("No hay llamada activa");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
 
   function addDigit(d: string) {
     setNumber((prev) => prev + d);
@@ -83,57 +107,49 @@ export default function IPPhoneBar() {
   }
 
   useEffect(() => {
-   async function initSip() {
-  try {
-    const SIP: any = await import("sip.js");
-    const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser;
+    initSip();
 
-    const aor = `sip:${config.username}@${config.domain}`;
-
-    const user = new SimpleUser(config.server, {
-      aor,
-      userAgentOptions: {
-        uri: SIP.UserAgent.makeURI(aor),
-        authorizationUsername: config.username,
-        authorizationPassword: config.password,
-        transportOptions: {
-          server: config.server,
-        },
-      },
-      media: {
-        constraints: { audio: true, video: false },
-        remote: { audio: audioRef.current },
-      },
-    });
-
-    // 🔥 ESTO ES LO IMPORTANTE (EVENTOS)
-    user.delegate = {
-      onCallCreated: () => {
-        setStatus("Llamando...");
-      },
-      onCallAnswered: () => {
-        setStatus("En llamada");
-      },
-      onCallHangup: () => {
-        setStatus("Colgado");
-      },
-      onRegistered: () => {
-        setStatus("Registrado ✅");
-      },
+    return () => {
+      try {
+        simpleUserRef.current?.disconnect?.();
+      } catch {
+        // noop
+      }
     };
+  }, []);
 
-    simpleUserRef.current = user;
+  return (
+    <div style={styles.container}>
+      <audio ref={audioRef} autoPlay />
 
-    await user.connect();
-    await user.register();
+      <div style={styles.display}>{number || "—"}</div>
 
-    setStatus("Conectado");
-  } catch (e: any) {
-    console.error(e);
-    setStatus("Error SIP");
-  }
+      <div style={styles.keypad}>
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((d) => (
+          <button key={d} style={styles.key} onClick={() => addDigit(d)}>
+            {d}
+          </button>
+        ))}
+      </div>
+
+      <div style={styles.actions}>
+        <button style={styles.call} onClick={call}>
+          📞
+        </button>
+        <button style={styles.hang} onClick={hangup}>
+          ❌
+        </button>
+        <button style={styles.clear} onClick={clear}>
+          ⌫
+        </button>
+      </div>
+
+      <div style={styles.status}>{status}</div>
+    </div>
+  );
 }
-const styles: any = {
+
+const styles: Record<string, React.CSSProperties> = {
   container: {
     width: 260,
     padding: 20,
@@ -172,10 +188,10 @@ const styles: any = {
     display: "flex",
     justifyContent: "space-between",
     marginTop: 15,
+    gap: 5,
   },
   call: {
     flex: 1,
-    marginRight: 5,
     background: "#00c853",
     border: "none",
     borderRadius: 10,
@@ -185,7 +201,6 @@ const styles: any = {
   },
   hang: {
     flex: 1,
-    marginRight: 5,
     background: "#d50000",
     border: "none",
     borderRadius: 10,
@@ -201,11 +216,12 @@ const styles: any = {
     height: 50,
     fontSize: 18,
     cursor: "pointer",
+    color: "white",
   },
   status: {
     marginTop: 10,
     fontSize: 12,
-    opacity: 0.7,
+    opacity: 0.8,
     textAlign: "center",
   },
 };
