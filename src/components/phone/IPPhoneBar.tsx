@@ -217,13 +217,6 @@ export default function IPPhoneBar() {
       },
     };
     // 🔥 FORZAR protocolo SIP en WebSocket (CLAVE)
-if (typeof window !== "undefined") {
-  (window as any).WebSocket = class extends WebSocket {
-    constructor(url: string, protocols?: string | string[]) {
-      super(url, ["sip"]);
-    }
-  };
-}
 
 const options = {
   aor,
