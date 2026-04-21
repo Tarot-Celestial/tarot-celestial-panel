@@ -9,6 +9,8 @@ export default function IPPhoneBar() {
   const [number, setNumber] = useState("");
   const [status, setStatus] = useState("Offline");
   const [open, setOpen] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+  const [incoming, setIncoming] = useState(false);
 
   const [config, setConfig] = useState({
     server: "wss://sip.clientestarotcelestial.es:8089/ws",
@@ -47,8 +49,17 @@ export default function IPPhoneBar() {
       user.delegate = {
         onCallCreated: () => setStatus("📞 Llamando"),
         onCallAnswered: () => setStatus("🟢 En llamada"),
-        onCallHangup: () => setStatus("🔴 Colgado"),
+        onCallHangup: () => {
+          setIncoming(false);
+          setStatus("🔴 Colgado");
+        },
         onRegistered: () => setStatus("🟢 Conectado"),
+
+        // 🔥 LLAMADA ENTRANTE
+        onCallReceived: () => {
+          setIncoming(true);
+          setStatus("📞 Llamada entrante");
+        },
       };
 
       simpleUserRef.current = user;
@@ -88,9 +99,20 @@ export default function IPPhoneBar() {
     }
   }
 
+  async function answer() {
+    try {
+      await simpleUserRef.current.answer();
+      setIncoming(false);
+      setStatus("🟢 En llamada");
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function hangup() {
     try {
       await simpleUserRef.current?.hangup();
+      setIncoming(false);
       setStatus("🔴 Colgado");
     } catch (e) {
       console.error(e);
@@ -112,49 +134,68 @@ export default function IPPhoneBar() {
     <>
       <audio ref={audioRef} autoPlay />
 
+      {/* BOTÓN FLOTANTE */}
       {!open && (
         <button onClick={() => setOpen(true)} style={styles.floatingBtn}>
           📞
         </button>
       )}
 
+      {/* PANEL */}
       {open && (
         <div style={styles.container}>
+          {/* HEADER */}
           <div style={styles.header}>
             <span>Softphone</span>
-            <button onClick={() => setOpen(false)}>✖</button>
-          </div>
-
-          {/* CONFIG */}
-          <div style={styles.config}>
-            <input
-              placeholder="Usuario (1000, 1001...)"
-              value={config.username}
-              onChange={(e) =>
-                setConfig({ ...config, username: e.target.value })
-              }
-            />
-            <input
-              placeholder="Password"
-              type="password"
-              value={config.password}
-              onChange={(e) =>
-                setConfig({ ...config, password: e.target.value })
-              }
-            />
-
             <div style={{ display: "flex", gap: 5 }}>
-              <button style={styles.connect} onClick={connect}>
-                Conectar
-              </button>
-              <button style={styles.disconnect} onClick={disconnect}>
-                Desconectar
-              </button>
+              <button onClick={() => setShowConfig(!showConfig)}>⚙️</button>
+              <button onClick={() => setOpen(false)}>✖</button>
             </div>
           </div>
 
+          {/* CONFIG OCULTA */}
+          {showConfig && (
+            <div style={styles.config}>
+              <input
+                placeholder="Usuario"
+                value={config.username}
+                onChange={(e) =>
+                  setConfig({ ...config, username: e.target.value })
+                }
+              />
+              <input
+                placeholder="Password"
+                type="password"
+                value={config.password}
+                onChange={(e) =>
+                  setConfig({ ...config, password: e.target.value })
+                }
+              />
+
+              <div style={{ display: "flex", gap: 5 }}>
+                <button style={styles.connect} onClick={connect}>
+                  Conectar
+                </button>
+                <button style={styles.disconnect} onClick={disconnect}>
+                  Off
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* DISPLAY */}
           <div style={styles.display}>{number || "—"}</div>
+
+          {/* INCOMING CALL */}
+          {incoming && (
+            <div style={styles.incoming}>
+              📞 Llamada entrante
+              <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
+                <button style={styles.call} onClick={answer}>Aceptar</button>
+                <button style={styles.hang} onClick={hangup}>Rechazar</button>
+              </div>
+            </div>
+          )}
 
           {/* KEYPAD */}
           <div style={styles.keypad}>
@@ -247,6 +288,14 @@ const styles: any = {
     justifyContent: "flex-end",
     padding: "0 10px",
     marginBottom: 10,
+  },
+
+  incoming: {
+    background: "#222",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+    textAlign: "center",
   },
 
   keypad: {
