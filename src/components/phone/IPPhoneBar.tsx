@@ -204,10 +204,7 @@ return (
   <div>{message}</div>
   <button onClick={saveConfig}>Guardar</button>
 </div>
-```
-
 );
 }
 
-}
 
