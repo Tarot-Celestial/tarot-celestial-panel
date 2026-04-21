@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { Copy, Mic, MicOff, Minimize2, Phone, PhoneCall, PhoneIncoming, PhoneOff, Settings2, Volume2, VolumeX, X } from "lucide-react";
+import { Clock3, Copy, History, Mic, MicOff, Minimize2, Phone, PhoneCall, PhoneIncoming, PhoneOff, RefreshCw, Settings2, Volume2, VolumeX, X } from "lucide-react";
 
 const sb = supabaseBrowser();
-const STORAGE_KEY = "tc_softphone_config_v2";
+const STORAGE_KEY = "tc_softphone_config_v3";
 
 type PhoneConfig = {
   server: string;
@@ -17,7 +17,7 @@ type PhoneConfig = {
 type CallHistoryItem = {
   id: string;
   number: string;
-  direction: "incoming" | "outgoing";
+  direction: "incoming" | "outgoing" | "transfer";
   createdAt: string;
   result: string;
 };
@@ -31,7 +31,7 @@ function formatDuration(totalSeconds: number) {
 }
 
 function sanitizeNumber(value: string) {
-  return String(value || "").replace(/[^0-9*#]/g, "");
+  return String(value || "").replace(/[^0-9*#+]/g, "");
 }
 
 function loadStoredConfig(): PhoneConfig {
@@ -57,42 +57,62 @@ function loadStoredConfig(): PhoneConfig {
   }
 }
 
+function cardStyle(extra?: CSSProperties): CSSProperties {
+  return {
+    border: "1px solid rgba(255,255,255,.12)",
+    background: "rgba(13,13,20,.92)",
+    borderRadius: 22,
+    backdropFilter: "blur(16px)",
+    ...extra,
+  };
+}
+
 export default function IPPhoneBar() {
   const simpleUserRef = useRef<any>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const ringAudioRef = useRef<HTMLAudioElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const ringtoneLoopRef = useRef<number | null>(null);
   const callStartedAtRef = useRef<number | null>(null);
   const historyRef = useRef<CallHistoryItem[]>([]);
+  const callNumberRef = useRef("");
+  const incomingNumberRef = useRef("");
+  const inCallRef = useRef(false);
 
   const [hydrated, setHydrated] = useState(false);
   const [open, setOpen] = useState(false);
   const [compact, setCompact] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [status, setStatus] = useState<"offline" | "connecting" | "registered" | "calling" | "ringing" | "in_call" | "ended" | "error">("offline");
+  const [statusText, setStatusText] = useState("Desconectado");
   const [number, setNumber] = useState("");
-  const [status, setStatus] = useState<"offline" | "connecting" | "registered" | "ringing" | "calling" | "in_call" | "ended" | "error">("offline");
-  const [statusText, setStatusText] = useState("Offline");
   const [incoming, setIncoming] = useState(false);
   const [incomingNumber, setIncomingNumber] = useState("");
   const [callNumber, setCallNumber] = useState("");
-  const [isMuted, setIsMuted] = useState(false);
-  const [isSpeakerMuted, setIsSpeakerMuted] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(true);
+  const [msg, setMsg] = useState("");
   const [history, setHistory] = useState<CallHistoryItem[]>([]);
-  const [config, setConfig] = useState<PhoneConfig>(loadStoredConfig);
+  const [config, setConfig] = useState<PhoneConfig>(loadStoredConfig());
 
-  const inCall = status === "in_call" || status === "calling" || status === "ringing";
-  const displayNumber = useMemo(() => incomingNumber || callNumber || number, [incomingNumber, callNumber, number]);
+  const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
+  const inCall = status === "calling" || status === "ringing" || status === "in_call";
+  const visiblePeer = incoming ? incomingNumber : callNumber || number;
 
   useEffect(() => {
     setHydrated(true);
+    setOpen(true);
     try {
-      const saved = loadStoredConfig();
-      setConfig(saved);
-    } catch {
-      // noop
-    }
+      const raw = localStorage.getItem("tc_softphone_history_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          historyRef.current = parsed;
+          setHistory(parsed);
+        }
+      }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -101,65 +121,70 @@ export default function IPPhoneBar() {
   }, [config, hydrated]);
 
   useEffect(() => {
-    async function prefillAssignedExtension() {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        const res = await fetch("/api/operator/panel", {
-          cache: "no-store",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const json = await res.json().catch(() => null);
-        if (!json?.ok) return;
-        const myWorkerId = String(json?.me?.id || "");
-        const assigned = (Array.isArray(json?.extensions) ? json.extensions : []).find((item: any) => String(item?.worker_id || "") === myWorkerId);
-        if (!assigned) return;
-        setConfig((prev) => ({
-          server: prev.server || String(assigned.ws_server || ""),
-          domain: prev.domain || String(assigned.domain || ""),
-          username: prev.username || String(assigned.extension || ""),
-          password: prev.password || String(assigned.secret || ""),
-        }));
-      } catch {
-        // noop
-      }
-    }
-
-    if (hydrated) prefillAssignedExtension();
-  }, [hydrated]);
+    if (!hydrated) return;
+    localStorage.setItem("tc_softphone_history_v1", JSON.stringify(history.slice(0, 12)));
+  }, [history, hydrated]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
-      if (!callStartedAtRef.current) {
-        setElapsed(0);
-        return;
-      }
+      if (!callStartedAtRef.current) return setElapsed(0);
       setElapsed(Math.max(0, Math.round((Date.now() - callStartedAtRef.current) / 1000)));
     }, 1000);
     return () => window.clearInterval(id);
   }, []);
 
   useEffect(() => {
+    callNumberRef.current = callNumber;
+    incomingNumberRef.current = incomingNumber;
+    inCallRef.current = inCall;
+  }, [callNumber, incomingNumber, inCall]);
+
+  useEffect(() => {
+    const onDial = async (event: Event) => {
+      const detail = (event as CustomEvent<{ number?: string; label?: string }>).detail || {};
+      const nextNumber = sanitizeNumber(detail.number || "");
+      if (!nextNumber) return;
+      setOpen(true);
+      setCompact(false);
+      setNumber(nextNumber);
+      if (inCallRef.current) {
+        const ok = await transfer(nextNumber);
+        setMsg(ok ? `Transferencia enviada a ${nextNumber}.` : `No se pudo transferir a ${nextNumber}.`);
+      } else {
+        setMsg(`Extensión ${nextNumber} preparada para marcar.`);
+      }
+    };
+
+    window.addEventListener("tc-softphone-dial", onDial as EventListener);
+    return () => window.removeEventListener("tc-softphone-dial", onDial as EventListener);
+  }, []);
+
+  useEffect(() => {
     async function onKeydown(event: KeyboardEvent) {
-      const tag = (event.target as HTMLElement | null)?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea") return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const editable = target?.getAttribute("contenteditable") === "true";
+      if (tag === "textarea" || editable) return;
       if (!open) return;
 
-      if (/^[0-9]$/.test(event.key) || ["*", "#"].includes(event.key)) {
-        event.preventDefault();
-        setNumber((prev) => sanitizeNumber(prev + event.key));
-        return;
+      if (tag !== "input") {
+        if (/^[0-9]$/.test(event.key) || ["*", "#"].includes(event.key)) {
+          event.preventDefault();
+          setNumber((prev) => sanitizeNumber(prev + event.key));
+          return;
+        }
+        if (event.key === "Backspace") {
+          event.preventDefault();
+          setNumber((prev) => prev.slice(0, -1));
+          return;
+        }
       }
-      if (event.key === "Backspace") {
-        event.preventDefault();
-        setNumber((prev) => prev.slice(0, -1));
-        return;
-      }
+
       if (event.key === "Enter" && !incoming && !inCall) {
         event.preventDefault();
         call();
       }
-      if (event.key === "Escape" && inCall) {
+      if (event.key === "Escape" && (inCall || incoming)) {
         event.preventDefault();
         hangup();
       }
@@ -172,17 +197,18 @@ export default function IPPhoneBar() {
   useEffect(() => {
     if (!config.username) return;
     syncRuntime({
-      registered: status === "registered" || status === "calling" || status === "ringing" || status === "in_call",
+      registered,
       status,
-      active_call_count: status === "calling" || status === "ringing" || status === "in_call" ? 1 : 0,
+      active_call_count: inCall ? 1 : 0,
       active_call_started_at: callStartedAtRef.current ? new Date(callStartedAtRef.current).toISOString() : null,
-      incoming_number: incomingNumber || null,
+      incoming_number: incoming ? incomingNumber || null : null,
+      talking_to: visiblePeer || null,
     });
-  }, [status, incomingNumber, config.username]);
+  }, [status, incomingNumber, callNumber, number, config.username, registered, inCall, visiblePeer, incoming]);
 
   function addHistory(item: Omit<CallHistoryItem, "id">) {
     const next: CallHistoryItem = { id: `${Date.now()}-${Math.random()}`, ...item };
-    historyRef.current = [next, ...historyRef.current].slice(0, 8);
+    historyRef.current = [next, ...historyRef.current].slice(0, 12);
     setHistory(historyRef.current);
   }
 
@@ -214,19 +240,20 @@ export default function IPPhoneBar() {
       if (!Ctx) return;
       const ctx = audioContextRef.current || new Ctx();
       audioContextRef.current = ctx;
+      if (ctx.state === "suspended") ctx.resume().catch(() => null);
       const now = ctx.currentTime;
-      [0, 0.28].forEach((offset) => {
+      [0, 0.35, 0.7].forEach((offset) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        osc.type = "sine";
+        osc.type = "triangle";
         osc.frequency.value = 880;
         gain.gain.setValueAtTime(0.0001, now + offset);
-        gain.gain.exponentialRampToValueAtTime(0.08, now + offset + 0.02);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.18);
+        gain.gain.exponentialRampToValueAtTime(0.10, now + offset + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.22);
         osc.connect(gain);
         gain.connect(ctx.destination);
         osc.start(now + offset);
-        osc.stop(now + offset + 0.2);
+        osc.stop(now + offset + 0.24);
       });
     } catch {
       // noop
@@ -234,21 +261,11 @@ export default function IPPhoneBar() {
   }
 
   function startRingtone() {
-    try {
+    stopRingtone();
+    playBeepSequence();
+    ringtoneLoopRef.current = window.setInterval(() => {
       playBeepSequence();
-      if (ringAudioRef.current) {
-        ringAudioRef.current.currentTime = 0;
-        ringAudioRef.current.volume = 1;
-        ringAudioRef.current.play().catch(() => null);
-      }
-      if (ringtoneLoopRef.current) window.clearInterval(ringtoneLoopRef.current);
-      ringtoneLoopRef.current = window.setInterval(() => {
-        playBeepSequence();
-        ringAudioRef.current?.play().catch(() => null);
-      }, 3500);
-    } catch {
-      // noop
-    }
+    }, 2300);
   }
 
   function stopRingtone() {
@@ -256,10 +273,6 @@ export default function IPPhoneBar() {
       if (ringtoneLoopRef.current) {
         window.clearInterval(ringtoneLoopRef.current);
         ringtoneLoopRef.current = null;
-      }
-      if (ringAudioRef.current) {
-        ringAudioRef.current.pause();
-        ringAudioRef.current.currentTime = 0;
       }
     } catch {
       // noop
@@ -275,10 +288,46 @@ export default function IPPhoneBar() {
     }
   }
 
+  async function hydrateFromPanel() {
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("No hay sesión activa.");
+      const res = await fetch("/api/operator/panel", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No se pudo leer la configuración.");
+      const mine = (json.extensions || []).find((item: any) => String(item.worker_id || "") === String(json.me?.id || "")) || json.extensions?.[0];
+      if (!mine) throw new Error("No tienes extensión asignada todavía.");
+      setConfig((prev) => ({
+        ...prev,
+        server: String(mine.ws_server || prev.server),
+        domain: String(mine.domain || prev.domain),
+        username: String(mine.extension || prev.username),
+        password: String(mine.secret || prev.password),
+      }));
+      setMsg(`Configuración cargada desde panel: ${mine.extension}`);
+    } catch (e: any) {
+      setMsg(e?.message || "No se pudo cargar la configuración desde panel.");
+    }
+  }
+
   async function connect() {
     try {
+      if (!config.server || !config.domain || !config.username || !config.password) {
+        throw new Error("Completa servidor, dominio, extensión y password SIP.");
+      }
       setStatus("connecting");
       setStatusText("Conectando…");
+      setMsg("");
+
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      } catch {
+        // si el navegador lo bloquea, seguimos y SIP.js volverá a pedirlo al contestar
+      }
+
       const SIP: any = await import("sip.js");
       const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
       if (!SimpleUser) throw new Error("No se pudo cargar SIP.js");
@@ -294,13 +343,14 @@ export default function IPPhoneBar() {
         },
         media: {
           constraints: { audio: true, video: false },
-          remote: { audio: audioRef.current },
+          remote: { audio: remoteAudioRef.current },
         },
       });
 
       user.delegate = {
         onCallCreated: () => {
           setOpen(true);
+          setCompact(false);
           setStatus("calling");
           setStatusText("Llamando…");
         },
@@ -312,14 +362,14 @@ export default function IPPhoneBar() {
           setIncoming(false);
         },
         onCallHangup: () => {
+          const endedNumber = incomingNumberRef.current || callNumberRef.current || number;
           stopRingtone();
-          const endedNumber = incomingNumber || callNumber || number;
           if (endedNumber) {
             addHistory({
               number: endedNumber,
-              direction: incoming ? "incoming" : "outgoing",
+              direction: incomingNumberRef.current ? "incoming" : "outgoing",
               createdAt: new Date().toISOString(),
-              result: "colgada",
+              result: "finalizada",
             });
           }
           setIncoming(false);
@@ -327,12 +377,20 @@ export default function IPPhoneBar() {
           setCallNumber("");
           callStartedAtRef.current = null;
           setElapsed(0);
-          setStatus("ended");
-          setStatusText("Colgado");
+          setStatus("registered");
+          setStatusText("Conectado");
         },
         onRegistered: () => {
           setStatus("registered");
           setStatusText("Conectado");
+        },
+        onServerConnect: () => {
+          setStatusText("Conectando transporte…");
+        },
+        onServerDisconnect: () => {
+          stopRingtone();
+          setStatus("offline");
+          setStatusText("Desconectado");
         },
         onCallReceived: (...args: any[]) => {
           const maybeSession = args?.[0];
@@ -362,6 +420,7 @@ export default function IPPhoneBar() {
       console.error(e);
       setStatus("error");
       setStatusText(e?.message || "Error de conexión");
+      setMsg(e?.message || "No se pudo conectar.");
     }
   }
 
@@ -377,20 +436,21 @@ export default function IPPhoneBar() {
       setCallNumber("");
       setStatus("offline");
       setStatusText("Offline");
-      await syncRuntime({ registered: false, status: "offline", active_call_count: 0, active_call_started_at: null, incoming_number: null });
+      await syncRuntime({ registered: false, status: "offline", active_call_count: 0, active_call_started_at: null, incoming_number: null, talking_to: null });
     } catch (e) {
       console.error(e);
     }
   }
 
   async function call() {
-    if (!number || !simpleUserRef.current) return;
+    const dialed = sanitizeNumber(number);
+    if (!dialed || !simpleUserRef.current) return;
     try {
-      setCallNumber(number);
+      setCallNumber(dialed);
       setStatus("calling");
-      setStatusText(`Llamando a ${number}…`);
-      await simpleUserRef.current.call(`sip:${number}@${config.domain}`);
-      addHistory({ number, direction: "outgoing", createdAt: new Date().toISOString(), result: "saliente" });
+      setStatusText(`Llamando a ${dialed}…`);
+      await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
+      addHistory({ number: dialed, direction: "outgoing", createdAt: new Date().toISOString(), result: "saliente" });
     } catch (e: any) {
       console.error(e);
       setStatus("error");
@@ -407,8 +467,9 @@ export default function IPPhoneBar() {
       setCallNumber(incomingNumber);
       setStatus("in_call");
       setStatusText("En llamada");
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setMsg(e?.message || "No se pudo contestar.");
     }
   }
 
@@ -418,10 +479,11 @@ export default function IPPhoneBar() {
       await simpleUserRef.current?.hangup();
       setIncoming(false);
       setIncomingNumber("");
+      setCallNumber("");
       callStartedAtRef.current = null;
       setElapsed(0);
-      setStatus("ended");
-      setStatusText("Colgado");
+      setStatus(registered ? "registered" : "ended");
+      setStatusText(registered ? "Conectado" : "Colgado");
     } catch (e) {
       console.error(e);
     }
@@ -430,354 +492,311 @@ export default function IPPhoneBar() {
   async function toggleMute() {
     try {
       const session = simpleUserRef.current?.session;
-      const pc = session?.sessionDescriptionHandler?.peerConnection;
-      const senders = pc?.getSenders?.() || [];
-      const next = !isMuted;
+      if (!session?.sessionDescriptionHandler?.peerConnection) return;
+      const pc = session.sessionDescriptionHandler.peerConnection;
+      const senders = pc.getSenders?.() || [];
+      const nextMuted = !muted;
       senders.forEach((sender: RTCRtpSender) => {
-        if (sender.track?.kind === "audio") sender.track.enabled = !next;
+        if (sender.track?.kind === "audio") sender.track.enabled = !nextMuted;
       });
-      setIsMuted(next);
+      setMuted(nextMuted);
     } catch (e) {
       console.error(e);
     }
   }
 
-  function toggleSpeaker() {
-    const next = !isSpeakerMuted;
-    setIsSpeakerMuted(next);
-    if (audioRef.current) audioRef.current.muted = next;
-  }
-
-  async function copyCurrentNumber() {
+  async function toggleSpeaker() {
     try {
-      if (!displayNumber) return;
-      await navigator.clipboard.writeText(displayNumber);
-      setStatusText(`Número copiado: ${displayNumber}`);
-    } catch {
-      setStatusText("No se pudo copiar el número");
+      const next = !speakerOn;
+      setSpeakerOn(next);
+      if (remoteAudioRef.current) remoteAudioRef.current.muted = !next;
+    } catch (e) {
+      console.error(e);
     }
   }
 
-  function addDigit(value: string) {
-    setNumber((prev) => sanitizeNumber(prev + value));
+  async function transfer(target: string) {
+    try {
+      const cleanTarget = sanitizeNumber(target);
+      if (!cleanTarget) return false;
+      const session = simpleUserRef.current?.session;
+      if (!session) return false;
+      if (typeof session.refer === "function") {
+        await session.refer(`sip:${cleanTarget}@${config.domain}`);
+      } else if (typeof simpleUserRef.current?.refer === "function") {
+        await simpleUserRef.current.refer(`sip:${cleanTarget}@${config.domain}`);
+      } else {
+        return false;
+      }
+      addHistory({ number: cleanTarget, direction: "transfer", createdAt: new Date().toISOString(), result: "transferida" });
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
   }
 
-  function backspace() {
-    setNumber((prev) => prev.slice(0, -1));
+  async function copyCurrentNumber() {
+    const value = visiblePeer || number;
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setMsg(`Copiado: ${value}`);
+    } catch {
+      setMsg("No se pudo copiar el número.");
+    }
   }
+
+  const statusTone = useMemo(() => {
+    if (status === "in_call" || status === "calling") return { dot: "#ff9f43", bg: "rgba(255,159,67,.16)" };
+    if (status === "ringing") return { dot: "#ff5d7a", bg: "rgba(255,93,122,.16)" };
+    if (registered) return { dot: "#59e39f", bg: "rgba(89,227,159,.16)" };
+    return { dot: "rgba(255,255,255,.48)", bg: "rgba(255,255,255,.10)" };
+  }, [status, registered]);
 
   if (!hydrated) return null;
 
   return (
     <>
-      <audio ref={audioRef} autoPlay playsInline />
-      <audio
-        ref={ringAudioRef}
-        preload="auto"
-        src="data:audio/wav;base64,UklGRlQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YTAAAAEAAP//AAD//wAA//8AAP//AAD//wAA"
-      />
+      <audio ref={remoteAudioRef} autoPlay playsInline />
 
-      {!open ? (
-        <button onClick={() => setOpen(true)} style={styles.floatingBtn} title="Abrir softphone">
-          <Phone size={20} />
-        </button>
+      {incoming ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 151, display: "grid", placeItems: "center", pointerEvents: "none" }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(4,4,10,.44)", backdropFilter: "blur(5px)", pointerEvents: "auto" }} />
+          <div
+            style={{
+              ...cardStyle({
+                position: "relative",
+                zIndex: 152,
+                width: "min(520px, calc(100vw - 24px))",
+                padding: 24,
+                boxShadow: "0 30px 80px rgba(0,0,0,.42)",
+                pointerEvents: "auto",
+              }),
+            }}
+          >
+            <div style={{ fontSize: 13, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(255,255,255,.62)" }}>Llamada entrante</div>
+            <div style={{ fontSize: 36, fontWeight: 900, color: "#fff", marginTop: 10 }}>{incomingNumber || "Número oculto"}</div>
+            <div style={{ marginTop: 10, color: "rgba(255,255,255,.72)" }}>Contesta o rechaza desde el centro de la pantalla para que sea imposible ignorarla.</div>
+            <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
+              <button onClick={hangup} style={dangerBtnStyle}>
+                <PhoneOff size={18} style={{ marginRight: 8 }} /> Rechazar
+              </button>
+              <button onClick={answer} style={goldBtnStyle}>
+                <PhoneIncoming size={18} style={{ marginRight: 8 }} /> Contestar
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
-      {open ? (
-        <div style={{ ...styles.container, width: compact && !incoming && !inCall ? 330 : 380 }}>
-          <div style={styles.header}>
-            <div>
-              <div style={{ fontWeight: 900, fontSize: 15 }}>Softphone Pro</div>
-              <div style={{ color: "rgba(255,255,255,.66)", fontSize: 12 }}>{statusText}</div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button style={styles.iconBtn} onClick={() => setShowConfig((v) => !v)} title="Configuración"><Settings2 size={16} /></button>
-              <button style={styles.iconBtn} onClick={() => setCompact((v) => !v)} title="Minimizar"><Minimize2 size={16} /></button>
-              <button style={styles.iconBtn} onClick={() => setOpen(false)} title="Cerrar"><X size={16} /></button>
+      <div
+        style={{
+          position: "fixed",
+          right: 18,
+          bottom: 18,
+          zIndex: 140,
+          width: compact ? 320 : 390,
+          maxWidth: "calc(100vw - 16px)",
+          transition: "all .18s ease",
+        }}
+      >
+        <div style={{ ...cardStyle(), overflow: "hidden", boxShadow: inCall ? "0 30px 80px rgba(0,0,0,.42)" : "0 20px 50px rgba(0,0,0,.28)" }}>
+          <div style={{ padding: 14, borderBottom: "1px solid rgba(255,255,255,.08)", background: "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0))" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fff", fontWeight: 900 }}>
+                  <PhoneCall size={16} /> Softphone Pro
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 999, padding: "6px 10px", background: statusTone.bg, fontSize: 12, fontWeight: 700 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 999, background: statusTone.dot, display: "inline-block" }} />
+                    {statusText}
+                  </span>
+                </div>
+                <div style={{ color: "rgba(255,255,255,.58)", fontSize: 12, marginTop: 5 }}>
+                  {config.username ? `Ext. ${config.username}` : "Sin extensión cargada"}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => setHistoryOpen((v) => !v)} style={iconBtnStyle}><History size={16} /></button>
+                <button onClick={() => setSettingsOpen((v) => !v)} style={iconBtnStyle}><Settings2 size={16} /></button>
+                <button onClick={() => setCompact((v) => !v)} style={iconBtnStyle}>{compact ? <Phone size={16} /> : <Minimize2 size={16} />}</button>
+                <button onClick={() => setOpen((v) => !v)} style={iconBtnStyle}><X size={16} /></button>
+              </div>
             </div>
           </div>
 
-          {showConfig ? (
-            <div style={styles.configCard}>
-              <div style={styles.grid2}>
-                <input style={styles.input} placeholder="Usuario / extensión" value={config.username} onChange={(e) => setConfig((prev) => ({ ...prev, username: sanitizeNumber(e.target.value) }))} />
-                <input style={styles.input} placeholder="Password SIP" type="password" value={config.password} onChange={(e) => setConfig((prev) => ({ ...prev, password: e.target.value }))} />
-              </div>
-              <input style={styles.input} placeholder="Dominio SIP" value={config.domain} onChange={(e) => setConfig((prev) => ({ ...prev, domain: e.target.value }))} />
-              <input style={styles.input} placeholder="Servidor WSS" value={config.server} onChange={(e) => setConfig((prev) => ({ ...prev, server: e.target.value }))} />
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={{ ...styles.primaryBtn, flex: 1 }} onClick={connect}>Conectar</button>
-                <button style={{ ...styles.secondaryBtn, flex: 1 }} onClick={disconnect}>Desconectar</button>
-              </div>
-            </div>
-          ) : null}
+          {open ? (
+            <div style={{ padding: compact ? 12 : 14, display: "grid", gap: 12 }}>
+              {msg ? <div style={{ color: "#fff", fontSize: 12, padding: "10px 12px", borderRadius: 14, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.10)" }}>{msg}</div> : null}
 
-          {incoming ? (
-            <div style={styles.incomingPopup}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <PhoneIncoming size={18} />
-                <div>
-                  <div style={{ fontWeight: 900 }}>Llamada entrante</div>
-                  <div style={{ color: "rgba(255,255,255,.72)", fontSize: 13 }}>{incomingNumber || "Número oculto"}</div>
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={{ ...styles.primaryBtn, flex: 1 }} onClick={answer}>Aceptar</button>
-                <button style={{ ...styles.dangerBtn, flex: 1 }} onClick={hangup}>Rechazar</button>
-              </div>
-            </div>
-          ) : null}
-
-          {!compact || incoming || inCall ? (
-            <>
-              <div style={styles.displayCard}>
-                <div style={{ color: "rgba(255,255,255,.62)", fontSize: 12 }}>Número</div>
-                <input
-                  style={styles.displayInput}
-                  value={number}
-                  onChange={(e) => setNumber(sanitizeNumber(e.target.value))}
-                  placeholder="Escribe con teclado o pulsa abajo"
-                  inputMode="tel"
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
-                  <div style={{ color: "rgba(255,255,255,.72)", fontSize: 12 }}>
-                    {inCall ? `Duración: ${formatDuration(elapsed)}` : config.username ? `Extensión ${config.username}` : "Sin configurar"}
+              {settingsOpen ? (
+                <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <button onClick={hydrateFromPanel} style={softBtnStyle}><RefreshCw size={14} style={{ marginRight: 6 }} /> Cargar desde panel</button>
+                    <input value={config.username} onChange={(e) => setConfig((p) => ({ ...p, username: sanitizeNumber(e.target.value) }))} placeholder="Extensión" style={inputStyle} />
+                    <input value={config.password} onChange={(e) => setConfig((p) => ({ ...p, password: e.target.value }))} placeholder="Password SIP" type="password" style={inputStyle} />
+                    <input value={config.domain} onChange={(e) => setConfig((p) => ({ ...p, domain: e.target.value }))} placeholder="Dominio SIP" style={inputStyle} />
+                    <input value={config.server} onChange={(e) => setConfig((p) => ({ ...p, server: e.target.value }))} placeholder="Servidor WSS" style={inputStyle} />
                   </div>
-                  <button style={styles.iconBtn} onClick={copyCurrentNumber} title="Copiar número"><Copy size={15} /></button>
-                </div>
-              </div>
-
-              {inCall ? (
-                <div style={styles.callPopup}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}><PhoneCall size={18} /> En llamada</div>
-                      <div style={{ fontSize: 14, color: "rgba(255,255,255,.76)", marginTop: 4 }}>{displayNumber || "Sin número"}</div>
-                    </div>
-                    <span style={styles.badge}>{formatDuration(elapsed)}</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                    <button style={styles.secondaryBtn} onClick={copyCurrentNumber}><Copy size={15} style={{ marginRight: 6 }} /> Copiar</button>
-                    <button style={styles.secondaryBtn} onClick={toggleMute}>{isMuted ? <MicOff size={15} style={{ marginRight: 6 }} /> : <Mic size={15} style={{ marginRight: 6 }} />}{isMuted ? "Activar mic" : "Mute"}</button>
-                    <button style={styles.secondaryBtn} onClick={toggleSpeaker}>{isSpeakerMuted ? <VolumeX size={15} style={{ marginRight: 6 }} /> : <Volume2 size={15} style={{ marginRight: 6 }} />}{isSpeakerMuted ? "Audio off" : "Audio on"}</button>
-                    <button style={styles.dangerBtn} onClick={hangup}><PhoneOff size={15} style={{ marginRight: 6 }} /> Colgar</button>
+                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                    {!registered ? (
+                      <button onClick={connect} style={goldBtnStyle}><Phone size={16} style={{ marginRight: 8 }} /> Conectar</button>
+                    ) : (
+                      <button onClick={disconnect} style={dangerBtnStyle}><PhoneOff size={16} style={{ marginRight: 8 }} /> Desconectar</button>
+                    )}
                   </div>
                 </div>
               ) : null}
 
-              <div style={styles.keypad}>
-                {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((digit) => (
-                  <button key={digit} style={styles.key} onClick={() => addDigit(digit)}>{digit}</button>
-                ))}
+              <div style={{ ...cardStyle({ padding: compact ? 12 : 14, borderRadius: 20, background: inCall ? "rgba(255,159,67,.10)" : "rgba(255,255,255,.03)" }) }}>
+                <div style={{ color: "rgba(255,255,255,.62)", fontSize: 12, textTransform: "uppercase", letterSpacing: ".08em" }}>
+                  {incoming ? "Entrante" : inCall ? "Conversación activa" : "Marcador"}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: "#fff", fontWeight: 900, fontSize: 28, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{visiblePeer || number || "—"}</div>
+                    <div style={{ color: "rgba(255,255,255,.62)", fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                      <Clock3 size={13} /> {inCall ? formatDuration(elapsed) : "Listo para llamar"}
+                    </div>
+                  </div>
+                  <button onClick={copyCurrentNumber} style={iconBtnStyle}><Copy size={16} /></button>
+                </div>
               </div>
 
-              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                <button style={{ ...styles.primaryBtn, flex: 1 }} onClick={call}><Phone size={16} style={{ marginRight: 6 }} /> Llamar</button>
-                <button style={{ ...styles.dangerBtn, flex: 1 }} onClick={hangup}><PhoneOff size={16} style={{ marginRight: 6 }} /> Colgar</button>
-                <button style={{ ...styles.secondaryBtn, width: 60 }} onClick={backspace}>⌫</button>
-              </div>
+              {!compact ? (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <input
+                    value={number}
+                    onChange={(e) => setNumber(sanitizeNumber(e.target.value))}
+                    placeholder="Escribe número o extensión con teclado"
+                    style={{ ...inputStyle, fontSize: 20, textAlign: "center", fontWeight: 800 }}
+                  />
 
-              {!!history.length ? (
-                <div style={styles.historyWrap}>
-                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Historial reciente</div>
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {history.map((item) => (
-                      <button key={item.id} style={styles.historyItem} onClick={() => setNumber(sanitizeNumber(item.number))}>
-                        <div style={{ fontWeight: 700 }}>{item.number}</div>
-                        <div style={{ color: "rgba(255,255,255,.66)", fontSize: 12 }}>{item.direction === "incoming" ? "Entrante" : "Saliente"} · {item.result}</div>
-                      </button>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                    {["1","2","3","4","5","6","7","8","9","*","0","#"].map((digit) => (
+                      <button key={digit} onClick={() => setNumber((prev) => sanitizeNumber(prev + digit))} style={dialBtnStyle}>{digit}</button>
                     ))}
                   </div>
                 </div>
               ) : null}
-            </>
-          ) : (
-            <div style={{ marginTop: 14, color: "rgba(255,255,255,.72)", fontSize: 13 }}>
-              Widget minimizado. Vuelve a abrirlo para marcar, responder o ver el popup de llamada.
+
+              <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+                {!inCall && !incoming ? (
+                  <button onClick={call} disabled={!registered || !number} style={{ ...goldBtnStyle, opacity: !registered || !number ? 0.6 : 1 }}>
+                    <Phone size={17} style={{ marginRight: 8 }} /> Llamar
+                  </button>
+                ) : null}
+                {inCall || incoming ? (
+                  <button onClick={hangup} style={dangerBtnStyle}><PhoneOff size={17} style={{ marginRight: 8 }} /> Colgar</button>
+                ) : null}
+                <button onClick={toggleMute} disabled={!inCall} style={{ ...softBtnStyle, opacity: !inCall ? 0.6 : 1 }}>
+                  {muted ? <MicOff size={16} style={{ marginRight: 8 }} /> : <Mic size={16} style={{ marginRight: 8 }} />}
+                  {muted ? "Unmute" : "Mute"}
+                </button>
+                <button onClick={toggleSpeaker} style={softBtnStyle}>
+                  {speakerOn ? <Volume2 size={16} style={{ marginRight: 8 }} /> : <VolumeX size={16} style={{ marginRight: 8 }} />}
+                  Audio
+                </button>
+                <button onClick={() => setNumber((prev) => prev.slice(0, -1))} style={softBtnStyle}>⌫ Borrar</button>
+              </div>
+
+              {historyOpen ? (
+                <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
+                  <div style={{ color: "#fff", fontWeight: 800, marginBottom: 10 }}>Historial reciente</div>
+                  <div style={{ display: "grid", gap: 8, maxHeight: 210, overflowY: "auto" }}>
+                    {history.length ? history.map((item) => (
+                      <button
+                        key={item.id}
+                        onClick={() => setNumber(sanitizeNumber(item.number))}
+                        style={{
+                          textAlign: "left",
+                          borderRadius: 14,
+                          border: "1px solid rgba(255,255,255,.10)",
+                          background: "rgba(255,255,255,.04)",
+                          padding: 10,
+                          color: "#fff",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <strong>{item.number}</strong>
+                          <span style={{ color: "rgba(255,255,255,.58)", fontSize: 12 }}>{new Date(item.createdAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                        <div style={{ color: "rgba(255,255,255,.60)", fontSize: 12, marginTop: 4 }}>{item.direction} · {item.result}</div>
+                      </button>
+                    )) : <div style={{ color: "rgba(255,255,255,.58)", fontSize: 13 }}>Todavía no hay llamadas recientes.</div>}
+                  </div>
+                </div>
+              ) : null}
             </div>
+          ) : (
+            <button onClick={() => setOpen(true)} style={{ width: "100%", padding: 14, background: "transparent", color: "#fff", border: 0, cursor: "pointer", fontWeight: 800 }}>
+              Abrir softphone
+            </button>
           )}
         </div>
-      ) : null}
+      </div>
     </>
   );
 }
 
-const styles: Record<string, CSSProperties> = {
-  floatingBtn: {
-    position: "fixed",
-    right: 22,
-    bottom: 22,
-    width: 58,
-    height: 58,
-    borderRadius: 999,
-    border: "1px solid rgba(215,181,109,.35)",
-    background: "linear-gradient(135deg, rgba(215,181,109,.95), rgba(139,92,246,.82))",
-    color: "#180f05",
-    cursor: "pointer",
-    display: "grid",
-    placeItems: "center",
-    boxShadow: "0 16px 44px rgba(0,0,0,.45)",
-    zIndex: 1000,
-  },
-  container: {
-    position: "fixed",
-    right: 20,
-    bottom: 20,
-    padding: 16,
-    borderRadius: 24,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "linear-gradient(180deg, rgba(10,8,16,.96), rgba(17,16,24,.94))",
-    color: "white",
-    boxShadow: "0 26px 80px rgba(0,0,0,.55)",
-    zIndex: 1000,
-    backdropFilter: "blur(14px)",
-  },
-  header: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    gap: 12,
-  },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.14)",
-    background: "rgba(255,255,255,.06)",
-    color: "white",
-    display: "grid",
-    placeItems: "center",
-    cursor: "pointer",
-  },
-  configCard: {
-    display: "grid",
-    gap: 10,
-    marginTop: 14,
-    padding: 12,
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(255,255,255,.04)",
-  },
-  grid2: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 10,
-  },
-  input: {
-    width: "100%",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,.14)",
-    background: "rgba(255,255,255,.05)",
-    color: "white",
-    padding: "12px 13px",
-    outline: "none",
-  },
-  primaryBtn: {
-    height: 44,
-    borderRadius: 14,
-    border: "1px solid rgba(244,216,159,.42)",
-    background: "linear-gradient(135deg, rgba(244,216,159,.94), rgba(215,181,109,.88))",
-    color: "#221405",
-    fontWeight: 900,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  secondaryBtn: {
-    height: 44,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,.16)",
-    background: "rgba(255,255,255,.07)",
-    color: "white",
-    fontWeight: 800,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "0 12px",
-  },
-  dangerBtn: {
-    height: 44,
-    borderRadius: 14,
-    border: "1px solid rgba(255,90,106,.32)",
-    background: "rgba(255,90,106,.14)",
-    color: "white",
-    fontWeight: 800,
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: "0 12px",
-  },
-  incomingPopup: {
-    marginTop: 14,
-    borderRadius: 18,
-    border: "1px solid rgba(255,90,106,.30)",
-    background: "rgba(255,90,106,.12)",
-    padding: 14,
-  },
-  displayCard: {
-    marginTop: 14,
-    padding: 14,
-    borderRadius: 18,
-    border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(255,255,255,.04)",
-  },
-  displayInput: {
-    width: "100%",
-    background: "transparent",
-    border: "none",
-    color: "white",
-    fontSize: 22,
-    fontWeight: 800,
-    marginTop: 4,
-    outline: "none",
-  },
-  callPopup: {
-    marginTop: 14,
-    borderRadius: 18,
-    border: "1px solid rgba(105,240,177,.24)",
-    background: "rgba(105,240,177,.08)",
-    padding: 14,
-  },
-  badge: {
-    padding: "8px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "rgba(0,0,0,.18)",
-    fontWeight: 900,
-    fontSize: 12,
-  },
-  keypad: {
-    marginTop: 14,
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 10,
-  },
-  key: {
-    height: 54,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,.12)",
-    background: "rgba(255,255,255,.05)",
-    color: "white",
-    cursor: "pointer",
-    fontSize: 18,
-    fontWeight: 900,
-  },
-  historyWrap: {
-    marginTop: 14,
-    borderTop: "1px solid rgba(255,255,255,.08)",
-    paddingTop: 14,
-  },
-  historyItem: {
-    width: "100%",
-    textAlign: "left",
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,.10)",
-    background: "rgba(255,255,255,.04)",
-    color: "white",
-    padding: 10,
-    cursor: "pointer",
-  },
+const iconBtnStyle: CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 12,
+  border: "1px solid rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.05)",
+  color: "#fff",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.06)",
+  color: "#fff",
+  padding: "12px 14px",
+  outline: "none",
+};
+
+const softBtnStyle: CSSProperties = {
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,.12)",
+  background: "rgba(255,255,255,.06)",
+  color: "#fff",
+  padding: "12px 14px",
+  fontWeight: 800,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const goldBtnStyle: CSSProperties = {
+  ...softBtnStyle,
+  background: "linear-gradient(180deg, #f0d68d, #d7b56d)",
+  color: "#201709",
+  border: "1px solid rgba(215,181,109,.34)",
+};
+
+const dangerBtnStyle: CSSProperties = {
+  ...softBtnStyle,
+  background: "linear-gradient(180deg, #ff6e7f, #d54558)",
+  color: "#fff",
+  border: "1px solid rgba(255,95,125,.34)",
+};
+
+const dialBtnStyle: CSSProperties = {
+  borderRadius: 16,
+  border: "1px solid rgba(255,255,255,.10)",
+  background: "rgba(255,255,255,.05)",
+  color: "#fff",
+  fontWeight: 900,
+  fontSize: 22,
+  padding: "14px 0",
+  cursor: "pointer",
 };
