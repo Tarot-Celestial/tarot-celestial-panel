@@ -72,7 +72,7 @@ async function getAuthContext(req: Request) {
 async function readExtensions(admin: any) {
   const { data, error } = await admin
     .from("pbx_extensions")
-    .select("id, worker_id, label, extension, secret, domain, ws_server, sip_uri, is_active, registered, status, active_call_count, active_call_started_at, incoming_number, last_seen_at, created_at, updated_at")
+    .select("id, worker_id, label, extension, secret, domain, ws_server, sip_uri, is_active, registered, status, active_call_count, active_call_started_at, incoming_number, talking_to, last_seen_at, created_at, updated_at")
     .order("extension", { ascending: true });
 
   if (error) {
@@ -156,6 +156,18 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "WS_SERVER_REQUIRED" }, { status: 400 });
       }
 
+      const duplicate = await admin
+        .from("pbx_extensions")
+        .select("id, extension")
+        .eq("extension", extension)
+        .neq("id", id || "00000000-0000-0000-0000-000000000000")
+        .maybeSingle();
+
+      if (duplicate.error && !isMissingRelationError(duplicate.error)) throw duplicate.error;
+      if (duplicate.data?.id) {
+        return NextResponse.json({ ok: false, error: "Ya existe una extensión con ese número." }, { status: 409 });
+      }
+
       const payload: any = {
         worker_id,
         extension,
@@ -168,11 +180,19 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       };
 
-      const query = id
-        ? admin.from("pbx_extensions").upsert({ id, ...payload }, { onConflict: "id" })
-        : admin.from("pbx_extensions").upsert(payload, { onConflict: "extension" });
+      let data: any = null;
+      let error: any = null;
 
-      const { data, error } = await query.select("*").maybeSingle();
+      if (id) {
+        const result = await admin.from("pbx_extensions").update(payload).eq("id", id).select("*").maybeSingle();
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await admin.from("pbx_extensions").insert(payload).select("*").maybeSingle();
+        data = result.data;
+        error = result.error;
+      }
+
       if (error) throw error;
 
       return NextResponse.json({ ok: true, extension: data });
@@ -190,6 +210,7 @@ export async function POST(req: Request) {
         active_call_count: body?.active_call_count !== undefined ? Number(body.active_call_count || 0) : undefined,
         active_call_started_at: body?.active_call_started_at !== undefined ? body.active_call_started_at || null : undefined,
         incoming_number: body?.incoming_number !== undefined ? String(body.incoming_number || "").trim() || null : undefined,
+        talking_to: body?.talking_to !== undefined ? String(body.talking_to || "").trim() || null : undefined,
         last_seen_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -200,7 +221,7 @@ export async function POST(req: Request) {
         .from("pbx_extensions")
         .update(runtimePatch)
         .eq("extension", extension)
-        .select("id, extension, status, registered, active_call_count, active_call_started_at, incoming_number, last_seen_at")
+        .select("id, extension, status, registered, active_call_count, active_call_started_at, incoming_number, talking_to, last_seen_at")
         .maybeSingle();
 
       if (error) throw error;
@@ -213,3 +234,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
 }
+
