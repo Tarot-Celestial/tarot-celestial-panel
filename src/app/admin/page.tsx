@@ -18,12 +18,14 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
-import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, ShieldCheck, Users, Wallet } from "lucide-react";
+import OperatorPanel from "@/components/panel/OperatorPanel";
+import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
 
 const ADMIN_NAV = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo" },
+  { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
@@ -95,6 +97,7 @@ async function safeJson(res: Response) {
 
 type TabKey =
   | "dashboard"
+  | "panel"
   | "facturas"
   | "editor"
   | "estadisticas"
@@ -1535,6 +1538,7 @@ function AdminPage() {
 
           <div className="tc-main-content">
 {tab === "dashboard" && <DashboardPanel month={month} />}
+          {tab === "panel" && <OperatorPanel mode="admin" />}
 
           {tab === "facturas" && (
             <div className="tc-card">
