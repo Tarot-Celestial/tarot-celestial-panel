@@ -216,30 +216,42 @@ export default function IPPhoneBar() {
         setMessage("Conexión SIP cerrada");
       },
     };
+    // 🔥 FORZAR protocolo SIP en WebSocket (CLAVE)
+;(window as any).WebSocket = class extends WebSocket {
+  constructor(url: string, protocols?: string | string[]) {
+    super(url, ["sip"]);
+  }
+};
 
-   const options = {
+ const options = {
   aor,
   userAgentOptions: {
     uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
     authorizationUsername: "1000",
     authorizationPassword: "123456",
     displayName: "1000",
+
+    // 🔥 IMPORTANTE
+    transportOptions: {
+      server: "wss://sip.clientestarotcelestial.es:8089/ws",
+    },
   },
+
   media: {
     constraints: { audio: true, video: false },
     remote: { audio: remoteAudioRef.current },
   },
+
   delegate,
 };
 
-// LOGS (FUERA del objeto, aquí sí)
+// LOGS
 console.log("FORCED URI:", "sip:1000@sip.clientestarotcelestial.es");
 console.log("FORCED USER:", "1000");
-console.log("FORCED PASS:", "1234");
+console.log("FORCED PASS:", "123456");
 
-    currentSignatureRef.current = configSignature();
-    return new SimpleUser(normalizedConfig.server, options);
-  }
+currentSignatureRef.current = configSignature();
+return new SimpleUser("wss://sip.clientestarotcelestial.es:8089/ws", options);
 
   async function connect() {
     if (!canConnect) {
