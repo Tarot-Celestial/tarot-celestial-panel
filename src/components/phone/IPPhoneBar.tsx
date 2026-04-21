@@ -47,16 +47,32 @@ export default function IPPhoneBar() {
     setStatus("Conectado");
   }
 
-  async function call() {
-    if (!number) return;
-    await simpleUserRef.current.call(`sip:${number}@${config.domain}`);
-    setStatus("Llamando...");
-  }
+ async function call() {
+  if (!number) return;
 
-  async function hangup() {
-    await simpleUserRef.current.hangup();
-    setStatus("Colgado");
+  try {
+    if (!simpleUserRef.current) return;
+
+    await simpleUserRef.current.call(`sip:${number}@${config.domain}`);
+  } catch (e) {
+    console.error(e);
+    setStatus("Error al llamar");
   }
+}
+
+ async function hangup() {
+  try {
+    if (!simpleUserRef.current) return;
+
+    if (simpleUserRef.current.session) {
+      await simpleUserRef.current.hangup();
+    } else {
+      setStatus("No hay llamada activa");
+    }
+  } catch (e) {
+    console.error(e);
+  }
+}
 
   function addDigit(d: string) {
     setNumber((prev) => prev + d);
@@ -67,34 +83,56 @@ export default function IPPhoneBar() {
   }
 
   useEffect(() => {
-    initSip();
-  }, []);
+   async function initSip() {
+  try {
+    const SIP: any = await import("sip.js");
+    const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser;
 
-  return (
-    <div style={styles.container}>
-      <audio ref={audioRef} autoPlay />
+    const aor = `sip:${config.username}@${config.domain}`;
 
-      <div style={styles.display}>{number || "—"}</div>
+    const user = new SimpleUser(config.server, {
+      aor,
+      userAgentOptions: {
+        uri: SIP.UserAgent.makeURI(aor),
+        authorizationUsername: config.username,
+        authorizationPassword: config.password,
+        transportOptions: {
+          server: config.server,
+        },
+      },
+      media: {
+        constraints: { audio: true, video: false },
+        remote: { audio: audioRef.current },
+      },
+    });
 
-      <div style={styles.keypad}>
-        {["1","2","3","4","5","6","7","8","9","*","0","#"].map((d) => (
-          <button key={d} style={styles.key} onClick={() => addDigit(d)}>
-            {d}
-          </button>
-        ))}
-      </div>
+    // 🔥 ESTO ES LO IMPORTANTE (EVENTOS)
+    user.delegate = {
+      onCallCreated: () => {
+        setStatus("Llamando...");
+      },
+      onCallAnswered: () => {
+        setStatus("En llamada");
+      },
+      onCallHangup: () => {
+        setStatus("Colgado");
+      },
+      onRegistered: () => {
+        setStatus("Registrado ✅");
+      },
+    };
 
-      <div style={styles.actions}>
-        <button style={styles.call} onClick={call}>📞</button>
-        <button style={styles.hang} onClick={hangup}>❌</button>
-        <button style={styles.clear} onClick={clear}>⌫</button>
-      </div>
+    simpleUserRef.current = user;
 
-      <div style={styles.status}>{status}</div>
-    </div>
-  );
+    await user.connect();
+    await user.register();
+
+    setStatus("Conectado");
+  } catch (e: any) {
+    console.error(e);
+    setStatus("Error SIP");
+  }
 }
-
 const styles: any = {
   container: {
     width: 260,
