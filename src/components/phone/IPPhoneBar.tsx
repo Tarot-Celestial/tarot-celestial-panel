@@ -50,7 +50,7 @@ return String(raw || "").trim().replace(/^sip:/i, "").replace(/@.*$/, "");
 function normalizeServer(raw: string) {
 const value = String(raw || "").trim();
 if (!value) return "";
-if (/^wss?:///i.test(value)) return value;
+if (/^wss?:\/\//i.test(value)) return value;
 return `wss://${stripProtocol(value)}`;
 }
 
