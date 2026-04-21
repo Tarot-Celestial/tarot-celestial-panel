@@ -2,7 +2,23 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { Clock3, Copy, History, Mic, MicOff, Minimize2, Phone, PhoneCall, PhoneIncoming, PhoneOff, RefreshCw, Settings2, Volume2, VolumeX, X } from "lucide-react";
+import {
+  Clock3,
+  Copy,
+  History,
+  Mic,
+  MicOff,
+  Minimize2,
+  Phone,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneOff,
+  RefreshCw,
+  Settings2,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
 
 const sb = supabaseBrowser();
 const STORAGE_KEY = "tc_softphone_config_v3";
@@ -77,6 +93,9 @@ export default function IPPhoneBar() {
   const callNumberRef = useRef("");
   const incomingNumberRef = useRef("");
   const inCallRef = useRef(false);
+  const keepAliveRef = useRef<number | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const connectingRef = useRef(false);
 
   const [hydrated, setHydrated] = useState(false);
   const [open, setOpen] = useState(false);
@@ -206,6 +225,19 @@ export default function IPPhoneBar() {
     });
   }, [status, incomingNumber, callNumber, number, config.username, registered, inCall, visiblePeer, incoming]);
 
+  useEffect(() => {
+    return () => {
+      if (keepAliveRef.current) {
+        window.clearInterval(keepAliveRef.current);
+        keepAliveRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   function addHistory(item: Omit<CallHistoryItem, "id">) {
     const next: CallHistoryItem = { id: `${Date.now()}-${Math.random()}`, ...item };
     historyRef.current = [next, ...historyRef.current].slice(0, 12);
@@ -281,7 +313,11 @@ export default function IPPhoneBar() {
 
   function parseIncomingNumber(session: any) {
     try {
-      const from = session?.remoteIdentity?.uri?.user || session?.request?.from?.uri?.user || session?.request?.from?.displayName || "";
+      const from =
+        session?.remoteIdentity?.uri?.user ||
+        session?.request?.from?.uri?.user ||
+        session?.request?.from?.displayName ||
+        "";
       return String(from || "").trim();
     } catch {
       return "";
@@ -298,7 +334,9 @@ export default function IPPhoneBar() {
       });
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No se pudo leer la configuración.");
-      const mine = (json.extensions || []).find((item: any) => String(item.worker_id || "") === String(json.me?.id || "")) || json.extensions?.[0];
+      const mine =
+        (json.extensions || []).find((item: any) => String(item.worker_id || "") === String(json.me?.id || "")) ||
+        json.extensions?.[0];
       if (!mine) throw new Error("No tienes extensión asignada todavía.");
       setConfig((prev) => ({
         ...prev,
@@ -314,10 +352,14 @@ export default function IPPhoneBar() {
   }
 
   async function connect() {
+    if (connectingRef.current) return;
+
     try {
       if (!config.server || !config.domain || !config.username || !config.password) {
         throw new Error("Completa servidor, dominio, extensión y password SIP.");
       }
+
+      connectingRef.current = true;
       setStatus("connecting");
       setStatusText("Conectando…");
       setMsg("");
@@ -325,7 +367,19 @@ export default function IPPhoneBar() {
       try {
         await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       } catch {
-        // si el navegador lo bloquea, seguimos y SIP.js volverá a pedirlo al contestar
+        // seguimos igualmente
+      }
+
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+
+      if (simpleUserRef.current) {
+        try {
+          await simpleUserRef.current.disconnect();
+        } catch {}
+        simpleUserRef.current = null;
       }
 
       const SIP: any = await import("sip.js");
@@ -339,7 +393,9 @@ export default function IPPhoneBar() {
           uri: SIP.UserAgent.makeURI(aor),
           authorizationUsername: config.username,
           authorizationPassword: config.password,
-          transportOptions: { server: config.server },
+          transportOptions: {
+            server: config.server,
+          },
         },
         media: {
           constraints: { audio: true, video: false },
@@ -387,14 +443,32 @@ export default function IPPhoneBar() {
         onServerConnect: () => {
           setStatusText("Conectando transporte…");
         },
-        onServerDisconnect: () => {
+        onServerDisconnect: async () => {
           stopRingtone();
           setStatus("offline");
-          setStatusText("Desconectado");
+          setStatusText("Reconectando...");
+
+          if (reconnectTimeoutRef.current) {
+            window.clearTimeout(reconnectTimeoutRef.current);
+          }
+
+          reconnectTimeoutRef.current = window.setTimeout(async () => {
+            try {
+              if (!simpleUserRef.current) return;
+              await simpleUserRef.current.connect();
+              await simpleUserRef.current.register();
+              setStatus("registered");
+              setStatusText("Reconectado");
+            } catch (e) {
+              console.error("❌ Error reconectando", e);
+            }
+          }, 2000);
         },
-        onCallReceived: (...args: any[]) => {
-          const maybeSession = args?.[0];
-          const caller = parseIncomingNumber(maybeSession);
+        onCallReceived: (session: any) => {
+          console.log("📞 Llamada entrante", session);
+
+          const caller = parseIncomingNumber(session);
+
           setOpen(true);
           setCompact(false);
           setIncoming(true);
@@ -402,6 +476,7 @@ export default function IPPhoneBar() {
           setStatus("ringing");
           setStatusText(caller ? `Llamada entrante · ${caller}` : "Llamada entrante");
           startRingtone();
+
           addHistory({
             number: caller || "Desconocido",
             direction: "incoming",
@@ -412,8 +487,28 @@ export default function IPPhoneBar() {
       };
 
       simpleUserRef.current = user;
+
       await user.connect();
       await user.register();
+
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.muted = false;
+        remoteAudioRef.current.volume = 1;
+      }
+
+      if (!keepAliveRef.current) {
+        keepAliveRef.current = window.setInterval(async () => {
+          try {
+            if (simpleUserRef.current?.isRegistered?.()) {
+              console.log("🔄 refresh register");
+              await simpleUserRef.current.register();
+            }
+          } catch {
+            // noop
+          }
+        }, 30000);
+      }
+
       setStatus("registered");
       setStatusText("Conectado");
     } catch (e: any) {
@@ -421,12 +516,25 @@ export default function IPPhoneBar() {
       setStatus("error");
       setStatusText(e?.message || "Error de conexión");
       setMsg(e?.message || "No se pudo conectar.");
+    } finally {
+      connectingRef.current = false;
     }
   }
 
   async function disconnect() {
     try {
       stopRingtone();
+
+      if (keepAliveRef.current) {
+        window.clearInterval(keepAliveRef.current);
+        keepAliveRef.current = null;
+      }
+
+      if (reconnectTimeoutRef.current) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+
       await simpleUserRef.current?.disconnect();
       simpleUserRef.current = null;
       callStartedAtRef.current = null;
@@ -436,66 +544,69 @@ export default function IPPhoneBar() {
       setCallNumber("");
       setStatus("offline");
       setStatusText("Offline");
-      await syncRuntime({ registered: false, status: "offline", active_call_count: 0, active_call_started_at: null, incoming_number: null, talking_to: null });
+      await syncRuntime({
+        registered: false,
+        status: "offline",
+        active_call_count: 0,
+        active_call_started_at: null,
+        incoming_number: null,
+        talking_to: null,
+      });
     } catch (e) {
       console.error(e);
     }
   }
 
   async function call() {
-  const dialed = sanitizeNumber(number);
+    const dialed = sanitizeNumber(number);
 
-  if (!dialed) {
-    console.warn("Número vacío");
-    return;
-  }
-
-  if (!simpleUserRef.current) {
-    console.error("SIP no inicializado");
-    setMsg("Softphone no conectado");
-    return;
-  }
-
-  try {
-    // 🔥 ASEGURAR CONEXIÓN
-    if (!simpleUserRef.current.isConnected()) {
-      console.log("Reconectando SIP...");
-      await simpleUserRef.current.connect();
-    }
-
-    // 🔥 ASEGURAR REGISTRO
-    if (!simpleUserRef.current.isRegistered()) {
-      console.log("Registrando SIP...");
-      await simpleUserRef.current.register();
-    }
-
-    // 🔥 EVITAR LLAMADAS DUPLICADAS
-    if (simpleUserRef.current.session) {
-      console.warn("Ya hay llamada activa");
+    if (!dialed) {
+      console.warn("Número vacío");
       return;
     }
 
-    console.log("📞 Llamando a:", `sip:${dialed}@${config.domain}`);
+    if (!simpleUserRef.current) {
+      console.error("SIP no inicializado");
+      setMsg("Softphone no conectado");
+      return;
+    }
 
-    setCallNumber(dialed);
-    setStatus("calling");
-    setStatusText(`Llamando a ${dialed}…`);
+    try {
+      if (!simpleUserRef.current.isConnected?.()) {
+        console.log("Reconectando SIP...");
+        await simpleUserRef.current.connect();
+      }
 
-    await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
+      if (!simpleUserRef.current.isRegistered?.()) {
+        console.log("Registrando SIP...");
+        await simpleUserRef.current.register();
+      }
 
-    addHistory({
-      number: dialed,
-      direction: "outgoing",
-      createdAt: new Date().toISOString(),
-      result: "saliente",
-    });
+      if (simpleUserRef.current.session) {
+        console.warn("Ya hay llamada activa");
+        return;
+      }
 
-  } catch (e: any) {
-    console.error("❌ Error en call:", e);
-    setStatus("error");
-    setStatusText(e?.message || "Error al llamar");
+      console.log("📞 Llamando a:", `sip:${dialed}@${config.domain}`);
+
+      setCallNumber(dialed);
+      setStatus("calling");
+      setStatusText(`Llamando a ${dialed}…`);
+
+      await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
+
+      addHistory({
+        number: dialed,
+        direction: "outgoing",
+        createdAt: new Date().toISOString(),
+        result: "saliente",
+      });
+    } catch (e: any) {
+      console.error("❌ Error en call:", e);
+      setStatus("error");
+      setStatusText(e?.message || "Error al llamar");
+    }
   }
-}
 
   async function answer() {
     try {
@@ -567,7 +678,12 @@ export default function IPPhoneBar() {
       } else {
         return false;
       }
-      addHistory({ number: cleanTarget, direction: "transfer", createdAt: new Date().toISOString(), result: "transferida" });
+      addHistory({
+        number: cleanTarget,
+        direction: "transfer",
+        createdAt: new Date().toISOString(),
+        result: "transferida",
+      });
       return true;
     } catch (e) {
       console.error(e);
@@ -614,9 +730,13 @@ export default function IPPhoneBar() {
               }),
             }}
           >
-            <div style={{ fontSize: 13, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(255,255,255,.62)" }}>Llamada entrante</div>
+            <div style={{ fontSize: 13, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(255,255,255,.62)" }}>
+              Llamada entrante
+            </div>
             <div style={{ fontSize: 36, fontWeight: 900, color: "#fff", marginTop: 10 }}>{incomingNumber || "Número oculto"}</div>
-            <div style={{ marginTop: 10, color: "rgba(255,255,255,.72)" }}>Contesta o rechaza desde el centro de la pantalla para que sea imposible ignorarla.</div>
+            <div style={{ marginTop: 10, color: "rgba(255,255,255,.72)" }}>
+              Contesta o rechaza desde el centro de la pantalla para que sea imposible ignorarla.
+            </div>
             <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
               <button onClick={hangup} style={dangerBtnStyle}>
                 <PhoneOff size={18} style={{ marginRight: 8 }} /> Rechazar
@@ -641,13 +761,38 @@ export default function IPPhoneBar() {
         }}
       >
         <div style={{ ...cardStyle(), overflow: "hidden", boxShadow: inCall ? "0 30px 80px rgba(0,0,0,.42)" : "0 20px 50px rgba(0,0,0,.28)" }}>
-          <div style={{ padding: 14, borderBottom: "1px solid rgba(255,255,255,.08)", background: "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0))" }}>
+          <div
+            style={{
+              padding: 14,
+              borderBottom: "1px solid rgba(255,255,255,.08)",
+              background: "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0))",
+            }}
+          >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fff", fontWeight: 900 }}>
                   <PhoneCall size={16} /> Softphone Pro
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 7, borderRadius: 999, padding: "6px 10px", background: statusTone.bg, fontSize: 12, fontWeight: 700 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 999, background: statusTone.dot, display: "inline-block" }} />
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 7,
+                      borderRadius: 999,
+                      padding: "6px 10px",
+                      background: statusTone.bg,
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 999,
+                        background: statusTone.dot,
+                        display: "inline-block",
+                      }}
+                    />
                     {statusText}
                   </span>
                 </div>
@@ -656,49 +801,118 @@ export default function IPPhoneBar() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setHistoryOpen((v) => !v)} style={iconBtnStyle}><History size={16} /></button>
-                <button onClick={() => setSettingsOpen((v) => !v)} style={iconBtnStyle}><Settings2 size={16} /></button>
-                <button onClick={() => setCompact((v) => !v)} style={iconBtnStyle}>{compact ? <Phone size={16} /> : <Minimize2 size={16} />}</button>
-                <button onClick={() => setOpen((v) => !v)} style={iconBtnStyle}><X size={16} /></button>
+                <button onClick={() => setHistoryOpen((v) => !v)} style={iconBtnStyle}>
+                  <History size={16} />
+                </button>
+                <button onClick={() => setSettingsOpen((v) => !v)} style={iconBtnStyle}>
+                  <Settings2 size={16} />
+                </button>
+                <button onClick={() => setCompact((v) => !v)} style={iconBtnStyle}>
+                  {compact ? <Phone size={16} /> : <Minimize2 size={16} />}
+                </button>
+                <button onClick={() => setOpen((v) => !v)} style={iconBtnStyle}>
+                  <X size={16} />
+                </button>
               </div>
             </div>
           </div>
 
           {open ? (
             <div style={{ padding: compact ? 12 : 14, display: "grid", gap: 12 }}>
-              {msg ? <div style={{ color: "#fff", fontSize: 12, padding: "10px 12px", borderRadius: 14, background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.10)" }}>{msg}</div> : null}
+              {msg ? (
+                <div
+                  style={{
+                    color: "#fff",
+                    fontSize: 12,
+                    padding: "10px 12px",
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,.06)",
+                    border: "1px solid rgba(255,255,255,.10)",
+                  }}
+                >
+                  {msg}
+                </div>
+              ) : null}
 
               {settingsOpen ? (
                 <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
                   <div style={{ display: "grid", gap: 10 }}>
-                    <button onClick={hydrateFromPanel} style={softBtnStyle}><RefreshCw size={14} style={{ marginRight: 6 }} /> Cargar desde panel</button>
-                    <input value={config.username} onChange={(e) => setConfig((p) => ({ ...p, username: sanitizeNumber(e.target.value) }))} placeholder="Extensión" style={inputStyle} />
-                    <input value={config.password} onChange={(e) => setConfig((p) => ({ ...p, password: e.target.value }))} placeholder="Password SIP" type="password" style={inputStyle} />
-                    <input value={config.domain} onChange={(e) => setConfig((p) => ({ ...p, domain: e.target.value }))} placeholder="Dominio SIP" style={inputStyle} />
-                    <input value={config.server} onChange={(e) => setConfig((p) => ({ ...p, server: e.target.value }))} placeholder="Servidor WSS" style={inputStyle} />
+                    <button onClick={hydrateFromPanel} style={softBtnStyle}>
+                      <RefreshCw size={14} style={{ marginRight: 6 }} /> Cargar desde panel
+                    </button>
+                    <input
+                      value={config.username}
+                      onChange={(e) => setConfig((p) => ({ ...p, username: sanitizeNumber(e.target.value) }))}
+                      placeholder="Extensión"
+                      style={inputStyle}
+                    />
+                    <input
+                      value={config.password}
+                      onChange={(e) => setConfig((p) => ({ ...p, password: e.target.value }))}
+                      placeholder="Password SIP"
+                      type="password"
+                      style={inputStyle}
+                    />
+                    <input
+                      value={config.domain}
+                      onChange={(e) => setConfig((p) => ({ ...p, domain: e.target.value }))}
+                      placeholder="Dominio SIP"
+                      style={inputStyle}
+                    />
+                    <input
+                      value={config.server}
+                      onChange={(e) => setConfig((p) => ({ ...p, server: e.target.value }))}
+                      placeholder="Servidor WSS"
+                      style={inputStyle}
+                    />
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                     {!registered ? (
-                      <button onClick={connect} style={goldBtnStyle}><Phone size={16} style={{ marginRight: 8 }} /> Conectar</button>
+                      <button onClick={connect} style={goldBtnStyle}>
+                        <Phone size={16} style={{ marginRight: 8 }} /> Conectar
+                      </button>
                     ) : (
-                      <button onClick={disconnect} style={dangerBtnStyle}><PhoneOff size={16} style={{ marginRight: 8 }} /> Desconectar</button>
+                      <button onClick={disconnect} style={dangerBtnStyle}>
+                        <PhoneOff size={16} style={{ marginRight: 8 }} /> Desconectar
+                      </button>
                     )}
                   </div>
                 </div>
               ) : null}
 
-              <div style={{ ...cardStyle({ padding: compact ? 12 : 14, borderRadius: 20, background: inCall ? "rgba(255,159,67,.10)" : "rgba(255,255,255,.03)" }) }}>
+              <div
+                style={{
+                  ...cardStyle({
+                    padding: compact ? 12 : 14,
+                    borderRadius: 20,
+                    background: inCall ? "rgba(255,159,67,.10)" : "rgba(255,255,255,.03)",
+                  }),
+                }}
+              >
                 <div style={{ color: "rgba(255,255,255,.62)", fontSize: 12, textTransform: "uppercase", letterSpacing: ".08em" }}>
                   {incoming ? "Entrante" : inCall ? "Conversación activa" : "Marcador"}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ color: "#fff", fontWeight: 900, fontSize: 28, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{visiblePeer || number || "—"}</div>
+                    <div
+                      style={{
+                        color: "#fff",
+                        fontWeight: 900,
+                        fontSize: 28,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {visiblePeer || number || "—"}
+                    </div>
                     <div style={{ color: "rgba(255,255,255,.62)", fontSize: 13, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
                       <Clock3 size={13} /> {inCall ? formatDuration(elapsed) : "Listo para llamar"}
                     </div>
                   </div>
-                  <button onClick={copyCurrentNumber} style={iconBtnStyle}><Copy size={16} /></button>
+                  <button onClick={copyCurrentNumber} style={iconBtnStyle}>
+                    <Copy size={16} />
+                  </button>
                 </div>
               </div>
 
@@ -712,8 +926,10 @@ export default function IPPhoneBar() {
                   />
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-                    {["1","2","3","4","5","6","7","8","9","*","0","#"].map((digit) => (
-                      <button key={digit} onClick={() => setNumber((prev) => sanitizeNumber(prev + digit))} style={dialBtnStyle}>{digit}</button>
+                    {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((digit) => (
+                      <button key={digit} onClick={() => setNumber((prev) => sanitizeNumber(prev + digit))} style={dialBtnStyle}>
+                        {digit}
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -726,7 +942,9 @@ export default function IPPhoneBar() {
                   </button>
                 ) : null}
                 {inCall || incoming ? (
-                  <button onClick={hangup} style={dangerBtnStyle}><PhoneOff size={17} style={{ marginRight: 8 }} /> Colgar</button>
+                  <button onClick={hangup} style={dangerBtnStyle}>
+                    <PhoneOff size={17} style={{ marginRight: 8 }} /> Colgar
+                  </button>
                 ) : null}
                 <button onClick={toggleMute} disabled={!inCall} style={{ ...softBtnStyle, opacity: !inCall ? 0.6 : 1 }}>
                   {muted ? <MicOff size={16} style={{ marginRight: 8 }} /> : <Mic size={16} style={{ marginRight: 8 }} />}
@@ -736,40 +954,53 @@ export default function IPPhoneBar() {
                   {speakerOn ? <Volume2 size={16} style={{ marginRight: 8 }} /> : <VolumeX size={16} style={{ marginRight: 8 }} />}
                   Audio
                 </button>
-                <button onClick={() => setNumber((prev) => prev.slice(0, -1))} style={softBtnStyle}>⌫ Borrar</button>
+                <button onClick={() => setNumber((prev) => prev.slice(0, -1))} style={softBtnStyle}>
+                  ⌫ Borrar
+                </button>
               </div>
 
               {historyOpen ? (
                 <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
                   <div style={{ color: "#fff", fontWeight: 800, marginBottom: 10 }}>Historial reciente</div>
                   <div style={{ display: "grid", gap: 8, maxHeight: 210, overflowY: "auto" }}>
-                    {history.length ? history.map((item) => (
-                      <button
-                        key={item.id}
-                        onClick={() => setNumber(sanitizeNumber(item.number))}
-                        style={{
-                          textAlign: "left",
-                          borderRadius: 14,
-                          border: "1px solid rgba(255,255,255,.10)",
-                          background: "rgba(255,255,255,.04)",
-                          padding: 10,
-                          color: "#fff",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                          <strong>{item.number}</strong>
-                          <span style={{ color: "rgba(255,255,255,.58)", fontSize: 12 }}>{new Date(item.createdAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</span>
-                        </div>
-                        <div style={{ color: "rgba(255,255,255,.60)", fontSize: 12, marginTop: 4 }}>{item.direction} · {item.result}</div>
-                      </button>
-                    )) : <div style={{ color: "rgba(255,255,255,.58)", fontSize: 13 }}>Todavía no hay llamadas recientes.</div>}
+                    {history.length ? (
+                      history.map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => setNumber(sanitizeNumber(item.number))}
+                          style={{
+                            textAlign: "left",
+                            borderRadius: 14,
+                            border: "1px solid rgba(255,255,255,.10)",
+                            background: "rgba(255,255,255,.04)",
+                            padding: 10,
+                            color: "#fff",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                            <strong>{item.number}</strong>
+                            <span style={{ color: "rgba(255,255,255,.58)", fontSize: 12 }}>
+                              {new Date(item.createdAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <div style={{ color: "rgba(255,255,255,.60)", fontSize: 12, marginTop: 4 }}>
+                            {item.direction} · {item.result}
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <div style={{ color: "rgba(255,255,255,.58)", fontSize: 13 }}>Todavía no hay llamadas recientes.</div>
+                    )}
                   </div>
                 </div>
               ) : null}
             </div>
           ) : (
-            <button onClick={() => setOpen(true)} style={{ width: "100%", padding: 14, background: "transparent", color: "#fff", border: 0, cursor: "pointer", fontWeight: 800 }}>
+            <button
+              onClick={() => setOpen(true)}
+              style={{ width: "100%", padding: 14, background: "transparent", color: "#fff", border: 0, cursor: "pointer", fontWeight: 800 }}
+            >
               Abrir softphone
             </button>
           )}
