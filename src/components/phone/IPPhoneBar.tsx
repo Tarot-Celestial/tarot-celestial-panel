@@ -443,27 +443,32 @@ export default function IPPhoneBar() {
         onServerConnect: () => {
           setStatusText("Conectando transporte…");
         },
-        onServerDisconnect: async () => {
-          stopRingtone();
-          setStatus("offline");
-          setStatusText("Reconectando...");
+       onServerDisconnect: () => {
+  console.warn("🔌 SIP desconectado");
 
-          if (reconnectTimeoutRef.current) {
-            window.clearTimeout(reconnectTimeoutRef.current);
-          }
+  stopRingtone();
+  setStatus("offline");
+  setStatusText("Reconectando...");
 
-          reconnectTimeoutRef.current = window.setTimeout(async () => {
-            try {
-              if (!simpleUserRef.current) return;
-              await simpleUserRef.current.connect();
-              await simpleUserRef.current.register();
-              setStatus("registered");
-              setStatusText("Reconectado");
-            } catch (e) {
-              console.error("❌ Error reconectando", e);
-            }
-          }, 2000);
-        },
+  if (reconnectTimeoutRef.current) {
+    window.clearTimeout(reconnectTimeoutRef.current);
+  }
+
+  reconnectTimeoutRef.current = window.setTimeout(async () => {
+    try {
+      if (!simpleUserRef.current) return;
+
+      await simpleUserRef.current.connect();
+      await simpleUserRef.current.register();
+
+      setStatus("registered");
+      setStatusText("Reconectado");
+    } catch (e) {
+      console.error("❌ Error reconectando", e);
+    }
+  }, 2000);
+},
+
         onCallReceived: (session: any) => {
           console.log("📞 Llamada entrante", session);
 
@@ -494,19 +499,6 @@ export default function IPPhoneBar() {
       if (remoteAudioRef.current) {
         remoteAudioRef.current.muted = false;
         remoteAudioRef.current.volume = 1;
-      }
-
-      if (!keepAliveRef.current) {
-        keepAliveRef.current = window.setInterval(async () => {
-          try {
-            if (simpleUserRef.current?.isRegistered?.()) {
-              console.log("🔄 refresh register");
-              await simpleUserRef.current.register();
-            }
-          } catch {
-            // noop
-          }
-        }, 30000);
       }
 
       setStatus("registered");
@@ -558,55 +550,50 @@ export default function IPPhoneBar() {
   }
 
   async function call() {
-    const dialed = sanitizeNumber(number);
+  const dialed = sanitizeNumber(number);
 
-    if (!dialed) {
-      console.warn("Número vacío");
-      return;
-    }
-
-    if (!simpleUserRef.current) {
-      console.error("SIP no inicializado");
-      setMsg("Softphone no conectado");
-      return;
-    }
-
-    try {
-      if (!simpleUserRef.current.isConnected?.()) {
-        console.log("Reconectando SIP...");
-        await simpleUserRef.current.connect();
-      }
-
-      if (!simpleUserRef.current.isRegistered?.()) {
-        console.log("Registrando SIP...");
-        await simpleUserRef.current.register();
-      }
-
-      if (simpleUserRef.current.session) {
-        console.warn("Ya hay llamada activa");
-        return;
-      }
-
-      console.log("📞 Llamando a:", `sip:${dialed}@${config.domain}`);
-
-      setCallNumber(dialed);
-      setStatus("calling");
-      setStatusText(`Llamando a ${dialed}…`);
-
-      await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
-
-      addHistory({
-        number: dialed,
-        direction: "outgoing",
-        createdAt: new Date().toISOString(),
-        result: "saliente",
-      });
-    } catch (e: any) {
-      console.error("❌ Error en call:", e);
-      setStatus("error");
-      setStatusText(e?.message || "Error al llamar");
-    }
+  if (!dialed) {
+    console.warn("Número vacío");
+    return;
   }
+
+  if (!simpleUserRef.current) {
+    console.error("SIP no inicializado");
+    setMsg("Softphone no conectado");
+    return;
+  }
+
+  try {
+    // ❌ NO reconectar aquí
+    // ❌ NO registrar aquí
+
+    // ✅ evitar doble llamada
+    if (simpleUserRef.current.session) {
+      console.warn("Ya hay llamada activa");
+      return;
+    }
+
+    console.log("📞 Llamando a:", `sip:${dialed}@${config.domain}`);
+
+    setCallNumber(dialed);
+    setStatus("calling");
+    setStatusText(`Llamando a ${dialed}…`);
+
+    await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
+
+    addHistory({
+      number: dialed,
+      direction: "outgoing",
+      createdAt: new Date().toISOString(),
+      result: "saliente",
+    });
+
+  } catch (e: any) {
+    console.error("❌ Error en call:", e);
+    setStatus("error");
+    setStatusText(e?.message || "Error al llamar");
+  }
+}
 
   async function answer() {
     try {
