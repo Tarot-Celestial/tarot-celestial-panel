@@ -27,13 +27,13 @@ autoRegister: true,
 };
 
 function stripProtocol(value: string) {
-return String(value || "")
-.trim()
-.replace(/^sips?:/i, "")
-.replace(/^wss?:///i, "")
-.replace(/^/+/, "")
-.replace(//ws$/i, "")
-.replace(//$/, "");
+  return String(value || "")
+    .trim()
+    .replace(/^sips?:/i, "")
+    .replace(/^wss?:\/\//i, "")
+    .replace(/^\/+/, "")
+    .replace(/\/ws$/i, "")
+    .replace(/\/$/, "");
 }
 
 function normalizeDomain(raw: string) {
