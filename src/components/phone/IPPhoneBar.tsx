@@ -217,13 +217,15 @@ export default function IPPhoneBar() {
       },
     };
     // 🔥 FORZAR protocolo SIP en WebSocket (CLAVE)
-;(window as any).WebSocket = class extends WebSocket {
-  constructor(url: string, protocols?: string | string[]) {
-    super(url, ["sip"]);
-  }
-};
+if (typeof window !== "undefined") {
+  (window as any).WebSocket = class extends WebSocket {
+    constructor(url: string, protocols?: string | string[]) {
+      super(url, ["sip"]);
+    }
+  };
+}
 
- const options = {
+const options = {
   aor,
   userAgentOptions: {
     uri: SIP.UserAgent.makeURI("sip:1000@sip.clientestarotcelestial.es"),
@@ -231,7 +233,6 @@ export default function IPPhoneBar() {
     authorizationPassword: "123456",
     displayName: "1000",
 
-    // 🔥 IMPORTANTE
     transportOptions: {
       server: "wss://sip.clientestarotcelestial.es:8089/ws",
     },
