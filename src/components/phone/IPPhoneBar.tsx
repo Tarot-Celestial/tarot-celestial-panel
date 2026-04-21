@@ -443,20 +443,59 @@ export default function IPPhoneBar() {
   }
 
   async function call() {
-    const dialed = sanitizeNumber(number);
-    if (!dialed || !simpleUserRef.current) return;
-    try {
-      setCallNumber(dialed);
-      setStatus("calling");
-      setStatusText(`Llamando a ${dialed}…`);
-      await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
-      addHistory({ number: dialed, direction: "outgoing", createdAt: new Date().toISOString(), result: "saliente" });
-    } catch (e: any) {
-      console.error(e);
-      setStatus("error");
-      setStatusText(e?.message || "Error al llamar");
-    }
+  const dialed = sanitizeNumber(number);
+
+  if (!dialed) {
+    console.warn("Número vacío");
+    return;
   }
+
+  if (!simpleUserRef.current) {
+    console.error("SIP no inicializado");
+    setMsg("Softphone no conectado");
+    return;
+  }
+
+  try {
+    // 🔥 ASEGURAR CONEXIÓN
+    if (!simpleUserRef.current.isConnected()) {
+      console.log("Reconectando SIP...");
+      await simpleUserRef.current.connect();
+    }
+
+    // 🔥 ASEGURAR REGISTRO
+    if (!simpleUserRef.current.isRegistered()) {
+      console.log("Registrando SIP...");
+      await simpleUserRef.current.register();
+    }
+
+    // 🔥 EVITAR LLAMADAS DUPLICADAS
+    if (simpleUserRef.current.session) {
+      console.warn("Ya hay llamada activa");
+      return;
+    }
+
+    console.log("📞 Llamando a:", `sip:${dialed}@${config.domain}`);
+
+    setCallNumber(dialed);
+    setStatus("calling");
+    setStatusText(`Llamando a ${dialed}…`);
+
+    await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
+
+    addHistory({
+      number: dialed,
+      direction: "outgoing",
+      createdAt: new Date().toISOString(),
+      result: "saliente",
+    });
+
+  } catch (e: any) {
+    console.error("❌ Error en call:", e);
+    setStatus("error");
+    setStatusText(e?.message || "Error al llamar");
+  }
+}
 
   async function answer() {
     try {
