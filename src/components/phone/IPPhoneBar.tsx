@@ -543,14 +543,25 @@ export default function IPPhoneBar() {
 
 // 🔥 ESPERAR A QUE SIP TENGA LOS HEADERS COMPLETOS
 setTimeout(() => {
+  const req =
+    session?.session?._request ||
+    session?.session?.request ||
+    session?._request ||
+    session?.request;
+
   let caller = "Número oculto";
 
   try {
-    caller =
-      session?.request?.getHeader?.("X-CallerID") ||
-      "Número oculto";
+    const header =
+      req?.getHeader?.("X-CallerID") ||
+      req?.getHeader?.("From");
+
+    if (header) {
+      const match = header.match(/sip:(\+?\d+)/);
+      if (match) caller = match[1];
+    }
   } catch (e) {
-    console.log("Error leyendo header", e);
+    console.log("error leyendo headers", e);
   }
 
   console.log("🔥 CALLER FINAL:", caller);
