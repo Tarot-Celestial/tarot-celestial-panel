@@ -56,6 +56,18 @@ type SipRuntime = {
   reconnectAttempts: number;
 };
 
+type ActiveClientContext = {
+  cliente_id?: string | null;
+  telefono?: string | null;
+  nombre?: string | null;
+  apellido?: string | null;
+  minutos_free_pendientes?: number | null;
+  minutos_normales_pendientes?: number | null;
+  tarotista_worker_id?: string | null;
+  tarotista_nombre?: string | null;
+  source?: string | null;
+};
+
 function formatDuration(totalSeconds: number) {
   const value = Math.max(0, Math.round(totalSeconds || 0));
   const hh = Math.floor(value / 3600);
@@ -146,6 +158,7 @@ export default function IPPhoneBar() {
   const callDirectionRef = useRef<"incoming" | "outgoing">("outgoing");
   const callAnsweredRef = useRef(false);
   const callFinalizedRef = useRef(false);
+  const activeClientContextRef = useRef<ActiveClientContext | null>(null);
   const dragStateRef = useRef<{ dragging: boolean; startX: number; startY: number; originX: number; originY: number }>({
     dragging: false,
     startX: 0,
@@ -277,6 +290,26 @@ export default function IPPhoneBar() {
   }, [showHangupButton]);
 
   useEffect(() => {
+    const onClientContext = (event: Event) => {
+      const detail = (event as CustomEvent<ActiveClientContext>).detail || {};
+      activeClientContextRef.current = {
+        cliente_id: detail?.cliente_id ? String(detail.cliente_id) : null,
+        telefono: detail?.telefono ? String(detail.telefono) : null,
+        nombre: detail?.nombre ? String(detail.nombre) : null,
+        apellido: detail?.apellido ? String(detail.apellido) : null,
+        minutos_free_pendientes: Number(detail?.minutos_free_pendientes || 0) || 0,
+        minutos_normales_pendientes: Number(detail?.minutos_normales_pendientes || 0) || 0,
+        tarotista_worker_id: detail?.tarotista_worker_id ? String(detail.tarotista_worker_id) : null,
+        tarotista_nombre: detail?.tarotista_nombre ? String(detail.tarotista_nombre) : null,
+        source: detail?.source ? String(detail.source) : null,
+      };
+    };
+
+    window.addEventListener("tc-softphone-client-context", onClientContext as EventListener);
+    return () => window.removeEventListener("tc-softphone-client-context", onClientContext as EventListener);
+  }, []);
+
+  useEffect(() => {
     const onKeydown = async (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName?.toLowerCase();
@@ -310,6 +343,21 @@ export default function IPPhoneBar() {
     window.addEventListener("keydown", onKeydown);
     return () => window.removeEventListener("keydown", onKeydown);
   }, [open, incoming, showHangupButton, number]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = window.setInterval(() => {
+      if (runtimeRef.current.manualDisconnect) return;
+      if (!config.username || !config.password || !config.domain || !config.server) return;
+      const ua = runtimeRef.current.userAgent;
+      const transportConnected = Boolean(ua?.transport && String(ua.transport.state || "").includes("Connected"));
+      const hasActive = Boolean(runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession));
+      if ((!ua || !transportConnected || ["offline", "error"].includes(statusRef.current)) && !connectingRef.current && !hasActive) {
+        void connect(true);
+      }
+    }, 15000);
+    return () => window.clearInterval(id);
+  }, [hydrated, config.username, config.password, config.domain, config.server]);
 
   async function getToken() {
     const { data } = await sb.auth.getSession();
@@ -519,6 +567,7 @@ export default function IPPhoneBar() {
     setIncomingNumber("");
     setCallNumber("");
     setMuted(false);
+    activeClientContextRef.current = null;
     setStatus(nextStatus);
     setStatusText(nextText);
   }
@@ -683,6 +732,7 @@ export default function IPPhoneBar() {
         transportOptions: {
           server: config.server,
           traceSip: true,
+          keepAliveInterval: 25,
         },
         sessionDescriptionHandlerFactoryOptions: {
           constraints: { audio: true, video: false },
@@ -728,6 +778,22 @@ export default function IPPhoneBar() {
         requestOptions: {
           extraHeaders: ["X-Softphone: TarotCelestial"],
         },
+        expires: 90,
+      });
+
+      registerer.stateChange?.addListener?.((state: any) => {
+        const txt = String(state || "");
+        if (txt.includes("Registered")) {
+          runtimeRef.current.reconnectAttempts = 0;
+          setStatus((prev) => (prev === "in_call" || prev === "calling" || prev === "ringing" ? prev : "registered"));
+          setStatusText((prev) => (prev === "En llamada" || prev.startsWith("Llamando") || prev.startsWith("Llamada entrante") ? prev : "Conectado"));
+          return;
+        }
+        if (txt.includes("Unregistered") || txt.includes("Terminated")) {
+          if (!runtimeRef.current.manualDisconnect) {
+            scheduleReconnect("Registro SIP perdido. Reconectando…");
+          }
+        }
       });
 
       userAgent.transport.stateChange.addListener((state: any) => {
@@ -852,6 +918,17 @@ export default function IPPhoneBar() {
       const json = await res.json().catch(() => null);
       if (!json?.ok) return;
       const cliente = Array.isArray(json?.clientes) ? json.clientes[0] : null;
+      if (cliente) {
+        activeClientContextRef.current = {
+          cliente_id: cliente?.id ? String(cliente.id) : null,
+          telefono: cliente?.telefono ? String(cliente.telefono) : digits,
+          nombre: cliente?.nombre ? String(cliente.nombre) : null,
+          apellido: cliente?.apellido ? String(cliente.apellido) : null,
+          minutos_free_pendientes: Number(cliente?.minutos_free_pendientes || 0) || 0,
+          minutos_normales_pendientes: Number(cliente?.minutos_normales_pendientes || 0) || 0,
+          source: "lookup",
+        };
+      }
       const basePath = window.location.pathname.startsWith("/admin") ? "/admin" : "/panel-central";
       const url = cliente?.id
         ? `${basePath}?tab=crm&open_cliente_id=${encodeURIComponent(String(cliente.id))}`
@@ -859,6 +936,53 @@ export default function IPPhoneBar() {
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e) {
       console.error("No se pudo abrir CRM", e);
+    }
+  }
+
+  async function dispatchTransferPopup(targetExtension: string) {
+    try {
+      const ctx = activeClientContextRef.current;
+      const cleanTarget = sanitizeNumber(targetExtension);
+      if (!ctx?.cliente_id || !cleanTarget) return { ok: false, reason: "missing_context" };
+
+      const token = await getToken();
+      if (!token) return { ok: false, reason: "no_auth" };
+
+      const operatorRes = await fetch("/api/operator/panel", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const operatorJson = await operatorRes.json().catch(() => null);
+      const ext = Array.isArray(operatorJson?.extensions)
+        ? operatorJson.extensions.find((item: any) => String(item?.extension || "") === String(cleanTarget))
+        : null;
+
+      const tarotistaWorkerId = ctx?.tarotista_worker_id || ext?.worker_id || null;
+      if (!tarotistaWorkerId) return { ok: false, reason: "target_not_found" };
+
+      const payload = {
+        tarotista_worker_id: String(tarotistaWorkerId),
+        cliente_id: String(ctx.cliente_id),
+        telefono: String(ctx.telefono || visiblePeer || numberRef.current || ""),
+        nombre: String(ctx.nombre || ""),
+        apellido: String(ctx.apellido || ""),
+        minutos_free_pendientes: Number(ctx.minutos_free_pendientes || 0) || 0,
+        minutos_normales_pendientes: Number(ctx.minutos_normales_pendientes || 0) || 0,
+      };
+
+      const popupRes = await fetch("/api/crm/call-popups/enviar", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      const popupJson = await popupRes.json().catch(() => null);
+      return { ok: Boolean(popupJson?.ok), popup: popupJson?.popup || null, reason: popupJson?.error || null };
+    } catch (error) {
+      console.error("Error enviando popup de transferencia", error);
+      return { ok: false, reason: "exception" };
     }
   }
 
@@ -1016,13 +1140,20 @@ export default function IPPhoneBar() {
       const session = runtimeRef.current.activeSession;
       if (!session || !isSessionAlive(session)) return false;
       if (typeof session.refer !== "function") return false;
+
+      const popupResult = await dispatchTransferPopup(cleanTarget);
       await session.refer(`sip:${cleanTarget}@${config.domain}`);
       addHistory({
         number: cleanTarget,
         direction: "transfer",
         createdAt: new Date().toISOString(),
-        result: "transferida",
+        result: popupResult?.ok ? "transferida + ficha" : "transferida",
       });
+      if (popupResult?.ok) {
+        setMsg(`Transferida a ${cleanTarget}. El contador de cliente arrancará cuando la tarotista acepte.`);
+      } else if (activeClientContextRef.current?.cliente_id) {
+        setMsg(`Transferida a ${cleanTarget}. No pude enlazar la ficha automáticamente (${String(popupResult?.reason || "sin detalle")}).`);
+      }
       return true;
     } catch (e) {
       console.error(e);
@@ -1273,7 +1404,7 @@ export default function IPPhoneBar() {
                 </div>
               ) : null}
 
-              <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : `repeat(${showHangupButton ? 5 : 4}, minmax(0, 1fr))`, gap: 8 }}>
                 {!showHangupButton ? (
                   <button onClick={() => void call()} disabled={!registered || !number} style={{ ...goldBtnStyle, opacity: !registered || !number ? 0.6 : 1 }}>
                     <Phone size={17} style={{ marginRight: 8 }} /> Llamar
@@ -1291,6 +1422,11 @@ export default function IPPhoneBar() {
                   {speakerOn ? <Volume2 size={16} style={{ marginRight: 8 }} /> : <VolumeX size={16} style={{ marginRight: 8 }} />}
                   Audio
                 </button>
+                {showHangupButton ? (
+                  <button onClick={() => void transfer(number)} disabled={!number} style={{ ...softBtnStyle, opacity: number ? 1 : 0.6 }}>
+                    Transferir
+                  </button>
+                ) : null}
                 <button onClick={() => setNumber((prev) => prev.slice(0, -1))} style={softBtnStyle}>
                   ⌫ Borrar
                 </button>

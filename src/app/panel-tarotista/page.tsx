@@ -53,6 +53,14 @@ function n2(n: any) {
   return x.toFixed(2);
 }
 
+function formatDuration(totalSeconds: number) {
+  const value = Math.max(0, Math.round(totalSeconds || 0));
+  const hh = Math.floor(value / 3600);
+  const mm = Math.floor((value % 3600) / 60);
+  const ss = value % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
 function capTier(captadas: number) {
   if (captadas >= 30) return { rate: 2.0, label: "2,00€ / captada (30+)", nextAt: null as any };
   if (captadas >= 20) return { rate: 1.5, label: "1,50€ / captada (20+)", nextAt: 30 };
@@ -210,6 +218,8 @@ export default function Tarotista() {
   const [closeFreeUsed, setCloseFreeUsed] = useState("0");
   const [closeNormalesUsed, setCloseNormalesUsed] = useState("0");
   const [closeLoading, setCloseLoading] = useState(false);
+  const [activeCallElapsed, setActiveCallElapsed] = useState(0);
+  const [closeManualOverride, setCloseManualOverride] = useState(false);
   const [closeMsg, setCloseMsg] = useState("");
 
   const incidenciasLive = useMemo(() => {
@@ -947,6 +957,7 @@ export default function Tarotista() {
 
       if (data) {
         setActiveCall(data);
+        setCloseManualOverride(false);
         setCloseFreeUsed(String(data?.minutos_free_pendientes ?? 0));
         setCloseNormalesUsed(String(data?.minutos_normales_pendientes ?? 0));
       } else {
@@ -956,6 +967,38 @@ export default function Tarotista() {
       console.error("ERROR CARGANDO LLAMADA ACTIVA CRM", e);
     }
   }
+
+  useEffect(() => {
+    if (!activeCall?.accepted_at) {
+      setActiveCallElapsed(0);
+      setCloseManualOverride(false);
+      return;
+    }
+
+    const sync = () => {
+      const started = new Date(String(activeCall.accepted_at)).getTime();
+      if (!Number.isFinite(started)) {
+        setActiveCallElapsed(0);
+        return;
+      }
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+      setActiveCallElapsed(elapsedSeconds);
+      if (!closeManualOverride) {
+        const elapsedMinutes = Math.ceil(elapsedSeconds / 60);
+        const maxFree = Number(activeCall?.minutos_free_pendientes || 0) || 0;
+        const maxNormal = Number(activeCall?.minutos_normales_pendientes || 0) || 0;
+        const autoFree = Math.min(maxFree, elapsedMinutes);
+        const remaining = Math.max(elapsedMinutes - autoFree, 0);
+        const autoNormal = Math.min(maxNormal, remaining);
+        setCloseFreeUsed(String(autoFree));
+        setCloseNormalesUsed(String(autoNormal));
+      }
+    };
+
+    sync();
+    const id = window.setInterval(sync, 1000);
+    return () => window.clearInterval(id);
+  }, [activeCall?.id, activeCall?.accepted_at, activeCall?.minutos_free_pendientes, activeCall?.minutos_normales_pendientes, closeManualOverride]);
 
   async function acceptIncomingPopup() {
     const popupId = incomingPopup?.id;
@@ -981,6 +1024,7 @@ export default function Tarotista() {
       setPopupOpen(false);
       setIncomingPopup(null);
       setActiveCall(popup);
+      setCloseManualOverride(false);
       setCloseFreeUsed(String(popup?.minutos_free_pendientes ?? 0));
       setCloseNormalesUsed(String(popup?.minutos_normales_pendientes ?? 0));
       setCloseMsg("✅ Llamada aceptada");
@@ -1023,6 +1067,8 @@ export default function Tarotista() {
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       setActiveCall(null);
+      setActiveCallElapsed(0);
+      setCloseManualOverride(false);
       setCloseFreeUsed("0");
       setCloseNormalesUsed("0");
       setCloseMsg(
@@ -1188,6 +1234,9 @@ export default function Tarotista() {
             <div className="tc-sub" style={{ marginTop: 6 }}>
               {[activeCall?.nombre, activeCall?.apellido].filter(Boolean).join(" ") || "Cliente"}
             </div>
+            <div className="tc-sub" style={{ marginTop: 8 }}>
+              Tiempo tarificado desde que aceptaste la transferencia: <b>{formatDuration(activeCallElapsed)}</b>
+            </div>
 
             <div className="tc-hr" />
 
@@ -1214,7 +1263,7 @@ export default function Tarotista() {
                 <input
                   className="tc-input"
                   value={closeFreeUsed}
-                  onChange={(e) => setCloseFreeUsed(e.target.value)}
+                  onChange={(e) => { setCloseManualOverride(true); setCloseFreeUsed(e.target.value); }}
                   placeholder="0"
                   style={{ width: "100%", marginTop: 6 }}
                 />
@@ -1224,7 +1273,7 @@ export default function Tarotista() {
                 <input
                   className="tc-input"
                   value={closeNormalesUsed}
-                  onChange={(e) => setCloseNormalesUsed(e.target.value)}
+                  onChange={(e) => { setCloseManualOverride(true); setCloseNormalesUsed(e.target.value); }}
                   placeholder="0"
                   style={{ width: "100%", marginTop: 6 }}
                 />
@@ -1235,10 +1284,30 @@ export default function Tarotista() {
               Al cerrar, el sistema devolverá automáticamente a la ficha del cliente los minutos no consumidos.
             </div>
 
-            <div className="tc-row" style={{ justifyContent: "flex-end", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
-              <button className="tc-btn tc-btn-danger" onClick={closeActiveCall} disabled={closeLoading}>
-                {closeLoading ? "Cerrando..." : "Finalizar llamada"}
+            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+              <button
+                className="tc-btn"
+                onClick={() => {
+                  setCloseManualOverride(false);
+                  const elapsedMinutes = Math.ceil(activeCallElapsed / 60);
+                  const maxFree = Number(activeCall?.minutos_free_pendientes || 0) || 0;
+                  const maxNormal = Number(activeCall?.minutos_normales_pendientes || 0) || 0;
+                  const autoFree = Math.min(maxFree, elapsedMinutes);
+                  const remaining = Math.max(elapsedMinutes - autoFree, 0);
+                  const autoNormal = Math.min(maxNormal, remaining);
+                  setCloseFreeUsed(String(autoFree));
+                  setCloseNormalesUsed(String(autoNormal));
+                }}
+                disabled={!activeCall}
+              >
+                Usar tiempo transcurrido
               </button>
+
+              <div className="tc-row" style={{ justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+                <button className="tc-btn tc-btn-danger" onClick={closeActiveCall} disabled={closeLoading}>
+                  {closeLoading ? "Cerrando..." : "Finalizar llamada"}
+                </button>
+              </div>
             </div>
 
             <div className="tc-sub" style={{ marginTop: 10 }}>{closeMsg || " "}</div>

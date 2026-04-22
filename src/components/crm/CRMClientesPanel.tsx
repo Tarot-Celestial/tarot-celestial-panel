@@ -34,9 +34,31 @@ function normalizeDialPhone(value: string | null | undefined) {
   return String(value || "").replace(/[^0-9*#+]/g, "");
 }
 
-function sendNumberToSoftphone(phone: string, autoCall = false) {
+function sendNumberToSoftphone(
+  phone: string,
+  autoCall = false,
+  clientContext?: {
+    cliente_id?: string | null;
+    telefono?: string | null;
+    nombre?: string | null;
+    apellido?: string | null;
+    minutos_free_pendientes?: number | null;
+    minutos_normales_pendientes?: number | null;
+    tarotista_worker_id?: string | null;
+    tarotista_nombre?: string | null;
+  }
+) {
   const clean = normalizeDialPhone(phone);
   if (!clean || typeof window === "undefined") return false;
+  if (clientContext) {
+    window.dispatchEvent(new CustomEvent("tc-softphone-client-context", {
+      detail: {
+        ...clientContext,
+        telefono: clientContext.telefono || clean,
+        source: "crm",
+      },
+    }));
+  }
   window.dispatchEvent(new CustomEvent("tc-softphone-dial", { detail: { number: clean, autoCall, openFicha: false } }));
   return true;
 }
@@ -2154,14 +2176,32 @@ console.log("URL CRM 👉", url);
                     {rankChip(crmClienteFicha?.rango_actual)}
                     <button
                       className="tc-btn"
-                      onClick={() => sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), false)}
+                      onClick={() => sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), false, {
+                        cliente_id: String(crmClienteFicha?.id || crmClienteSelId || ""),
+                        telefono: String(crmClienteFicha?.telefono || crmEditTelefono || ""),
+                        nombre: String(crmClienteFicha?.nombre || crmEditNombre || ""),
+                        apellido: String(crmClienteFicha?.apellido || crmEditApellido || ""),
+                        minutos_free_pendientes: Number(String(crmSendMinFree).replace(",", ".")) || 0,
+                        minutos_normales_pendientes: Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+                        tarotista_worker_id: String(crmTarotistaSendId || ""),
+                        tarotista_nombre: String((crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId))?.display_name) || ""),
+                      })}
                       disabled={!normalizeDialPhone(String(crmClienteFicha?.telefono || crmEditTelefono || ""))}
                     >
                       Enviar al softphone
                     </button>
                     <button
                       className="tc-btn tc-btn-gold"
-                      onClick={() => sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), true)}
+                      onClick={() => sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), true, {
+                        cliente_id: String(crmClienteFicha?.id || crmClienteSelId || ""),
+                        telefono: String(crmClienteFicha?.telefono || crmEditTelefono || ""),
+                        nombre: String(crmClienteFicha?.nombre || crmEditNombre || ""),
+                        apellido: String(crmClienteFicha?.apellido || crmEditApellido || ""),
+                        minutos_free_pendientes: Number(String(crmSendMinFree).replace(",", ".")) || 0,
+                        minutos_normales_pendientes: Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+                        tarotista_worker_id: String(crmTarotistaSendId || ""),
+                        tarotista_nombre: String((crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId))?.display_name) || ""),
+                      })}
                       disabled={!normalizeDialPhone(String(crmClienteFicha?.telefono || crmEditTelefono || ""))}
                     >
                       Llamar ahora
@@ -2472,3 +2512,4 @@ console.log("URL CRM 👉", url);
     </div>
   );
 }
+
