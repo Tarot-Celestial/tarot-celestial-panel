@@ -273,31 +273,28 @@ export default function IPPhoneBar() {
 
   function parseIncomingNumber(session: any) {
   try {
-    // 1. estándar SIP
-    const fromUser = session?.remoteIdentity?.uri?.user;
-    if (fromUser) return String(fromUser);
+    // 1. remoteIdentity (SIP.js principal)
+    const uriUser = session?.remoteIdentity?.uri?.user;
+    if (uriUser && uriUser !== "anonymous") return uriUser;
 
-    // 2. fallback request.from
-    const fromHeader = session?.request?.from?.uri?.user;
-    if (fromHeader) return String(fromHeader);
+    // 2. displayName (MUY IMPORTANTE)
+    const displayName = session?.remoteIdentity?.displayName;
+    if (displayName && displayName !== "Anonymous") {
+      const clean = displayName.replace(/[^0-9+]/g, "");
+      if (clean) return clean;
+    }
 
-    // 3. P-Asserted-Identity (MUY IMPORTANTE)
-    const pai = session?.request?.headers?.["P-Asserted-Identity"]?.[0]?.raw;
-    if (pai) {
-      const match = pai.match(/sip:(\+?\d+)/);
+    // 3. raw header From
+    const fromRaw = session?.request?.headers?.From?.[0]?.raw;
+    if (fromRaw) {
+      const match = fromRaw.match(/sip:(\+?\d+)/);
       if (match) return match[1];
     }
 
-    // 4. Remote-Party-ID (algunos carriers)
-    const rpid = session?.request?.headers?.["Remote-Party-ID"]?.[0]?.raw;
-    if (rpid) {
-      const match = rpid.match(/sip:(\+?\d+)/);
-      if (match) return match[1];
-    }
-
-    return "Desconocido";
+    // 4. fallback final
+    return "Número oculto";
   } catch {
-    return "Desconocido";
+    return "Número oculto";
   }
 }
 
