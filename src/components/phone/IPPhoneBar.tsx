@@ -1544,18 +1544,26 @@ const payload = {
                 </div>
               ) : null}
 
-              {settingsOpen ? (
-                <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <button onClick={hydrateFromPanel} style={softBtnStyle}>
-                      <RefreshCw size={14} style={{ marginRight: 6 }} /> Cargar desde panel
-                    </button>
-                    <input
-                      value={config.username}
-                      onChange={(e) => setConfig((p) => ({ ...p, username: sanitizeNumber(e.target.value) }))}
-                      placeholder="Extensión"
-                      style={inputStyle}
-                    />
+             {settingsOpen ? (
+  <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
+    <div style={{ display: "grid", gap: 10 }}>
+
+      <button onClick={() => hydrateFromPanel()} style={softBtnStyle}>
+        <RefreshCw size={14} style={{ marginRight: 6 }} />
+        Cargar desde panel
+      </button>
+
+      <input
+        value={config.username}
+        onChange={(e) =>
+          setConfig((p) => ({
+            ...p,
+            username: sanitizeNumber(e.target.value),
+          }))
+        }
+        placeholder="Extensión"
+        style={inputStyle}
+      />
                     <input
                       value={config.password}
                       onChange={(e) => setConfig((p) => ({ ...p, password: e.target.value }))}
