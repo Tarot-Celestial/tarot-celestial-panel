@@ -543,37 +543,18 @@ export default function IPPhoneBar() {
 
 // 🔥 ESPERAR A QUE SIP TENGA LOS HEADERS COMPLETOS
 setTimeout(() => {
-  const req =
-    session?.session?._request ||
-    session?.session?.request ||
-    session?._request ||
-    session?.request;
+  console.log("🔥 SESSION RAW:", session);
+  console.log("🔥 SESSION KEYS:", Object.keys(session || {}));
+  console.log("🔥 SESSION.SESSION:", session?.session);
+  console.log("🔥 SESSION.REQUEST:", session?.request);
+  console.log("🔥 SESSION._REQUEST:", session?._request);
 
   let caller = "Número oculto";
-
-  try {
-    const header =
-      req?.getHeader?.("X-CallerID") ||
-      req?.getHeader?.("From");
-
-    if (header) {
-      const match = header.match(/sip:(\+?\d+)/);
-      if (match) caller = match[1];
-    }
-  } catch (e) {
-    console.log("error leyendo headers", e);
-  }
-
-  console.log("🔥 CALLER FINAL:", caller);
 
   setIncomingNumber(caller);
   setCallNumber(caller);
 
-  setStatusText(
-    caller && caller !== "Número oculto"
-      ? `Llamada entrante · ${caller}`
-      : "Llamada entrante"
-  );
+  setStatusText("Llamada entrante");
 }, 300);
           },   // 👈 ESTA LÍNEA FALTABA
         
