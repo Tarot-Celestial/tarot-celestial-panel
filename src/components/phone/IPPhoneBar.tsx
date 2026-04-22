@@ -541,22 +541,29 @@ export default function IPPhoneBar() {
 
   startRingtone();
 
-  // 🔥 ESPERAR A QUE SIP TENGA LOS HEADERS COMPLETOS
-  setTimeout(() => {
-    const caller = parseIncomingNumber(session);
+// 🔥 ESPERAR A QUE SIP TENGA LOS HEADERS COMPLETOS
+setTimeout(() => {
+  let caller = "Número oculto";
 
-    console.log("📞 CALLER DETECTADO:", caller);
+  try {
+    caller =
+      session?.request?.getHeader?.("X-CallerID") ||
+      "Número oculto";
+  } catch (e) {
+    console.log("Error leyendo header", e);
+  }
 
-    setIncomingNumber(caller);
-    setCallNumber(caller);
+  console.log("🔥 CALLER FINAL:", caller);
 
-    setStatusText(
-      caller && caller !== "Número oculto"
-        ? `Llamada entrante · ${caller}`
-        : "Llamada entrante"
-    );
-  }, 300);
-},
+  setIncomingNumber(caller);
+  setCallNumber(caller);
+
+  setStatusText(
+    caller && caller !== "Número oculto"
+      ? `Llamada entrante · ${caller}`
+      : "Llamada entrante"
+  );
+}, 300);
         onCallAnswered: () => {
           callAnsweredRef.current = true;
           stopRingtone();
