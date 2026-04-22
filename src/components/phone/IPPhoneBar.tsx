@@ -517,24 +517,6 @@ export default function IPPhoneBar() {
   }
 }
 
-      simpleUserRef.current = user;
-
-      await user.connect();
-      await user.register();
-      await ensureRemoteAudioPlayback();
-
-      setStatus("registered");
-      setStatusText("Conectado");
-    } catch (e: any) {
-      console.error(e);
-      setStatus("error");
-      setStatusText(e?.message || "Error de conexión");
-      setMsg(e?.message || "No se pudo conectar.");
-    } finally {
-      connectingRef.current = false;
-    }
-  }
-
   async function disconnect() {
     try {
       stopRingtone();
