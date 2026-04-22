@@ -68,6 +68,12 @@ type ActiveClientContext = {
   source?: string | null;
 };
 
+type PresenceInfo = {
+  online: boolean;
+  status: string;
+  role?: string | null;
+};
+
 function formatDuration(totalSeconds: number) {
   const value = Math.max(0, Math.round(totalSeconds || 0));
   const hh = Math.floor(value / 3600);
@@ -185,10 +191,14 @@ export default function IPPhoneBar() {
   const [history, setHistory] = useState<CallHistoryItem[]>([]);
   const [config, setConfig] = useState<PhoneConfig>(loadStoredConfig());
   const [position, setPosition] = useState<SoftphonePosition>(loadStoredPosition());
+  const [presence, setPresence] = useState<PresenceInfo>({ online: true, status: "working", role: null });
+  const [incomingClientKnown, setIncomingClientKnown] = useState(false);
+  const [incomingDisplayName, setIncomingDisplayName] = useState("");
 
   const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
   const inCall = status === "calling" || status === "ringing" || status === "in_call";
-  const visiblePeer = incoming ? incomingNumber : callNumber || number;
+  const crmDisplayName = [activeClientContextRef.current?.nombre, activeClientContextRef.current?.apellido].filter(Boolean).join(" ").trim();
+  const visiblePeer = incoming ? (incomingDisplayName || incomingNumber) : crmDisplayName || callNumber || number;
   const showHangupButton = incoming || inCall || Boolean(runtimeRef.current.activeSession || runtimeRef.current.incomingInvitation);
 
   useEffect(() => {
@@ -358,6 +368,45 @@ export default function IPPhoneBar() {
     }, 15000);
     return () => window.clearInterval(id);
   }, [hydrated, config.username, config.password, config.domain, config.server]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncPresence = async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!json?.ok || cancelled) return;
+        const nextPresence = {
+          online: !!json.online,
+          status: String(json.status || (json.online ? "working" : "offline")),
+          role: json?.worker?.role ? String(json.worker.role) : null,
+        };
+        setPresence(nextPresence);
+        const shouldRegister = nextPresence.online && nextPresence.status === "working";
+        const isConnected = Boolean(runtimeRef.current.userAgent && runtimeRef.current.registerer);
+        if (shouldRegister && !isConnected && !connectingRef.current && config.username && config.password) {
+          void connect(true);
+        }
+        if (!shouldRegister && isConnected && !showHangupButton) {
+          void disconnect(true);
+          setStatus("offline");
+          setStatusText(nextPresence.status === "offline" ? "Softphone pausado" : "Softphone en pausa");
+        }
+      } catch {
+        // noop
+      }
+    };
+
+    void syncPresence();
+    const id = window.setInterval(syncPresence, 12000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [config.username, config.password, showHangupButton]);
 
   async function getToken() {
     const { data } = await sb.auth.getSession();
@@ -565,6 +614,8 @@ export default function IPPhoneBar() {
     setElapsed(0);
     setIncoming(false);
     setIncomingNumber("");
+    setIncomingDisplayName("");
+    setIncomingClientKnown(false);
     setCallNumber("");
     setMuted(false);
     activeClientContextRef.current = null;
@@ -707,6 +758,13 @@ export default function IPPhoneBar() {
     }
 
     try {
+      const shouldRegister = presence.online && presence.status === "working";
+      if (!shouldRegister && !isReconnect) {
+        setStatus("offline");
+        setStatusText(presence.status === "offline" ? "Softphone pausado" : `Pausado · ${presence.status}`);
+        setMsg("El softphone sigue tu estado laboral y solo se registra cuando estás conectada.");
+        return false;
+      }
       connectingRef.current = true;
       runtimeRef.current.manualDisconnect = false;
       setStatus("connecting");
@@ -756,12 +814,15 @@ export default function IPPhoneBar() {
               setCompact(false);
               setIncoming(true);
               setIncomingNumber(caller);
+              setIncomingDisplayName("");
+              setIncomingClientKnown(false);
               setCallNumber(caller);
               setStatus("ringing");
               setStatusText(`Llamada entrante · ${caller}`);
               startRingtone();
 
               await bindSession(invitation, "incoming", caller);
+              void lookupClientContextByPhone(caller, { openCRM: false });
             } catch (error) {
               console.error("Error gestionando onInvite", error);
               try {
@@ -906,17 +967,31 @@ export default function IPPhoneBar() {
     return ["registered", "calling", "ringing", "in_call"].includes(statusRef.current);
   }
 
-  async function maybeOpenCRMForNumber(rawNumber: string) {
+  function openCRMTabForClient(clienteId?: string | null, rawNumber?: string | null, mode: "associate" | "new" | "lookup" = "lookup") {
+    const digits = normalizePhoneForSearch(rawNumber || "");
+    const basePath = window.location.pathname.startsWith("/admin") ? "/admin" : "/panel-central";
+    let url = `${basePath}?tab=crm`;
+    if (clienteId) {
+      url += `&open_cliente_id=${encodeURIComponent(String(clienteId))}`;
+    } else if (digits) {
+      url += `&telefono=${encodeURIComponent(digits)}`;
+      if (mode === "new") url += `&new_cliente=1`;
+      if (mode === "associate") url += `&associate_phone=1`;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function lookupClientContextByPhone(rawNumber: string, options?: { openCRM?: boolean }) {
     try {
       const digits = normalizePhoneForSearch(rawNumber);
-      if (!digits) return;
+      if (!digits) return { found: false, cliente: null };
       const token = await getToken();
-      if (!token) return;
+      if (!token) return { found: false, cliente: null };
       const res = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(digits)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json().catch(() => null);
-      if (!json?.ok) return;
+      if (!json?.ok) return { found: false, cliente: null };
       const cliente = Array.isArray(json?.clientes) ? json.clientes[0] : null;
       if (cliente) {
         activeClientContextRef.current = {
@@ -928,18 +1003,29 @@ export default function IPPhoneBar() {
           minutos_normales_pendientes: Number(cliente?.minutos_normales_pendientes || 0) || 0,
           source: "lookup",
         };
+        if (digits === normalizePhoneForSearch(incomingNumberRef.current || "")) {
+          setIncomingClientKnown(true);
+          setIncomingDisplayName([cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim());
+        }
+      } else if (digits === normalizePhoneForSearch(incomingNumberRef.current || "")) {
+        setIncomingClientKnown(false);
+        setIncomingDisplayName("");
       }
-      const basePath = window.location.pathname.startsWith("/admin") ? "/admin" : "/panel-central";
-      const url = cliente?.id
-        ? `${basePath}?tab=crm&open_cliente_id=${encodeURIComponent(String(cliente.id))}`
-        : `${basePath}?tab=crm&telefono=${encodeURIComponent(digits)}`;
-      window.open(url, "_blank", "noopener,noreferrer");
+      if (options?.openCRM) {
+        openCRMTabForClient(cliente?.id ? String(cliente.id) : null, digits, cliente ? "lookup" : "associate");
+      }
+      return { found: Boolean(cliente), cliente };
     } catch (e) {
-      console.error("No se pudo abrir CRM", e);
+      console.error("No se pudo buscar cliente", e);
+      return { found: false, cliente: null };
     }
   }
 
-  async function dispatchTransferPopup(targetExtension: string) {
+  async function maybeOpenCRMForNumber(rawNumber: string) {
+    await lookupClientContextByPhone(rawNumber, { openCRM: true });
+  }
+
+  async function dispatchTransferPopup(targetExtension: string, allocation?: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number }) {
     try {
       const ctx = activeClientContextRef.current;
       const cleanTarget = sanitizeNumber(targetExtension);
@@ -966,8 +1052,8 @@ export default function IPPhoneBar() {
         telefono: String(ctx.telefono || visiblePeer || numberRef.current || ""),
         nombre: String(ctx.nombre || ""),
         apellido: String(ctx.apellido || ""),
-        minutos_free_pendientes: Number(ctx.minutos_free_pendientes || 0) || 0,
-        minutos_normales_pendientes: Number(ctx.minutos_normales_pendientes || 0) || 0,
+        minutos_free_pendientes: Number(allocation?.minutos_free_pendientes ?? ctx.minutos_free_pendientes || 0) || 0,
+        minutos_normales_pendientes: Number(allocation?.minutos_normales_pendientes ?? ctx.minutos_normales_pendientes || 0) || 0,
       };
 
       const popupRes = await fetch("/api/crm/call-popups/enviar", {
@@ -1138,10 +1224,38 @@ export default function IPPhoneBar() {
       const cleanTarget = sanitizeNumber(target);
       if (!cleanTarget) return false;
       const session = runtimeRef.current.activeSession;
-      if (!session || !isSessionAlive(session)) return false;
-      if (typeof session.refer !== "function") return false;
+      if (!session || !isSessionAlive(session)) {
+        setMsg("No hay una llamada activa para transferir.");
+        return false;
+      }
+      if (!isSessionState(session, "Established")) {
+        setMsg("La transferencia solo se puede lanzar cuando la llamada ya está conectada.");
+        return false;
+      }
+      if (typeof session.refer !== "function") {
+        setMsg("Tu sesión SIP no soporta transferencias REFER.");
+        return false;
+      }
 
-      const popupResult = await dispatchTransferPopup(cleanTarget);
+      const ctx = activeClientContextRef.current;
+      let allocation: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number } | undefined;
+      if (ctx?.cliente_id) {
+        const totalDisponibles = Math.max(0, Number(ctx.minutos_free_pendientes || 0) + Number(ctx.minutos_normales_pendientes || 0));
+        const asked = window.prompt(`¿Cuántos minutos quieres enviar a la tarotista ${cleanTarget}?`, String(totalDisponibles));
+        if (asked === null) return false;
+        const totalAsignados = Math.max(0, Number(String(asked).replace(",", ".")) || 0);
+        const freeAvail = Math.max(0, Number(ctx.minutos_free_pendientes || 0));
+        const usedFree = Math.min(freeAvail, totalAsignados);
+        allocation = {
+          minutos_free_pendientes: usedFree,
+          minutos_normales_pendientes: Math.min(Math.max(0, Number(ctx.minutos_normales_pendientes || 0)), Math.max(0, totalAsignados - usedFree)),
+        };
+      }
+
+      const popupResult = await dispatchTransferPopup(cleanTarget, allocation);
+      const confirmed = window.confirm(`¿Transferir ahora la llamada a la extensión ${cleanTarget}?`);
+      if (!confirmed) return false;
+
       await session.refer(`sip:${cleanTarget}@${config.domain}`);
       addHistory({
         number: cleanTarget,
@@ -1150,13 +1264,16 @@ export default function IPPhoneBar() {
         result: popupResult?.ok ? "transferida + ficha" : "transferida",
       });
       if (popupResult?.ok) {
-        setMsg(`Transferida a ${cleanTarget}. El contador de cliente arrancará cuando la tarotista acepte.`);
-      } else if (activeClientContextRef.current?.cliente_id) {
-        setMsg(`Transferida a ${cleanTarget}. No pude enlazar la ficha automáticamente (${String(popupResult?.reason || "sin detalle")}).`);
+        setMsg(`Transferencia enviada a ${cleanTarget}. La tarotista recibirá ficha y minutos al aceptar.`);
+      } else if (ctx?.cliente_id) {
+        setMsg(`Transferencia SIP enviada a ${cleanTarget}, pero el popup CRM falló (${String(popupResult?.reason || "sin detalle")}).`);
+      } else {
+        setMsg(`Transferencia SIP enviada a ${cleanTarget}.`);
       }
       return true;
     } catch (e) {
       console.error(e);
+      setMsg("No se pudo transferir la llamada.");
       return false;
     }
   }
@@ -1235,10 +1352,24 @@ export default function IPPhoneBar() {
             <div style={{ fontSize: 13, letterSpacing: ".12em", textTransform: "uppercase", color: "rgba(255,255,255,.62)" }}>
               Llamada entrante
             </div>
-            <div style={{ fontSize: 36, fontWeight: 900, color: "#fff", marginTop: 10 }}>{incomingNumber || "Número oculto"}</div>
+            <div style={{ fontSize: 36, fontWeight: 900, color: "#fff", marginTop: 10 }}>{incomingDisplayName || incomingNumber || "Número oculto"}</div>
             <div style={{ marginTop: 10, color: "rgba(255,255,255,.72)" }}>
               Contesta o rechaza desde el centro de la pantalla para que sea imposible ignorarla.
             </div>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,.62)", fontSize: 14 }}>
+              {incomingDisplayName && incomingNumber ? incomingNumber : incomingClientKnown ? "Cliente identificado en agenda" : "Número sin identificar en CRM"}
+            </div>
+
+            {!incomingClientKnown && incomingNumber && incomingNumber !== "Número oculto" ? (
+              <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
+                <button className="tc-chip" type="button" onClick={() => openCRMTabForClient(null, incomingNumber, "associate")} style={{ cursor: "pointer" }}>
+                  Asociar a cliente
+                </button>
+                <button className="tc-chip" type="button" onClick={() => openCRMTabForClient(null, incomingNumber, "new")} style={{ cursor: "pointer" }}>
+                  Nuevo cliente
+                </button>
+              </div>
+            ) : null}
             <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
               <button onClick={hangup} style={dangerBtnStyle}>
                 <PhoneOff size={18} style={{ marginRight: 8 }} /> Rechazar
