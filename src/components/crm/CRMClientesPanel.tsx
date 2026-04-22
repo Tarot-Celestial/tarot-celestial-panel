@@ -29,6 +29,18 @@ function normalizeRankParam(value: string | null | undefined): "" | "bronce" | "
 }
 
 
+
+function normalizeDialPhone(value: string | null | undefined) {
+  return String(value || "").replace(/[^0-9*#+]/g, "");
+}
+
+function sendNumberToSoftphone(phone: string, autoCall = false) {
+  const clean = normalizeDialPhone(phone);
+  if (!clean || typeof window === "undefined") return false;
+  window.dispatchEvent(new CustomEvent("tc-softphone-dial", { detail: { number: clean, autoCall, openFicha: false } }));
+  return true;
+}
+
 function renderNoteText(text: string) {
   const lines = String(text || "").split(/\n/);
   return lines.map((line, lineIndex) => {
@@ -581,6 +593,37 @@ export default function CRMClientesPanel({
     window.addEventListener("crm-open-cliente", onOpenCliente);
     return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
   }, []);
+
+  useEffect(() => {
+    const openClienteId = String(searchParams?.get("open_cliente_id") || "").trim();
+    const phoneFromUrl = String(searchParams?.get("telefono") || "").trim();
+
+    if (openClienteId) {
+      void openCRMFicha(openClienteId);
+      return;
+    }
+
+    if (!phoneFromUrl) return;
+
+    setCrmPhoneFilter(phoneFromUrl);
+
+    void (async () => {
+      try {
+        const token = await getTokenOrLogin();
+        if (!token) return;
+        const r = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(phoneFromUrl)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = await safeJson(r);
+        if (!j?._ok || !j?.ok) return;
+        setCrmRows(j.clientes || []);
+        setCrmMsg(`Resultados: ${(j.clientes || []).length}`);
+      } catch {
+        // noop
+      }
+    })();
+  }, [searchParams]);
 
   useEffect(() => {
     if (!crmClienteSelId) return;
@@ -2109,6 +2152,20 @@ console.log("URL CRM 👉", url);
                   <div className="tc-sub">ID cliente: {crmClienteFicha?.id || crmClienteSelId || "—"}</div>
                   <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                     {rankChip(crmClienteFicha?.rango_actual)}
+                    <button
+                      className="tc-btn"
+                      onClick={() => sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), false)}
+                      disabled={!normalizeDialPhone(String(crmClienteFicha?.telefono || crmEditTelefono || ""))}
+                    >
+                      Enviar al softphone
+                    </button>
+                    <button
+                      className="tc-btn tc-btn-gold"
+                      onClick={() => sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), true)}
+                      disabled={!normalizeDialPhone(String(crmClienteFicha?.telefono || crmEditTelefono || ""))}
+                    >
+                      Llamar ahora
+                    </button>
                     <button className="tc-btn tc-btn-gold" onClick={() => setCrmRegistrarOpen(true)} disabled={!crmClienteSelId && !crmClienteFicha?.id}>
                       Registrar llamada
                     </button>
@@ -2391,7 +2448,14 @@ console.log("URL CRM 👉", url);
                     <td>{r.minutos_free_pendientes ?? 0}</td>
                     <td>{r.minutos_normales_pendientes ?? 0}</td>
                     <td>{eur(r.deuda_pendiente || 0)}</td>
-                    <td><button className="tc-btn" onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button></td>
+                    <td>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button className="tc-btn" onClick={() => openCRMFicha(String(r.id || ""))}>Ver ficha</button>
+                        <button className="tc-btn tc-btn-gold" onClick={() => sendNumberToSoftphone(String(r.telefono || ""), true)} disabled={!normalizeDialPhone(String(r.telefono || ""))}>
+                          Llamar
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -2408,4 +2472,3 @@ console.log("URL CRM 👉", url);
     </div>
   );
 }
-
