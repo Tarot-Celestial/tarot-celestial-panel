@@ -564,6 +564,8 @@ setTimeout(() => {
       : "Llamada entrante"
   );
 }, 300);
+          },   // 👈 ESTA LÍNEA FALTABA
+        
         onCallAnswered: () => {
           callAnsweredRef.current = true;
           stopRingtone();
