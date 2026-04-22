@@ -494,7 +494,7 @@ export default function IPPhoneBar() {
   userAgent.delegate = {
   onInvite: (invitation: any) => {
 
-    // 🔥 AÑADE ESTO AQUÍ (lo primero)
+    // 🔥 listener de estado (CORRECTO)
     invitation.stateChange.addListener((state: any) => {
       console.log("📡 estado llamada:", state);
 
@@ -509,7 +509,7 @@ export default function IPPhoneBar() {
       }
     });
 
-    // 👇 TU CÓDIGO EXISTENTE
+    // 🔥 obtener número
     let caller = "Número oculto";
 
     try {
@@ -520,17 +520,17 @@ export default function IPPhoneBar() {
       }
     } catch (e) {}
 
-    // 👇 resto igual
+    // 🔥 UI
     setIncoming(true);
     setIncomingNumber(caller);
     setCallNumber(caller);
     setStatus("ringing");
     setStatusText(`Llamada entrante · ${caller}`);
 
+    // 🔥 guardar sesión
     simpleUserRef.current.currentInvitation = invitation;
-  },
+  }
 };
-
         setIncoming(true);
         setIncomingNumber(caller);
         setCallNumber(caller);
