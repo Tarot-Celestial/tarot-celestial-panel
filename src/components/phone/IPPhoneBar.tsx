@@ -461,7 +461,7 @@ export default function IPPhoneBar() {
     }
   }
 
-  async function connect() {
+ async function connect() {
   try {
     const SIP: any = await import("sip.js");
 
@@ -493,23 +493,15 @@ export default function IPPhoneBar() {
 
     userAgent.delegate = {
       onInvite: (invitation: any) => {
-        console.log("📞 INVITE REAL:", invitation);
-
         let caller = "Número oculto";
 
         try {
           const from = invitation.request.getHeader("From");
-          console.log("FROM HEADER:", from);
-
           if (from) {
             const match = from.match(/sip:(\+?\d+)/);
             if (match) caller = match[1];
           }
-        } catch (e) {
-          console.log("error leyendo caller", e);
-        }
-
-        console.log("🔥 CALLER REAL:", caller);
+        } catch (e) {}
 
         setIncoming(true);
         setIncomingNumber(caller);
@@ -520,12 +512,11 @@ export default function IPPhoneBar() {
         simpleUserRef.current.currentInvitation = invitation;
       },
     };
-  } catch (e: any) {
+  } catch (e) {
     console.error(e);
-    setStatus("error");
-    setStatusText("Error de conexión");
   }
 }
+
 
       user.delegate = {
         onCallCreated: () => {
