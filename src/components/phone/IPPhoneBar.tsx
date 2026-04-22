@@ -524,20 +524,39 @@ export default function IPPhoneBar() {
           callFinalizedRef.current = false;
         },
         onCallReceived: (session: any) => {
-          const caller = parseIncomingNumber(session);
-          attachRemoteAudioFromSession(session);
-          setOpen(true);
-          setCompact(false);
-          callDirectionRef.current = "incoming";
-          callAnsweredRef.current = false;
-          callFinalizedRef.current = false;
-          setIncoming(true);
-          setIncomingNumber(caller);
-          setCallNumber(caller);
-          setStatus("ringing");
-          setStatusText(caller ? `Llamada entrante · ${caller}` : "Llamada entrante");
-          startRingtone();
-        },
+  console.log("📞 Llamada entrante (raw)", session);
+
+  attachRemoteAudioFromSession(session);
+
+  setOpen(true);
+  setCompact(false);
+
+  callDirectionRef.current = "incoming";
+  callAnsweredRef.current = false;
+  callFinalizedRef.current = false;
+
+  setIncoming(true);
+  setStatus("ringing");
+  setStatusText("Llamada entrante");
+
+  startRingtone();
+
+  // 🔥 ESPERAR A QUE SIP TENGA LOS HEADERS COMPLETOS
+  setTimeout(() => {
+    const caller = parseIncomingNumber(session);
+
+    console.log("📞 CALLER DETECTADO:", caller);
+
+    setIncomingNumber(caller);
+    setCallNumber(caller);
+
+    setStatusText(
+      caller && caller !== "Número oculto"
+        ? `Llamada entrante · ${caller}`
+        : "Llamada entrante"
+    );
+  }, 300);
+},
         onCallAnswered: () => {
           callAnsweredRef.current = true;
           stopRingtone();
