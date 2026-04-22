@@ -483,12 +483,14 @@ export default function IPPhoneBar() {
     await userAgent.start();
     await registerer.register();
 
-    simpleUserRef.current = userAgent;
+    simpleUserRef.current = {
+      userAgent,
+      registerer,
+    };
 
     setStatus("registered");
     setStatusText("Conectado");
 
-    // 🔥 AQUÍ ESTÁ LA MAGIA REAL
     userAgent.delegate = {
       onInvite: (invitation: any) => {
         console.log("📞 INVITE REAL:", invitation);
@@ -497,7 +499,6 @@ export default function IPPhoneBar() {
 
         try {
           const from = invitation.request.getHeader("From");
-
           console.log("FROM HEADER:", from);
 
           if (from) {
@@ -514,13 +515,8 @@ export default function IPPhoneBar() {
         setIncomingNumber(caller);
         setCallNumber(caller);
         setStatus("ringing");
-        setStatusText(
-          caller !== "Número oculto"
-            ? `Llamada entrante · ${caller}`
-            : "Llamada entrante"
-        );
+        setStatusText(`Llamada entrante · ${caller}`);
 
-        // guardamos la llamada para contestar luego
         simpleUserRef.current.currentInvitation = invitation;
       },
     };
