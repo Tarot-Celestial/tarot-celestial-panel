@@ -491,17 +491,45 @@ export default function IPPhoneBar() {
     setStatus("registered");
     setStatusText("Conectado");
 
-    userAgent.delegate = {
-      onInvite: (invitation: any) => {
-        let caller = "Número oculto";
+  userAgent.delegate = {
+  onInvite: (invitation: any) => {
 
-        try {
-          const from = invitation.request.getHeader("From");
-          if (from) {
-            const match = from.match(/sip:(\+?\d+)/);
-            if (match) caller = match[1];
-          }
-        } catch (e) {}
+    // 🔥 AÑADE ESTO AQUÍ (lo primero)
+    invitation.stateChange.addListener((state: any) => {
+      console.log("📡 estado llamada:", state);
+
+      if (state === "Terminated") {
+        console.log("📴 llamada terminada por el otro");
+
+        setIncoming(false);
+        setStatus("registered");
+        setStatusText("Conectado");
+
+        simpleUserRef.current.currentInvitation = null;
+      }
+    });
+
+    // 👇 TU CÓDIGO EXISTENTE
+    let caller = "Número oculto";
+
+    try {
+      const from = invitation.request.getHeader("From");
+      if (from) {
+        const match = from.match(/sip:(\+?\d+)/);
+        if (match) caller = match[1];
+      }
+    } catch (e) {}
+
+    // 👇 resto igual
+    setIncoming(true);
+    setIncomingNumber(caller);
+    setCallNumber(caller);
+    setStatus("ringing");
+    setStatusText(`Llamada entrante · ${caller}`);
+
+    simpleUserRef.current.currentInvitation = invitation;
+  },
+};
 
         setIncoming(true);
         setIncomingNumber(caller);
