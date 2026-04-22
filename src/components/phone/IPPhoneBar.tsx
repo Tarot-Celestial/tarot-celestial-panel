@@ -5,6 +5,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   Clock3,
   Copy,
+  GripHorizontal,
   History,
   Mic,
   MicOff,
@@ -21,8 +22,11 @@ import {
 } from "lucide-react";
 
 const sb = supabaseBrowser();
-const STORAGE_KEY = "tc_softphone_config_v3";
+const STORAGE_KEY = "tc_softphone_config_v4";
 const HISTORY_STORAGE_KEY = "tc_softphone_history_v1";
+const POSITION_STORAGE_KEY = "tc_softphone_position_v1";
+const DEFAULT_SERVER = "wss://sip.clientestarotcelestial.es:8089/ws";
+const DEFAULT_DOMAIN = "sip.clientestarotcelestial.es";
 
 type PhoneStatus = "offline" | "connecting" | "registered" | "calling" | "ringing" | "in_call" | "ended" | "error";
 
@@ -41,6 +45,17 @@ type CallHistoryItem = {
   result: string;
 };
 
+type SoftphonePosition = { x: number; y: number };
+
+type SipRuntime = {
+  userAgent: any | null;
+  registerer: any | null;
+  activeSession: any | null;
+  incomingInvitation: any | null;
+  manualDisconnect: boolean;
+  reconnectAttempts: number;
+};
+
 function formatDuration(totalSeconds: number) {
   const value = Math.max(0, Math.round(totalSeconds || 0));
   const hh = Math.floor(value / 3600);
@@ -53,10 +68,14 @@ function sanitizeNumber(value: string) {
   return String(value || "").replace(/[^0-9*#+]/g, "");
 }
 
+function normalizePhoneForSearch(value: string) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 function loadStoredConfig(): PhoneConfig {
   const fallback = {
-    server: "wss://sip.clientestarotcelestial.es:8089/ws",
-    domain: "sip.clientestarotcelestial.es",
+    server: DEFAULT_SERVER,
+    domain: DEFAULT_DOMAIN,
     username: "",
     password: "",
   };
@@ -72,6 +91,27 @@ function loadStoredConfig(): PhoneConfig {
   }
 }
 
+function getDefaultPosition() {
+  if (typeof window === "undefined") return { x: 18, y: 18 };
+  return {
+    x: Math.max(8, window.innerWidth - 408),
+    y: Math.max(8, window.innerHeight - 540),
+  };
+}
+
+function loadStoredPosition(): SoftphonePosition {
+  if (typeof window === "undefined") return { x: 18, y: 18 };
+  try {
+    const raw = localStorage.getItem(POSITION_STORAGE_KEY);
+    if (!raw) throw new Error("empty");
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.x !== "number" || typeof parsed?.y !== "number") throw new Error("invalid");
+    return parsed;
+  } catch {
+    return getDefaultPosition();
+  }
+}
+
 function cardStyle(extra?: CSSProperties): CSSProperties {
   return {
     border: "1px solid rgba(255,255,255,.12)",
@@ -83,7 +123,15 @@ function cardStyle(extra?: CSSProperties): CSSProperties {
 }
 
 export default function IPPhoneBar() {
-  const simpleUserRef = useRef<any>(null);
+  const sipModuleRef = useRef<any>(null);
+  const runtimeRef = useRef<SipRuntime>({
+    userAgent: null,
+    registerer: null,
+    activeSession: null,
+    incomingInvitation: null,
+    manualDisconnect: false,
+    reconnectAttempts: 0,
+  });
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const ringtoneLoopRef = useRef<number | null>(null);
@@ -98,6 +146,13 @@ export default function IPPhoneBar() {
   const callDirectionRef = useRef<"incoming" | "outgoing">("outgoing");
   const callAnsweredRef = useRef(false);
   const callFinalizedRef = useRef(false);
+  const dragStateRef = useRef<{ dragging: boolean; startX: number; startY: number; originX: number; originY: number }>({
+    dragging: false,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+  });
 
   const [hydrated, setHydrated] = useState(false);
   const [open, setOpen] = useState(false);
@@ -116,11 +171,12 @@ export default function IPPhoneBar() {
   const [msg, setMsg] = useState("");
   const [history, setHistory] = useState<CallHistoryItem[]>([]);
   const [config, setConfig] = useState<PhoneConfig>(loadStoredConfig());
+  const [position, setPosition] = useState<SoftphonePosition>(loadStoredPosition());
 
   const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
   const inCall = status === "calling" || status === "ringing" || status === "in_call";
   const visiblePeer = incoming ? incomingNumber : callNumber || number;
-  const showHangupButton = incoming || inCall || Boolean(simpleUserRef.current?.session);
+  const showHangupButton = incoming || inCall || Boolean(runtimeRef.current.activeSession || runtimeRef.current.incomingInvitation);
 
   useEffect(() => {
     setHydrated(true);
@@ -147,6 +203,11 @@ export default function IPPhoneBar() {
     if (!hydrated) return;
     localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history.slice(0, 12)));
   }, [history, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(position));
+  }, [position, hydrated]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -185,22 +246,29 @@ export default function IPPhoneBar() {
         window.clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
+      void disconnect(true);
     };
   }, []);
 
   useEffect(() => {
     const onDial = async (event: Event) => {
-      const detail = (event as CustomEvent<{ number?: string; label?: string }>).detail || {};
+      const detail = (event as CustomEvent<{ number?: string; label?: string; autoCall?: boolean; openFicha?: boolean }>).detail || {};
       const nextNumber = sanitizeNumber(detail.number || "");
       if (!nextNumber) return;
       setOpen(true);
       setCompact(false);
       setNumber(nextNumber);
+      if (detail.autoCall && !showHangupButton) {
+        window.setTimeout(() => {
+          void call(nextNumber, { openFicha: detail.openFicha !== false });
+        }, 120);
+        return;
+      }
       if (showHangupButton) {
         const ok = await transfer(nextNumber);
         setMsg(ok ? `Transferencia enviada a ${nextNumber}.` : `No se pudo transferir a ${nextNumber}.`);
       } else {
-        setMsg(`Extensión ${nextNumber} preparada para marcar.`);
+        setMsg(`Número ${nextNumber} preparado para marcar.`);
       }
     };
 
@@ -271,33 +339,32 @@ export default function IPPhoneBar() {
     setHistory(historyRef.current);
   }
 
- function parseIncomingNumber(session: any) {
-  try {
-    console.log("📞 remoteIdentity:", session?.remoteIdentity);
+  function parseIncomingNumber(session: any) {
+    try {
+      const fromHeader = session?.request?.getHeader?.("From") || session?.request?.from?.uri?.toString?.() || "";
+      const headerMatch = String(fromHeader).match(/sip:(\+?\d+)/);
+      if (headerMatch?.[1]) return headerMatch[1];
 
-    // 🔥 1. URI completa (LA BUENA EN TU CASO)
-    const uri = session?.remoteIdentity?.uri?.toString?.();
-    if (uri) {
-      const match = uri.match(/sip:(\+?\d+)/);
-      if (match) return match[1];
+      const uri = session?.remoteIdentity?.uri?.toString?.();
+      if (uri) {
+        const match = String(uri).match(/sip:(\+?\d+)/);
+        if (match?.[1]) return match[1];
+      }
+
+      const user = session?.remoteIdentity?.uri?.user;
+      if (user && user !== "anonymous") return sanitizeNumber(user) || String(user);
+
+      const display = session?.remoteIdentity?.displayName;
+      if (display && display !== "Anonymous") {
+        const clean = String(display).replace(/[^0-9+]/g, "");
+        if (clean) return clean;
+      }
+    } catch {
+      // noop
     }
-
-    // 🔥 2. displayName
-    const name = session?.remoteIdentity?.displayName;
-    if (name && name !== "Anonymous") {
-      const clean = name.replace(/[^0-9+]/g, "");
-      if (clean) return clean;
-    }
-
-    // 🔥 3. uri.user
-    const user = session?.remoteIdentity?.uri?.user;
-    if (user && user !== "anonymous") return user;
-
-    return "Número oculto";
-  } catch (e) {
     return "Número oculto";
   }
-}
+
   function playBeepSequence() {
     try {
       const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -353,21 +420,52 @@ export default function IPPhoneBar() {
     }
   }
 
+  function cleanupRemoteAudio() {
+    const audio = remoteAudioRef.current;
+    if (!audio) return;
+    try {
+      audio.pause();
+    } catch {
+      // noop
+    }
+    audio.srcObject = null;
+  }
+
+  function getSipStateValue(stateName: string) {
+    return sipModuleRef.current?.SessionState?.[stateName];
+  }
+
+  function isSessionState(session: any, stateName: string) {
+    if (!session) return false;
+    const direct = getSipStateValue(stateName);
+    if (direct !== undefined && session.state === direct) return true;
+    const asString = String(session.state);
+    return asString === stateName || asString.endsWith(`.${stateName}`);
+  }
+
+  function isSessionAlive(session: any) {
+    return isSessionState(session, "Initial") || isSessionState(session, "Establishing") || isSessionState(session, "Established");
+  }
+
+  function getSessionPeerConnection(session: any) {
+    return session?.sessionDescriptionHandler?.peerConnection || null;
+  }
+
   function attachRemoteAudioFromSession(session: any) {
     try {
-      const pc = session?.sessionDescriptionHandler?.peerConnection;
+      const pc = getSessionPeerConnection(session);
       const audio = remoteAudioRef.current;
       if (!pc || !audio) return;
 
       const syncRemoteStream = async () => {
         try {
-          const tracks = (pc.getReceivers?.() || [])
-            .map((receiver: any) => receiver?.track)
-            .filter((track: MediaStreamTrack | null) => track && track.kind === "audio") as MediaStreamTrack[];
-
-          if (!tracks.length) return;
-
-          const stream = new MediaStream(tracks);
+          const stream = new MediaStream();
+          const receivers = pc.getReceivers?.() || [];
+          for (const receiver of receivers) {
+            const track = receiver?.track;
+            if (track && track.kind === "audio") stream.addTrack(track);
+          }
+          if (!stream.getTracks().length) return;
           audio.srcObject = stream;
           await ensureRemoteAudioPlayback();
         } catch {
@@ -375,18 +473,33 @@ export default function IPPhoneBar() {
         }
       };
 
-      if (typeof pc.addEventListener === "function") {
-        pc.addEventListener("track", () => {
-          syncRemoteStream();
-        });
+      const onTrack = async (event: any) => {
+        try {
+          const [stream] = event?.streams || [];
+          if (stream) {
+            audio.srcObject = stream;
+          } else {
+            await syncRemoteStream();
+            return;
+          }
+          await ensureRemoteAudioPlayback();
+        } catch {
+          // noop
+        }
+      };
+
+      if (!pc.__tcSoftphoneTrackBound && typeof pc.addEventListener === "function") {
+        pc.addEventListener("track", onTrack);
+        pc.__tcSoftphoneTrackBound = true;
       }
 
-      for (const receiver of pc.getReceivers?.() || []) {
-        const track = receiver?.track;
-        if (!track || track.kind !== "audio") continue;
-        track.onunmute = () => {
-          syncRemoteStream();
+      const handler = session?.sessionDescriptionHandler;
+      if (handler && !handler.__tcSoftphoneDelegateBound) {
+        handler.peerConnectionDelegate = {
+          ...(handler.peerConnectionDelegate || {}),
+          ontrack: onTrack,
         };
+        handler.__tcSoftphoneDelegateBound = true;
       }
 
       void syncRemoteStream();
@@ -397,6 +510,7 @@ export default function IPPhoneBar() {
 
   function resetCallState(nextStatus: PhoneStatus = "registered", nextText = "Conectado") {
     stopRingtone();
+    cleanupRemoteAudio();
     callStartedAtRef.current = null;
     callAnsweredRef.current = false;
     callFinalizedRef.current = false;
@@ -416,11 +530,7 @@ export default function IPPhoneBar() {
     const endedNumber = incomingNumberRef.current || callNumberRef.current || numberRef.current;
     const result =
       resultOverride ||
-      (callAnsweredRef.current
-        ? "finalizada"
-        : callDirectionRef.current === "incoming"
-          ? "perdida"
-          : "fallida");
+      (callAnsweredRef.current ? "finalizada" : callDirectionRef.current === "incoming" ? "perdida" : "fallida");
 
     if (endedNumber) {
       addHistory({
@@ -431,7 +541,84 @@ export default function IPPhoneBar() {
       });
     }
 
-    resetCallState(simpleUserRef.current ? "registered" : "offline", simpleUserRef.current ? "Conectado" : "Desconectado");
+    const nextOnline = Boolean(runtimeRef.current.userAgent && runtimeRef.current.registerer);
+    resetCallState(nextOnline ? "registered" : "offline", nextOnline ? "Conectado" : "Desconectado");
+  }
+
+  function cleanupSessionRefs(session?: any | null) {
+    if (!session) {
+      runtimeRef.current.activeSession = null;
+      runtimeRef.current.incomingInvitation = null;
+      return;
+    }
+    if (runtimeRef.current.activeSession === session) runtimeRef.current.activeSession = null;
+    if (runtimeRef.current.incomingInvitation === session) runtimeRef.current.incomingInvitation = null;
+  }
+
+  function scheduleReconnect(reason = "Reconectando SIP…") {
+    if (runtimeRef.current.manualDisconnect || !config.username || !config.password) return;
+    if (reconnectTimeoutRef.current) return;
+
+    const attempt = Math.min(runtimeRef.current.reconnectAttempts + 1, 6);
+    runtimeRef.current.reconnectAttempts = attempt;
+    const delay = Math.min(15000, 1000 * Math.pow(2, attempt - 1));
+    setStatus("connecting");
+    setStatusText(reason);
+
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      reconnectTimeoutRef.current = null;
+      void connect(true);
+    }, delay);
+  }
+
+  function buildSessionOptions() {
+    return {
+      sessionDescriptionHandlerOptions: {
+        constraints: { audio: true, video: false },
+      },
+    };
+  }
+
+  async function bindSession(session: any, direction: "incoming" | "outgoing", peerNumber: string) {
+    callDirectionRef.current = direction;
+    callFinalizedRef.current = false;
+    if (direction === "incoming") {
+      runtimeRef.current.incomingInvitation = session;
+    }
+    runtimeRef.current.activeSession = session;
+
+    try {
+      const handler = session.stateChange;
+      handler?.addListener?.((state: any) => {
+        const established = isSessionState({ state }, "Established") || isSessionState(session, "Established");
+        const terminated = isSessionState({ state }, "Terminated") || isSessionState(session, "Terminated");
+        const establishing = isSessionState({ state }, "Establishing") || isSessionState(session, "Establishing");
+
+        if (establishing && !callAnsweredRef.current) {
+          setStatus(direction === "incoming" ? "ringing" : "calling");
+        }
+
+        if (established) {
+          stopRingtone();
+          callAnsweredRef.current = true;
+          callStartedAtRef.current = callStartedAtRef.current || Date.now();
+          setIncoming(false);
+          setCallNumber(peerNumber);
+          setStatus("in_call");
+          setStatusText("En llamada");
+          attachRemoteAudioFromSession(session);
+          void ensureRemoteAudioPlayback();
+        }
+
+        if (terminated) {
+          stopRingtone();
+          cleanupSessionRefs(session);
+          finalizeCall(callAnsweredRef.current ? "finalizada" : direction === "incoming" ? "perdida" : "fallida");
+        }
+      });
+    } catch {
+      // noop
+    }
   }
 
   async function hydrateFromPanel() {
@@ -461,102 +648,170 @@ export default function IPPhoneBar() {
     }
   }
 
- async function connect() {
-  try {
-    const SIP: any = await import("sip.js");
-
-    const uri = SIP.UserAgent.makeURI(
-      `sip:${config.username}@${config.domain}`
-    );
-
-    const userAgent = new SIP.UserAgent({
-      uri,
-      transportOptions: {
-        server: config.server,
-      },
-      authorizationUsername: config.username,
-      authorizationPassword: config.password,
-    });
-
-    const registerer = new SIP.Registerer(userAgent);
-
-    await userAgent.start();
-    await registerer.register();
-
-    simpleUserRef.current = {
-      userAgent,
-      registerer,
-    };
-
-    setStatus("registered");
-    setStatusText("Conectado");
-
-  userAgent.delegate = {
-  onInvite: (invitation: any) => {
-
-    // 🔥 listener de estado (CORRECTO)
-    invitation.stateChange.addListener((state: any) => {
-      console.log("📡 estado llamada:", state);
-
-      if (state === "Terminated") {
-        console.log("📴 llamada terminada por el otro");
-
-        setIncoming(false);
-        setStatus("registered");
-        setStatusText("Conectado");
-
-        simpleUserRef.current.currentInvitation = null;
-      }
-    });
-
-    // 🔥 obtener número
-    let caller = "Número oculto";
+  async function connect(isReconnect = false) {
+    if (connectingRef.current) return true;
+    if (!config.username || !config.password || !config.domain || !config.server) {
+      setStatus("error");
+      setStatusText("Falta configuración SIP");
+      setMsg("Completa extensión, password, dominio y servidor WSS.");
+      return false;
+    }
 
     try {
-      const from = invitation.request.getHeader("From");
-      if (from) {
-        const match = from.match(/sip:(\+?\d+)/);
-        if (match) caller = match[1];
+      connectingRef.current = true;
+      runtimeRef.current.manualDisconnect = false;
+      setStatus("connecting");
+      setStatusText(isReconnect ? "Reconectando SIP…" : "Conectando SIP…");
+      setMsg("");
+
+      if (!sipModuleRef.current) {
+        sipModuleRef.current = await import("sip.js");
       }
-    } catch (e) {}
+      const SIP = sipModuleRef.current;
 
-    // 🔥 UI
-    setIncoming(true);
-    setIncomingNumber(caller);
-    setCallNumber(caller);
-    setStatus("ringing");
-    setStatusText(`Llamada entrante · ${caller}`);
+      if (runtimeRef.current.userAgent) {
+        await disconnect(true);
+      }
 
-    // 🔥 guardar sesión
-    simpleUserRef.current.currentInvitation = invitation;
+      const uri = SIP.UserAgent.makeURI(`sip:${config.username}@${config.domain}`);
+      if (!uri) throw new Error("URI SIP inválida");
+
+      const userAgent = new SIP.UserAgent({
+        uri,
+        authorizationUsername: config.username,
+        authorizationPassword: config.password,
+        transportOptions: {
+          server: config.server,
+          traceSip: true,
+        },
+        sessionDescriptionHandlerFactoryOptions: {
+          constraints: { audio: true, video: false },
+          peerConnectionConfiguration: {
+            iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+          },
+        },
+        delegate: {
+          onInvite: async (invitation: any) => {
+            try {
+              if (runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession)) {
+                await invitation.reject().catch(() => null);
+                return;
+              }
+
+              const caller = parseIncomingNumber(invitation);
+              callDirectionRef.current = "incoming";
+              callAnsweredRef.current = false;
+              callFinalizedRef.current = false;
+              setOpen(true);
+              setCompact(false);
+              setIncoming(true);
+              setIncomingNumber(caller);
+              setCallNumber(caller);
+              setStatus("ringing");
+              setStatusText(`Llamada entrante · ${caller}`);
+              startRingtone();
+
+              await bindSession(invitation, "incoming", caller);
+            } catch (error) {
+              console.error("Error gestionando onInvite", error);
+              try {
+                await invitation.reject().catch(() => null);
+              } catch {
+                // noop
+              }
+            }
+          },
+        },
+      });
+
+      const registerer = new SIP.Registerer(userAgent, {
+        requestOptions: {
+          extraHeaders: ["X-Softphone: TarotCelestial"],
+        },
+      });
+
+      userAgent.transport.stateChange.addListener((state: any) => {
+        const txt = String(state);
+        if (txt.includes("Connected")) {
+          runtimeRef.current.reconnectAttempts = 0;
+        }
+        if (txt.includes("Disconnected")) {
+          cleanupSessionRefs();
+          resetCallState("offline", "Transporte SIP caído");
+          scheduleReconnect("Reconectando transporte SIP…");
+        }
+      });
+
+      await userAgent.start();
+      await registerer.register();
+
+      runtimeRef.current.userAgent = userAgent;
+      runtimeRef.current.registerer = registerer;
+      runtimeRef.current.reconnectAttempts = 0;
+      setStatus("registered");
+      setStatusText("Conectado");
+      setMsg(isReconnect ? "Conexión SIP restaurada." : "Softphone conectado.");
+      return true;
+    } catch (e: any) {
+      console.error("Error conectando SIP", e);
+      setStatus("error");
+      setStatusText(e?.message || "No se pudo conectar");
+      setMsg(e?.message || "No se pudo conectar la extensión SIP.");
+      scheduleReconnect("Reintentando registro SIP…");
+      return false;
+    } finally {
+      connectingRef.current = false;
+    }
   }
-};
-    
-  } catch (e) {
-    console.error(e);
-  }
-}
 
-  async function disconnect() {
+  async function disconnect(silent = false) {
     try {
+      runtimeRef.current.manualDisconnect = true;
       stopRingtone();
       if (reconnectTimeoutRef.current) {
         window.clearTimeout(reconnectTimeoutRef.current);
         reconnectTimeoutRef.current = null;
       }
-      if (simpleUserRef.current) {
+
+      const session = runtimeRef.current.activeSession || runtimeRef.current.incomingInvitation;
+      if (session && isSessionAlive(session)) {
         try {
-          await simpleUserRef.current.unregister?.();
+          if (isSessionState(session, "Established")) {
+            await session.bye?.().catch(() => null);
+          } else if (typeof session.cancel === "function") {
+            await session.cancel().catch(() => null);
+          } else if (typeof session.reject === "function") {
+            await session.reject().catch(() => null);
+          }
         } catch {
           // noop
         }
-        await simpleUserRef.current.disconnect();
+      }
+
+      try {
+        await runtimeRef.current.registerer?.unregister?.().catch(() => null);
+      } catch {
+        // noop
+      }
+      try {
+        await runtimeRef.current.userAgent?.stop?.().catch(() => null);
+      } catch {
+        // noop
       }
     } catch (e) {
       console.error(e);
     } finally {
-      simpleUserRef.current = null;
-      resetCallState("offline", "Offline");
+      runtimeRef.current.userAgent = null;
+      runtimeRef.current.registerer = null;
+      runtimeRef.current.activeSession = null;
+      runtimeRef.current.incomingInvitation = null;
+      cleanupRemoteAudio();
+      if (!silent) {
+        resetCallState("offline", "Offline");
+      } else {
+        setStatus("offline");
+        setStatusText("Offline");
+      }
       await syncRuntime({
         registered: false,
         status: "offline",
@@ -569,8 +824,9 @@ export default function IPPhoneBar() {
   }
 
   async function ensureReadyToCall() {
-    if (!simpleUserRef.current) {
-      await connect();
+    if (!runtimeRef.current.userAgent || !runtimeRef.current.registerer) {
+      const ok = await connect();
+      if (!ok) return false;
     }
 
     const start = Date.now();
@@ -584,23 +840,52 @@ export default function IPPhoneBar() {
     return ["registered", "calling", "ringing", "in_call"].includes(statusRef.current);
   }
 
-  async function call() {
-    const dialed = sanitizeNumber(number);
+  async function maybeOpenCRMForNumber(rawNumber: string) {
+    try {
+      const digits = normalizePhoneForSearch(rawNumber);
+      if (!digits) return;
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(digits)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) return;
+      const cliente = Array.isArray(json?.clientes) ? json.clientes[0] : null;
+      const basePath = window.location.pathname.startsWith("/admin") ? "/admin" : "/panel-central";
+      const url = cliente?.id
+        ? `${basePath}?tab=crm&open_cliente_id=${encodeURIComponent(String(cliente.id))}`
+        : `${basePath}?tab=crm&telefono=${encodeURIComponent(digits)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      console.error("No se pudo abrir CRM", e);
+    }
+  }
+
+  async function call(overrideNumber?: string, options?: { openFicha?: boolean }) {
+    const dialed = sanitizeNumber(overrideNumber || number);
     if (!dialed) return;
 
     try {
       const ready = await ensureReadyToCall();
-      if (!ready || !simpleUserRef.current) {
+      if (!ready || !runtimeRef.current.userAgent) {
         setMsg("Softphone no conectado");
         setStatus("error");
         setStatusText("No se pudo registrar la extensión");
         return;
       }
 
-      if (simpleUserRef.current.session) {
+      if (runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession)) {
         setMsg("Ya hay una llamada activa.");
         return;
       }
+
+      const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
+      const target = SIP.UserAgent.makeURI(`sip:${dialed}@${config.domain}`);
+      if (!target) throw new Error("Destino SIP inválido");
+
+      const inviter = new SIP.Inviter(runtimeRef.current.userAgent, target, buildSessionOptions());
+      await bindSession(inviter, "outgoing", dialed);
 
       callDirectionRef.current = "outgoing";
       callAnsweredRef.current = false;
@@ -613,20 +898,24 @@ export default function IPPhoneBar() {
       setStatus("calling");
       setStatusText(`Llamando a ${dialed}…`);
 
-      await simpleUserRef.current.call(`sip:${dialed}@${config.domain}`);
-      attachRemoteAudioFromSession(simpleUserRef.current.session);
+      await inviter.invite();
+      attachRemoteAudioFromSession(inviter);
       await ensureRemoteAudioPlayback();
+
+      if (options?.openFicha) {
+        void maybeOpenCRMForNumber(dialed);
+      }
     } catch (e: any) {
       console.error("Error en call:", e);
+      cleanupSessionRefs();
       callAnsweredRef.current = false;
       callFinalizedRef.current = false;
-      const dialedNumber = dialed;
       setCallNumber("");
       setStatus("error");
       setStatusText(e?.message || "Error al llamar");
       setMsg(e?.message || "La llamada no se pudo iniciar.");
       addHistory({
-        number: dialedNumber,
+        number: dialed,
         direction: "outgoing",
         createdAt: new Date().toISOString(),
         result: "fallida",
@@ -635,63 +924,66 @@ export default function IPPhoneBar() {
   }
 
   async function answer() {
-  try {
-    const invitation = simpleUserRef.current?.currentInvitation;
-    if (!invitation) return;
+    try {
+      const invitation = runtimeRef.current.incomingInvitation || runtimeRef.current.activeSession;
+      if (!invitation) return;
+      if (!isSessionState(invitation, "Initial") && !isSessionState(invitation, "Establishing")) {
+        cleanupSessionRefs(invitation);
+        finalizeCall("perdida");
+        return;
+      }
 
-    const state = invitation.state;
-
-    // 👇 SOLO aceptar si la llamada sigue viva
-    if (state === "Initial" || state === "Establishing") {
-      await invitation.accept();
-
+      await invitation.accept(buildSessionOptions());
+      callAnsweredRef.current = true;
+      callStartedAtRef.current = Date.now();
       setIncoming(false);
       setStatus("in_call");
       setStatusText("En llamada");
-    } else {
-      console.log("⚠️ Llamada ya terminada:", state);
-
-      // 🔥 LIMPIAR UI SI YA MURIÓ
-      setIncoming(false);
-      setStatus("registered");
-      setStatusText("Conectado");
-
-      simpleUserRef.current.currentInvitation = null;
+      attachRemoteAudioFromSession(invitation);
+      await ensureRemoteAudioPlayback();
+      void maybeOpenCRMForNumber(incomingNumberRef.current || callNumberRef.current);
+    } catch (e: any) {
+      console.error("Error al contestar:", e);
+      setMsg(e?.message || "No se pudo contestar la llamada.");
+      cleanupSessionRefs();
+      finalizeCall("perdida");
     }
-  } catch (e) {
-    console.error("Error al contestar:", e);
   }
-}
 
- async function hangup() {
-  try {
-    const invitation = simpleUserRef.current?.currentInvitation;
-
-    if (invitation) {
-      const state = invitation.state;
-
-      // 👇 SOLO colgar si la sesión está activa
-      if (state === "Established" || state === "Establishing") {
-        await invitation.bye();
-      } else {
-        console.log("⚠️ Intento de colgar sesión ya terminada:", state);
+  async function hangup() {
+    try {
+      const session = runtimeRef.current.activeSession || runtimeRef.current.incomingInvitation;
+      if (!session) {
+        finalizeCall("cancelada");
+        return;
       }
+
+      stopRingtone();
+      if (isSessionState(session, "Established")) {
+        await session.bye?.().catch(() => null);
+      } else if (isSessionState(session, "Initial") || isSessionState(session, "Establishing")) {
+        if (typeof session.cancel === "function") {
+          await session.cancel().catch(() => null);
+        } else if (typeof session.reject === "function") {
+          await session.reject().catch(() => null);
+        } else if (typeof session.bye === "function") {
+          await session.bye().catch(() => null);
+        }
+      }
+
+      cleanupSessionRefs(session);
+      finalizeCall(callAnsweredRef.current ? "finalizada" : callDirectionRef.current === "incoming" ? "rechazada" : "cancelada");
+    } catch (e) {
+      console.error("Error al colgar:", e);
+      cleanupSessionRefs();
+      finalizeCall(callAnsweredRef.current ? "finalizada" : "cancelada");
     }
-
-    // 🔥 SIEMPRE limpia UI
-    setIncoming(false);
-    setStatus("registered");
-    setStatusText("Conectado");
-
-  } catch (e) {
-    console.error("Error al colgar:", e);
   }
-}
 
   async function toggleMute() {
     try {
-      const session = simpleUserRef.current?.session;
-      const pc = session?.sessionDescriptionHandler?.peerConnection;
+      const session = runtimeRef.current.activeSession;
+      const pc = getSessionPeerConnection(session);
       if (!pc) return;
       const nextMuted = !muted;
       const senders = pc.getSenders?.() || [];
@@ -721,15 +1013,10 @@ export default function IPPhoneBar() {
     try {
       const cleanTarget = sanitizeNumber(target);
       if (!cleanTarget) return false;
-      const session = simpleUserRef.current?.session;
-      if (!session) return false;
-      if (typeof session.refer === "function") {
-        await session.refer(`sip:${cleanTarget}@${config.domain}`);
-      } else if (typeof simpleUserRef.current?.refer === "function") {
-        await simpleUserRef.current.refer(`sip:${cleanTarget}@${config.domain}`);
-      } else {
-        return false;
-      }
+      const session = runtimeRef.current.activeSession;
+      if (!session || !isSessionAlive(session)) return false;
+      if (typeof session.refer !== "function") return false;
+      await session.refer(`sip:${cleanTarget}@${config.domain}`);
       addHistory({
         number: cleanTarget,
         direction: "transfer",
@@ -752,6 +1039,38 @@ export default function IPPhoneBar() {
     } catch {
       setMsg("No se pudo copiar el número.");
     }
+  }
+
+  function startDragging(event: any) {
+    dragStateRef.current = {
+      dragging: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: position.x,
+      originY: position.y,
+    };
+
+    const onMove = (moveEvent: MouseEvent) => {
+      if (!dragStateRef.current.dragging) return;
+      const nextX = dragStateRef.current.originX + (moveEvent.clientX - dragStateRef.current.startX);
+      const nextY = dragStateRef.current.originY + (moveEvent.clientY - dragStateRef.current.startY);
+      const width = compact ? 320 : 390;
+      const maxX = Math.max(8, window.innerWidth - width - 8);
+      const maxY = Math.max(8, window.innerHeight - 72);
+      setPosition({
+        x: Math.min(Math.max(8, nextX), maxX),
+        y: Math.min(Math.max(8, nextY), maxY),
+      });
+    };
+
+    const onUp = () => {
+      dragStateRef.current.dragging = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   }
 
   const statusTone = useMemo(() => {
@@ -804,12 +1123,12 @@ export default function IPPhoneBar() {
       <div
         style={{
           position: "fixed",
-          right: 18,
-          bottom: 18,
+          left: position.x,
+          top: position.y,
           zIndex: 140,
           width: compact ? 320 : 390,
           maxWidth: "calc(100vw - 16px)",
-          transition: "all .18s ease",
+          transition: dragStateRef.current.dragging ? "none" : "box-shadow .18s ease, width .18s ease",
         }}
       >
         <div style={{ ...cardStyle(), overflow: "hidden", boxShadow: inCall ? "0 30px 80px rgba(0,0,0,.42)" : "0 20px 50px rgba(0,0,0,.28)" }}>
@@ -818,71 +1137,38 @@ export default function IPPhoneBar() {
               padding: 14,
               borderBottom: "1px solid rgba(255,255,255,.08)",
               background: "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0))",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+              cursor: open ? "grab" : "default",
+              userSelect: "none",
             }}
+            onMouseDown={startDragging}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#fff", fontWeight: 900 }}>
-                  <PhoneCall size={16} /> Softphone Pro
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 7,
-                      borderRadius: 999,
-                      padding: "6px 10px",
-                      background: statusTone.bg,
-                      fontSize: 12,
-                      fontWeight: 700,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 999,
-                        background: statusTone.dot,
-                        display: "inline-block",
-                      }}
-                    />
-                    {statusText}
-                  </span>
-                </div>
-                <div style={{ color: "rgba(255,255,255,.58)", fontSize: 12, marginTop: 5 }}>
-                  {config.username ? `Ext. ${config.username}` : "Sin extensión cargada"}
-                </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: "#fff", fontWeight: 900, fontSize: 15, display: "flex", alignItems: "center", gap: 8 }}>
+                <GripHorizontal size={16} /> Softphone SIP
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => setHistoryOpen((v) => !v)} style={iconBtnStyle}>
-                  <History size={16} />
-                </button>
-                <button onClick={() => setSettingsOpen((v) => !v)} style={iconBtnStyle}>
-                  <Settings2 size={16} />
-                </button>
-                <button onClick={() => setCompact((v) => !v)} style={iconBtnStyle}>
-                  {compact ? <Phone size={16} /> : <Minimize2 size={16} />}
-                </button>
-                <button onClick={() => setOpen((v) => !v)} style={iconBtnStyle}>
-                  <X size={16} />
-                </button>
+              <div style={{ color: "rgba(255,255,255,.62)", fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 999, background: statusTone.dot, boxShadow: `0 0 0 6px ${statusTone.bg}` }} />
+                {statusText}
               </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, flexShrink: 0 }} onMouseDown={(e) => e.stopPropagation()}>
+              <button onClick={() => setSettingsOpen((v) => !v)} style={iconBtnStyle}><Settings2 size={16} /></button>
+              <button onClick={() => setHistoryOpen((v) => !v)} style={iconBtnStyle}><History size={16} /></button>
+              <button onClick={() => setCompact((v) => !v)} style={iconBtnStyle}><Minimize2 size={16} /></button>
+              <button onClick={() => setOpen((v) => !v)} style={iconBtnStyle}>{open ? <X size={16} /> : <PhoneCall size={16} />}</button>
             </div>
           </div>
 
           {open ? (
             <div style={{ padding: compact ? 12 : 14, display: "grid", gap: 12 }}>
               {msg ? (
-                <div
-                  style={{
-                    color: "#fff",
-                    fontSize: 12,
-                    padding: "10px 12px",
-                    borderRadius: 14,
-                    background: "rgba(255,255,255,.06)",
-                    border: "1px solid rgba(255,255,255,.10)",
-                  }}
-                >
-                  {msg}
+                <div style={{ ...cardStyle({ padding: "10px 12px", borderRadius: 16, background: "rgba(255,255,255,.04)" }) }}>
+                  <div style={{ color: "rgba(255,255,255,.82)", fontSize: 13 }}>{msg}</div>
                 </div>
               ) : null}
 
@@ -920,11 +1206,11 @@ export default function IPPhoneBar() {
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                     {!registered ? (
-                      <button onClick={connect} style={goldBtnStyle}>
+                      <button onClick={() => void connect()} style={goldBtnStyle}>
                         <Phone size={16} style={{ marginRight: 8 }} /> Conectar
                       </button>
                     ) : (
-                      <button onClick={disconnect} style={dangerBtnStyle}>
+                      <button onClick={() => void disconnect()} style={dangerBtnStyle}>
                         <PhoneOff size={16} style={{ marginRight: 8 }} /> Desconectar
                       </button>
                     )}
@@ -989,19 +1275,19 @@ export default function IPPhoneBar() {
 
               <div style={{ display: "grid", gridTemplateColumns: compact ? "1fr 1fr" : "repeat(4, minmax(0, 1fr))", gap: 8 }}>
                 {!showHangupButton ? (
-                  <button onClick={call} disabled={!registered || !number} style={{ ...goldBtnStyle, opacity: !registered || !number ? 0.6 : 1 }}>
+                  <button onClick={() => void call()} disabled={!registered || !number} style={{ ...goldBtnStyle, opacity: !registered || !number ? 0.6 : 1 }}>
                     <Phone size={17} style={{ marginRight: 8 }} /> Llamar
                   </button>
                 ) : (
-                  <button onClick={hangup} style={dangerBtnStyle}>
+                  <button onClick={() => void hangup()} style={dangerBtnStyle}>
                     <PhoneOff size={17} style={{ marginRight: 8 }} /> Colgar
                   </button>
                 )}
-                <button onClick={toggleMute} disabled={!showHangupButton} style={{ ...softBtnStyle, opacity: !showHangupButton ? 0.6 : 1 }}>
+                <button onClick={() => void toggleMute()} disabled={!showHangupButton} style={{ ...softBtnStyle, opacity: !showHangupButton ? 0.6 : 1 }}>
                   {muted ? <MicOff size={16} style={{ marginRight: 8 }} /> : <Mic size={16} style={{ marginRight: 8 }} />}
                   {muted ? "Unmute" : "Mute"}
                 </button>
-                <button onClick={toggleSpeaker} style={softBtnStyle}>
+                <button onClick={() => void toggleSpeaker()} style={softBtnStyle}>
                   {speakerOn ? <Volume2 size={16} style={{ marginRight: 8 }} /> : <VolumeX size={16} style={{ marginRight: 8 }} />}
                   Audio
                 </button>
