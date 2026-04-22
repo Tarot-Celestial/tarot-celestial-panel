@@ -273,27 +273,39 @@ export default function IPPhoneBar() {
 
   function parseIncomingNumber(session: any) {
   try {
-    // 1. displayName (lo más fiable)
+    console.log("📡 HEADERS COMPLETOS:", session?.request?.headers);
+
+    // 1. P-Asserted-Identity (PRIORIDAD MÁXIMA)
+    const pai = session?.request?.headers?.["P-Asserted-Identity"]?.[0]?.raw;
+    if (pai) {
+      const match = pai.match(/sip:(\+?\d+)/);
+      if (match) return match[1];
+    }
+
+    // 2. Remote-Party-ID
+    const rpid = session?.request?.headers?.["Remote-Party-ID"]?.[0]?.raw;
+    if (rpid) {
+      const match = rpid.match(/sip:(\+?\d+)/);
+      if (match) return match[1];
+    }
+
+    // 3. From (🔥 ESTE TE VA A FUNCIONAR)
+    const from = session?.request?.headers?.From?.[0]?.raw;
+    if (from) {
+      const match = from.match(/sip:(\+?\d+)/);
+      if (match) return match[1];
+    }
+
+    // 4. fallback SIP.js
     const name = session?.remoteIdentity?.displayName;
     if (name && name !== "Anonymous") {
       const clean = name.replace(/[^0-9+]/g, "");
       if (clean) return clean;
     }
 
-    // 2. uri user
     const user = session?.remoteIdentity?.uri?.user;
-    if (user && user !== "anonymous") {
-      return user;
-    }
+    if (user && user !== "anonymous") return user;
 
-    // 3. header From (CLAVE 🔥)
-    const fromRaw = session?.request?.headers?.From?.[0]?.raw;
-    if (fromRaw) {
-      const match = fromRaw.match(/sip:(\+?\d+)/);
-      if (match) return match[1];
-    }
-
-    // 4. fallback final
     return "Número oculto";
   } catch (e) {
     return "Número oculto";
