@@ -273,16 +273,22 @@ export default function IPPhoneBar() {
 
   function parseIncomingNumber(session: any) {
   try {
-    // 1. remoteIdentity (SIP.js principal)
-    const uriUser = session?.remoteIdentity?.uri?.user;
-    if (uriUser && uriUser !== "anonymous") return uriUser;
-
-    // 2. displayName (MUY IMPORTANTE)
-    const displayName = session?.remoteIdentity?.displayName;
-    if (displayName && displayName !== "Anonymous") {
-      const clean = displayName.replace(/[^0-9+]/g, "");
+    // 1. intentar displayName (MUY IMPORTANTE)
+    const name = session?.remoteIdentity?.displayName;
+    if (name && name !== "Anonymous") {
+      const clean = name.replace(/[^0-9+]/g, "");
       if (clean) return clean;
     }
+
+    // 2. fallback uri
+    const user = session?.remoteIdentity?.uri?.user;
+    if (user && user !== "anonymous") return user;
+
+    return "Número oculto";
+  } catch {
+    return "Número oculto";
+  }
+}
 
     // 3. raw header From
     const fromRaw = session?.request?.headers?.From?.[0]?.raw;
