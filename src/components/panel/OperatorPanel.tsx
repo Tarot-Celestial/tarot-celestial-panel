@@ -113,6 +113,13 @@ function toneForStatus(status?: string | null, activeCallCount?: number | null) 
   };
 }
 
+function toneForWorkerRole(role?: string | null) {
+  const r = String(role || "").toLowerCase();
+  if (r === "tarotista") return { label: "Tarotista", bg: "rgba(143,92,255,.18)", border: "rgba(143,92,255,.42)", color: "#e8dcff" };
+  if (r === "central") return { label: "Central", bg: "rgba(86,180,255,.16)", border: "rgba(86,180,255,.38)", color: "#dff4ff" };
+  return { label: "Sin rol", bg: "rgba(255,255,255,.08)", border: "rgba(255,255,255,.16)", color: "#fff" };
+}
+
 function emptyForm(): FormState {
   return {
     worker_id: "",
@@ -156,6 +163,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
           ...ext,
           worker,
           tone: toneForStatus(ext.status, ext.active_call_count),
+          roleTone: toneForWorkerRole(worker?.role),
         };
       })
       .sort((a, b) => String(a.extension || "").localeCompare(String(b.extension || ""), "es"));
@@ -298,7 +306,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
     }
   }
 
-  function sendToSoftphone(item: any) {
+  function sendToSoftphone(item: any, intent: "dial" | "transfer" = "dial") {
     const number = String(item.extension || "").trim();
     if (!number) return;
     window.dispatchEvent(
@@ -306,10 +314,21 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
         detail: {
           number,
           label: item.label || item.worker?.display_name || `Ext. ${number}`,
+          autoCall: false,
+          intent,
         },
       })
     );
-    setMsg(`Extensión ${number} enviada al softphone.`);
+    setMsg(intent === "transfer" ? `Transferencia preparada a ${number}.` : `Extensión ${number} enviada al softphone.`);
+  }
+
+  function handleCardClick(item: any) {
+    const number = String(item.extension || "").trim();
+    if (!number) return;
+    const shouldTransfer = window.confirm(`¿Transferir o marcar la extensión ${number}?
+
+Aceptar = transferir / Cancelar = solo marcar`);
+    sendToSoftphone(item, shouldTransfer ? "transfer" : "dial");
   }
 
   return (
@@ -364,7 +383,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginTop: 18, position: "relative" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
           {cards.map((item) => {
             const seconds = item.active_call_started_at ? secondsSince(item.active_call_started_at) : 0;
             const workerName = item.worker?.display_name || item.label || `Extensión ${item.extension}`;
@@ -376,7 +395,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
                 key={String(item.id || item.extension || Math.random())}
                 className="tc-card"
                 style={{
-                  padding: 16,
+                  padding: 12,
                   borderColor: isSelected ? "rgba(215,181,109,.36)" : item.tone.border,
                   background: `linear-gradient(180deg, rgba(18,18,30,0.92), rgba(10,10,18,0.96)), ${item.tone.bg}`,
                   boxShadow: item.tone.glow,
@@ -385,10 +404,10 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
                 <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                   <button
                     type="button"
-                    onClick={() => sendToSoftphone(item)}
+                    onClick={(e) => { e.stopPropagation(); sendToSoftphone(item); }}
                     style={{ background: "transparent", border: 0, padding: 0, textAlign: "left", color: "inherit", cursor: "pointer", flex: 1 }}
                   >
-                    <div style={{ fontWeight: 900, fontSize: 18 }}>{workerName}</div>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>{workerName}</div>
                     <div className="tc-sub">Ext. {item.extension || "—"}</div>
                   </button>
                   <span className="tc-chip" style={{ borderColor: item.tone.border, background: "rgba(255,255,255,.04)" }}>
@@ -397,14 +416,14 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
                   </span>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }}>
-                  <div className="tc-chip" style={{ padding: 12, borderRadius: 16, display: "block" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
+                  <div className="tc-chip" style={{ padding: 10, borderRadius: 14, display: "block" }}>
                     <div className="tc-sub">Llamadas activas</div>
-                    <div style={{ fontSize: 24, fontWeight: 900, marginTop: 4 }}>{Number(item.active_call_count || 0)}</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, marginTop: 4 }}>{Number(item.active_call_count || 0)}</div>
                   </div>
                   <div className="tc-chip" style={{ padding: 12, borderRadius: 16, display: "block" }}>
                     <div className="tc-sub">Tiempo en vivo</div>
-                    <div style={{ fontSize: 18, fontWeight: 900, marginTop: 6 }}>{formatDuration(seconds)}</div>
+                    <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{formatDuration(seconds)}</div>
                   </div>
                 </div>
 
@@ -428,12 +447,14 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
                   <span className="tc-sub">{item.last_seen_at ? `Heartbeat ${formatDuration(secondsSince(item.last_seen_at))}` : "Sin heartbeat"}</span>
                 </div>
 
-                <div className="tc-row" style={{ marginTop: 14, gap: 8, flexWrap: "wrap" }}>
-                  <button className="tc-btn" onClick={() => sendToSoftphone(item)}>
+                <div className="tc-sub" style={{ marginTop: 10, color: "rgba(255,255,255,.78)" }}>Pulsa la tarjeta para transferir rápido o dejar la extensión lista en el softphone.</div>
+
+                <div className="tc-row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
+                  <button className="tc-btn" onClick={(e) => { e.stopPropagation(); sendToSoftphone(item); }}>
                     <Phone size={14} style={{ marginRight: 6 }} />
-                    Marcar / transferir
+                    Enviar al softphone
                   </button>
-                  <button className="tc-btn" onClick={() => openEditDrawer(item)}>
+                  <button className="tc-btn" onClick={(e) => { e.stopPropagation(); openEditDrawer(item); }}>
                     <Settings2 size={14} style={{ marginRight: 6 }} />
                     Editar
                   </button>
@@ -496,11 +517,14 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
               <label>
                 <div className="tc-sub" style={{ marginBottom: 6 }}>Operadora</div>
                 <select className="tc-select" value={form.worker_id} onChange={(e) => setForm((prev) => ({ ...prev, worker_id: e.target.value }))}>
+
+                  
                   <option value="">Sin asignar</option>
                   {workers.filter((worker) => worker.role !== "admin").map((worker) => (
                     <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>
                   ))}
                 </select>
+                <div className="tc-sub" style={{ marginTop: 6 }}>El tipo de extensión se toma del rol del trabajador asignado: central o tarotista.</div>
               </label>
 
               <label>
