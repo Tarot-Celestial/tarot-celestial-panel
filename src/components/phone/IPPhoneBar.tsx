@@ -1052,8 +1052,12 @@ export default function IPPhoneBar() {
         telefono: String(ctx.telefono || visiblePeer || numberRef.current || ""),
         nombre: String(ctx.nombre || ""),
         apellido: String(ctx.apellido || ""),
-        minutos_free_pendientes: Number(allocation?.minutos_free_pendientes ?? ctx.minutos_free_pendientes || 0) || 0,
-        minutos_normales_pendientes: Number(allocation?.minutos_normales_pendientes ?? ctx.minutos_normales_pendientes || 0) || 0,
+        minutos_free_pendientes: Number(
+  const minutosFree = allocation?.minutos_free_pendientes ?? ctx.minutos_free_pendientes ?? 0;
+const minutosNormales = allocation?.minutos_normales_pendientes ?? ctx.minutos_normales_pendientes ?? 0;
+
+minutos_free_pendientes: Number(minutosFree),
+minutos_normales_pendientes: Number(minutosNormales),
       };
 
       const popupRes = await fetch("/api/crm/call-popups/enviar", {
