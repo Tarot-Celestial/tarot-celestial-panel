@@ -273,44 +273,23 @@ export default function IPPhoneBar() {
 
  function parseIncomingNumber(session: any) {
   try {
-    // 🔥 SIP.js correcto → usar getHeader
-    const get = (h: string) =>
-      session?.request?.getHeader?.(h) ||
-      session?.incomingRequest?.getHeader?.(h);
+    console.log("📞 remoteIdentity:", session?.remoteIdentity);
 
-    console.log("📡 TEST HEADERS:");
-    console.log("FROM:", get("From"));
-    console.log("PAI:", get("P-Asserted-Identity"));
-    console.log("RPID:", get("Remote-Party-ID"));
-
-    // 1. P-Asserted-Identity
-    const pai = get("P-Asserted-Identity");
-    if (pai) {
-      const match = pai.match(/sip:(\+?\d+)/);
+    // 🔥 1. URI completa (LA BUENA EN TU CASO)
+    const uri = session?.remoteIdentity?.uri?.toString?.();
+    if (uri) {
+      const match = uri.match(/sip:(\+?\d+)/);
       if (match) return match[1];
     }
 
-    // 2. Remote-Party-ID
-    const rpid = get("Remote-Party-ID");
-    if (rpid) {
-      const match = rpid.match(/sip:(\+?\d+)/);
-      if (match) return match[1];
-    }
-
-    // 3. From (🔥 ESTE DEBERÍA FUNCIONAR SEGÚN TU CAPTURA)
-    const from = get("From");
-    if (from) {
-      const match = from.match(/sip:(\+?\d+)/);
-      if (match) return match[1];
-    }
-
-    // 4. fallback SIP.js
+    // 🔥 2. displayName
     const name = session?.remoteIdentity?.displayName;
     if (name && name !== "Anonymous") {
       const clean = name.replace(/[^0-9+]/g, "");
       if (clean) return clean;
     }
 
+    // 🔥 3. uri.user
     const user = session?.remoteIdentity?.uri?.user;
     if (user && user !== "anonymous") return user;
 
