@@ -531,15 +531,7 @@ export default function IPPhoneBar() {
     simpleUserRef.current.currentInvitation = invitation;
   }
 };
-        setIncoming(true);
-        setIncomingNumber(caller);
-        setCallNumber(caller);
-        setStatus("ringing");
-        setStatusText(`Llamada entrante · ${caller}`);
-
-        simpleUserRef.current.currentInvitation = invitation;
-      },
-    };
+    
   } catch (e) {
     console.error(e);
   }
