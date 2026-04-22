@@ -629,19 +629,28 @@ export default function IPPhoneBar() {
   }
 }
 
-  async function hangup() {
+ async function hangup() {
   try {
     const invitation = simpleUserRef.current?.currentInvitation;
 
     if (invitation) {
-      await invitation.bye();
+      const state = invitation.state;
+
+      // 👇 SOLO colgar si la sesión está activa
+      if (state === "Established" || state === "Establishing") {
+        await invitation.bye();
+      } else {
+        console.log("⚠️ Intento de colgar sesión ya terminada:", state);
+      }
     }
 
+    // 🔥 SIEMPRE limpia UI
     setIncoming(false);
     setStatus("registered");
     setStatusText("Conectado");
+
   } catch (e) {
-    console.error(e);
+    console.error("Error al colgar:", e);
   }
 }
 
