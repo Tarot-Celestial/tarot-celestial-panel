@@ -462,56 +462,74 @@ export default function IPPhoneBar() {
   }
 
   async function connect() {
-    if (connectingRef.current) return;
+  try {
+    const SIP: any = await import("sip.js");
 
-    try {
-      if (!config.server || !config.domain || !config.username || !config.password) {
-        throw new Error("Completa servidor, dominio, extensión y password SIP.");
-      }
+    const uri = SIP.UserAgent.makeURI(
+      `sip:${config.username}@${config.domain}`
+    );
 
-      connectingRef.current = true;
-      setStatus("connecting");
-      setStatusText("Conectando…");
-      setMsg("");
+    const userAgent = new SIP.UserAgent({
+      uri,
+      transportOptions: {
+        server: config.server,
+      },
+      authorizationUsername: config.username,
+      authorizationPassword: config.password,
+    });
 
-      try {
-        await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      } catch {
-        // seguimos igualmente
-      }
+    const registerer = new SIP.Registerer(userAgent);
 
-      if (reconnectTimeoutRef.current) {
-        window.clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+    await userAgent.start();
+    await registerer.register();
 
-      if (simpleUserRef.current) {
+    simpleUserRef.current = userAgent;
+
+    setStatus("registered");
+    setStatusText("Conectado");
+
+    // 🔥 AQUÍ ESTÁ LA MAGIA REAL
+    userAgent.delegate = {
+      onInvite: (invitation: any) => {
+        console.log("📞 INVITE REAL:", invitation);
+
+        let caller = "Número oculto";
+
         try {
-          await simpleUserRef.current.disconnect();
-        } catch {
-          // noop
+          const from = invitation.request.getHeader("From");
+
+          console.log("FROM HEADER:", from);
+
+          if (from) {
+            const match = from.match(/sip:(\+?\d+)/);
+            if (match) caller = match[1];
+          }
+        } catch (e) {
+          console.log("error leyendo caller", e);
         }
-        simpleUserRef.current = null;
-      }
 
-      const SIP: any = await import("sip.js");
-      const SimpleUser = SIP?.Web?.SimpleUser || SIP?.SimpleUser || SIP?.default?.Web?.SimpleUser;
-      if (!SimpleUser) throw new Error("No se pudo cargar SIP.js");
+        console.log("🔥 CALLER REAL:", caller);
 
-      const aor = `sip:${config.username}@${config.domain}`;
-      const user = new SimpleUser(config.server, {
-        aor,
-        userAgentOptions: {
-          uri: SIP.UserAgent.makeURI(aor),
-          authorizationUsername: config.username,
-          authorizationPassword: config.password,
-          transportOptions: { server: config.server },
-        },
-        media: {
-          constraints: { audio: true, video: false },
-          remote: { audio: remoteAudioRef.current },
-        },
-      });
+        setIncoming(true);
+        setIncomingNumber(caller);
+        setCallNumber(caller);
+        setStatus("ringing");
+        setStatusText(
+          caller !== "Número oculto"
+            ? `Llamada entrante · ${caller}`
+            : "Llamada entrante"
+        );
+
+        // guardamos la llamada para contestar luego
+        simpleUserRef.current.currentInvitation = invitation;
+      },
+    };
+  } catch (e: any) {
+    console.error(e);
+    setStatus("error");
+    setStatusText("Error de conexión");
+  }
+}
 
       user.delegate = {
         onCallCreated: () => {
@@ -735,43 +753,35 @@ setTimeout(() => {
   }
 
   async function answer() {
-    try {
-      if (!simpleUserRef.current) return;
-      stopRingtone();
-      callAnsweredRef.current = true;
-      await simpleUserRef.current.answer();
-      callStartedAtRef.current = Date.now();
-      setIncoming(false);
-      setCallNumber(incomingNumberRef.current);
-      setStatus("in_call");
-      setStatusText("En llamada");
-      attachRemoteAudioFromSession(simpleUserRef.current.session);
-      await ensureRemoteAudioPlayback();
-    } catch (e: any) {
-      console.error(e);
-      setMsg(e?.message || "No se pudo contestar.");
-    }
+  try {
+    const invitation = simpleUserRef.current?.currentInvitation;
+    if (!invitation) return;
+
+    await invitation.accept();
+
+    setIncoming(false);
+    setStatus("in_call");
+    setStatusText("En llamada");
+  } catch (e) {
+    console.error(e);
   }
+}
 
   async function hangup() {
-    try {
-      stopRingtone();
-      if (!simpleUserRef.current) {
-        finalizeCall();
-        return;
-      }
-      if (incoming && typeof simpleUserRef.current.decline === "function") {
-        await simpleUserRef.current.decline();
-        finalizeCall("rechazada");
-        return;
-      }
-      await simpleUserRef.current.hangup();
-      finalizeCall(callAnsweredRef.current ? "finalizada" : callDirectionRef.current === "incoming" ? "rechazada" : "cancelada");
-    } catch (e) {
-      console.error(e);
-      finalizeCall();
+  try {
+    const invitation = simpleUserRef.current?.currentInvitation;
+
+    if (invitation) {
+      await invitation.bye();
     }
+
+    setIncoming(false);
+    setStatus("registered");
+    setStatusText("Conectado");
+  } catch (e) {
+    console.error(e);
   }
+}
 
   async function toggleMute() {
     try {
