@@ -331,7 +331,7 @@ export default function IPPhoneBar() {
       const el = remoteAudioRef.current;
       if (!el) return;
       el.autoplay = true;
-      el.playsInline = true;
+      el.setAttribute("playsinline", "true");
       el.muted = !speakerOn;
       el.volume = 1;
       await el.play().catch(() => null);
