@@ -272,18 +272,34 @@ export default function IPPhoneBar() {
   }
 
   function parseIncomingNumber(session: any) {
-    try {
-      const from =
-        session?.remoteIdentity?.uri?.user ||
-        session?.remoteIdentity?.displayName ||
-        session?.request?.from?.uri?.user ||
-        session?.request?.from?.displayName ||
-        "";
-      return String(from || "").trim();
-    } catch {
-      return "";
+  try {
+    // 1. estándar SIP
+    const fromUser = session?.remoteIdentity?.uri?.user;
+    if (fromUser) return String(fromUser);
+
+    // 2. fallback request.from
+    const fromHeader = session?.request?.from?.uri?.user;
+    if (fromHeader) return String(fromHeader);
+
+    // 3. P-Asserted-Identity (MUY IMPORTANTE)
+    const pai = session?.request?.headers?.["P-Asserted-Identity"]?.[0]?.raw;
+    if (pai) {
+      const match = pai.match(/sip:(\+?\d+)/);
+      if (match) return match[1];
     }
+
+    // 4. Remote-Party-ID (algunos carriers)
+    const rpid = session?.request?.headers?.["Remote-Party-ID"]?.[0]?.raw;
+    if (rpid) {
+      const match = rpid.match(/sip:(\+?\d+)/);
+      if (match) return match[1];
+    }
+
+    return "Desconocido";
+  } catch {
+    return "Desconocido";
   }
+}
 
   function playBeepSequence() {
     try {
