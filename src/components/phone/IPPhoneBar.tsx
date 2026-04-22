@@ -619,13 +619,27 @@ export default function IPPhoneBar() {
     const invitation = simpleUserRef.current?.currentInvitation;
     if (!invitation) return;
 
-    await invitation.accept();
+    const state = invitation.state;
 
-    setIncoming(false);
-    setStatus("in_call");
-    setStatusText("En llamada");
+    // 👇 SOLO aceptar si la llamada sigue viva
+    if (state === "Initial" || state === "Establishing") {
+      await invitation.accept();
+
+      setIncoming(false);
+      setStatus("in_call");
+      setStatusText("En llamada");
+    } else {
+      console.log("⚠️ Llamada ya terminada:", state);
+
+      // 🔥 LIMPIAR UI SI YA MURIÓ
+      setIncoming(false);
+      setStatus("registered");
+      setStatusText("Conectado");
+
+      simpleUserRef.current.currentInvitation = null;
+    }
   } catch (e) {
-    console.error(e);
+    console.error("Error al contestar:", e);
   }
 }
 
