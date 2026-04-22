@@ -271,26 +271,34 @@ export default function IPPhoneBar() {
     setHistory(historyRef.current);
   }
 
-  function parseIncomingNumber(session: any) {
+ function parseIncomingNumber(session: any) {
   try {
-    console.log("📡 HEADERS COMPLETOS:", session?.request?.headers);
+    // 🔥 SIP.js correcto → usar getHeader
+    const get = (h: string) =>
+      session?.request?.getHeader?.(h) ||
+      session?.incomingRequest?.getHeader?.(h);
 
-    // 1. P-Asserted-Identity (PRIORIDAD MÁXIMA)
-    const pai = session?.request?.headers?.["P-Asserted-Identity"]?.[0]?.raw;
+    console.log("📡 TEST HEADERS:");
+    console.log("FROM:", get("From"));
+    console.log("PAI:", get("P-Asserted-Identity"));
+    console.log("RPID:", get("Remote-Party-ID"));
+
+    // 1. P-Asserted-Identity
+    const pai = get("P-Asserted-Identity");
     if (pai) {
       const match = pai.match(/sip:(\+?\d+)/);
       if (match) return match[1];
     }
 
     // 2. Remote-Party-ID
-    const rpid = session?.request?.headers?.["Remote-Party-ID"]?.[0]?.raw;
+    const rpid = get("Remote-Party-ID");
     if (rpid) {
       const match = rpid.match(/sip:(\+?\d+)/);
       if (match) return match[1];
     }
 
-    // 3. From (🔥 ESTE TE VA A FUNCIONAR)
-    const from = session?.request?.headers?.From?.[0]?.raw;
+    // 3. From (🔥 ESTE DEBERÍA FUNCIONAR SEGÚN TU CAPTURA)
+    const from = get("From");
     if (from) {
       const match = from.match(/sip:(\+?\d+)/);
       if (match) return match[1];
@@ -311,7 +319,6 @@ export default function IPPhoneBar() {
     return "Número oculto";
   }
 }
-
   function playBeepSequence() {
     try {
       const Ctx = window.AudioContext || (window as any).webkitAudioContext;
