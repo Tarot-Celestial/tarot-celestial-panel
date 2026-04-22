@@ -273,24 +273,20 @@ export default function IPPhoneBar() {
 
   function parseIncomingNumber(session: any) {
   try {
-    // 1. intentar displayName (MUY IMPORTANTE)
+    // 1. displayName (lo más fiable)
     const name = session?.remoteIdentity?.displayName;
     if (name && name !== "Anonymous") {
       const clean = name.replace(/[^0-9+]/g, "");
       if (clean) return clean;
     }
 
-    // 2. fallback uri
+    // 2. uri user
     const user = session?.remoteIdentity?.uri?.user;
-    if (user && user !== "anonymous") return user;
+    if (user && user !== "anonymous") {
+      return user;
+    }
 
-    return "Número oculto";
-  } catch {
-    return "Número oculto";
-  }
-}
-
-    // 3. raw header From
+    // 3. header From (CLAVE 🔥)
     const fromRaw = session?.request?.headers?.From?.[0]?.raw;
     if (fromRaw) {
       const match = fromRaw.match(/sip:(\+?\d+)/);
@@ -299,7 +295,7 @@ export default function IPPhoneBar() {
 
     // 4. fallback final
     return "Número oculto";
-  } catch {
+  } catch (e) {
     return "Número oculto";
   }
 }
