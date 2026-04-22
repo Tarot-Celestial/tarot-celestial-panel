@@ -165,6 +165,8 @@ export default function IPPhoneBar() {
   const callAnsweredRef = useRef(false);
   const callFinalizedRef = useRef(false);
   const activeClientContextRef = useRef<ActiveClientContext | null>(null);
+  const panelConfigHydratedRef = useRef(false);
+  const crmPopupWindowRef = useRef<Window | null>(null);
   const dragStateRef = useRef<{ dragging: boolean; startX: number; startY: number; originX: number; originY: number }>({
     dragging: false,
     startX: 0,
@@ -231,6 +233,23 @@ export default function IPPhoneBar() {
     if (!hydrated) return;
     localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(position));
   }, [position, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (config.username && config.password) return;
+    if (panelConfigHydratedRef.current) return;
+    panelConfigHydratedRef.current = true;
+    void hydrateFromPanel(true);
+  }, [hydrated, config.username, config.password]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const shouldRegister = presence.online && presence.status === "working";
+    if (!shouldRegister) return;
+    if (!config.username || !config.password) return;
+    if (runtimeRef.current.userAgent || connectingRef.current) return;
+    void connect(true);
+  }, [hydrated, presence.online, presence.status, config.username, config.password]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -386,14 +405,20 @@ export default function IPPhoneBar() {
         };
         setPresence(nextPresence);
         const shouldRegister = nextPresence.online && nextPresence.status === "working";
+        const hasCreds = Boolean(config.username && config.password);
         const isConnected = Boolean(runtimeRef.current.userAgent && runtimeRef.current.registerer);
-        if (shouldRegister && !isConnected && !connectingRef.current && config.username && config.password) {
+
+        if (shouldRegister && !hasCreds && !connectingRef.current) {
+          await hydrateFromPanel(true);
+        }
+
+        if (shouldRegister && !isConnected && !connectingRef.current && (config.username && config.password)) {
           void connect(true);
         }
         if (!shouldRegister && isConnected && !showHangupButton) {
           void disconnect(true);
           setStatus("offline");
-          setStatusText(nextPresence.status === "offline" ? "Softphone pausado" : "Softphone en pausa");
+          setStatusText(nextPresence.status === "offline" ? "Softphone pausado" : `Pausado · ${nextPresence.status}`);
         }
       } catch {
         // noop
@@ -401,7 +426,7 @@ export default function IPPhoneBar() {
     };
 
     void syncPresence();
-    const id = window.setInterval(syncPresence, 12000);
+    const id = window.setInterval(syncPresence, 6000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -721,7 +746,7 @@ export default function IPPhoneBar() {
     }
   }
 
-  async function hydrateFromPanel() {
+  async function hydrateFromPanel(silent = false) {
     try {
       const token = await getToken();
       if (!token) throw new Error("No hay sesión activa.");
@@ -742,9 +767,10 @@ export default function IPPhoneBar() {
         username: String(mine.extension || prev.username),
         password: String(mine.secret || prev.password),
       }));
-      setMsg(`Configuración cargada desde panel: ${mine.extension}`);
+      panelConfigHydratedRef.current = true;
+      if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
     } catch (e: any) {
-      setMsg(e?.message || "No se pudo cargar la configuración desde panel.");
+      if (!silent) setMsg(e?.message || "No se pudo cargar la configuración desde panel.");
     }
   }
 
@@ -806,7 +832,8 @@ export default function IPPhoneBar() {
                 return;
               }
 
-              const caller = parseIncomingNumber(invitation);
+              const realCaller = parseIncomingNumber(invitation);
+              const caller = presence.role === "tarotista" ? "Número oculto" : realCaller;
               callDirectionRef.current = "incoming";
               callAnsweredRef.current = false;
               callFinalizedRef.current = false;
@@ -822,7 +849,7 @@ export default function IPPhoneBar() {
               startRingtone();
 
               await bindSession(invitation, "incoming", caller);
-              void lookupClientContextByPhone(caller, { openCRM: false });
+              if (realCaller && realCaller !== "Número oculto") void lookupClientContextByPhone(realCaller, { openCRM: false });
             } catch (error) {
               console.error("Error gestionando onInvite", error);
               try {
@@ -861,10 +888,18 @@ export default function IPPhoneBar() {
         const txt = String(state);
         if (txt.includes("Connected")) {
           runtimeRef.current.reconnectAttempts = 0;
+          if (!showHangupButton && statusRef.current !== "registered") {
+            setStatus("registered");
+            setStatusText("Conectado");
+          }
         }
         if (txt.includes("Disconnected")) {
-          cleanupSessionRefs();
-          resetCallState("offline", "Transporte SIP caído");
+          const hasActive = Boolean(runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession));
+          if (hasActive) {
+            setStatusText("Transporte SIP inestable · reintentando");
+          } else {
+            resetCallState("offline", "Transporte SIP caído");
+          }
           scheduleReconnect("Reconectando transporte SIP…");
         }
       });
@@ -978,7 +1013,15 @@ export default function IPPhoneBar() {
       if (mode === "new") url += `&new_cliente=1`;
       if (mode === "associate") url += `&associate_phone=1`;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    const popup = window.open(url, "tc-crm-popup", "popup=yes,width=1420,height=960,left=60,top=40");
+    crmPopupWindowRef.current = popup || null;
+    window.setTimeout(() => {
+      try {
+        window.focus();
+      } catch {
+        // noop
+      }
+    }, 80);
   }
 
   async function lookupClientContextByPhone(rawNumber: string, options?: { openCRM?: boolean }) {
@@ -1262,43 +1305,85 @@ const payload = {
         return false;
       }
 
-      const ctx = activeClientContextRef.current;
+      const token = await getToken();
+      if (!token) {
+        setMsg("Tu sesión ha caducado.");
+        return false;
+      }
+
+      const operatorRes = await fetch("/api/operator/panel", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const operatorJson = await operatorRes.json().catch(() => null);
+      const ext = Array.isArray(operatorJson?.extensions)
+        ? operatorJson.extensions.find((item: any) => String(item?.extension || "") === String(cleanTarget))
+        : null;
+      const workers = Array.isArray(operatorJson?.workers) ? operatorJson.workers : [];
+      const targetWorker = ext?.worker_id ? workers.find((item: any) => String(item?.id || "") === String(ext.worker_id)) : null;
+      const targetRole = String(targetWorker?.role || "").toLowerCase();
+      const isTarotistaTarget = targetRole === "tarotista";
+
       let allocation: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number } | undefined;
-      if (ctx?.cliente_id) {
-        const totalDisponibles = Math.max(0, Number(ctx.minutos_free_pendientes || 0) + Number(ctx.minutos_normales_pendientes || 0));
-        const asked = window.prompt(`¿Cuántos minutos quieres enviar a la tarotista ${cleanTarget}?`, String(totalDisponibles));
+      let popupResult: { ok?: boolean; reason?: string | null } | null = null;
+      const ctx = activeClientContextRef.current;
+
+      if (isTarotistaTarget && ctx?.cliente_id) {
+        const freeAvail = Math.max(0, Number(ctx.minutos_free_pendientes || 0));
+        const normalAvail = Math.max(0, Number(ctx.minutos_normales_pendientes || 0));
+        const totalDisponibles = freeAvail + normalAvail;
+        const asked = window.prompt(
+          `¿Cuántos minutos quieres enviar a la tarotista ${cleanTarget}?\nSe consumirán primero los minutos free y luego los normales.`,
+          String(totalDisponibles)
+        );
         if (asked === null) return false;
         const totalAsignados = Math.max(0, Number(String(asked).replace(",", ".")) || 0);
-        const freeAvail = Math.max(0, Number(ctx.minutos_free_pendientes || 0));
         const usedFree = Math.min(freeAvail, totalAsignados);
         allocation = {
           minutos_free_pendientes: usedFree,
-          minutos_normales_pendientes: Math.min(Math.max(0, Number(ctx.minutos_normales_pendientes || 0)), Math.max(0, totalAsignados - usedFree)),
+          minutos_normales_pendientes: Math.min(normalAvail, Math.max(0, totalAsignados - usedFree)),
         };
+        popupResult = await dispatchTransferPopup(cleanTarget, allocation);
       }
 
-      const popupResult = await dispatchTransferPopup(cleanTarget, allocation);
-      const confirmed = window.confirm(`¿Transferir ahora la llamada a la extensión ${cleanTarget}?`);
+      const confirmed = window.confirm(
+        isTarotistaTarget
+          ? `¿Transferir la llamada a la tarotista ${cleanTarget}?`
+          : `¿Transferir la llamada a la central ${cleanTarget}?`
+      );
       if (!confirmed) return false;
 
-      await session.refer(`sip:${cleanTarget}@${config.domain}`);
+      const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
+      const referTarget = SIP.UserAgent.makeURI(`sip:${cleanTarget}@${config.domain}`);
+      if (!referTarget) {
+        setMsg("Destino SIP inválido para la transferencia.");
+        return false;
+      }
+
+      await session.refer(referTarget);
+
       addHistory({
         number: cleanTarget,
         direction: "transfer",
         createdAt: new Date().toISOString(),
         result: popupResult?.ok ? "transferida + ficha" : "transferida",
       });
-      if (popupResult?.ok) {
-        setMsg(`Transferencia enviada a ${cleanTarget}. La tarotista recibirá ficha y minutos al aceptar.`);
-      } else if (ctx?.cliente_id) {
-        setMsg(`Transferencia SIP enviada a ${cleanTarget}, pero el popup CRM falló (${String(popupResult?.reason || "sin detalle")}).`);
+
+      if (isTarotistaTarget) {
+        if (popupResult?.ok) {
+          setMsg(`Transferencia enviada a ${cleanTarget}. Se consumirán primero los minutos free y luego los normales.`);
+        } else if (ctx?.cliente_id) {
+          setMsg(`Transferencia SIP enviada a ${cleanTarget}, pero el popup CRM falló (${String(popupResult?.reason || "sin detalle")}).`);
+        } else {
+          setMsg(`Transferencia SIP enviada a ${cleanTarget}.`);
+        }
       } else {
         setMsg(`Transferencia SIP enviada a ${cleanTarget}.`);
       }
       return true;
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      setMsg("No se pudo transferir la llamada.");
+      setMsg(e?.message || "No se pudo transferir la llamada.");
       return false;
     }
   }

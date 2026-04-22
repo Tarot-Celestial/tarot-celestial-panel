@@ -169,6 +169,12 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       .sort((a, b) => String(a.extension || "").localeCompare(String(b.extension || ""), "es"));
   }, [extensions, workerMap]);
 
+  const groupedCards = useMemo(() => ({
+    central: cards.filter((item) => String(item.worker?.role || "").toLowerCase() === "central"),
+    tarotista: cards.filter((item) => String(item.worker?.role || "").toLowerCase() === "tarotista"),
+    other: cards.filter((item) => !["central", "tarotista"].includes(String(item.worker?.role || "").toLowerCase())),
+  }), [cards]);
+
   const stats = useMemo(() => {
     return cards.reduce(
       (acc, item) => {
@@ -316,6 +322,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
           label: item.label || item.worker?.display_name || `Ext. ${number}`,
           autoCall: false,
           intent,
+          role: item.worker?.role || null,
         },
       })
     );
@@ -325,9 +332,8 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   function handleCardClick(item: any) {
     const number = String(item.extension || "").trim();
     if (!number) return;
-    const shouldTransfer = window.confirm(`¿Transferir o marcar la extensión ${number}?
-
-Aceptar = transferir / Cancelar = solo marcar`);
+    const workerRole = String(item.worker?.role || "").toLowerCase();
+    const shouldTransfer = window.confirm(workerRole === "tarotista" ? `¿Transferir a la tarotista ${number}?` : `¿Transferir a la extensión ${number}?`);
     sendToSoftphone(item, shouldTransfer ? "transfer" : "dial");
   }
 
@@ -382,94 +388,63 @@ Aceptar = transferir / Cancelar = solo marcar`);
         <div className="tc-kpi"><div className="tc-kpi-label">Líneas activas</div><div className="tc-kpi-value">{stats.activeLines}</div></div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 16, marginTop: 18, position: "relative" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
-          {cards.map((item) => {
-            const seconds = item.active_call_started_at ? secondsSince(item.active_call_started_at) : 0;
-            const workerName = item.worker?.display_name || item.label || `Extensión ${item.extension}`;
-            const incoming = String(item.incoming_number || "").trim();
-            const talkingTo = String(item.talking_to || incoming || "").trim();
-            const isSelected = String(selectedId) === String(item.id || "");
-            return (
-              <div
-                key={String(item.id || item.extension || Math.random())}
-                className="tc-card"
-                style={{
-                  padding: 12,
-                  borderColor: isSelected ? "rgba(215,181,109,.36)" : item.tone.border,
-                  background: `linear-gradient(180deg, rgba(18,18,30,0.92), rgba(10,10,18,0.96)), ${item.tone.bg}`,
-                  boxShadow: item.tone.glow,
-                }}
-              >
-                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); sendToSoftphone(item); }}
-                    style={{ background: "transparent", border: 0, padding: 0, textAlign: "left", color: "inherit", cursor: "pointer", flex: 1 }}
-                  >
-                    <div style={{ fontWeight: 900, fontSize: 16 }}>{workerName}</div>
-                    <div className="tc-sub">Ext. {item.extension || "—"}</div>
-                  </button>
-                  <span className="tc-chip" style={{ borderColor: item.tone.border, background: "rgba(255,255,255,.04)" }}>
-                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: item.tone.dot, marginRight: 8 }} />
-                    {item.tone.label}
-                  </span>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 10 }}>
-                  <div className="tc-chip" style={{ padding: 10, borderRadius: 14, display: "block" }}>
-                    <div className="tc-sub">Llamadas activas</div>
-                    <div style={{ fontSize: 20, fontWeight: 900, marginTop: 4 }}>{Number(item.active_call_count || 0)}</div>
-                  </div>
-                  <div className="tc-chip" style={{ padding: 12, borderRadius: 16, display: "block" }}>
-                    <div className="tc-sub">Tiempo en vivo</div>
-                    <div style={{ fontSize: 16, fontWeight: 900, marginTop: 6 }}>{formatDuration(seconds)}</div>
-                  </div>
-                </div>
-
-                <div className="tc-chip" style={{ marginTop: 12, justifyContent: "space-between", display: "flex", gap: 10, alignItems: "center" }}>
-                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {talkingTo ? `Hablando con ${talkingTo}` : "Sin interlocutor activo"}
-                  </span>
-                  {talkingTo ? (
-                    <button
-                      type="button"
-                      onClick={() => copyValue(talkingTo)}
-                      style={{ background: "transparent", border: 0, color: "inherit", cursor: "pointer", display: "inline-flex" }}
-                    >
-                      <Copy size={14} />
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="tc-row" style={{ marginTop: 12, justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-                  <span className="tc-sub">{item.registered ? "Registrada en SIP" : "Sin registrar"}</span>
-                  <span className="tc-sub">{item.last_seen_at ? `Heartbeat ${formatDuration(secondsSince(item.last_seen_at))}` : "Sin heartbeat"}</span>
-                </div>
-
-                <div className="tc-sub" style={{ marginTop: 10, color: "rgba(255,255,255,.78)" }}>Pulsa la tarjeta para transferir rápido o dejar la extensión lista en el softphone.</div>
-
-                <div className="tc-row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-                  <button className="tc-btn" onClick={(e) => { e.stopPropagation(); sendToSoftphone(item); }}>
-                    <Phone size={14} style={{ marginRight: 6 }} />
-                    Enviar al softphone
-                  </button>
-                  <button className="tc-btn" onClick={(e) => { e.stopPropagation(); openEditDrawer(item); }}>
-                    <Settings2 size={14} style={{ marginRight: 6 }} />
-                    Editar
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          {!cards.length && !loading ? (
-            <div className="tc-card" style={{ padding: 24 }}>
-              <div className="tc-title">Todavía no hay extensiones</div>
-              <div className="tc-sub" style={{ marginTop: 8 }}>Crea la primera desde el botón “Nueva extensión”.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14, marginTop: 18, position: "relative" }}>
+        {[
+          { key: "central", title: "Centrales", items: groupedCards.central, tone: { bg: "linear-gradient(180deg, rgba(40,92,145,.38), rgba(12,22,38,.92))", border: "rgba(86,180,255,.46)" } },
+          { key: "tarotista", title: "Tarotistas", items: groupedCards.tarotista, tone: { bg: "linear-gradient(180deg, rgba(90,42,150,.38), rgba(18,12,34,.92))", border: "rgba(143,92,255,.44)" } },
+          { key: "other", title: "Sin rol asignado", items: groupedCards.other, tone: { bg: "linear-gradient(180deg, rgba(70,70,90,.28), rgba(16,16,22,.92))", border: "rgba(255,255,255,.18)" } },
+        ].filter((section) => section.items.length > 0).map((section) => (
+          <div key={section.key} className="tc-card" style={{ padding: 10, borderColor: section.tone.border, background: section.tone.bg }}>
+            <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
+              <div className="tc-title">{section.title}</div>
+              <div className="tc-sub">{section.items.length} extensiones</div>
             </div>
-          ) : null}
-        </div>
+
+            <div className="tc-compact-grid">
+              {section.items.map((item: any) => {
+                const seconds = item.active_call_started_at ? secondsSince(item.active_call_started_at) : 0;
+                const workerName = item.worker?.display_name || item.label || `Extensión ${item.extension}`;
+                const incoming = String(item.incoming_number || "").trim();
+                const talkingTo = String(item.talking_to || incoming || "").trim();
+                const isSelected = String(selectedId) === String(item.id || "");
+                return (
+                  <button
+                    key={String(item.id || item.extension || Math.random())}
+                    type="button"
+                    onClick={() => handleCardClick(item)}
+                    className="tc-mini-card"
+                    style={{
+                      borderColor: isSelected ? "rgba(255,214,102,.72)" : item.roleTone.border,
+                      background: item.tone.bg,
+                      boxShadow: `inset 0 0 0 1px ${item.tone.border}`,
+                    }}
+                  >
+                    <div className="tc-mini-top">
+                      <span className="tc-mini-dot" style={{ background: item.tone.dot }} />
+                      <span className="tc-mini-ext">{item.extension || "—"}</span>
+                      <span className="tc-mini-role" style={{ background: item.roleTone.bg, borderColor: item.roleTone.border, color: item.roleTone.color }}>
+                        {item.roleTone.label}
+                      </span>
+                    </div>
+                    <div className="tc-mini-name">{workerName}</div>
+                    <div className="tc-mini-sub">{item.tone.label}{talkingTo ? ` · ${talkingTo}` : ""}</div>
+                    <div className="tc-mini-footer">
+                      <span>{Number(item.active_call_count || 0)} llamada{Number(item.active_call_count || 0) === 1 ? "" : "s"}</span>
+                      <span>{seconds ? formatDuration(seconds) : (item.registered ? "SIP ok" : "SIP off")}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        {!cards.length && !loading ? (
+          <div className="tc-card" style={{ padding: 24 }}>
+            <div className="tc-title">Todavía no hay extensiones</div>
+            <div className="tc-sub" style={{ marginTop: 8 }}>Crea la primera desde el botón “Nueva extensión”.</div>
+          </div>
+        ) : null}
       </div>
 
       {drawerOpen ? (
@@ -520,11 +495,18 @@ Aceptar = transferir / Cancelar = solo marcar`);
 
                   
                   <option value="">Sin asignar</option>
-                  {workers.filter((worker) => worker.role !== "admin").map((worker) => (
-                    <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>
-                  ))}
+                  <optgroup label="Centrales">
+                    {workers.filter((worker) => worker.role === "central").map((worker) => (
+                      <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Tarotistas">
+                    {workers.filter((worker) => worker.role === "tarotista").map((worker) => (
+                      <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>
+                    ))}
+                  </optgroup>
                 </select>
-                <div className="tc-sub" style={{ marginTop: 6 }}>El tipo de extensión se toma del rol del trabajador asignado: central o tarotista.</div>
+                <div className="tc-sub" style={{ marginTop: 6 }}>La extensión hereda el rol del trabajador asignado. Si asignas una central, no pedirá minutos al transferir. Si asignas una tarotista, sí.</div>
               </label>
 
               <label>
@@ -605,6 +587,71 @@ Aceptar = transferir / Cancelar = solo marcar`);
           padding: 8px 12px;
           font-size: 13px;
           min-width: 0;
+        }
+
+        .tc-compact-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 8px;
+        }
+        .tc-mini-card {
+          display: grid;
+          gap: 6px;
+          text-align: left;
+          width: 100%;
+          min-height: 104px;
+          padding: 9px 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(255,255,255,.16);
+          color: #fff;
+          cursor: pointer;
+        }
+        .tc-mini-top {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+        }
+        .tc-mini-dot {
+          width: 9px;
+          height: 9px;
+          border-radius: 999px;
+          flex: 0 0 auto;
+        }
+        .tc-mini-ext {
+          font-weight: 900;
+          font-size: 13px;
+          letter-spacing: .02em;
+        }
+        .tc-mini-role {
+          margin-left: auto;
+          border: 1px solid rgba(255,255,255,.14);
+          border-radius: 999px;
+          padding: 2px 7px;
+          font-size: 11px;
+          font-weight: 800;
+        }
+        .tc-mini-name {
+          font-size: 14px;
+          font-weight: 900;
+          line-height: 1.15;
+          min-height: 32px;
+        }
+        .tc-mini-sub {
+          color: rgba(255,255,255,.84);
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .tc-mini-footer {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          color: rgba(255,255,255,.7);
+          font-size: 11px;
+          margin-top: auto;
         }
         .tc-btn {
           display: inline-flex;
