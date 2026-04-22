@@ -1039,26 +1039,47 @@ export default function IPPhoneBar() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const operatorJson = await operatorRes.json().catch(() => null);
-      const ext = Array.isArray(operatorJson?.extensions)
-        ? operatorJson.extensions.find((item: any) => String(item?.extension || "") === String(cleanTarget))
-        : null;
 
-      const tarotistaWorkerId = ctx?.tarotista_worker_id || ext?.worker_id || null;
-      if (!tarotistaWorkerId) return { ok: false, reason: "target_not_found" };
+const ext = Array.isArray(operatorJson?.extensions)
+  ? operatorJson.extensions.find(
+      (item: any) => String(item?.extension || "") === String(cleanTarget)
+    )
+  : null;
 
-      const payload = {
-        tarotista_worker_id: String(tarotistaWorkerId),
-        cliente_id: String(ctx.cliente_id),
-        telefono: String(ctx.telefono || visiblePeer || numberRef.current || ""),
-        nombre: String(ctx.nombre || ""),
-        apellido: String(ctx.apellido || ""),
-        minutos_free_pendientes: Number(
-  const minutosFree = allocation?.minutos_free_pendientes ?? ctx.minutos_free_pendientes ?? 0;
-const minutosNormales = allocation?.minutos_normales_pendientes ?? ctx.minutos_normales_pendientes ?? 0;
+const tarotistaWorkerId =
+  ctx?.tarotista_worker_id || ext?.worker_id || null;
 
-minutos_free_pendientes: Number(minutosFree),
-minutos_normales_pendientes: Number(minutosNormales),
-      };
+if (!tarotistaWorkerId)
+  return { ok: false, reason: "target_not_found" };
+
+
+// ✅ BIEN: variables fuera del objeto
+const minutosFree =
+  allocation?.minutos_free_pendientes ??
+  ctx.minutos_free_pendientes ??
+  0;
+
+const minutosNormales =
+  allocation?.minutos_normales_pendientes ??
+  ctx.minutos_normales_pendientes ??
+  0;
+
+
+// ✅ OBJETO LIMPIO
+const payload = {
+  tarotista_worker_id: String(tarotistaWorkerId),
+  cliente_id: String(ctx.cliente_id),
+
+  telefono: String(
+    ctx.telefono ?? visiblePeer ?? numberRef.current ?? ""
+  ),
+
+  nombre: String(ctx.nombre ?? ""),
+  apellido: String(ctx.apellido ?? ""),
+
+  minutos_free_pendientes: Number(minutosFree),
+  minutos_normales_pendientes: Number(minutosNormales),
+};
 
       const popupRes = await fetch("/api/crm/call-popups/enviar", {
         method: "POST",
