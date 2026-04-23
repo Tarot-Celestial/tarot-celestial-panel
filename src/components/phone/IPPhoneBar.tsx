@@ -900,8 +900,8 @@ export default function IPPhoneBar() {
     keepAliveInterval: 25,
   },
 
-authorizationUsername: config.username,
-authorizationPassword: config.password,
+authorizationUsername: "1001",
+authorizationPassword: "Nosotrostarot1.",
 
   // ✅ ESTO VA DENTRO
   sessionDescriptionHandlerFactoryOptions: {
