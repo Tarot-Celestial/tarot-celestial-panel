@@ -80,7 +80,7 @@ async function getAuthContext(req: Request) {
 async function readExtensions(admin: any) {
   const { data, error } = await admin
     .from("pbx_extensions")
-    .select("id, worker_id, label, extension, secret, domain, ws_server, sip_uri, is_active, registered, status, active_call_count, active_call_started_at, incoming_number, talking_to, last_seen_at, created_at, updated_at")
+    .select("*")
     .order("extension", { ascending: true });
 
   if (error) {
