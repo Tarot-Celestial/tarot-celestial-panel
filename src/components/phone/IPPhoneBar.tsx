@@ -763,7 +763,7 @@ export default function IPPhoneBar() {
       setConfig((prev) => ({
   ...prev,
   username: String(mine?.extension || prev.username),
-  password: String(mine?.password || prev.password),
+  // ❌ NO TOCAR password desde panel
 }));
       panelConfigHydratedRef.current = true;
       if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
