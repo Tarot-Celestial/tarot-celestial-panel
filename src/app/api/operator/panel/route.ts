@@ -79,12 +79,14 @@ async function getAuthContext(req: Request) {
 
 async function readExtensions(admin: any) {
   const { data, error } = await admin
-    .from("pbx_extensions")
-    .select("*")
-    .order("extension", { ascending: true });
+  .from("pbx_extensions")
+  .select("*")
+  .order("extension", { ascending: true });
+
+const rows = (data || []) as any[];
 
   if (error) {
-    if (isMissingRelationError(error)) return { rows: [], missingTable: true };
+    if (isMissingRelationError(error)) return { rows: (data || []) as any[], missingTable: false };
     throw error;
   }
 
