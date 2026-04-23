@@ -97,9 +97,25 @@ async function ensureDefaultExtensions(admin: any) {
   ];
 
   for (const item of defaults) {
-    const payload = normalizeExtensionRow({
-      id: item.extension,
-      extension: item.extension,
+    const extension = sanitizeExtension(item.extension);
+
+    const existing = await admin
+      .from("pbx_extensions")
+      .select("id, extension")
+      .eq("extension", extension)
+      .maybeSingle();
+
+    if (existing.error && !isMissingRelationError(existing.error)) {
+      throw existing.error;
+    }
+
+    if (existing.data) {
+      continue;
+    }
+
+    const payload = {
+      id: extension,
+      extension,
       secret: item.secret,
       password: item.secret,
       label: item.label,
@@ -108,11 +124,14 @@ async function ensureDefaultExtensions(admin: any) {
       extension_role: item.role,
       context: "from-internal",
       is_active: true,
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    });
+    };
 
-    const result = await upsertExtensionRecord(admin, payload);
-    if (result.error && !isMissingRelationError(result.error)) throw result.error;
+    const result = await insertExtensionRecord(admin, payload);
+    if (result.error && !isMissingRelationError(result.error)) {
+      throw result.error;
+    }
   }
 }
 
@@ -460,30 +479,61 @@ export async function POST(req: Request) {
     const extension = sanitizeExtension(body?.extension);
 
     if (!extension) {
-      return NextResponse.json({ ok: false }, { status: 200 });
+      return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 200 });
     }
-    const role = normalizeExtensionRole(body?.role) || null;
 
     const runtimePatch: any = {
-      status: body?.status,
-      registered: body?.registered,
-      active_call_count: body?.active_call_count,
-      incoming_number: body?.incoming_number,
-      talking_to: body?.talking_to,
+      status: body?.status !== undefined ? String(body.status || "").trim() || "offline" : undefined,
+      registered: body?.registered !== undefined ? !!body.registered : undefined,
+      active_call_count: body?.active_call_count !== undefined ? Number(body.active_call_count || 0) || 0 : undefined,
+      active_call_started_at: body?.active_call_started_at !== undefined ? body.active_call_started_at || null : undefined,
+      incoming_number: body?.incoming_number !== undefined ? String(body.incoming_number || "").trim() || null : undefined,
+      talking_to: body?.talking_to !== undefined ? String(body.talking_to || "").trim() || null : undefined,
       last_seen_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     Object.keys(runtimePatch).forEach((k) => runtimePatch[k] === undefined && delete runtimePatch[k]);
 
-    const { error } = await upsertExtensionRecord(admin, { extension, role, extension_role: role, secret: getDefaultSecret(extension), password: getDefaultSecret(extension), ...runtimePatch });
+    console.log("UPDATE RUNTIME → extension:", extension, "patch:", runtimePatch);
 
-    if (error) {
-      console.error("RUNTIME ERROR:", error);
+    let result = await admin
+      .from("pbx_extensions")
+      .update(runtimePatch)
+      .eq("extension", extension)
+      .select("*")
+      .maybeSingle();
+
+    if (result.error) {
+      console.error("RUNTIME UPDATE ERROR:", result.error);
+      return NextResponse.json({ ok: false, error: result.error.message }, { status: 200 });
     }
 
-    return NextResponse.json({ ok: true });
+    if (!result.data) {
+      const bootstrapPayload = {
+        id: extension,
+        extension,
+        secret: getDefaultSecret(extension),
+        password: getDefaultSecret(extension),
+        name: `Extensión ${extension}`,
+        label: `Extensión ${extension}`,
+        context: "from-internal",
+        is_active: true,
+        ...runtimePatch,
+      };
 
+      result = await insertExtensionRecord(admin, bootstrapPayload);
+
+      if (result.error) {
+        console.error("RUNTIME INSERT ERROR:", result.error);
+        return NextResponse.json({ ok: false, error: result.error.message }, { status: 200 });
+      }
+    }
+
+    return NextResponse.json({
+      ok: true,
+      extension: result.data ? normalizeExtensionRow(result.data) : null,
+    });
   } catch (err) {
     console.error("RUNTIME FATAL:", err);
     return NextResponse.json({ ok: false }, { status: 200 });
