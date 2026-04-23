@@ -809,15 +809,20 @@ export default function IPPhoneBar() {
       const uri = SIP.UserAgent.makeURI(`sip:${config.username}@${config.domain}`);
       if (!uri) throw new Error("URI SIP inválida");
 
-      const userAgent = new SIP.UserAgent({
-        uri,
-        authorizationUsername: config.username,
-        authorizationPassword: config.password,
-        transportOptions: {
-          server: config.server,
-          traceSip: true,
-          keepAliveInterval: 25,
-        },
+     const userAgent = new SIP.UserAgent({
+  uri,
+
+  transportConstructor: SIP.WebSocketTransport, // 🔥 CLAVE
+
+  transportOptions: {
+    server: config.server,
+    traceSip: true,
+    keepAliveInterval: 25,
+  },
+
+  authorizationUsername: config.username,
+  authorizationPassword: config.password,
+});
         sessionDescriptionHandlerFactoryOptions: {
           constraints: { audio: true, video: false },
           peerConnectionConfiguration: {
