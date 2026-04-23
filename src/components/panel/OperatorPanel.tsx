@@ -378,50 +378,64 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   }
 
   async function saveExtension() {
-    try {
-      setSaving(true);
-      setMsg("");
-      const token = await getToken();
-      if (!token) throw new Error("Sesión no válida");
+  console.log("CLICK SAVE EXTENSION"); // 👈 AÑADE ESTO
 
-      const payload = {
-        action: "save_extension",
-        id: form.id || undefined,
-        worker_id: form.worker_id || null,
-        role: form.role,
-        label: form.label,
-        extension: cleanDigits(form.extension),
-        secret: form.secret,
-        domain: form.domain,
-        ws_server: form.ws_server,
-        is_active: form.is_active,
-        route_type: form.route_type,
-        target_phone: form.route_type === "external" ? cleanPhone(form.target_phone) : null,
-        queue_id: form.queue_id || null,
-        queue_priority: form.queue_priority || 0,
-        routing_notes: form.routing_notes || null,
-      };
+  try {
+    setSaving(true);
+    setMsg("");
 
-      const res = await fetch("/api/operator/panel", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error || "No se pudo guardar la extensión");
+    const token = await getToken();
+    console.log("TOKEN:", token); // 👈 AÑADE ESTO
 
-      await loadData();
-      setDrawerOpen(false);
-      setMsg(form.id ? "Extensión actualizada." : "Extensión creada correctamente.");
-    } catch (e: any) {
-      setMsg(e?.message || "No se pudo guardar la extensión");
-    } finally {
-      setSaving(false);
-    }
+    if (!token) throw new Error("Sesión no válida");
+
+    const payload = {
+      action: "save_extension",
+      id: form.id || undefined,
+      worker_id: form.worker_id || null,
+      role: form.role,
+      label: form.label,
+      extension: cleanDigits(form.extension),
+      secret: form.secret,
+      domain: form.domain,
+      ws_server: form.ws_server,
+      is_active: form.is_active,
+      route_type: form.route_type,
+      target_phone: form.route_type === "external" ? cleanPhone(form.target_phone) : null,
+      queue_id: form.queue_id || null,
+      queue_priority: form.queue_priority || 0,
+      routing_notes: form.routing_notes || null,
+    };
+
+    console.log("PAYLOAD:", payload); // 👈 AÑADE ESTO
+
+    const res = await fetch("/api/operator/panel", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    console.log("FETCH DONE"); // 👈 AÑADE ESTO
+
+    const json = await res.json().catch(() => null);
+    console.log("RESPONSE:", json); // 👈 AÑADE ESTO
+
+    if (!json?.ok) throw new Error(json?.error || "No se pudo guardar la extensión");
+
+    await loadData();
+    setDrawerOpen(false);
+    setMsg(form.id ? "Extensión actualizada." : "Extensión creada correctamente.");
+
+  } catch (e: any) {
+    console.error("ERROR SAVE:", e); // 👈 AÑADE ESTO
+    setMsg(e?.message || "No se pudo guardar la extensión");
+  } finally {
+    setSaving(false);
   }
+}
 
   async function saveQueue() {
     try {
