@@ -447,6 +447,11 @@ export async function POST(req: Request) {
 
   } catch (err) {
     console.error("RUNTIME FATAL ERROR:", err);
-    return NextResponse.json({ ok: false }, { status: 200 }); // 👈 JAMÁS 500
-  }
+   }
+
+return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
+
+} catch (e: any) {
+  return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+}
 }
