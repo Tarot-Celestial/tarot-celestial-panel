@@ -352,11 +352,7 @@ export async function POST(req: Request) {
 
   let result;
 
-  if (body?.id) {
-    result = await updateExtensionRecord(admin, body.id, payload);
-  } else {
-    result = await insertExtensionRecord(admin, payload);
-  }
+  result = await upsertExtensionRecord(admin, payload);
 
   if (result.error) {
     console.error("EXTENSION ERROR:", result.error);
