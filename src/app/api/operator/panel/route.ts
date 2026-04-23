@@ -13,6 +13,8 @@ type MeWorker = {
   email: string | null;
 };
 
+type ExtensionRow = Record<string, any>;
+
 function getEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
@@ -30,6 +32,34 @@ function sanitizeExtension(value: any) {
 
 function sanitizePhone(value: any) {
   return String(value || "").replace(/[^0-9+]/g, "").trim();
+}
+
+function normalizeExtensionRow(row: ExtensionRow) {
+  const extension = sanitizeExtension(row?.extension || row?.id || row?.exten);
+  const secret = String(row?.secret || row?.password || "").trim() || null;
+  const label = String(row?.label || row?.name || "").trim() || null;
+  const domain = String(row?.domain || process.env.NEXT_PUBLIC_SIP_DOMAIN || "sip.clientestarotcelestial.es").trim();
+  const ws_server = String(row?.ws_server || process.env.NEXT_PUBLIC_SIP_WS_SERVER || "wss://sip.clientestarotcelestial.es:8089/ws").trim();
+  return {
+    ...row,
+    id: String(row?.id || extension || crypto.randomUUID()),
+    extension,
+    secret,
+    password: secret,
+    label,
+    name: label,
+    domain,
+    ws_server,
+    sip_uri: row?.sip_uri || (extension && domain ? `sip:${extension}@${domain}` : null),
+    is_active: row?.is_active !== false,
+    registered: !!row?.registered,
+    status: String(row?.status || (row?.registered ? "registered" : "offline") || "offline"),
+    active_call_count: Number(row?.active_call_count || 0) || 0,
+    active_call_started_at: row?.active_call_started_at || null,
+    incoming_number: row?.incoming_number || null,
+    talking_to: row?.talking_to || null,
+    last_seen_at: row?.last_seen_at || null,
+  };
 }
 
 async function getAuthContext(req: Request) {
@@ -79,18 +109,16 @@ async function getAuthContext(req: Request) {
 
 async function readExtensions(admin: any) {
   const { data, error } = await admin
-  .from("pbx_extensions")
-  .select("*")
-  .order("extension", { ascending: true });
-
-const rows = (data || []) as any[];
+    .from("pbx_extensions")
+    .select("*")
+    .order("extension", { ascending: true });
 
   if (error) {
-    if (isMissingRelationError(error)) return { rows: (data || []) as any[], missingTable: false };
+    if (isMissingRelationError(error)) return { rows: [], missingTable: true };
     throw error;
   }
 
-  return { rows: data || [], missingTable: false };
+  return { rows: (data || []).map(normalizeExtensionRow), missingTable: false };
 }
 
 async function readRouting(admin: any) {
@@ -159,7 +187,7 @@ export async function GET(req: Request) {
       ok: true,
       me,
       workers: workers || [],
-      extensions: extensionsResult.rows,
+      extensions: extensionsResult.rows.map(normalizeExtensionRow),
       routing: routingResult.rows,
       queues: queuesResult.queues,
       queueMembers: queuesResult.members,
@@ -221,10 +249,16 @@ export async function POST(req: Request) {
     id,
     worker_id,
     extension,
-    password, // 🔥 ahora correcto
+    secret: password,
+    password,
+    label,
     name: label,
+    domain: domain || null,
+    ws_server: ws_server || null,
+    sip_uri,
     context: "from-internal",
     is_active,
+    updated_at: new Date().toISOString(),
   };
 
   let result;
@@ -364,16 +398,34 @@ export async function POST(req: Request) {
 
       Object.keys(runtimePatch).forEach((key) => runtimePatch[key] === undefined && delete runtimePatch[key]);
 
-      const { data, error } = await admin
+      let result = await admin
         .from("pbx_extensions")
         .update(runtimePatch)
         .eq("extension", extension)
-        .select("id, extension, status, registered, active_call_count, active_call_started_at, incoming_number, talking_to, last_seen_at")
+        .select("*")
         .maybeSingle();
 
-      if (error) throw error;
+      if (result.error) throw result.error;
 
-      return NextResponse.json({ ok: true, extension: data || null });
+      if (!result.data) {
+        const bootstrapPayload = normalizeExtensionRow({
+          extension,
+          secret: String(body?.secret || body?.password || "").trim() || null,
+          name: body?.label || body?.name || `Extensión ${extension}`,
+          worker_id: String(body?.worker_id || "").trim() || null,
+          ...runtimePatch,
+        });
+
+        result = await admin
+          .from("pbx_extensions")
+          .upsert(bootstrapPayload, { onConflict: "extension" })
+          .select("*")
+          .maybeSingle();
+
+        if (result.error) throw result.error;
+      }
+
+      return NextResponse.json({ ok: true, extension: result.data ? normalizeExtensionRow(result.data) : null });
     }
 
     return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
