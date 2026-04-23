@@ -438,7 +438,9 @@ export default function IPPhoneBar() {
     return data.session?.access_token || "";
   }
 
-  async function syncRuntime(payload: Record<string, any>) {
+  async functiasync function syncRuntime(payload: Record<string, any>) {
+  return; // 🔥 desactivado temporalmente
+}on syncRuntime(payload: Record<string, any>) {
     try {
       const token = await getToken();
       if (!token || !config.username) return;
