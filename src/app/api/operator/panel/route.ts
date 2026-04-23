@@ -21,7 +21,15 @@ function getEnv(name: string) {
 
 function isMissingRelationError(error: any) {
   const msg = String(error?.message || "").toLowerCase();
-  return msg.includes("does not exist") || msg.includes("could not find the table") || msg.includes("relation");
+  return msg.includes("does not exist") || msg.includes("could not find the table") || msg.includes("relation") || msg.includes("column");
+}
+
+function sanitizeExtension(value: any) {
+  return String(value || "").replace(/[^0-9]/g, "").trim();
+}
+
+function sanitizePhone(value: any) {
+  return String(value || "").replace(/[^0-9+]/g, "").trim();
 }
 
 async function getAuthContext(req: Request) {
@@ -83,6 +91,44 @@ async function readExtensions(admin: any) {
   return { rows: data || [], missingTable: false };
 }
 
+async function readRouting(admin: any) {
+  const { data, error } = await admin
+    .from("pbx_routing")
+    .select("id, extension, type, target, is_active, queue_id, queue_priority, notes, created_at, updated_at")
+    .order("extension", { ascending: true });
+
+  if (error) {
+    if (isMissingRelationError(error)) return { rows: [], missingTable: true };
+    throw error;
+  }
+
+  return { rows: data || [], missingTable: false };
+}
+
+async function readQueues(admin: any) {
+  const queuesRes = await admin
+    .from("pbx_queues")
+    .select("id, queue_key, label, strategy, ring_timeout, wrapup_seconds, max_wait_seconds, is_active, created_at, updated_at")
+    .order("queue_key", { ascending: true });
+
+  const membersRes = await admin
+    .from("pbx_queue_members")
+    .select("id, queue_id, worker_id, extension, penalty, is_active, created_at, updated_at")
+    .order("queue_id", { ascending: true });
+
+  const queuesMissing = queuesRes.error && isMissingRelationError(queuesRes.error);
+  const membersMissing = membersRes.error && isMissingRelationError(membersRes.error);
+
+  if (queuesRes.error && !queuesMissing) throw queuesRes.error;
+  if (membersRes.error && !membersMissing) throw membersRes.error;
+
+  return {
+    queues: queuesRes.data || [],
+    members: membersRes.data || [],
+    missingTables: queuesMissing || membersMissing,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const gate = await getAuthContext(req);
@@ -104,13 +150,20 @@ export async function GET(req: Request) {
     if (workersErr) throw workersErr;
 
     const extensionsResult = await readExtensions(admin);
+    const routingResult = await readRouting(admin);
+    const queuesResult = await readQueues(admin);
 
     return NextResponse.json({
       ok: true,
       me,
       workers: workers || [],
       extensions: extensionsResult.rows,
+      routing: routingResult.rows,
+      queues: queuesResult.queues,
+      queueMembers: queuesResult.members,
       setupNeeded: extensionsResult.missingTable,
+      routingSetupNeeded: routingResult.missingTable,
+      queueSetupNeeded: queuesResult.missingTables,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
@@ -135,13 +188,18 @@ export async function POST(req: Request) {
 
       const id = String(body?.id || "").trim() || null;
       const worker_id = String(body?.worker_id || "").trim() || null;
-      const extension = String(body?.extension || "").trim();
+      const extension = sanitizeExtension(body?.extension);
       const secret = String(body?.secret || "").trim();
       const label = String(body?.label || "").trim() || null;
       const domain = String(body?.domain || "").trim();
       const ws_server = String(body?.ws_server || "").trim();
       const sip_uri = extension && domain ? `sip:${extension}@${domain}` : null;
       const is_active = body?.is_active !== undefined ? !!body.is_active : true;
+      const route_type = String(body?.route_type || "internal").trim() || "internal";
+      const target_phone = sanitizePhone(body?.target_phone);
+      const queue_id = String(body?.queue_id || "").trim() || null;
+      const queue_priority = Number(body?.queue_priority || 0) || 0;
+      const routing_notes = String(body?.routing_notes || "").trim() || null;
 
       if (!extension) {
         return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 400 });
@@ -154,6 +212,9 @@ export async function POST(req: Request) {
       }
       if (!ws_server) {
         return NextResponse.json({ ok: false, error: "WS_SERVER_REQUIRED" }, { status: 400 });
+      }
+      if (route_type === "external" && !target_phone) {
+        return NextResponse.json({ ok: false, error: "TARGET_PHONE_REQUIRED" }, { status: 400 });
       }
 
       const duplicate = await admin
@@ -195,11 +256,97 @@ export async function POST(req: Request) {
 
       if (error) throw error;
 
-      return NextResponse.json({ ok: true, extension: data });
+      const routingPayload = {
+        extension,
+        type: route_type,
+        target: target_phone || null,
+        queue_id,
+        queue_priority,
+        notes: routing_notes,
+        is_active,
+        updated_at: new Date().toISOString(),
+      };
+
+      const routingUpsert = await admin
+        .from("pbx_routing")
+        .upsert(routingPayload, { onConflict: "extension" })
+        .select("*")
+        .maybeSingle();
+
+      if (routingUpsert.error && !isMissingRelationError(routingUpsert.error)) throw routingUpsert.error;
+
+      return NextResponse.json({ ok: true, extension: data, routing: routingUpsert.data || null });
+    }
+
+    if (action === "save_queue") {
+      if (!["admin", "central"].includes(String(me.role || ""))) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+
+      const id = String(body?.id || "").trim() || null;
+      const queue_key = sanitizeExtension(body?.queue_key);
+      const label = String(body?.label || "").trim();
+      const strategy = String(body?.strategy || "ringall").trim() || "ringall";
+      const ring_timeout = Math.max(5, Number(body?.ring_timeout || 20) || 20);
+      const wrapup_seconds = Math.max(0, Number(body?.wrapup_seconds || 10) || 10);
+      const max_wait_seconds = Math.max(0, Number(body?.max_wait_seconds || 120) || 120);
+      const is_active = body?.is_active !== undefined ? !!body.is_active : true;
+
+      if (!queue_key) return NextResponse.json({ ok: false, error: "QUEUE_KEY_REQUIRED" }, { status: 400 });
+      if (!label) return NextResponse.json({ ok: false, error: "QUEUE_LABEL_REQUIRED" }, { status: 400 });
+
+      const payload = {
+        queue_key,
+        label,
+        strategy,
+        ring_timeout,
+        wrapup_seconds,
+        max_wait_seconds,
+        is_active,
+        updated_at: new Date().toISOString(),
+      };
+
+      const result = id
+        ? await admin.from("pbx_queues").update(payload).eq("id", id).select("*").maybeSingle()
+        : await admin.from("pbx_queues").insert(payload).select("*").maybeSingle();
+
+      if (result.error) throw result.error;
+
+      return NextResponse.json({ ok: true, queue: result.data });
+    }
+
+    if (action === "save_queue_members") {
+      if (!["admin", "central"].includes(String(me.role || ""))) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+
+      const queue_id = String(body?.queue_id || "").trim();
+      const members = Array.isArray(body?.members) ? body.members : [];
+      if (!queue_id) return NextResponse.json({ ok: false, error: "QUEUE_ID_REQUIRED" }, { status: 400 });
+
+      const deleteRes = await admin.from("pbx_queue_members").delete().eq("queue_id", queue_id);
+      if (deleteRes.error && !isMissingRelationError(deleteRes.error)) throw deleteRes.error;
+
+      const cleanMembers = members
+        .map((item: any) => ({
+          queue_id,
+          worker_id: String(item?.worker_id || "").trim() || null,
+          extension: sanitizeExtension(item?.extension),
+          penalty: Math.max(0, Number(item?.penalty || 0) || 0),
+          is_active: item?.is_active !== false,
+        }))
+        .filter((item: any) => item.worker_id || item.extension);
+
+      if (cleanMembers.length) {
+        const ins = await admin.from("pbx_queue_members").insert(cleanMembers).select("*");
+        if (ins.error) throw ins.error;
+      }
+
+      return NextResponse.json({ ok: true, count: cleanMembers.length });
     }
 
     if (action === "update_runtime") {
-      const extension = String(body?.extension || "").trim();
+      const extension = sanitizeExtension(body?.extension);
       if (!extension) {
         return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 400 });
       }
@@ -234,4 +381,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }
 }
-
