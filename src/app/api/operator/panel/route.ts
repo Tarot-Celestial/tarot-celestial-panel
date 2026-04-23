@@ -15,6 +15,11 @@ type MeWorker = {
 
 type ExtensionRow = Record<string, any>;
 
+const DEFAULT_SIP_DOMAIN = process.env.NEXT_PUBLIC_SIP_DOMAIN || "sip.clientestarotcelestial.es";
+const DEFAULT_SIP_WS_SERVER = process.env.NEXT_PUBLIC_SIP_WS_SERVER || "wss://sip.clientestarotcelestial.es:8089/ws";
+const DEFAULT_PJSIP_CONTEXT = process.env.ASTERISK_PJSIP_CONTEXT || "default";
+const DEFAULT_PJSIP_TRANSPORT = process.env.ASTERISK_PJSIP_TRANSPORT || "transport-wss";
+
 function getEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
@@ -90,6 +95,86 @@ async function upsertExtensionRecord(admin: any, payload: any) {
   return res;
 }
 
+async function upsertWithFallback(admin: any, table: string, payload: any, fallbackPayload?: any) {
+  let res = await admin.from(table).upsert(payload, { onConflict: "id" }).select("*").maybeSingle();
+  if (res.error && fallbackPayload && isMissingRelationError(res.error)) {
+    res = await admin.from(table).upsert(fallbackPayload, { onConflict: "id" }).select("*").maybeSingle();
+  }
+  return res;
+}
+
+async function deleteAsteriskRealtimeExtension(admin: any, extension: string) {
+  await admin.from("ps_endpoints").delete().eq("id", extension);
+  await admin.from("ps_auths").delete().eq("id", extension);
+  await admin.from("ps_aors").delete().eq("id", extension);
+}
+
+async function syncAsteriskRealtimeExtension(admin: any, source: ExtensionRow) {
+  const extension = sanitizeExtension(source?.extension || source?.id || source?.exten);
+  if (!extension) return { ok: false, skipped: true, reason: "NO_EXTENSION" };
+
+  if (source?.is_active === false) {
+    await deleteAsteriskRealtimeExtension(admin, extension);
+    return { ok: true, deleted: true, extension };
+  }
+
+  const password = String(source?.secret || source?.password || "").trim() || getDefaultSecret(extension);
+  const context = String(source?.context || DEFAULT_PJSIP_CONTEXT).trim() || DEFAULT_PJSIP_CONTEXT;
+  const transport = String(source?.transport || DEFAULT_PJSIP_TRANSPORT).trim() || DEFAULT_PJSIP_TRANSPORT;
+
+  const aorPayload = { id: extension, max_contacts: 1, remove_existing: "yes", qualify_frequency: 0 };
+  const aorFallback = { id: extension, max_contacts: 1 };
+  const authPayload = { id: extension, auth_type: "userpass", username: extension, password };
+  const endpointPayload = {
+    id: extension,
+    transport,
+    context,
+    disallow: "all",
+    allow: "opus,ulaw,alaw",
+    aors: extension,
+    auth: extension,
+    webrtc: "yes",
+    use_avpf: "yes",
+    media_encryption: "dtls",
+    dtls_auto_generate_cert: "yes",
+    dtls_verify: "fingerprint",
+    dtls_setup: "actpass",
+    ice_support: "yes",
+    rtcp_mux: "yes",
+    media_use_received_transport: "yes",
+    rtp_symmetric: "yes",
+    force_rport: "yes",
+    rewrite_contact: "yes",
+    direct_media: "no",
+  };
+  const endpointFallback = {
+    id: extension,
+    transport,
+    context,
+    disallow: "all",
+    allow: "opus,ulaw,alaw",
+    aors: extension,
+    auth: extension,
+  };
+
+  const aor = await upsertWithFallback(admin, "ps_aors", aorPayload, aorFallback);
+  if (aor.error) return { ok: false, table: "ps_aors", error: aor.error.message };
+
+  const auth = await upsertWithFallback(admin, "ps_auths", authPayload);
+  if (auth.error) return { ok: false, table: "ps_auths", error: auth.error.message };
+
+  const endpoint = await upsertWithFallback(admin, "ps_endpoints", endpointPayload, endpointFallback);
+  if (endpoint.error) return { ok: false, table: "ps_endpoints", error: endpoint.error.message };
+
+  return { ok: true, extension };
+}
+
+async function syncAsteriskRealtimeExtensions(admin: any, rows: ExtensionRow[]) {
+  const results = [];
+  for (const row of rows || []) results.push(await syncAsteriskRealtimeExtension(admin, row));
+  return results;
+}
+
 async function ensureDefaultExtensions(admin: any) {
   const defaults = [
     { extension: "1000", secret: "123456", label: "Central 1000", role: "central" },
@@ -110,6 +195,7 @@ async function ensureDefaultExtensions(admin: any) {
     }
 
     if (existing.data) {
+      await syncAsteriskRealtimeExtension(admin, { ...existing.data, ...item, extension, is_active: true });
       continue;
     }
 
@@ -122,7 +208,7 @@ async function ensureDefaultExtensions(admin: any) {
       name: item.label,
       role: item.role,
       extension_role: item.role,
-      context: "from-internal",
+      context: DEFAULT_PJSIP_CONTEXT,
       is_active: true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -132,6 +218,7 @@ async function ensureDefaultExtensions(admin: any) {
     if (result.error && !isMissingRelationError(result.error)) {
       throw result.error;
     }
+    await syncAsteriskRealtimeExtension(admin, result.data || payload);
   }
 }
 
@@ -139,8 +226,8 @@ function normalizeExtensionRow(row: ExtensionRow) {
   const extension = sanitizeExtension(row?.extension || row?.id || row?.exten);
   const secret = String(row?.secret || row?.password || "").trim() || null;
   const label = String(row?.label || row?.name || "").trim() || null;
-  const domain = String(row?.domain || process.env.NEXT_PUBLIC_SIP_DOMAIN || "sip.clientestarotcelestial.es").trim();
-  const ws_server = String(row?.ws_server || process.env.NEXT_PUBLIC_SIP_WS_SERVER || "wss://sip.clientestarotcelestial.es:8089/ws").trim();
+  const domain = String(row?.domain || DEFAULT_SIP_DOMAIN).trim();
+  const ws_server = String(row?.ws_server || DEFAULT_SIP_WS_SERVER).trim();
   return {
     ...row,
     id: String(row?.id || extension || crypto.randomUUID()),
@@ -284,6 +371,7 @@ export async function GET(req: Request) {
 
     await ensureDefaultExtensions(admin);
     const extensionsResult = await readExtensions(admin);
+    const realtimeSync = extensionsResult.missingTable ? [] : await syncAsteriskRealtimeExtensions(admin, extensionsResult.rows);
     const routingResult = await readRouting(admin);
     const queuesResult = await readQueues(admin);
 
@@ -296,6 +384,7 @@ export async function GET(req: Request) {
       queues: queuesResult.queues,
       queueMembers: queuesResult.members,
       setupNeeded: extensionsResult.missingTable,
+      realtimeSync,
       routingSetupNeeded: routingResult.missingTable,
       queueSetupNeeded: queuesResult.missingTables,
     });
@@ -362,7 +451,7 @@ export async function POST(req: Request) {
     domain: domain || null,
     ws_server: ws_server || null,
     sip_uri,
-    context: "from-internal",
+    context: DEFAULT_PJSIP_CONTEXT,
     is_active,
     role,
     extension_role: role,
@@ -376,6 +465,12 @@ export async function POST(req: Request) {
   if (result.error) {
     console.error("EXTENSION ERROR:", result.error);
     return NextResponse.json({ ok: false, error: result.error.message });
+  }
+
+  const realtimeSync = await syncAsteriskRealtimeExtension(admin, result.data || payload);
+  if (!realtimeSync.ok && !realtimeSync.skipped) {
+    console.error("ASTERISK REALTIME SYNC ERROR:", realtimeSync);
+    return NextResponse.json({ ok: false, error: `ASTERISK_REALTIME_SYNC_FAILED: ${realtimeSync.error || realtimeSync.reason || realtimeSync.table || "unknown"}` });
   }
 
   // 🔥 ROUTING
@@ -404,6 +499,7 @@ export async function POST(req: Request) {
     ok: true,
     extension: result.data,
     routing: routingRes.data || null,
+    realtimeSync,
   });
 }
 
@@ -517,7 +613,7 @@ export async function POST(req: Request) {
         password: getDefaultSecret(extension),
         name: `Extensión ${extension}`,
         label: `Extensión ${extension}`,
-        context: "from-internal",
+        context: DEFAULT_PJSIP_CONTEXT,
         is_active: true,
         ...runtimePatch,
       };
@@ -528,6 +624,7 @@ export async function POST(req: Request) {
         console.error("RUNTIME INSERT ERROR:", result.error);
         return NextResponse.json({ ok: false, error: result.error.message }, { status: 200 });
       }
+      await syncAsteriskRealtimeExtension(admin, result.data || bootstrapPayload);
     }
 
     return NextResponse.json({

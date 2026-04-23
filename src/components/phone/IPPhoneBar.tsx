@@ -178,6 +178,7 @@ export default function IPPhoneBar() {
   const callDirectionRef = useRef<"incoming" | "outgoing">("outgoing");
   const callAnsweredRef = useRef(false);
   const callFinalizedRef = useRef(false);
+  const sipConfigSignatureRef = useRef("");
   const activeClientContextRef = useRef<ActiveClientContext | null>(null);
   const panelConfigHydratedRef = useRef(false);
   const crmPopupWindowRef = useRef<Window | null>(null);
@@ -285,6 +286,24 @@ export default function IPPhoneBar() {
       };
     });
   }, [selectedPanelExtension]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const signature = [config.username, config.password, config.domain, config.server].join("|");
+    if (!sipConfigSignatureRef.current) {
+      sipConfigSignatureRef.current = signature;
+      return;
+    }
+    if (sipConfigSignatureRef.current === signature) return;
+    sipConfigSignatureRef.current = signature;
+    if (runtimeRef.current.userAgent || runtimeRef.current.registerer) {
+      void disconnect(true).then(() => {
+        if (presence.online && presence.status === "working" && config.username && config.password) {
+          void connect(true);
+        }
+      });
+    }
+  }, [hydrated, config.username, config.password, config.domain, config.server, presence.online, presence.status]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -881,8 +900,8 @@ export default function IPPhoneBar() {
     keepAliveInterval: 25,
   },
 
-authorizationUsername: "1001",
-authorizationPassword: "test123",
+authorizationUsername: config.username,
+authorizationPassword: config.password,
 
   // ✅ ESTO VA DENTRO
   sessionDescriptionHandlerFactoryOptions: {
@@ -1668,12 +1687,17 @@ const payload = {
       {panelExtensions.length ? (
         <select
           value={config.username}
-          onChange={(e) =>
+          onChange={(e) => {
+            const selectedExtension = sanitizeNumber(e.target.value);
+            const selected = panelExtensions.find((item) => String(item.extension || "") === selectedExtension);
             setConfig((p) => ({
               ...p,
-              username: sanitizeNumber(e.target.value),
-            }))
-          }
+              username: selectedExtension,
+              password: String(selected?.secret || selected?.password || ""),
+              domain: String(selected?.domain || p.domain || DEFAULT_DOMAIN),
+              server: String(selected?.ws_server || p.server || DEFAULT_SERVER),
+            }));
+          }}
           style={inputStyle}
         >
           <option value="">Selecciona extensión</option>
