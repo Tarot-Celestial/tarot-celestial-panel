@@ -384,71 +384,41 @@ export async function POST(req: Request) {
     const extension = sanitizeExtension(body?.extension);
 
     if (!extension) {
-      return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 200 });
+      return NextResponse.json({ ok: false }, { status: 200 });
     }
 
     const runtimePatch: any = {
-      registered: body?.registered !== undefined ? !!body.registered : undefined,
-      status: body?.status !== undefined ? String(body.status || "").trim() : undefined,
-      active_call_count: body?.active_call_count !== undefined ? Number(body.active_call_count || 0) : undefined,
-      active_call_started_at: body?.active_call_started_at !== undefined ? body.active_call_started_at || null : undefined,
-      incoming_number: body?.incoming_number !== undefined ? String(body.incoming_number || "").trim() || null : undefined,
-      talking_to: body?.talking_to !== undefined ? String(body.talking_to || "").trim() || null : undefined,
+      status: body?.status,
+      registered: body?.registered,
+      active_call_count: body?.active_call_count,
+      incoming_number: body?.incoming_number,
+      talking_to: body?.talking_to,
       last_seen_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    Object.keys(runtimePatch).forEach((key) => runtimePatch[key] === undefined && delete runtimePatch[key]);
+    Object.keys(runtimePatch).forEach((k) => runtimePatch[k] === undefined && delete runtimePatch[k]);
 
-    // 🔹 Intento update
-    let result = await admin
+    const { error } = await admin
       .from("pbx_extensions")
-      .update(runtimePatch)
-      .eq("extension", extension)
-      .select("*")
-      .maybeSingle();
+      .upsert(
+        { extension, ...runtimePatch },
+        { onConflict: "extension" }
+      );
 
-    if (result.error) {
-      console.error("RUNTIME UPDATE ERROR:", result.error);
-      return NextResponse.json({ ok: false }, { status: 200 }); // 👈 NO 500
+    if (error) {
+      console.error("RUNTIME ERROR:", error);
     }
 
-    // 🔹 Si no existe → crear
-    if (!result.data) {
-      const bootstrapPayload = normalizeExtensionRow({
-        extension,
-        secret: String(body?.secret || body?.password || "").trim() || null,
-        name: body?.label || body?.name || `Extensión ${extension}`,
-        worker_id: String(body?.worker_id || "").trim() || null,
-        ...runtimePatch,
-      });
-
-      const upsert = await admin
-        .from("pbx_extensions")
-        .upsert(bootstrapPayload, { onConflict: "extension" })
-        .select("*")
-        .maybeSingle();
-
-      if (upsert.error) {
-        console.error("RUNTIME UPSERT ERROR:", upsert.error);
-        return NextResponse.json({ ok: false }, { status: 200 }); // 👈 NO 500
-      }
-
-      return NextResponse.json({
-        ok: true,
-        extension: upsert.data ? normalizeExtensionRow(upsert.data) : null,
-      });
-    }
-
-    return NextResponse.json({
-      ok: true,
-      extension: result.data ? normalizeExtensionRow(result.data) : null,
-    });
+    return NextResponse.json({ ok: true });
 
   } catch (err) {
-    console.error("RUNTIME FATAL ERROR:", err);
-   }
+    console.error("RUNTIME FATAL:", err);
+    return NextResponse.json({ ok: false }, { status: 200 });
+  }
+}
 
+// ✅ SI NO ES NINGUNA ACCIÓN
 return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
 
 } catch (e: any) {
