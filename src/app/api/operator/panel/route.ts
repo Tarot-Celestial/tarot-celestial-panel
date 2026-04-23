@@ -182,101 +182,99 @@ export async function POST(req: Request) {
     const action = String(body?.action || "").trim();
 
     if (action === "save_extension") {
-      if (!["admin", "central"].includes(String(me.role || ""))) {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-      }
+  if (!["admin", "central"].includes(String(me.role || ""))) {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
 
-      const id = String(body?.id || "").trim() || null;
-      const worker_id = String(body?.worker_id || "").trim() || null;
-      const extension = sanitizeExtension(body?.extension);
-      const secret = String(body?.secret || "").trim();
-      const label = String(body?.label || "").trim() || null;
-      const domain = String(body?.domain || "").trim();
-      const ws_server = String(body?.ws_server || "").trim();
-      const sip_uri = extension && domain ? `sip:${extension}@${domain}` : null;
-      const is_active = body?.is_active !== undefined ? !!body.is_active : true;
-      const route_type = String(body?.route_type || "internal").trim() || "internal";
-      const target_phone = sanitizePhone(body?.target_phone);
-      const queue_id = String(body?.queue_id || "").trim() || null;
-      const queue_priority = Number(body?.queue_priority || 0) || 0;
-      const routing_notes = String(body?.routing_notes || "").trim() || null;
+  const id = String(body?.id || "").trim() || crypto.randomUUID();
+  const worker_id = String(body?.worker_id || "").trim() || null;
 
-      if (!extension) {
-        return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 400 });
-      }
-      if (!secret) {
-        return NextResponse.json({ ok: false, error: "SECRET_REQUIRED" }, { status: 400 });
-      }
-      if (!domain) {
-        return NextResponse.json({ ok: false, error: "DOMAIN_REQUIRED" }, { status: 400 });
-      }
-      if (!ws_server) {
-        return NextResponse.json({ ok: false, error: "WS_SERVER_REQUIRED" }, { status: 400 });
-      }
-      if (route_type === "external" && !target_phone) {
-        return NextResponse.json({ ok: false, error: "TARGET_PHONE_REQUIRED" }, { status: 400 });
-      }
+  const extension = sanitizeExtension(body?.extension);
+  const password = String(body?.secret || body?.password || "").trim(); // 🔥 CLAVE
 
-      const duplicate = await admin
-        .from("pbx_extensions")
-        .select("id, extension")
-        .eq("extension", extension)
-        .neq("id", id || "00000000-0000-0000-0000-000000000000")
-        .maybeSingle();
+  const label = String(body?.label || "").trim() || null;
+  const domain = String(body?.domain || "").trim();
+  const ws_server = String(body?.ws_server || "").trim();
+  const sip_uri = extension && domain ? `sip:${extension}@${domain}` : null;
 
-      if (duplicate.error && !isMissingRelationError(duplicate.error)) throw duplicate.error;
-      if (duplicate.data?.id) {
-        return NextResponse.json({ ok: false, error: "Ya existe una extensión con ese número." }, { status: 409 });
-      }
+  const is_active = body?.is_active !== undefined ? !!body.is_active : true;
 
-      const payload: any = {
-        worker_id,
-        extension,
-        secret,
-        label,
-        domain,
-        ws_server,
-        sip_uri,
-        is_active,
-        updated_at: new Date().toISOString(),
-      };
+  const route_type = String(body?.route_type || "internal").trim() || "internal";
+  const target_phone = sanitizePhone(body?.target_phone);
 
-      let data: any = null;
-      let error: any = null;
+  const queue_id = String(body?.queue_id || "").trim() || null;
+  const queue_priority = Number(body?.queue_priority || 0) || 0;
+  const routing_notes = String(body?.routing_notes || "").trim() || null;
 
-      if (id) {
-        const result = await admin.from("pbx_extensions").update(payload).eq("id", id).select("*").maybeSingle();
-        data = result.data;
-        error = result.error;
-      } else {
-        const result = await admin.from("pbx_extensions").insert(payload).select("*").maybeSingle();
-        data = result.data;
-        error = result.error;
-      }
+  if (!extension) {
+    return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 400 });
+  }
 
-      if (error) throw error;
+  if (!password) {
+    return NextResponse.json({ ok: false, error: "PASSWORD_REQUIRED" }, { status: 400 });
+  }
 
-      const routingPayload = {
-        extension,
-        type: route_type,
-        target: target_phone || null,
-        queue_id,
-        queue_priority,
-        notes: routing_notes,
-        is_active,
-        updated_at: new Date().toISOString(),
-      };
+  // 🔥 INSERT / UPDATE
+  const payload = {
+    id,
+    worker_id,
+    extension,
+    password, // 🔥 ahora correcto
+    name: label,
+    context: "from-internal",
+    is_active,
+  };
 
-      const routingUpsert = await admin
-        .from("pbx_routing")
-        .upsert(routingPayload, { onConflict: "extension" })
-        .select("*")
-        .maybeSingle();
+  let result;
 
-      if (routingUpsert.error && !isMissingRelationError(routingUpsert.error)) throw routingUpsert.error;
+  if (body?.id) {
+    result = await admin
+      .from("pbx_extensions")
+      .update(payload)
+      .eq("id", body.id)
+      .select("*")
+      .maybeSingle();
+  } else {
+    result = await admin
+      .from("pbx_extensions")
+      .insert(payload)
+      .select("*")
+      .maybeSingle();
+  }
 
-      return NextResponse.json({ ok: true, extension: data, routing: routingUpsert.data || null });
-    }
+  if (result.error) {
+    console.error("EXTENSION ERROR:", result.error);
+    return NextResponse.json({ ok: false, error: result.error.message });
+  }
+
+  // 🔥 ROUTING
+  const routingPayload = {
+    extension,
+    type: route_type,
+    target: target_phone || null,
+    queue_id,
+    queue_priority,
+    notes: routing_notes,
+    is_active,
+  };
+
+  const routingRes = await admin
+    .from("pbx_routing")
+    .upsert(routingPayload, { onConflict: "extension" })
+    .select("*")
+    .maybeSingle();
+
+  if (routingRes.error && !isMissingRelationError(routingRes.error)) {
+    console.error("ROUTING ERROR:", routingRes.error);
+    return NextResponse.json({ ok: false, error: routingRes.error.message });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    extension: result.data,
+    routing: routingRes.data || null,
+  });
+}
 
     if (action === "save_queue") {
       if (!["admin", "central"].includes(String(me.role || ""))) {
