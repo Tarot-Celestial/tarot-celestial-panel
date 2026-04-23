@@ -923,9 +923,19 @@ export default function IPPhoneBar() {
       runtimeRef.current.registerer = registerer;
       runtimeRef.current.reconnectAttempts = 0;
       setStatus("registered");
-      setStatusText("Conectado");
-      setMsg(isReconnect ? "Conexión SIP restaurada." : "Softphone conectado.");
-      return true;
+setStatusText("Conectado");
+setMsg(isReconnect ? "Conexión SIP restaurada." : "Softphone conectado.");
+
+await syncRuntime({
+  registered: true,
+  status: "registered",
+  active_call_count: 0,
+  active_call_started_at: null,
+  incoming_number: null,
+  talking_to: null,
+});
+
+return true;
     } catch (e: any) {
       console.error("Error conectando SIP", e);
       setStatus("error");
