@@ -74,6 +74,20 @@ type PresenceInfo = {
   role?: string | null;
 };
 
+type PanelExtensionOption = {
+  id?: string;
+  extension?: string | null;
+  secret?: string | null;
+  password?: string | null;
+  label?: string | null;
+  name?: string | null;
+  domain?: string | null;
+  ws_server?: string | null;
+  worker_id?: string | null;
+  caller_id_visible?: boolean | null;
+  show_caller_number?: boolean | null;
+};
+
 function formatDuration(totalSeconds: number) {
   const value = Math.max(0, Math.round(totalSeconds || 0));
   const hh = Math.floor(value / 3600);
@@ -196,10 +210,24 @@ export default function IPPhoneBar() {
   const [presence, setPresence] = useState<PresenceInfo>({ online: true, status: "working", role: null });
   const [incomingClientKnown, setIncomingClientKnown] = useState(false);
   const [incomingDisplayName, setIncomingDisplayName] = useState("");
+  const [panelExtensions, setPanelExtensions] = useState<PanelExtensionOption[]>([]);
 
   const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
   const inCall = status === "calling" || status === "ringing" || status === "in_call";
   const crmDisplayName = [activeClientContextRef.current?.nombre, activeClientContextRef.current?.apellido].filter(Boolean).join(" ").trim();
+  const selectedPanelExtension = useMemo(
+    () => panelExtensions.find((item) => String(item.extension || "") === String(config.username || "")) || null,
+    [panelExtensions, config.username]
+  );
+  const shouldHideIncomingCaller = useMemo(() => {
+    if (selectedPanelExtension?.caller_id_visible !== undefined && selectedPanelExtension?.caller_id_visible !== null) {
+      return !selectedPanelExtension.caller_id_visible;
+    }
+    if (selectedPanelExtension?.show_caller_number !== undefined && selectedPanelExtension?.show_caller_number !== null) {
+      return !selectedPanelExtension.show_caller_number;
+    }
+    return presence.role === "tarotista";
+  }, [selectedPanelExtension, presence.role]);
   const visiblePeer = incoming ? (incomingDisplayName || incomingNumber) : crmDisplayName || callNumber || number;
   const showHangupButton = incoming || inCall || Boolean(runtimeRef.current.activeSession || runtimeRef.current.incomingInvitation);
 
@@ -241,6 +269,22 @@ export default function IPPhoneBar() {
     panelConfigHydratedRef.current = true;
     void hydrateFromPanel(true);
   }, [hydrated, config.username, config.password]);
+
+  useEffect(() => {
+    if (!selectedPanelExtension) return;
+    setConfig((prev) => {
+      const nextPassword = String(selectedPanelExtension.secret || selectedPanelExtension.password || prev.password || "");
+      const nextDomain = String(selectedPanelExtension.domain || prev.domain || DEFAULT_DOMAIN);
+      const nextServer = String(selectedPanelExtension.ws_server || prev.server || DEFAULT_SERVER);
+      if (prev.password === nextPassword && prev.domain === nextDomain && prev.server === nextServer) return prev;
+      return {
+        ...prev,
+        password: nextPassword,
+        domain: nextDomain,
+        server: nextServer,
+      };
+    });
+  }, [selectedPanelExtension]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -438,9 +482,7 @@ export default function IPPhoneBar() {
     return data.session?.access_token || "";
   }
 
-  async functiasync function syncRuntime(payload: Record<string, any>) {
-  return; // 🔥 desactivado temporalmente
-}on syncRuntime(payload: Record<string, any>) {
+    async function syncRuntime(payload: Record<string, any>) {
     try {
       const token = await getToken();
       if (!token || !config.username) return;
@@ -758,15 +800,34 @@ export default function IPPhoneBar() {
       });
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No se pudo leer la configuración.");
+
+      const options = Array.isArray(json.extensions)
+        ? json.extensions.filter((item: any) => item?.extension).map((item: any) => ({
+            ...item,
+            extension: String(item.extension || ""),
+            secret: String(item.secret || item.password || "") || null,
+            password: String(item.password || item.secret || "") || null,
+            label: String(item.label || item.name || item.extension || ""),
+            name: String(item.name || item.label || item.extension || ""),
+          }))
+        : [];
+
+      setPanelExtensions(options);
+
       const mine =
-        (json.extensions || []).find((item: any) => String(item.worker_id || "") === String(json.me?.id || "")) ||
-        json.extensions?.[0];
+        options.find((item: any) => String(item.worker_id || "") === String(json.me?.id || "")) ||
+        options.find((item: any) => String(item.extension || "") === String(config.username || "")) ||
+        options[0];
+
       if (!mine) throw new Error("No tienes extensión asignada todavía.");
+
       setConfig((prev) => ({
-  ...prev,
-  username: String(mine?.extension || prev.username),
-  // ❌ NO TOCAR password desde panel
-}));
+        ...prev,
+        username: String(mine.extension || prev.username || ""),
+        password: String(mine.secret || mine.password || prev.password || ""),
+        domain: String(mine.domain || prev.domain || DEFAULT_DOMAIN),
+        server: String(mine.ws_server || prev.server || DEFAULT_SERVER),
+      }));
       panelConfigHydratedRef.current = true;
       if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
     } catch (e: any) {
@@ -841,7 +902,7 @@ export default function IPPhoneBar() {
         }
 
         const realCaller = parseIncomingNumber(invitation);
-        const caller = presence.role === "tarotista" ? "Número oculto" : realCaller;
+        const caller = shouldHideIncomingCaller ? "Número oculto" : realCaller;
 
         callDirectionRef.current = "incoming";
         callAnsweredRef.current = false;
@@ -1575,17 +1636,37 @@ const payload = {
         Cargar desde panel
       </button>
 
-      <input
-        value={config.username}
-        onChange={(e) =>
-          setConfig((p) => ({
-            ...p,
-            username: sanitizeNumber(e.target.value),
-          }))
-        }
-        placeholder="Extensión"
-        style={inputStyle}
-      />
+      {panelExtensions.length ? (
+        <select
+          value={config.username}
+          onChange={(e) =>
+            setConfig((p) => ({
+              ...p,
+              username: sanitizeNumber(e.target.value),
+            }))
+          }
+          style={inputStyle}
+        >
+          <option value="">Selecciona extensión</option>
+          {panelExtensions.map((item) => (
+            <option key={String(item.id || item.extension)} value={String(item.extension || "")}>
+              {String(item.extension || "")} · {item.label || item.name || "Extensión"}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <input
+          value={config.username}
+          onChange={(e) =>
+            setConfig((p) => ({
+              ...p,
+              username: sanitizeNumber(e.target.value),
+            }))
+          }
+          placeholder="Extensión"
+          style={inputStyle}
+        />
+      )}
                     <input
                       value={config.password}
                       onChange={(e) => setConfig((p) => ({ ...p, password: e.target.value }))}
