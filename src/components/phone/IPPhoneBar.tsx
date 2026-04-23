@@ -943,19 +943,48 @@ export default function IPPhoneBar() {
       });
 
       registerer.stateChange?.addListener?.((state: any) => {
-        const txt = String(state || "");
-        if (txt.includes("Registered")) {
-          runtimeRef.current.reconnectAttempts = 0;
-          setStatus((prev) => (prev === "in_call" || prev === "calling" || prev === "ringing" ? prev : "registered"));
-          setStatusText((prev) => (prev === "En llamada" || prev.startsWith("Llamando") || prev.startsWith("Llamada entrante") ? prev : "Conectado"));
-          return;
-        }
-        if (txt.includes("Unregistered") || txt.includes("Terminated")) {
-          if (!runtimeRef.current.manualDisconnect) {
-            scheduleReconnect("Registro SIP perdido. Reconectando…");
-          }
-        }
-      });
+  const txt = String(state || "");
+  console.log("SIP REGISTER STATE:", txt);
+
+  if (txt.includes("Registered")) {
+    runtimeRef.current.reconnectAttempts = 0;
+
+    setStatus((prev) =>
+      prev === "in_call" || prev === "calling" || prev === "ringing"
+        ? prev
+        : "registered"
+    );
+
+    setStatusText((prev) =>
+      prev === "En llamada" ||
+      prev.startsWith("Llamando") ||
+      prev.startsWith("Llamada entrante")
+        ? prev
+        : "Conectado"
+    );
+
+    // 🔥 AQUI ESTÁ LA MAGIA
+    syncRuntime({
+      registered: true,
+      status: "registered",
+    });
+
+    return;
+  }
+
+  if (txt.includes("Unregistered") || txt.includes("Terminated")) {
+
+    // 🔥 AQUI TAMBIÉN
+    syncRuntime({
+      registered: false,
+      status: "offline",
+    });
+
+    if (!runtimeRef.current.manualDisconnect) {
+      scheduleReconnect("Registro SIP perdido. Reconectando…");
+    }
+  }
+});
 
       userAgent.transport.stateChange.addListener((state: any) => {
         const txt = String(state);
