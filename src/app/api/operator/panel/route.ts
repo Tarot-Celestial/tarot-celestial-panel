@@ -34,6 +34,88 @@ function sanitizePhone(value: any) {
   return String(value || "").replace(/[^0-9+]/g, "").trim();
 }
 
+function getDefaultSecret(extension: string) {
+  return extension === "1000" ? "123456" : extension ? "1234" : "";
+}
+
+async function getWorkerRole(admin: any, workerId: string | null) {
+  if (!workerId) return null;
+  const { data, error } = await admin
+    .from("workers")
+    .select("role")
+    .eq("id", workerId)
+    .maybeSingle();
+  if (error) throw error;
+  const role = String(data?.role || "").toLowerCase();
+  return role === "admin" ? "central" : role || null;
+}
+
+function normalizeExtensionRole(value: any) {
+  const role = String(value || "").trim().toLowerCase();
+  if (role === "admin") return "central";
+  if (role === "central" || role === "tarotista") return role;
+  return null;
+}
+
+async function insertExtensionRecord(admin: any, payload: any) {
+  let res = await admin.from("pbx_extensions").insert(payload).select("*").maybeSingle();
+  if (res.error && isMissingRelationError(res.error) && ("role" in payload || "extension_role" in payload)) {
+    const fallback = { ...payload };
+    delete fallback.role;
+    delete fallback.extension_role;
+    res = await admin.from("pbx_extensions").insert(fallback).select("*").maybeSingle();
+  }
+  return res;
+}
+
+async function updateExtensionRecord(admin: any, id: string, payload: any) {
+  let res = await admin.from("pbx_extensions").update(payload).eq("id", id).select("*").maybeSingle();
+  if (res.error && isMissingRelationError(res.error) && ("role" in payload || "extension_role" in payload)) {
+    const fallback = { ...payload };
+    delete fallback.role;
+    delete fallback.extension_role;
+    res = await admin.from("pbx_extensions").update(fallback).eq("id", id).select("*").maybeSingle();
+  }
+  return res;
+}
+
+async function upsertExtensionRecord(admin: any, payload: any) {
+  let res = await admin.from("pbx_extensions").upsert(payload, { onConflict: "extension" }).select("*").maybeSingle();
+  if (res.error && isMissingRelationError(res.error) && ("role" in payload || "extension_role" in payload)) {
+    const fallback = { ...payload };
+    delete fallback.role;
+    delete fallback.extension_role;
+    res = await admin.from("pbx_extensions").upsert(fallback, { onConflict: "extension" }).select("*").maybeSingle();
+  }
+  return res;
+}
+
+async function ensureDefaultExtensions(admin: any) {
+  const defaults = [
+    { extension: "1000", secret: "123456", label: "Central 1000", role: "central" },
+    { extension: "1002", secret: "1234", label: "Tarotista 1002", role: "tarotista" },
+  ];
+
+  for (const item of defaults) {
+    const payload = normalizeExtensionRow({
+      id: item.extension,
+      extension: item.extension,
+      secret: item.secret,
+      password: item.secret,
+      label: item.label,
+      name: item.label,
+      role: item.role,
+      extension_role: item.role,
+      context: "from-internal",
+      is_active: true,
+      updated_at: new Date().toISOString(),
+    });
+
+    const result = await upsertExtensionRecord(admin, payload);
+    if (result.error && !isMissingRelationError(result.error)) throw result.error;
+  }
+}
+
 function normalizeExtensionRow(row: ExtensionRow) {
   const extension = sanitizeExtension(row?.extension || row?.id || row?.exten);
   const secret = String(row?.secret || row?.password || "").trim() || null;
@@ -59,6 +141,8 @@ function normalizeExtensionRow(row: ExtensionRow) {
     incoming_number: row?.incoming_number || null,
     talking_to: row?.talking_to || null,
     last_seen_at: row?.last_seen_at || null,
+    role: normalizeExtensionRole(row?.role || row?.extension_role) || null,
+    extension_role: normalizeExtensionRole(row?.extension_role || row?.role) || null,
   };
 }
 
@@ -179,6 +263,7 @@ export async function GET(req: Request) {
 
     if (workersErr) throw workersErr;
 
+    await ensureDefaultExtensions(admin);
     const extensionsResult = await readExtensions(admin);
     const routingResult = await readRouting(admin);
     const queuesResult = await readQueues(admin);
@@ -220,7 +305,9 @@ export async function POST(req: Request) {
   const worker_id = String(body?.worker_id || "").trim() || null;
 
   const extension = sanitizeExtension(body?.extension);
-  const password = String(body?.secret || body?.password || "").trim(); // 🔥 CLAVE
+  const password = String(body?.secret || body?.password || "").trim() || getDefaultSecret(extension);
+  const workerRole = normalizeExtensionRole(await getWorkerRole(admin, worker_id));
+  const role = normalizeExtensionRole(body?.role) || workerRole || "tarotista";
 
   const label = String(body?.label || "").trim() || null;
   const domain = String(body?.domain || "").trim();
@@ -258,24 +345,17 @@ export async function POST(req: Request) {
     sip_uri,
     context: "from-internal",
     is_active,
+    role,
+    extension_role: role,
     updated_at: new Date().toISOString(),
   };
 
   let result;
 
   if (body?.id) {
-    result = await admin
-      .from("pbx_extensions")
-      .update(payload)
-      .eq("id", body.id)
-      .select("*")
-      .maybeSingle();
+    result = await updateExtensionRecord(admin, body.id, payload);
   } else {
-    result = await admin
-      .from("pbx_extensions")
-      .insert(payload)
-      .select("*")
-      .maybeSingle();
+    result = await insertExtensionRecord(admin, payload);
   }
 
   if (result.error) {
@@ -386,6 +466,7 @@ export async function POST(req: Request) {
     if (!extension) {
       return NextResponse.json({ ok: false }, { status: 200 });
     }
+    const role = normalizeExtensionRole(body?.role) || null;
 
     const runtimePatch: any = {
       status: body?.status,
@@ -399,12 +480,7 @@ export async function POST(req: Request) {
 
     Object.keys(runtimePatch).forEach((k) => runtimePatch[k] === undefined && delete runtimePatch[k]);
 
-    const { error } = await admin
-      .from("pbx_extensions")
-      .upsert(
-        { extension, ...runtimePatch },
-        { onConflict: "extension" }
-      );
+    const { error } = await upsertExtensionRecord(admin, { extension, role, extension_role: role, secret: getDefaultSecret(extension), password: getDefaultSecret(extension), ...runtimePatch });
 
     if (error) {
       console.error("RUNTIME ERROR:", error);

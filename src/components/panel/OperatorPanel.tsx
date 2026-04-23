@@ -23,6 +23,8 @@ type WorkerRow = {
 type ExtensionRow = {
   id?: string;
   worker_id?: string | null;
+  role?: string | null;
+  extension_role?: string | null;
   label?: string | null;
   extension?: string | null;
   secret?: string | null;
@@ -73,6 +75,7 @@ type QueueMemberRow = {
 type FormState = {
   id?: string;
   worker_id: string;
+  role: "central" | "tarotista";
   label: string;
   extension: string;
   secret: string;
@@ -137,9 +140,14 @@ function toneForWorkerRole(role?: string | null) {
   return { label: "Sin rol", bg: "rgba(255,255,255,.08)", border: "rgba(255,255,255,.16)", color: "#fff" };
 }
 
+function defaultSecretForExtension(extension: string) {
+  return cleanDigits(extension) === "1000" ? "123456" : cleanDigits(extension) ? "1234" : "";
+}
+
 function emptyForm(): FormState {
   return {
     worker_id: "",
+    role: "tarotista",
     label: "",
     extension: "",
     secret: "",
@@ -222,7 +230,8 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
           worker,
           route,
           tone: toneForStatus(ext.status, ext.active_call_count),
-          roleTone: toneForWorkerRole(worker?.role),
+          resolvedRole: String(ext.role || ext.extension_role || worker?.role || "").toLowerCase(),
+          roleTone: toneForWorkerRole(ext.role || ext.extension_role || worker?.role),
         };
       })
       .sort((a, b) => String(a.extension || "").localeCompare(String(b.extension || ""), "es"));
@@ -230,9 +239,9 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
 
   const groupedCards = useMemo(
     () => ({
-      central: cards.filter((item) => String(item.worker?.role || "").toLowerCase() === "central"),
-      tarotista: cards.filter((item) => String(item.worker?.role || "").toLowerCase() === "tarotista"),
-      other: cards.filter((item) => !["central", "tarotista"].includes(String(item.worker?.role || "").toLowerCase())),
+      central: cards.filter((item) => item.resolvedRole === "central"),
+      tarotista: cards.filter((item) => item.resolvedRole === "tarotista"),
+      other: cards.filter((item) => !["central", "tarotista"].includes(String(item.resolvedRole || "").toLowerCase())),
     }),
     [cards]
   );
@@ -322,9 +331,10 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
     setForm({
       id: item.id,
       worker_id: String(item.worker_id || ""),
+      role: (String(item.role || item.extension_role || item.worker?.role || "tarotista").toLowerCase() === "central" ? "central" : "tarotista"),
       label: String(item.label || ""),
       extension: String(item.extension || ""),
-      secret: String(item.secret || ""),
+      secret: String(item.secret || defaultSecretForExtension(String(item.extension || ""))),
       domain: String(item.domain || "sip.clientestarotcelestial.es"),
       ws_server: String(item.ws_server || "wss://sip.clientestarotcelestial.es:8089/ws"),
       is_active: item.is_active !== false,
@@ -378,6 +388,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
         action: "save_extension",
         id: form.id || undefined,
         worker_id: form.worker_id || null,
+        role: form.role,
         label: form.label,
         extension: cleanDigits(form.extension),
         secret: form.secret,
@@ -626,7 +637,12 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
             <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
               <label>
                 <div className="tc-sub" style={{ marginBottom: 6 }}>Operadora</div>
-                <select className="tc-select" value={form.worker_id} onChange={(e) => setForm((prev) => ({ ...prev, worker_id: e.target.value }))}>
+                <select className="tc-select" value={form.worker_id} onChange={(e) => {
+                  const nextWorkerId = e.target.value;
+                  const nextWorker = workers.find((worker) => worker.id === nextWorkerId);
+                  const nextRole = String(nextWorker?.role || "").toLowerCase() === "central" ? "central" : String(nextWorker?.role || "").toLowerCase() === "tarotista" ? "tarotista" : form.role;
+                  setForm((prev) => ({ ...prev, worker_id: nextWorkerId, role: nextRole as "central" | "tarotista" }));
+                }}>
                   <option value="">Sin asignar</option>
                   <optgroup label="Centrales">
                     {workers.filter((worker) => worker.role === "central").map((worker) => <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>)}
@@ -637,14 +653,30 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
                 </select>
               </label>
 
+              <label>
+                <div className="tc-sub" style={{ marginBottom: 6 }}>Rol de la extensión</div>
+                <select className="tc-select" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value as "central" | "tarotista" }))}>
+                  <option value="central">Central</option>
+                  <option value="tarotista">Tarotista</option>
+                </select>
+              </label>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <label>
                   <div className="tc-sub" style={{ marginBottom: 6 }}>Extensión</div>
-                  <input className="tc-input" value={form.extension} onChange={(e) => setForm((prev) => ({ ...prev, extension: cleanDigits(e.target.value) }))} placeholder="1004" />
+                  <input className="tc-input" value={form.extension} onChange={(e) => {
+                    const nextExtension = cleanDigits(e.target.value);
+                    setForm((prev) => ({
+                      ...prev,
+                      extension: nextExtension,
+                      secret: (!prev.secret || prev.secret === "1234" || prev.secret === "123456") ? defaultSecretForExtension(nextExtension) : prev.secret,
+                    }));
+                  }} placeholder="1004" />
                 </label>
                 <label>
                   <div className="tc-sub" style={{ marginBottom: 6 }}>Password SIP</div>
                   <input className="tc-input" type="password" value={form.secret} onChange={(e) => setForm((prev) => ({ ...prev, secret: e.target.value }))} placeholder="password" />
+                  <div className="tc-sub" style={{ marginTop: 6 }}>1000 usa 123456. El resto se autocompleta con 1234, aunque puedes cambiarlo antes de guardar.</div>
                 </label>
               </div>
 
