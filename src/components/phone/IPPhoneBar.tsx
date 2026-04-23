@@ -809,10 +809,10 @@ export default function IPPhoneBar() {
       const uri = SIP.UserAgent.makeURI(`sip:${config.username}@${config.domain}`);
       if (!uri) throw new Error("URI SIP inválida");
 
-     const userAgent = new SIP.UserAgent({
+    const userAgent = new SIP.UserAgent({
   uri,
 
-  transportConstructor: SIP.WebSocketTransport, // 🔥 CLAVE
+  transportConstructor: SIP.WebSocketTransport, // 🔥 OK
 
   transportOptions: {
     server: config.server,
@@ -822,50 +822,57 @@ export default function IPPhoneBar() {
 
   authorizationUsername: config.username,
   authorizationPassword: config.password,
+
+  // ✅ ESTO VA DENTRO
+  sessionDescriptionHandlerFactoryOptions: {
+    constraints: { audio: true, video: false },
+    peerConnectionConfiguration: {
+      iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+    },
+  },
+
+  // ✅ ESTO TAMBIÉN
+  delegate: {
+    onInvite: async (invitation: any) => {
+      try {
+        if (runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession)) {
+          await invitation.reject().catch(() => null);
+          return;
+        }
+
+        const realCaller = parseIncomingNumber(invitation);
+        const caller = presence.role === "tarotista" ? "Número oculto" : realCaller;
+
+        callDirectionRef.current = "incoming";
+        callAnsweredRef.current = false;
+        callFinalizedRef.current = false;
+
+        setOpen(true);
+        setCompact(false);
+        setIncoming(true);
+        setIncomingNumber(caller);
+        setIncomingDisplayName("");
+        setIncomingClientKnown(false);
+        setCallNumber(caller);
+        setStatus("ringing");
+        setStatusText(`Llamada entrante · ${caller}`);
+
+        startRingtone();
+
+        await bindSession(invitation, "incoming", caller);
+
+        if (realCaller && realCaller !== "Número oculto") {
+          void lookupClientContextByPhone(realCaller, { openCRM: false });
+        }
+      } catch (error) {
+        console.error("Error gestionando onInvite", error);
+        try {
+          await invitation.reject().catch(() => null);
+        } catch {}
+      }
+    },
+  },
 });
-        sessionDescriptionHandlerFactoryOptions: {
-          constraints: { audio: true, video: false },
-          peerConnectionConfiguration: {
-            iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
-          },
-        },
-        delegate: {
-          onInvite: async (invitation: any) => {
-            try {
-              if (runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession)) {
-                await invitation.reject().catch(() => null);
-                return;
-              }
-
-              const realCaller = parseIncomingNumber(invitation);
-              const caller = presence.role === "tarotista" ? "Número oculto" : realCaller;
-              callDirectionRef.current = "incoming";
-              callAnsweredRef.current = false;
-              callFinalizedRef.current = false;
-              setOpen(true);
-              setCompact(false);
-              setIncoming(true);
-              setIncomingNumber(caller);
-              setIncomingDisplayName("");
-              setIncomingClientKnown(false);
-              setCallNumber(caller);
-              setStatus("ringing");
-              setStatusText(`Llamada entrante · ${caller}`);
-              startRingtone();
-
-              await bindSession(invitation, "incoming", caller);
-              if (realCaller && realCaller !== "Número oculto") void lookupClientContextByPhone(realCaller, { openCRM: false });
-            } catch (error) {
-              console.error("Error gestionando onInvite", error);
-              try {
-                await invitation.reject().catch(() => null);
-              } catch {
-                // noop
-              }
-            }
-          },
-        },
-      });
 
       const registerer = new SIP.Registerer(userAgent, {
         requestOptions: {
