@@ -1119,8 +1119,8 @@ const payload = {
   cliente_id: String(ctx.cliente_id),
 
   telefono: String(
-    ctx.telefono ?? visiblePeer ?? numberRef.current ?? ""
-  ),
+  ctx.telefono ?? callNumberRef.current ?? numberRef.current ?? ""
+),
 
   nombre: String(ctx.nombre ?? ""),
   apellido: String(ctx.apellido ?? ""),
