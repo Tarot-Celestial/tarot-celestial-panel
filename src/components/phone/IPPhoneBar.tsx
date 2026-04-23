@@ -761,12 +761,12 @@ export default function IPPhoneBar() {
         json.extensions?.[0];
       if (!mine) throw new Error("No tienes extensión asignada todavía.");
       setConfig((prev) => ({
-        ...prev,
-        server: String(mine.ws_server || prev.server),
-        domain: String(mine.domain || prev.domain),
-        username: String(mine.extension || prev.username),
-        password: String(mine.secret || prev.password),
-      }));
+  ...prev,
+  server: prev.server, // lo mantienes manual o default
+  domain: prev.domain,
+  username: String(mine.extension || prev.username),
+  password: String(mine.password || prev.password), // 👈 CAMBIO CLAVE
+}));
       panelConfigHydratedRef.current = true;
       if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
     } catch (e: any) {
