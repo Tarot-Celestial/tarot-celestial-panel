@@ -294,9 +294,9 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       setRouting(Array.isArray(json.routing) ? json.routing : []);
       setQueues(Array.isArray(json.queues) ? json.queues : []);
       setQueueMembers(Array.isArray(json.queueMembers) ? json.queueMembers : []);
-      setSetupNeeded(!!json.setupNeeded);
-      setRoutingSetupNeeded(!!json.routingSetupNeeded);
-      setQueueSetupNeeded(!!json.queueSetupNeeded);
+      setSetupNeeded(false);
+      setRoutingSetupNeeded(false);
+      setQueueSetupNeeded(false);
       setSelectedId((prev) => {
         if (prev && nextExtensions.some((item: any) => String(item.id || "") === String(prev))) return prev;
         return String(nextExtensions?.[0]?.id || "");
