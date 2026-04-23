@@ -762,10 +762,8 @@ export default function IPPhoneBar() {
       if (!mine) throw new Error("No tienes extensión asignada todavía.");
       setConfig((prev) => ({
   ...prev,
-  server: prev.server, // lo mantienes manual o default
-  domain: prev.domain,
-  username: String(mine.extension || prev.username),
-  password: String(mine.password || prev.password), // 👈 CAMBIO CLAVE
+  username: String(mine?.extension || prev.username),
+  password: String(mine?.password || prev.password),
 }));
       panelConfigHydratedRef.current = true;
       if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
