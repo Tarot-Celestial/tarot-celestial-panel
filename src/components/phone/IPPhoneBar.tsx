@@ -1022,6 +1022,9 @@ authorizationPassword: config.password,
         expires: 90,
       });
 
+      if (registerer.__tcBound) return;
+registerer.__tcBound = true;
+      
      registerer.stateChange?.addListener?.((state: any) => {
   const txt = String(state || "");
   console.log("SIP REGISTER STATE:", txt);
@@ -1067,9 +1070,14 @@ authorizationPassword: config.password,
     });
 
     if (!runtimeRef.current.manualDisconnect) {
-      scheduleReconnect("Registro SIP perdido. Reconectando…");
-    }
+  const hasActiveCall =
+    runtimeRef.current.activeSession &&
+    isSessionAlive(runtimeRef.current.activeSession);
+
+  if (!hasActiveCall && !runtimeRef.current.userAgent) {
+    scheduleReconnect(...)
   }
+}
 });
       userAgent.transport.stateChange.addListener((state: any) => {
         const txt = String(state);
