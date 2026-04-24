@@ -649,28 +649,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: result.error.message }, { status: 200 });
     }
 
-    if (!result.data) {
-      const bootstrapPayload = {
-        id: extension,
-        extension,
-        secret: getDefaultSecret(extension),
-        password: getDefaultSecret(extension),
-        name: `Extensión ${extension}`,
-        label: `Extensión ${extension}`,
-        context: DEFAULT_PJSIP_CONTEXT,
-        is_active: true,
-        ...runtimePatch,
-      };
-
-      result = await insertExtensionRecord(admin, bootstrapPayload);
-
-      if (result.error) {
-        console.error("RUNTIME INSERT ERROR:", result.error);
-        return NextResponse.json({ ok: false, error: result.error.message }, { status: 200 });
-      }
-      await syncAsteriskRealtimeExtension(admin, result.data || bootstrapPayload);
-    }
-
     return NextResponse.json({
       ok: true,
       extension: result.data ? normalizeExtensionRow(result.data) : null,
