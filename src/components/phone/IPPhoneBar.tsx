@@ -1022,7 +1022,7 @@ authorizationPassword: config.password,
         expires: 90,
       });
 
-      registerer.stateChange?.addListener?.((state: any) => {
+     registerer.stateChange?.addListener?.((state: any) => {
   const txt = String(state || "");
   console.log("SIP REGISTER STATE:", txt);
 
@@ -1043,7 +1043,6 @@ authorizationPassword: config.password,
         : "Conectado"
     );
 
-    // 🔥 AQUI ESTÁ LA MAGIA
     syncRuntime({
       registered: true,
       status: "registered",
@@ -1053,27 +1052,25 @@ authorizationPassword: config.password,
   }
 
   if (txt.includes("Unregistered") || txt.includes("Terminated")) {
-  const hasActiveCall =
-    runtimeRef.current.activeSession &&
-    isSessionAlive(runtimeRef.current.activeSession);
+    const hasActiveCall =
+      runtimeRef.current.activeSession &&
+      isSessionAlive(runtimeRef.current.activeSession);
 
-  // Si el registro se mueve durante una llamada, NO reconectar ni marcar offline.
-  // no bloqueamos aquí, solo evitamos reconexión
-if (hasActiveCall) {
-  console.log("ignore unregister during call");
-} else {
+    if (hasActiveCall) {
+      console.log("ignore unregister during call");
+      return;
+    }
 
-  syncRuntime({
-    registered: false,
-    status: "offline",
-  });
+    syncRuntime({
+      registered: false,
+      status: "offline",
+    });
 
-  if (!runtimeRef.current.manualDisconnect) {
-    scheduleReconnect("Registro SIP perdido. Reconectando…");
+    if (!runtimeRef.current.manualDisconnect) {
+      scheduleReconnect("Registro SIP perdido. Reconectando…");
+    }
   }
-}
 });
-
       userAgent.transport.stateChange.addListener((state: any) => {
         const txt = String(state);
         if (txt.includes("Connected")) {
