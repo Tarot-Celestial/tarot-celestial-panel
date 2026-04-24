@@ -113,12 +113,48 @@ async function upsertExtensionRecord(admin: any, payload: any) {
   return res;
 }
 
-async function upsertWithFallback(admin: any, table: string, payload: any, fallbackPayload?: any) {
-  let res = await admin.from(table).upsert(payload, { onConflict: "id" }).select("*").maybeSingle();
-  if (res.error && fallbackPayload && isMissingRelationError(res.error)) {
-    res = await admin.from(table).upsert(fallbackPayload, { onConflict: "id" }).select("*").maybeSingle();
+function missingColumnName(error: any) {
+  const msg = String(error?.message || "");
+  return msg.match(/column "([^"]+)"/i)?.[1] || null;
+}
+
+function stripUndefined(payload: Record<string, any>) {
+  const next = { ...payload };
+  Object.keys(next).forEach((key) => next[key] === undefined && delete next[key]);
+  return next;
+}
+
+async function upsertFlexible(admin: any, table: string, payload: Record<string, any>, fallbackPayload?: Record<string, any>) {
+  let current = stripUndefined(payload);
+  const removedColumns: string[] = [];
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const res = await admin.from(table).upsert(current, { onConflict: "id" }).select("*").maybeSingle();
+    if (!res.error) return { ...res, removedColumns };
+
+    const col = missingColumnName(res.error);
+    if (col && col in current) {
+      removedColumns.push(col);
+      const next = { ...current };
+      delete next[col];
+      current = next;
+      continue;
+    }
+
+    if (fallbackPayload && isMissingRelationError(res.error)) {
+      current = stripUndefined(fallbackPayload);
+      fallbackPayload = undefined;
+      continue;
+    }
+
+    return { ...res, removedColumns };
   }
-  return res;
+
+  return {
+    data: null,
+    error: { message: `No se pudo sincronizar ${table}: demasiadas columnas incompatibles (${removedColumns.join(", ")})` },
+    removedColumns,
+  };
 }
 
 async function deleteAsteriskRealtimeExtension(admin: any, extension: string) {
@@ -140,9 +176,24 @@ async function syncAsteriskRealtimeExtension(admin: any, source: ExtensionRow) {
   const context = String(source?.context || DEFAULT_PJSIP_CONTEXT).trim() || DEFAULT_PJSIP_CONTEXT;
   const transport = String(source?.transport || DEFAULT_PJSIP_TRANSPORT).trim() || DEFAULT_PJSIP_TRANSPORT;
 
-  const aorPayload = { id: extension, max_contacts: 1, remove_existing: "yes", qualify_frequency: 0 };
+  const extensionRole = normalizeExtensionRole(source?.role || source?.extension_role);
+  const callerIdVisible = extensionRole === "tarotista" ? false : true;
+
+  const aorPayload = {
+    id: extension,
+    contact: null,
+    max_contacts: 1,
+    remove_existing: "yes",
+    qualify_frequency: 0,
+  };
   const aorFallback = { id: extension, max_contacts: 1 };
-  const authPayload = { id: extension, auth_type: "userpass", username: extension, password };
+  const authPayload = {
+    id: extension,
+    auth_type: "userpass",
+    username: extension,
+    password,
+    realm: null,
+  };
   const endpointPayload = {
     id: extension,
     transport,
@@ -151,19 +202,21 @@ async function syncAsteriskRealtimeExtension(admin: any, source: ExtensionRow) {
     allow: "opus,ulaw,alaw",
     aors: extension,
     auth: extension,
+    direct_media: "no",
+    rewrite_contact: "yes",
+    force_rport: "yes",
+    rtp_symmetric: "yes",
+    ice_support: "yes",
+    media_use_received_transport: "yes",
     webrtc: "yes",
     use_avpf: "yes",
     media_encryption: "dtls",
     dtls_auto_generate_cert: "yes",
-    dtls_verify: "fingerprint",
+    dtls_verify: "no",
     dtls_setup: "actpass",
-    ice_support: "yes",
     rtcp_mux: "yes",
-    media_use_received_transport: "yes",
-    rtp_symmetric: "yes",
-    force_rport: "yes",
-    rewrite_contact: "yes",
-    direct_media: "no",
+    allow_transfer: "yes",
+    callerid: callerIdVisible ? undefined : "Oculto <anonymous>",
   };
   const endpointFallback = {
     id: extension,
@@ -173,18 +226,27 @@ async function syncAsteriskRealtimeExtension(admin: any, source: ExtensionRow) {
     allow: "opus,ulaw,alaw",
     aors: extension,
     auth: extension,
+    direct_media: "no",
   };
 
-  const aor = await upsertWithFallback(admin, "ps_aors", aorPayload, aorFallback);
+  const aor = await upsertFlexible(admin, "ps_aors", aorPayload, aorFallback);
   if (aor.error) return { ok: false, table: "ps_aors", error: aor.error.message };
 
-  const auth = await upsertWithFallback(admin, "ps_auths", authPayload);
+  const auth = await upsertFlexible(admin, "ps_auths", authPayload, { id: extension, auth_type: "userpass", username: extension, password });
   if (auth.error) return { ok: false, table: "ps_auths", error: auth.error.message };
 
-  const endpoint = await upsertWithFallback(admin, "ps_endpoints", endpointPayload, endpointFallback);
+  const endpoint = await upsertFlexible(admin, "ps_endpoints", endpointPayload, endpointFallback);
   if (endpoint.error) return { ok: false, table: "ps_endpoints", error: endpoint.error.message };
 
-  return { ok: true, extension };
+  return {
+    ok: true,
+    extension,
+    removedColumns: {
+      ps_aors: aor.removedColumns || [],
+      ps_auths: auth.removedColumns || [],
+      ps_endpoints: endpoint.removedColumns || [],
+    },
+  };
 }
 
 async function syncAsteriskRealtimeExtensions(admin: any, rows: ExtensionRow[]) {
@@ -267,6 +329,8 @@ function normalizeExtensionRow(row: ExtensionRow) {
     last_seen_at: row?.last_seen_at || null,
     role: normalizeExtensionRole(row?.role || row?.extension_role) || null,
     extension_role: normalizeExtensionRole(row?.extension_role || row?.role) || null,
+    caller_id_visible: row?.caller_id_visible !== undefined ? !!row.caller_id_visible : normalizeExtensionRole(row?.role || row?.extension_role) !== "tarotista",
+    show_caller_number: row?.show_caller_number !== undefined ? !!row.show_caller_number : normalizeExtensionRole(row?.role || row?.extension_role) !== "tarotista",
   };
 }
 

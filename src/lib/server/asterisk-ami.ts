@@ -116,7 +116,17 @@ function extractPeer(value: string) {
   if (dialMatch?.[1]) return dialMatch[1].replace(/^\+34/, "");
   const sipMatch = clean.match(/sip:([^@>;]+)/i);
   if (sipMatch?.[1]) return sipMatch[1].replace(/^\+34/, "");
+  const numberMatch = clean.match(/\+?\d{5,15}/);
+  if (numberMatch?.[0]) return numberMatch[0].replace(/^\+34/, "");
   return null;
+}
+
+function normalizeChannelState(state: string, app: string, data: string) {
+  const s = String(state || "").toLowerCase();
+  const a = String(app || "").toLowerCase();
+  const d = String(data || "").toLowerCase();
+  if (s.includes("ring") || a.includes("dial") || d.includes("ring")) return "ringing" as const;
+  return "in_call" as const;
 }
 
 function markRegistered(map: Record<string, ExtensionLiveState>, extension: string) {
@@ -134,12 +144,13 @@ function markRegistered(map: Record<string, ExtensionLiveState>, extension: stri
 function markCall(map: Record<string, ExtensionLiveState>, extension: string, peer: string | null, ringing = false) {
   const ext = digits(extension);
   if (!ext) return;
+  const previous = map[ext];
   map[ext] = {
-    registered: true,
+    registered: previous?.registered !== false,
     status: ringing ? "ringing" : "in_call",
-    active_call_count: Math.max(1, Number(map[ext]?.active_call_count || 0) + 1),
-    talking_to: peer || map[ext]?.talking_to || null,
-    active_call_started_at: map[ext]?.active_call_started_at || new Date().toISOString(),
+    active_call_count: Math.max(1, Number(previous?.active_call_count || 0) + 1),
+    talking_to: peer || previous?.talking_to || null,
+    active_call_started_at: previous?.active_call_started_at || new Date().toISOString(),
   };
 }
 
@@ -201,7 +212,8 @@ export async function getAsteriskLiveSnapshot(): Promise<AsteriskLiveSnapshot> {
 
         const channelExt = extractEndpointFromChannel(channel);
         const bridgeExt = extractEndpointFromChannel(bridgedChannel);
-        const isRinging = /ring/i.test(state) || /appdial/i.test(app);
+        const channelStatus = normalizeChannelState(state, app, data);
+        const isRinging = channelStatus === "ringing";
         const peer = extractPeer(data) || extractPeer(bridgedChannel) || digits(callerId) || digits(exten) || null;
 
         if (channelExt && /^\d{2,6}$/.test(channelExt)) {

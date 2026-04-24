@@ -84,6 +84,8 @@ type PanelExtensionOption = {
   domain?: string | null;
   ws_server?: string | null;
   worker_id?: string | null;
+  role?: string | null;
+  extension_role?: string | null;
   caller_id_visible?: boolean | null;
   show_caller_number?: boolean | null;
 };
@@ -242,7 +244,8 @@ export default function IPPhoneBar() {
     if (selectedPanelExtension?.show_caller_number !== undefined && selectedPanelExtension?.show_caller_number !== null) {
       return !selectedPanelExtension.show_caller_number;
     }
-    return presence.role === "tarotista";
+    const extensionRole = String(selectedPanelExtension?.role || selectedPanelExtension?.extension_role || "").toLowerCase();
+    return extensionRole === "tarotista" || presence.role === "tarotista";
   }, [selectedPanelExtension, presence.role]);
   const visiblePeer = incoming ? (incomingDisplayName || incomingNumber) : crmDisplayName || callNumber || number;
   const showHangupButton = status === "calling" || status === "ringing" || status === "in_call";
@@ -372,12 +375,17 @@ export default function IPPhoneBar() {
 
   useEffect(() => {
     const onDial = async (event: Event) => {
-      const detail = (event as CustomEvent<{ number?: string; label?: string; autoCall?: boolean; openFicha?: boolean }>).detail || {};
+      const detail = (event as CustomEvent<{ number?: string; label?: string; autoCall?: boolean; openFicha?: boolean; intent?: "dial" | "transfer" }>).detail || {};
       const nextNumber = sanitizeNumber(detail.number || "");
       if (!nextNumber) return;
       setOpen(true);
       setCompact(false);
       setNumber(nextNumber);
+      if (detail.intent === "transfer" && showHangupButton) {
+        const ok = await transfer(nextNumber);
+        setMsg(ok ? `Transferencia enviada a ${nextNumber}.` : `No se pudo transferir a ${nextNumber}.`);
+        return;
+      }
       if (detail.autoCall && !showHangupButton) {
         window.setTimeout(() => {
           void call(nextNumber, { openFicha: detail.openFicha !== false });
