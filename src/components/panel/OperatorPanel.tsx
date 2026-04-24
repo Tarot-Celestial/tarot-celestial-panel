@@ -152,7 +152,7 @@ function emptyForm(): FormState {
     extension: "",
     secret: "",
     domain: "sip.clientestarotcelestial.es",
-    ws_server: "wss://sip.clientestarotcelestial.es:8089/ws",
+    ws_server: "wss://sip.clientestarotcelestial.es/ws",
     is_active: true,
     route_type: "internal",
     target_phone: "",
@@ -336,7 +336,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       extension: String(item.extension || ""),
       secret: String(item.secret || defaultSecretForExtension(String(item.extension || ""))),
       domain: String(item.domain || "sip.clientestarotcelestial.es"),
-      ws_server: String(item.ws_server || "wss://sip.clientestarotcelestial.es:8089/ws"),
+      ws_server: String(item.ws_server || "wss://sip.clientestarotcelestial.es/ws"),
       is_active: item.is_active !== false,
       route_type: String(route?.type || "internal") === "external" ? "external" : "internal",
       target_phone: String(route?.target || ""),
@@ -378,15 +378,11 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   }
 
   async function saveExtension() {
-  console.log("CLICK SAVE EXTENSION"); // 👈 AÑADE ESTO
-
   try {
     setSaving(true);
     setMsg("");
 
     const token = await getToken();
-    console.log("TOKEN:", token); // 👈 AÑADE ESTO
-
     if (!token) throw new Error("Sesión no válida");
 
     const payload = {
@@ -407,7 +403,6 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       routing_notes: form.routing_notes || null,
     };
 
-    console.log("PAYLOAD:", payload); // 👈 AÑADE ESTO
 
     const res = await fetch("/api/operator/panel", {
       method: "POST",
@@ -737,7 +732,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
 
               <label>
                 <div className="tc-sub" style={{ marginBottom: 6 }}>Servidor WSS</div>
-                <input className="tc-input" value={form.ws_server} onChange={(e) => setForm((prev) => ({ ...prev, ws_server: e.target.value }))} placeholder="wss://sip.clientestarotcelestial.es:8089/ws" />
+                <input className="tc-input" value={form.ws_server} onChange={(e) => setForm((prev) => ({ ...prev, ws_server: e.target.value }))} placeholder="wss://sip.clientestarotcelestial.es/ws" />
               </label>
 
               <label>

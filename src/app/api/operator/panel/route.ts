@@ -16,8 +16,8 @@ type MeWorker = {
 type ExtensionRow = Record<string, any>;
 
 const DEFAULT_SIP_DOMAIN = process.env.NEXT_PUBLIC_SIP_DOMAIN || "sip.clientestarotcelestial.es";
-const DEFAULT_SIP_WS_SERVER = process.env.NEXT_PUBLIC_SIP_WS_SERVER || "wss://sip.clientestarotcelestial.es:8089/ws";
-const DEFAULT_PJSIP_CONTEXT = process.env.ASTERISK_PJSIP_CONTEXT || "default";
+const DEFAULT_SIP_WS_SERVER = normalizeWsServer(process.env.NEXT_PUBLIC_SIP_WS_SERVER || "wss://sip.clientestarotcelestial.es/ws");
+const DEFAULT_PJSIP_CONTEXT = process.env.ASTERISK_PJSIP_CONTEXT || "from-internal";
 const DEFAULT_PJSIP_TRANSPORT = process.env.ASTERISK_PJSIP_TRANSPORT || "transport-wss";
 
 function getEnv(name: string) {
@@ -37,6 +37,20 @@ function sanitizeExtension(value: any) {
 
 function sanitizePhone(value: any) {
   return String(value || "").replace(/[^0-9+]/g, "").trim();
+}
+
+function normalizeWsServer(value: any) {
+  const raw = String(value || "").trim();
+  if (!raw) return "wss://sip.clientestarotcelestial.es/ws";
+  const lower = raw.toLowerCase().replace(/\/$/, "");
+  if (
+    lower === "wss://sip.clientestarotcelestial.es:8088/ws" ||
+    lower === "wss://sip.clientestarotcelestial.es:8089/ws" ||
+    lower === "ws://sip.clientestarotcelestial.es:8088/ws"
+  ) {
+    return "wss://sip.clientestarotcelestial.es/ws";
+  }
+  return lower.endsWith("/ws") ? raw : raw.replace(/\/$/, "") + "/ws";
 }
 
 function getDefaultSecret(extension: string) {
@@ -227,7 +241,7 @@ function normalizeExtensionRow(row: ExtensionRow) {
   const secret = String(row?.secret || row?.password || "").trim() || null;
   const label = String(row?.label || row?.name || "").trim() || null;
   const domain = String(row?.domain || DEFAULT_SIP_DOMAIN).trim();
-  const ws_server = String(row?.ws_server || DEFAULT_SIP_WS_SERVER).trim();
+  const ws_server = normalizeWsServer(row?.ws_server || DEFAULT_SIP_WS_SERVER);
   return {
     ...row,
     id: String(row?.id || extension || crypto.randomUUID()),
@@ -419,7 +433,7 @@ export async function POST(req: Request) {
 
   const label = String(body?.label || "").trim() || null;
   const domain = String(body?.domain || "").trim();
-  const ws_server = String(body?.ws_server || "").trim();
+  const ws_server = normalizeWsServer(body?.ws_server || DEFAULT_SIP_WS_SERVER);
   const sip_uri = extension && domain ? `sip:${extension}@${domain}` : null;
 
   const is_active = body?.is_active !== undefined ? !!body.is_active : true;
@@ -449,7 +463,7 @@ export async function POST(req: Request) {
     label,
     name: label,
     domain: domain || null,
-    ws_server: ws_server || null,
+    ws_server,
     sip_uri,
     context: DEFAULT_PJSIP_CONTEXT,
     is_active,

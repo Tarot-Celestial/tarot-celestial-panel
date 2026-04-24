@@ -25,7 +25,7 @@ const sb = supabaseBrowser();
 const STORAGE_KEY = "tc_softphone_config_v4";
 const HISTORY_STORAGE_KEY = "tc_softphone_history_v1";
 const POSITION_STORAGE_KEY = "tc_softphone_position_v1";
-const DEFAULT_SERVER = "wss://sip.clientestarotcelestial.es:8089/ws";
+const DEFAULT_SERVER = "wss://sip.clientestarotcelestial.es/ws";
 const DEFAULT_DOMAIN = "sip.clientestarotcelestial.es";
 
 type PhoneStatus = "offline" | "connecting" | "registered" | "calling" | "ringing" | "in_call" | "ended" | "error";
@@ -104,6 +104,20 @@ function normalizePhoneForSearch(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function normalizeWsServer(value: string) {
+  const raw = String(value || "").trim();
+  if (!raw) return DEFAULT_SERVER;
+  const lower = raw.toLowerCase().replace(/\/$/, "");
+  if (
+    lower === "wss://sip.clientestarotcelestial.es:8088/ws" ||
+    lower === "wss://sip.clientestarotcelestial.es:8089/ws" ||
+    lower === "ws://sip.clientestarotcelestial.es:8088/ws"
+  ) {
+    return DEFAULT_SERVER;
+  }
+  return lower.endsWith("/ws") ? raw : raw.replace(/\/$/, "") + "/ws";
+}
+
 function loadStoredConfig(): PhoneConfig {
   const fallback = {
     server: DEFAULT_SERVER,
@@ -117,7 +131,8 @@ function loadStoredConfig(): PhoneConfig {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) throw new Error("empty");
-    return { ...fallback, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    return { ...fallback, ...parsed, server: normalizeWsServer(parsed?.server || fallback.server) };
   } catch {
     return fallback;
   }
@@ -276,7 +291,7 @@ export default function IPPhoneBar() {
     setConfig((prev) => {
       const nextPassword = String(selectedPanelExtension.secret || selectedPanelExtension.password || prev.password || "");
       const nextDomain = String(selectedPanelExtension.domain || prev.domain || DEFAULT_DOMAIN);
-      const nextServer = String(selectedPanelExtension.ws_server || prev.server || DEFAULT_SERVER);
+      const nextServer = normalizeWsServer(String(selectedPanelExtension.ws_server || prev.server || DEFAULT_SERVER));
       if (prev.password === nextPassword && prev.domain === nextDomain && prev.server === nextServer) return prev;
       return {
         ...prev,
@@ -828,6 +843,7 @@ export default function IPPhoneBar() {
             password: String(item.password || item.secret || "") || null,
             label: String(item.label || item.name || item.extension || ""),
             name: String(item.name || item.label || item.extension || ""),
+            ws_server: normalizeWsServer(String(item.ws_server || DEFAULT_SERVER)),
           }))
         : [];
 
@@ -845,7 +861,7 @@ export default function IPPhoneBar() {
         username: String(mine.extension || prev.username || ""),
         password: String(mine.secret || mine.password || prev.password || ""),
         domain: String(mine.domain || prev.domain || DEFAULT_DOMAIN),
-        server: "wss://sip.clientestarotcelestial.es/ws",
+        server: DEFAULT_SERVER,
       }));
       panelConfigHydratedRef.current = true;
       if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
@@ -900,8 +916,8 @@ export default function IPPhoneBar() {
     keepAliveInterval: 25,
   },
 
-authorizationUsername: "1001",
-authorizationPassword: "Nosotrostarot1.",
+authorizationUsername: config.username,
+authorizationPassword: config.password,
 
   // ✅ ESTO VA DENTRO
   sessionDescriptionHandlerFactoryOptions: {
@@ -1695,7 +1711,7 @@ const payload = {
               username: selectedExtension,
               password: String(selected?.secret || selected?.password || ""),
               domain: String(selected?.domain || p.domain || DEFAULT_DOMAIN),
-              server: String(selected?.ws_server || p.server || DEFAULT_SERVER),
+              server: normalizeWsServer(String(selected?.ws_server || p.server || DEFAULT_SERVER)),
             }));
           }}
           style={inputStyle}
