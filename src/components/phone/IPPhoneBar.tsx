@@ -747,35 +747,39 @@ export default function IPPhoneBar() {
   }
 
   function finalizeCall(resultOverride?: string) {
-    if (callFinalizedRef.current) return;
-    callFinalizedRef.current = true;
+  if (callFinalizedRef.current) return;
+  callFinalizedRef.current = true;
 
-    const endedNumber = incomingNumberRef.current || callNumberRef.current || numberRef.current;
-    const result =
-      resultOverride ||
-      (callAnsweredRef.current ? "finalizada" : callDirectionRef.current === "incoming" ? "perdida" : "fallida");
+  try {
+    const session = runtimeRef.current.activeSession;
+    session?.dispose?.();
+  } catch {}
 
-    if (endedNumber) {
-      addHistory({
-        number: endedNumber,
-        direction: callDirectionRef.current,
-        createdAt: new Date().toISOString(),
-        result,
-      });
-    }
+  const endedNumber = ...
+  const result = ...
 
-    cleanupSessionRefs();
-    const nextOnline = Boolean(runtimeRef.current.userAgent && runtimeRef.current.registerer);
-    void syncRuntime({
-      registered: nextOnline,
-      status: nextOnline ? "registered" : "offline",
-      active_call_count: 0,
-      active_call_started_at: null,
-      incoming_number: null,
-      talking_to: null,
-    });
-    resetCallState(nextOnline ? "registered" : "offline", nextOnline ? "Conectado" : "Desconectado");
+  if (endedNumber) {
+    addHistory(...)
   }
+
+  cleanupSessionRefs();
+
+  const nextOnline = Boolean(runtimeRef.current.userAgent && runtimeRef.current.registerer);
+
+  void syncRuntime(...);
+
+  resetCallState(
+    nextOnline ? "registered" : "offline",
+    nextOnline ? "Conectado" : "Desconectado"
+  );
+
+  // 🔥 AQUÍ DENTRO (CORRECTO)
+  setTimeout(() => {
+    if (!runtimeRef.current.manualDisconnect) {
+      connect(true);
+    }
+  }, 500);
+}
 
   function cleanupSessionRefs(session?: any | null) {
     if (!session) {
@@ -941,9 +945,7 @@ export default function IPPhoneBar() {
 
   if (hasActiveCall) return true;
 
-  // Si ya hay UA y no hay llamada, no crees otro encima.
-  if (runtimeRef.current.registerer) return true;
-
+  // 🔥 SIEMPRE RESETEAR SI NO HAY LLAMADA
   await disconnect(true);
 }
 
@@ -2023,3 +2025,5 @@ const dialBtnStyle: CSSProperties = {
   padding: "14px 0",
   cursor: "pointer",
 };
+
+
