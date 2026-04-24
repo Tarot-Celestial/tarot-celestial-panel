@@ -1076,10 +1076,10 @@ registerer.__tcBound = true;
 
   if (!hasActiveCall && !runtimeRef.current.userAgent) {
   scheduleReconnect("Reconectando SIP…");
-}
-}
- }
-}
+      }
+    }
+  }
+});
       userAgent.transport.stateChange.addListener((state: any) => {
         const txt = String(state);
         if (txt.includes("Connected")) {
