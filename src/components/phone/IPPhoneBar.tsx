@@ -1075,10 +1075,11 @@ registerer.__tcBound = true;
     isSessionAlive(runtimeRef.current.activeSession);
 
   if (!hasActiveCall && !runtimeRef.current.userAgent) {
-    scheduleReconnect(...)
-  }
+  scheduleReconnect("Reconectando SIP…");
 }
-});
+}
+ }
+}
       userAgent.transport.stateChange.addListener((state: any) => {
         const txt = String(state);
         if (txt.includes("Connected")) {
