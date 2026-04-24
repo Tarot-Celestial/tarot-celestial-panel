@@ -1074,9 +1074,9 @@ registerer.__tcBound = true;
     runtimeRef.current.activeSession &&
     isSessionAlive(runtimeRef.current.activeSession);
 
-  if (!hasActiveCall && !runtimeRef.current.userAgent) {
+  if (!hasActiveCall) {
   scheduleReconnect("Reconectando SIP…");
-      }
+}
     }
   }
 });
