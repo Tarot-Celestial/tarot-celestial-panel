@@ -14,7 +14,10 @@ type MeWorker = {
   email: string | null;
 };
 
-type ExtensionRow = Record<string, any>;
+type ExtensionRow = {
+  extension?: string;
+  [key: string]: any;
+};
 
 const DEFAULT_SIP_DOMAIN = process.env.NEXT_PUBLIC_SIP_DOMAIN || "sip.clientestarotcelestial.es";
 const DEFAULT_SIP_WS_SERVER = normalizeWsServer(process.env.NEXT_PUBLIC_SIP_WS_SERVER || "wss://sip.clientestarotcelestial.es/ws");
@@ -245,7 +248,7 @@ function normalizeExtensionRow(row: ExtensionRow) {
   const ws_server = normalizeWsServer(row?.ws_server || DEFAULT_SIP_WS_SERVER);
   return {
     ...row,
-    id: String(row?.id || extension || crypto.randomUUID()),
+    id: String(row?.id || extension),
     extension,
     secret,
     password: secret,
@@ -406,10 +409,11 @@ export async function GET(req: Request) {
     const queuesResult = await readQueues(admin);
     const liveSnapshot = await getAsteriskLiveSnapshot();
     const liveExtensions = liveSnapshot.extensions || {};
-    const extensions = extensionsResult.rows
-      .map(normalizeExtensionRow)
-      .map((row) => mergeAsteriskLiveState(row, liveExtensions[String(row.extension || "")]))
-      .map(normalizeExtensionRow);
+    const extensions = extensionsResult.rows.map((row: ExtensionRow) =>
+  normalizeExtensionRow(
+    mergeAsteriskLiveState(row, liveExtensions[String(row.extension || "")])
+  )
+);
 
     return NextResponse.json({
       ok: true,
@@ -422,7 +426,6 @@ export async function GET(req: Request) {
       queueMembers: queuesResult.members,
       setupNeeded: extensionsResult.missingTable,
       realtimeSync,
-    asteriskRefresh,
       routingSetupNeeded: routingResult.missingTable,
       queueSetupNeeded: queuesResult.missingTables,
     });
