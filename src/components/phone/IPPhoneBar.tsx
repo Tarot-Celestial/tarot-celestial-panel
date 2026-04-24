@@ -344,16 +344,24 @@ export default function IPPhoneBar() {
     void connect(true);
   }, [hydrated, presence.online, presence.status, config.username, config.password]);
 
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      if (!callStartedAtRef.current) {
-        setElapsed(0);
-        return;
-      }
-      setElapsed(Math.max(0, Math.round((Date.now() - callStartedAtRef.current) / 1000)));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, []);
+ useEffect(() => {
+  const id = window.setInterval(() => {
+    if (runtimeRef.current.manualDisconnect) return;
+
+    const ua = runtimeRef.current.userAgent;
+    if (!ua) return;
+
+    const transportState = String(ua.transport?.state || "");
+
+    // SOLO reconectar si está realmente muerto
+    if (transportState.includes("Disconnected")) {
+      console.log("FORCED RECONNECT: transport dead");
+      void connect(true);
+    }
+  }, 15000);
+
+  return () => window.clearInterval(id);
+}, []);
 
   useEffect(() => {
     statusRef.current = status;
@@ -799,11 +807,7 @@ export default function IPPhoneBar() {
   );
 
   // 🔥 re-registro correcto
-  setTimeout(() => {
-    if (!runtimeRef.current.manualDisconnect) {
-      connect(true);
-    }
-  }, 500);
+
 }
 
   function cleanupSessionRefs(session?: any | null) {
@@ -964,14 +968,8 @@ export default function IPPhoneBar() {
       const SIP = sipModuleRef.current;
 
       if (runtimeRef.current.userAgent) {
-  const hasActiveCall =
-    runtimeRef.current.activeSession &&
-    isSessionAlive(runtimeRef.current.activeSession);
-
-  if (hasActiveCall) return true;
-
-  // 🔥 SIEMPRE RESETEAR SI NO HAY LLAMADA
-  await disconnect(true);
+  console.log("SIP already initialized → skipping reconnect");
+  return true;
 }
 
       const uri = SIP.UserAgent.makeURI(`sip:${config.username}@${config.domain}`);
@@ -1097,35 +1095,48 @@ registerer.__tcBound = true;
     });
 
     if (!runtimeRef.current.manualDisconnect) {
-  const hasActiveCall =
-    runtimeRef.current.activeSession &&
-    isSessionAlive(runtimeRef.current.activeSession);
+  const transportState = String(runtimeRef.current.userAgent?.transport?.state || "");
 
-  if (!hasActiveCall) {
-  scheduleReconnect("Reconectando SIP…");
+  if (transportState.includes("Disconnected")) {
+    scheduleReconnect("Reconectando SIP…");
+  }
 }
+  }
+});
+    userAgent.transport.stateChange.addListener((state: any) => {
+  console.log("TRANSPORT STATE:", state);
+
+  const txt = String(state);
+
+  if (txt.includes("Connected")) {
+    runtimeRef.current.reconnectAttempts = 0;
+
+    if (!showHangupButton && statusRef.current !== "registered") {
+      setStatus("registered");
+      setStatusText("Conectado");
+    }
+  }
+
+  if (txt.includes("Disconnected")) {
+    console.log("⚠️ TRANSPORT DISCONNECTED");
+
+    const hasActive = Boolean(
+      runtimeRef.current.activeSession &&
+      isSessionAlive(runtimeRef.current.activeSession)
+    );
+
+    if (hasActive) {
+      setStatusText("Transporte SIP inestable · reintentando");
+      return;
+    }
+
+    resetCallState("offline", "Transporte SIP caído");
+
+    if (!runtimeRef.current.manualDisconnect) {
+      scheduleReconnect("Reconectando transporte SIP…");
     }
   }
 });
-      userAgent.transport.stateChange.addListener((state: any) => {
-        const txt = String(state);
-        if (txt.includes("Connected")) {
-          runtimeRef.current.reconnectAttempts = 0;
-          if (!showHangupButton && statusRef.current !== "registered") {
-            setStatus("registered");
-            setStatusText("Conectado");
-          }
-        }
-        if (txt.includes("Disconnected")) {
-          const hasActive = Boolean(runtimeRef.current.activeSession && isSessionAlive(runtimeRef.current.activeSession));
-          if (hasActive) {
-            setStatusText("Transporte SIP inestable · reintentando");
-          } else {
-            resetCallState("offline", "Transporte SIP caído");
-          }
-          scheduleReconnect("Reconectando transporte SIP…");
-        }
-      });
 
       await userAgent.start();
       await registerer.register();
