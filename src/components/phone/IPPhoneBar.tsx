@@ -245,7 +245,7 @@ export default function IPPhoneBar() {
     return presence.role === "tarotista";
   }, [selectedPanelExtension, presence.role]);
   const visiblePeer = incoming ? (incomingDisplayName || incomingNumber) : crmDisplayName || callNumber || number;
-  const showHangupButton = incoming || inCall || Boolean(runtimeRef.current.activeSession || runtimeRef.current.incomingInvitation);
+  const showHangupButton = status === "calling" || status === "ringing" || status === "in_call";
 
   useEffect(() => {
     setHydrated(true);
@@ -744,7 +744,16 @@ export default function IPPhoneBar() {
       });
     }
 
+    cleanupSessionRefs();
     const nextOnline = Boolean(runtimeRef.current.userAgent && runtimeRef.current.registerer);
+    void syncRuntime({
+      registered: nextOnline,
+      status: nextOnline ? "registered" : "offline",
+      active_call_count: 0,
+      active_call_started_at: null,
+      incoming_number: null,
+      talking_to: null,
+    });
     resetCallState(nextOnline ? "registered" : "offline", nextOnline ? "Conectado" : "Desconectado");
   }
 

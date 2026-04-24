@@ -272,7 +272,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
 
   useEffect(() => {
     void loadData();
-    const id = window.setInterval(() => void loadData(), 9000);
+    const id = window.setInterval(() => void loadData(), 2500);
     return () => window.clearInterval(id);
   }, []);
 

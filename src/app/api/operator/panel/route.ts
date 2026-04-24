@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
 
 export const runtime = "nodejs";
 
@@ -266,6 +267,21 @@ function normalizeExtensionRow(row: ExtensionRow) {
   };
 }
 
+function mergeAsteriskLiveState(row: any, liveState: any) {
+  if (!liveState) return row;
+  const activeCallCount = Number(liveState.active_call_count || 0) || 0;
+  const liveStatus = activeCallCount > 0 ? liveState.status || "in_call" : liveState.registered ? "registered" : "offline";
+  return {
+    ...row,
+    registered: !!liveState.registered,
+    status: liveStatus,
+    active_call_count: activeCallCount,
+    active_call_started_at: activeCallCount > 0 ? liveState.active_call_started_at || row.active_call_started_at || new Date().toISOString() : null,
+    incoming_number: liveStatus === "ringing" ? liveState.talking_to || row.incoming_number || null : null,
+    talking_to: activeCallCount > 0 ? liveState.talking_to || row.talking_to || null : null,
+  };
+}
+
 async function getAuthContext(req: Request) {
   const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
@@ -388,17 +404,25 @@ export async function GET(req: Request) {
     const realtimeSync = extensionsResult.missingTable ? [] : await syncAsteriskRealtimeExtensions(admin, extensionsResult.rows);
     const routingResult = await readRouting(admin);
     const queuesResult = await readQueues(admin);
+    const liveSnapshot = await getAsteriskLiveSnapshot();
+    const liveExtensions = liveSnapshot.extensions || {};
+    const extensions = extensionsResult.rows
+      .map(normalizeExtensionRow)
+      .map((row) => mergeAsteriskLiveState(row, liveExtensions[String(row.extension || "")]))
+      .map(normalizeExtensionRow);
 
     return NextResponse.json({
       ok: true,
       me,
       workers: workers || [],
-      extensions: extensionsResult.rows.map(normalizeExtensionRow),
+      extensions,
+      asteriskLive: { ok: liveSnapshot.ok, error: liveSnapshot.error || null },
       routing: routingResult.rows,
       queues: queuesResult.queues,
       queueMembers: queuesResult.members,
       setupNeeded: extensionsResult.missingTable,
       realtimeSync,
+    asteriskRefresh,
       routingSetupNeeded: routingResult.missingTable,
       queueSetupNeeded: queuesResult.missingTables,
     });
@@ -484,8 +508,10 @@ export async function POST(req: Request) {
   const realtimeSync = await syncAsteriskRealtimeExtension(admin, result.data || payload);
   if (!realtimeSync.ok && !realtimeSync.skipped) {
     console.error("ASTERISK REALTIME SYNC ERROR:", realtimeSync);
-    return NextResponse.json({ ok: false, error: `ASTERISK_REALTIME_SYNC_FAILED: ${realtimeSync.error || realtimeSync.reason || realtimeSync.table || "unknown"}` });
+    return NextResponse.json({ ok: false, error: "ASTERISK_REALTIME_SYNC_FAILED: " + (realtimeSync.error || realtimeSync.reason || realtimeSync.table || "unknown") });
   }
+
+  const asteriskRefresh = await refreshPjsipRealtimeObject(extension);
 
   // 🔥 ROUTING
   const routingPayload = {
@@ -514,6 +540,7 @@ export async function POST(req: Request) {
     extension: result.data,
     routing: routingRes.data || null,
     realtimeSync,
+    asteriskRefresh,
   });
 }
 
