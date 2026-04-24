@@ -1052,7 +1052,7 @@ authorizationPassword: config.password,
     return;
   }
 
-  iif (txt.includes("Unregistered") || txt.includes("Terminated")) {
+  if (txt.includes("Unregistered") || txt.includes("Terminated")) {
   const hasActiveCall =
     runtimeRef.current.activeSession &&
     isSessionAlive(runtimeRef.current.activeSession);
