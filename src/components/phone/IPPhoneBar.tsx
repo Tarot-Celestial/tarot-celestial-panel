@@ -306,22 +306,34 @@ export default function IPPhoneBar() {
   }, [selectedPanelExtension]);
 
   useEffect(() => {
-    if (!hydrated) return;
-    const signature = [config.username, config.password, config.domain, config.server].join("|");
-    if (!sipConfigSignatureRef.current) {
-      sipConfigSignatureRef.current = signature;
-      return;
-    }
-    if (sipConfigSignatureRef.current === signature) return;
+  if (!hydrated) return;
+
+  const signature = [config.username, config.password, config.domain, config.server].join("|");
+
+  if (!sipConfigSignatureRef.current) {
     sipConfigSignatureRef.current = signature;
-    if (runtimeRef.current.userAgent || runtimeRef.current.registerer) {
-      void disconnect(true).then(() => {
-        if (presence.online && presence.status === "working" && config.username && config.password) {
-          void connect(true);
-        }
-      });
-    }
-  }, [hydrated, config.username, config.password, config.domain, config.server, presence.online, presence.status]);
+    return;
+  }
+
+  if (sipConfigSignatureRef.current === signature) return;
+
+  const hasActiveCall =
+    runtimeRef.current.activeSession &&
+    isSessionAlive(runtimeRef.current.activeSession);
+
+  // Nunca reiniciar SIP mientras hay llamada activa.
+  if (hasActiveCall) return;
+
+  sipConfigSignatureRef.current = signature;
+
+  if (runtimeRef.current.userAgent || runtimeRef.current.registerer) {
+    void disconnect(true).then(() => {
+      if (presence.online && presence.status === "working" && config.username && config.password) {
+        void connect(true);
+      }
+    });
+  }
+}, [hydrated, config.username, config.password, config.domain, config.server, presence.online, presence.status]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -776,8 +788,15 @@ export default function IPPhoneBar() {
   }
 
   function scheduleReconnect(reason = "Reconectando SIP…") {
-    if (runtimeRef.current.manualDisconnect || !config.username || !config.password) return;
-    if (reconnectTimeoutRef.current) return;
+  const hasActiveCall =
+    runtimeRef.current.activeSession &&
+    isSessionAlive(runtimeRef.current.activeSession);
+
+  // Nunca reconectar mientras hay llamada activa.
+  if (hasActiveCall) return;
+
+  if (runtimeRef.current.manualDisconnect || !config.username || !config.password) return;
+  if (reconnectTimeoutRef.current) return;
 
     const attempt = Math.min(runtimeRef.current.reconnectAttempts + 1, 6);
     runtimeRef.current.reconnectAttempts = attempt;
@@ -916,8 +935,17 @@ export default function IPPhoneBar() {
       const SIP = sipModuleRef.current;
 
       if (runtimeRef.current.userAgent) {
-        await disconnect(true);
-      }
+  const hasActiveCall =
+    runtimeRef.current.activeSession &&
+    isSessionAlive(runtimeRef.current.activeSession);
+
+  if (hasActiveCall) return true;
+
+  // Si ya hay UA y no hay llamada, no crees otro encima.
+  if (runtimeRef.current.registerer) return true;
+
+  await disconnect(true);
+}
 
       const uri = SIP.UserAgent.makeURI(`sip:${config.username}@${config.domain}`);
       if (!uri) throw new Error("URI SIP inválida");
@@ -1024,18 +1052,23 @@ authorizationPassword: config.password,
     return;
   }
 
-  if (txt.includes("Unregistered") || txt.includes("Terminated")) {
+  iif (txt.includes("Unregistered") || txt.includes("Terminated")) {
+  const hasActiveCall =
+    runtimeRef.current.activeSession &&
+    isSessionAlive(runtimeRef.current.activeSession);
 
-    // 🔥 AQUI TAMBIÉN
-    syncRuntime({
-      registered: false,
-      status: "offline",
-    });
+  // Si el registro se mueve durante una llamada, NO reconectar ni marcar offline.
+  if (hasActiveCall) return;
 
-    if (!runtimeRef.current.manualDisconnect) {
-      scheduleReconnect("Registro SIP perdido. Reconectando…");
-    }
+  syncRuntime({
+    registered: false,
+    status: "offline",
+  });
+
+  if (!runtimeRef.current.manualDisconnect) {
+    scheduleReconnect("Registro SIP perdido. Reconectando…");
   }
+}
 });
 
       userAgent.transport.stateChange.addListener((state: any) => {
