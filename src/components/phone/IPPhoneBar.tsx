@@ -1058,7 +1058,10 @@ authorizationPassword: config.password,
     isSessionAlive(runtimeRef.current.activeSession);
 
   // Si el registro se mueve durante una llamada, NO reconectar ni marcar offline.
-  if (hasActiveCall) return;
+  // no bloqueamos aquí, solo evitamos reconexión
+if (hasActiveCall) {
+  console.log("ignore unregister during call");
+} else {
 
   syncRuntime({
     registered: false,
