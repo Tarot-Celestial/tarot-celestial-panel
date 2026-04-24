@@ -402,7 +402,7 @@ export async function GET(req: Request) {
 
     if (workersErr) throw workersErr;
 
-    await ensureDefaultExtensions(admin);
+   // await ensureDefaultExtensions(admin);
     const extensionsResult = await readExtensions(admin);
     const realtimeSync = extensionsResult.missingTable ? [] : await syncAsteriskRealtimeExtensions(admin, extensionsResult.rows);
     const routingResult = await readRouting(admin);
