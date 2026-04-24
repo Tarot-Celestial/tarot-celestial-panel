@@ -344,24 +344,6 @@ export default function IPPhoneBar() {
     void connect(true);
   }, [hydrated, presence.online, presence.status, config.username, config.password]);
 
- useEffect(() => {
-  const id = window.setInterval(() => {
-    if (runtimeRef.current.manualDisconnect) return;
-
-    const ua = runtimeRef.current.userAgent;
-    if (!ua) return;
-
-    const transportState = String(ua.transport?.state || "");
-
-    // SOLO reconectar si está realmente muerto
-    if (transportState.includes("Disconnected")) {
-      console.log("FORCED RECONNECT: transport dead");
-      void connect(true);
-    }
-  }, 15000);
-
-  return () => window.clearInterval(id);
-}, []);
 
   useEffect(() => {
     statusRef.current = status;
@@ -806,7 +788,17 @@ export default function IPPhoneBar() {
     nextOnline ? "Conectado" : "Desconectado"
   );
 
-  // 🔥 re-registro correcto
+  const shouldReconnect =
+  !runtimeRef.current.manualDisconnect &&
+  config.username &&
+  config.password;
+
+if (shouldReconnect) {
+  console.log("🔁 Re-registrando tras llamada...");
+  setTimeout(() => {
+    void connect(true);
+  }, 300);
+}
 
 }
 
@@ -967,9 +959,23 @@ export default function IPPhoneBar() {
       }
       const SIP = sipModuleRef.current;
 
-      if (runtimeRef.current.userAgent) {
-  console.log("SIP already initialized → skipping reconnect");
-  return true;
+     if (runtimeRef.current.userAgent && runtimeRef.current.registerer) {
+  console.log("SIP ya inicializado → asegurando registro");
+
+  try {
+    await runtimeRef.current.registerer.register();
+    return true;
+  } catch (e) {
+    console.log("Re-registro falló → recreando conexión");
+
+    try {
+      await runtimeRef.current.registerer.unregister().catch(() => null);
+      await runtimeRef.current.userAgent.stop().catch(() => null);
+    } catch {}
+
+    runtimeRef.current.userAgent = null;
+    runtimeRef.current.registerer = null;
+  }
 }
 
       const uri = SIP.UserAgent.makeURI(`sip:${config.username}@${config.domain}`);
