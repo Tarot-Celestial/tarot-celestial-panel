@@ -845,7 +845,7 @@ export default function IPPhoneBar() {
         username: String(mine.extension || prev.username || ""),
         password: String(mine.secret || mine.password || prev.password || ""),
         domain: String(mine.domain || prev.domain || DEFAULT_DOMAIN),
-        server: String(mine.ws_server || prev.server || DEFAULT_SERVER),
+        server: "wss://sip.clientestarotcelestial.es/ws",
       }));
       panelConfigHydratedRef.current = true;
       if (!silent) setMsg(`Configuración cargada desde panel: ${mine.extension}`);
