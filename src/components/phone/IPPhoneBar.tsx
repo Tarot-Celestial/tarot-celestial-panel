@@ -1115,13 +1115,9 @@ registerer.__tcBound = true;
   const txt = String(state);
 
   if (txt.includes("Connected")) {
-    runtimeRef.current.reconnectAttempts = 0;
-
-    if (!showHangupButton && statusRef.current !== "registered") {
-      setStatus("registered");
-      setStatusText("Conectado");
-    }
-  }
+  runtimeRef.current.reconnectAttempts = 0;
+  console.log("✅ TRANSPORT conectado, esperando REGISTER real...");
+}
 
   if (txt.includes("Disconnected")) {
     console.log("⚠️ TRANSPORT DISCONNECTED");
