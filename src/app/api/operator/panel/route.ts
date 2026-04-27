@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 import { createClient } from "@supabase/supabase-js";
 import { getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
 
@@ -78,6 +82,22 @@ function normalizeExtensionRole(value: any) {
   if (role === "admin") return "central";
   if (role === "central" || role === "tarotista") return role;
   return null;
+}
+
+async function syncCentralInAsterisk(extension: string, isActive: boolean) {
+  try {
+    if (!extension) return;
+
+    if (isActive) {
+      console.log("🟢 Registrando central en Asterisk:", extension);
+      await execAsync(`asterisk -rx "database put centrales ${extension} online"`);
+    } else {
+      console.log("🔴 Eliminando central de Asterisk:", extension);
+      await execAsync(`asterisk -rx "database del centrales ${extension}"`);
+    }
+  } catch (e) {
+    console.error("Error sync central ASTERISK:", e);
+  }
 }
 
 async function insertExtensionRecord(admin: any, payload: any) {
@@ -707,6 +727,18 @@ export async function POST(req: Request) {
       .eq("extension", extension)
       .select("*")
       .maybeSingle();
+
+    // 🔥 SINCRONIZAR CENTRALES CON ASTERISK
+try {
+  const role = normalizeExtensionRole(result.data?.role || result.data?.extension_role);
+  const isRegistered = runtimePatch.registered === true;
+
+  if (role === "central") {
+    await syncCentralInAsterisk(extension, isRegistered);
+  }
+} catch (e) {
+  console.error("Error sincronizando central:", e);
+}
 
     if (result.error) {
       console.error("RUNTIME UPDATE ERROR:", result.error);
