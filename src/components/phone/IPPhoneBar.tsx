@@ -24,8 +24,6 @@ import {
 
 const sb = supabaseBrowser();
 const STORAGE_KEY = "tc_softphone_config_v4";
-const [parkingCalls, setParkingCalls] = useState<any[]>([]);
-const [parkingError, setParkingError] = useState("");
 const HISTORY_STORAGE_KEY = "tc_softphone_history_v1";
 const POSITION_STORAGE_KEY = "tc_softphone_position_v1";
 const DEFAULT_SERVER = "wss://sip.clientestarotcelestial.es/ws";

@@ -321,19 +321,27 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   }
 
   async function loadAll() {
-  await loadData();
+    await loadData();
 
-  try {
-    const res = await fetch("/api/asterisk/parking");
-    const json = await res.json();
+    try {
+      const token = await getToken();
+      if (!token) {
+        setParkingCalls([]);
+        return;
+      }
 
-    if (json?.ok) {
-      setParkingCalls(json.calls || []);
+      const res = await fetch("/api/asterisk/parking", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+
+      setParkingCalls(json?.ok && Array.isArray(json.calls) ? json.calls : []);
+    } catch (e) {
+      console.log("Parking error", e);
+      setParkingCalls([]);
     }
-  } catch (e) {
-    console.log("Parking error", e);
   }
-}
   
   function openCreateDrawer() {
     setSelectedId("");
