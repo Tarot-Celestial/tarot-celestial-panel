@@ -635,12 +635,16 @@ export async function getAsteriskLiveSnapshot(): Promise<AsteriskLiveSnapshot> {
           markCall(extensions, bridgeExt, peer && peer !== bridgeExt ? peer : null, isRinging);
         }
 
-        // Cuando Asterisk está ejecutando Dial(PJSIP/1000&PJSIP/1001...), todavía puede no existir
-        // canal propio de cada central. Marcamos esas extensiones como ringing para que el panel
-        // no las muestre disponibles mientras está entrando la llamada.
-        for (const match of String(data || "").matchAll(/PJSIP\/(\d{2,6})/g)) {
-          const dialedExt = match[1];
-          if (dialedExt) markCall(extensions, dialedExt, digits(callerId) || peer || null, true);
+        // Solo marcamos todos los destinos de un Dial paralelo mientras la llamada está
+        // realmente sonando. Cuando una central contesta, Asterisk puede conservar el string
+        // Dial(PJSIP/1000&PJSIP/1001...) en algún canal y antes eso dejaba a todas ocupadas.
+        // Con bridgedChannel presente, marcamos únicamente el endpoint puenteado arriba.
+        const shouldMarkDialTargets = /^Dial$/i.test(String(app || "")) && !bridgedChannel && /ring/i.test(String(state || ""));
+        if (shouldMarkDialTargets) {
+          for (const match of String(data || "").matchAll(/PJSIP\/(\d{2,6})/g)) {
+            const dialedExt = match[1];
+            if (dialedExt) markCall(extensions, dialedExt, digits(callerId) || peer || null, true);
+          }
         }
 
         if (/^\d{2,6}$/.test(exten) && context === "from-trunk") {

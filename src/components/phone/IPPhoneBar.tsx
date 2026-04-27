@@ -183,6 +183,9 @@ export default function IPPhoneBar() {
     manualDisconnect: false,
     reconnectAttempts: 0,
   });
+  const consultSessionRef = useRef<any | null>(null);
+  const originalSessionDuringConsultRef = useRef<any | null>(null);
+  const assistedTransferTargetRef = useRef("");
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const ringtoneLoopRef = useRef<number | null>(null);
@@ -231,6 +234,8 @@ export default function IPPhoneBar() {
   const [incomingClientKnown, setIncomingClientKnown] = useState(false);
   const [incomingDisplayName, setIncomingDisplayName] = useState("");
   const [panelExtensions, setPanelExtensions] = useState<PanelExtensionOption[]>([]);
+  const [assistedTransferTarget, setAssistedTransferTarget] = useState("");
+  const [assistedTransferStatus, setAssistedTransferStatus] = useState<"idle" | "calling" | "consulting">("idle");
  
   const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
   const inCall = status === "calling" || status === "ringing" || status === "in_call";
@@ -394,12 +399,14 @@ export default function IPPhoneBar() {
 
   useEffect(() => {
     const onDial = async (event: Event) => {
-      const detail = (event as CustomEvent<{ number?: string; label?: string; autoCall?: boolean; openFicha?: boolean; intent?: "dial" | "transfer" }>).detail || {};
+      const detail = (event as CustomEvent<{ number?: string; label?: string; caller?: string | null; autoCall?: boolean; openFicha?: boolean; intent?: "dial" | "transfer" }>).detail || {};
       const nextNumber = sanitizeNumber(detail.number || "");
       if (!nextNumber) return;
       setOpen(true);
       setCompact(false);
       setNumber(nextNumber);
+      const displayPeer = String(detail.caller || detail.label || "").trim();
+      if (displayPeer) setCallNumber(displayPeer);
       if (detail.intent === "transfer" && showHangupButton) {
         const ok = await transfer(nextNumber);
         setMsg(ok ? `Transferencia enviada a ${nextNumber}.` : `No se pudo transferir a ${nextNumber}.`);
@@ -407,7 +414,7 @@ export default function IPPhoneBar() {
       }
       if (detail.autoCall && !showHangupButton) {
         window.setTimeout(() => {
-          void call(nextNumber, { openFicha: detail.openFicha !== false });
+          void call(nextNumber, { openFicha: detail.openFicha !== false, displayName: displayPeer || undefined });
         }, 120);
         return;
       }
@@ -749,6 +756,11 @@ export default function IPPhoneBar() {
     setIncomingClientKnown(false);
     setCallNumber("");
     setMuted(false);
+    consultSessionRef.current = null;
+    originalSessionDuringConsultRef.current = null;
+    assistedTransferTargetRef.current = "";
+    setAssistedTransferTarget("");
+    setAssistedTransferStatus("idle");
     activeClientContextRef.current = null;
     setStatus(nextStatus);
     setStatusText(nextText);
@@ -1414,7 +1426,7 @@ const payload = {
     }
   }
 
-  async function call(overrideNumber?: string, options?: { openFicha?: boolean }) {
+  async function call(overrideNumber?: string, options?: { openFicha?: boolean; displayName?: string }) {
     const dialed = sanitizeNumber(overrideNumber || number);
     if (!dialed) return;
 
@@ -1446,7 +1458,7 @@ const payload = {
       setOpen(true);
       setCompact(false);
       setIncoming(false);
-      setCallNumber(dialed);
+      setCallNumber(options?.displayName || dialed);
       setStatus("calling");
       setStatusText(`Llamando a ${dialed}…`);
 
@@ -1561,6 +1573,150 @@ const payload = {
     }
   }
 
+  function holdModifier(description: any) {
+    try {
+      description.sdp = String(description.sdp || "")
+        .replace(/a=sendrecv/g, "a=sendonly")
+        .replace(/a=recvonly/g, "a=sendonly");
+    } catch {
+      // noop
+    }
+    return Promise.resolve(description);
+  }
+
+  function unholdModifier(description: any) {
+    try {
+      description.sdp = String(description.sdp || "")
+        .replace(/a=sendonly/g, "a=sendrecv")
+        .replace(/a=inactive/g, "a=sendrecv");
+    } catch {
+      // noop
+    }
+    return Promise.resolve(description);
+  }
+
+  async function reinviteSession(session: any, modifier: any) {
+    try {
+      if (!session || typeof session.invite !== "function") return false;
+      await session.invite({ sessionDescriptionHandlerModifiers: [modifier] });
+      return true;
+    } catch (e) {
+      console.error("No se pudo renegociar la llamada", e);
+      return false;
+    }
+  }
+
+  async function startAssistedTransfer(cleanTarget: string) {
+    const original = runtimeRef.current.activeSession;
+    if (!original || !isSessionState(original, "Established")) {
+      setMsg("No hay llamada de cliente establecida para transferir.");
+      return false;
+    }
+    if (!runtimeRef.current.userAgent) {
+      setMsg("Softphone no conectado.");
+      return false;
+    }
+
+    const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
+    const consultTarget = SIP.UserAgent.makeURI(`sip:${cleanTarget}@${config.domain}`);
+    if (!consultTarget) {
+      setMsg("Destino SIP inválido para consulta.");
+      return false;
+    }
+
+    await reinviteSession(original, holdModifier);
+
+    const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
+    consultSessionRef.current = inviter;
+    originalSessionDuringConsultRef.current = original;
+    assistedTransferTargetRef.current = cleanTarget;
+    setAssistedTransferTarget(cleanTarget);
+    setAssistedTransferStatus("calling");
+    setMsg(`Llamando a ${cleanTarget} para consulta. El cliente queda en espera y no escucha esta conversación.`);
+
+    try {
+      inviter.stateChange?.addListener?.((state: any) => {
+        const established = isSessionState({ state }, "Established") || isSessionState(inviter, "Established");
+        const terminated = isSessionState({ state }, "Terminated") || isSessionState(inviter, "Terminated");
+        if (established) {
+          setAssistedTransferStatus("consulting");
+          setMsg(`Consulta activa con ${cleanTarget}. Pulsa “Completar” para pasar el cliente o “Recuperar” para cancelar.`);
+          attachRemoteAudioFromSession(inviter);
+          void ensureRemoteAudioPlayback();
+        }
+        if (terminated && consultSessionRef.current === inviter) {
+          consultSessionRef.current = null;
+          setAssistedTransferStatus("idle");
+          setAssistedTransferTarget("");
+          assistedTransferTargetRef.current = "";
+          void reinviteSession(original, unholdModifier);
+          attachRemoteAudioFromSession(original);
+          setMsg("Consulta finalizada. Llamada de cliente recuperada.");
+        }
+      });
+      await inviter.invite();
+      return true;
+    } catch (e: any) {
+      console.error("Error en consulta de transferencia", e);
+      consultSessionRef.current = null;
+      setAssistedTransferStatus("idle");
+      setAssistedTransferTarget("");
+      assistedTransferTargetRef.current = "";
+      await reinviteSession(original, unholdModifier);
+      attachRemoteAudioFromSession(original);
+      setMsg(e?.message || "No se pudo iniciar la consulta de transferencia.");
+      return false;
+    }
+  }
+
+  async function completeAssistedTransfer() {
+    try {
+      const original = originalSessionDuringConsultRef.current || runtimeRef.current.activeSession;
+      const consult = consultSessionRef.current;
+      const target = assistedTransferTargetRef.current;
+      if (!original || !target) return;
+      const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
+      const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
+      if (!referTarget) throw new Error("Destino SIP inválido.");
+      await original.refer(referTarget);
+      await consult?.bye?.().catch(() => null);
+      addHistory({ number: target, direction: "transfer", createdAt: new Date().toISOString(), result: "transferencia asistida" });
+      setMsg(`Transferencia completada a ${target}.`);
+      consultSessionRef.current = null;
+      originalSessionDuringConsultRef.current = null;
+      assistedTransferTargetRef.current = "";
+      setAssistedTransferTarget("");
+      setAssistedTransferStatus("idle");
+    } catch (e: any) {
+      console.error(e);
+      setMsg(e?.message || "No se pudo completar la transferencia.");
+    }
+  }
+
+  async function recoverAssistedTransfer() {
+    try {
+      const original = originalSessionDuringConsultRef.current || runtimeRef.current.activeSession;
+      const consult = consultSessionRef.current;
+      await consult?.bye?.().catch(() => null);
+      await consult?.cancel?.().catch(() => null);
+      consultSessionRef.current = null;
+      originalSessionDuringConsultRef.current = null;
+      assistedTransferTargetRef.current = "";
+      setAssistedTransferTarget("");
+      setAssistedTransferStatus("idle");
+      if (original) {
+        runtimeRef.current.activeSession = original;
+        await reinviteSession(original, unholdModifier);
+        attachRemoteAudioFromSession(original);
+        await ensureRemoteAudioPlayback();
+      }
+      setMsg("Transferencia cancelada. Llamada de cliente recuperada.");
+    } catch (e: any) {
+      console.error(e);
+      setMsg(e?.message || "No se pudo recuperar la llamada.");
+    }
+  }
+
   async function transfer(target: string) {
     try {
       const cleanTarget = sanitizeNumber(target);
@@ -1626,6 +1782,14 @@ const payload = {
           : `¿Transferir la llamada a la central ${cleanTarget}?`
       );
       if (!confirmed) return false;
+
+      if (isTarotistaTarget) {
+        const ok = await startAssistedTransfer(cleanTarget);
+        if (ok) {
+          setMsg(`Consulta iniciada con ${cleanTarget}. El cliente queda en espera y no escucha a la tarotista.`);
+        }
+        return ok;
+      }
 
       const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
       const referTarget = SIP.UserAgent.makeURI(`sip:${cleanTarget}@${config.domain}`);
@@ -1980,7 +2144,25 @@ const payload = {
                 </button>
               </div>
 
-      
+              {assistedTransferStatus !== "idle" ? (
+                <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,159,67,.10)", borderColor: "rgba(255,159,67,.24)" }) }}>
+                  <div style={{ color: "#fff", fontWeight: 900, marginBottom: 8 }}>
+                    Transferencia asistida · {assistedTransferTarget}
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,.72)", fontSize: 12, marginBottom: 10 }}>
+                    El cliente está en espera. Solo central y destino se escuchan hasta completar la transferencia.
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <button onClick={() => void recoverAssistedTransfer()} style={softBtnStyle}>
+                      Recuperar llamada
+                    </button>
+                    <button onClick={() => void completeAssistedTransfer()} disabled={assistedTransferStatus !== "consulting"} style={{ ...goldBtnStyle, opacity: assistedTransferStatus === "consulting" ? 1 : 0.55 }}>
+                      Completar
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {historyOpen ? (
                 <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
                   <div style={{ color: "#fff", fontWeight: 800, marginBottom: 10 }}>Historial reciente</div>

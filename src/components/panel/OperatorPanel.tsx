@@ -548,6 +548,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
         detail: {
           number,
           label: item.label || item.worker?.display_name || `Ext. ${number}`,
+          caller: item.caller || item.incoming_number || null,
           autoCall,
           openFicha,
           intent,
@@ -567,7 +568,16 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   function recoverParkingCall(call: ParkingCallRow) {
     const slot = cleanDigits(String(call.slot || ""));
     if (!slot) return;
-    sendToSoftphone({ extension: slot, label: `Parking ${slot}` }, "dial", true, false);
+    sendToSoftphone(
+      {
+        extension: slot,
+        label: call.caller || `Parking ${slot}`,
+        caller: call.caller || null,
+      },
+      "dial",
+      true,
+      false
+    );
     window.setTimeout(() => void loadAll(), 1200);
   }
 

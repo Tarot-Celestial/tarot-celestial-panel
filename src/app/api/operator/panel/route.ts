@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { createClient } from "@supabase/supabase-js";
+import { amiCommand, getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
 
 const execAsync = promisify(exec);
-import { createClient } from "@supabase/supabase-js";
-import { getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
 
 export const runtime = "nodejs";
 
@@ -97,6 +97,27 @@ async function syncCentralInAsterisk(extension: string, isActive: boolean) {
     }
   } catch (e) {
     console.error("Error sync central ASTERISK:", e);
+  }
+}
+
+async function syncExtensionRoutingInAsterisk(extension: string, routeType: string, targetPhone?: string | null) {
+  try {
+    const ext = sanitizeExtension(extension);
+    const target = sanitizePhone(targetPhone);
+    if (!ext) return;
+
+    if (routeType === "external" && target) {
+      // Para el dialplan realtime: DB(pbx_route/EXT)=external y DB(pbx_mobile/EXT)=telefono
+      // Así una extensión creada en el panel puede desviar a móvil sin tocar pjsip.conf.
+      await amiCommand(`database put pbx_route ${ext} external`);
+      await amiCommand(`database put pbx_mobile ${ext} ${target}`);
+      return;
+    }
+
+    await amiCommand(`database del pbx_route ${ext}`);
+    await amiCommand(`database del pbx_mobile ${ext}`);
+  } catch (e) {
+    console.error("Error sync routing ASTERISK:", e);
   }
 }
 
@@ -636,6 +657,8 @@ export async function POST(req: Request) {
     console.error("ROUTING ERROR:", routingRes.error);
     return NextResponse.json({ ok: false, error: routingRes.error.message });
   }
+
+  await syncExtensionRoutingInAsterisk(extension, route_type, target_phone || null);
 
   return NextResponse.json({
     ok: true,
