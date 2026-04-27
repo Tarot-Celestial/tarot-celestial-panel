@@ -354,13 +354,28 @@ function normalizeExtensionRow(row: ExtensionRow) {
   };
 }
 
+function isFreshRuntime(row: any) {
+  const ts = row?.last_seen_at ? new Date(row.last_seen_at).getTime() : 0;
+  return Number.isFinite(ts) && Date.now() - ts < 20000;
+}
+
 function mergeAsteriskLiveState(row: any, liveState: any) {
   if (!liveState) return row;
+
+  const runtimeActive = Number(row?.active_call_count || 0) > 0 || ["in_call", "ringing", "calling"].includes(String(row?.status || "").toLowerCase());
+  const runtimeFresh = isFreshRuntime(row);
   const activeCallCount = Number(liveState.active_call_count || 0) || 0;
+
+  // If the browser softphone just reported a live call, do not let a partial AMI snapshot
+  // that only sees the registered contact overwrite it as "Disponible".
+  if (runtimeFresh && runtimeActive && activeCallCount === 0) {
+    return normalizeExtensionRow(row);
+  }
+
   const liveStatus = activeCallCount > 0 ? liveState.status || "in_call" : liveState.registered ? "registered" : "offline";
   return {
     ...row,
-    registered: !!liveState.registered,
+    registered: !!liveState.registered || (runtimeFresh && !!row.registered),
     status: liveStatus,
     active_call_count: activeCallCount,
     active_call_started_at: activeCallCount > 0 ? liveState.active_call_started_at || row.active_call_started_at || new Date().toISOString() : null,

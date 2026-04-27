@@ -359,6 +359,29 @@ export default function IPPhoneBar() {
   }, [status, incomingNumber, callNumber, number, config.username, registered, incoming, visiblePeer, showHangupButton]);
 
   useEffect(() => {
+    if (!config.username || !showHangupButton) return;
+
+    const tick = () => {
+      if (callStartedAtRef.current) {
+        setElapsed(Math.max(0, Math.round((Date.now() - callStartedAtRef.current) / 1000)));
+      }
+
+      void syncRuntime({
+        registered: true,
+        status: statusRef.current === "ringing" ? "ringing" : "in_call",
+        active_call_count: 1,
+        active_call_started_at: callStartedAtRef.current ? new Date(callStartedAtRef.current).toISOString() : new Date().toISOString(),
+        incoming_number: incomingNumberRef.current || null,
+        talking_to: callNumberRef.current || incomingNumberRef.current || numberRef.current || null,
+      });
+    };
+
+    tick();
+    const id = window.setInterval(tick, 2500);
+    return () => window.clearInterval(id);
+  }, [config.username, showHangupButton]);
+
+  useEffect(() => {
     return () => {
       stopRingtone();
       if (reconnectTimeoutRef.current) {

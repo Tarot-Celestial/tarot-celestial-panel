@@ -1,4 +1,8 @@
 import net from "net";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 type AmiResponse = {
   ok: boolean;
@@ -20,6 +24,7 @@ export type AsteriskLiveSnapshot = {
   error?: string;
 };
 
+const HAS_EXPLICIT_AMI_HOST = Boolean(process.env.ASTERISK_AMI_HOST);
 const DEFAULT_AMI_HOST = process.env.ASTERISK_AMI_HOST || "127.0.0.1";
 const DEFAULT_AMI_PORT = Number(process.env.ASTERISK_AMI_PORT || 5038);
 const DEFAULT_AMI_USER = process.env.ASTERISK_AMI_USER || "panel";
@@ -43,7 +48,54 @@ function writeAction(socket: net.Socket, fields: Record<string, string>) {
   socket.write(`${body}\r\n\r\n`);
 }
 
-export function amiCommand(command: string): Promise<AmiResponse> {
+async function localCliCommand(command: string): Promise<AmiResponse> {
+  try {
+    const { stdout, stderr } = await execFileAsync("asterisk", ["-rx", command], { timeout: AMI_TIMEOUT_MS });
+    return { ok: true, raw: String(stdout || stderr || "") };
+  } catch (error: any) {
+    return { ok: false, raw: String(error?.stdout || error?.stderr || ""), error: error?.message || "ASTERISK_LOCAL_CLI_FAILED" };
+  }
+}
+
+async function sshCliCommand(command: string): Promise<AmiResponse> {
+  const host = process.env.ASTERISK_SSH_HOST || process.env.ASTERISK_HOST || "";
+  if (!host) return { ok: false, raw: "", error: "ASTERISK_SSH_HOST_NOT_SET" };
+
+  const user = process.env.ASTERISK_SSH_USER || "root";
+  const port = process.env.ASTERISK_SSH_PORT || "22";
+  const key = process.env.ASTERISK_SSH_KEY_PATH || "";
+  const remote = `${user}@${host}`;
+  const args = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=4", "-p", port];
+  if (key) args.push("-i", key);
+  args.push(remote, "asterisk", "-rx", command);
+
+  try {
+    const { stdout, stderr } = await execFileAsync("ssh", args, { timeout: Math.max(AMI_TIMEOUT_MS, 5000) });
+    return { ok: true, raw: String(stdout || stderr || "") };
+  } catch (error: any) {
+    return { ok: false, raw: String(error?.stdout || error?.stderr || ""), error: error?.message || "ASTERISK_SSH_CLI_FAILED" };
+  }
+}
+
+async function cliCommand(command: string): Promise<AmiResponse> {
+  if (process.env.ASTERISK_SSH_HOST || process.env.ASTERISK_HOST) {
+    const ssh = await sshCliCommand(command);
+    if (ssh.ok || ssh.raw) return ssh;
+  }
+
+  if (process.env.ASTERISK_CLI_LOCAL === "1" || !process.env.VERCEL) {
+    const local = await localCliCommand(command);
+    if (local.ok || local.raw) return local;
+  }
+
+  return {
+    ok: false,
+    raw: "",
+    error: "ASTERISK_NOT_CONFIGURED: set ASTERISK_AMI_HOST for remote AMI, or ASTERISK_SSH_HOST/ASTERISK_SSH_USER for remote CLI.",
+  };
+}
+
+function amiCommandOnly(command: string): Promise<AmiResponse> {
   const cfg = getAmiConfig();
 
   return new Promise((resolve) => {
@@ -93,12 +145,28 @@ export function amiCommand(command: string): Promise<AmiResponse> {
   });
 }
 
+export async function amiCommand(command: string): Promise<AmiResponse> {
+  if (HAS_EXPLICIT_AMI_HOST) {
+    const ami = await amiCommandOnly(command);
+    if (ami.ok) return ami;
+
+    const cli = await cliCommand(command);
+    if (cli.ok || cli.raw) return cli;
+    return { ok: false, raw: ami.raw || cli.raw, error: `${ami.error || "AMI_FAILED"}; ${cli.error || "CLI_FAILED"}` };
+  }
+
+  return cliCommand(command);
+}
+
 function parseCommandOutput(raw: string) {
-  return raw
+  const output = raw
     .split(/\r?\n/)
     .filter((line) => /^Output:\s*/.test(line))
     .map((line) => line.replace(/^Output:\s?/, ""))
     .join("\n");
+
+  // AMI Command responses prefix each line with Output:. CLI/SSH returns plain text.
+  return output || String(raw || "");
 }
 
 function digits(value: string | null | undefined) {
