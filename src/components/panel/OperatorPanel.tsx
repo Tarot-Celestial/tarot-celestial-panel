@@ -191,6 +191,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   const [queueSetupNeeded, setQueueSetupNeeded] = useState(false);
   const [workers, setWorkers] = useState<WorkerRow[]>([]);
   const [extensions, setExtensions] = useState<ExtensionRow[]>([]);
+  const [parkingCalls, setParkingCalls] = useState<{ slot: string; caller: string }[]>([]);
   const [routing, setRouting] = useState<RoutingRow[]>([]);
   const [queues, setQueues] = useState<QueueRow[]>([]);
   const [queueMembers, setQueueMembers] = useState<QueueMemberRow[]>([]);
@@ -271,10 +272,11 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   }, []);
 
   useEffect(() => {
-    void loadData();
-    const id = window.setInterval(() => void loadData(), 2500);
-    return () => window.clearInterval(id);
-  }, []);
+  void loadAll();
+
+  const id = window.setInterval(() => void loadAll(), 2000);
+  return () => window.clearInterval(id);
+}, []);
 
   async function getToken() {
     const { data } = await sb.auth.getSession();
@@ -318,6 +320,21 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
     }
   }
 
+  async function loadAll() {
+  await loadData();
+
+  try {
+    const res = await fetch("/api/asterisk/parking");
+    const json = await res.json();
+
+    if (json?.ok) {
+      setParkingCalls(json.calls || []);
+    }
+  } catch (e) {
+    console.log("Parking error", e);
+  }
+}
+  
   function openCreateDrawer() {
     setSelectedId("");
     setForm(emptyForm());
@@ -555,6 +572,40 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14, marginTop: 18, position: "relative" }}>
+         <div className="tc-card" style={{
+    padding: 14,
+    borderColor: "rgba(255,200,100,.25)",
+    background: "linear-gradient(180deg, rgba(255,200,100,.08), rgba(20,10,0,.9))"
+  }}>
+    <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+      <div className="tc-title">📦 Parking</div>
+      <div className="tc-sub">{parkingCalls.length} llamadas</div>
+    </div>
+
+    <div style={{ display: "grid", gap: 8 }}>
+      {parkingCalls.length === 0 ? (
+        <div className="tc-sub">Sin llamadas aparcadas</div>
+      ) : parkingCalls.map(call => (
+        <div key={call.slot} className="tc-queue-row">
+          <div>
+            <div className="tc-title" style={{ fontSize: 15 }}>
+              Slot {call.slot}
+            </div>
+            <div className="tc-sub">
+              {call.caller}
+            </div>
+          </div>
+
+          <button
+            className="tc-btn-mini"
+            onClick={() => sendToSoftphone({ extension: call.slot })}
+          >
+            <Phone size={12} /> Recuperar
+          </button>
+        </div>
+      ))}
+    </div>
+  </div>
         {[
           { key: "central", title: "Centrales", items: groupedCards.central, tone: { bg: "linear-gradient(180deg, rgba(40,92,145,.38), rgba(12,22,38,.92))", border: "rgba(86,180,255,.46)" } },
           { key: "tarotista", title: "Tarotistas", items: groupedCards.tarotista, tone: { bg: "linear-gradient(180deg, rgba(90,42,150,.38), rgba(18,12,34,.92))", border: "rgba(143,92,255,.44)" } },
