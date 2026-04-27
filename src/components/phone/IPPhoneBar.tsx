@@ -724,7 +724,8 @@ export default function IPPhoneBar() {
     cleanupRemoteAudio();
     callStartedAtRef.current = null;
     callAnsweredRef.current = false;
-    callFinalizedRef.current = false;
+// NO resetear callFinalizedRef aquí.
+// Se resetea únicamente al iniciar una nueva sesión.
     setElapsed(0);
     setIncoming(false);
     setIncomingNumber("");
