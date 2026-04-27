@@ -72,6 +72,24 @@ type QueueMemberRow = {
   is_active?: boolean | null;
 };
 
+type ParkingCallRow = {
+  slot: string;
+  caller?: string | null;
+  channel?: string | null;
+  parkingLot?: string | null;
+  timeoutSeconds?: number | null;
+};
+
+type IncomingCallRow = {
+  id: string;
+  caller?: string | null;
+  did?: string | null;
+  state?: string | null;
+  app?: string | null;
+  data?: string | null;
+  durationSeconds?: number | null;
+};
+
 type FormState = {
   id?: string;
   worker_id: string;
@@ -191,7 +209,9 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   const [queueSetupNeeded, setQueueSetupNeeded] = useState(false);
   const [workers, setWorkers] = useState<WorkerRow[]>([]);
   const [extensions, setExtensions] = useState<ExtensionRow[]>([]);
-  const [parkingCalls, setParkingCalls] = useState<{ slot: string; caller: string }[]>([]);
+  const [parkingCalls, setParkingCalls] = useState<ParkingCallRow[]>([]);
+  const [incomingCalls, setIncomingCalls] = useState<IncomingCallRow[]>([]);
+  const [asteriskPanelError, setAsteriskPanelError] = useState("");
   const [routing, setRouting] = useState<RoutingRow[]>([]);
   const [queues, setQueues] = useState<QueueRow[]>([]);
   const [queueMembers, setQueueMembers] = useState<QueueMemberRow[]>([]);
@@ -327,6 +347,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       const token = await getToken();
       if (!token) {
         setParkingCalls([]);
+        setIncomingCalls([]);
         return;
       }
 
@@ -336,10 +357,14 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       });
       const json = await res.json().catch(() => null);
 
-      setParkingCalls(json?.ok && Array.isArray(json.calls) ? json.calls : []);
-    } catch (e) {
-      console.log("Parking error", e);
+      setParkingCalls(Array.isArray(json?.calls) ? json.calls : []);
+      setIncomingCalls(Array.isArray(json?.incomingCalls) ? json.incomingCalls : []);
+      setAsteriskPanelError(json?.ok ? "" : String(json?.asteriskParking?.error || json?.asteriskIncoming?.error || json?.error || "No se pudo leer Asterisk"));
+    } catch (e: any) {
+      console.log("Asterisk panel error", e);
       setParkingCalls([]);
+      setIncomingCalls([]);
+      setAsteriskPanelError(e?.message || "No se pudo leer Asterisk");
     }
   }
   
@@ -515,7 +540,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
     }
   }
 
-  function sendToSoftphone(item: any, intent: "dial" | "transfer" = "dial") {
+  function sendToSoftphone(item: any, intent: "dial" | "transfer" = "dial", autoCall = false) {
     const number = String(item.extension || "").trim();
     if (!number) return;
     window.dispatchEvent(
@@ -523,13 +548,26 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
         detail: {
           number,
           label: item.label || item.worker?.display_name || `Ext. ${number}`,
-          autoCall: false,
+          autoCall,
           intent,
           role: item.worker?.role || null,
         },
       })
     );
-    setMsg(intent === "transfer" ? `Transferencia preparada a ${number}.` : `Extensión ${number} enviada al softphone.`);
+    setMsg(
+      autoCall
+        ? `Recuperando ${number} en el softphone.`
+        : intent === "transfer"
+        ? `Transferencia preparada a ${number}.`
+        : `Extensión ${number} enviada al softphone.`
+    );
+  }
+
+  function recoverParkingCall(call: ParkingCallRow) {
+    const slot = cleanDigits(String(call.slot || ""));
+    if (!slot) return;
+    sendToSoftphone({ extension: slot, label: `Parking ${slot}` }, "dial", true);
+    window.setTimeout(() => void loadAll(), 1200);
   }
 
   function handleCardClick(item: any) {
@@ -580,40 +618,59 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 14, marginTop: 18, position: "relative" }}>
-         <div className="tc-card" style={{
-    padding: 14,
-    borderColor: "rgba(255,200,100,.25)",
-    background: "linear-gradient(180deg, rgba(255,200,100,.08), rgba(20,10,0,.9))"
-  }}>
-    <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-      <div className="tc-title">📦 Parking</div>
-      <div className="tc-sub">{parkingCalls.length} llamadas</div>
-    </div>
-
-    <div style={{ display: "grid", gap: 8 }}>
-      {parkingCalls.length === 0 ? (
-        <div className="tc-sub">Sin llamadas aparcadas</div>
-      ) : parkingCalls.map(call => (
-        <div key={call.slot} className="tc-queue-row">
-          <div>
-            <div className="tc-title" style={{ fontSize: 15 }}>
-              Slot {call.slot}
+        <div className="tc-card" style={{ padding: 14, borderColor: "rgba(255,93,122,.28)", background: "linear-gradient(180deg, rgba(255,93,122,.10), rgba(22,8,14,.90))" }}>
+          <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
+            <div>
+              <div className="tc-title">☎️ Llamadas entrando</div>
+              <div className="tc-sub" style={{ marginTop: 4 }}>Canales entrantes detectados en Asterisk antes de caer en parking.</div>
             </div>
-            <div className="tc-sub">
-              {call.caller}
-            </div>
+            <div className="tc-sub">{incomingCalls.length} activas</div>
           </div>
 
-          <button
-            className="tc-btn-mini"
-            onClick={() => sendToSoftphone({ extension: call.slot })}
-          >
-            <Phone size={12} /> Recuperar
-          </button>
+          <div style={{ display: "grid", gap: 8 }}>
+            {incomingCalls.length === 0 ? (
+              <div className="tc-sub">Sin llamadas entrando ahora mismo.</div>
+            ) : incomingCalls.map((call) => (
+              <div key={call.id} className="tc-queue-row" style={{ borderColor: "rgba(255,93,122,.24)", background: "rgba(255,93,122,.07)" }}>
+                <div>
+                  <div className="tc-title" style={{ fontSize: 15 }}>{call.caller || "Número no identificado"}</div>
+                  <div className="tc-sub" style={{ marginTop: 4 }}>
+                    {call.app || "Entrante"}{call.did ? ` · DID ${call.did}` : ""}{typeof call.durationSeconds === "number" ? ` · ${formatDuration(call.durationSeconds)}` : ""}
+                  </div>
+                </div>
+                <span className="tc-chip">{call.state || "activa"}</span>
+              </div>
+            ))}
+          </div>
         </div>
-      ))}
-    </div>
-  </div>
+
+        <div className="tc-card" style={{ padding: 14, borderColor: "rgba(255,200,100,.25)", background: "linear-gradient(180deg, rgba(255,200,100,.08), rgba(20,10,0,.9))" }}>
+          <div className="tc-row" style={{ justifyContent: "space-between", marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
+            <div>
+              <div className="tc-title">📦 Parking</div>
+              <div className="tc-sub" style={{ marginTop: 4 }}>Pulsa una llamada aparcada para recuperarla en tu softphone.</div>
+            </div>
+            <div className="tc-sub">{parkingCalls.length} llamadas</div>
+          </div>
+
+          {asteriskPanelError ? <div className="tc-chip" style={{ marginBottom: 10, color: "#ffb0bd" }}>{asteriskPanelError}</div> : null}
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {parkingCalls.length === 0 ? (
+              <div className="tc-sub">Sin llamadas aparcadas</div>
+            ) : parkingCalls.map((call) => (
+              <button key={call.slot} type="button" className="tc-queue-row" onClick={() => recoverParkingCall(call)} style={{ textAlign: "left", cursor: "pointer", color: "#fff", borderColor: "rgba(255,200,100,.30)", background: "rgba(255,200,100,.08)" }}>
+                <div>
+                  <div className="tc-title" style={{ fontSize: 15 }}>Slot {call.slot}</div>
+                  <div className="tc-sub" style={{ marginTop: 4 }}>
+                    {call.caller || "Número no identificado"}{typeof call.timeoutSeconds === "number" ? ` · timeout ${call.timeoutSeconds}s` : ""}
+                  </div>
+                </div>
+                <span className="tc-btn-mini"><Phone size={12} /> Recuperar</span>
+              </button>
+            ))}
+          </div>
+        </div>
         {[
           { key: "central", title: "Centrales", items: groupedCards.central, tone: { bg: "linear-gradient(180deg, rgba(40,92,145,.38), rgba(12,22,38,.92))", border: "rgba(86,180,255,.46)" } },
           { key: "tarotista", title: "Tarotistas", items: groupedCards.tarotista, tone: { bg: "linear-gradient(180deg, rgba(90,42,150,.38), rgba(18,12,34,.92))", border: "rgba(143,92,255,.44)" } },

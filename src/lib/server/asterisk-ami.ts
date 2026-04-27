@@ -170,6 +170,27 @@ export type AsteriskParkingSnapshot = {
   error?: string;
 };
 
+export type AsteriskIncomingCallInfo = {
+  id: string;
+  channel: string;
+  caller: string | null;
+  did: string | null;
+  state: string | null;
+  app: string | null;
+  data: string | null;
+  context: string | null;
+  exten: string | null;
+  durationSeconds: number | null;
+  raw: string;
+};
+
+export type AsteriskIncomingSnapshot = {
+  ok: boolean;
+  calls: AsteriskIncomingCallInfo[];
+  raw?: string;
+  error?: string;
+};
+
 function parseParkingShow(output: string): ParkedCallInfo[] {
   const calls: ParkedCallInfo[] = [];
   const seen = new Set<string>();
@@ -189,21 +210,31 @@ function parseParkingShow(output: string): ParkedCallInfo[] {
     });
   };
 
-  // Asterisk can print either detailed blocks or a table. Support both.
   for (const line of text.split(/\r?\n/)) {
     const row = line.trim();
-    const tableMatch = row.match(/^(\d{3,})\s+(PJSIP\/\S+|SIP\/\S+|Local\/\S+)(.*)$/i);
+    if (!row) continue;
+
+    const tableMatch = row.match(/^(?:Space\s+)?(\d{3,})\s*:?\s+(PJSIP\/\S+|SIP\/\S+|Local\/\S+)(.*)$/i);
     if (tableMatch) {
       const rest = tableMatch[3] || "";
-      const timeout = rest.match(/\b(\d{1,4})\b/)?.[1] || null;
-      const caller = rest.match(/(\+?\d{5,15})/)?.[1] || null;
+      const timeout = rest.match(/(?:timeout|expires|left)\D*(\d{1,4})/i)?.[1] || rest.match(/\b(\d{1,4})\b/)?.[1] || null;
+      const caller = rest.match(/(?:caller|cid|from)\D*(\+?\d{5,15})/i)?.[1] || rest.match(/(\+?\d{5,15})/)?.[1] || null;
       pushCall(tableMatch[1], row, tableMatch[2], caller, timeout);
+      continue;
+    }
+
+    const slotOnly = row.match(/(?:Parking\s+Space|Space)\s*[:=]\s*(\d{3,})/i);
+    if (slotOnly) {
+      const channel = row.match(/(PJSIP\/\S+|SIP\/\S+|Local\/\S+)/i)?.[1] || null;
+      const caller = row.match(/(?:caller|cid|from)\D*(\+?\d{5,15})/i)?.[1] || row.match(/(\+?\d{5,15})/)?.[1] || null;
+      const timeout = row.match(/(?:timeout|expires|left)\D*(\d{1,4})/i)?.[1] || null;
+      pushCall(slotOnly[1], row, channel, caller, timeout);
     }
   }
 
   const blocks = text
     .split(/(?=\n?\s*(?:Parking Space|Space)\s*[:=]?\s*\d{3,})/i)
-    .map((block) => block.trim())
+    .map((value) => value.trim())
     .filter(Boolean);
 
   for (const block of blocks) {
@@ -215,6 +246,76 @@ function parseParkingShow(output: string): ParkedCallInfo[] {
   }
 
   return calls.sort((a, b) => Number(a.slot) - Number(b.slot));
+}
+
+function parseIncomingShowChannels(output: string): AsteriskIncomingCallInfo[] {
+  const calls: AsteriskIncomingCallInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const rawLine of String(output || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || !line.includes("!")) continue;
+
+    const parts = line.split("!");
+    const channel = parts[0] || "";
+    const context = parts[1] || "";
+    const exten = parts[2] || "";
+    const state = parts[4] || "";
+    const app = parts[5] || "";
+    const data = parts[6] || "";
+    const callerId = parts[7] || "";
+    const duration = parts[10] || "";
+    const bridgedChannel = parts[11] || "";
+    const uniqueId = parts[12] || parts[13] || channel;
+
+    const isInboundContext = context === "from-trunk" || context === "from-pstn" || context === "default";
+    const isInboundChannel = /PJSIP\/.*(?:premium|trunk|b2com|from)/i.test(channel) || isInboundContext;
+    const isCentralDial = /PJSIP\/10\d{2}/.test(data) || /PJSIP\/(100[0-6])/.test(bridgedChannel);
+    const isWaitingApp = /^(Dial|Queue|Wait|Ringing|Progress|Playback|Park)$/i.test(app);
+    const alreadyParked = /ParkedCall|Park\(/i.test(app) || /parkedcalls/i.test(context);
+
+    if (!isInboundChannel || alreadyParked) continue;
+    if (!isInboundContext && !isCentralDial && !isWaitingApp) continue;
+
+    const id = String(uniqueId || channel);
+    if (seen.has(id)) continue;
+    seen.add(id);
+
+    const caller = digits(callerId) || extractPeer(channel) || extractPeer(data) || null;
+    const did = /^\d+$/.test(exten) ? exten : extractPeer(data);
+    const durationSeconds = Number(duration || 0);
+
+    calls.push({
+      id,
+      channel,
+      caller,
+      did: did || null,
+      state: state || null,
+      app: app || null,
+      data: data || null,
+      context: context || null,
+      exten: exten || null,
+      durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+      raw: line,
+    });
+  }
+
+  return calls.sort((a, b) => Number(b.durationSeconds || 0) - Number(a.durationSeconds || 0));
+}
+
+export async function getAsteriskIncomingSnapshot(): Promise<AsteriskIncomingSnapshot> {
+  try {
+    const res = await amiCommand("core show channels concise");
+    const output = parseCommandOutput(res.raw);
+    return {
+      ok: res.ok,
+      calls: res.ok ? parseIncomingShowChannels(output) : [],
+      raw: output || res.raw,
+      error: res.error,
+    };
+  } catch (error: any) {
+    return { ok: false, calls: [], error: error?.message || "AMI_INCOMING_ERROR" };
+  }
 }
 
 export async function getAsteriskParkingSnapshot(): Promise<AsteriskParkingSnapshot> {

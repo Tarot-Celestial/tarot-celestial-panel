@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAsteriskLiveSnapshot, getAsteriskParkingSnapshot } from "@/lib/server/asterisk-ami";
+import { getAsteriskIncomingSnapshot, getAsteriskLiveSnapshot, getAsteriskParkingSnapshot } from "@/lib/server/asterisk-ami";
 
 export const runtime = "nodejs";
 
@@ -60,13 +60,19 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const [parking, live] = await Promise.all([getAsteriskParkingSnapshot(), getAsteriskLiveSnapshot()]);
+    const [parking, incoming, live] = await Promise.all([
+      getAsteriskParkingSnapshot(),
+      getAsteriskIncomingSnapshot(),
+      getAsteriskLiveSnapshot(),
+    ]);
 
     return NextResponse.json({
-      ok: parking.ok,
+      ok: parking.ok || incoming.ok || live.ok,
       calls: parking.calls,
+      incomingCalls: incoming.calls,
       liveExtensions: live.extensions || {},
       asteriskParking: { ok: parking.ok, error: parking.error || null, raw: parking.raw || null },
+      asteriskIncoming: { ok: incoming.ok, error: incoming.error || null, raw: incoming.raw || null },
       asteriskLive: { ok: live.ok, error: live.error || null },
     });
   } catch (e: any) {

@@ -1634,42 +1634,6 @@ const payload = {
     }
   }
 
-  async function parkCall() {
-  try {
-    const session = runtimeRef.current.activeSession;
-
-    if (!session || !isSessionAlive(session)) {
-      setMsg("No hay llamada activa para parquear.");
-      return false;
-    }
-
-    if (!isSessionState(session, "Established")) {
-      setMsg("Solo puedes parquear una llamada ya conectada.");
-      return false;
-    }
-
-    const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
-
-    // 🔥 EXTENSIÓN DE PARKING (AJUSTA SI NO ES 700)
-    const target = SIP.UserAgent.makeURI(`sip:700@${config.domain}`);
-
-    if (!target) {
-      setMsg("Destino de parking inválido.");
-      return false;
-    }
-
-    await session.refer(target);
-
-    setMsg("Llamada enviada a parking.");
-
-    return true;
-  } catch (e: any) {
-    console.error(e);
-    setMsg("Error al parquear la llamada.");
-    return false;
-  }
-}
-
   async function copyCurrentNumber() {
     const value = visiblePeer || number;
     if (!value) return;
@@ -1983,14 +1947,6 @@ const payload = {
                     Transferir
                   </button>
                 ) : null}
-                {showHangupButton ? (
-  <button
-    onClick={() => void parkCall()}
-    style={softBtnStyle}
-  >
-    Parking
-  </button>
-) : null}
                 <button onClick={() => setNumber((prev) => prev.slice(0, -1))} style={softBtnStyle}>
                   ⌫ Borrar
                 </button>
