@@ -345,21 +345,7 @@ export default function IPPhoneBar() {
     numberRef.current = number;
   }, [status, incomingNumber, callNumber, number]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    const shouldPollParking = presence.role === "central" || presence.role === "admin";
-    if (!shouldPollParking) {
-      setParkingCalls([]);
-      setParkingError("");
-      return;
-    }
-    void refreshParkingCalls();
-    const id = window.setInterval(() => {
-      void refreshParkingCalls();
-    }, parkingCalls.length ? 2500 : 5000);
-    return () => window.clearInterval(id);
-  }, [hydrated, presence.role, parkingCalls.length]);
-
+  
   useEffect(() => {
     if (!config.username) return;
     syncRuntime({
