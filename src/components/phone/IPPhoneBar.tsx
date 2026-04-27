@@ -1952,43 +1952,7 @@ const payload = {
                 </button>
               </div>
 
-              
-
-                  {parkingCalls.length ? (
-                    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-                      {parkingCalls.map((item) => {
-                        const caller = item.caller || "Número no identificado";
-                        return (
-                          <button
-                            key={item.slot}
-                            onClick={() => void recoverParkedCall(item.slot)}
-                            disabled={showHangupButton}
-                            style={{
-                              textAlign: "left",
-                              borderRadius: 14,
-                              border: "1px solid rgba(255,159,67,.28)",
-                              background: "rgba(255,159,67,.12)",
-                              padding: 10,
-                              color: "#fff",
-                              cursor: showHangupButton ? "not-allowed" : "pointer",
-                              opacity: showHangupButton ? 0.55 : 1,
-                            }}
-                          >
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                              <strong>Parking {item.slot}</strong>
-                              <span style={{ color: "rgba(255,255,255,.68)", fontSize: 12 }}>Click para recuperar</span>
-                            </div>
-                            <div style={{ color: "rgba(255,255,255,.72)", fontSize: 12, marginTop: 4 }}>
-                              {caller}{typeof item.timeoutSeconds === "number" ? ` · timeout ${item.timeoutSeconds}s` : ""}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
+      
               {historyOpen ? (
                 <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>
                   <div style={{ color: "#fff", fontWeight: 800, marginBottom: 10 }}>Historial reciente</div>
