@@ -788,19 +788,6 @@ export default function IPPhoneBar() {
     nextOnline ? "registered" : "offline",
     nextOnline ? "Conectado" : "Desconectado"
   );
-
-  const shouldReconnect =
-  !runtimeRef.current.manualDisconnect &&
-  config.username &&
-  config.password;
-
-if (shouldReconnect) {
-  console.log("🔁 Re-registrando tras llamada...");
-  setTimeout(() => {
-    void connect(true);
-  }, 300);
-}
-
 }
 
   function cleanupSessionRefs(session?: any | null) {
