@@ -540,7 +540,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
     }
   }
 
-  function sendToSoftphone(item: any, intent: "dial" | "transfer" = "dial", autoCall = false) {
+  function sendToSoftphone(item: any, intent: "dial" | "transfer" = "dial", autoCall = false, openFicha = true) {
     const number = String(item.extension || "").trim();
     if (!number) return;
     window.dispatchEvent(
@@ -549,6 +549,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
           number,
           label: item.label || item.worker?.display_name || `Ext. ${number}`,
           autoCall,
+          openFicha,
           intent,
           role: item.worker?.role || null,
         },
@@ -566,7 +567,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   function recoverParkingCall(call: ParkingCallRow) {
     const slot = cleanDigits(String(call.slot || ""));
     if (!slot) return;
-    sendToSoftphone({ extension: slot, label: `Parking ${slot}` }, "dial", true);
+    sendToSoftphone({ extension: slot, label: `Parking ${slot}` }, "dial", true, false);
     window.setTimeout(() => void loadAll(), 1200);
   }
 
@@ -590,7 +591,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
           </div>
         </div>
         <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <button className="tc-btn" onClick={() => void loadData()} disabled={loading}><RefreshCw size={14} style={{ marginRight: 6 }} />Actualizar</button>
+          <button className="tc-btn" onClick={() => void loadAll()} disabled={loading}><RefreshCw size={14} style={{ marginRight: 6 }} />Actualizar</button>
           <button className="tc-btn tc-btn-gold" onClick={openCreateDrawer}><Plus size={14} style={{ marginRight: 6 }} />Nueva extensión</button>
           <button className="tc-btn" onClick={openCreateQueueDrawer}><Users2 size={14} style={{ marginRight: 6 }} />Nueva cola</button>
           <span className="tc-chip">Modo {mode === "admin" ? "Admin" : "Central"}</span>

@@ -1021,6 +1021,7 @@ authorizationPassword: config.password,
         const caller = shouldHideIncomingCaller ? "Número oculto" : realCaller;
 
         callDirectionRef.current = "incoming";
+        activeClientContextRef.current = null;
         callAnsweredRef.current = false;
         callFinalizedRef.current = false;
 
@@ -1038,7 +1039,7 @@ authorizationPassword: config.password,
 
         await bindSession(invitation, "incoming", caller);
 
-        if (realCaller && realCaller !== "Número oculto") {
+        if (!shouldHideIncomingCaller && realCaller && realCaller !== "Número oculto") {
           void lookupClientContextByPhone(realCaller, { openCRM: false });
         }
       } catch (error) {
@@ -1282,15 +1283,19 @@ return true;
       if (mode === "new") url += `&new_cliente=1`;
       if (mode === "associate") url += `&associate_phone=1`;
     }
-    const popup = window.open(url, "tc-crm-popup", "popup=yes,width=1420,height=960,left=60,top=40");
-    crmPopupWindowRef.current = popup || null;
-    window.setTimeout(() => {
-      try {
-        window.focus();
-      } catch {
-        // noop
+
+    // CRM en la MISMA ventana: evita montar otro panel y duplicar el softphone.
+    try {
+      window.history.pushState({}, "", url);
+      window.dispatchEvent(new CustomEvent("tc-open-crm-tab"));
+      if (clienteId) {
+        window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: String(clienteId) } }));
+      } else if (digits) {
+        window.dispatchEvent(new CustomEvent("crm-open-phone", { detail: { phone: digits, mode } }));
       }
-    }, 80);
+    } catch {
+      window.location.assign(url);
+    }
   }
 
   async function lookupClientContextByPhone(rawNumber: string, options?: { openCRM?: boolean }) {

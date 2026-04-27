@@ -152,6 +152,12 @@ function AdminPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
+
+  useEffect(() => {
+    const onOpenCrmTab = () => setTab("crm" as any);
+    window.addEventListener("tc-open-crm-tab", onOpenCrmTab);
+    return () => window.removeEventListener("tc-open-crm-tab", onOpenCrmTab);
+  }, []);
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
 

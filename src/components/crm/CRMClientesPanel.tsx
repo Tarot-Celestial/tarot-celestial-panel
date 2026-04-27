@@ -612,8 +612,38 @@ export default function CRMClientesPanel({
       if (id) openCRMFicha(String(id));
     }
 
+    async function onOpenPhone(e: any) {
+      const phone = String(e?.detail?.phone || "").trim();
+      const mode = String(e?.detail?.mode || "lookup");
+      if (!phone) return;
+
+      setCrmPhoneFilter(phone);
+
+      try {
+        const token = await getTokenOrLogin();
+        if (!token) return;
+        const r = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(phone)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = await safeJson(r);
+        const clientes = Array.isArray(j?.clientes) ? j.clientes : [];
+        setCrmRows(clientes);
+        setCrmMsg(`Resultados: ${clientes.length}`);
+        if (clientes.length === 1 && mode !== "new") {
+          await openCRMFicha(String(clientes[0].id));
+        }
+      } catch {
+        // noop
+      }
+    }
+
     window.addEventListener("crm-open-cliente", onOpenCliente);
-    return () => window.removeEventListener("crm-open-cliente", onOpenCliente);
+    window.addEventListener("crm-open-phone", onOpenPhone);
+    return () => {
+      window.removeEventListener("crm-open-cliente", onOpenCliente);
+      window.removeEventListener("crm-open-phone", onOpenPhone);
+    };
   }, []);
 
   useEffect(() => {

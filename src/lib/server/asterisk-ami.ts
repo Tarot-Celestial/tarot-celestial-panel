@@ -219,9 +219,10 @@ function parseParkedCallsAmi(raw: string): ParkedCallInfo[] {
 
   for (const block of parseAmiBlocks(raw)) {
     const event = String(block.Event || "").toLowerCase();
-    if (!event.includes("parkedcall")) continue;
+    if (!event.includes("parkedcall") || event.includes("complete")) continue;
 
     const slot = digits(block.ParkingSpace || block.Exten || block.Space || block.ParkingExten || "");
+    if (!slot) continue;
     const channel = block.ParkeeChannel || block.Channel || block.ParkerChannel || null;
     const callerRaw =
       block.ParkeeCallerIDNum ||
@@ -237,7 +238,7 @@ function parseParkedCallsAmi(raw: string): ParkedCallInfo[] {
     seen.add(key);
 
     calls.push({
-      slot: slot || "700",
+      slot,
       parkingLot: block.Parkinglot || block.ParkingLot || "default",
       channel,
       caller: digits(callerRaw) || extractPeer(String(callerRaw || "")) || extractPeer(String(channel || "")) || null,
@@ -270,8 +271,11 @@ function parseParkedCallsFromChannels(output: string): ParkedCallInfo[] {
     if (seen.has(key)) continue;
     seen.add(key);
 
+    const slot = digits(appData);
+    if (!slot) continue;
+
     calls.push({
-      slot: digits(appData) || "700",
+      slot,
       parkingLot: appData && !digits(appData) ? appData : "default",
       channel,
       caller: digits(callerRaw) || extractPeer(channel) || null,
