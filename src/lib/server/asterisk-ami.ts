@@ -154,6 +154,84 @@ function markCall(map: Record<string, ExtensionLiveState>, extension: string, pe
   };
 }
 
+export type ParkedCallInfo = {
+  slot: string;
+  parkingLot: string | null;
+  channel: string | null;
+  caller: string | null;
+  timeoutSeconds: number | null;
+  raw: string;
+};
+
+export type AsteriskParkingSnapshot = {
+  ok: boolean;
+  calls: ParkedCallInfo[];
+  raw?: string;
+  error?: string;
+};
+
+function parseParkingShow(output: string): ParkedCallInfo[] {
+  const calls: ParkedCallInfo[] = [];
+  const seen = new Set<string>();
+  const text = String(output || "");
+
+  const pushCall = (slot: string | null, raw: string, channel?: string | null, callerRaw?: string | null, timeoutRaw?: string | null) => {
+    if (!slot || seen.has(slot)) return;
+    seen.add(slot);
+    const caller = extractPeer(callerRaw || "") || digits(callerRaw) || extractPeer(channel || "") || null;
+    calls.push({
+      slot,
+      parkingLot: raw.match(/Parking\s*Lot\s*[:=]\s*([^\r\n]+)/i)?.[1]?.trim() || "default",
+      channel: channel || null,
+      caller,
+      timeoutSeconds: timeoutRaw ? Number(timeoutRaw) : null,
+      raw,
+    });
+  };
+
+  // Asterisk can print either detailed blocks or a table. Support both.
+  for (const line of text.split(/\r?\n/)) {
+    const row = line.trim();
+    const tableMatch = row.match(/^(\d{3,})\s+(PJSIP\/\S+|SIP\/\S+|Local\/\S+)(.*)$/i);
+    if (tableMatch) {
+      const rest = tableMatch[3] || "";
+      const timeout = rest.match(/\b(\d{1,4})\b/)?.[1] || null;
+      const caller = rest.match(/(\+?\d{5,15})/)?.[1] || null;
+      pushCall(tableMatch[1], row, tableMatch[2], caller, timeout);
+    }
+  }
+
+  const blocks = text
+    .split(/(?=\n?\s*(?:Parking Space|Space)\s*[:=]?\s*\d{3,})/i)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  for (const block of blocks) {
+    const slot = block.match(/(?:Parking Space|Space)\s*[:=]?\s*(\d{3,})/i)?.[1] || block.match(/^\s*(\d{3,})\s+/m)?.[1] || null;
+    const channel = block.match(/Channel\s*[:=]\s*([^\r\n]+)/i)?.[1]?.trim() || block.match(/(PJSIP\/[A-Za-z0-9_.+@-]+)/)?.[1] || null;
+    const callerRaw = block.match(/(?:Caller\s*ID|Parker\s*Caller\s*ID|From)\s*[:=]\s*([^\r\n]+)/i)?.[1]?.trim() || block.match(/(?:CID|CallerID)\s*[:=]\s*([^\r\n]+)/i)?.[1]?.trim() || null;
+    const timeoutRaw = block.match(/(?:Timeout|Time(?:\s*Left)?)\s*[:=]?\s*(\d+)/i)?.[1] || null;
+    pushCall(slot, block, channel, callerRaw, timeoutRaw);
+  }
+
+  return calls.sort((a, b) => Number(a.slot) - Number(b.slot));
+}
+
+export async function getAsteriskParkingSnapshot(): Promise<AsteriskParkingSnapshot> {
+  try {
+    const res = await amiCommand("parking show");
+    const output = parseCommandOutput(res.raw);
+    return {
+      ok: res.ok,
+      calls: res.ok ? parseParkingShow(output) : [],
+      raw: output || res.raw,
+      error: res.error,
+    };
+  } catch (error: any) {
+    return { ok: false, calls: [], error: error?.message || "AMI_PARKING_ERROR" };
+  }
+}
+
 export async function refreshPjsipRealtimeObject(extension: string) {
   const ext = digits(extension);
   if (!ext) return { ok: false, error: "NO_EXTENSION" };

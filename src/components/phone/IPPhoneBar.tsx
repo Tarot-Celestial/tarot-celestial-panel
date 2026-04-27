@@ -91,6 +91,14 @@ type PanelExtensionOption = {
   show_caller_number?: boolean | null;
 };
 
+type ParkingCallItem = {
+  slot: string;
+  parkingLot?: string | null;
+  channel?: string | null;
+  caller?: string | null;
+  timeoutSeconds?: number | null;
+};
+
 function formatDuration(totalSeconds: number) {
   const value = Math.max(0, Math.round(totalSeconds || 0));
   const hh = Math.floor(value / 3600);
@@ -230,6 +238,8 @@ export default function IPPhoneBar() {
   const [incomingClientKnown, setIncomingClientKnown] = useState(false);
   const [incomingDisplayName, setIncomingDisplayName] = useState("");
   const [panelExtensions, setPanelExtensions] = useState<PanelExtensionOption[]>([]);
+  const [parkingCalls, setParkingCalls] = useState<ParkingCallItem[]>([]);
+  const [parkingError, setParkingError] = useState("");
 
   const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
   const inCall = status === "calling" || status === "ringing" || status === "in_call";
@@ -352,6 +362,21 @@ export default function IPPhoneBar() {
     callNumberRef.current = callNumber;
     numberRef.current = number;
   }, [status, incomingNumber, callNumber, number]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const shouldPollParking = presence.role === "central" || presence.role === "admin";
+    if (!shouldPollParking) {
+      setParkingCalls([]);
+      setParkingError("");
+      return;
+    }
+    void refreshParkingCalls();
+    const id = window.setInterval(() => {
+      void refreshParkingCalls();
+    }, parkingCalls.length ? 2500 : 5000);
+    return () => window.clearInterval(id);
+  }, [hydrated, presence.role, parkingCalls.length]);
 
   useEffect(() => {
     if (!config.username) return;
@@ -525,6 +550,37 @@ export default function IPPhoneBar() {
   async function getToken() {
     const { data } = await sb.auth.getSession();
     return data.session?.access_token || "";
+  }
+
+  async function refreshParkingCalls() {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetch("/api/asterisk/parking", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await res.json().catch(() => null);
+      setParkingCalls(Array.isArray(json?.calls) ? json.calls : []);
+      if (!json?.ok) {
+        setParkingError(String(json?.error || json?.asteriskParking?.error || "No se pudo leer parking"));
+        return;
+      }
+      setParkingError("");
+    } catch (e: any) {
+      setParkingError(e?.message || "No se pudo leer parking");
+    }
+  }
+
+  async function recoverParkedCall(slot: string) {
+    const cleanSlot = sanitizeNumber(slot);
+    if (!cleanSlot) return;
+    setNumber(cleanSlot);
+    setOpen(true);
+    setCompact(false);
+    setMsg(`Recuperando llamada aparcada en ${cleanSlot}…`);
+    await call(cleanSlot, { openFicha: false });
+    window.setTimeout(() => void refreshParkingCalls(), 1200);
   }
 
     async function syncRuntime(payload: Record<string, any>) {
@@ -1958,6 +2014,59 @@ const payload = {
                   ⌫ Borrar
                 </button>
               </div>
+
+              {presence.role === "central" || presence.role === "admin" ? (
+                <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: parkingCalls.length ? "rgba(255,159,67,.10)" : "rgba(255,255,255,.03)" }) }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <div>
+                      <div style={{ color: "#fff", fontWeight: 900 }}>Llamadas en parking</div>
+                      <div style={{ color: "rgba(255,255,255,.60)", fontSize: 12, marginTop: 3 }}>
+                        {parkingCalls.length ? `${parkingCalls.length} llamada(s) esperando` : "Sin llamadas aparcadas"}
+                      </div>
+                    </div>
+                    <button onClick={() => void refreshParkingCalls()} style={iconBtnStyle} title="Actualizar parking">
+                      <RefreshCw size={15} />
+                    </button>
+                  </div>
+
+                  {parkingError ? (
+                    <div style={{ color: "#ff9aa8", fontSize: 12, marginTop: 8 }}>{parkingError}</div>
+                  ) : null}
+
+                  {parkingCalls.length ? (
+                    <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+                      {parkingCalls.map((item) => {
+                        const caller = item.caller || "Número no identificado";
+                        return (
+                          <button
+                            key={item.slot}
+                            onClick={() => void recoverParkedCall(item.slot)}
+                            disabled={showHangupButton}
+                            style={{
+                              textAlign: "left",
+                              borderRadius: 14,
+                              border: "1px solid rgba(255,159,67,.28)",
+                              background: "rgba(255,159,67,.12)",
+                              padding: 10,
+                              color: "#fff",
+                              cursor: showHangupButton ? "not-allowed" : "pointer",
+                              opacity: showHangupButton ? 0.55 : 1,
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                              <strong>Parking {item.slot}</strong>
+                              <span style={{ color: "rgba(255,255,255,.68)", fontSize: 12 }}>Click para recuperar</span>
+                            </div>
+                            <div style={{ color: "rgba(255,255,255,.72)", fontSize: 12, marginTop: 4 }}>
+                              {caller}{typeof item.timeoutSeconds === "number" ? ` · timeout ${item.timeoutSeconds}s` : ""}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {historyOpen ? (
                 <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: "rgba(255,255,255,.03)" }) }}>

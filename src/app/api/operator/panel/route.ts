@@ -728,21 +728,24 @@ export async function POST(req: Request) {
       .select("*")
       .maybeSingle();
 
-    // 🔥 SINCRONIZAR CENTRALES CON ASTERISK
-try {
-  const role = normalizeExtensionRole(result.data?.role || result.data?.extension_role);
-  const isRegistered = runtimePatch.registered === true;
-
-  if (role === "central") {
-    await syncCentralInAsterisk(extension, isRegistered);
-  }
-} catch (e) {
-  console.error("Error sincronizando central:", e);
-}
-
     if (result.error) {
       console.error("RUNTIME UPDATE ERROR:", result.error);
       return NextResponse.json({ ok: false, error: result.error.message }, { status: 200 });
+    }
+
+    // 🔥 SINCRONIZAR CENTRALES CON ASTERISK
+    // Importante: usamos result.data.registered, no runtimePatch.registered.
+    // update_runtime a veces llega solo con status/active_call_count; si leyéramos
+    // runtimePatch.registered en esos casos, borraríamos la central de ASTDB por error.
+    try {
+      const role = normalizeExtensionRole(result.data?.role || result.data?.extension_role);
+      const isRegistered = result.data?.registered === true;
+
+      if (role === "central") {
+        await syncCentralInAsterisk(extension, isRegistered);
+      }
+    } catch (e) {
+      console.error("Error sincronizando central:", e);
     }
 
     return NextResponse.json({
