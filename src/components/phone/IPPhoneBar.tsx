@@ -91,13 +91,6 @@ type PanelExtensionOption = {
   show_caller_number?: boolean | null;
 };
 
-type ParkingCallItem = {
-  slot: string;
-  parkingLot?: string | null;
-  channel?: string | null;
-  caller?: string | null;
-  timeoutSeconds?: number | null;
-};
 
 function formatDuration(totalSeconds: number) {
   const value = Math.max(0, Math.round(totalSeconds || 0));
@@ -238,9 +231,7 @@ export default function IPPhoneBar() {
   const [incomingClientKnown, setIncomingClientKnown] = useState(false);
   const [incomingDisplayName, setIncomingDisplayName] = useState("");
   const [panelExtensions, setPanelExtensions] = useState<PanelExtensionOption[]>([]);
-  const [parkingCalls, setParkingCalls] = useState<ParkingCallItem[]>([]);
-  const [parkingError, setParkingError] = useState("");
-
+ 
   const registered = status === "registered" || status === "calling" || status === "ringing" || status === "in_call";
   const inCall = status === "calling" || status === "ringing" || status === "in_call";
   const crmDisplayName = [activeClientContextRef.current?.nombre, activeClientContextRef.current?.apellido].filter(Boolean).join(" ").trim();
@@ -346,16 +337,7 @@ export default function IPPhoneBar() {
   }
 }, [hydrated, config.username, config.password, config.domain, config.server, presence.online, presence.status]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    const shouldRegister = presence.online && presence.status === "working";
-    if (!shouldRegister) return;
-    if (!config.username || !config.password) return;
-    if (runtimeRef.current.userAgent || connectingRef.current) return;
-    void connect(true);
-  }, [hydrated, presence.online, presence.status, config.username, config.password]);
-
-
+  
   useEffect(() => {
     statusRef.current = status;
     incomingNumberRef.current = incomingNumber;
@@ -550,37 +532,6 @@ export default function IPPhoneBar() {
   async function getToken() {
     const { data } = await sb.auth.getSession();
     return data.session?.access_token || "";
-  }
-
-  async function refreshParkingCalls() {
-    try {
-      const token = await getToken();
-      if (!token) return;
-      const res = await fetch("/api/asterisk/parking", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => null);
-      setParkingCalls(Array.isArray(json?.calls) ? json.calls : []);
-      if (!json?.ok) {
-        setParkingError(String(json?.error || json?.asteriskParking?.error || "No se pudo leer parking"));
-        return;
-      }
-      setParkingError("");
-    } catch (e: any) {
-      setParkingError(e?.message || "No se pudo leer parking");
-    }
-  }
-
-  async function recoverParkedCall(slot: string) {
-    const cleanSlot = sanitizeNumber(slot);
-    if (!cleanSlot) return;
-    setNumber(cleanSlot);
-    setOpen(true);
-    setCompact(false);
-    setMsg(`Recuperando llamada aparcada en ${cleanSlot}…`);
-    await call(cleanSlot, { openFicha: false });
-    window.setTimeout(() => void refreshParkingCalls(), 1200);
   }
 
     async function syncRuntime(payload: Record<string, any>) {
@@ -2015,23 +1966,7 @@ const payload = {
                 </button>
               </div>
 
-              {presence.role === "central" || presence.role === "admin" ? (
-                <div style={{ ...cardStyle({ padding: 12, borderRadius: 18, background: parkingCalls.length ? "rgba(255,159,67,.10)" : "rgba(255,255,255,.03)" }) }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <div>
-                      <div style={{ color: "#fff", fontWeight: 900 }}>Llamadas en parking</div>
-                      <div style={{ color: "rgba(255,255,255,.60)", fontSize: 12, marginTop: 3 }}>
-                        {parkingCalls.length ? `${parkingCalls.length} llamada(s) esperando` : "Sin llamadas aparcadas"}
-                      </div>
-                    </div>
-                    <button onClick={() => void refreshParkingCalls()} style={iconBtnStyle} title="Actualizar parking">
-                      <RefreshCw size={15} />
-                    </button>
-                  </div>
-
-                  {parkingError ? (
-                    <div style={{ color: "#ff9aa8", fontSize: 12, marginTop: 8 }}>{parkingError}</div>
-                  ) : null}
+              
 
                   {parkingCalls.length ? (
                     <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
