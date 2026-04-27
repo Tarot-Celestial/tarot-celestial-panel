@@ -145,6 +145,144 @@ function amiCommandOnly(command: string): Promise<AmiResponse> {
   });
 }
 
+
+function amiAction(fields: Record<string, string>): Promise<AmiResponse> {
+  const cfg = getAmiConfig();
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let raw = "";
+    const socket = net.createConnection(cfg.port, cfg.host);
+
+    const finish = (response: AmiResponse) => {
+      if (settled) return;
+      settled = true;
+      try {
+        socket.destroy();
+      } catch {
+        // noop
+      }
+      resolve(response);
+    };
+
+    const timer = setTimeout(() => {
+      finish({ ok: false, raw, error: "AMI_TIMEOUT" });
+    }, cfg.timeoutMs);
+
+    socket.on("connect", () => {
+      writeAction(socket, { Action: "Login", Username: cfg.username, Secret: cfg.secret, Events: "off" });
+      writeAction(socket, fields);
+      writeAction(socket, { Action: "Logoff" });
+    });
+
+    socket.on("data", (chunk) => {
+      raw += chunk.toString("utf8");
+      if (raw.includes("Message: Thanks for all the fish") || raw.includes("Response: Goodbye")) {
+        clearTimeout(timer);
+        const loginFailed = /Message:\s*Authentication failed/i.test(raw);
+        finish({ ok: !loginFailed, raw, error: loginFailed ? "AMI_AUTH_FAILED" : undefined });
+      }
+    });
+
+    socket.on("error", (err) => {
+      clearTimeout(timer);
+      finish({ ok: false, raw, error: err.message });
+    });
+
+    socket.on("close", () => {
+      clearTimeout(timer);
+      if (!settled) finish({ ok: raw.length > 0, raw });
+    });
+  });
+}
+
+function parseAmiBlocks(raw: string) {
+  return String(raw || "")
+    .split(/\r?\n\r?\n/)
+    .map((block) => {
+      const obj: Record<string, string> = {};
+      for (const line of block.split(/\r?\n/)) {
+        const idx = line.indexOf(":");
+        if (idx <= 0) continue;
+        const key = line.slice(0, idx).trim();
+        const value = line.slice(idx + 1).trim();
+        if (key) obj[key] = value;
+      }
+      return obj;
+    })
+    .filter((obj) => Object.keys(obj).length > 0);
+}
+
+function parseParkedCallsAmi(raw: string): ParkedCallInfo[] {
+  const calls: ParkedCallInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const block of parseAmiBlocks(raw)) {
+    const event = String(block.Event || "").toLowerCase();
+    if (!event.includes("parkedcall")) continue;
+
+    const slot = digits(block.ParkingSpace || block.Exten || block.Space || block.ParkingExten || "");
+    const channel = block.ParkeeChannel || block.Channel || block.ParkerChannel || null;
+    const callerRaw =
+      block.ParkeeCallerIDNum ||
+      block.ParkerCallerIDNum ||
+      block.CallerIDNum ||
+      block.ConnectedLineNum ||
+      block.ParkeeCallerIDName ||
+      block.CallerIDName ||
+      null;
+
+    const key = slot || channel || JSON.stringify(block);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    calls.push({
+      slot: slot || "700",
+      parkingLot: block.Parkinglot || block.ParkingLot || "default",
+      channel,
+      caller: digits(callerRaw) || extractPeer(String(callerRaw || "")) || extractPeer(String(channel || "")) || null,
+      timeoutSeconds: block.Timeout ? Number(block.Timeout) : block.TimeoutTime ? Number(block.TimeoutTime) : null,
+      raw: Object.entries(block).map(([k, v]) => `${k}: ${v}`).join("\n"),
+    });
+  }
+
+  return calls.sort((a, b) => Number(a.slot) - Number(b.slot));
+}
+
+function parseParkedCallsFromChannels(output: string): ParkedCallInfo[] {
+  const calls: ParkedCallInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const rawLine of String(output || "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || !line.includes("!")) continue;
+
+    const parts = line.split("!");
+    const channel = parts[0] || "";
+    const app = parts[5] || "";
+    const appData = parts[6] || "";
+    const callerRaw = parts[7] || "";
+    const uniqueId = parts[12] || parts[13] || channel;
+
+    if (!String(app).toLowerCase().includes("park")) continue;
+
+    const key = String(uniqueId || channel);
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    calls.push({
+      slot: digits(appData) || "700",
+      parkingLot: appData && !digits(appData) ? appData : "default",
+      channel,
+      caller: digits(callerRaw) || extractPeer(channel) || null,
+      timeoutSeconds: null,
+      raw: line,
+    });
+  }
+
+  return calls;
+}
+
 export async function amiCommand(command: string): Promise<AmiResponse> {
   if (HAS_EXPLICIT_AMI_HOST) {
     const ami = await amiCommandOnly(command);
@@ -336,14 +474,18 @@ function parseIncomingShowChannels(output: string): AsteriskIncomingCallInfo[] {
     const bridgedChannel = parts[11] || "";
     const uniqueId = parts[12] || parts[13] || channel;
 
-    const isInboundContext = context === "from-trunk" || context === "from-pstn" || context === "default";
-    const isInboundChannel = /PJSIP\/.*(?:premium|trunk|b2com|from)/i.test(channel) || isInboundContext;
-    const isCentralDial = /PJSIP\/10\d{2}/.test(data) || /PJSIP\/(100[0-6])/.test(bridgedChannel);
-    const isWaitingApp = /^(Dial|Queue|Wait|Ringing|Progress|Playback|Park)$/i.test(app);
-    const alreadyParked = /ParkedCall|Park\(/i.test(app) || /parkedcalls/i.test(context);
-   
-    if (!isInboundChannel || alreadyParked) continue;
-    if (!isInboundContext && !isCentralDial && !isWaitingApp) continue;
+    const appLower = String(app || "").toLowerCase();
+    const contextLower = String(context || "").toLowerCase();
+
+    if (appLower.includes("park") || contextLower.includes("parkedcalls")) continue;
+
+    const isInboundContext = ["from-trunk", "from-pstn", "default"].includes(contextLower);
+    const isTrunkChannel = /PJSIP\/(premium|trunk|b2com|from|entrada|inbound)/i.test(channel);
+    const isDialingCentral = /PJSIP\/(100[0-6])\b/i.test(data) || /PJSIP\/(100[0-6])-/i.test(bridgedChannel);
+    const isWaitingOrDialing = /^(Dial|Queue|Wait|Ringing|Progress|Playback|Answer)$/i.test(app);
+
+    if (!isInboundContext && !isTrunkChannel && !isDialingCentral) continue;
+    if (!isWaitingOrDialing && !isDialingCentral) continue;
 
     const id = String(uniqueId || channel);
     if (seen.has(id)) continue;
@@ -388,46 +530,32 @@ export async function getAsteriskIncomingSnapshot(): Promise<AsteriskIncomingSna
 
 export async function getAsteriskParkingSnapshot(): Promise<AsteriskParkingSnapshot> {
   try {
-  const res = await amiCommand("core show channels concise");
-const output = parseCommandOutput(res.raw);
+    if (HAS_EXPLICIT_AMI_HOST) {
+      const parked = await amiAction({ Action: "ParkedCalls" });
+      const amiCalls = parseParkedCallsAmi(parked.raw);
+      if (parked.ok && amiCalls.length) {
+        return { ok: true, calls: amiCalls, raw: parked.raw };
+      }
 
-const calls: ParkedCallInfo[] = [];
+      const channelsRes = await amiCommand("core show channels concise");
+      const channelsOutput = parseCommandOutput(channelsRes.raw);
+      const channelCalls = parseParkedCallsFromChannels(channelsOutput);
+      return {
+        ok: parked.ok || channelsRes.ok,
+        calls: channelCalls,
+        raw: `${parked.raw || ""}\n${channelsOutput || channelsRes.raw || ""}`.trim(),
+        error: channelCalls.length ? undefined : parked.error || channelsRes.error,
+      };
+    }
 
-for (const line of String(output || "").split("\n")) {
-  if (!line.includes("!")) continue;
-
-  const parts = line.split("!");
-
-  const channel = parts[0] || "";
-  const app = parts[5] || "";
-  const callerRaw = parts[7] || "";
-
-  // 🔥 ESTA ES LA CLAVE
-  if (!String(app).toLowerCase().includes("park")) continue;
-
-  const caller =
-    digits(callerRaw) ||
-    extractPeer(channel) ||
-    "Desconocido";
-  
-const slotMatch = channel.match(/-(\d+)/);
-const slot = slotMatch?.[1] || "700";
-  
-  calls.push({
-    slot,
-    parkingLot: "default",
-    channel,
-    caller,
-    timeoutSeconds: null,
-    raw: line,
-  });
-}
-
-return {
-  ok: true,
-  calls,
-  raw: output,
-};
+    const res = await amiCommand("core show channels concise");
+    const output = parseCommandOutput(res.raw);
+    return {
+      ok: res.ok,
+      calls: res.ok ? parseParkedCallsFromChannels(output) : [],
+      raw: output || res.raw,
+      error: res.error,
+    };
   } catch (error: any) {
     return { ok: false, calls: [], error: error?.message || "AMI_PARKING_ERROR" };
   }
@@ -501,6 +629,14 @@ export async function getAsteriskLiveSnapshot(): Promise<AsteriskLiveSnapshot> {
 
         if (bridgeExt && /^\d{2,6}$/.test(bridgeExt)) {
           markCall(extensions, bridgeExt, peer && peer !== bridgeExt ? peer : null, isRinging);
+        }
+
+        // Cuando Asterisk está ejecutando Dial(PJSIP/1000&PJSIP/1001...), todavía puede no existir
+        // canal propio de cada central. Marcamos esas extensiones como ringing para que el panel
+        // no las muestre disponibles mientras está entrando la llamada.
+        for (const match of String(data || "").matchAll(/PJSIP\/(\d{2,6})/g)) {
+          const dialedExt = match[1];
+          if (dialedExt) markCall(extensions, dialedExt, digits(callerId) || peer || null, true);
         }
 
         if (/^\d{2,6}$/.test(exten) && context === "from-trunk") {
