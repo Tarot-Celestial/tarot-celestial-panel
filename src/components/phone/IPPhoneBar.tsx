@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { RegistererState } from "sip.js";
 import {
   Clock3,
   Copy,
@@ -1057,56 +1058,74 @@ authorizationPassword: config.password,
 registerer.__tcBound = true;
       
      registerer.stateChange?.addListener?.((state: any) => {
-  const txt = String(state || "");
-  console.log("SIP REGISTER STATE:", txt);
+  console.log("SIP REGISTER STATE:", state);
 
-  if (txt.includes("Registered")) {
-    runtimeRef.current.reconnectAttempts = 0;
+  const runtime = runtimeRef.current;
 
-    setStatus((prev) =>
-      prev === "in_call" || prev === "calling" || prev === "ringing"
-        ? prev
-        : "registered"
-    );
+  switch (state) {
+    case RegistererState.Registered:
+      console.log("✅ SIP REALMENTE REGISTRADO");
 
-    setStatusText((prev) =>
-      prev === "En llamada" ||
-      prev.startsWith("Llamando") ||
-      prev.startsWith("Llamada entrante")
-        ? prev
-        : "Conectado"
-    );
+      runtime.reconnectAttempts = 0;
 
-    syncRuntime({
-      registered: true,
-      status: "registered",
-    });
+      setStatus((prev) =>
+        prev === "in_call" || prev === "calling" || prev === "ringing"
+          ? prev
+          : "registered"
+      );
 
-    return;
-  }
+      statusRef.current = "registered";
 
-  if (txt.includes("Unregistered") || txt.includes("Terminated")) {
-    const hasActiveCall =
-      runtimeRef.current.activeSession &&
-      isSessionAlive(runtimeRef.current.activeSession);
+      setStatusText((prev) =>
+        prev === "En llamada" ||
+        prev.startsWith("Llamando") ||
+        prev.startsWith("Llamada entrante")
+          ? prev
+          : "Conectado"
+      );
 
-    if (hasActiveCall) {
-      console.log("ignore unregister during call");
-      return;
-    }
+      syncRuntime({
+        registered: true,
+        status: "registered",
+      });
 
-    syncRuntime({
-      registered: false,
-      status: "offline",
-    });
+      break;
 
-    if (!runtimeRef.current.manualDisconnect) {
-  const transportState = String(runtimeRef.current.userAgent?.transport?.state || "");
+    case RegistererState.Unregistered:
+      console.log("⚠️ SIP UNREGISTERED");
 
-  if (transportState.includes("Disconnected")) {
-    scheduleReconnect("Reconectando SIP…");
-  }
-}
+      if (
+        runtime.activeSession &&
+        isSessionAlive(runtime.activeSession)
+      ) {
+        console.log("ignore unregister during call");
+        return;
+      }
+
+      setStatus("connecting");
+      statusRef.current = "connecting";
+      setStatusText("Reconectando...");
+
+      syncRuntime({
+        registered: false,
+        status: "offline",
+      });
+
+      break;
+
+    case RegistererState.Terminated:
+      console.log("💀 SIP TERMINATED");
+
+      setStatus("offline");
+      statusRef.current = "offline";
+      setStatusText("Desconectado");
+
+      syncRuntime({
+        registered: false,
+        status: "offline",
+      });
+
+      break;
   }
 });
     userAgent.transport.stateChange.addListener((state: any) => {
