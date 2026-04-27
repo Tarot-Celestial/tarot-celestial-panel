@@ -341,7 +341,7 @@ function parseIncomingShowChannels(output: string): AsteriskIncomingCallInfo[] {
     const isCentralDial = /PJSIP\/10\d{2}/.test(data) || /PJSIP\/(100[0-6])/.test(bridgedChannel);
     const isWaitingApp = /^(Dial|Queue|Wait|Ringing|Progress|Playback|Park)$/i.test(app);
     const alreadyParked = /ParkedCall|Park\(/i.test(app) || /parkedcalls/i.test(context);
-
+   
     if (!isInboundChannel || alreadyParked) continue;
     if (!isInboundContext && !isCentralDial && !isWaitingApp) continue;
 
@@ -388,14 +388,46 @@ export async function getAsteriskIncomingSnapshot(): Promise<AsteriskIncomingSna
 
 export async function getAsteriskParkingSnapshot(): Promise<AsteriskParkingSnapshot> {
   try {
-    const res = await amiCommand("parking show");
-    const output = parseCommandOutput(res.raw);
-    return {
-      ok: res.ok,
-      calls: res.ok ? parseParkingShow(output) : [],
-      raw: output || res.raw,
-      error: res.error,
-    };
+  const res = await amiCommand("core show channels concise");
+const output = parseCommandOutput(res.raw);
+
+const calls: ParkedCallInfo[] = [];
+
+for (const line of String(output || "").split("\n")) {
+  if (!line.includes("!")) continue;
+
+  const parts = line.split("!");
+
+  const channel = parts[0] || "";
+  const app = parts[5] || "";
+  const callerRaw = parts[7] || "";
+
+  // 🔥 ESTA ES LA CLAVE
+  if (!String(app).toLowerCase().includes("park")) continue;
+
+  const caller =
+    digits(callerRaw) ||
+    extractPeer(channel) ||
+    "Desconocido";
+  
+const slotMatch = channel.match(/-(\d+)/);
+const slot = slotMatch?.[1] || "700";
+  
+  calls.push({
+    slot,
+    parkingLot: "default",
+    channel,
+    caller,
+    timeoutSeconds: null,
+    raw: line,
+  });
+}
+
+return {
+  ok: true,
+  calls,
+  raw: output,
+};
   } catch (error: any) {
     return { ok: false, calls: [], error: error?.message || "AMI_PARKING_ERROR" };
   }
