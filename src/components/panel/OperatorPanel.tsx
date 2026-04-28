@@ -299,9 +299,23 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
 }, []);
 
   async function getToken() {
-    const { data } = await sb.auth.getSession();
-    return data.session?.access_token || "";
+  const { data, error } = await sb.auth.getSession();
+
+  if (error) {
+    console.error("SESSION ERROR:", error);
+    return "";
   }
+
+  const token = data?.session?.access_token;
+
+  console.log("TOKEN:", token); // 👈 MUY IMPORTANTE
+
+  if (!token) {
+    console.error("NO SESSION TOKEN");
+  }
+
+  return token || "";
+}
 
   async function loadData() {
     try {
