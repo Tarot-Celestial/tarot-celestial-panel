@@ -1856,7 +1856,7 @@ stopRingtone();
 
 // 🔥 transferir desde Asterisk
 // 🔥 para móviles: simplemente salir de la llamada
-await original.bye();
+await original.refer(referTarget);
 // 🔥 cerrar llamada de consulta (CLAVE)
 await consultSessionRef.current?.bye?.().catch(() => null);
 await consultSessionRef.current?.cancel?.().catch(() => null);
