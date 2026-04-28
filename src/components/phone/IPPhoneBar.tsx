@@ -1854,7 +1854,15 @@ await ensureRemoteAudioPlayback();
 
       // SOLO aquí se conecta cliente ↔ destino final.
       stopRingtone();
-      await original.refer(referTarget);
+      const isExternal = target.length >= 6;
+
+if (isExternal) {
+  // 🔥 PARA MÓVILES → colgar central y dejar llamada ya establecida
+  await original.bye();
+} else {
+  // SIP normal
+  await original.refer(referTarget);
+}
       cleanupRemoteAudio();
       addHistory({ number: target, direction: "transfer", createdAt: new Date().toISOString(), result: "transferencia asistida" });
       void syncExtensionRuntime(target, {
