@@ -88,10 +88,11 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
 
     const cliente_id = String(body?.cliente_id || "").trim();
-    const tarotista_id = String(body?.tarotista_id || "").trim() || null;
+    const tarotista_id = String(body?.tarotista_id || body?.tarotista_worker_id || "").trim() || null;
     const tarotista_nombre_manual = String(body?.tarotista_nombre_manual || "").trim() || null;
     const fecha_reserva = String(body?.fecha_reserva || "").trim();
     const nota = String(body?.nota || "").trim() || null;
+    const notify_when_tarotista_idle = body?.notify_when_tarotista_idle === true;
 
     if (!cliente_id) {
       return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
@@ -128,7 +129,9 @@ export async function POST(req: Request) {
       tarotista_nombre,
       tarotista_nombre_manual,
       fecha_reserva: new Date(fecha_reserva).toISOString(),
-      estado: "pendiente",
+      estado: notify_when_tarotista_idle ? "esperando_tarotista" : "pendiente",
+      notify_when_tarotista_idle,
+      ready_notified_at: null,
       nota,
       created_by_worker_id: me.id,
     };

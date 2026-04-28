@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { finalizeBestMinuteSessionFromAsterisk } from "@/lib/server/call-minute-sessions";
 
 type SupabaseAny = ReturnType<typeof getAdminClient>;
 
@@ -332,9 +333,26 @@ export async function handleAsteriskCallWebhook(body: Record<string, any>) {
   const telefonistaNombre = internalCentral?.worker?.display_name || internalCentral?.label || null;
   const fechaHora = payload.answeredAt || payload.startedAt || payload.endedAt;
   const fecha = fechaHora.slice(0, 10);
+  let minuteSessionResult: any = null;
 
   if (payload.event === "completed" || payload.event === "hangup" || payload.event === "ended" || payload.event === "finalized") {
-    if (cliente?.id && (consumo.freeUsed > 0 || consumo.normalUsed > 0)) {
+    const minuteSession = await finalizeBestMinuteSessionFromAsterisk(admin, {
+      clienteId: cliente?.id || null,
+      tarotistaWorkerId: internalTarotista?.worker_id || null,
+      endedAt: payload.endedAt,
+      fallbackSeconds: finalSeconds,
+      metadata: {
+        call_id: payload.callId || null,
+        linked_id: payload.linkedId || null,
+        from: payload.from,
+        to: payload.to,
+        disposition: payload.disposition,
+      },
+    });
+
+    minuteSessionResult = minuteSession;
+
+    if (!minuteSession.handled && cliente?.id && (consumo.freeUsed > 0 || consumo.normalUsed > 0)) {
       const { error: updateClienteError } = await admin
         .from("crm_clientes")
         .update({
@@ -345,6 +363,13 @@ export async function handleAsteriskCallWebhook(body: Record<string, any>) {
         .eq("id", cliente.id);
       if (updateClienteError) throw updateClienteError;
     }
+
+    const effectiveFreeUsed = minuteSession.handled ? Number((minuteSession as any).free_used || 0) : consumo.freeUsed;
+    const effectiveNormalUsed = minuteSession.handled ? Number((minuteSession as any).normal_used || 0) : consumo.normalUsed;
+    const effectiveMinutes = minuteSession.handled ? Number((minuteSession as any).consumed_minutes || totalMinutes) : totalMinutes;
+    const effectiveSummary = minuteSession.handled
+      ? [minutesToText(effectiveFreeUsed, "free"), minutesToText(effectiveNormalUsed, normalizeCode(payload.codigo))].filter(Boolean).join(" · ")
+      : consumo.summary;
 
     const rendimientoPayload = {
       fecha,
@@ -365,12 +390,12 @@ export async function handleAsteriskCallWebhook(body: Record<string, any>) {
       guarda_minutos: false,
       minutos_guardados_free: 0,
       minutos_guardados_normales: 0,
-      codigo_1: consumo.primaryCode,
-      minutos_1: consumo.primaryCode === "FREE" ? consumo.freeUsed : consumo.normalUsed,
-      codigo_2: consumo.secondaryCode,
-      minutos_2: consumo.secondaryCode ? consumo.normalUsed : 0,
-      resumen_codigo: consumo.summary || null,
-      tiempo: totalMinutes,
+      codigo_1: effectiveFreeUsed > 0 ? "FREE" : effectiveNormalUsed > 0 ? consumo.primaryCode : null,
+      minutos_1: effectiveFreeUsed > 0 ? effectiveFreeUsed : effectiveNormalUsed,
+      codigo_2: effectiveFreeUsed > 0 && effectiveNormalUsed > 0 ? consumo.secondaryCode || normalizeCode(payload.codigo) : null,
+      minutos_2: effectiveFreeUsed > 0 && effectiveNormalUsed > 0 ? effectiveNormalUsed : 0,
+      resumen_codigo: effectiveSummary || null,
+      tiempo: effectiveMinutes,
       forma_pago: null,
       importe: 0,
       promo: false,
@@ -391,8 +416,8 @@ export async function handleAsteriskCallWebhook(body: Record<string, any>) {
         `Llamada registrada automáticamente desde centralita.`,
         tarotistaNombre ? `Tarotista: ${tarotistaNombre}.` : null,
         telefonistaNombre ? `Central: ${telefonistaNombre}.` : null,
-        totalMinutes > 0 ? `Duración: ${Number(totalMinutes.toFixed(2))} min.` : null,
-        consumo.summary ? `Consumo: ${consumo.summary}.` : null,
+        effectiveMinutes > 0 ? `Duración: ${Number(effectiveMinutes.toFixed(2))} min.` : null,
+        effectiveSummary ? `Consumo: ${effectiveSummary}.` : null,
         payload.disposition ? `Estado: ${payload.disposition}.` : null,
       ]
         .filter(Boolean)
@@ -421,6 +446,7 @@ export async function handleAsteriskCallWebhook(body: Record<string, any>) {
       central_worker_id: internalCentral?.worker_id || null,
       central_nombre: telefonistaNombre,
       consumo,
+      minute_session: minuteSessionResult,
     },
   };
 }

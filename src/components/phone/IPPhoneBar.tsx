@@ -75,6 +75,14 @@ type PresenceInfo = {
   role?: string | null;
 };
 
+type TransferBillingSession = {
+  id: string;
+  cliente_id: string;
+  tarotista_worker_id: string;
+  assigned_free_minutes: number;
+  assigned_normal_minutes: number;
+};
+
 type PanelExtensionOption = {
   id?: string;
   extension?: string | null;
@@ -206,6 +214,7 @@ export default function IPPhoneBar() {
   const callFinalizedRef = useRef(false);
   const sipConfigSignatureRef = useRef("");
   const activeClientContextRef = useRef<ActiveClientContext | null>(null);
+  const pendingTransferBillingRef = useRef<TransferBillingSession | null>(null);
   const panelConfigHydratedRef = useRef(false);
   const crmPopupWindowRef = useRef<Window | null>(null);
   const dragStateRef = useRef<{ dragging: boolean; startX: number; startY: number; originX: number; originY: number }>({
@@ -802,6 +811,7 @@ export default function IPPhoneBar() {
     setAssistedTransferTarget("");
     setAssistedTransferStatus("idle");
     activeClientContextRef.current = null;
+    pendingTransferBillingRef.current = null;
     setStatus(nextStatus);
     setStatusText(nextText);
   }
@@ -1429,6 +1439,56 @@ return true;
     await lookupClientContextByPhone(rawNumber, { openCRM: true });
   }
 
+  async function postCallMinuteSession(action: "reserve" | "activate" | "cancel", payload: Record<string, any>) {
+    const token = await getToken();
+    if (!token) throw new Error("Tu sesión ha caducado.");
+    const res = await fetch("/api/crm/call-sessions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+    return json.session;
+  }
+
+  async function reserveTransferBillingSession(args: { targetExtension: string; tarotistaWorkerId: string; allocation: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number } }) {
+    const ctx = activeClientContextRef.current;
+    if (!ctx?.cliente_id) return null;
+    const free = Math.max(0, Number(args.allocation.minutos_free_pendientes || 0));
+    const normal = Math.max(0, Number(args.allocation.minutos_normales_pendientes || 0));
+    if (free + normal <= 0) return null;
+    const session = await postCallMinuteSession("reserve", {
+      cliente_id: String(ctx.cliente_id),
+      tarotista_worker_id: String(args.tarotistaWorkerId),
+      source_extension: config.username || null,
+      target_extension: args.targetExtension,
+      assigned_free_minutes: free,
+      assigned_normal_minutes: normal,
+      metadata: { telefono: ctx.telefono || incomingNumberRef.current || callNumberRef.current || null },
+    });
+    return session as TransferBillingSession;
+  }
+
+  async function activatePendingTransferBillingSession() {
+    const pending = pendingTransferBillingRef.current;
+    if (!pending?.id) return null;
+    const session = await postCallMinuteSession("activate", { session_id: pending.id });
+    pendingTransferBillingRef.current = session as TransferBillingSession;
+    return session;
+  }
+
+  async function cancelPendingTransferBillingSession() {
+    const pending = pendingTransferBillingRef.current;
+    pendingTransferBillingRef.current = null;
+    if (!pending?.id) return;
+    try {
+      await postCallMinuteSession("cancel", { session_id: pending.id });
+    } catch (e) {
+      console.error("No se pudo cancelar la reserva de minutos", e);
+    }
+  }
+
   async function dispatchTransferPopup(targetExtension: string, allocation?: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number }) {
     try {
       const ctx = activeClientContextRef.current;
@@ -1855,6 +1915,13 @@ await ensureRemoteAudioPlayback();
     // 🔥 TRANSFERENCIA REAL
     await original.refer(consult);
 
+    try {
+      await activatePendingTransferBillingSession();
+    } catch (billingError: any) {
+      console.error("Transferencia completada, pero no se pudo activar la reserva de minutos", billingError);
+      setMsg(`Transferencia completada a ${target}, pero revisa minutos: ${billingError?.message || "error"}`);
+    }
+
     // 🔥🔥 CLAVE: cerrar TU sesión local
     try {
       await original.bye?.().catch(() => null);
@@ -1924,6 +1991,7 @@ await ensureRemoteAudioPlayback();
           talking_to: null,
         });
       }
+      await cancelPendingTransferBillingSession();
       setMsg("Transferencia cancelada. Llamada de cliente recuperada.");
     } catch (e: any) {
       console.error(e);
@@ -2002,8 +2070,22 @@ await ensureRemoteAudioPlayback();
       );
       if (!confirmed) return false;
 
+      if (isTarotistaTarget && ctx?.cliente_id && allocation && targetWorker?.id) {
+        try {
+          pendingTransferBillingRef.current = await reserveTransferBillingSession({
+            targetExtension: cleanTarget,
+            tarotistaWorkerId: String(targetWorker.id),
+            allocation,
+          });
+        } catch (billingError: any) {
+          setMsg(billingError?.message || "No se pudo reservar los minutos del cliente.");
+          return false;
+        }
+      }
+
       if (useAssistedTransfer) {
         const ok = await startAssistedTransfer(cleanTarget);
+        if (!ok) await cancelPendingTransferBillingSession();
         if (ok) {
           setMsg(
             isTarotistaTarget
@@ -2028,6 +2110,12 @@ await ensureRemoteAudioPlayback();
 
       await session.refer(referTarget);
 
+      try {
+        await activatePendingTransferBillingSession();
+      } catch (billingError) {
+        console.error("Transferencia directa completada, pero no se pudo activar la reserva de minutos", billingError);
+      }
+
       addHistory({
         number: cleanTarget,
         direction: "transfer",
@@ -2038,6 +2126,7 @@ await ensureRemoteAudioPlayback();
       setMsg(`Transferencia directa enviada a ${cleanTarget}.`);
       return true;
     } catch (e: any) {
+      await cancelPendingTransferBillingSession();
       console.error(e);
       setMsg(e?.message || "No se pudo transferir la llamada.");
       return false;

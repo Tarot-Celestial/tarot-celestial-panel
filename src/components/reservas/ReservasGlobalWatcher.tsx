@@ -49,6 +49,17 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
         if (popupReserva) return;
         const token = await getTokenOrLogin();
         if (!token) return;
+        const readyRes = await fetch("/api/crm/reservas/ready", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const readyJson = await safeJson(readyRes);
+        const readyRows = Array.isArray(readyJson?.reservas) ? readyJson.reservas : [];
+        for (const row of readyRows) {
+          const id = String(row?.id || "");
+          if (!id || avisadasRef.current.includes(`ready:${id}`)) continue;
+          avisadasRef.current = [...avisadasRef.current, `ready:${id}`];
+          if (!cancelled) setPopupReserva({ ...row, __popup_kind: "tarotista_idle" });
+          return;
+        }
+
         const r = await fetch("/api/crm/reservas/listar", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const j = await safeJson(r);
         if (!j?._ok || !j?.ok) return;
@@ -78,8 +89,8 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 16 }}>
       <div className="tc-card" style={{ width: "100%", maxWidth: 520, borderRadius: 24, boxShadow: "0 30px 90px rgba(0,0,0,0.48)", background: "radial-gradient(circle at top right, rgba(215,181,109,.16), transparent 26%), radial-gradient(circle at top left, rgba(181,156,255,.12), transparent 24%), linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04))" }}>
-        <div className="tc-title">⏰ Reserva ahora</div>
-        <div className="tc-sub" style={{ marginTop: 10 }}><b>{popupReserva?.cliente_nombre || "Cliente"}</b> ya tiene su reserva programada.</div>
+        <div className="tc-title">{popupReserva?.__popup_kind === "tarotista_idle" ? "✅ Reserva pendiente: tarotista libre" : "⏰ Reserva ahora"}</div>
+        <div className="tc-sub" style={{ marginTop: 10 }}><b>{popupReserva?.cliente_nombre || "Cliente"}</b> {popupReserva?.__popup_kind === "tarotista_idle" ? "estaba esperando a una tarotista en llamada. La tarotista ya ha terminado y está libre." : "ya tiene su reserva programada."}</div>
         <div className="tc-sub" style={{ marginTop: 6 }}>Hora: <b>{parseReservaDate(popupReserva?.fecha_reserva)?.toLocaleString("es-ES") || "—"}</b></div>
         {(popupReserva?.tarotista_display_name || popupReserva?.tarotista_nombre || popupReserva?.tarotista_nombre_manual) ? <div className="tc-sub" style={{ marginTop: 6 }}>Tarotista: <b>{popupReserva?.tarotista_display_name || popupReserva?.tarotista_nombre || popupReserva?.tarotista_nombre_manual}</b></div> : null}
         <div className="tc-row" style={{ marginTop: 18, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>

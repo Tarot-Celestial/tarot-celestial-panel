@@ -259,6 +259,7 @@ export default function CRMClientesPanel({
   const [crmReservaTarotistaManual, setCrmReservaTarotistaManual] = useState("");
   const [crmReservaFecha, setCrmReservaFecha] = useState("");
   const [crmReservaNota, setCrmReservaNota] = useState("");
+  const [crmReservaAvisarCuandoLibre, setCrmReservaAvisarCuandoLibre] = useState(false);
   const [crmReservaLoading, setCrmReservaLoading] = useState(false);
   const [crmReservaMsg, setCrmReservaMsg] = useState("");
 
@@ -1357,6 +1358,7 @@ console.log("URL CRM 👉", url);
         cliente_id: clienteId,
         fecha_reserva: new Date(fecha_reserva).toISOString(),
         nota: crmReservaNota.trim(),
+        notify_when_tarotista_idle: crmReservaAvisarCuandoLibre,
       };
 
       if (tarotista_worker_id) payload.tarotista_worker_id = tarotista_worker_id;
@@ -1379,6 +1381,7 @@ console.log("URL CRM 👉", url);
       setCrmReservaTarotistaManual("");
       setCrmReservaFecha("");
       setCrmReservaNota("");
+      setCrmReservaAvisarCuandoLibre(false);
     } catch (e: any) {
       setCrmReservaMsg(`❌ ${e?.message || "Error creando reserva"}`);
     } finally {
@@ -2165,6 +2168,17 @@ console.log("URL CRM 👉", url);
                     />
                   </div>
                 </div>
+
+                <label className="tc-row" style={{ marginTop: 12, alignItems: "center", gap: 10, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={crmReservaAvisarCuandoLibre}
+                    onChange={(e) => setCrmReservaAvisarCuandoLibre(e.target.checked)}
+                  />
+                  <span className="tc-sub">
+                    Tarotista en llamada: avisar automáticamente cuando termine y quede libre
+                  </span>
+                </label>
 
                 <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
                   <button
