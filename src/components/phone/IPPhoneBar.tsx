@@ -101,7 +101,7 @@ function formatDuration(totalSeconds: number) {
 }
 
 function sanitizeNumber(value: string) {
-  return String(value || "").replace(/[^0-9*#+]/g, "");
+  return String(value || "").replace(/[^0-9+]/g, "");
 }
 
 function normalizePhoneForSearch(value: string) {
@@ -870,13 +870,24 @@ export default function IPPhoneBar() {
     }, delay);
   }
 
-  function buildSessionOptions() {
-    return {
-      sessionDescriptionHandlerOptions: {
-        constraints: { audio: true, video: false },
-      },
-    };
+  function buildSessionOptions(dialed?: string) {
+  const headers: string[] = [];
+
+  if (dialed && dialed.length >= 6) {
+    headers.push("X-Call-Type: external");
+  } else {
+    headers.push("X-Call-Type: internal");
   }
+
+  return {
+    requestOptions: {
+      extraHeaders: headers,
+    },
+    sessionDescriptionHandlerOptions: {
+      constraints: { audio: true, video: false },
+    },
+  };
+}
 
   async function bindSession(session: any, direction: "incoming" | "outgoing", peerNumber: string) {
     callDirectionRef.current = direction;
@@ -1482,10 +1493,20 @@ const payload = {
       }
 
       const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
-      const target = SIP.UserAgent.makeURI(`sip:${dialed}@${config.domain}`);
+      const isExternal = isExternalNumber(dialed);
+
+const target = SIP.UserAgent.makeURI(
+  isExternal
+    ? `sip:${dialed}@${config.domain}`   // 👉 esto lo procesa Asterisk como salida
+    : `sip:${dialed}@${config.domain}`
+);
       if (!target) throw new Error("Destino SIP inválido");
 
-      const inviter = new SIP.Inviter(runtimeRef.current.userAgent, target, buildSessionOptions());
+      const inviter = new SIP.Inviter(
+  runtimeRef.current.userAgent,
+  target,
+  buildSessionOptions(dialed)
+);
       await bindSession(inviter, "outgoing", dialed);
 
       callDirectionRef.current = "outgoing";
@@ -1802,8 +1823,11 @@ const payload = {
       assistedTransferTargetRef.current = "";
       setAssistedTransferTarget("");
       setAssistedTransferStatus("idle");
-      cleanupSessionRefs(original);
-      resetCallState("registered", "Conectado");
+      // 🔥 MANTENER sesión activa tras transfer
+runtimeRef.current.activeSession = original;
+
+setStatus("in_call");
+setStatusText("En llamada (transferida)");
     } catch (e: any) {
       console.error(e);
       setMsg(e?.message || "No se pudo completar la transferencia.");
