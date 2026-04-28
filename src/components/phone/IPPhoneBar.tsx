@@ -1624,7 +1624,17 @@ const payload = {
       return false;
     }
 
-    await reinviteSession(original, holdModifier);
+    // 🔥 HOLD REAL
+await original.invite({
+  sessionDescriptionHandlerOptions: {
+    hold: true
+  }
+});
+
+// 🔥 SILENCIAR AUDIO DEL CLIENTE
+if (remoteAudioRef.current) {
+  remoteAudioRef.current.muted = true;
+}
 
     const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
     consultSessionRef.current = inviter;
@@ -1649,6 +1659,10 @@ const payload = {
           setAssistedTransferStatus("idle");
           setAssistedTransferTarget("");
           assistedTransferTargetRef.current = "";
+          // 🔥 RESTAURAR AUDIO SI SE CANCELA LA CONSULTA
+if (remoteAudioRef.current) {
+  remoteAudioRef.current.muted = false;
+}
           void reinviteSession(original, unholdModifier);
           attachRemoteAudioFromSession(original);
           setMsg("Consulta finalizada. Llamada de cliente recuperada.");
@@ -1662,7 +1676,17 @@ const payload = {
       setAssistedTransferStatus("idle");
       setAssistedTransferTarget("");
       assistedTransferTargetRef.current = "";
-      await reinviteSession(original, unholdModifier);
+      // 🔥 QUITAR HOLD REAL
+await original.invite({
+  sessionDescriptionHandlerOptions: {
+    hold: false
+  }
+});
+
+// 🔥 RESTAURAR AUDIO
+if (remoteAudioRef.current) {
+  remoteAudioRef.current.muted = false;
+}
       attachRemoteAudioFromSession(original);
       setMsg(e?.message || "No se pudo iniciar la consulta de transferencia.");
       return false;
