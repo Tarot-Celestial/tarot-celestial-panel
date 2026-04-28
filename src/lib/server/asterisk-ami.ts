@@ -146,7 +146,7 @@ function amiCommandOnly(command: string): Promise<AmiResponse> {
 }
 
 
-function amiAction(fields: Record<string, string>): Promise<AmiResponse> {
+export function amiAction(fields: Record<string, string>): Promise<AmiResponse> {
   const cfg = getAmiConfig();
 
   return new Promise((resolve) => {
