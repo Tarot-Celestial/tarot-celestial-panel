@@ -1855,8 +1855,8 @@ if (!referTarget) throw new Error("Destino SIP inválido.");
 stopRingtone();
 
 // 🔥 transferir desde Asterisk
-await original.refer(referTarget);
-
+// 🔥 para móviles: simplemente salir de la llamada
+await original.bye();
 // 🔥 cerrar llamada de consulta (CLAVE)
 await consultSessionRef.current?.bye?.().catch(() => null);
 await consultSessionRef.current?.cancel?.().catch(() => null);
