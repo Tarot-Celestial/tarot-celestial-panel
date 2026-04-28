@@ -703,6 +703,24 @@ export default function IPPhoneBar() {
     return isSessionState(session, "Initial") || isSessionState(session, "Establishing") || isSessionState(session, "Established");
   }
 
+  function forceEnableMic(session: any) {
+  try {
+    const pc = getSessionPeerConnection(session);
+    if (!pc) return;
+
+    const senders = pc.getSenders?.() || [];
+
+    senders.forEach((sender: RTCRtpSender) => {
+      if (sender.track?.kind === "audio") {
+        sender.track.enabled = true;
+        sender.replaceTrack?.(sender.track).catch?.(() => null);
+      }
+    });
+  } catch {
+    // noop
+  }
+}
+
   function getSessionPeerConnection(session: any) {
     return session?.sessionDescriptionHandler?.peerConnection || null;
   }
@@ -1721,22 +1739,14 @@ const target = SIP.UserAgent.makeURI(
         }
 
         if (established && consultSessionRef.current === inviter) {
-          stopRingtone();
-          setAssistedTransferStatus("consulting");
-          setStatus("in_call");
-          setStatusText(`Consulta con ${cleanTarget}`);
-          setMsg(`Consulta activa con ${cleanTarget}. Pulsa “Completar” para pasar el cliente o “Recuperar” para volver con él.`);
-          void syncExtensionRuntime(cleanTarget, {
-            registered: true,
-            status: "in_call",
-            active_call_count: 1,
-            active_call_started_at: new Date().toISOString(),
-            talking_to: incomingNumberRef.current || callNumberRef.current || numberRef.current || null,
-          });
-          cleanupRemoteAudio();
-          attachRemoteAudioFromSession(inviter);
-          void ensureRemoteAudioPlayback();
-        }
+  stopRingtone();
+
+  // 🔥 asegurar que 1000 envía micro hacia 1001
+  forceEnableMic(inviter);
+
+  setAssistedTransferStatus("consulting");
+  setStatus("in_call");
+  setStatusText(`Consulta con ${cleanTarget}`);
 
         if (terminated && consultSessionRef.current === inviter) {
           stopRingtone();
@@ -1747,8 +1757,9 @@ const target = SIP.UserAgent.makeURI(
           runtimeRef.current.activeSession = original;
           void reinviteSession(original, unholdModifier).then(() => {
             cleanupRemoteAudio();
-            attachRemoteAudioFromSession(original);
-            void ensureRemoteAudioPlayback();
+            attachRemoteAudioFromSession(inviter);
+forceEnableMic(inviter);
+void ensureRemoteAudioPlayback();
           });
           setStatus("in_call");
           setStatusText("En llamada");
@@ -1765,8 +1776,9 @@ const target = SIP.UserAgent.makeURI(
 
       startRingtone();
       await inviter.invite();
-      attachRemoteAudioFromSession(inviter);
-      await ensureRemoteAudioPlayback();
+attachRemoteAudioFromSession(inviter);
+forceEnableMic(inviter);
+await ensureRemoteAudioPlayback();
       return true;
     } catch (e: any) {
       console.error("Error en consulta de transferencia", e);
