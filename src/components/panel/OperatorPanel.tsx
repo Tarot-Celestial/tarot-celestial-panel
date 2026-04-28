@@ -321,11 +321,11 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
     try {
       if (loading) setMsg("");
       const token = await getToken();
-      if (!token) {
-        setMsg("Tu sesión ha caducado.");
-        setLoading(false);
-        return;
-      }
+if (!token) {
+  setParkingCalls([]);
+  setIncomingCalls([]);
+  return;
+}
 
       const res = await fetch("/api/operator/panel", {
         cache: "no-store",
