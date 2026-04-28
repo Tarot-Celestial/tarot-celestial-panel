@@ -104,6 +104,10 @@ function sanitizeNumber(value: string) {
   return String(value || "").replace(/[^0-9+]/g, "");
 }
 
+function isExternalNumber(num: string) {
+  return num.length >= 6;
+}
+
 function normalizePhoneForSearch(value: string) {
   return String(value || "").replace(/\D/g, "");
 }
