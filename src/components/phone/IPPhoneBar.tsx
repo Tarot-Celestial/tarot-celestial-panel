@@ -1835,83 +1835,72 @@ await ensureRemoteAudioPlayback();
   }
 
   async function completeAssistedTransfer() {
-    try {
-      const original = originalSessionDuringConsultRef.current;
-      const consult = consultSessionRef.current;
-      const target = assistedTransferTargetRef.current;
-      if (!original || !target) {
-        setMsg("No hay transferencia asistida pendiente.");
-        return;
-      }
-      if (consult && !isSessionState(consult, "Established")) {
-        setMsg("Espera a que el destino conteste antes de completar la transferencia.");
-        return;
-      }
+  try {
+    const original = originalSessionDuringConsultRef.current;
+    const consult = consultSessionRef.current;
+    const target = assistedTransferTargetRef.current;
 
-      const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
-const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
-if (!referTarget) throw new Error("Destino SIP inválido.");
-
-stopRingtone();
-
-// 🔥 transferir desde Asterisk
-// 🔥 para móviles: simplemente salir de la llamada
-const isExternal = target.length >= 6; // o tu lógica
-
-if (isExternal) {
-  // 🔥 NO usar REFER
-  await original.bye();
-
-  // 🔥 lanzar llamada desde Asterisk (igual que si marcases)
-  await call(target);
-} else {
-  // 🔥 internas sí usan REFER
-  await original.refer(referTarget);
-}
-// 🔥 cerrar llamada de consulta (CLAVE)
-await consultSessionRef.current?.bye?.().catch(() => null);
-await consultSessionRef.current?.cancel?.().catch(() => null);
-consultSessionRef.current = null;
-
-// 🔥 limpiar estado
-cleanupRemoteAudio();
-
-// 🔥 mantener historial
-addHistory({
-  number: target,
-  direction: "transfer",
-  createdAt: new Date().toISOString(),
-  result: "transferencia asistida"
-});
-
-// 🔥 mantener sync (NO LO BORRES)
-void syncExtensionRuntime(target, {
-  registered: true,
-  status: "in_call",
-  active_call_count: 1,
-  active_call_started_at: new Date().toISOString(),
-  talking_to:
-    incomingNumberRef.current ||
-    callNumberRef.current ||
-    numberRef.current ||
-    null,
-});
-      setMsg(`Transferencia completada a ${target}.`);
-      consultSessionRef.current = null;
-      originalSessionDuringConsultRef.current = null;
-      assistedTransferTargetRef.current = "";
-      setAssistedTransferTarget("");
-      setAssistedTransferStatus("idle");
-      // 🔥 MANTENER sesión activa tras transfer
-runtimeRef.current.activeSession = null;
-
-setStatus("registered");
-setStatusText("Conectado");
-    } catch (e: any) {
-      console.error(e);
-      setMsg(e?.message || "No se pudo completar la transferencia.");
+    if (!original || !target) {
+      setMsg("No hay transferencia asistida pendiente.");
+      return;
     }
+
+    if (consult && !isSessionState(consult, "Established")) {
+      setMsg("Espera a que el destino conteste.");
+      return;
+    }
+
+    const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
+    const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
+    if (!referTarget) throw new Error("Destino SIP inválido.");
+
+    stopRingtone();
+
+    // 🔥 TRANSFERENCIA REAL
+    await original.refer(referTarget);
+
+    // 🔥 cerrar consulta (IMPORTANTE)
+    await consult?.bye?.().catch(() => null);
+    await consult?.cancel?.().catch(() => null);
+    consultSessionRef.current = null;
+
+    cleanupRemoteAudio();
+
+    addHistory({
+      number: target,
+      direction: "transfer",
+      createdAt: new Date().toISOString(),
+      result: "transferencia asistida",
+    });
+
+    void syncExtensionRuntime(target, {
+      registered: true,
+      status: "in_call",
+      active_call_count: 1,
+      active_call_started_at: new Date().toISOString(),
+      talking_to:
+        incomingNumberRef.current ||
+        callNumberRef.current ||
+        numberRef.current ||
+        null,
+    });
+
+    setMsg(`Transferencia completada a ${target}.`);
+
+    // 🔥 LIMPIEZA CORRECTA (SIN ROMPER SIP)
+    originalSessionDuringConsultRef.current = null;
+    assistedTransferTargetRef.current = "";
+    setAssistedTransferTarget("");
+    setAssistedTransferStatus("idle");
+
+    // ❌ NO TOCAR activeSession
+    // ❌ NO cambiar status manualmente
+
+  } catch (e: any) {
+    console.error(e);
+    setMsg(e?.message || "No se pudo completar la transferencia.");
   }
+}
 
   async function recoverAssistedTransfer() {
     try {
