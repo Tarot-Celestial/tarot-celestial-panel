@@ -1852,16 +1852,24 @@ await ensureRemoteAudioPlayback();
 
     stopRingtone();
 
-    // 🔥 CLAVE TOTAL: usar sesión consult (Replaces)
+    // 🔥 TRANSFERENCIA REAL
     await original.refer(consult);
 
-    // ❌ NO colgar consult
-    // ❌ NO usar referTarget
-    // ❌ NO cancelar nada aquí
+    // 🔥🔥 CLAVE: cerrar TU sesión local
+    try {
+      await original.bye?.().catch(() => null);
+    } catch {}
 
+    try {
+      await consult.bye?.().catch(() => null);
+    } catch {}
+
+    // 🔥 limpiar todo
+    runtimeRef.current.activeSession = null;
     consultSessionRef.current = null;
     originalSessionDuringConsultRef.current = null;
     assistedTransferTargetRef.current = "";
+
     setAssistedTransferTarget("");
     setAssistedTransferStatus("idle");
 
@@ -1873,6 +1881,9 @@ await ensureRemoteAudioPlayback();
       createdAt: new Date().toISOString(),
       result: "transferencia asistida",
     });
+
+    // 🔥 reset visual TOTAL
+    resetCallState("registered", "Conectado");
 
     setMsg(`Transferencia completada a ${target}.`);
 
