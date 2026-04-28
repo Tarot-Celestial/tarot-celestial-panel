@@ -9,6 +9,15 @@ export const runtime = "nodejs";
 
 type Role = "admin" | "central" | "tarotista";
 
+type RoutingRow = {
+  extension: string;
+  type?: "internal" | "external" | string | null;
+  destination?: string | null;
+  target?: string | null;
+  phone?: string | null;
+  mobile?: string | null;
+};
+
 type MeWorker = {
   id: string;
   user_id: string | null;
@@ -562,10 +571,17 @@ export async function GET(req: Request) {
     const extensionsResult = await readExtensions(admin);
     const realtimeSync = extensionsResult.missingTable ? [] : await syncAsteriskRealtimeExtensions(admin, extensionsResult.rows);
     const routingResult = await readRouting(admin);
+    const routingByExtension = new Map<string, RoutingRow>();
+
+(routingResult.rows || []).forEach((r: any) => {
+  const ext = String(r.extension || "");
+  if (!ext) return;
+
+  routingByExtension.set(ext, r as RoutingRow);
+});
     const queuesResult = await readQueues(admin);
     const liveSnapshot = await getAsteriskLiveSnapshot();
     const liveExtensions = liveSnapshot.extensions || {};
-    const routingByExtension = new Map((routingResult.rows || []).map((route: any) => [String(route.extension || ""), route]));
     const extensions = extensionsResult.rows.map((row: ExtensionRow) => {
       const extension = String(row.extension || "");
       const route = routingByExtension.get(extension);
