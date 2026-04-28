@@ -1732,8 +1732,7 @@ const target = SIP.UserAgent.makeURI(
     hold: true
   }
 });
-      if (!held) throw new Error("No se pudo poner al cliente en espera.");
-
+    
       const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
       consultSessionRef.current = inviter;
 
