@@ -727,7 +727,52 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: routingRes.error.message });
   }
 
-  await syncExtensionRoutingInAsterisk(extension, route_type, target_phone || null);
+  async function syncExtensionRoutingInAsterisk(
+  extension: string,
+  routeType: string,
+  targetPhone?: string | null
+) {
+  try {
+    const ext = sanitizeExtension(extension);
+    const target = sanitizePhone(targetPhone);
+
+    console.log("🔥 ROUTING SYNC INPUT →", {
+      ext,
+      routeType,
+      targetPhone,
+      target,
+    });
+
+    if (!ext) return;
+
+    const isExternal =
+      String(routeType || "")
+        .toLowerCase()
+        .includes("external");
+
+    if (isExternal && target) {
+      const res = await amiAction({
+        Action: "DBPut",
+        Family: "pbx_route_external",
+        Key: ext,
+        Val: target,
+      });
+
+      console.log("✅ DBPut RESULT:", res);
+      return;
+    }
+
+    const res = await amiAction({
+      Action: "DBDel",
+      Family: "pbx_route_external",
+      Key: ext,
+    });
+
+    console.log("🧹 DBDel RESULT:", res);
+  } catch (e) {
+    console.error("❌ ROUTING SYNC ERROR:", e);
+  }
+}
 
   return NextResponse.json({
     ok: true,
