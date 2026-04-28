@@ -386,33 +386,51 @@ function normalizeExtensionRow(row: ExtensionRow) {
   };
 }
 
-function isFreshRuntime(row: any) {
+function runtimeAgeMs(row: any) {
   const ts = row?.last_seen_at ? new Date(row.last_seen_at).getTime() : 0;
-  return Number.isFinite(ts) && Date.now() - ts < 20000;
+  if (!Number.isFinite(ts) || ts <= 0) return Infinity;
+  return Date.now() - ts;
 }
 
-function mergeAsteriskLiveState(row: any, liveState: any) {
-  if (!liveState) return row;
+function isFreshRuntime(row: any) {
+  return runtimeAgeMs(row) < 20000;
+}
 
-  const runtimeActive = Number(row?.active_call_count || 0) > 0 || ["in_call", "ringing", "calling"].includes(String(row?.status || "").toLowerCase());
+function isStaleRuntime(row: any) {
+  return runtimeAgeMs(row) > 90000;
+}
+
+function mergeAsteriskLiveState(row: any, liveState: any, opts: { forceClearRuntimeIfAmiIdle?: boolean } = {}) {
+  const baseLiveState = liveState || { registered: false, active_call_count: 0, status: "offline", talking_to: null, active_call_started_at: null };
+
+  const runtimeActive = Number(row?.active_call_count || 0) > 0 || ["in_call", "ringing", "calling", "busy"].includes(String(row?.status || "").toLowerCase());
   const runtimeFresh = isFreshRuntime(row);
-  const activeCallCount = Number(liveState.active_call_count || 0) || 0;
+  const runtimeStale = isStaleRuntime(row);
+  const activeCallCount = Number(baseLiveState.active_call_count || 0) || 0;
 
-  // If the browser softphone just reported a live call, do not let a partial AMI snapshot
-  // that only sees the registered contact overwrite it as "Disponible".
+  if (opts.forceClearRuntimeIfAmiIdle && activeCallCount === 0) {
+    const nextStatus = row?.registered || baseLiveState.registered ? "registered" : "offline";
+    return normalizeExtensionRow({ ...row, registered: !!row?.registered || !!baseLiveState.registered, status: nextStatus, active_call_count: 0, active_call_started_at: null, incoming_number: null, talking_to: null });
+  }
+
   if (runtimeFresh && runtimeActive && activeCallCount === 0) {
     return normalizeExtensionRow(row);
   }
 
-  const liveStatus = activeCallCount > 0 ? liveState.status || "in_call" : liveState.registered ? "registered" : "offline";
+  if (runtimeStale && runtimeActive && activeCallCount === 0) {
+    const nextStatus = row?.registered || baseLiveState.registered ? "registered" : "offline";
+    return normalizeExtensionRow({ ...row, registered: !!row?.registered || !!baseLiveState.registered, status: nextStatus, active_call_count: 0, active_call_started_at: null, incoming_number: null, talking_to: null });
+  }
+
+  const liveStatus = activeCallCount > 0 ? baseLiveState.status || "in_call" : baseLiveState.registered ? "registered" : (row?.registered ? "registered" : "offline");
   return {
     ...row,
-    registered: !!liveState.registered || (runtimeFresh && !!row.registered),
+    registered: !!baseLiveState.registered || (runtimeFresh && !!row.registered) || (!!row.registered && activeCallCount === 0),
     status: liveStatus,
     active_call_count: activeCallCount,
-    active_call_started_at: activeCallCount > 0 ? liveState.active_call_started_at || row.active_call_started_at || new Date().toISOString() : null,
-    incoming_number: liveStatus === "ringing" ? liveState.talking_to || row.incoming_number || null : null,
-    talking_to: activeCallCount > 0 ? liveState.talking_to || row.talking_to || null : null,
+    active_call_started_at: activeCallCount > 0 ? baseLiveState.active_call_started_at || row.active_call_started_at || new Date().toISOString() : null,
+    incoming_number: liveStatus === "ringing" ? baseLiveState.talking_to || row.incoming_number || null : null,
+    talking_to: activeCallCount > 0 ? baseLiveState.talking_to || row.talking_to || null : null,
   };
 }
 
@@ -547,11 +565,15 @@ export async function GET(req: Request) {
     const queuesResult = await readQueues(admin);
     const liveSnapshot = await getAsteriskLiveSnapshot();
     const liveExtensions = liveSnapshot.extensions || {};
-    const extensions = extensionsResult.rows.map((row: ExtensionRow) =>
-  normalizeExtensionRow(
-    mergeAsteriskLiveState(row, liveExtensions[String(row.extension || "")])
-  )
-);
+    const routingByExtension = new Map((routingResult.rows || []).map((route: any) => [String(route.extension || ""), route]));
+    const extensions = extensionsResult.rows.map((row: ExtensionRow) => {
+      const extension = String(row.extension || "");
+      const route = routingByExtension.get(extension);
+      const isExternalRoute = String(route?.type || "internal") === "external";
+      return normalizeExtensionRow(
+        mergeAsteriskLiveState(row, liveExtensions[extension], { forceClearRuntimeIfAmiIdle: isExternalRoute })
+      );
+    });
 
     return NextResponse.json({
       ok: true,
@@ -700,6 +722,49 @@ export async function POST(req: Request) {
   });
 }
 
+
+    if (action === "delete_extension") {
+      if (!["admin", "central"].includes(String(me.role || ""))) {
+        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+      }
+
+      const extension = sanitizeExtension(body?.extension);
+      const id = String(body?.id || "").trim();
+
+      if (!extension && !id) {
+        return NextResponse.json({ ok: false, error: "EXTENSION_REQUIRED" }, { status: 400 });
+      }
+
+      let extToDelete = extension;
+      if (!extToDelete && id) {
+        const existing = await admin.from("pbx_extensions").select("extension").eq("id", id).maybeSingle();
+        if (existing.error && !isMissingRelationError(existing.error)) throw existing.error;
+        extToDelete = sanitizeExtension(existing.data?.extension);
+      }
+
+      if (!extToDelete) {
+        return NextResponse.json({ ok: false, error: "EXTENSION_NOT_FOUND" }, { status: 404 });
+      }
+
+      await deleteAsteriskRealtimeExtension(admin, extToDelete);
+      await syncExtensionRoutingInAsterisk(extToDelete, "internal", null);
+      await syncCentralInAsterisk(extToDelete, false);
+
+      const routingDel = await admin.from("pbx_routing").delete().eq("extension", extToDelete);
+      if (routingDel.error && !isMissingRelationError(routingDel.error)) throw routingDel.error;
+
+      const queueDel = await admin.from("pbx_queue_members").delete().eq("extension", extToDelete);
+      if (queueDel.error && !isMissingRelationError(queueDel.error)) throw queueDel.error;
+
+      const extDel = id
+        ? await admin.from("pbx_extensions").delete().eq("id", id)
+        : await admin.from("pbx_extensions").delete().eq("extension", extToDelete);
+      if (extDel.error && !isMissingRelationError(extDel.error)) throw extDel.error;
+
+      const asteriskRefresh = await refreshPjsipRealtimeObject(extToDelete);
+
+      return NextResponse.json({ ok: true, extension: extToDelete, asteriskRefresh });
+    }
     if (action === "save_queue") {
       if (!["admin", "central"].includes(String(me.role || ""))) {
         return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });

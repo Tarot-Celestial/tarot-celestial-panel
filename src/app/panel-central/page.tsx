@@ -5,7 +5,6 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
@@ -1254,8 +1253,6 @@ function CentralPage() {
     <>
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
-      <AppHeader />
-
       <div className="tc-shell">
         <aside className="tc-sidebar">
           <div className="tc-sidebar-card">

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { Copy, Phone, Plus, RefreshCw, Save, Settings2, Smartphone, Users2, X } from "lucide-react";
+import { Copy, Phone, Plus, RefreshCw, Save, Settings2, Smartphone, Trash2, Users2, X } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -496,6 +496,46 @@ if (!token) {
   }
 }
 
+
+  async function deleteExtension(item?: any) {
+    try {
+      const extension = cleanDigits(String(item?.extension || form.extension || ""));
+      const id = String(item?.id || form.id || "").trim();
+      if (!extension && !id) return;
+      const label = extension ? `la extensión ${extension}` : "esta extensión";
+      if (!window.confirm(`¿Eliminar ${label}? Se quitará de Supabase, routing, colas y Asterisk Realtime.`)) return;
+
+      setSaving(true);
+      setMsg("");
+      const token = await getToken();
+      if (!token) throw new Error("Sesión no válida");
+
+      const res = await fetch("/api/operator/panel", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "delete_extension",
+          id: id || undefined,
+          extension: extension || undefined,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No se pudo eliminar la extensión");
+
+      setDrawerOpen(false);
+      setSelectedId("");
+      setMsg(`Extensión ${json.extension || extension} eliminada.`);
+      await loadAll();
+    } catch (e: any) {
+      setMsg(e?.message || "No se pudo eliminar la extensión");
+    } finally {
+      setSaving(false);
+    }
+  }
   async function saveQueue() {
     try {
       setSaving(true);
@@ -747,7 +787,6 @@ if (!token) {
                 const talkingTo = String(item.talking_to || incoming || "").trim();
                 const isSelected = String(selectedId) === String(item.id || "");
                 const queueLabel = item.route?.queue_id ? (queueMap.get(String(item.route.queue_id))?.label || "Cola") : "";
-                const isExternalRoute = String(item.route?.type || "internal") === "external";
                 const isManualBusy = Number(item.active_call_count || 0) > 0 || ["in_call", "calling", "ringing", "busy"].includes(String(item.status || "").toLowerCase());
                 return (
                   <div key={String(item.id || item.extension || Math.random())} className="tc-mini-card" style={{ borderColor: isSelected ? "rgba(255,214,102,.72)" : item.roleTone.border, background: item.tone.bg, boxShadow: `inset 0 0 0 1px ${item.tone.border}` }}>
@@ -769,15 +808,21 @@ if (!token) {
                     <div className="tc-row" style={{ gap: 8, marginTop: 2, flexWrap: "wrap" }}>
                       <button className="tc-btn-mini" onClick={() => openEditDrawer(item)}><Settings2 size={12} />Editar</button>
                       <button className="tc-btn-mini" onClick={() => copyValue(String(item.extension || ""))}><Copy size={12} />Copiar</button>
-                      {isExternalRoute ? (
-                        <button
-                          className="tc-btn-mini"
-                          onClick={() => void setExternalExtensionManualState(item, !(item.registered || isManualBusy))}
-                          style={{ borderColor: item.registered || isManualBusy ? "rgba(255,120,120,.38)" : "rgba(89,227,159,.34)" }}
-                        >
-                          <Phone size={12} />{item.registered || isManualBusy ? "Desconectar" : "Conectar"}
-                        </button>
-                      ) : null}
+                      <button
+                        className="tc-btn-mini"
+                        onClick={() => void setExternalExtensionManualState(item, !(item.registered || isManualBusy))}
+                        style={{ borderColor: item.registered || isManualBusy ? "rgba(255,120,120,.38)" : "rgba(89,227,159,.34)" }}
+                      >
+                        <Phone size={12} />{item.registered || isManualBusy ? "Desconectar" : "Conectar"}
+                      </button>
+                      <button
+                        className="tc-btn-mini"
+                        onClick={() => void deleteExtension(item)}
+                        disabled={saving}
+                        style={{ borderColor: "rgba(255,120,120,.38)", color: "#ffd1d1" }}
+                      >
+                        <Trash2 size={12} />Eliminar
+                      </button>
                     </div>
                   </div>
                 );
@@ -935,6 +980,7 @@ if (!token) {
               <button className="tc-btn tc-btn-gold" onClick={() => void saveExtension()} disabled={saving}><Save size={14} style={{ marginRight: 6 }} />{saving ? "Guardando..." : form.id ? "Guardar cambios" : "Crear extensión"}</button>
               {form.extension ? <button className="tc-btn" onClick={() => void copyValue(form.extension)}><Copy size={14} style={{ marginRight: 6 }} />Copiar ext.</button> : null}
             </div>
+              {form.id ? <button className="tc-btn" onClick={() => void deleteExtension()} disabled={saving} style={{ borderColor: "rgba(255,120,120,.38)", color: "#ffd1d1" }}><Trash2 size={14} style={{ marginRight: 6 }} />Eliminar extensión</button> : null}
           </aside>
         </>
       ) : null}
