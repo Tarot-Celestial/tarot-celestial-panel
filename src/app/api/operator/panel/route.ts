@@ -421,9 +421,16 @@ async function getAuthContext(req: Request) {
   const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
   const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return { ok: false as const, error: "NO_TOKEN" as const };
+const auth = req.headers.get("authorization") || "";
+
+console.log("AUTH HEADER:", auth); // 👈 AÑADE ESTA LÍNEA
+
+const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+
+if (!token) {
+  console.log("❌ NO TOKEN DETECTADO"); // 👈 OPCIONAL PERO ÚTIL
+  return { ok: false as const, error: "NO_TOKEN" as const };
+}
 
   const userClient = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
