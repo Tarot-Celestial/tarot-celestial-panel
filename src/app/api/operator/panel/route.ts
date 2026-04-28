@@ -104,16 +104,27 @@ async function syncExtensionRoutingInAsterisk(extension: string, routeType: stri
   try {
     const ext = sanitizeExtension(extension);
     const target = sanitizePhone(targetPhone);
+
+    console.log("🔥 ROUTING DEBUG →", {
+      ext,
+      routeType,
+      targetPhone,
+      target
+    });
+
     if (!ext) return;
 
     if (routeType === "external" && target) {
+      console.log("✅ GUARDANDO EN ASTERISK");
       await amiCommand(`database put pbx_route_external ${ext} ${target}`);
       return;
     }
 
+    console.log("🧹 BORRANDO EN ASTERISK");
     await amiCommand(`database del pbx_route_external ${ext}`);
+
   } catch (e) {
-    console.error("Error sync routing ASTERISK:", e);
+    console.error("❌ ERROR ASTERISK:", e);
   }
 }
 
