@@ -1729,50 +1729,70 @@ const target = SIP.UserAgent.makeURI(
       consultSessionRef.current = inviter;
 
       inviter.stateChange?.addListener?.((state: any) => {
-        const established = isSessionState({ state }, "Established") || isSessionState(inviter, "Established");
-        const terminated = isSessionState({ state }, "Terminated") || isSessionState(inviter, "Terminated");
-        const establishing = isSessionState({ state }, "Establishing") || isSessionState(inviter, "Establishing");
+  const established =
+    isSessionState({ state }, "Established") ||
+    isSessionState(inviter, "Established");
 
-        if (establishing) {
-          setAssistedTransferStatus("calling");
-          setStatusText(`Consultando a ${cleanTarget}…`);
-        }
+  const terminated =
+    isSessionState({ state }, "Terminated") ||
+    isSessionState(inviter, "Terminated");
 
-        if (established && consultSessionRef.current === inviter) {
-  stopRingtone();
+  const establishing =
+    isSessionState({ state }, "Establishing") ||
+    isSessionState(inviter, "Establishing");
 
-  // 🔥 asegurar que 1000 envía micro hacia 1001
-  forceEnableMic(inviter);
+  if (establishing) {
+    setAssistedTransferStatus("calling");
+    setStatusText(`Consultando a ${cleanTarget}…`);
+  }
 
-  setAssistedTransferStatus("consulting");
-  setStatus("in_call");
-  setStatusText(`Consulta con ${cleanTarget}`);
+  if (established && consultSessionRef.current === inviter) {
+    stopRingtone();
 
-        if (terminated && consultSessionRef.current === inviter) {
-          stopRingtone();
-          consultSessionRef.current = null;
-          setAssistedTransferStatus("idle");
-          setAssistedTransferTarget("");
-          assistedTransferTargetRef.current = "";
-          runtimeRef.current.activeSession = original;
-          void reinviteSession(original, unholdModifier).then(() => {
-            cleanupRemoteAudio();
-            attachRemoteAudioFromSession(inviter);
-forceEnableMic(inviter);
-void ensureRemoteAudioPlayback();
-          });
-          setStatus("in_call");
-          setStatusText("En llamada");
-          void syncExtensionRuntime(cleanTarget, {
-            registered: true,
-            status: "registered",
-            active_call_count: 0,
-            active_call_started_at: null,
-            talking_to: null,
-          });
-          setMsg("Consulta finalizada. Llamada de cliente recuperada.");
-        }
-      });
+    // 🔥 FIX AUDIO
+    forceEnableMic(inviter);
+
+    setAssistedTransferStatus("consulting");
+    setStatus("in_call");
+    setStatusText(`Consulta con ${cleanTarget}`);
+
+    cleanupRemoteAudio();
+    attachRemoteAudioFromSession(inviter);
+    forceEnableMic(inviter);
+    void ensureRemoteAudioPlayback();
+  }
+
+  if (terminated && consultSessionRef.current === inviter) {
+    stopRingtone();
+
+    consultSessionRef.current = null;
+    setAssistedTransferStatus("idle");
+    setAssistedTransferTarget("");
+    assistedTransferTargetRef.current = "";
+
+    runtimeRef.current.activeSession = original;
+
+    void reinviteSession(original, unholdModifier).then(() => {
+      cleanupRemoteAudio();
+      attachRemoteAudioFromSession(original);
+      forceEnableMic(original);
+      void ensureRemoteAudioPlayback();
+    });
+
+    setStatus("in_call");
+    setStatusText("En llamada");
+
+    void syncExtensionRuntime(cleanTarget, {
+      registered: true,
+      status: "registered",
+      active_call_count: 0,
+      active_call_started_at: null,
+      talking_to: null,
+    });
+
+    setMsg("Consulta finalizada. Llamada de cliente recuperada.");
+  }
+});
 
       startRingtone();
       await inviter.invite();
