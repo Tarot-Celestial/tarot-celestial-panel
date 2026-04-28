@@ -579,6 +579,39 @@ if (!token) {
     );
   }
 
+  async function setExternalExtensionManualState(item: any, nextOnline: boolean) {
+    try {
+      const extension = cleanDigits(String(item?.extension || ""));
+      if (!extension) return;
+      const token = await getToken();
+      if (!token) throw new Error("Sesión no válida");
+
+      const res = await fetch("/api/operator/panel", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "update_runtime",
+          extension,
+          registered: nextOnline,
+          status: nextOnline ? "registered" : "offline",
+          active_call_count: 0,
+          active_call_started_at: null,
+          incoming_number: null,
+          talking_to: null,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No se pudo actualizar el estado");
+      setMsg(nextOnline ? `${extension} conectada manualmente.` : `${extension} desconectada manualmente.`);
+      await loadData();
+    } catch (e: any) {
+      setMsg(e?.message || "No se pudo cambiar el estado manual.");
+    }
+  }
+
   function recoverParkingCall(call: ParkingCallRow) {
     const slot = cleanDigits(String(call.slot || ""));
     if (!slot) return;
@@ -714,6 +747,8 @@ if (!token) {
                 const talkingTo = String(item.talking_to || incoming || "").trim();
                 const isSelected = String(selectedId) === String(item.id || "");
                 const queueLabel = item.route?.queue_id ? (queueMap.get(String(item.route.queue_id))?.label || "Cola") : "";
+                const isExternalRoute = String(item.route?.type || "internal") === "external";
+                const isManualBusy = Number(item.active_call_count || 0) > 0 || ["in_call", "calling", "ringing", "busy"].includes(String(item.status || "").toLowerCase());
                 return (
                   <div key={String(item.id || item.extension || Math.random())} className="tc-mini-card" style={{ borderColor: isSelected ? "rgba(255,214,102,.72)" : item.roleTone.border, background: item.tone.bg, boxShadow: `inset 0 0 0 1px ${item.tone.border}` }}>
                     <button type="button" onClick={() => handleCardClick(item)} style={{ all: "unset", cursor: "pointer", display: "grid", gap: 6 }}>
@@ -731,9 +766,18 @@ if (!token) {
                         <span>{seconds ? formatDuration(seconds) : (item.registered ? "SIP ok" : "SIP off")}</span>
                       </div>
                     </button>
-                    <div className="tc-row" style={{ gap: 8, marginTop: 2 }}>
+                    <div className="tc-row" style={{ gap: 8, marginTop: 2, flexWrap: "wrap" }}>
                       <button className="tc-btn-mini" onClick={() => openEditDrawer(item)}><Settings2 size={12} />Editar</button>
                       <button className="tc-btn-mini" onClick={() => copyValue(String(item.extension || ""))}><Copy size={12} />Copiar</button>
+                      {isExternalRoute ? (
+                        <button
+                          className="tc-btn-mini"
+                          onClick={() => void setExternalExtensionManualState(item, !(item.registered || isManualBusy))}
+                          style={{ borderColor: item.registered || isManualBusy ? "rgba(255,120,120,.38)" : "rgba(89,227,159,.34)" }}
+                        >
+                          <Phone size={12} />{item.registered || isManualBusy ? "Desconectar" : "Conectar"}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -998,3 +1042,4 @@ if (!token) {
     </section>
   );
 }
+
