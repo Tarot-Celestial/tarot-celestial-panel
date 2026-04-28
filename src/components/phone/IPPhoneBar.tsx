@@ -1811,7 +1811,6 @@ const target = SIP.UserAgent.makeURI(
       // SOLO aquí se conecta cliente ↔ destino final.
       stopRingtone();
       await original.refer(referTarget);
-      await consult?.bye?.().catch(() => null);
       cleanupRemoteAudio();
       addHistory({ number: target, direction: "transfer", createdAt: new Date().toISOString(), result: "transferencia asistida" });
       void syncExtensionRuntime(target, {
@@ -1828,10 +1827,10 @@ const target = SIP.UserAgent.makeURI(
       setAssistedTransferTarget("");
       setAssistedTransferStatus("idle");
       // 🔥 MANTENER sesión activa tras transfer
-runtimeRef.current.activeSession = original;
+runtimeRef.current.activeSession = null;
 
-setStatus("in_call");
-setStatusText("En llamada (transferida)");
+setStatus("registered");
+setStatusText("Conectado");
     } catch (e: any) {
       console.error(e);
       setMsg(e?.message || "No se pudo completar la transferencia.");
