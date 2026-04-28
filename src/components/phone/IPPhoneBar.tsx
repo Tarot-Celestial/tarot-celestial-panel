@@ -567,6 +567,24 @@ export default function IPPhoneBar() {
     }
   }
 
+  async function syncExtensionRuntime(extension: string, payload: Record<string, any>) {
+    try {
+      const ext = sanitizeNumber(extension);
+      const token = await getToken();
+      if (!token || !ext) return;
+      await fetch("/api/operator/panel", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "update_runtime", extension: ext, ...payload }),
+      });
+    } catch {
+      // noop
+    }
+  }
+
   function addHistory(item: Omit<CallHistoryItem, "id">) {
     const next: CallHistoryItem = { id: `${Date.now()}-${Math.random()}`, ...item };
     historyRef.current = [next, ...historyRef.current].slice(0, 12);
@@ -1462,6 +1480,7 @@ const payload = {
       setStatus("calling");
       setStatusText(`Llamando a ${dialed}…`);
 
+      startRingtone();
       await inviter.invite();
       attachRemoteAudioFromSession(inviter);
       await ensureRemoteAudioPlayback();
@@ -1612,6 +1631,10 @@ const payload = {
       setMsg("Softphone no conectado.");
       return false;
     }
+    if (consultSessionRef.current && isSessionAlive(consultSessionRef.current)) {
+      setMsg("Ya hay una consulta de transferencia en curso.");
+      return false;
+    }
 
     const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
     const consultTarget = SIP.UserAgent.makeURI(`sip:${cleanTarget}@${config.domain}`);
@@ -1619,81 +1642,105 @@ const payload = {
       setMsg("Destino SIP inválido para consulta.");
       return false;
     }
-// 🔥 LIMPIAR AUDIO ANTES DE TODO
-cleanupRemoteAudio();
-    
-    // 🔥 HOLD REAL
-await original.invite({
-  sessionDescriptionHandlerOptions: {
-    hold: true
-  }
-});
-
-// 🔥 SILENCIAR AUDIO DEL CLIENTE
-if (remoteAudioRef.current) {
-  remoteAudioRef.current.muted = true;
-}
-
-    const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
-    // 🔥 ESTO FALTA (CLAVE)
-await bindSession(inviter, "outgoing", cleanTarget);
-    
-    consultSessionRef.current = inviter;
-    originalSessionDuringConsultRef.current = original;
-    assistedTransferTargetRef.current = cleanTarget;
-    setAssistedTransferTarget(cleanTarget);
-    setAssistedTransferStatus("calling");
-    setMsg(`Llamando a ${cleanTarget} para consulta. El cliente queda en espera y no escucha esta conversación.`);
 
     try {
+      // Guardamos SIEMPRE la llamada original antes de crear la consulta.
+      originalSessionDuringConsultRef.current = original;
+      assistedTransferTargetRef.current = cleanTarget;
+      setAssistedTransferTarget(cleanTarget);
+      setAssistedTransferStatus("calling");
+      setMsg(`Poniendo al cliente en espera y llamando a ${cleanTarget} para consulta…`);
+      void syncExtensionRuntime(cleanTarget, {
+        registered: true,
+        status: "calling",
+        active_call_count: 1,
+        active_call_started_at: new Date().toISOString(),
+        talking_to: incomingNumberRef.current || callNumberRef.current || numberRef.current || null,
+      });
+
+      // El cliente debe quedar retenido en Asterisk antes de llamar al destino.
+      cleanupRemoteAudio();
+      const held = await reinviteSession(original, holdModifier);
+      if (!held) throw new Error("No se pudo poner al cliente en espera.");
+
+      const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
+      consultSessionRef.current = inviter;
+
       inviter.stateChange?.addListener?.((state: any) => {
         const established = isSessionState({ state }, "Established") || isSessionState(inviter, "Established");
         const terminated = isSessionState({ state }, "Terminated") || isSessionState(inviter, "Terminated");
-        if (established) {
+        const establishing = isSessionState({ state }, "Establishing") || isSessionState(inviter, "Establishing");
+
+        if (establishing) {
+          setAssistedTransferStatus("calling");
+          setStatusText(`Consultando a ${cleanTarget}…`);
+        }
+
+        if (established && consultSessionRef.current === inviter) {
+          stopRingtone();
           setAssistedTransferStatus("consulting");
-          setMsg(`Consulta activa con ${cleanTarget}. Pulsa “Completar” para pasar el cliente o “Recuperar” para cancelar.`);
+          setStatus("in_call");
+          setStatusText(`Consulta con ${cleanTarget}`);
+          setMsg(`Consulta activa con ${cleanTarget}. Pulsa “Completar” para pasar el cliente o “Recuperar” para volver con él.`);
+          void syncExtensionRuntime(cleanTarget, {
+            registered: true,
+            status: "in_call",
+            active_call_count: 1,
+            active_call_started_at: new Date().toISOString(),
+            talking_to: incomingNumberRef.current || callNumberRef.current || numberRef.current || null,
+          });
+          cleanupRemoteAudio();
           attachRemoteAudioFromSession(inviter);
           void ensureRemoteAudioPlayback();
         }
+
         if (terminated && consultSessionRef.current === inviter) {
+          stopRingtone();
           consultSessionRef.current = null;
           setAssistedTransferStatus("idle");
           setAssistedTransferTarget("");
           assistedTransferTargetRef.current = "";
-          // 🔥 RESTAURAR AUDIO SI SE CANCELA LA CONSULTA
-if (remoteAudioRef.current) {
-  remoteAudioRef.current.muted = false;
-}
-          void reinviteSession(original, unholdModifier);
-          attachRemoteAudioFromSession(original);
+          runtimeRef.current.activeSession = original;
+          void reinviteSession(original, unholdModifier).then(() => {
+            cleanupRemoteAudio();
+            attachRemoteAudioFromSession(original);
+            void ensureRemoteAudioPlayback();
+          });
+          setStatus("in_call");
+          setStatusText("En llamada");
+          void syncExtensionRuntime(cleanTarget, {
+            registered: true,
+            status: "registered",
+            active_call_count: 0,
+            active_call_started_at: null,
+            talking_to: null,
+          });
           setMsg("Consulta finalizada. Llamada de cliente recuperada.");
         }
       });
+
+      startRingtone();
       await inviter.invite();
-      // 🔥 FORZAR AUDIO DE LA NUEVA LLAMADA
-attachRemoteAudioFromSession(inviter);
-await ensureRemoteAudioPlayback();
+      attachRemoteAudioFromSession(inviter);
+      await ensureRemoteAudioPlayback();
       return true;
     } catch (e: any) {
       console.error("Error en consulta de transferencia", e);
+      stopRingtone();
+      const consult = consultSessionRef.current;
       consultSessionRef.current = null;
-      setAssistedTransferStatus("idle");
-      setAssistedTransferTarget("");
       assistedTransferTargetRef.current = "";
-      // 🔥 QUITAR HOLD REAL
-await original.invite({
-  sessionDescriptionHandlerOptions: {
-    hold: false
-  }
-});
-      // 🔥 FORZAR RE-ATTACH AUDIO AL ORIGINAL (evita leaks)
-attachRemoteAudioFromSession(original);
-
-// 🔥 RESTAURAR AUDIO
-if (remoteAudioRef.current) {
-  remoteAudioRef.current.muted = false;
-}
+      setAssistedTransferTarget("");
+      setAssistedTransferStatus("idle");
+      await consult?.bye?.().catch(() => null);
+      await consult?.cancel?.().catch(() => null);
+      runtimeRef.current.activeSession = original;
+      await reinviteSession(original, unholdModifier);
+      cleanupRemoteAudio();
       attachRemoteAudioFromSession(original);
+      await ensureRemoteAudioPlayback();
+      setStatus("in_call");
+      setStatusText("En llamada");
       setMsg(e?.message || "No se pudo iniciar la consulta de transferencia.");
       return false;
     }
@@ -1701,22 +1748,43 @@ if (remoteAudioRef.current) {
 
   async function completeAssistedTransfer() {
     try {
-      const original = originalSessionDuringConsultRef.current || runtimeRef.current.activeSession;
+      const original = originalSessionDuringConsultRef.current;
       const consult = consultSessionRef.current;
       const target = assistedTransferTargetRef.current;
-      if (!original || !target) return;
+      if (!original || !target) {
+        setMsg("No hay transferencia asistida pendiente.");
+        return;
+      }
+      if (consult && !isSessionState(consult, "Established")) {
+        setMsg("Espera a que el destino conteste antes de completar la transferencia.");
+        return;
+      }
+
       const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
       const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
       if (!referTarget) throw new Error("Destino SIP inválido.");
+
+      // SOLO aquí se conecta cliente ↔ destino final.
+      stopRingtone();
       await original.refer(referTarget);
       await consult?.bye?.().catch(() => null);
+      cleanupRemoteAudio();
       addHistory({ number: target, direction: "transfer", createdAt: new Date().toISOString(), result: "transferencia asistida" });
+      void syncExtensionRuntime(target, {
+        registered: true,
+        status: "in_call",
+        active_call_count: 1,
+        active_call_started_at: new Date().toISOString(),
+        talking_to: incomingNumberRef.current || callNumberRef.current || numberRef.current || null,
+      });
       setMsg(`Transferencia completada a ${target}.`);
       consultSessionRef.current = null;
       originalSessionDuringConsultRef.current = null;
       assistedTransferTargetRef.current = "";
       setAssistedTransferTarget("");
       setAssistedTransferStatus("idle");
+      cleanupSessionRefs(original);
+      resetCallState("registered", "Conectado");
     } catch (e: any) {
       console.error(e);
       setMsg(e?.message || "No se pudo completar la transferencia.");
@@ -1727,6 +1795,8 @@ if (remoteAudioRef.current) {
     try {
       const original = originalSessionDuringConsultRef.current || runtimeRef.current.activeSession;
       const consult = consultSessionRef.current;
+      const target = assistedTransferTargetRef.current;
+      stopRingtone();
       await consult?.bye?.().catch(() => null);
       await consult?.cancel?.().catch(() => null);
       consultSessionRef.current = null;
@@ -1737,8 +1807,20 @@ if (remoteAudioRef.current) {
       if (original) {
         runtimeRef.current.activeSession = original;
         await reinviteSession(original, unholdModifier);
+        cleanupRemoteAudio();
         attachRemoteAudioFromSession(original);
         await ensureRemoteAudioPlayback();
+      }
+      setStatus("in_call");
+      setStatusText("En llamada");
+      if (target) {
+        void syncExtensionRuntime(target, {
+          registered: true,
+          status: "registered",
+          active_call_count: 0,
+          active_call_started_at: null,
+          talking_to: null,
+        });
       }
       setMsg("Transferencia cancelada. Llamada de cliente recuperada.");
     } catch (e: any) {
@@ -1760,8 +1842,8 @@ if (remoteAudioRef.current) {
         setMsg("La transferencia solo se puede lanzar cuando la llamada ya está conectada.");
         return false;
       }
-      if (typeof session.refer !== "function") {
-        setMsg("Tu sesión SIP no soporta transferencias REFER.");
+      if (assistedTransferStatus !== "idle") {
+        setMsg("Ya hay una transferencia asistida en curso.");
         return false;
       }
 
@@ -1779,10 +1861,15 @@ if (remoteAudioRef.current) {
       const ext = Array.isArray(operatorJson?.extensions)
         ? operatorJson.extensions.find((item: any) => String(item?.extension || "") === String(cleanTarget))
         : null;
+      const routing = Array.isArray(operatorJson?.routing)
+        ? operatorJson.routing.find((item: any) => String(item?.extension || "") === String(cleanTarget))
+        : null;
       const workers = Array.isArray(operatorJson?.workers) ? operatorJson.workers : [];
       const targetWorker = ext?.worker_id ? workers.find((item: any) => String(item?.id || "") === String(ext.worker_id)) : null;
-      const targetRole = String(targetWorker?.role || "").toLowerCase();
+      const targetRole = String(ext?.role || ext?.extension_role || targetWorker?.role || "").toLowerCase();
+      const isExternalRoute = String(ext?.route?.type || routing?.type || "").toLowerCase() === "external";
       const isTarotistaTarget = targetRole === "tarotista";
+      const useAssistedTransfer = isTarotistaTarget || isExternalRoute;
 
       let allocation: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number } | undefined;
       let popupResult: { ok?: boolean; reason?: string | null } | null = null;
@@ -1807,18 +1894,27 @@ if (remoteAudioRef.current) {
       }
 
       const confirmed = window.confirm(
-        isTarotistaTarget
-          ? `¿Transferir la llamada a la tarotista ${cleanTarget}?`
-          : `¿Transferir la llamada a la central ${cleanTarget}?`
+        useAssistedTransfer
+          ? `¿Iniciar consulta asistida con ${cleanTarget}? El cliente quedará en espera hasta que pulses “Completar”.`
+          : `¿Transferir directamente la llamada a ${cleanTarget}?`
       );
       if (!confirmed) return false;
 
-      if (isTarotistaTarget) {
+      if (useAssistedTransfer) {
         const ok = await startAssistedTransfer(cleanTarget);
         if (ok) {
-          setMsg(`Consulta iniciada con ${cleanTarget}. El cliente queda en espera y no escucha a la tarotista.`);
+          setMsg(
+            isTarotistaTarget
+              ? `Consulta iniciada con ${cleanTarget}. El cliente queda en espera y no escucha a la tarotista.`
+              : `Consulta iniciada con ${cleanTarget}. El cliente queda en espera.`
+          );
         }
         return ok;
+      }
+
+      if (typeof session.refer !== "function") {
+        setMsg("Tu sesión SIP no soporta transferencias REFER.");
+        return false;
       }
 
       const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
@@ -1837,17 +1933,7 @@ if (remoteAudioRef.current) {
         result: popupResult?.ok ? "transferida + ficha" : "transferida",
       });
 
-      if (isTarotistaTarget) {
-        if (popupResult?.ok) {
-          setMsg(`Transferencia enviada a ${cleanTarget}. Se consumirán primero los minutos free y luego los normales.`);
-        } else if (ctx?.cliente_id) {
-          setMsg(`Transferencia SIP enviada a ${cleanTarget}, pero el popup CRM falló (${String(popupResult?.reason || "sin detalle")}).`);
-        } else {
-          setMsg(`Transferencia SIP enviada a ${cleanTarget}.`);
-        }
-      } else {
-        setMsg(`Transferencia SIP enviada a ${cleanTarget}.`);
-      }
+      setMsg(`Transferencia directa enviada a ${cleanTarget}.`);
       return true;
     } catch (e: any) {
       console.error(e);
@@ -2304,5 +2390,4 @@ const dialBtnStyle: CSSProperties = {
   padding: "14px 0",
   cursor: "pointer",
 };
-
 
