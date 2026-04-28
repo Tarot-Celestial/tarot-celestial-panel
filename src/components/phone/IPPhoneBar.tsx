@@ -942,6 +942,11 @@ export default function IPPhoneBar() {
           void ensureRemoteAudioPlayback();
         }
 
+        if (assistedTransferStatus !== "idle") {
+  console.log("EVITANDO FINALIZE DURANTE TRANSFER");
+  return;
+}
+        
        if (terminated) {
   const isConsult =
     consultSessionRef.current === session;
@@ -1722,7 +1727,11 @@ const target = SIP.UserAgent.makeURI(
 
       // El cliente debe quedar retenido en Asterisk antes de llamar al destino.
       cleanupRemoteAudio();
-      const held = await reinviteSession(original, holdModifier);
+      await original.invite({
+  sessionDescriptionHandlerOptions: {
+    hold: true
+  }
+});
       if (!held) throw new Error("No se pudo poner al cliente en espera.");
 
       const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
@@ -1811,7 +1820,11 @@ await ensureRemoteAudioPlayback();
       await consult?.bye?.().catch(() => null);
       await consult?.cancel?.().catch(() => null);
       runtimeRef.current.activeSession = original;
-      await reinviteSession(original, unholdModifier);
+      await original.invite({
+  sessionDescriptionHandlerOptions: {
+    hold: false
+  }
+});
       cleanupRemoteAudio();
       attachRemoteAudioFromSession(original);
       await ensureRemoteAudioPlayback();
