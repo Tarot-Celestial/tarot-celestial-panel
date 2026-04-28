@@ -1564,10 +1564,6 @@ const payload = {
     try {
       const next = !speakerOn;
       setSpeakerOn(next);
-      if (remoteAudioRef.current) {
-        remoteAudioRef.current.muted = !next;
-        if (next) await ensureRemoteAudioPlayback();
-      }
     } catch (e) {
       console.error(e);
     }
@@ -1623,7 +1619,9 @@ const payload = {
       setMsg("Destino SIP inválido para consulta.");
       return false;
     }
-
+// 🔥 LIMPIAR AUDIO ANTES DE TODO
+cleanupRemoteAudio();
+    
     // 🔥 HOLD REAL
 await original.invite({
   sessionDescriptionHandlerOptions: {
@@ -1637,6 +1635,9 @@ if (remoteAudioRef.current) {
 }
 
     const inviter = new SIP.Inviter(runtimeRef.current.userAgent, consultTarget, buildSessionOptions());
+    // 🔥 ESTO FALTA (CLAVE)
+await bindSession(inviter, "outgoing", cleanTarget);
+    
     consultSessionRef.current = inviter;
     originalSessionDuringConsultRef.current = original;
     assistedTransferTargetRef.current = cleanTarget;
@@ -1669,6 +1670,9 @@ if (remoteAudioRef.current) {
         }
       });
       await inviter.invite();
+      // 🔥 FORZAR AUDIO DE LA NUEVA LLAMADA
+attachRemoteAudioFromSession(inviter);
+await ensureRemoteAudioPlayback();
       return true;
     } catch (e: any) {
       console.error("Error en consulta de transferencia", e);
@@ -1682,6 +1686,8 @@ await original.invite({
     hold: false
   }
 });
+      // 🔥 FORZAR RE-ATTACH AUDIO AL ORIGINAL (evita leaks)
+attachRemoteAudioFromSession(original);
 
 // 🔥 RESTAURAR AUDIO
 if (remoteAudioRef.current) {
