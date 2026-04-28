@@ -1491,6 +1491,7 @@ function AdminPage() {
         </aside>
 
         <main className="tc-main">
+          {tab !== "panel" && (
           <section className="tc-hero">
             <div className="tc-hero-top">
               <div>
@@ -1541,6 +1542,7 @@ function AdminPage() {
               </div>
             </div>
           </section>
+          )}
 
           <div className="tc-main-content">
 {tab === "dashboard" && <DashboardPanel month={month} />}
