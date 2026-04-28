@@ -1947,7 +1947,7 @@ setStatusText("Conectado");
       const targetRole = String(ext?.role || ext?.extension_role || targetWorker?.role || "").toLowerCase();
       const isExternalRoute = String(ext?.route?.type || routing?.type || "").toLowerCase() === "external";
       const isTarotistaTarget = targetRole === "tarotista";
-      const useAssistedTransfer = isTarotistaTarget || isExternalRoute;
+      const useAssistedTransfer = true;
 
       let allocation: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number } | undefined;
       let popupResult: { ok?: boolean; reason?: string | null } | null = null;
