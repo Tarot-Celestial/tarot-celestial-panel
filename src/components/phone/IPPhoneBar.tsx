@@ -909,11 +909,30 @@ export default function IPPhoneBar() {
           void ensureRemoteAudioPlayback();
         }
 
-        if (terminated) {
-          stopRingtone();
-          cleanupSessionRefs(session);
-          finalizeCall(callAnsweredRef.current ? "finalizada" : direction === "incoming" ? "perdida" : "fallida");
-        }
+       if (terminated) {
+  const isConsult =
+    consultSessionRef.current === session;
+
+  const isOriginalDuringTransfer =
+    assistedTransferStatus !== "idle" &&
+    session === originalSessionDuringConsultRef.current;
+
+  // 🔥 NO finalizar si estamos en transferencia
+  if (isConsult || isOriginalDuringTransfer) {
+    console.log("IGNORANDO TERMINATED DURANTE TRANSFER");
+    return;
+  }
+
+  stopRingtone();
+  cleanupSessionRefs(session);
+  finalizeCall(
+    callAnsweredRef.current
+      ? "finalizada"
+      : direction === "incoming"
+      ? "perdida"
+      : "fallida"
+  );
+}
       });
     } catch {
       // noop
