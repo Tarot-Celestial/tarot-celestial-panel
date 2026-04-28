@@ -107,15 +107,11 @@ async function syncExtensionRoutingInAsterisk(extension: string, routeType: stri
     if (!ext) return;
 
     if (routeType === "external" && target) {
-      // Para el dialplan realtime: DB(pbx_route/EXT)=external y DB(pbx_mobile/EXT)=telefono
-      // Así una extensión creada en el panel puede desviar a móvil sin tocar pjsip.conf.
-      await amiCommand(`database put pbx_route ${ext} external`);
-      await amiCommand(`database put pbx_mobile ${ext} ${target}`);
+      await amiCommand(`database put pbx_route_external ${ext} ${target}`);
       return;
     }
 
-    await amiCommand(`database del pbx_route ${ext}`);
-    await amiCommand(`database del pbx_mobile ${ext}`);
+    await amiCommand(`database del pbx_route_external ${ext}`);
   } catch (e) {
     console.error("Error sync routing ASTERISK:", e);
   }
@@ -636,22 +632,35 @@ export async function POST(req: Request) {
 
   const asteriskRefresh = await refreshPjsipRealtimeObject(extension);
 
-  // 🔥 ROUTING
+    // 🔥 ROUTING
   const routingPayload = {
     extension,
     type: route_type,
-    target: target_phone || null,
+    target: route_type === "external" ? target_phone || null : null,
     queue_id,
     queue_priority,
     notes: routing_notes,
     is_active,
+    updated_at: new Date().toISOString(),
   };
 
-  const routingRes = await admin
+  let routingRes = await admin
     .from("pbx_routing")
     .upsert(routingPayload, { onConflict: "extension" })
     .select("*")
     .maybeSingle();
+
+  if (routingRes.error && String(routingRes.error.message || "").includes("there is no unique")) {
+    const existing = await admin
+      .from("pbx_routing")
+      .select("id")
+      .eq("extension", extension)
+      .maybeSingle();
+
+    routingRes = existing.data?.id
+      ? await admin.from("pbx_routing").update(routingPayload).eq("id", existing.data.id).select("*").maybeSingle()
+      : await admin.from("pbx_routing").insert(routingPayload).select("*").maybeSingle();
+  }
 
   if (routingRes.error && !isMissingRelationError(routingRes.error)) {
     console.error("ROUTING ERROR:", routingRes.error);
