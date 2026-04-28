@@ -1856,7 +1856,18 @@ stopRingtone();
 
 // 🔥 transferir desde Asterisk
 // 🔥 para móviles: simplemente salir de la llamada
-await original.refer(referTarget);
+const isExternal = target.length >= 6; // o tu lógica
+
+if (isExternal) {
+  // 🔥 NO usar REFER
+  await original.bye();
+
+  // 🔥 lanzar llamada desde Asterisk (igual que si marcases)
+  await call(target);
+} else {
+  // 🔥 internas sí usan REFER
+  await original.refer(referTarget);
+}
 // 🔥 cerrar llamada de consulta (CLAVE)
 await consultSessionRef.current?.bye?.().catch(() => null);
 await consultSessionRef.current?.cancel?.().catch(() => null);
