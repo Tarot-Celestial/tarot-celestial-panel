@@ -1849,29 +1849,42 @@ await ensureRemoteAudioPlayback();
       }
 
       const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
-      const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
-      if (!referTarget) throw new Error("Destino SIP inválido.");
+const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
+if (!referTarget) throw new Error("Destino SIP inválido.");
 
-      // SOLO aquí se conecta cliente ↔ destino final.
-      stopRingtone();
-      const isExternal = target.length >= 6;
+stopRingtone();
 
-if (isExternal) {
-  // 🔥 PARA MÓVILES → colgar central y dejar llamada ya establecida
-  await original.bye();
-} else {
-  // SIP normal
-  await original.refer(referTarget);
-}
-      cleanupRemoteAudio();
-      addHistory({ number: target, direction: "transfer", createdAt: new Date().toISOString(), result: "transferencia asistida" });
-      void syncExtensionRuntime(target, {
-        registered: true,
-        status: "in_call",
-        active_call_count: 1,
-        active_call_started_at: new Date().toISOString(),
-        talking_to: incomingNumberRef.current || callNumberRef.current || numberRef.current || null,
-      });
+// 🔥 transferir desde Asterisk
+await original.refer(referTarget);
+
+// 🔥 cerrar llamada de consulta (CLAVE)
+await consultSessionRef.current?.bye?.().catch(() => null);
+await consultSessionRef.current?.cancel?.().catch(() => null);
+consultSessionRef.current = null;
+
+// 🔥 limpiar estado
+cleanupRemoteAudio();
+
+// 🔥 mantener historial
+addHistory({
+  number: target,
+  direction: "transfer",
+  createdAt: new Date().toISOString(),
+  result: "transferencia asistida"
+});
+
+// 🔥 mantener sync (NO LO BORRES)
+void syncExtensionRuntime(target, {
+  registered: true,
+  status: "in_call",
+  active_call_count: 1,
+  active_call_started_at: new Date().toISOString(),
+  talking_to:
+    incomingNumberRef.current ||
+    callNumberRef.current ||
+    numberRef.current ||
+    null,
+});
       setMsg(`Transferencia completada a ${target}.`);
       consultSessionRef.current = null;
       originalSessionDuringConsultRef.current = null;
