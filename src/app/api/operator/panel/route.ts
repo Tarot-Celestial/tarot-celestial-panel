@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { createClient } from "@supabase/supabase-js";
-import { amiCommand, getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
-
+import { amiAction, amiCommand, getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
 const execAsync = promisify(exec);
 
 export const runtime = "nodejs";
@@ -105,26 +104,31 @@ async function syncExtensionRoutingInAsterisk(extension: string, routeType: stri
     const ext = sanitizeExtension(extension);
     const target = sanitizePhone(targetPhone);
 
-    console.log("🔥 ROUTING DEBUG →", {
-      ext,
-      routeType,
-      targetPhone,
-      target
-    });
+    console.log("🔥 ROUTING DEBUG →", { ext, routeType, targetPhone, target });
 
     if (!ext) return;
 
-    if (routeType === "external" && target) {
-      console.log("✅ GUARDANDO EN ASTERISK");
-      await amiCommand(`database put pbx_route_external ${ext} ${target}`);
+    if (String(routeType).trim().toLowerCase() === "external" && target) {
+      const res = await amiAction({
+        Action: "DBPut",
+        Family: "pbx_route_external",
+        Key: ext,
+        Val: target,
+      });
+
+      console.log("✅ DBPut pbx_route_external →", res.ok, res.error || null);
       return;
     }
 
-    console.log("🧹 BORRANDO EN ASTERISK");
-    await amiCommand(`database del pbx_route_external ${ext}`);
+    const res = await amiAction({
+      Action: "DBDel",
+      Family: "pbx_route_external",
+      Key: ext,
+    });
 
+    console.log("🧹 DBDel pbx_route_external →", res.ok, res.error || null);
   } catch (e) {
-    console.error("❌ ERROR ASTERISK:", e);
+    console.error("Error sync routing ASTERISK:", e);
   }
 }
 
