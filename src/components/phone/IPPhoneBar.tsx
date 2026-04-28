@@ -1840,29 +1840,30 @@ await ensureRemoteAudioPlayback();
     const consult = consultSessionRef.current;
     const target = assistedTransferTargetRef.current;
 
-    if (!original || !target) {
+    if (!original || !consult || !target) {
       setMsg("No hay transferencia asistida pendiente.");
       return;
     }
 
-    if (consult && !isSessionState(consult, "Established")) {
+    if (!isSessionState(consult, "Established")) {
       setMsg("Espera a que el destino conteste.");
       return;
     }
 
-    const SIP = sipModuleRef.current || (sipModuleRef.current = await import("sip.js"));
-    const referTarget = SIP.UserAgent.makeURI(`sip:${target}@${config.domain}`);
-    if (!referTarget) throw new Error("Destino SIP inválido.");
-
     stopRingtone();
 
-    // 🔥 TRANSFERENCIA REAL
-    await original.refer(referTarget);
+    // 🔥 CLAVE TOTAL: usar sesión consult (Replaces)
+    await original.refer(consult);
 
-    // 🔥 cerrar consulta (IMPORTANTE)
-    await consult?.bye?.().catch(() => null);
-    await consult?.cancel?.().catch(() => null);
+    // ❌ NO colgar consult
+    // ❌ NO usar referTarget
+    // ❌ NO cancelar nada aquí
+
     consultSessionRef.current = null;
+    originalSessionDuringConsultRef.current = null;
+    assistedTransferTargetRef.current = "";
+    setAssistedTransferTarget("");
+    setAssistedTransferStatus("idle");
 
     cleanupRemoteAudio();
 
@@ -1873,28 +1874,7 @@ await ensureRemoteAudioPlayback();
       result: "transferencia asistida",
     });
 
-    void syncExtensionRuntime(target, {
-      registered: true,
-      status: "in_call",
-      active_call_count: 1,
-      active_call_started_at: new Date().toISOString(),
-      talking_to:
-        incomingNumberRef.current ||
-        callNumberRef.current ||
-        numberRef.current ||
-        null,
-    });
-
     setMsg(`Transferencia completada a ${target}.`);
-
-    // 🔥 LIMPIEZA CORRECTA (SIN ROMPER SIP)
-    originalSessionDuringConsultRef.current = null;
-    assistedTransferTargetRef.current = "";
-    setAssistedTransferTarget("");
-    setAssistedTransferStatus("idle");
-
-    // ❌ NO TOCAR activeSession
-    // ❌ NO cambiar status manualmente
 
   } catch (e: any) {
     console.error(e);
