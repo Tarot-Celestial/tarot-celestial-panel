@@ -108,74 +108,37 @@ async function syncCentralInAsterisk(extension: string, isActive: boolean) {
   }
 }
 
-async function syncExtensionRoutingInAsterisk(
-  extension: string,
-  routeType: string,
-  targetPhone?: string | null
-) {
+async function syncExtensionRoutingInAsterisk(extension: string, routeType: string, targetPhone?: string | null) {
+  const ext = sanitizeExtension(extension);
+  const target = sanitizePhone(targetPhone);
+  const isExternal = String(routeType || "").trim().toLowerCase() === "external";
+
+  if (!ext) return { ok: false, error: "EXTENSION_REQUIRED" };
+
   try {
-    const ext = sanitizeExtension(extension);
-    const target = sanitizePhone(targetPhone);
+    if (isExternal) {
+      if (!target) return { ok: false, error: "TARGET_PHONE_REQUIRED" };
 
-    console.log("🔥 ROUTING SYNC INPUT →", {
-      ext,
-      routeType,
-      target,
-    });
-
-    if (!ext) return;
-
-    const isExternal = String(routeType || "")
-      .toLowerCase()
-      .includes("external");
-
-    // 🟢 CASO EXTERNO → DBPut
-    if (isExternal && target) {
-      // 🔹 1. Intento por AMI
-      const res = await amiAction({
-        Action: "DBPut",
-        Family: "pbx_route_external",
-        Key: ext,
-        Val: target,
-      });
-
-      if (res.ok) {
-        console.log("✅ AMI DBPut OK");
-        return;
+      const res = await amiCommand(`database put pbx_route_external ${ext} ${target}`);
+      if (!res.ok) {
+        console.error("❌ ASTDB route DBPut failed", { ext, target, error: res.error, raw: res.raw });
+        return { ok: false, error: res.error || "ASTERISK_ROUTE_SYNC_FAILED", raw: res.raw };
       }
 
-      console.error("❌ AMI DBPut FAILED → fallback CLI", res);
-
-      // 🔹 2. FALLBACK CLI (PRODUCCIÓN)
-      await execAsync(
-        `asterisk -rx "database put pbx_route_external ${ext} ${target}"`
-      );
-
-      console.log("✅ CLI DBPut OK");
-      return;
+      return { ok: true, action: "put", extension: ext, target, raw: res.raw };
     }
 
-    // 🔴 CASO INTERNO → DBDel
-    const res = await amiAction({
-      Action: "DBDel",
-      Family: "pbx_route_external",
-      Key: ext,
-    });
-
-    if (res.ok) {
-      console.log("🧹 AMI DBDel OK");
-      return;
+    const res = await amiCommand(`database del pbx_route_external ${ext}`);
+    const notFound = String(res.raw || res.error || "").toLowerCase().includes("database entry not found");
+    if (!res.ok && !notFound) {
+      console.error("❌ ASTDB route DBDel failed", { ext, error: res.error, raw: res.raw });
+      return { ok: false, error: res.error || "ASTERISK_ROUTE_DELETE_FAILED", raw: res.raw };
     }
 
-    console.error("❌ AMI DBDel FAILED → fallback CLI", res);
-
-    await execAsync(
-      `asterisk -rx "database del pbx_route_external ${ext}"`
-    );
-
-    console.log("🧹 CLI DBDel OK");
-  } catch (e) {
-    console.error("❌ ROUTING SYNC FATAL:", e);
+    return { ok: true, action: "del", extension: ext, raw: res.raw };
+  } catch (e: any) {
+    console.error("❌ Error sync routing ASTERISK:", e);
+    return { ok: false, error: e?.message || "ASTERISK_ROUTE_SYNC_FATAL" };
   }
 }
 
@@ -202,12 +165,35 @@ async function updateExtensionRecord(admin: any, id: string, payload: any) {
 }
 
 async function upsertExtensionRecord(admin: any, payload: any) {
-  let res = await admin.from("pbx_extensions").upsert(payload, { onConflict: "extension" }).select("*").maybeSingle();
+  const extension = sanitizeExtension(payload?.extension);
+  const id = String(payload?.id || "").trim();
+
+  const tryWrite = async (writePayload: any) => {
+    if (id) {
+      const byId = await admin.from("pbx_extensions").select("id, extension").eq("id", id).maybeSingle();
+      if (byId.error && !isMissingRelationError(byId.error)) return byId;
+      if (byId.data?.id) {
+        return admin.from("pbx_extensions").update(writePayload).eq("id", byId.data.id).select("*").maybeSingle();
+      }
+    }
+
+    if (extension) {
+      const byExtension = await admin.from("pbx_extensions").select("id, extension").eq("extension", extension).maybeSingle();
+      if (byExtension.error && !isMissingRelationError(byExtension.error)) return byExtension;
+      if (byExtension.data?.id) {
+        return admin.from("pbx_extensions").update({ ...writePayload, id: byExtension.data.id }).eq("id", byExtension.data.id).select("*").maybeSingle();
+      }
+    }
+
+    return admin.from("pbx_extensions").insert(writePayload).select("*").maybeSingle();
+  };
+
+  let res = await tryWrite(payload);
   if (res.error && isMissingRelationError(res.error) && ("role" in payload || "extension_role" in payload)) {
     const fallback = { ...payload };
     delete fallback.role;
     delete fallback.extension_role;
-    res = await admin.from("pbx_extensions").upsert(fallback, { onConflict: "extension" }).select("*").maybeSingle();
+    res = await tryWrite(fallback);
   }
   return res;
 }
@@ -679,14 +665,8 @@ export async function POST(req: Request) {
 
   const is_active = body?.is_active !== undefined ? !!body.is_active : true;
 
-  const route_type = String(body?.route_type || "internal").trim() || "internal";
-  const target_phone = sanitizePhone(
-  body?.target_phone ||
-  body?.target ||
-  body?.phone ||
-  body?.mobile ||
-  ""
-);
+  const route_type = String(body?.route_type || body?.type || "internal").trim().toLowerCase() === "external" ? "external" : "internal";
+  const target_phone = sanitizePhone(body?.target_phone || body?.target || body?.phone || body?.mobile || body?.destination || "");
 
   const queue_id = String(body?.queue_id || "").trim() || null;
   const queue_priority = Number(body?.queue_priority || 0) || 0;
@@ -698,6 +678,10 @@ export async function POST(req: Request) {
 
   if (!password) {
     return NextResponse.json({ ok: false, error: "PASSWORD_REQUIRED" }, { status: 400 });
+  }
+
+  if (route_type === "external" && !target_phone) {
+    return NextResponse.json({ ok: false, error: "TARGET_PHONE_REQUIRED" }, { status: 400 });
   }
 
   // 🔥 INSERT / UPDATE
@@ -771,58 +755,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: routingRes.error.message });
   }
 
-  async function syncExtensionRoutingInAsterisk(
-  extension: string,
-  routeType: string,
-  targetPhone?: string | null
-) {
-  try {
-    const ext = sanitizeExtension(extension);
-    const target = sanitizePhone(targetPhone);
-
-    console.log("🔥 ROUTING SYNC INPUT →", {
-      ext,
-      routeType,
-      targetPhone,
-      target,
-    });
-
-    if (!ext) return;
-
-    const isExternal =
-      String(routeType || "")
-        .toLowerCase()
-        .includes("external");
-
-    if (isExternal && target) {
-      const res = await amiAction({
-        Action: "DBPut",
-        Family: "pbx_route_external",
-        Key: ext,
-        Val: target,
-      });
-
-      console.log("✅ DBPut RESULT:", res);
-      return;
-    }
-
-    const res = await amiAction({
-      Action: "DBDel",
-      Family: "pbx_route_external",
-      Key: ext,
-    });
-
-    console.log("🧹 DBDel RESULT:", res);
-  } catch (e) {
-    console.error("❌ ROUTING SYNC ERROR:", e);
+  const routingSync = await syncExtensionRoutingInAsterisk(extension, route_type, target_phone || null);
+  if (!routingSync.ok) {
+    return NextResponse.json({ ok: false, error: routingSync.error || "ASTERISK_ROUTING_SYNC_FAILED", routingSync }, { status: 500 });
   }
-}
 
   return NextResponse.json({
     ok: true,
     extension: result.data,
     routing: routingRes.data || null,
     realtimeSync,
+    routingSync,
     asteriskRefresh,
   });
 }
@@ -852,7 +795,7 @@ export async function POST(req: Request) {
       }
 
       await deleteAsteriskRealtimeExtension(admin, extToDelete);
-      await syncExtensionRoutingInAsterisk(extToDelete, "internal", null);
+      const routingSync = await syncExtensionRoutingInAsterisk(extToDelete, "internal", null);
       await syncCentralInAsterisk(extToDelete, false);
 
       const routingDel = await admin.from("pbx_routing").delete().eq("extension", extToDelete);
@@ -868,7 +811,7 @@ export async function POST(req: Request) {
 
       const asteriskRefresh = await refreshPjsipRealtimeObject(extToDelete);
 
-      return NextResponse.json({ ok: true, extension: extToDelete, asteriskRefresh });
+      return NextResponse.json({ ok: true, extension: extToDelete, routingSync, asteriskRefresh });
     }
     if (action === "save_queue") {
       if (!["admin", "central"].includes(String(me.role || ""))) {
