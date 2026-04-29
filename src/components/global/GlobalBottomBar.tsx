@@ -6,6 +6,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
+import DockChatWidget from "@/components/global/DockChatWidget";
 
 type DockPresence = {
   online: boolean;
@@ -26,7 +27,7 @@ function playNotificationSound(type: "parking" | "lead") {
 
 function shouldShowDock(pathname: string | null) {
   const path = pathname || "";
-  return path.startsWith("/admin") || path.startsWith("/panel-central");
+  return path.startsWith("/admin") || path.startsWith("/panel-central") || path.startsWith("/panel-tarotista");
 }
 
 function presenceFromAttendance(payload: any): DockPresence {
@@ -54,6 +55,8 @@ export default function GlobalBottomBar() {
   const { isOpen, setIsOpen } = usePhone();
   const { parking, leads } = useRealtimeCounters();
 
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatUnread, setChatUnread] = useState(0);
   const [presence, setPresence] = useState<DockPresence>({
     online: false,
     status: "offline",
@@ -66,6 +69,8 @@ export default function GlobalBottomBar() {
   const hydratedRef = useRef(false);
 
   const visible = shouldShowDock(pathname);
+  const path = pathname || "";
+  const isTarotistaPanel = path.startsWith("/panel-tarotista");
 
   async function refreshPresence() {
     try {
@@ -160,36 +165,55 @@ export default function GlobalBottomBar() {
             <span className="tc-ops-dock-label">Teléfono</span>
           </button>
 
-          <button
-            type="button"
-            className={`tc-ops-dock-item ${parking > 0 ? "tc-ops-dock-item-alert" : ""}`}
-            onClick={() => window.dispatchEvent(new CustomEvent("go-to-parking"))}
-          >
-            <span className="tc-ops-dock-icon">🅿️</span>
-            <span className="tc-ops-dock-label">Parking</span>
-            {parking > 0 ? <span className="tc-ops-dock-badge tc-ops-dock-badge-danger">{parking}</span> : null}
-          </button>
+          {!isTarotistaPanel ? (
+            <button
+              type="button"
+              className={`tc-ops-dock-item ${parking > 0 ? "tc-ops-dock-item-alert" : ""}`}
+              onClick={() => window.dispatchEvent(new CustomEvent("go-to-parking"))}
+            >
+              <span className="tc-ops-dock-icon">🅿️</span>
+              <span className="tc-ops-dock-label">Parking</span>
+              {parking > 0 ? <span className="tc-ops-dock-badge tc-ops-dock-badge-danger">{parking}</span> : null}
+            </button>
+          ) : null}
+
+          {!isTarotistaPanel ? (
+            <button
+              type="button"
+              className={`tc-ops-dock-item ${leads > 0 ? "tc-ops-dock-item-alert" : ""}`}
+              onClick={() => window.dispatchEvent(new CustomEvent("go-to-captacion"))}
+            >
+              <span className="tc-ops-dock-icon">🔥</span>
+              <span className="tc-ops-dock-label">Leads</span>
+              {leads > 0 ? <span className="tc-ops-dock-badge tc-ops-dock-badge-gold">{leads}</span> : null}
+            </button>
+          ) : null}
 
           <button
             type="button"
-            className={`tc-ops-dock-item ${leads > 0 ? "tc-ops-dock-item-alert" : ""}`}
-            onClick={() => window.dispatchEvent(new CustomEvent("go-to-captacion"))}
+            className={`tc-ops-dock-item ${chatOpen ? "tc-ops-dock-item-active" : ""} ${chatUnread > 0 ? "tc-ops-dock-item-alert" : ""}`}
+            onClick={() => setChatOpen((v) => !v)}
+            aria-pressed={chatOpen}
           >
-            <span className="tc-ops-dock-icon">🔥</span>
-            <span className="tc-ops-dock-label">Leads</span>
-            {leads > 0 ? <span className="tc-ops-dock-badge tc-ops-dock-badge-gold">{leads}</span> : null}
+            <span className="tc-ops-dock-icon">💬</span>
+            <span className="tc-ops-dock-label">Chat</span>
+            {chatUnread > 0 ? <span className="tc-ops-dock-badge tc-ops-dock-badge-gold">{chatUnread}</span> : null}
           </button>
 
-          <div
-            className={`tc-ops-dock-item tc-ops-dock-status tc-ops-dock-status-${presence.tone}`}
-            aria-label={`Estado: ${presence.label}`}
-            title={`Estado: ${presence.label}`}
-          >
-            <span className="tc-ops-status-dot" />
-            <span className="tc-ops-dock-label">{presence.label}</span>
-          </div>
+          {!isTarotistaPanel ? (
+            <div
+              className={`tc-ops-dock-item tc-ops-dock-status tc-ops-dock-status-${presence.tone}`}
+              aria-label={`Estado: ${presence.label}`}
+              title={`Estado: ${presence.label}`}
+            >
+              <span className="tc-ops-status-dot" />
+              <span className="tc-ops-dock-label">{presence.label}</span>
+            </div>
+          ) : null}
         </div>
       </nav>
+
+      <DockChatWidget open={chatOpen} onClose={() => setChatOpen(false)} onUnreadChange={setChatUnread} />
     </>
   );
 }

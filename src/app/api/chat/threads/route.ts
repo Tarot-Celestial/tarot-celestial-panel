@@ -58,7 +58,7 @@ export async function GET(req: Request) {
       if (ee) throw ee;
 
       if (existing?.id) {
-        return NextResponse.json({ ok: true, mode: "tarotista", thread: existing });
+        return NextResponse.json({ ok: true, mode: "tarotista", me, thread: existing });
       }
 
       const { data: created, error: ec } = await db
@@ -68,7 +68,7 @@ export async function GET(req: Request) {
         .single();
       if (ec) throw ec;
 
-      return NextResponse.json({ ok: true, mode: "tarotista", thread: created });
+      return NextResponse.json({ ok: true, mode: "tarotista", me, thread: created });
     }
 
     // STAFF (central/admin) => lista todos
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
 
     if (et) throw et;
 
-    return NextResponse.json({ ok: true, mode: "staff", threads: threads ?? [] });
+    return NextResponse.json({ ok: true, mode: "staff", me, threads: threads ?? [] });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

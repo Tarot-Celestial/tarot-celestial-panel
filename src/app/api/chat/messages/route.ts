@@ -184,6 +184,16 @@ export async function POST(req: Request) {
 
     if (ei) throw ei;
 
+    await db
+      .from("chat_threads")
+      .update({
+        last_message_at: msgRow.created_at,
+        last_message_preview: text.slice(0, 180),
+        status: "open",
+      })
+      .eq("id", threadId)
+      .then(() => null);
+
     const senderNameFromJoin = senderDisplayFromJoin((msgRow as any)?.sender);
 
     return NextResponse.json({
