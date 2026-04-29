@@ -33,63 +33,71 @@ export default function GlobalBottomBar() {
   }, [parking, leads]);
 
   return (
-    <>
-      {/* 📞 Softphone SIEMPRE montado */}
-      <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
+    <div className="fixed inset-x-0 bottom-6 z-[999999] flex justify-center pointer-events-none">
+  <div className="
+    pointer-events-auto
+    flex items-center gap-10 px-10 py-4
+    rounded-3xl
+    bg-gradient-to-b from-white/10 to-white/5
+    border border-white/10
+    backdrop-blur-2xl
+    shadow-[0_30px_80px_rgba(0,0,0,0.7)]
+    relative
+  ">
 
-      {/* 🔥 DOCK CORRECTO (centrado REAL) */}
-      <div className="fixed inset-x-0 bottom-4 z-[99999] flex justify-center pointer-events-none">
-        <div className="
-          pointer-events-auto
-          flex items-center gap-8 px-8 py-3
-          rounded-2xl
-          bg-[#0f0f17]/95
-          border border-white/10
-          backdrop-blur-xl
-          shadow-[0_20px_60px_rgba(0,0,0,0.6)]
+    {/* 🔥 glow fondo */}
+    <div className="absolute inset-0 rounded-3xl bg-[radial-gradient(circle_at_center,rgba(215,181,109,0.15),transparent_70%)] pointer-events-none" />
+
+    {/* 📞 TELÉFONO */}
+    <button
+      onClick={() => setIsOpen(!isOpen)}
+      className="flex flex-col items-center text-xs gap-1 hover:scale-110 transition"
+    >
+      <span className="text-xl">📞</span>
+      <span className="opacity-80">Teléfono</span>
+    </button>
+
+    {/* 🅿️ PARKING */}
+    <div className="relative flex flex-col items-center text-xs gap-1">
+      <span className="text-xl">🅿️</span>
+      <span className="opacity-80">Parking</span>
+
+      {parking > 0 && (
+        <span className="
+          absolute -top-3 -right-3
+          bg-red-500 text-[11px] px-2 py-0.5
+          rounded-full
+          animate-pulse
+          shadow-lg
         ">
+          {parking}
+        </span>
+      )}
+    </div>
 
-          {/* 📞 TELÉFONO */}
-          <button
-            onClick={() => setIsOpen(!isOpen)}
-            className="flex flex-col items-center text-xs hover:scale-110 transition"
-          >
-            <span className="text-lg">📞</span>
-            <span>Teléfono</span>
-          </button>
+    {/* 🔥 LEADS */}
+    <div className="relative flex flex-col items-center text-xs gap-1">
+      <span className="text-xl">🔥</span>
+      <span className="opacity-80">Leads</span>
 
-          {/* 🅿️ PARKING */}
-          <div className="relative flex flex-col items-center text-xs">
-            <span className="text-lg">🅿️</span>
-            <span>Parking</span>
+      {leads > 0 && (
+        <span className="
+          absolute -top-3 -right-3
+          bg-yellow-400 text-black text-[11px] px-2 py-0.5
+          rounded-full
+          animate-pulse
+          shadow-lg
+        ">
+          {leads}
+        </span>
+      )}
+    </div>
 
-            {parking > 0 && (
-              <span className="absolute -top-2 -right-3 bg-red-500 text-[10px] px-2 rounded-full animate-pulse">
-                {parking}
-              </span>
-            )}
-          </div>
+    {/* 🟢 ESTADO */}
+    <div className="flex flex-col items-center text-xs gap-1">
+      <span className="text-green-400 text-xl animate-pulse">●</span>
+      <span className="opacity-80">Disponible</span>
+    </div>
 
-          {/* 🔥 LEADS */}
-          <div className="relative flex flex-col items-center text-xs">
-            <span className="text-lg">🔥</span>
-            <span>Leads</span>
-
-            {leads > 0 && (
-              <span className="absolute -top-2 -right-3 bg-yellow-400 text-black text-[10px] px-2 rounded-full animate-pulse">
-                {leads}
-              </span>
-            )}
-          </div>
-
-          {/* 🟢 ESTADO */}
-          <div className="flex flex-col items-center text-xs">
-            <span className="text-green-400 text-lg">●</span>
-            <span>Disponible</span>
-          </div>
-
-        </div>
-      </div>
-    </>
-  );
-}
+  </div>
+</div>
