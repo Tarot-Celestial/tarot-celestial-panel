@@ -3,6 +3,7 @@
 
 export const dynamic = "force-dynamic";
 
+import CentralTopBar from "@/components/global/CentralTopBar";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
