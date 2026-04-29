@@ -3,7 +3,7 @@
 
 export const dynamic = "force-dynamic";
 
-import CentralTopBar from "@/components/global/CentralTopBar";
+import AppHeader from "@/components/AppHeader";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -1252,6 +1252,7 @@ function CentralPage() {
 
   return (
     <>
+      <AppHeader />
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
       <div className="tc-shell">
