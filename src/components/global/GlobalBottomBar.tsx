@@ -26,7 +26,7 @@ function playNotificationSound(type: "parking" | "lead") {
 
 function shouldShowDock(pathname: string | null) {
   const path = pathname || "";
-  return path.startsWith("/admin");
+  return path.startsWith("/admin") || path.startsWith("/panel-central");
 }
 
 function presenceFromAttendance(payload: any): DockPresence {
