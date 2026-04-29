@@ -10,7 +10,17 @@ export function useRealtimeCounters() {
   useEffect(() => {
     const sb = supabaseBrowser();
 
-    // 🔥 LEADS (ESTO SÍ ES REAL)
+    // 🔥 LEADS (SOLO NUEVOS)
+    async function fetchLeads() {
+      const { count } = await sb
+        .from("captacion_leads")
+        .select("*", { count: "exact", head: true })
+        .eq("estado", "nuevo"); // 🔥 FIX
+
+      setLeads(count || 0);
+    }
+
+    // 🔴 REALTIME LEADS
     const leadsChannel = sb
       .channel("captacion_leads_changes")
       .on(
@@ -22,15 +32,7 @@ export function useRealtimeCounters() {
       )
       .subscribe();
 
-    async function fetchLeads() {
-      const { count } = await sb
-        .from("captacion_leads")
-        .select("*", { count: "exact", head: true });
-
-      setLeads(count || 0);
-    }
-
-    // 🅿️ PARKING (VIENE DE API, NO DB)
+    // 🅿️ PARKING (API)
     async function fetchParking() {
       try {
         const res = await fetch("/api/asterisk/parking", {
@@ -45,7 +47,7 @@ export function useRealtimeCounters() {
       }
     }
 
-    // ⏱ REFRESH AUTOMÁTICO
+    // ⏱ REFRESH
     const interval = setInterval(() => {
       fetchParking();
       fetchLeads();
