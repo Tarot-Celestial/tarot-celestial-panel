@@ -169,7 +169,7 @@ export default function GlobalBottomBar() {
             <button
               type="button"
               className={`tc-ops-dock-item ${parking > 0 ? "tc-ops-dock-item-alert" : ""}`}
-              onClick={() => window.dispatchEvent(new CustomEvent("go-to-parking"))}
+              onClick={() => { window.location.href = "/admin?tab=parking"; }}
             >
               <span className="tc-ops-dock-icon">🅿️</span>
               <span className="tc-ops-dock-label">Parking</span>
