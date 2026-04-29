@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body className="pb-16">
+      <body className="bg-[#0b0b0f] text-white">
         <PhoneProvider>
           {children}
           <GlobalBottomBar />
