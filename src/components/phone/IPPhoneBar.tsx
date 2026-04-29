@@ -185,7 +185,7 @@ function cardStyle(extra?: CSSProperties): CSSProperties {
   };
 }
 
-export default function IPPhoneBar({ forcedOpen }: { forcedOpen?: boolean }) {
+export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: boolean; onOpenChange?: (open: boolean) => void } = {}) {
   const sipModuleRef = useRef<any>(null);
   const runtimeRef = useRef<SipRuntime>({
     userAgent: null,
@@ -271,8 +271,18 @@ export default function IPPhoneBar({ forcedOpen }: { forcedOpen?: boolean }) {
   const showHangupButton = status === "calling" || status === "ringing" || status === "in_call";
 
   useEffect(() => {
+    if (forcedOpen !== undefined) {
+      setOpen(forcedOpen);
+    }
+  }, [forcedOpen]);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  useEffect(() => {
     setHydrated(true);
-    setOpen(true);
+    setOpen(forcedOpen ?? true);
     try {
       const raw = localStorage.getItem(HISTORY_STORAGE_KEY);
       if (!raw) return;
