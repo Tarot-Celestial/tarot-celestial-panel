@@ -3,14 +3,21 @@
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export default function GlobalBottomBar() {
   const { isOpen, setIsOpen } = usePhone();
   const { parking, leads } = useRealtimeCounters();
 
+  const [mounted, setMounted] = useState(false);
+
   const prevParkingRef = useRef(0);
   const prevLeadsRef = useRef(0);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function playSound(type: "parking" | "lead") {
     try {
@@ -32,14 +39,25 @@ export default function GlobalBottomBar() {
     prevLeadsRef.current = leads;
   }, [parking, leads]);
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <>
-      {/* 📞 Softphone */}
+      {/* 📞 Softphone SIEMPRE activo */}
       <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
 
-      {/* 🔥 DOCK FLOTANTE */}
-      <div className="fixed bottom-6 left-[calc(50%+120px)] -translate-x-1/2 z-[9999]">
-        <div className="flex items-center gap-6 px-6 py-3 rounded-2xl bg-zinc-900/80 backdrop-blur-xl border border-white/10 shadow-2xl">
+      {/* 🔥 DOCK PRO */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[999999] pointer-events-none">
+        <div className="
+          pointer-events-auto
+          flex items-center gap-8 px-8 py-3
+          rounded-2xl
+          bg-[#0f0f17]/95
+          border border-white/10
+          backdrop-blur-xl
+          shadow-[0_20px_60px_rgba(0,0,0,0.6)]
+          transition-all duration-300
+        ">
 
           {/* 📞 TELÉFONO */}
           <button
@@ -51,36 +69,46 @@ export default function GlobalBottomBar() {
           </button>
 
           {/* 🅿️ PARKING */}
-          <button className="relative flex flex-col items-center text-xs hover:scale-110 transition">
+          <div className="relative flex flex-col items-center text-xs">
             <span className="text-lg">🅿️</span>
             <span>Parking</span>
 
             {parking > 0 && (
-              <span className="absolute -top-2 -right-2 bg-red-500 text-[10px] px-1.5 rounded-full">
+              <span className="
+                absolute -top-2 -right-3
+                bg-red-500 text-[10px] px-2 rounded-full
+                animate-pulse
+              ">
                 {parking}
               </span>
             )}
-          </button>
+          </div>
 
           {/* 🔥 LEADS */}
-          <button className="relative flex flex-col items-center text-xs hover:scale-110 transition">
+          <div className="relative flex flex-col items-center text-xs">
             <span className="text-lg">🔥</span>
             <span>Leads</span>
 
             {leads > 0 && (
-              <span className="absolute -top-2 -right-2 bg-yellow-400 text-black text-[10px] px-1.5 rounded-full">
+              <span className="
+                absolute -top-2 -right-3
+                bg-yellow-400 text-black text-[10px] px-2 rounded-full
+                animate-pulse
+              ">
                 {leads}
               </span>
             )}
-          </button>
+          </div>
 
           {/* 🟢 ESTADO */}
           <div className="flex flex-col items-center text-xs">
-            <span className="text-lg">🟢</span>
+            <span className="text-green-400 text-lg">●</span>
             <span>Disponible</span>
           </div>
+
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
