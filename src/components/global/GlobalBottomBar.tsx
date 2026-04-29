@@ -181,7 +181,7 @@ export default function GlobalBottomBar() {
             <button
               type="button"
               className={`tc-ops-dock-item ${leads > 0 ? "tc-ops-dock-item-alert" : ""}`}
-              onClick={() => window.dispatchEvent(new CustomEvent("go-to-captacion"))}
+              onClick={() => window.dispatchEvent(new CustomEvent("tc-open-captacion"))}
             >
               <span className="tc-ops-dock-icon">🔥</span>
               <span className="tc-ops-dock-label">Leads</span>
