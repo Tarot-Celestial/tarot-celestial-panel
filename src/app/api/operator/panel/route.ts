@@ -642,7 +642,13 @@ export async function POST(req: Request) {
   const is_active = body?.is_active !== undefined ? !!body.is_active : true;
 
   const route_type = String(body?.route_type || "internal").trim() || "internal";
-  const target_phone = sanitizePhone(body?.target_phone);
+  const target_phone = sanitizePhone(
+  body?.target_phone ||
+  body?.target ||
+  body?.phone ||
+  body?.mobile ||
+  ""
+);
 
   const queue_id = String(body?.queue_id || "").trim() || null;
   const queue_priority = Number(body?.queue_priority || 0) || 0;
