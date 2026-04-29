@@ -834,6 +834,15 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
   if (callFinalizedRef.current) return;
   callFinalizedRef.current = true;
 
+  const billingSession = activeTransferBillingRef.current;
+  if (billingSession?.id) {
+    void finishActiveTransferBillingSession("finish").catch((e: any) => {
+      setMsg(`Llamada finalizada, pero no se pudo consolidar minutos: ${e?.message || "error"}`);
+    });
+  } else {
+    clearTransferCutoffTimer();
+  }
+
   try {
     const session = runtimeRef.current.activeSession;
     session?.dispose?.();
@@ -1453,7 +1462,10 @@ return true;
     await lookupClientContextByPhone(rawNumber, { openCRM: true });
   }
 
-  async function postCallMinuteSession(action: "reserve" | "activate" | "cancel" | "force_end", payload: Record<string, any>) {
+  async function postCallMinuteSession(
+    action: "reserve" | "activate" | "cancel" | "finish" | "complete" | "force_end",
+    payload: Record<string, any>
+  ) {
     const token = await getToken();
     if (!token) throw new Error("Tu sesión ha caducado.");
     const res = await fetch("/api/crm/call-sessions", {
@@ -1504,6 +1516,23 @@ return true;
     }
   }
 
+  async function finishActiveTransferBillingSession(reason: "finish" | "force_end" = "finish") {
+    const active = activeTransferBillingRef.current;
+    if (!active?.id) return null;
+
+    clearTransferCutoffTimer();
+
+    try {
+      const finished = await postCallMinuteSession(reason, { session_id: active.id });
+      activeTransferBillingRef.current = null;
+      return finished as TransferBillingSession;
+    } catch (e) {
+      activeTransferBillingRef.current = active;
+      console.error("No se pudo finalizar la sesión de minutos", e);
+      throw e;
+    }
+  }
+
 
   function clearTransferCutoffTimer() {
     if (transferCutoffTimeoutRef.current) {
@@ -1530,8 +1559,7 @@ return true;
     transferCutoffTimeoutRef.current = window.setTimeout(async () => {
       transferCutoffTimeoutRef.current = null;
       try {
-        const finished = await postCallMinuteSession("force_end", { session_id: session.id });
-        activeTransferBillingRef.current = finished as TransferBillingSession;
+        await finishActiveTransferBillingSession("force_end");
         if (targetExtension) {
           void syncExtensionRuntime(targetExtension, {
             registered: true,

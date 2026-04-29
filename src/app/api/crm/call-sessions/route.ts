@@ -113,7 +113,7 @@ async function completeActiveSession(db: any, session: MinuteSessionRow, opts: {
   const assignedNormal = Math.max(0, n(session.assigned_normal_minutes));
   const assignedTotal = assignedFree + assignedNormal;
   const elapsedSeconds = computeElapsedSeconds(session, endedAt);
-  const consumedMinutes = Math.min(assignedTotal, Math.floor(elapsedSeconds / 60));
+  const consumedMinutes = Math.min(assignedTotal, Math.ceil(elapsedSeconds / 60));
 
   // La reserva se descuenta completa al activar. Al cerrar devolvemos solo lo no consumido.
   // Siempre se consumen primero los minutos free y después los normales, como en la asignación inicial.
@@ -121,10 +121,6 @@ async function completeActiveSession(db: any, session: MinuteSessionRow, opts: {
   const consumedNormal = Math.min(assignedNormal, Math.max(0, consumedMinutes - consumedFree));
   const refundFree = Math.max(0, assignedFree - consumedFree);
   const refundNormal = Math.max(0, assignedNormal - consumedNormal);
-
-  if (refundFree > 0 || refundNormal > 0) {
-    await addClientMinutes(db, session.cliente_id, refundFree, refundNormal);
-  }
 
   const updatePayload = {
     status: "completed",
@@ -138,8 +134,24 @@ async function completeActiveSession(db: any, session: MinuteSessionRow, opts: {
     updated_at: endedAt,
   };
 
-  const { data, error } = await db.from("call_minute_sessions").update(updatePayload).eq("id", session.id).select("*").single();
+  // Cierre idempotente: solo una petición puede pasar de active → completed y devolver sobrantes.
+  const { data, error } = await db
+    .from("call_minute_sessions")
+    .update(updatePayload)
+    .eq("id", session.id)
+    .eq("status", "active")
+    .select("*")
+    .maybeSingle();
   if (error) throw error;
+  if (!data?.id) {
+    const { data: current, error: currentErr } = await db.from("call_minute_sessions").select("*").eq("id", session.id).maybeSingle();
+    if (currentErr) throw currentErr;
+    return { session: current || session, alreadyCompleted: String(current?.status || "") === "completed", ignored: true, reason: "NOT_ACTIVE", hangup: null };
+  }
+
+  if (refundFree > 0 || refundNormal > 0) {
+    await addClientMinutes(db, session.cliente_id, refundFree, refundNormal);
+  }
 
   let hangup: any = null;
   if (opts.forceHangup) {

@@ -106,6 +106,26 @@ export async function finalizeBestMinuteSessionFromAsterisk(
   const refundFree = Math.max(0, assignedFree - consumedFree);
   const refundNormal = Math.max(0, assignedNormal - consumedNormal);
 
+  const { data: closedSession, error: updSessionErr } = await admin
+    .from("call_minute_sessions")
+    .update({
+      status: "completed",
+      ended_at: endedAtIso,
+      consumed_seconds: consumedSeconds,
+      consumed_free_minutes: consumedFree,
+      consumed_normal_minutes: consumedNormal,
+      refunded_free_minutes: refundFree,
+      refunded_normal_minutes: refundNormal,
+      metadata: { ...(session.metadata || {}), ...(args.metadata || {}), finalized_by: "asterisk_webhook" },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", session.id)
+    .eq("status", "active")
+    .select("id")
+    .maybeSingle();
+  if (updSessionErr) throw updSessionErr;
+  if (!closedSession?.id) return { handled: false, reason: "session_already_closed" };
+
   if (refundFree > 0 || refundNormal > 0) {
     const { data: cliente, error: clienteErr } = await admin
       .from("crm_clientes")
@@ -125,22 +145,6 @@ export async function finalizeBestMinuteSessionFromAsterisk(
       if (updErr) throw updErr;
     }
   }
-
-  const { error: updSessionErr } = await admin
-    .from("call_minute_sessions")
-    .update({
-      status: "completed",
-      ended_at: endedAtIso,
-      consumed_seconds: consumedSeconds,
-      consumed_free_minutes: consumedFree,
-      consumed_normal_minutes: consumedNormal,
-      refunded_free_minutes: refundFree,
-      refunded_normal_minutes: refundNormal,
-      metadata: { ...(session.metadata || {}), ...(args.metadata || {}), finalized_by: "asterisk_webhook" },
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", session.id);
-  if (updSessionErr) throw updSessionErr;
 
   return {
     handled: true,

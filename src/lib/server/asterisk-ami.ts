@@ -614,7 +614,12 @@ export async function hangupActiveTransferChannels(args: {
     if (targetTail && hayDigits.includes(targetTail)) matched = true;
     if (clientTail && hayDigits.includes(clientTail)) matched = true;
 
-    if (matched && channel) channels.add(channel);
+    if (matched && channel) {
+      channels.add(channel);
+      if (bridgedChannel && bridgedChannel !== "<none>" && bridgedChannel !== "(None)") {
+        channels.add(bridgedChannel);
+      }
+    }
   }
 
   const results = [] as Array<{ channel: string; ok: boolean; error?: string; raw?: string }>;
@@ -625,10 +630,10 @@ export async function hangupActiveTransferChannels(args: {
   }
 
   return {
-    ok: channelsRes.ok,
+    ok: channelsRes.ok && (channels.size === 0 || results.some((item) => item.ok)),
     matched: channels.size,
     results,
-    error: channelsRes.error,
+    error: channelsRes.error || (channels.size === 0 ? "NO_MATCHING_CHANNELS" : undefined),
   };
 }
 export async function refreshPjsipRealtimeObject(extension: string) {
