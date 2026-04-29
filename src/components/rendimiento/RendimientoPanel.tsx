@@ -72,9 +72,9 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
 
-  // 🔥 FILTROS
-  const [fWorker, setFWorker] = useState("");
-  const [fTelefono, setFTelefono] = useState("");
+  // 🔎 FILTROS
+  const [fTarotista, setFTarotista] = useState("");
+  const [fTelefonista, setFTelefonista] = useState("");
   const [fCodigo, setFCodigo] = useState("");
   const [fFrom, setFFrom] = useState("");
   const [fTo, setFTo] = useState("");
@@ -129,9 +129,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       if (!json?.ok) throw new Error(json?.error || "No se pudo sincronizar");
 
       setMsg(
-        `✅ Sincronización completada: ${json.inserted || 0} nuevas · ${
-          json.skipped || 0
-        } omitidas`
+        `✅ Sincronización completada: ${json.inserted || 0} nuevas · ${json.skipped || 0} omitidas`
       );
 
       await fetchData(false);
@@ -144,9 +142,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
 
   function updateField(id: string, field: keyof Row, value: any) {
     setRows((prev) =>
-      prev.map((r) =>
-        String(r.id) === String(id) ? { ...r, [field]: value } : r
-      )
+      prev.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r))
     );
   }
 
@@ -213,10 +209,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       const json = await res.json().catch(() => ({}));
       if (!json?.ok) throw new Error(json?.error || "No se pudo eliminar");
 
-      setRows((prev) =>
-        prev.filter((r) => String(r.id) !== String(id))
-      );
-
+      setRows((prev) => prev.filter((r) => String(r.id) !== String(id)));
       setMsg("✅ Línea eliminada");
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "No se pudo eliminar"}`);
@@ -230,77 +223,37 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   // 🔥 FILTRADO
   const visibleRows = useMemo(() => {
     return dedupeRows(rows).filter((r) => {
-      const matchWorker =
-        !fWorker ||
-        (r.tarotista_nombre || "")
-          .toLowerCase()
-          .includes(fWorker.toLowerCase());
-
-      const matchTelefono =
-        !fTelefono ||
-        (r.telefonista_nombre || "")
-          .toLowerCase()
-          .includes(fTelefono.toLowerCase());
-
-      const matchCodigo =
-        !fCodigo ||
-        (r.resumen_codigo || "")
-          .toLowerCase()
-          .includes(fCodigo.toLowerCase());
-
       const date = r.fecha_hora ? new Date(r.fecha_hora) : null;
 
-      const matchFrom =
-        !fFrom || (date && date >= new Date(fFrom));
-
-      const matchTo =
-        !fTo || (date && date <= new Date(fTo + "T23:59:59"));
-
       return (
-        matchWorker &&
-        matchTelefono &&
-        matchCodigo &&
-        matchFrom &&
-        matchTo
+        (!fTarotista ||
+          (r.tarotista_nombre || "")
+            .toLowerCase()
+            .includes(fTarotista.toLowerCase())) &&
+        (!fTelefonista ||
+          (r.telefonista_nombre || "")
+            .toLowerCase()
+            .includes(fTelefonista.toLowerCase())) &&
+        (!fCodigo ||
+          (r.resumen_codigo || "")
+            .toLowerCase()
+            .includes(fCodigo.toLowerCase())) &&
+        (!fFrom || (date && date >= new Date(fFrom))) &&
+        (!fTo || (date && date <= new Date(fTo + "T23:59:59")))
       );
     });
-  }, [rows, fWorker, fTelefono, fCodigo, fFrom, fTo]);
+  }, [rows, fTarotista, fTelefonista, fCodigo, fFrom, fTo]);
 
   if (loading) return <div className="p-4">Cargando...</div>;
 
   return (
     <div className="tc-card">
+
       {/* 🔎 FILTROS */}
-      <div style={{ marginBottom: 16 }}>
-        <div className="tc-title" style={{ fontSize: 14 }}>
-          🔎 Filtros
-        </div>
-
-        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-          <input className="tc-input" placeholder="Tarotista" value={fWorker} onChange={(e) => setFWorker(e.target.value)} />
-          <input className="tc-input" placeholder="Telefonista" value={fTelefono} onChange={(e) => setFTelefono(e.target.value)} />
-          <input className="tc-input" placeholder="Código" value={fCodigo} onChange={(e) => setFCodigo(e.target.value)} />
-          <input className="tc-input" type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
-          <input className="tc-input" type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} />
-        </div>
+      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <input className="tc-input" placeholder="Tarotista" value={fTarotista} onChange={(e) => setFTarotista(e.target.value)} />
+        <input className="tc-input" placeholder="Telefonista" value={fTelefonista} onChange={(e) => setFTelefonista(e.target.value)} />
+        <input className="tc-input" placeholder="Código" value={fCodigo} onChange={(e) => setFCodigo(e.target.value)} />
+        <input className="tc-input" type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
+        <input className="tc-input" type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} />
       </div>
-
-      {/* TABLA */}
-      <div style={{ overflowX: "auto" }}>
-        <table className="tc-table">
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.id}>
-                <td>{fmt(row.fecha_hora)}</td>
-                <td>{row.telefonista_nombre}</td>
-                <td>{row.tarotista_nombre}</td>
-                <td>{row.cliente_nombre}</td>
-                <td>{row.tiempo}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
