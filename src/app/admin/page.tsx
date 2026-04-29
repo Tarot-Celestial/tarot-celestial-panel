@@ -342,6 +342,24 @@ function AdminPage() {
   }, []);
 
   useEffect(() => {
+  function goCaptacion() {
+    setTab("captacion");
+  }
+
+  function goParking() {
+    setTab("panel"); // 👈 ESTE ES TU "parking"
+  }
+
+  window.addEventListener("go-to-captacion", goCaptacion);
+  window.addEventListener("go-to-parking", goParking);
+
+  return () => {
+    window.removeEventListener("go-to-captacion", goCaptacion);
+    window.removeEventListener("go-to-parking", goParking);
+  };
+}, []);
+
+  useEffect(() => {
   (async () => {
     const { data } = await sb.auth.getUser();
     const user = data?.user;
