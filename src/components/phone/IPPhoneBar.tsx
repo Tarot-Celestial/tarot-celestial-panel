@@ -81,6 +81,8 @@ type TransferBillingSession = {
   tarotista_worker_id: string;
   assigned_free_minutes: number;
   assigned_normal_minutes: number;
+  status?: string | null;
+  started_at?: string | null;
 };
 
 type PanelExtensionOption = {
@@ -215,6 +217,8 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
   const sipConfigSignatureRef = useRef("");
   const activeClientContextRef = useRef<ActiveClientContext | null>(null);
   const pendingTransferBillingRef = useRef<TransferBillingSession | null>(null);
+  const activeTransferBillingRef = useRef<TransferBillingSession | null>(null);
+  const transferCutoffTimeoutRef = useRef<number | null>(null);
   const panelConfigHydratedRef = useRef(false);
   const crmPopupWindowRef = useRef<Window | null>(null);
   const dragStateRef = useRef<{ dragging: boolean; startX: number; startY: number; originX: number; originY: number }>({
@@ -1485,6 +1489,7 @@ return true;
     if (!pending?.id) return null;
     const session = await postCallMinuteSession("activate", { session_id: pending.id });
     pendingTransferBillingRef.current = session as TransferBillingSession;
+    activeTransferBillingRef.current = session as TransferBillingSession;
     return session;
   }
 
@@ -1499,6 +1504,50 @@ return true;
     }
   }
 
+
+  function clearTransferCutoffTimer() {
+    if (transferCutoffTimeoutRef.current) {
+      window.clearTimeout(transferCutoffTimeoutRef.current);
+      transferCutoffTimeoutRef.current = null;
+    }
+  }
+
+  function assignedMinutesForSession(session: TransferBillingSession | null) {
+    if (!session) return 0;
+    return Math.max(0, Number(session.assigned_free_minutes || 0) + Number(session.assigned_normal_minutes || 0));
+  }
+
+  function scheduleTransferCutoff(session: TransferBillingSession | null, targetExtension?: string | null) {
+    clearTransferCutoffTimer();
+    if (!session?.id) return;
+
+    const totalMinutes = assignedMinutesForSession(session);
+    if (totalMinutes <= 0) return;
+
+    activeTransferBillingRef.current = session;
+    const delayMs = Math.max(1000, Math.round(totalMinutes * 60 * 1000));
+
+    transferCutoffTimeoutRef.current = window.setTimeout(async () => {
+      transferCutoffTimeoutRef.current = null;
+      try {
+        const finished = await postCallMinuteSession("force_end", { session_id: session.id });
+        activeTransferBillingRef.current = finished as TransferBillingSession;
+        if (targetExtension) {
+          void syncExtensionRuntime(targetExtension, {
+            registered: true,
+            status: "registered",
+            active_call_count: 0,
+            active_call_started_at: null,
+            talking_to: null,
+          });
+        }
+        setMsg(`Tiempo asignado agotado (${totalMinutes} min). Llamada cortada y minutos consolidados.`);
+      } catch (e: any) {
+        console.error("No se pudo cortar la llamada por tiempo asignado", e);
+        setMsg(`Tiempo agotado, pero no se pudo cortar automáticamente: ${e?.message || "error"}`);
+      }
+    }, delayMs);
+  }
   async function dispatchTransferPopup(targetExtension: string, allocation?: { minutos_free_pendientes?: number; minutos_normales_pendientes?: number }) {
     try {
       const ctx = activeClientContextRef.current;
@@ -1926,7 +1975,8 @@ await ensureRemoteAudioPlayback();
     await original.refer(consult);
 
     try {
-      await activatePendingTransferBillingSession();
+      const activatedSession = await activatePendingTransferBillingSession();
+      scheduleTransferCutoff(activatedSession as TransferBillingSession | null, target);
     } catch (billingError: any) {
       console.error("Transferencia completada, pero no se pudo activar la reserva de minutos", billingError);
       setMsg(`Transferencia completada a ${target}, pero revisa minutos: ${billingError?.message || "error"}`);
@@ -2121,7 +2171,8 @@ await ensureRemoteAudioPlayback();
       await session.refer(referTarget);
 
       try {
-        await activatePendingTransferBillingSession();
+        const activatedSession = await activatePendingTransferBillingSession();
+        scheduleTransferCutoff(activatedSession as TransferBillingSession | null, cleanTarget);
       } catch (billingError) {
         console.error("Transferencia directa completada, pero no se pudo activar la reserva de minutos", billingError);
       }

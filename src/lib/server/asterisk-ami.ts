@@ -565,6 +565,72 @@ export async function getAsteriskParkingSnapshot(): Promise<AsteriskParkingSnaps
   }
 }
 
+
+function compactDigits(value: string | null | undefined) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function phoneTail(value: string | null | undefined) {
+  const d = compactDigits(value);
+  if (!d) return "";
+  return d.length > 9 ? d.slice(-9) : d;
+}
+
+
+export async function hangupActiveTransferChannels(args: {
+  targetExtension?: string | null;
+  targetPhone?: string | null;
+  clientPhone?: string | null;
+}) {
+  const targetExtension = digits(args.targetExtension || "");
+  const targetTail = phoneTail(args.targetPhone || "");
+  const clientTail = phoneTail(args.clientPhone || "");
+
+  const channelsRes = await amiCommand("core show channels concise");
+  const output = parseCommandOutput(channelsRes.raw);
+  const channels = new Set<string>();
+
+  for (const rawLine of output.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || !line.includes("!")) continue;
+    const parts = line.split("!");
+    const channel = parts[0] || "";
+    const appData = parts[6] || "";
+    const callerId = parts[7] || "";
+    const bridgedChannel = parts[11] || "";
+    const haystack = `${line} ${channel} ${appData} ${callerId} ${bridgedChannel}`;
+    const hayDigits = compactDigits(haystack);
+
+    let matched = false;
+
+    if (targetExtension) {
+      matched =
+        matched ||
+        new RegExp(`PJSIP/${targetExtension}(?:[-@,\\s]|$)`).test(haystack) ||
+        new RegExp(`SIP/${targetExtension}(?:[-@,\\s]|$)`).test(haystack) ||
+        new RegExp(`Local/${targetExtension}(?:[-@,\\s]|$)`).test(haystack);
+    }
+
+    if (targetTail && hayDigits.includes(targetTail)) matched = true;
+    if (clientTail && hayDigits.includes(clientTail)) matched = true;
+
+    if (matched && channel) channels.add(channel);
+  }
+
+  const results = [] as Array<{ channel: string; ok: boolean; error?: string; raw?: string }>;
+  for (const channel of channels) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await amiCommand(`channel request hangup ${channel}`);
+    results.push({ channel, ok: res.ok, error: res.error, raw: res.raw?.slice?.(0, 500) || "" });
+  }
+
+  return {
+    ok: channelsRes.ok,
+    matched: channels.size,
+    results,
+    error: channelsRes.error,
+  };
+}
 export async function refreshPjsipRealtimeObject(extension: string) {
   const ext = digits(extension);
   if (!ext) return { ok: false, error: "NO_EXTENSION" };

@@ -16,6 +16,21 @@ function isMissingRelationError(error: any) {
   return msg.includes("does not exist") || msg.includes("could not find the table") || msg.includes("relation") || msg.includes("schema cache") || msg.includes("column");
 }
 
+function completedSessionPayload(session: any) {
+  return {
+    handled: true,
+    session_id: session.id,
+    already_completed: true,
+    assigned_minutes: Math.max(0, n(session.assigned_free_minutes)) + Math.max(0, n(session.assigned_normal_minutes)),
+    consumed_seconds: Math.max(0, n(session.consumed_seconds)),
+    consumed_minutes: Math.max(0, n(session.consumed_free_minutes) + n(session.consumed_normal_minutes)),
+    free_used: Math.max(0, n(session.consumed_free_minutes)),
+    normal_used: Math.max(0, n(session.consumed_normal_minutes)),
+    refund_free: Math.max(0, n(session.refunded_free_minutes)),
+    refund_normal: Math.max(0, n(session.refunded_normal_minutes)),
+  };
+}
+
 export async function finalizeBestMinuteSessionFromAsterisk(
   admin: any,
   args: {
@@ -30,7 +45,7 @@ export async function finalizeBestMinuteSessionFromAsterisk(
   const tarotistaWorkerId = clean(args.tarotistaWorkerId);
   if (!clienteId || !tarotistaWorkerId) return { handled: false, reason: "missing_match_keys" };
 
-  const { data: session, error } = await admin
+  const activeRes = await admin
     .from("call_minute_sessions")
     .select("*")
     .eq("cliente_id", clienteId)
@@ -40,11 +55,40 @@ export async function finalizeBestMinuteSessionFromAsterisk(
     .limit(1)
     .maybeSingle();
 
-  if (error) {
-    if (isMissingRelationError(error)) return { handled: false, reason: "missing_table" };
-    throw error;
+  if (activeRes.error) {
+    if (isMissingRelationError(activeRes.error)) return { handled: false, reason: "missing_table" };
+    throw activeRes.error;
   }
-  if (!session?.id) return { handled: false, reason: "no_active_session" };
+
+  let session = activeRes.data;
+
+  // Si el frontend ya cortó por tiempo y marcó la sesión como completed, el webhook
+  // de Asterisk llegará después. En ese caso solo consideramos una sesión completed
+  // muy reciente para no bloquear consumos normales de otras llamadas futuras.
+  if (!session?.id) {
+    const endedAtIso = args.endedAt || new Date().toISOString();
+    const endedAtMs = new Date(endedAtIso).getTime();
+    const since = new Date((Number.isFinite(endedAtMs) ? endedAtMs : Date.now()) - 15 * 60 * 1000).toISOString();
+
+    const completedRes = await admin
+      .from("call_minute_sessions")
+      .select("*")
+      .eq("cliente_id", clienteId)
+      .eq("tarotista_worker_id", tarotistaWorkerId)
+      .eq("status", "completed")
+      .gte("ended_at", since)
+      .order("ended_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (completedRes.error) {
+      if (isMissingRelationError(completedRes.error)) return { handled: false, reason: "missing_table" };
+      throw completedRes.error;
+    }
+
+    if (completedRes.data?.id) return completedSessionPayload(completedRes.data);
+    return { handled: false, reason: "no_active_session" };
+  }
 
   const startedAtMs = session.started_at ? new Date(session.started_at).getTime() : Date.now();
   const endedAtIso = args.endedAt || new Date().toISOString();

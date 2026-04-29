@@ -1,7 +1,23 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { hangupActiveTransferChannels } from "@/lib/server/asterisk-ami";
 
 export const runtime = "nodejs";
+
+type MinuteSessionRow = {
+  id: string;
+  cliente_id: string;
+  tarotista_worker_id?: string | null;
+  source_worker_id?: string | null;
+  source_extension?: string | null;
+  target_extension?: string | null;
+  assigned_free_minutes?: number | null;
+  assigned_normal_minutes?: number | null;
+  status?: string | null;
+  started_at?: string | null;
+  ended_at?: string | null;
+  metadata?: Record<string, any> | null;
+};
 
 function getEnv(name: string) {
   const value = process.env[name];
@@ -20,6 +36,14 @@ function n(value: any) {
 
 function clean(value: any) {
   return String(value ?? "").trim();
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function sanitizePhone(value: any) {
+  return String(value || "").replace(/[^0-9+]/g, "").trim();
 }
 
 async function getWorker(req: Request, db: any) {
@@ -58,10 +82,86 @@ async function addClientMinutes(db: any, clienteId: string, freeDelta: number, n
     .update({
       minutos_free_pendientes: Math.max(0, n(cliente.minutos_free_pendientes) + freeDelta),
       minutos_normales_pendientes: Math.max(0, n(cliente.minutos_normales_pendientes) + normalDelta),
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso(),
     })
     .eq("id", clienteId);
   if (error) throw error;
+}
+
+async function readTargetPhone(db: any, extension?: string | null) {
+  const ext = clean(extension);
+  if (!ext) return null;
+  const { data, error } = await db.from("pbx_routing").select("target,type").eq("extension", ext).maybeSingle();
+  if (error) return null;
+  if (String(data?.type || "").toLowerCase() !== "external") return null;
+  return sanitizePhone(data?.target || "") || null;
+}
+
+function computeElapsedSeconds(session: MinuteSessionRow, endedAtIso: string) {
+  const startedMs = session.started_at ? new Date(session.started_at).getTime() : Date.now();
+  const endedMs = new Date(endedAtIso).getTime();
+  if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs)) return 0;
+  return Math.max(0, Math.round((endedMs - startedMs) / 1000));
+}
+
+async function completeActiveSession(db: any, session: MinuteSessionRow, opts: { forceHangup?: boolean; reason?: string }) {
+  if (String(session.status || "") === "completed") return { session, alreadyCompleted: true, hangup: null };
+  if (String(session.status || "") !== "active") return { session, ignored: true, reason: "NOT_ACTIVE", hangup: null };
+
+  const endedAt = nowIso();
+  const assignedFree = Math.max(0, n(session.assigned_free_minutes));
+  const assignedNormal = Math.max(0, n(session.assigned_normal_minutes));
+  const assignedTotal = assignedFree + assignedNormal;
+  const elapsedSeconds = computeElapsedSeconds(session, endedAt);
+  const consumedMinutes = Math.min(assignedTotal, Math.ceil(elapsedSeconds / 60));
+
+  // La reserva se descuenta completa al activar. Al cerrar devolvemos solo lo no consumido.
+  // Siempre se consumen primero los minutos free y después los normales, como en la asignación inicial.
+  const consumedFree = Math.min(assignedFree, consumedMinutes);
+  const consumedNormal = Math.min(assignedNormal, Math.max(0, consumedMinutes - consumedFree));
+  const refundFree = Math.max(0, assignedFree - consumedFree);
+  const refundNormal = Math.max(0, assignedNormal - consumedNormal);
+
+  if (refundFree > 0 || refundNormal > 0) {
+    await addClientMinutes(db, session.cliente_id, refundFree, refundNormal);
+  }
+
+  const updatePayload = {
+    status: "completed",
+    ended_at: endedAt,
+    consumed_seconds: elapsedSeconds,
+    consumed_free_minutes: consumedFree,
+    consumed_normal_minutes: consumedNormal,
+    refunded_free_minutes: refundFree,
+    refunded_normal_minutes: refundNormal,
+    metadata: { ...(session.metadata || {}), closed_by: opts.reason || "call_sessions_api" },
+    updated_at: endedAt,
+  };
+
+  const { data, error } = await db.from("call_minute_sessions").update(updatePayload).eq("id", session.id).select("*").single();
+  if (error) throw error;
+
+  let hangup: any = null;
+  if (opts.forceHangup) {
+    const targetPhone = await readTargetPhone(db, session.target_extension);
+    hangup = await hangupActiveTransferChannels({
+      targetExtension: session.target_extension || null,
+      targetPhone,
+      clientPhone: sanitizePhone(session.metadata?.telefono || session.metadata?.phone || "") || null,
+    });
+  }
+
+  return {
+    session: data,
+    assigned_minutes: assignedTotal,
+    consumed_seconds: elapsedSeconds,
+    consumed_minutes: consumedMinutes,
+    consumed_free_minutes: consumedFree,
+    consumed_normal_minutes: consumedNormal,
+    refunded_free_minutes: refundFree,
+    refunded_normal_minutes: refundNormal,
+    hangup,
+  };
 }
 
 export async function POST(req: Request) {
@@ -126,14 +226,23 @@ export async function POST(req: Request) {
       if (session.status !== "reserved") return NextResponse.json({ ok: false, error: "INVALID_STATUS" }, { status: 409 });
 
       await addClientMinutes(db, session.cliente_id, -n(session.assigned_free_minutes), -n(session.assigned_normal_minutes));
+      const startedAt = nowIso();
       const { data, error } = await db
         .from("call_minute_sessions")
-        .update({ status: "active", started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .update({ status: "active", started_at: startedAt, updated_at: startedAt })
         .eq("id", session.id)
         .select("*")
         .single();
       if (error) throw error;
       return NextResponse.json({ ok: true, session: data });
+    }
+
+    if (action === "force_end" || action === "finish" || action === "complete") {
+      const result = await completeActiveSession(db, session as MinuteSessionRow, {
+        forceHangup: action === "force_end",
+        reason: action === "force_end" ? "assigned_minutes_timeout" : "manual_finish",
+      });
+      return NextResponse.json({ ok: true, ...result });
     }
 
     if (action === "cancel") {
@@ -142,7 +251,7 @@ export async function POST(req: Request) {
       }
       const { data, error } = await db
         .from("call_minute_sessions")
-        .update({ status: "cancelled", ended_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .update({ status: "cancelled", ended_at: nowIso(), updated_at: nowIso() })
         .eq("id", session.id)
         .select("*")
         .single();
