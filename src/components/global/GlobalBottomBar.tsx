@@ -1,36 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { usePhone } from "@/context/PhoneContext";
+import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 
 export default function GlobalBottomBar() {
-  const [phoneOpen, setPhoneOpen] = useState(false);
+  const { isOpen, setIsOpen } = usePhone();
+  const { parking, leads } = useRealtimeCounters();
 
   return (
     <>
       {/* 📞 SOFTPHONE */}
-      {phoneOpen && (
-        <div className="fixed bottom-16 right-4 z-50 bg-zinc-800 p-4 rounded-xl shadow-lg">
-          <div className="text-white">Softphone aquí</div>
+      {isOpen && (
+        <div className="fixed bottom-16 right-4 z-50">
+          {/* 🔥 AQUÍ irá tu softphone real */}
+          <div className="bg-zinc-800 p-4 rounded-xl shadow-lg text-white w-80">
+            Softphone aquí
+          </div>
         </div>
       )}
 
       {/* 🔻 BARRA */}
       <div className="fixed bottom-0 left-0 w-full h-14 bg-zinc-900 border-t border-zinc-700 flex items-center justify-around z-40 text-white">
 
-        <button onClick={() => setPhoneOpen(!phoneOpen)}>
-          📞 Teléfono
+        {/* 📞 TELÉFONO */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex flex-col items-center text-xs"
+        >
+          <span>📞</span>
+          <span>Teléfono</span>
         </button>
 
-        <button>
-          🅿️ Parking (0)
+        {/* 🅿️ PARKING */}
+        <button className="flex flex-col items-center text-xs">
+          <span>🅿️</span>
+          <span>Parking ({parking})</span>
         </button>
 
-        <button>
-          🔥 Leads (0)
+        {/* 🔥 LEADS */}
+        <button className="flex flex-col items-center text-xs">
+          <span>🔥</span>
+          <span>Leads ({leads})</span>
         </button>
 
-        <button>
-          🟢 Disponible
+        {/* 👤 ESTADO */}
+        <button className="flex flex-col items-center text-xs">
+          <span>🟢</span>
+          <span>Disponible</span>
         </button>
 
       </div>
