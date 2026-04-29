@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
@@ -23,10 +24,11 @@ function shouldShowDock(pathname: string | null) {
 
 export default function GlobalBottomBar() {
   const pathname = usePathname();
-  const router = useRouter();
 
   const { isOpen, setIsOpen } = usePhone();
   const { parking, leads } = useRealtimeCounters();
+
+  const [isOnline, setIsOnline] = useState(false); // 🔥 NUEVO
 
   const prevParkingRef = useRef(0);
   const prevLeadsRef = useRef(0);
@@ -34,6 +36,29 @@ export default function GlobalBottomBar() {
 
   const visible = shouldShowDock(pathname);
 
+  // 🔥 ESTADO DE LOGIN (SUPABASE)
+  useEffect(() => {
+    const sb = supabaseBrowser();
+
+    async function checkUser() {
+      const { data } = await sb.auth.getSession();
+      setIsOnline(!!data.session);
+    }
+
+    checkUser();
+
+    const {
+      data: { subscription },
+    } = sb.auth.onAuthStateChange((_event, session) => {
+      setIsOnline(!!session);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // 🔊 SONIDOS
   useEffect(() => {
     if (!visible) return;
 
@@ -58,10 +83,7 @@ export default function GlobalBottomBar() {
 
   return (
     <>
-      <IPPhoneBar
-        forcedOpen={isOpen}
-        onOpenChange={setIsOpen}
-      />
+      <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
 
       <nav className="tc-ops-dock-root">
         <div className="tc-ops-dock">
@@ -83,8 +105,8 @@ export default function GlobalBottomBar() {
               parking > 0 ? "tc-ops-dock-item-alert" : ""
             }`}
             onClick={() => {
-  window.dispatchEvent(new CustomEvent("go-to-parking"));
-}}
+              window.dispatchEvent(new CustomEvent("go-to-parking"));
+            }}
           >
             <span>🅿️</span>
             <span>Parking</span>
@@ -101,7 +123,9 @@ export default function GlobalBottomBar() {
             className={`tc-ops-dock-item ${
               leads > 0 ? "tc-ops-dock-item-alert" : ""
             }`}
-            onClick={() => {   window.dispatchEvent(new CustomEvent("go-to-captacion")); }}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("go-to-captacion"));
+            }}
           >
             <span>🔥</span>
             <span>Leads</span>
@@ -113,10 +137,18 @@ export default function GlobalBottomBar() {
             )}
           </button>
 
-          {/* 🟢 ESTADO */}
+          {/* 🟢 ESTADO (DINÁMICO) */}
           <div className="tc-ops-dock-item">
-            <span className="tc-ops-status-dot" />
-            <span>Disponible</span>
+            <span
+              className="tc-ops-status-dot"
+              style={{
+                background: isOnline ? "#00ff9d" : "#ff4d4d",
+                boxShadow: isOnline
+                  ? "0 0 8px rgba(0,255,157,0.7)"
+                  : "0 0 8px rgba(255,77,77,0.7)",
+              }}
+            />
+            <span>{isOnline ? "Disponible" : "Desconectado"}</span>
           </div>
 
         </div>
