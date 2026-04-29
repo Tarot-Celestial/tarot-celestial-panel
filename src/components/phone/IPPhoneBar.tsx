@@ -1453,7 +1453,7 @@ return true;
     await lookupClientContextByPhone(rawNumber, { openCRM: true });
   }
 
-  async function postCallMinuteSession(action: "reserve" | "activate" | "cancel", payload: Record<string, any>) {
+  async function postCallMinuteSession(action: "reserve" | "activate" | "cancel" | "force_end", payload: Record<string, any>) {
     const token = await getToken();
     if (!token) throw new Error("Tu sesión ha caducado.");
     const res = await fetch("/api/crm/call-sessions", {
