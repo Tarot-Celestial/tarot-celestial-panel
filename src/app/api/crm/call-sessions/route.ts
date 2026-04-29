@@ -113,7 +113,7 @@ async function completeActiveSession(db: any, session: MinuteSessionRow, opts: {
   const assignedNormal = Math.max(0, n(session.assigned_normal_minutes));
   const assignedTotal = assignedFree + assignedNormal;
   const elapsedSeconds = computeElapsedSeconds(session, endedAt);
-  const consumedMinutes = Math.min(assignedTotal, Math.ceil(elapsedSeconds / 60));
+  const consumedMinutes = Math.min(assignedTotal, Math.floor(elapsedSeconds / 60));
 
   // La reserva se descuenta completa al activar. Al cerrar devolvemos solo lo no consumido.
   // Siempre se consumen primero los minutos free y después los normales, como en la asignación inicial.
@@ -143,13 +143,28 @@ async function completeActiveSession(db: any, session: MinuteSessionRow, opts: {
 
   let hangup: any = null;
   if (opts.forceHangup) {
-    const targetPhone = await readTargetPhone(db, session.target_extension);
+  const targetPhone = await readTargetPhone(db, session.target_extension);
+
+  console.log("FORCE END → intentando colgar llamada", {
+    extension: session.target_extension,
+    targetPhone,
+    clientPhone: session.metadata?.telefono,
+  });
+
+  try {
     hangup = await hangupActiveTransferChannels({
       targetExtension: session.target_extension || null,
       targetPhone,
       clientPhone: sanitizePhone(session.metadata?.telefono || session.metadata?.phone || "") || null,
     });
+
+    if (!hangup?.ok) {
+      console.error("⚠️ AMI no colgó la llamada correctamente", hangup);
+    }
+  } catch (err) {
+    console.error("💥 ERROR colgando llamada", err);
   }
+}
 
   return {
     session: data,
