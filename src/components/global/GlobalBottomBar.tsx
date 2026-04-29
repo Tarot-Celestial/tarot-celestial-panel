@@ -3,21 +3,14 @@
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useRef } from "react";
 
 export default function GlobalBottomBar() {
   const { isOpen, setIsOpen } = usePhone();
   const { parking, leads } = useRealtimeCounters();
 
-  const [mounted, setMounted] = useState(false);
-
   const prevParkingRef = useRef(0);
   const prevLeadsRef = useRef(0);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   function playSound(type: "parking" | "lead") {
     try {
@@ -39,25 +32,14 @@ export default function GlobalBottomBar() {
     prevLeadsRef.current = leads;
   }, [parking, leads]);
 
-  if (!mounted) return null;
-
-  return createPortal(
+  return (
     <>
-      {/* 📞 Softphone SIEMPRE activo */}
+      {/* 📞 Softphone */}
       <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
 
-      {/* 🔥 DOCK PRO */}
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[999999] pointer-events-none">
-        <div className="
-          pointer-events-auto
-          flex items-center gap-8 px-8 py-3
-          rounded-2xl
-          bg-[#0f0f17]/95
-          border border-white/10
-          backdrop-blur-xl
-          shadow-[0_20px_60px_rgba(0,0,0,0.6)]
-          transition-all duration-300
-        ">
+      {/* 🔥 DOCK BIEN POSICIONADO */}
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999]">
+        <div className="flex items-center gap-8 px-8 py-3 rounded-2xl bg-[#0f0f17]/95 border border-white/10 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
 
           {/* 📞 TELÉFONO */}
           <button
@@ -74,11 +56,7 @@ export default function GlobalBottomBar() {
             <span>Parking</span>
 
             {parking > 0 && (
-              <span className="
-                absolute -top-2 -right-3
-                bg-red-500 text-[10px] px-2 rounded-full
-                animate-pulse
-              ">
+              <span className="absolute -top-2 -right-3 bg-red-500 text-[10px] px-2 rounded-full animate-pulse">
                 {parking}
               </span>
             )}
@@ -90,11 +68,7 @@ export default function GlobalBottomBar() {
             <span>Leads</span>
 
             {leads > 0 && (
-              <span className="
-                absolute -top-2 -right-3
-                bg-yellow-400 text-black text-[10px] px-2 rounded-full
-                animate-pulse
-              ">
+              <span className="absolute -top-2 -right-3 bg-yellow-400 text-black text-[10px] px-2 rounded-full animate-pulse">
                 {leads}
               </span>
             )}
@@ -108,7 +82,6 @@ export default function GlobalBottomBar() {
 
         </div>
       </div>
-    </>,
-    document.body
+    </>
   );
 }
