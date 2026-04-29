@@ -38,7 +38,7 @@ export default function GlobalBottomBar() {
       <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
 
       {/* 🔥 DOCK FLOTANTE */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[999]">
+      <div className="fixed bottom-6 left-[calc(50%+120px)] -translate-x-1/2 z-[9999]">
         <div className="flex items-center gap-6 px-6 py-3 rounded-2xl bg-zinc-900/80 backdrop-blur-xl border border-white/10 shadow-2xl">
 
           {/* 📞 TELÉFONO */}
