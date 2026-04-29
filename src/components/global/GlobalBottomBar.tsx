@@ -2,6 +2,7 @@
 
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
+import IPPhoneBar from "@/components/phone/IPPhoneBar";
 
 export default function GlobalBottomBar() {
   const { isOpen, setIsOpen } = usePhone();
@@ -10,14 +11,11 @@ export default function GlobalBottomBar() {
   return (
     <>
       {/* 📞 SOFTPHONE */}
-      {isOpen && (
-        <div className="fixed bottom-16 right-4 z-50">
-          {/* 🔥 AQUÍ irá tu softphone real */}
-          <div className="bg-zinc-800 p-4 rounded-xl shadow-lg text-white w-80">
-            Softphone aquí
-          </div>
-        </div>
-      )}
+{isOpen && (
+  <div className="fixed bottom-16 right-4 z-50">
+    <IPPhoneBar />
+  </div>
+)}
 
       {/* 🔻 BARRA */}
       <div className="fixed bottom-0 left-0 w-full h-14 bg-zinc-900 border-t border-zinc-700 flex items-center justify-around z-40 text-white">
