@@ -47,6 +47,11 @@ function isMissingRelationError(error: any) {
   return msg.includes("does not exist") || msg.includes("could not find the table") || msg.includes("relation") || msg.includes("column");
 }
 
+function isMissingTableOrRelationError(error: any) {
+  const msg = String(error?.message || "").toLowerCase();
+  return msg.includes("could not find the table") || msg.includes("relation") || (msg.includes("does not exist") && !msg.includes("column"));
+}
+
 function sanitizeExtension(value: any) {
   return String(value || "").replace(/[^0-9]/g, "").trim();
 }
@@ -200,7 +205,12 @@ async function upsertExtensionRecord(admin: any, payload: any) {
 
 function missingColumnName(error: any) {
   const msg = String(error?.message || "");
-  return msg.match(/column "([^"]+)"/i)?.[1] || null;
+  return (
+    msg.match(/column "([^"]+)"/i)?.[1] ||
+    msg.match(/Could not find the '([^']+)' column/i)?.[1] ||
+    msg.match(/'([^']+)' column of/i)?.[1] ||
+    null
+  );
 }
 
 function stripUndefined(payload: Record<string, any>) {
@@ -226,7 +236,11 @@ async function upsertFlexible(admin: any, table: string, payload: Record<string,
       continue;
     }
 
-    if (fallbackPayload && isMissingRelationError(res.error)) {
+    // Importante: PostgREST usa mensajes tipo
+    // "Could not find the 'x' column...". Antes esto activaba el fallback mínimo
+    // y creaba endpoints sin WebRTC/DTLS. Solo usamos fallback si falta la tabla/relación,
+    // no cuando falta una columna concreta.
+    if (fallbackPayload && isMissingTableOrRelationError(res.error)) {
       current = stripUndefined(fallbackPayload);
       fallbackPayload = undefined;
       continue;
@@ -303,6 +317,8 @@ async function syncAsteriskRealtimeExtension(admin: any, source: ExtensionRow) {
     allow_transfer: "yes",
     callerid: callerIdVisible ? undefined : "Oculto <anonymous>",
   };
+  // Fallback seguro: mantenemos los campos WebRTC críticos.
+  // Si alguna columna no existe, upsertFlexible la va eliminando una a una.
   const endpointFallback = {
     id: extension,
     transport,
@@ -312,6 +328,18 @@ async function syncAsteriskRealtimeExtension(admin: any, source: ExtensionRow) {
     aors: extension,
     auth: extension,
     direct_media: "no",
+    rewrite_contact: "yes",
+    force_rport: "yes",
+    rtp_symmetric: "yes",
+    ice_support: "yes",
+    media_use_received_transport: "yes",
+    webrtc: "yes",
+    use_avpf: "yes",
+    media_encryption: "dtls",
+    dtls_auto_generate_cert: "yes",
+    dtls_verify: "no",
+    dtls_setup: "actpass",
+    rtcp_mux: "yes",
   };
 
   const aor = await upsertFlexible(admin, "ps_aors", aorPayload, aorFallback);
