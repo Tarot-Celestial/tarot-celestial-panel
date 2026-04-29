@@ -187,7 +187,7 @@ type ChatMessage = {
 function CentralPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
-  const [tab, setTab] = useState<TabKey>("equipo");
+  const [tab, setTab] = useState<TabKey>("panel");
 
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
