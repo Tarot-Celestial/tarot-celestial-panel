@@ -1,31 +1,30 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
 
 function playNotificationSound(type: "parking" | "lead") {
   try {
-    const audio = new Audio(type === "parking" ? "/sounds/parking.mp3" : "/sounds/lead.mp3");
+    const audio = new Audio(
+      type === "parking" ? "/sounds/parking.mp3" : "/sounds/lead.mp3"
+    );
     audio.volume = type === "parking" ? 0.7 : 0.55;
     audio.play().catch(() => null);
-  } catch {
-    // El navegador puede bloquear audio hasta la primera interacción del usuario.
-  }
+  } catch {}
 }
 
 function shouldShowDock(pathname: string | null) {
   const path = pathname || "";
-  if (!path) return false;
-
-  // Solo panel interno. Evita que aparezca en login, panel de cliente, checkout, chat público, etc.
-  return path === "/admin" || path.startsWith("/admin/") || path === "/panel-central" || path === "/panel-tarotista";
+  return path.startsWith("/admin");
 }
 
 export default function GlobalBottomBar() {
   const pathname = usePathname();
+  const router = useRouter();
+
   const { isOpen, setIsOpen } = usePhone();
   const { parking, leads } = useRealtimeCounters();
 
@@ -34,13 +33,10 @@ export default function GlobalBottomBar() {
   const hydratedRef = useRef(false);
 
   const visible = shouldShowDock(pathname);
-  const hasParking = parking > 0;
-  const hasLeads = leads > 0;
 
   useEffect(() => {
     if (!visible) return;
 
-    // Evita reproducir sonido con los contadores iniciales al cargar la página.
     if (!hydratedRef.current) {
       prevParkingRef.current = parking;
       prevLeadsRef.current = leads;
@@ -48,8 +44,11 @@ export default function GlobalBottomBar() {
       return;
     }
 
-    if (parking > prevParkingRef.current) playNotificationSound("parking");
-    if (leads > prevLeadsRef.current) playNotificationSound("lead");
+    if (parking > prevParkingRef.current)
+      playNotificationSound("parking");
+
+    if (leads > prevLeadsRef.current)
+      playNotificationSound("lead");
 
     prevParkingRef.current = parking;
     prevLeadsRef.current = leads;
@@ -59,36 +58,65 @@ export default function GlobalBottomBar() {
 
   return (
     <>
-      <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
+      <IPPhoneBar
+        forcedOpen={isOpen}
+        onOpenChange={setIsOpen}
+      />
 
-      <nav className="tc-ops-dock-root" aria-label="Acciones rápidas de centralita">
-        <div className="tc-ops-dock" role="toolbar" aria-label="Centralita">
+      <nav className="tc-ops-dock-root">
+        <div className="tc-ops-dock">
+
+          {/* 📞 TELÉFONO */}
           <button
-            type="button"
-            className={`tc-ops-dock-item ${isOpen ? "tc-ops-dock-item-active" : ""}`}
+            className={`tc-ops-dock-item ${
+              isOpen ? "tc-ops-dock-item-active" : ""
+            }`}
             onClick={() => setIsOpen(!isOpen)}
-            aria-pressed={isOpen}
           >
-            <span className="tc-ops-dock-icon tc-ops-dock-icon-phone">☎</span>
-            <span className="tc-ops-dock-label">Teléfono</span>
+            <span>☎</span>
+            <span>Teléfono</span>
           </button>
 
-          <button type="button" className={`tc-ops-dock-item ${hasParking ? "tc-ops-dock-item-alert" : ""}`}>
-            <span className="tc-ops-dock-icon">🅿️</span>
-            <span className="tc-ops-dock-label">Parking</span>
-            {hasParking ? <span className="tc-ops-dock-badge tc-ops-dock-badge-danger">{parking}</span> : null}
+          {/* 🅿️ PARKING */}
+          <button
+            className={`tc-ops-dock-item ${
+              parking > 0 ? "tc-ops-dock-item-alert" : ""
+            }`}
+            onClick={() => router.push("/admin/telefonia")}
+          >
+            <span>🅿️</span>
+            <span>Parking</span>
+
+            {parking > 0 && (
+              <span className="tc-ops-dock-badge tc-ops-dock-badge-danger">
+                {parking}
+              </span>
+            )}
           </button>
 
-          <button type="button" className={`tc-ops-dock-item ${hasLeads ? "tc-ops-dock-item-alert" : ""}`}>
-            <span className="tc-ops-dock-icon">🔥</span>
-            <span className="tc-ops-dock-label">Leads</span>
-            {hasLeads ? <span className="tc-ops-dock-badge tc-ops-dock-badge-gold">{leads}</span> : null}
+          {/* 🔥 LEADS */}
+          <button
+            className={`tc-ops-dock-item ${
+              leads > 0 ? "tc-ops-dock-item-alert" : ""
+            }`}
+            onClick={() => router.push("/admin/captacion")}
+          >
+            <span>🔥</span>
+            <span>Leads</span>
+
+            {leads > 0 && (
+              <span className="tc-ops-dock-badge tc-ops-dock-badge-gold">
+                {leads}
+              </span>
+            )}
           </button>
 
-          <div className="tc-ops-dock-item tc-ops-dock-status" aria-label="Estado disponible">
+          {/* 🟢 ESTADO */}
+          <div className="tc-ops-dock-item">
             <span className="tc-ops-status-dot" />
-            <span className="tc-ops-dock-label">Disponible</span>
+            <span>Disponible</span>
           </div>
+
         </div>
       </nav>
     </>
