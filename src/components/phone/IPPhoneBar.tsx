@@ -185,7 +185,7 @@ function cardStyle(extra?: CSSProperties): CSSProperties {
   };
 }
 
-export default function IPPhoneBar() {
+export default function IPPhoneBar({ forcedOpen }: { forcedOpen?: boolean }) {
   const sipModuleRef = useRef<any>(null);
   const runtimeRef = useRef<SipRuntime>({
     userAgent: null,
@@ -226,7 +226,7 @@ export default function IPPhoneBar() {
   });
 
   const [hydrated, setHydrated] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(forcedOpen ?? false);
   const [compact, setCompact] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
