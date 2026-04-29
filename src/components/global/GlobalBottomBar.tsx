@@ -34,12 +34,20 @@ export default function GlobalBottomBar() {
 
   return (
     <>
-      {/* 📞 Softphone */}
+      {/* 📞 Softphone SIEMPRE montado */}
       <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
 
-      {/* 🔥 DOCK BIEN POSICIONADO */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9999]">
-        <div className="flex items-center gap-8 px-8 py-3 rounded-2xl bg-[#0f0f17]/95 border border-white/10 backdrop-blur-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
+      {/* 🔥 DOCK CORRECTO (centrado REAL) */}
+      <div className="fixed inset-x-0 bottom-4 z-[99999] flex justify-center pointer-events-none">
+        <div className="
+          pointer-events-auto
+          flex items-center gap-8 px-8 py-3
+          rounded-2xl
+          bg-[#0f0f17]/95
+          border border-white/10
+          backdrop-blur-xl
+          shadow-[0_20px_60px_rgba(0,0,0,0.6)]
+        ">
 
           {/* 📞 TELÉFONO */}
           <button
