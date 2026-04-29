@@ -10,50 +10,54 @@ export function useRealtimeCounters() {
   useEffect(() => {
     const sb = supabaseBrowser();
 
-    // 🅿️ PARKING
-    const parkingChannel = sb
-      .channel("parking")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "parked_calls" },
-        (payload) => {
-          console.log("parking update", payload);
-          fetchCounts();
-        }
-      )
-      .subscribe();
-
-    // 🔥 LEADS
+    // 🔥 LEADS (ESTO SÍ ES REAL)
     const leadsChannel = sb
-      .channel("leads")
+      .channel("captacion_leads_changes")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "leads" },
-        (payload) => {
-          console.log("leads update", payload);
-          fetchCounts();
+        { event: "*", schema: "public", table: "captacion_leads" },
+        () => {
+          fetchLeads();
         }
       )
       .subscribe();
 
-    async function fetchCounts() {
-      const { count: p } = await sb
-        .from("parked_calls")
+    async function fetchLeads() {
+      const { count } = await sb
+        .from("captacion_leads")
         .select("*", { count: "exact", head: true });
 
-      const { count: l } = await sb
-        .from("leads")
-        .select("*", { count: "exact", head: true });
-
-      setParking(p || 0);
-      setLeads(l || 0);
+      setLeads(count || 0);
     }
 
-    fetchCounts();
+    // 🅿️ PARKING (VIENE DE API, NO DB)
+    async function fetchParking() {
+      try {
+        const res = await fetch("/api/asterisk/parking", {
+          cache: "no-store",
+        });
+        const json = await res.json();
+
+        const calls = Array.isArray(json?.calls) ? json.calls : [];
+        setParking(calls.length);
+      } catch {
+        setParking(0);
+      }
+    }
+
+    // ⏱ REFRESH AUTOMÁTICO
+    const interval = setInterval(() => {
+      fetchParking();
+      fetchLeads();
+    }, 3000);
+
+    // Primera carga
+    fetchParking();
+    fetchLeads();
 
     return () => {
-      sb.removeChannel(parkingChannel);
       sb.removeChannel(leadsChannel);
+      clearInterval(interval);
     };
   }, []);
 
