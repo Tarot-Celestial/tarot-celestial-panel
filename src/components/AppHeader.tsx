@@ -252,13 +252,33 @@ export default function AppHeader() {
       });
 
       await syncEstado();
+      window.dispatchEvent(new CustomEvent("tc-attendance-changed"));
     } finally {
       setEstadoLoading(false);
     }
   }
 
   async function logout() {
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (token) {
+        await fetch("/api/attendance/event", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ event_type: "offline" }),
+        }).catch(() => null);
+      }
+      window.dispatchEvent(new CustomEvent("tc-attendance-changed"));
+    } catch {
+      // noop
+    }
+
     await sb.auth.signOut();
+    window.dispatchEvent(new CustomEvent("tc-attendance-changed"));
     window.location.href = "/login";
   }
 

@@ -809,3 +809,20 @@ a{ color: inherit; text-decoration: none; }
   .tc-ops-dock-label{ font-size: 10px; }
   .tc-ops-dock-badge{ top: 3px; right: 5px; }
 }
+
+/* Estado real del dock operativo: sincronizado con attendance_state */
+.tc-ops-dock-status-online .tc-ops-status-dot{
+  background: #69f0b1;
+  box-shadow: 0 0 0 5px rgba(105,240,177,.12), 0 0 18px rgba(105,240,177,.55);
+}
+.tc-ops-dock-status-break .tc-ops-status-dot{
+  background: #f4d89f;
+  box-shadow: 0 0 0 5px rgba(244,216,159,.12), 0 0 18px rgba(244,216,159,.48);
+}
+.tc-ops-dock-status-offline .tc-ops-status-dot{
+  background: #ff5a6a;
+  box-shadow: 0 0 0 5px rgba(255,90,106,.11), 0 0 16px rgba(255,90,106,.42);
+}
+.tc-ops-dock-status-offline{
+  opacity: .82;
+}
