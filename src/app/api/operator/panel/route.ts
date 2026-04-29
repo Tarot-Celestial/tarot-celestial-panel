@@ -108,16 +108,30 @@ async function syncCentralInAsterisk(extension: string, isActive: boolean) {
   }
 }
 
-async function syncExtensionRoutingInAsterisk(extension: string, routeType: string, targetPhone?: string | null) {
+async function syncExtensionRoutingInAsterisk(
+  extension: string,
+  routeType: string,
+  targetPhone?: string | null
+) {
   try {
     const ext = sanitizeExtension(extension);
     const target = sanitizePhone(targetPhone);
 
-    console.log("🔥 ROUTING DEBUG →", { ext, routeType, targetPhone, target });
+    console.log("🔥 ROUTING SYNC INPUT →", {
+      ext,
+      routeType,
+      target,
+    });
 
     if (!ext) return;
 
-    if (String(routeType).trim().toLowerCase() === "external" && target) {
+    const isExternal = String(routeType || "")
+      .toLowerCase()
+      .includes("external");
+
+    // 🟢 CASO EXTERNO → DBPut
+    if (isExternal && target) {
+      // 🔹 1. Intento por AMI
       const res = await amiAction({
         Action: "DBPut",
         Family: "pbx_route_external",
@@ -125,19 +139,43 @@ async function syncExtensionRoutingInAsterisk(extension: string, routeType: stri
         Val: target,
       });
 
-      console.log("✅ DBPut pbx_route_external →", res.ok, res.error || null);
+      if (res.ok) {
+        console.log("✅ AMI DBPut OK");
+        return;
+      }
+
+      console.error("❌ AMI DBPut FAILED → fallback CLI", res);
+
+      // 🔹 2. FALLBACK CLI (PRODUCCIÓN)
+      await execAsync(
+        `asterisk -rx "database put pbx_route_external ${ext} ${target}"`
+      );
+
+      console.log("✅ CLI DBPut OK");
       return;
     }
 
+    // 🔴 CASO INTERNO → DBDel
     const res = await amiAction({
       Action: "DBDel",
       Family: "pbx_route_external",
       Key: ext,
     });
 
-    console.log("🧹 DBDel pbx_route_external →", res.ok, res.error || null);
+    if (res.ok) {
+      console.log("🧹 AMI DBDel OK");
+      return;
+    }
+
+    console.error("❌ AMI DBDel FAILED → fallback CLI", res);
+
+    await execAsync(
+      `asterisk -rx "database del pbx_route_external ${ext}"`
+    );
+
+    console.log("🧹 CLI DBDel OK");
   } catch (e) {
-    console.error("Error sync routing ASTERISK:", e);
+    console.error("❌ ROUTING SYNC FATAL:", e);
   }
 }
 
