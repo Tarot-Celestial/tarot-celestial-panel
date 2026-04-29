@@ -82,7 +82,9 @@ export default function GlobalBottomBar() {
             className={`tc-ops-dock-item ${
               parking > 0 ? "tc-ops-dock-item-alert" : ""
             }`}
-            onClick={() => router.push("/admin/telefonia")}
+            onClick={() => {
+  window.dispatchEvent(new CustomEvent("go-to-parking"));
+}}
           >
             <span>🅿️</span>
             <span>Parking</span>
@@ -99,7 +101,7 @@ export default function GlobalBottomBar() {
             className={`tc-ops-dock-item ${
               leads > 0 ? "tc-ops-dock-item-alert" : ""
             }`}
-            onClick={() => router.push("/admin/captacion")}
+            onClick={() => {   window.dispatchEvent(new CustomEvent("go-to-captacion")); }}
           >
             <span>🔥</span>
             <span>Leads</span>
