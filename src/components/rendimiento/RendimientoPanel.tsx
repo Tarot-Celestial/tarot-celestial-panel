@@ -59,18 +59,13 @@ function textInputStyle() {
     width: "100%",
     minWidth: 0,
     padding: "8px 10px",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
   } as const;
 }
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [msg, setMsg] = useState("");
 
   // 🔎 FILTROS
   const [fTarotista, setFTarotista] = useState("");
@@ -84,145 +79,78 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     return data.session?.access_token || "";
   }
 
-  async function fetchData(showLoader = true) {
+  async function fetchData() {
     const token = await getToken();
     if (!token) return;
 
-    if (showLoader) setLoading(true);
-    else setRefreshing(true);
+    setLoading(true);
 
-    try {
-      const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!json?.ok) throw new Error(json?.error || "No se pudo cargar rendimiento");
-      setRows(dedupeRows(Array.isArray(json.data) ? json.data : []));
-      if (!showLoader) setMsg("✅ Rendimiento actualizado");
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error cargando rendimiento"}`);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    const json = await res.json();
+    setRows(dedupeRows(json.data || []));
+    setLoading(false);
   }
 
-  async function syncFromSheets() {
-    const token = await getToken();
-    if (!token || mode !== "admin" || syncing) return;
-
-    try {
-      setSyncing(true);
-      setMsg("");
-
-      const res = await fetch("/api/admin/rendimiento/import-sheet", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ month: "2026-04" }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!json?.ok) throw new Error(json?.error || "No se pudo sincronizar");
-
-      setMsg(
-        `✅ Sincronización completada: ${json.inserted || 0} nuevas · ${json.skipped || 0} omitidas`
-      );
-
-      await fetchData(false);
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error sincronizando"}`);
-    } finally {
-      setSyncing(false);
-    }
-  }
+  useEffect(() => {
+    fetchData();
+  }, [mode]);
 
   function updateField(id: string, field: keyof Row, value: any) {
     setRows((prev) =>
-      prev.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r))
+      prev.map((r) =>
+        String(r.id) === String(id) ? { ...r, [field]: value } : r
+      )
     );
   }
 
   async function saveRow(id?: string) {
     if (!id) return;
+
     const row = rows.find((r) => String(r.id) === String(id));
-    if (!row?.id) return;
+    if (!row) return;
 
     const token = await getToken();
-    if (!token) return;
 
-    try {
-      setSavingId(String(row.id));
+    setSavingId(id);
 
-      const updates = {
-        cliente_nombre: row.cliente_nombre || null,
-        tiempo: Number(row.tiempo || 0),
-        resumen_codigo: row.resumen_codigo || null,
-        forma_pago: row.forma_pago || null,
-        importe:
-          row.importe == null || row.importe === ("" as any)
-            ? null
-            : Number(row.importe),
-        llamada_call: Boolean(row.llamada_call),
-        promo: Boolean(row.promo),
-        captado: Boolean(row.captado),
-        recuperado: Boolean(row.recuperado),
-      };
+    await fetch("/api/crm/rendimiento/update", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id,
+        updates: row,
+      }),
+    });
 
-      const res = await fetch("/api/crm/rendimiento/update", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ id: row.id, updates }),
-      });
-
-      const json = await res.json().catch(() => ({}));
-      if (!json?.ok) throw new Error(json?.error || "No se pudo guardar");
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error guardando cambios"}`);
-      await fetchData(false);
-    } finally {
-      setSavingId(null);
-    }
+    setSavingId(null);
   }
 
   async function deleteRow(id?: string) {
+    if (!id) return;
+
     const token = await getToken();
-    if (!token || !id) return;
-    if (!window.confirm("¿Seguro que quieres eliminar esta línea?")) return;
 
-    try {
-      const res = await fetch("/api/crm/rendimiento/delete", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ id }),
-      });
+    await fetch("/api/crm/rendimiento/delete", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ id }),
+    });
 
-      const json = await res.json().catch(() => ({}));
-      if (!json?.ok) throw new Error(json?.error || "No se pudo eliminar");
-
-      setRows((prev) => prev.filter((r) => String(r.id) !== String(id)));
-      setMsg("✅ Línea eliminada");
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "No se pudo eliminar"}`);
-    }
+    setRows((prev) => prev.filter((r) => r.id !== id));
   }
-
-  useEffect(() => {
-    fetchData(true);
-  }, [mode]);
 
   // 🔥 FILTRADO
   const visibleRows = useMemo(() => {
-    return dedupeRows(rows).filter((r) => {
+    return rows.filter((r) => {
       const date = r.fecha_hora ? new Date(r.fecha_hora) : null;
 
       return (
@@ -250,10 +178,74 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     <div className="tc-card">
 
       {/* 🔎 FILTROS */}
-      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <input className="tc-input" placeholder="Tarotista" value={fTarotista} onChange={(e) => setFTarotista(e.target.value)} />
         <input className="tc-input" placeholder="Telefonista" value={fTelefonista} onChange={(e) => setFTelefonista(e.target.value)} />
         <input className="tc-input" placeholder="Código" value={fCodigo} onChange={(e) => setFCodigo(e.target.value)} />
         <input className="tc-input" type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
         <input className="tc-input" type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} />
       </div>
+
+      {/* 🧾 TABLA ORIGINAL */}
+      <table className="tc-table">
+        <tbody>
+          {visibleRows.map((row) => (
+            <tr key={row.id}>
+              <td>{fmt(row.fecha_hora)}</td>
+              <td>{row.telefonista_nombre}</td>
+
+              <td>
+                <input
+                  style={textInputStyle()}
+                  value={row.cliente_nombre || ""}
+                  onChange={(e) =>
+                    updateField(row.id!, "cliente_nombre", e.target.value)
+                  }
+                  onBlur={() => saveRow(row.id)}
+                />
+              </td>
+
+              <td>{row.tarotista_nombre}</td>
+
+              <td>
+                <input
+                  type="number"
+                  value={row.tiempo || 0}
+                  onChange={(e) =>
+                    updateField(row.id!, "tiempo", Number(e.target.value))
+                  }
+                  onBlur={() => saveRow(row.id)}
+                />
+              </td>
+
+              <td>
+                <input
+                  value={row.resumen_codigo || ""}
+                  onChange={(e) =>
+                    updateField(row.id!, "resumen_codigo", e.target.value)
+                  }
+                  onBlur={() => saveRow(row.id)}
+                />
+              </td>
+
+              <td>
+                <input
+                  type="number"
+                  value={row.importe || ""}
+                  onChange={(e) =>
+                    updateField(row.id!, "importe", Number(e.target.value))
+                  }
+                  onBlur={() => saveRow(row.id)}
+                />
+              </td>
+
+              <td>
+                <button onClick={() => deleteRow(row.id)}>❌</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
