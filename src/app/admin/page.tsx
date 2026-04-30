@@ -20,6 +20,7 @@ import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import OperatorPanel from "@/components/panel/OperatorPanel";
+import OperationalInbox from "@/components/central/OperationalInbox";
 import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Wallet } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -1563,8 +1564,38 @@ function AdminPage() {
           )}
 
           <div className="tc-main-content">
-{tab === "dashboard" && <DashboardPanel month={month} />}
-          {tab === "panel" && <OperatorPanel mode="admin" />}
+{tab === "dashboard" && (
+            <>
+              <OperationalInbox
+                mode="admin"
+                onAction={(action) => {
+                  if (action === "leads") setTab("captacion");
+                  if (action === "parking") setTab("panel");
+                  if (action === "chat") setTab("chat");
+                  if (action === "team") setTab("asistencia");
+                  if (action === "incidents") setTab("pagos");
+                  if (action === "crm") setTab("crm");
+                }}
+              />
+              <DashboardPanel month={month} />
+            </>
+          )}
+          {tab === "panel" && (
+            <>
+              <OperationalInbox
+                mode="admin"
+                onAction={(action) => {
+                  if (action === "leads") setTab("captacion");
+                  if (action === "parking") setTab("panel");
+                  if (action === "chat") setTab("chat");
+                  if (action === "team") setTab("asistencia");
+                  if (action === "incidents") setTab("pagos");
+                  if (action === "crm") setTab("crm");
+                }}
+              />
+              <OperatorPanel mode="admin" />
+            </>
+          )}
 
           {tab === "facturas" && (
             <div className="tc-card">

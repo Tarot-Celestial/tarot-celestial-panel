@@ -22,6 +22,7 @@ import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
+import OperationalInbox from "@/components/central/OperationalInbox";
 import { BarChart3, CalendarDays, CheckSquare, Headphones, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -990,7 +991,23 @@ function CentralPage() {
           />
 
           <div className="tc-main-content">
-{tab === "panel" && <OperatorPanel mode="central" />}
+{tab === "panel" && (
+            <>
+              <OperationalInbox
+                mode="central"
+                onAction={(action) => {
+                  if (action === "leads") setTab("captacion");
+                  if (action === "parking") setTab("panel");
+                  if (action === "chat") setTab("chat");
+                  if (action === "calls") setTab("llamadas");
+                  if (action === "team") setTab("equipo");
+                  if (action === "incidents") setTab("incidencias");
+                  if (action === "crm") setTab("crm");
+                }}
+              />
+              <OperatorPanel mode="central" />
+            </>
+          )}
           {tab === "chat" && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
+import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -1553,7 +1554,18 @@ export default function Tarotista() {
             )}
 
             {tab === "resumen" && (
-              <div className="tc-grid-2">
+              <>
+                <OperationalInbox
+                  mode="tarotista"
+                  compact
+                  onAction={(action) => {
+                    if (action === "chat") setTab("chat");
+                    if (action === "calls") setTab("clientes");
+                    if (action === "incidents") setTab("facturas");
+                    if (action === "attendance") setTab("resumen");
+                  }}
+                />
+                <div className="tc-grid-2">
                 <div className="tc-card">
                   <div className="tc-title">📊 Mis estadísticas</div>
                   <div className="tc-hr" />
@@ -1615,7 +1627,8 @@ export default function Tarotista() {
                     </div>
                   )}
                 </div>
-              </div>
+                </div>
+              </>
             )}
 
             {tab === "clientes" && (
