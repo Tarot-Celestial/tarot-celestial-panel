@@ -30,6 +30,42 @@ function shouldShowDock(pathname: string | null) {
   return path.startsWith("/admin") || path.startsWith("/panel-central") || path.startsWith("/panel-tarotista");
 }
 
+function dispatchDockEvent(name: string) {
+  try {
+    window.dispatchEvent(new CustomEvent(name));
+  } catch {
+    // noop
+  }
+}
+
+function openParkingFromDock(pathname: string | null) {
+  const path = pathname || "";
+
+  // Evento nuevo y único para navegación interna en admin/central.
+  dispatchDockEvent("tc-open-parking");
+
+  // Compatibilidad temporal con listeners antiguos mientras se limpia el proyecto.
+  dispatchDockEvent("go-to-parking");
+
+  // Si el dock se usa fuera de admin/central, caemos a una ruta segura.
+  if (!path.startsWith("/admin") && !path.startsWith("/panel-central")) {
+    window.location.href = "/admin?tab=parking";
+  }
+}
+
+function openCaptacionFromDock(pathname: string | null) {
+  const path = pathname || "";
+
+  dispatchDockEvent("tc-open-captacion");
+
+  // Compatibilidad temporal con listeners antiguos.
+  dispatchDockEvent("go-to-captacion");
+
+  if (!path.startsWith("/admin") && !path.startsWith("/panel-central")) {
+    window.location.href = "/admin?tab=captacion";
+  }
+}
+
 function presenceFromAttendance(payload: any): DockPresence {
   const online = payload?.online === true;
   const status = String(payload?.status || (online ? "working" : "offline")).toLowerCase();
@@ -169,7 +205,7 @@ export default function GlobalBottomBar() {
             <button
               type="button"
               className={`tc-ops-dock-item ${parking > 0 ? "tc-ops-dock-item-alert" : ""}`}
-              onClick={() => { window.location.href = "/admin?tab=parking"; }}
+              onClick={() => openParkingFromDock(pathname)}
             >
               <span className="tc-ops-dock-icon">🅿️</span>
               <span className="tc-ops-dock-label">Parking</span>
@@ -181,7 +217,7 @@ export default function GlobalBottomBar() {
             <button
               type="button"
               className={`tc-ops-dock-item ${leads > 0 ? "tc-ops-dock-item-alert" : ""}`}
-              onClick={() => window.dispatchEvent(new CustomEvent("tc-open-captacion"))}
+              onClick={() => openCaptacionFromDock(pathname)}
             >
               <span className="tc-ops-dock-icon">🔥</span>
               <span className="tc-ops-dock-label">Leads</span>

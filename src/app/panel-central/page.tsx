@@ -291,8 +291,22 @@ function CentralPage() {
 
   useEffect(() => {
     const openCaptacion = () => setTab("captacion");
+    const openParking = () => setTab("panel");
+
+    // Eventos oficiales del dock global.
     window.addEventListener("tc-open-captacion", openCaptacion as EventListener);
-    return () => window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
+    window.addEventListener("tc-open-parking", openParking as EventListener);
+
+    // Compatibilidad temporal con eventos antiguos.
+    window.addEventListener("go-to-captacion", openCaptacion as EventListener);
+    window.addEventListener("go-to-parking", openParking as EventListener);
+
+    return () => {
+      window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
+      window.removeEventListener("tc-open-parking", openParking as EventListener);
+      window.removeEventListener("go-to-captacion", openCaptacion as EventListener);
+      window.removeEventListener("go-to-parking", openParking as EventListener);
+    };
   }, []);
 
   useEffect(() => {

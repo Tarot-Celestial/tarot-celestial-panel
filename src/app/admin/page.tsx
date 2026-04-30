@@ -337,27 +337,23 @@ function AdminPage() {
 
   useEffect(() => {
     const openCaptacion = () => setTab("captacion");
+    const openParking = () => setTab("panel");
+
+    // Eventos oficiales del dock global.
     window.addEventListener("tc-open-captacion", openCaptacion as EventListener);
-    return () => window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
+    window.addEventListener("tc-open-parking", openParking as EventListener);
+
+    // Compatibilidad temporal con eventos antiguos.
+    window.addEventListener("go-to-captacion", openCaptacion as EventListener);
+    window.addEventListener("go-to-parking", openParking as EventListener);
+
+    return () => {
+      window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
+      window.removeEventListener("tc-open-parking", openParking as EventListener);
+      window.removeEventListener("go-to-captacion", openCaptacion as EventListener);
+      window.removeEventListener("go-to-parking", openParking as EventListener);
+    };
   }, []);
-
-  useEffect(() => {
-  function goCaptacion() {
-    setTab("captacion");
-  }
-
-  function goParking() {
-    setTab("panel"); // 👈 ESTE ES TU "parking"
-  }
-
-  window.addEventListener("go-to-captacion", goCaptacion);
-  window.addEventListener("go-to-parking", goParking);
-
-  return () => {
-    window.removeEventListener("go-to-captacion", goCaptacion);
-    window.removeEventListener("go-to-parking", goParking);
-  };
-}, []);
 
   useEffect(() => {
   (async () => {
