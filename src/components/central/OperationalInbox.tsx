@@ -723,8 +723,6 @@ const nextSuggestion = nextBestItem
   ? getSuggestion(nextBestItem, nextBestItem.action)
   : null;
 
-  const topAggressiveSuggestion = topAggressiveItem ? getSuggestion(topAggressiveItem, topAggressiveItem.action) : null;
-
   return (
     <section className="tc-card" style={{ border: "1px solid rgba(215,181,109,0.18)", overflow: "hidden" }}>
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
