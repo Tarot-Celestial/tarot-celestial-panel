@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 const sb = createClient(
@@ -9,11 +9,22 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const TRUST_POINTS = [
+  "Panel interno seguro",
+  "Central · Admin · Tarotistas",
+  "Operativa en tiempo real",
+];
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  const canSubmit = useMemo(
+    () => email.trim().length > 0 && password.length > 0 && !loading,
+    [email, password, loading]
+  );
 
   async function login() {
     if (loading) return;
@@ -62,7 +73,6 @@ export default function LoginPage() {
       } else {
         alert("ROL DESCONOCIDO: " + role);
       }
-
     } catch (e: any) {
       setErr(e?.message || "Error de login");
     } finally {
@@ -70,63 +80,104 @@ export default function LoginPage() {
     }
   }
 
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    void login();
+  }
+
   return (
-    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 420,
-          border: "1px solid rgba(255,255,255,0.15)",
-          borderRadius: 16,
-          padding: 16,
-        }}
-      >
-        <div style={{ display: "grid", placeItems: "center", gap: 10 }}>
-          <Image
-            src="/Nuevo-logo-tarot.png"
-            alt="Tarot Celestial"
-            width={110}
-            height={110}
-          />
-          <div style={{ fontWeight: 800, fontSize: 22 }}>Tarot Celestial</div>
-          <div style={{ opacity: 0.7, fontSize: 12 }}>
-            Acceso al panel interno
+    <main className="tc-login-shell">
+      <div className="tc-login-bg" aria-hidden="true">
+        <div className="tc-login-orb tc-login-orb-one" />
+        <div className="tc-login-orb tc-login-orb-two" />
+        <div className="tc-login-orb tc-login-orb-three" />
+        <div className="tc-login-stars" />
+        <div className="tc-login-grid" />
+      </div>
+
+      <section className="tc-login-hero" aria-label="Acceso Tarot Celestial">
+        <div className="tc-login-brand-panel">
+          <div className="tc-login-logo-wrap">
+            <Image
+              src="/Nuevo-logo-tarot.png"
+              alt="Tarot Celestial"
+              width={118}
+              height={118}
+              priority
+              className="tc-login-logo"
+            />
+          </div>
+
+          <div className="tc-login-kicker">Central Operativa Inteligente</div>
+          <h1 className="tc-login-title">
+            Tarot Celestial
+            <span>Control total de llamadas, chats y equipo.</span>
+          </h1>
+
+          <p className="tc-login-copy">
+            Accede al panel interno para gestionar la operación en directo con
+            Supabase, realtime, roles y decisiones basadas en prioridad.
+          </p>
+
+          <div className="tc-login-trust-row">
+            {TRUST_POINTS.map((item) => (
+              <span key={item} className="tc-login-trust-chip">
+                {item}
+              </span>
+            ))}
           </div>
         </div>
 
-        <div
-          style={{
-            height: 1,
-            background: "rgba(255,255,255,0.12)",
-            margin: "14px 0",
-          }}
-        />
+        <form className="tc-login-card" onSubmit={handleSubmit}>
+          <div className="tc-login-card-glow" aria-hidden="true" />
 
-        <div style={{ display: "grid", gap: 10 }}>
-          <input
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-
-          <input
-            placeholder="Contraseña"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-
-          {err && (
-            <div style={{ color: "#ff5a7a", fontSize: 12 }}>
-              {err}
+          <div className="tc-login-card-head">
+            <span className="tc-login-status-dot" />
+            <div>
+              <h2>Entrar al panel</h2>
+              <p>Identificación segura para personal autorizado.</p>
             </div>
-          )}
+          </div>
 
-          <button onClick={login} disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
+          <label className="tc-login-field">
+            <span>Email</span>
+            <input
+              className="tc-login-input"
+              placeholder="tu@email.com"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+
+          <label className="tc-login-field">
+            <span>Contraseña</span>
+            <input
+              className="tc-login-input"
+              placeholder="••••••••"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+
+          {err && <div className="tc-login-error">{err}</div>}
+
+          <button className="tc-login-button" type="submit" disabled={!canSubmit}>
+            <span>{loading ? "Validando acceso..." : "Entrar al panel"}</span>
+            <span className="tc-login-button-icon" aria-hidden="true">
+              {loading ? "✦" : "→"}
+            </span>
           </button>
-        </div>
-      </div>
-    </div>
+
+          <div className="tc-login-footnote">
+            Sistema privado · roles sincronizados con workers
+          </div>
+        </form>
+      </section>
+    </main>
   );
 }
