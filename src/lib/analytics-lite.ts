@@ -18,11 +18,17 @@ export function getAnalytics({ leads, outboundItems, chatItems }: any) {
 
   const leadsCount = leadRows.length || 0;
 
+  const conversionRate =
+  leadRows.length > 0
+    ? Math.round((convertedLeads / leadRows.length) * 100)
+    : 0;
+
   return {
   leads: leadsCount,
   calls: callRows.length || 0,
   chats: chatRows.length || 0,
   revenue,
   convertedLeads,
+  conversionRate,
 };
 }
