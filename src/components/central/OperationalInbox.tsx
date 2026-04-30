@@ -747,17 +747,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       <span className="tc-chip">Chats: {analytics.chats}</span>
     </div>
 
-    <div style={{ marginTop: 8 }}>
-      {Object.entries(goals).map(([k, v]: any) => (
-        <div key={k} style={{ marginBottom: 6 }}>
-          <div style={{ fontSize: 12 }}>{k}: {v.percent}%</div>
-          <div style={{ height: 6, background: "rgba(255,255,255,0.1)", borderRadius: 4 }}>
-            <div style={{ width: `${v.percent}%`, height: "100%", background: "gold", borderRadius: 4 }} />
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
+  
 )}
 
 
