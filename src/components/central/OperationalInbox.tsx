@@ -5,6 +5,8 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useOps } from "@/hooks/useOps";
 import { sortItems, type Priority } from "@/lib/priority-engine";
 import { getSuggestion, type Suggestion } from "@/lib/suggestion-engine";
+import { evaluateSla, type SlaStatus } from "@/lib/sla-engine";
+import { getLoadSummary } from "@/lib/load-engine";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -38,6 +40,7 @@ type InboxItem = {
   created_at?: string | null;
   last_activity_at?: string | null;
   unread_count?: number | null;
+  sla?: SlaStatus;
 };
 
 type InboxSection = {
@@ -256,6 +259,28 @@ function metricLabel(value: number, label: string) {
   return `${label}: ${Number(value || 0)}`;
 }
 
+const PRIORITY_RANK: Record<Priority, number> = {
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+};
+
+function maxPriority(a?: Priority, b?: Priority): Priority {
+  const pa = a || "low";
+  const pb = b || "low";
+  return PRIORITY_RANK[pb] > PRIORITY_RANK[pa] ? pb : pa;
+}
+
+function withSla<T extends InboxItem>(item: T): T {
+  const sla = evaluateSla(item);
+  return {
+    ...item,
+    sla,
+    priority: maxPriority(item.priority, sla.priority),
+  };
+}
+
 export default function OperationalInbox({ mode, onAction, compact = false }: OperationalInboxProps) {
   const ops = useOps();
   const [loading, setLoading] = useState(false);
@@ -378,10 +403,22 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     return () => window.clearInterval(id);
   }, [load, mode]);
 
+  const loadSummary = useMemo(() => {
+    return getLoadSummary({
+      presences: ops.presences.rows || [],
+      expected: ops.expected.rows || [],
+      outboundItems,
+      chatItems,
+      parkingCount: ops.counters.parking || 0,
+      chatUnread: ops.counters.chatUnread || 0,
+      incidentCount: incidentItems.length,
+    });
+  }, [chatItems, incidentItems.length, ops.counters.chatUnread, ops.counters.parking, ops.expected.rows, ops.presences.rows, outboundItems]);
+
   const sections = useMemo<InboxSection[]>(() => {
     const onlineRows = (ops.presences.rows || []).filter((r) => r.online);
     const expectedRows = ops.expected.rows || [];
-    const offlineExpected = expectedRows.filter((r) => r.online === false).length;
+    const offlineExpected = loadSummary.offlineExpected;
 
     if (mode === "tarotista") {
       return [
@@ -394,14 +431,14 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           action: "attendance",
           empty: "Conéctate cuando estés dentro de tu turno.",
           items: [
-            {
+            withSla({
               id: "my-status",
               title: ops.attendance.online ? "Estás online" : "Estás offline",
               subtitle: ops.attendance.status ? `Estado: ${ops.attendance.status}` : undefined,
               priority: ops.attendance.online ? "low" : "medium",
               action: "attendance",
               type: "attendance",
-            },
+            }),
           ],
         },
         {
@@ -413,7 +450,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           action: "calls",
           empty: "No tienes llamadas asignadas para hoy.",
           items: sortItems(
-            outboundItems.map((it: any) => ({
+            outboundItems.map((it: any) => withSla({
               id: String(it.id),
               title: it.customer_name || it.phone || "Cliente pendiente",
               subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
@@ -435,7 +472,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           action: "incidents",
           empty: "No tienes incidencias este mes.",
           items: sortItems(
-            incidentItems.map((it: any) => ({
+            incidentItems.map((it: any) => withSla({
               id: String(it.id),
               title: it.reason || it.title || "Incidencia",
               subtitle: it.amount ? `Importe: ${it.amount}€` : "Aviso operativo",
@@ -463,7 +500,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         items:
           ops.counters.parking > 0
             ? [
-                {
+                withSla({
                   id: "parking",
                   title: `${ops.counters.parking} llamada(s) esperando`,
                   subtitle: "Revisar parking y derivar cuanto antes.",
@@ -471,7 +508,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                   priority: "critical",
                   action: "parking",
                   type: "parking",
-                },
+                }),
               ]
             : [],
       },
@@ -489,7 +526,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             const value = getLeadValue(lead);
             const dueNow = lead.next_contact_at && new Date(lead.next_contact_at).getTime() <= Date.now();
             const rankText = rankLabel(rank);
-            return {
+            return withSla({
               id: String(lead.id),
               title: normalizeLeadName(lead),
               subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
@@ -504,7 +541,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               next_contact_at: lead.next_contact_at,
               created_at: lead.created_at,
               last_activity_at: lead.updated_at || lead.last_activity_at,
-            };
+            });
           })
         ),
       },
@@ -517,7 +554,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         action: "calls",
         empty: mode === "admin" ? "Vista supervisor sin lote central asignado." : "No hay llamadas pendientes para hoy.",
         items: sortItems(
-          outboundItems.map((it: any) => ({
+          outboundItems.map((it: any) => withSla({
             id: String(it.id),
             title: it.customer_name || it.phone || "Cliente pendiente",
             subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
@@ -539,7 +576,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         action: "chat",
         empty: "No hay chats pendientes visibles.",
         items: sortItems(
-          chatItems.map((t: any) => ({
+          chatItems.map((t: any) => withSla({
             id: String(t.id),
             title: t.tarotist_display_name || t.cliente_nombre || t.title || "Chat activo",
             subtitle: t.last_message_text || t.last_message_preview || "Sin vista previa",
@@ -561,15 +598,15 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         action: "team",
         empty: "No hay presencia activa registrada.",
         items: sortItems([
-          {
+          withSla({
             id: "online",
             title: `${onlineRows.length} conectadas ahora`,
-            subtitle: `${expectedRows.length} deberían estar en turno`,
+            subtitle: `${expectedRows.length} deberían estar en turno · ${loadSummary.label}`,
             meta: offlineExpected ? `${offlineExpected} ausencias detectadas` : "Sin ausencias detectadas",
-            priority: offlineExpected ? "high" : "low",
+            priority: offlineExpected ? "high" : loadSummary.level === "critical" || loadSummary.level === "high" ? "medium" : "low",
             action: "team",
             type: "team",
-          },
+          }),
         ]),
       },
       {
@@ -581,7 +618,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         action: "incidents",
         empty: mode === "admin" ? "No hay incidencias recientes." : "Gestiona incidencias desde su pestaña.",
         items: sortItems(
-          incidentItems.map((it: any) => ({
+          incidentItems.map((it: any) => withSla({
             id: String(it.id),
             title: it.display_name || it.reason || "Incidencia",
             subtitle: it.reason || it.title || "Pendiente de revisión",
@@ -615,7 +652,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       },
       ...baseSections,
     ];
-  }, [chatItems, incidentItems, leads, mode, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
+  }, [chatItems, incidentItems, leads, loadSummary, mode, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
 
   const aggressiveFocusItems = useMemo(() => {
     return sortItems(
@@ -661,6 +698,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         <span className="tc-chip">{metricLabel(outboundItems.length, "Llamadas")}</span>
         <span className="tc-chip">{metricLabel(chatItems.length || ops.counters.chatUnread || 0, "Chats")}</span>
         <span className="tc-chip">{metricLabel(incidentItems.length, "Avisos")}</span>
+        <span className="tc-chip" title={`Score operativo: ${loadSummary.pressureScore.toFixed(1)}`}>{loadSummary.label}</span>
       </div>
 
       {topAggressiveItem ? (
@@ -681,6 +719,9 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               {topAggressiveItem.subtitle ? <div className="tc-sub" style={{ marginTop: 4 }}>{topAggressiveItem.subtitle}</div> : null}
               {topAggressiveSuggestion?.reason ? (
                 <div className="tc-sub" style={{ marginTop: 4, color: "#f5dfaa" }}>{topAggressiveSuggestion.reason}</div>
+              ) : null}
+              {topAggressiveItem.sla?.breached && topAggressiveItem.sla.reason ? (
+                <div className="tc-sub" style={{ marginTop: 4, color: "#ffd6d6" }}>{topAggressiveItem.sla.reason}</div>
               ) : null}
             </div>
 
@@ -783,6 +824,11 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                       {item.meta ? (
                         <div className="tc-sub" style={{ marginTop: 4, opacity: 0.78 }}>
                           {item.meta}
+                        </div>
+                      ) : null}
+                      {item.sla?.breached && item.sla.label ? (
+                        <div className="tc-sub" style={{ marginTop: 4, color: "#ffd6d6" }}>
+                          {item.sla.label}{item.sla.minutesWaiting != null ? ` · ${item.sla.minutesWaiting}m` : ""}
                         </div>
                       ) : null}
 
