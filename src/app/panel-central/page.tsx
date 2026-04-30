@@ -4,6 +4,8 @@
 export const dynamic = "force-dynamic";
 
 import AppHeader from "@/components/AppHeader";
+import CentralHero from "@/features/central/CentralHero";
+import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -38,12 +40,7 @@ const TABS = [
 
 type TabKey = typeof TABS[number];
 
-const CENTRAL_NAV: {
-  key: TabKey;
-  label: string;
-  icon: any;
-  kicker?: string;
-}[] = [
+const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -1274,83 +1271,19 @@ function CentralPage() {
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
       <div className="tc-shell">
-        <aside className="tc-sidebar">
-          <div className="tc-sidebar-card">
-            <div className="tc-sidebar-title">Navegación centrales</div>
-            <div className="tc-sidebar-nav">
-              {CENTRAL_NAV.map((item) => {
-                const Icon = item.icon;
-                const active = tab === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
-                    onClick={() => setTab(item.key as TabKey)}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                      <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
-                        <Icon size={16} />
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="tc-sidebtn-main">{item.label}</div>
-                        <div className="tc-sidebtn-kicker">{item.kicker}</div>
-                      </div>
-                    </div>
-                    <span className="tc-sidebtn-dot" />
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </aside>
+        <CentralSidebar items={CENTRAL_NAV} activeTab={tab} onTabChange={setTab} />
 
         <main className="tc-main">
-          <section className="tc-hero">
-            <div className="tc-hero-top">
-              <div>
-                <div className="tc-hero-title">🎧 Central — Tarot Celestial</div>
-                <div className="tc-hero-sub">Centro operativo premium para llamadas, reservas, chat, checklist y rendimiento del equipo en tiempo real.</div>
-              </div>
-
-              <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                <span className="tc-chip" style={{ ...attStyle(attOnline, attStatus), padding: "6px 10px", borderRadius: 999, fontSize: 12 }} title={attStatus}>
-                  {attLabel(attOnline, attStatus)}
-                </span>
-                <span className="tc-chip">Mes</span>
-                <input
-                  className="tc-input"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  placeholder="2026-02"
-                  style={{ width: 120 }}
-                />
-                <button className="tc-btn tc-btn-gold" onClick={refreshRanking}>Actualizar</button>
-              </div>
-            </div>
-
-            <div className="tc-hero-kpis">
-              <div className="tc-kpi-panel tc-kpi-panel-main">
-                <div className="tc-kpi-label">Estado central</div>
-                <div className="tc-kpi-value" style={{ fontSize: 24 }}>{attLabel(attOnline, attStatus)}</div>
-                <div className="tc-kpi-note">Acceso rápido a tu estado operativo y al mes activo</div>
-              </div>
-              <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Chats</div>
-                <div className="tc-kpi-value">{String(threads.length || 0)}</div>
-                <div className="tc-kpi-note">Conversaciones cargadas</div>
-              </div>
-              <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Reservas</div>
-                <div className="tc-kpi-value">{String(tab === "reservas" ? "Live" : "Activas")}</div>
-                <div className="tc-kpi-note">Seguimiento operativo en tiempo real</div>
-              </div>
-              <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Módulo activo</div>
-                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{String(tab).toUpperCase()}</div>
-                <div className="tc-kpi-note">Vista lateral tipo software premium</div>
-              </div>
-            </div>
-          </section>
+          <CentralHero
+            statusLabel={attLabel(attOnline, attStatus)}
+            statusStyle={attStyle(attOnline, attStatus)}
+            statusTitle={attStatus}
+            month={month}
+            onMonthChange={setMonth}
+            onRefreshRanking={refreshRanking}
+            threadCount={threads.length || 0}
+            activeTab={tab}
+          />
 
           <div className="tc-main-content">
 {tab === "panel" && <OperatorPanel mode="central" />}
