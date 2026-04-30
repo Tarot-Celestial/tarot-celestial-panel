@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useOps } from "@/hooks/useOps";
-import { sortItems } from "@/lib/priority-engine";
+import { sortItems, type Priority } from "@/lib/priority-engine";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -28,7 +28,15 @@ type InboxItem = {
   title: string;
   subtitle?: string;
   meta?: string;
-  priority?: "high" | "medium" | "low";
+  priority?: Priority;
+  action?: InboxAction;
+  type?: "parking" | "lead" | "chat" | "call" | "incident" | "team" | "attendance";
+  rank?: string | null;
+  value?: number | null;
+  next_contact_at?: string | null;
+  created_at?: string | null;
+  last_activity_at?: string | null;
+  unread_count?: number | null;
 };
 
 type InboxSection = {
@@ -83,20 +91,62 @@ function normalizeLeadName(row: any) {
   return [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim() || c?.telefono || row?.campaign_name || "Lead pendiente";
 }
 
+function getLeadRank(lead: any) {
+  return (
+    lead?.rango_actual ||
+    lead?.rango ||
+    lead?.rank ||
+    lead?.cliente?.rango_actual ||
+    lead?.cliente?.rango ||
+    lead?.cliente?.rank ||
+    null
+  );
+}
+
+function getLeadValue(lead: any) {
+  return Number(
+    lead?.valor_total ||
+      lead?.total_spent ||
+      lead?.importe_total ||
+      lead?.cliente?.rango_gasto_mes_anterior ||
+      lead?.cliente?.valor_total ||
+      0
+  );
+}
+
+function rankLabel(rank?: string | null) {
+  const r = String(rank || "").toLowerCase();
+  if (!r) return "";
+  if (r === "oro" || r === "gold") return "Rango oro";
+  if (r === "plata" || r === "silver") return "Rango plata";
+  if (r === "bronce" || r === "bronze") return "Rango bronce";
+  return `Rango ${rank}`;
+}
+
 function priorityBorder(priority?: InboxItem["priority"]) {
+  if (priority === "critical") return "rgba(255,82,82,0.58)";
   if (priority === "high") return "rgba(255,120,120,0.34)";
   if (priority === "medium") return "rgba(215,181,109,0.34)";
   return "rgba(255,255,255,0.10)";
 }
 
-
 function priorityLabel(priority?: InboxItem["priority"]) {
+  if (priority === "critical") return "CRÍTICO";
   if (priority === "high") return "URGENTE";
-  if (priority === "medium") return "Prioridad media";
-  return "Baja prioridad";
+  if (priority === "medium") return "Media";
+  return "Baja";
 }
 
 function priorityBadgeStyle(priority?: InboxItem["priority"]): CSSProperties {
+  if (priority === "critical") {
+    return {
+      border: "1px solid rgba(255,82,82,0.58)",
+      background: "rgba(255,82,82,0.22)",
+      color: "#ffe0e0",
+      boxShadow: "0 0 22px rgba(255,82,82,0.18)",
+    };
+  }
+
   if (priority === "high") {
     return {
       border: "1px solid rgba(255,120,120,0.40)",
@@ -122,6 +172,16 @@ function priorityBadgeStyle(priority?: InboxItem["priority"]): CSSProperties {
 }
 
 function priorityItemStyle(priority?: InboxItem["priority"]): CSSProperties {
+  if (priority === "critical") {
+    return {
+      border: `1px solid ${priorityBorder(priority)}`,
+      borderRadius: 12,
+      padding: 10,
+      background: "linear-gradient(135deg, rgba(255,82,82,0.18), rgba(0,0,0,0.10))",
+      boxShadow: "0 0 0 1px rgba(255,82,82,0.08), 0 14px 30px rgba(255,82,82,0.14)",
+    };
+  }
+
   if (priority === "high") {
     return {
       border: `1px solid ${priorityBorder(priority)}`,
@@ -146,6 +206,19 @@ function toneStyle(tone: InboxSection["tone"]) {
   if (tone === "red") return { border: "rgba(255,120,120,0.22)", bg: "rgba(255,120,120,0.07)" };
   if (tone === "blue") return { border: "rgba(120,190,255,0.22)", bg: "rgba(120,190,255,0.07)" };
   return { border: "rgba(215,181,109,0.24)", bg: "rgba(215,181,109,0.08)" };
+}
+
+function itemActionLabel(item: InboxItem, fallback?: InboxAction) {
+  const action = item.action || fallback;
+  if (action === "parking") return "Atender ahora";
+  if (action === "leads") return "Abrir lead";
+  if (action === "chat") return "Abrir chat";
+  if (action === "calls") return "Ver llamadas";
+  if (action === "team") return "Revisar equipo";
+  if (action === "incidents") return "Ver aviso";
+  if (action === "attendance") return "Gestionar estado";
+  if (action === "crm") return "Abrir CRM";
+  return "Abrir";
 }
 
 export default function OperationalInbox({ mode, onAction, compact = false }: OperationalInboxProps) {
@@ -291,6 +364,8 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               title: ops.attendance.online ? "Estás online" : "Estás offline",
               subtitle: ops.attendance.status ? `Estado: ${ops.attendance.status}` : undefined,
               priority: ops.attendance.online ? "low" : "medium",
+              action: "attendance",
+              type: "attendance",
             },
           ],
         },
@@ -309,6 +384,10 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
               meta: it.current_status || "Pendiente",
               priority: it.priority === "high" ? "high" : "medium",
+              action: "calls",
+              type: "call",
+              created_at: it.created_at,
+              last_activity_at: it.last_call_at || it.updated_at,
             }))
           ),
         },
@@ -327,31 +406,17 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               subtitle: it.amount ? `Importe: ${it.amount}€` : "Aviso operativo",
               meta: timeAgo(it.created_at),
               priority: "medium",
+              action: "incidents",
+              type: "incident",
+              created_at: it.created_at,
+              value: Number(it.amount || 0),
             }))
           ),
         },
       ];
     }
 
-    return [
-      {
-        key: "leads",
-        title: "Leads pendientes",
-        icon: "🔥",
-        count: ops.counters.leads || leads.length,
-        tone: "gold",
-        action: "leads",
-        empty: "No hay leads pendientes.",
-        items: sortItems(
-          leads.map((lead: any) => ({
-            id: String(lead.id),
-            title: normalizeLeadName(lead),
-            subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
-            meta: lead.next_contact_at ? `Próximo contacto ${timeAgo(lead.next_contact_at)}` : timeAgo(lead.created_at),
-            priority: lead.next_contact_at && new Date(lead.next_contact_at).getTime() <= Date.now() ? "high" : "medium",
-          }))
-        ),
-      },
+    const baseSections: InboxSection[] = [
       {
         key: "parking",
         title: "Parking",
@@ -367,11 +432,68 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                   id: "parking",
                   title: `${ops.counters.parking} llamada(s) esperando`,
                   subtitle: "Revisar parking y derivar cuanto antes.",
-                  meta: "Tiempo crítico",
-                  priority: "high",
+                  meta: "Prioridad máxima",
+                  priority: "critical",
+                  action: "parking",
+                  type: "parking",
                 },
               ]
             : [],
+      },
+      {
+        key: "leads",
+        title: "Leads pendientes",
+        icon: "🔥",
+        count: ops.counters.leads || leads.length,
+        tone: "gold",
+        action: "leads",
+        empty: "No hay leads pendientes.",
+        items: sortItems(
+          leads.map((lead: any) => {
+            const rank = getLeadRank(lead);
+            const value = getLeadValue(lead);
+            const dueNow = lead.next_contact_at && new Date(lead.next_contact_at).getTime() <= Date.now();
+            const rankText = rankLabel(rank);
+            return {
+              id: String(lead.id),
+              title: normalizeLeadName(lead),
+              subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
+              meta: [lead.next_contact_at ? `Próximo contacto ${timeAgo(lead.next_contact_at)}` : timeAgo(lead.created_at), rankText]
+                .filter(Boolean)
+                .join(" · "),
+              priority: dueNow || String(rank || "").toLowerCase() === "oro" ? "high" : "medium",
+              action: "leads",
+              type: "lead",
+              rank,
+              value,
+              next_contact_at: lead.next_contact_at,
+              created_at: lead.created_at,
+              last_activity_at: lead.updated_at || lead.last_activity_at,
+            };
+          })
+        ),
+      },
+      {
+        key: "calls",
+        title: "Llamadas pendientes",
+        icon: "📞",
+        count: outboundItems.length,
+        tone: "gold",
+        action: "calls",
+        empty: mode === "admin" ? "Vista supervisor sin lote central asignado." : "No hay llamadas pendientes para hoy.",
+        items: sortItems(
+          outboundItems.map((it: any) => ({
+            id: String(it.id),
+            title: it.customer_name || it.phone || "Cliente pendiente",
+            subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
+            meta: it._sender?.display_name ? `Asignado por ${it._sender.display_name}` : it.current_status || "Pendiente",
+            priority: it.priority === "high" ? "high" : "medium",
+            action: "calls",
+            type: "call",
+            created_at: it.created_at,
+            last_activity_at: it.last_call_at || it.updated_at,
+          }))
+        ),
       },
       {
         key: "chat",
@@ -387,7 +509,11 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             title: t.tarotist_display_name || t.cliente_nombre || t.title || "Chat activo",
             subtitle: t.last_message_text || t.last_message_preview || "Sin vista previa",
             meta: timeAgo(t.last_message_at),
-            priority: t.unread_count ? "high" : "low",
+            priority: t.unread_count ? "medium" : "low",
+            action: "chat",
+            type: "chat",
+            unread_count: Number(t.unread_count || 0),
+            last_activity_at: t.last_message_at,
           }))
         ),
       },
@@ -405,7 +531,9 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             title: `${onlineRows.length} conectadas ahora`,
             subtitle: `${expectedRows.length} deberían estar en turno`,
             meta: offlineExpected ? `${offlineExpected} ausencias detectadas` : "Sin ausencias detectadas",
-            priority: offlineExpected ? "medium" : "low",
+            priority: offlineExpected ? "high" : "low",
+            action: "team",
+            type: "team",
           },
         ]),
       },
@@ -424,27 +552,33 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             subtitle: it.reason || it.title || "Pendiente de revisión",
             meta: it.amount ? `${it.amount}€ · ${timeAgo(it.created_at)}` : timeAgo(it.created_at),
             priority: "medium",
+            action: "incidents",
+            type: "incident",
+            created_at: it.created_at,
+            value: Number(it.amount || 0),
           }))
         ),
       },
+    ];
+
+    const focusItems = sortItems(baseSections.flatMap((section) => section.items.map((item) => ({ ...item, action: item.action || section.action })))).filter(
+      (item) => item.priority === "critical" || item.priority === "high"
+    );
+
+    if (!focusItems.length) return baseSections;
+
+    return [
       {
-        key: "calls",
-        title: "Llamadas pendientes",
-        icon: "📞",
-        count: outboundItems.length,
-        tone: "gold",
-        action: "calls",
-        empty: mode === "admin" ? "Vista supervisor sin lote central asignado." : "No hay llamadas pendientes para hoy.",
-        items: sortItems(
-          outboundItems.map((it: any) => ({
-            id: String(it.id),
-            title: it.customer_name || it.phone || "Cliente pendiente",
-            subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
-            meta: it._sender?.display_name ? `Asignado por ${it._sender.display_name}` : it.current_status || "Pendiente",
-            priority: it.priority === "high" ? "high" : "medium",
-          }))
-        ),
+        key: "focus-now",
+        title: "Prioridad ahora",
+        icon: "🎯",
+        count: focusItems.length,
+        tone: "red",
+        action: focusItems[0]?.action,
+        empty: "No hay prioridades críticas ahora mismo.",
+        items: focusItems.slice(0, 4),
       },
+      ...baseSections,
     ];
   }, [chatItems, incidentItems, leads, mode, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
 
@@ -457,10 +591,10 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           </div>
           <div className="tc-sub" style={{ marginTop: 6 }}>
             {mode === "admin"
-              ? "Visión global de lo que requiere atención."
+              ? "Visión global de lo que requiere atención. Parking manda; chats no bloquean salvo pendientes."
               : mode === "tarotista"
               ? "Resumen reducido de tu turno, llamadas y avisos."
-              : "Trabajo operativo: leads, parking, chats, equipo y llamadas."}
+              : "Trabajo operativo priorizado: parking primero, leads/rangos y ausencias después."}
             {refreshedAt ? ` · Actualizado ${timeAgo(refreshedAt)}` : ""}
             {error ? ` · ${error}` : ""}
           </div>
@@ -525,7 +659,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               <div style={{ display: "grid", gap: 8 }}>
                 {visibleItems.length ? (
                   visibleItems.map((item) => (
-                    <div key={item.id} style={priorityItemStyle(item.priority)}>
+                    <div key={`${section.key}-${item.id}`} style={priorityItemStyle(item.priority)}>
                       <div
                         style={{
                           display: "flex",
@@ -563,6 +697,17 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                           {item.meta}
                         </div>
                       ) : null}
+
+                      {(item.action || section.action) && (
+                        <button
+                          type="button"
+                          className="tc-btn"
+                          onClick={() => fireAction((item.action || section.action) as InboxAction)}
+                          style={{ marginTop: 8, padding: "6px 9px", borderRadius: 10, fontSize: 12 }}
+                        >
+                          {itemActionLabel(item, section.action)}
+                        </button>
+                      )}
                     </div>
                   ))
                 ) : (
