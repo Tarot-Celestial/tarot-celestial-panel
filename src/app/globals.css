@@ -830,3 +830,331 @@ a{ color: inherit; text-decoration: none; }
 .tc-ops-dock-status-offline{
   opacity: .82;
 }
+
+/* Login premium Tarot Celestial */
+.tc-login-shell{
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  isolation: isolate;
+}
+.tc-login-bg{
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(circle at 20% 12%, rgba(244,216,159,.22), transparent 28%),
+    radial-gradient(circle at 82% 20%, rgba(139,92,246,.28), transparent 31%),
+    radial-gradient(circle at 50% 100%, rgba(215,181,109,.16), transparent 34%),
+    linear-gradient(135deg, #050409 0%, #120b1d 44%, #07060b 100%);
+}
+.tc-login-bg::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at center, black, transparent 72%);
+  opacity:.42;
+}
+.tc-login-stars{
+  position:absolute;
+  inset:0;
+  background-image:
+    radial-gradient(circle, rgba(255,255,255,.8) 0 1px, transparent 1.4px),
+    radial-gradient(circle, rgba(244,216,159,.7) 0 1px, transparent 1.6px);
+  background-size: 86px 86px, 132px 132px;
+  background-position: 0 0, 38px 24px;
+  opacity:.2;
+  animation: tcLoginStars 18s linear infinite;
+}
+.tc-login-grid{
+  position:absolute;
+  inset:auto -10% -36% -10%;
+  height:46%;
+  background: linear-gradient(to top, rgba(215,181,109,.16), transparent 65%);
+  transform: perspective(680px) rotateX(64deg);
+  transform-origin: bottom;
+  border-top: 1px solid rgba(244,216,159,.18);
+  opacity:.55;
+}
+.tc-login-orb{
+  position:absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 999px;
+  filter: blur(36px);
+  opacity:.38;
+  animation: tcLoginFloat 8s ease-in-out infinite;
+}
+.tc-login-orb-one{ left:-120px; top:8%; background: rgba(215,181,109,.34); }
+.tc-login-orb-two{ right:-120px; top:4%; background: rgba(139,92,246,.38); animation-delay: -2s; }
+.tc-login-orb-three{ left:42%; bottom:-180px; background: rgba(244,216,159,.22); animation-delay: -4s; }
+.tc-login-hero{
+  width: min(1120px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(360px, .85fr);
+  gap: 28px;
+  align-items: center;
+}
+.tc-login-brand-panel{
+  min-height: 580px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 34px;
+  padding: clamp(28px, 5vw, 58px);
+  background: linear-gradient(135deg, rgba(255,255,255,.10), rgba(255,255,255,.035));
+  box-shadow: 0 36px 110px rgba(0,0,0,.46), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter: blur(18px);
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  position:relative;
+  overflow:hidden;
+}
+.tc-login-brand-panel::before{
+  content:"";
+  position:absolute;
+  inset: -2px;
+  background: radial-gradient(circle at 22% 18%, rgba(244,216,159,.18), transparent 30%), radial-gradient(circle at 86% 12%, rgba(139,92,246,.18), transparent 32%);
+  pointer-events:none;
+}
+.tc-login-logo-wrap{
+  width: 146px;
+  height: 146px;
+  display:grid;
+  place-items:center;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(244,216,159,.24), rgba(255,255,255,.05) 62%, transparent 70%);
+  box-shadow: 0 0 46px rgba(215,181,109,.18);
+  animation: tcLoginPulse 3.6s ease-in-out infinite;
+  position:relative;
+  z-index:1;
+}
+.tc-login-logo{ filter: drop-shadow(0 18px 30px rgba(0,0,0,.38)); }
+.tc-login-kicker{
+  margin-top: 24px;
+  width:max-content;
+  max-width:100%;
+  border: 1px solid rgba(244,216,159,.28);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--tc-gold-2);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  background: rgba(215,181,109,.08);
+  position:relative;
+  z-index:1;
+}
+.tc-login-title{
+  margin: 20px 0 0;
+  max-width: 660px;
+  font-size: clamp(42px, 6vw, 76px);
+  line-height: .92;
+  letter-spacing: -.07em;
+  color:#fff;
+  text-wrap: balance;
+  position:relative;
+  z-index:1;
+  animation: tcLoginRise .75s ease-out both;
+}
+.tc-login-title span{
+  display:block;
+  margin-top: 16px;
+  font-size: clamp(21px, 2.8vw, 35px);
+  line-height: 1.08;
+  letter-spacing: -.035em;
+  color: rgba(255,255,255,.72);
+}
+.tc-login-copy{
+  max-width: 610px;
+  margin: 22px 0 0;
+  color: rgba(255,255,255,.68);
+  font-size: 15px;
+  line-height: 1.75;
+  position:relative;
+  z-index:1;
+  animation: tcLoginRise .75s ease-out .08s both;
+}
+.tc-login-trust-row{
+  margin-top: 30px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  position:relative;
+  z-index:1;
+}
+.tc-login-trust-chip{
+  border:1px solid rgba(255,255,255,.13);
+  border-radius:999px;
+  padding: 10px 12px;
+  color:rgba(255,255,255,.78);
+  background:rgba(255,255,255,.055);
+  font-size:12px;
+  font-weight:800;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+}
+.tc-login-card{
+  position:relative;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius: 30px;
+  padding: 26px;
+  background: linear-gradient(180deg, rgba(12,11,18,.82), rgba(12,10,16,.58));
+  backdrop-filter: blur(22px);
+  box-shadow: 0 34px 100px rgba(0,0,0,.52), inset 0 1px 0 rgba(255,255,255,.08);
+  animation: tcLoginRise .75s ease-out .12s both;
+}
+.tc-login-card-glow{
+  position:absolute;
+  inset:0;
+  background: radial-gradient(circle at 50% 0%, rgba(244,216,159,.18), transparent 34%);
+  pointer-events:none;
+}
+.tc-login-card-head{
+  position:relative;
+  display:flex;
+  gap:13px;
+  align-items:flex-start;
+  margin-bottom: 24px;
+}
+.tc-login-card-head h2{
+  margin:0;
+  font-size: 25px;
+  letter-spacing: -.04em;
+}
+.tc-login-card-head p{
+  margin:5px 0 0;
+  color:rgba(255,255,255,.58);
+  font-size:13px;
+  line-height:1.45;
+}
+.tc-login-status-dot{
+  width:13px;
+  height:13px;
+  margin-top:7px;
+  border-radius:999px;
+  background:#69f0b1;
+  box-shadow:0 0 0 7px rgba(105,240,177,.10), 0 0 22px rgba(105,240,177,.55);
+  flex:0 0 auto;
+  animation: tcStatusPulse 1.8s ease-in-out infinite;
+}
+.tc-login-field{
+  position:relative;
+  display:grid;
+  gap:8px;
+  margin-top: 14px;
+}
+.tc-login-field span{
+  color:rgba(255,255,255,.72);
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+.tc-login-input{
+  width:100%;
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:18px;
+  padding: 15px 15px;
+  color:#fff;
+  background: rgba(255,255,255,.065);
+  outline:none;
+  font: inherit;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease, background .2s ease;
+}
+.tc-login-input::placeholder{ color: rgba(255,255,255,.35); }
+.tc-login-input:focus{
+  border-color: rgba(244,216,159,.62);
+  box-shadow: 0 0 0 4px rgba(215,181,109,.12), inset 0 1px 0 rgba(255,255,255,.07);
+  background: rgba(255,255,255,.09);
+  transform: translateY(-1px);
+}
+.tc-login-error{
+  margin-top: 14px;
+  border: 1px solid rgba(255,90,106,.32);
+  border-radius: 16px;
+  padding: 11px 12px;
+  color:#ff9aac;
+  background: rgba(255,90,106,.10);
+  font-size: 13px;
+  font-weight: 700;
+}
+.tc-login-button{
+  width:100%;
+  margin-top: 18px;
+  min-height: 54px;
+  border:0;
+  border-radius: 18px;
+  color:#251807;
+  background: linear-gradient(135deg, #fff1c7, var(--tc-gold-2) 38%, var(--tc-gold));
+  box-shadow: 0 18px 44px rgba(215,181,109,.24);
+  cursor:pointer;
+  font: inherit;
+  font-weight: 950;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  transition: transform .18s ease, box-shadow .18s ease, opacity .18s ease, filter .18s ease;
+}
+.tc-login-button:hover:not(:disabled){
+  transform: translateY(-2px);
+  box-shadow: 0 24px 58px rgba(215,181,109,.32);
+  filter:saturate(1.05);
+}
+.tc-login-button:disabled{
+  opacity:.54;
+  cursor:not-allowed;
+  box-shadow:none;
+}
+.tc-login-button-icon{
+  font-size:20px;
+  line-height:1;
+}
+.tc-login-footnote{
+  margin-top: 16px;
+  text-align:center;
+  color:rgba(255,255,255,.45);
+  font-size:12px;
+}
+@keyframes tcLoginStars{
+  from{ transform: translate3d(0,0,0); }
+  to{ transform: translate3d(-86px,86px,0); }
+}
+@keyframes tcLoginFloat{
+  0%,100%{ transform: translate3d(0,0,0) scale(1); }
+  50%{ transform: translate3d(18px,-18px,0) scale(1.06); }
+}
+@keyframes tcLoginPulse{
+  0%,100%{ transform: scale(1); box-shadow: 0 0 46px rgba(215,181,109,.18); }
+  50%{ transform: scale(1.035); box-shadow: 0 0 72px rgba(215,181,109,.30); }
+}
+@keyframes tcLoginRise{
+  from{ opacity:0; transform: translateY(18px); }
+  to{ opacity:1; transform: translateY(0); }
+}
+@media (max-width: 900px){
+  .tc-login-shell{ padding: 18px; align-items: start; }
+  .tc-login-hero{ grid-template-columns: 1fr; gap: 16px; }
+  .tc-login-brand-panel{ min-height: auto; padding: 28px; border-radius: 28px; }
+  .tc-login-logo-wrap{ width: 104px; height: 104px; }
+  .tc-login-logo{ width: 86px; height: 86px; }
+  .tc-login-card{ border-radius: 26px; padding: 22px; }
+}
+@media (max-width: 520px){
+  .tc-login-shell{ padding: 12px; }
+  .tc-login-brand-panel{ padding: 22px; }
+  .tc-login-title{ font-size: 42px; }
+  .tc-login-title span{ font-size: 21px; }
+  .tc-login-copy{ font-size: 14px; }
+  .tc-login-trust-chip{ width:100%; text-align:center; }
+}
+
