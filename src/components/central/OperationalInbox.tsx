@@ -746,8 +746,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       <span className="tc-chip">Llamadas: {analytics.calls}</span>
       <span className="tc-chip">Chats: {analytics.chats}</span>
     </div>
-
-  
+  </div>
 )}
 
 
