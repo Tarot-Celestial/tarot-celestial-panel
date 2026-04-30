@@ -231,14 +231,14 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: "gold",
           action: "calls",
           empty: "No tienes llamadas asignadas para hoy.",
-          items: sortItems(outboundItems.map((it: any)) => ({
-            id: String(it.id),
-            title: it.customer_name || it.phone || "Cliente pendiente",
-            subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
-            meta: it.current_status ? `Estado: ${it.current_status}` : "Pendiente",
-            priority: it.priority === "high" ? "high" : "medium",
-          })),
-        },
+          items: sortItems(
+  outboundItems.map((it: any) => ({
+    id: String(it.id),
+    title: it.customer_name || it.phone || "Cliente pendiente",
+    subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
+    priority: "medium",
+  }))
+),
         {
           key: "my-incidents",
           title: "Mis avisos",
