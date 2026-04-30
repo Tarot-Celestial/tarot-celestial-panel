@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "r
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useOps } from "@/hooks/useOps";
 import { sortItems, type Priority } from "@/lib/priority-engine";
+import { getSuggestion, type Suggestion } from "@/lib/suggestion-engine";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -219,6 +220,40 @@ function itemActionLabel(item: InboxItem, fallback?: InboxAction) {
   if (action === "attendance") return "Gestionar estado";
   if (action === "crm") return "Abrir CRM";
   return "Abrir";
+}
+
+function suggestionButtonStyle(suggestion?: Suggestion | null): CSSProperties {
+  if (!suggestion) return {};
+  if (suggestion.severity === "critical") {
+    return {
+      border: "1px solid rgba(255,82,82,0.50)",
+      background: "rgba(255,82,82,0.18)",
+      color: "#ffe0e0",
+      boxShadow: "0 0 16px rgba(255,82,82,0.14)",
+    };
+  }
+  if (suggestion.severity === "high") {
+    return {
+      border: "1px solid rgba(255,120,120,0.38)",
+      background: "rgba(255,120,120,0.14)",
+      color: "#ffd6d6",
+    };
+  }
+  if (suggestion.severity === "medium") {
+    return {
+      border: "1px solid rgba(215,181,109,0.34)",
+      background: "rgba(215,181,109,0.12)",
+      color: "#f5dfaa",
+    };
+  }
+  return {
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+  };
+}
+
+function metricLabel(value: number, label: string) {
+  return `${label}: ${Number(value || 0)}`;
 }
 
 export default function OperationalInbox({ mode, onAction, compact = false }: OperationalInboxProps) {
@@ -582,6 +617,17 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     ];
   }, [chatItems, incidentItems, leads, mode, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
 
+  const aggressiveFocusItems = useMemo(() => {
+    return sortItems(
+      sections
+        .filter((section) => section.key !== "focus-now")
+        .flatMap((section) => section.items.map((item) => ({ ...item, action: item.action || section.action })))
+    ).filter((item) => item.priority === "critical" || item.priority === "high");
+  }, [sections]);
+
+  const topAggressiveItem = aggressiveFocusItems[0] || null;
+  const topAggressiveSuggestion = topAggressiveItem ? getSuggestion(topAggressiveItem, topAggressiveItem.action) : null;
+
   return (
     <section className="tc-card" style={{ border: "1px solid rgba(215,181,109,0.18)", overflow: "hidden" }}>
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -609,6 +655,48 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       </div>
 
       <div className="tc-hr" />
+
+      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        <span className="tc-chip">{metricLabel(leads.length, "Leads")}</span>
+        <span className="tc-chip">{metricLabel(outboundItems.length, "Llamadas")}</span>
+        <span className="tc-chip">{metricLabel(chatItems.length || ops.counters.chatUnread || 0, "Chats")}</span>
+        <span className="tc-chip">{metricLabel(incidentItems.length, "Avisos")}</span>
+      </div>
+
+      {topAggressiveItem ? (
+        <div
+          style={{
+            border: "2px solid rgba(255,82,82,0.58)",
+            background: "linear-gradient(135deg, rgba(255,82,82,0.18), rgba(215,181,109,0.07))",
+            borderRadius: 18,
+            padding: 14,
+            marginBottom: 12,
+            boxShadow: "0 0 0 1px rgba(255,82,82,0.08), 0 18px 42px rgba(255,82,82,0.18)",
+          }}
+        >
+          <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 950, letterSpacing: 0.2 }}>🚨 ACCIÓN CRÍTICA AHORA</div>
+              <div style={{ marginTop: 6, fontWeight: 900 }}>{topAggressiveItem.title}</div>
+              {topAggressiveItem.subtitle ? <div className="tc-sub" style={{ marginTop: 4 }}>{topAggressiveItem.subtitle}</div> : null}
+              {topAggressiveSuggestion?.reason ? (
+                <div className="tc-sub" style={{ marginTop: 4, color: "#f5dfaa" }}>{topAggressiveSuggestion.reason}</div>
+              ) : null}
+            </div>
+
+            {topAggressiveSuggestion ? (
+              <button
+                type="button"
+                className="tc-btn tc-btn-gold"
+                onClick={() => fireAction(topAggressiveSuggestion.action as InboxAction)}
+                style={{ alignSelf: "center", boxShadow: "0 0 18px rgba(215,181,109,0.18)" }}
+              >
+                {topAggressiveSuggestion.label}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div
         style={{
@@ -698,16 +786,29 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                         </div>
                       ) : null}
 
-                      {(item.action || section.action) && (
-                        <button
-                          type="button"
-                          className="tc-btn"
-                          onClick={() => fireAction((item.action || section.action) as InboxAction)}
-                          style={{ marginTop: 8, padding: "6px 9px", borderRadius: 10, fontSize: 12 }}
-                        >
-                          {itemActionLabel(item, section.action)}
-                        </button>
-                      )}
+                      {(() => {
+                        const suggestion = getSuggestion(item, item.action || section.action);
+                        const action = suggestion?.action || item.action || section.action;
+                        if (!action) return null;
+
+                        return (
+                          <button
+                            type="button"
+                            className="tc-btn"
+                            onClick={() => fireAction(action as InboxAction)}
+                            title={suggestion?.reason || undefined}
+                            style={{
+                              marginTop: 8,
+                              padding: "6px 9px",
+                              borderRadius: 10,
+                              fontSize: 12,
+                              ...suggestionButtonStyle(suggestion),
+                            }}
+                          >
+                            {suggestion?.label || itemActionLabel(item, section.action)}
+                          </button>
+                        );
+                      })()}
                     </div>
                   ))
                 ) : (
