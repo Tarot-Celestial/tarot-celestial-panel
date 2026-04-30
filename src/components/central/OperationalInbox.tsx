@@ -217,17 +217,13 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: ops.attendance.online ? "green" : "purple",
           action: "attendance",
           empty: "Conéctate cuando estés dentro de tu turno.",
-          items: sortItems([
-            {
-              id: "attendance",
-              title: ops.attendance.online ? "Estás conectada" : "No estás conectada",
-              subtitle: `Estado: ${ops.attendance.status || "offline"}`,
-              meta: ops.attendance.refreshedAt ? `Actualizado ${timeAgo(ops.attendance.refreshedAt)}` : "",
-              priority: ops.attendance.online ? "low" : "medium",
-            },
-          ],
-        },
-        {
+          iitems: [
+  {
+    id: "my-status",
+    label: ops.attendance.online ? "Estás online" : "Estás offline",
+    priority: ops.attendance.online ? "low" : "medium",
+  }
+],
           key: "assigned-calls",
           title: "Mis llamadas",
           icon: "📞",
