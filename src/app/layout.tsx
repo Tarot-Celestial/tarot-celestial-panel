@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 import { PhoneProvider } from "@/context/PhoneContext";
+import { OpsProvider } from "@/providers/OpsProvider";
 import GlobalBottomBar from "@/components/global/GlobalBottomBar";
 
 export const metadata: Metadata = {
@@ -13,10 +14,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body className="bg-[#0b0b0f] text-white">
-        <PhoneProvider>
-          {children}
-          <GlobalBottomBar />
-        </PhoneProvider>
+        <OpsProvider>
+          <PhoneProvider>
+            {children}
+            <GlobalBottomBar />
+          </PhoneProvider>
+        </OpsProvider>
       </body>
     </html>
   );

@@ -341,7 +341,7 @@ export default function AppHeader() {
                   boxShadow: "0 12px 28px rgba(0,0,0,.22)",
                 }}
               >
-                <Image src="/tarot-celestial-logo.png" alt="Tarot Celestial" width={38} height={38} />
+                <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={38} height={38} />
               </div>
 
               <div style={{ lineHeight: 1.15 }}>

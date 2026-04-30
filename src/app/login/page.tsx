@@ -83,7 +83,7 @@ export default function LoginPage() {
       >
         <div style={{ display: "grid", placeItems: "center", gap: 10 }}>
           <Image
-            src="/tarot-celestial-logo.png"
+            src="/Nuevo-logo-tarot.png"
             alt="Tarot Celestial"
             width={110}
             height={110}
