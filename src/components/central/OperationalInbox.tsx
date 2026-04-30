@@ -427,6 +427,11 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     });
   }, [chatItems, loadSummary.offlineExpected, ops.counters.parking, ops.expected.rows, ops.presences.rows, outboundItems]);
 
+  
+  const analytics = getAnalytics({ leads, outboundItems, chatItems });
+  const goals = getGoals(analytics);
+
+
   const sections = useMemo<InboxSection[]>(() => {
     const onlineRows = (ops.presences.rows || []).filter((r) => r.online);
     const expectedRows = ops.expected.rows || [];
@@ -733,6 +738,28 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       </div>
 
       <div className="tc-hr" />
+
+{mode === "admin" && (
+  <div style={{ marginTop: 10 }}>
+    <div className="tc-row" style={{ gap: 8 }}>
+      <span className="tc-chip">Leads: {analytics.leads}</span>
+      <span className="tc-chip">Llamadas: {analytics.calls}</span>
+      <span className="tc-chip">Chats: {analytics.chats}</span>
+    </div>
+
+    <div style={{ marginTop: 8 }}>
+      {Object.entries(goals).map(([k, v]: any) => (
+        <div key={k} style={{ marginBottom: 6 }}>
+          <div style={{ fontSize: 12 }}>{k}: {v.percent}%</div>
+          <div style={{ height: 6, background: "rgba(255,255,255,0.1)", borderRadius: 4 }}>
+            <div style={{ width: `${v.percent}%`, height: "100%", background: "gold", borderRadius: 4 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
 
       <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <span className="tc-chip">{metricLabel(leads.length, "Leads")}</span>
