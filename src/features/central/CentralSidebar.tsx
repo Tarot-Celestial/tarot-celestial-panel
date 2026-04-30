@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 export type CentralNavItem<T extends string = string> = {
   key: T;
   label: string;
-  icon: LucideIcon; ✅
+  icon: LucideIcon;
   kicker?: string;
 };
 
