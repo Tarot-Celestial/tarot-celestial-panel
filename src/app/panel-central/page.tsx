@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
+import { useAttendance } from "@/hooks/useAttendance";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
@@ -245,8 +246,9 @@ function CentralPage() {
   // ✅ attendance (online real) - Central (self)
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
-  const [attOnline, setAttOnline] = useState(false);
-  const [attStatus, setAttStatus] = useState<string>("offline");
+  const attendance = useAttendance();
+  const attOnline = attendance.online;
+  const attStatus = attendance.status;
   const attBeatRef = useRef<any>(null);
 
   // ✅ presencias tarotistas
@@ -407,22 +409,12 @@ function CentralPage() {
       setAttLoading(true);
       setAttMsg("");
     }
+
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setAttOnline(!!j.online);
-      setAttStatus(String(j.status || (j.online ? "working" : "offline")));
+      attendance.refreshAttendance();
       if (!silent) setAttMsg("");
     } catch (e: any) {
       if (!silent) setAttMsg(`❌ Estado: ${e?.message || "Error"}`);
-      setAttOnline(false);
-      setAttStatus("offline");
     } finally {
       if (!silent) setAttLoading(false);
     }
@@ -516,13 +508,6 @@ function CentralPage() {
       attBeatRef.current = null;
     };
   }, [ok, attOnline]);
-
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadAttendanceMe(true), 60_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, crmDismissedIds]);
 
   async function refreshRanking() {
     setRankMsg("");
