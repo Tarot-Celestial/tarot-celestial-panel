@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
 import AdminPaymentsTab from "@/components/admin/AdminPaymentsTab";
 import AdminClientesTab from "@/components/admin/AdminClientesTab";
@@ -339,21 +340,24 @@ function AdminPage() {
     const openCaptacion = () => setTab("captacion");
     const openParking = () => setTab("panel");
 
-    // Eventos oficiales del dock global.
-    window.addEventListener("tc-open-captacion", openCaptacion as EventListener);
-    window.addEventListener("tc-open-parking", openParking as EventListener);
-
-    // Compatibilidad temporal con eventos antiguos.
-    window.addEventListener("go-to-captacion", openCaptacion as EventListener);
-    window.addEventListener("go-to-parking", openParking as EventListener);
+    const cleanupCaptacion = listenTcEvent(
+      [TC_EVENTS.openCaptacion, TC_LEGACY_EVENTS.openCaptacion],
+      openCaptacion as EventListener
+    );
+    const cleanupParking = listenTcEvent(
+      [TC_EVENTS.openParking, TC_LEGACY_EVENTS.openParking],
+      openParking as EventListener
+    );
 
     return () => {
-      window.removeEventListener("tc-open-captacion", openCaptacion as EventListener);
-      window.removeEventListener("tc-open-parking", openParking as EventListener);
-      window.removeEventListener("go-to-captacion", openCaptacion as EventListener);
-      window.removeEventListener("go-to-parking", openParking as EventListener);
+      cleanupCaptacion();
+      cleanupParking();
     };
   }, []);
+
+  useEffect(() => {
+    emitTcEvent(TC_EVENTS.activeTabChanged, { tab, surface: "admin" });
+  }, [tab]);
 
   useEffect(() => {
   (async () => {

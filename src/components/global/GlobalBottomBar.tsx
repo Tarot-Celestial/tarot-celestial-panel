@@ -7,6 +7,7 @@ import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
 import DockChatWidget from "@/components/global/DockChatWidget";
+import { TC_EVENTS, emitDockOpenCaptacion, emitDockOpenParking } from "@/lib/tc-events";
 
 type DockPresence = {
   online: boolean;
@@ -30,22 +31,11 @@ function shouldShowDock(pathname: string | null) {
   return path.startsWith("/admin") || path.startsWith("/panel-central") || path.startsWith("/panel-tarotista");
 }
 
-function dispatchDockEvent(name: string) {
-  try {
-    window.dispatchEvent(new CustomEvent(name));
-  } catch {
-    // noop
-  }
-}
 
 function openParkingFromDock(pathname: string | null) {
   const path = pathname || "";
 
-  // Evento nuevo y único para navegación interna en admin/central.
-  dispatchDockEvent("tc-open-parking");
-
-  // Compatibilidad temporal con listeners antiguos mientras se limpia el proyecto.
-  dispatchDockEvent("go-to-parking");
+  emitDockOpenParking({ source: "global-dock" });
 
   // Si el dock se usa fuera de admin/central, caemos a una ruta segura.
   if (!path.startsWith("/admin") && !path.startsWith("/panel-central")) {
@@ -56,10 +46,7 @@ function openParkingFromDock(pathname: string | null) {
 function openCaptacionFromDock(pathname: string | null) {
   const path = pathname || "";
 
-  dispatchDockEvent("tc-open-captacion");
-
-  // Compatibilidad temporal con listeners antiguos.
-  dispatchDockEvent("go-to-captacion");
+  emitDockOpenCaptacion({ source: "global-dock" });
 
   if (!path.startsWith("/admin") && !path.startsWith("/panel-central")) {
     window.location.href = "/admin?tab=captacion";
@@ -99,6 +86,7 @@ export default function GlobalBottomBar() {
     label: "Desconectado",
     tone: "offline",
   });
+  const [activeTab, setActiveTab] = useState<string>("");
 
   const prevParkingRef = useRef(0);
   const prevLeadsRef = useRef(0);
@@ -106,6 +94,8 @@ export default function GlobalBottomBar() {
 
   const visible = shouldShowDock(pathname);
   const path = pathname || "";
+  const parkingActive = activeTab === "panel";
+  const captacionActive = activeTab === "captacion";
   const isTarotistaPanel = path.startsWith("/panel-tarotista");
 
   async function refreshPresence() {
@@ -136,6 +126,18 @@ export default function GlobalBottomBar() {
     }
   }
 
+  useEffect(() => {
+    if (!visible) return;
+
+    const onActiveTabChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ tab?: string }>).detail;
+      setActiveTab(String(detail?.tab || ""));
+    };
+
+    window.addEventListener(TC_EVENTS.activeTabChanged, onActiveTabChanged as EventListener);
+    return () => window.removeEventListener(TC_EVENTS.activeTabChanged, onActiveTabChanged as EventListener);
+  }, [visible]);
+
   // Estado real del operador: viene de attendance_state vía /api/attendance/me.
   // No depende solo de que exista sesión Supabase.
   useEffect(() => {
@@ -149,7 +151,7 @@ export default function GlobalBottomBar() {
     const onAttendanceChanged = () => void refreshPresence();
 
     window.addEventListener("focus", onFocus);
-    window.addEventListener("tc-attendance-changed", onAttendanceChanged as EventListener);
+    window.addEventListener(TC_EVENTS.attendanceChanged, onAttendanceChanged as EventListener);
 
     const {
       data: { subscription },
@@ -160,7 +162,7 @@ export default function GlobalBottomBar() {
     return () => {
       window.clearInterval(interval);
       window.removeEventListener("focus", onFocus);
-      window.removeEventListener("tc-attendance-changed", onAttendanceChanged as EventListener);
+      window.removeEventListener(TC_EVENTS.attendanceChanged, onAttendanceChanged as EventListener);
       subscription.unsubscribe();
     };
   }, [visible]);
@@ -204,7 +206,7 @@ export default function GlobalBottomBar() {
           {!isTarotistaPanel ? (
             <button
               type="button"
-              className={`tc-ops-dock-item ${parking > 0 ? "tc-ops-dock-item-alert" : ""}`}
+              className={`tc-ops-dock-item ${parkingActive ? "tc-ops-dock-item-active" : ""} ${parking > 0 ? "tc-ops-dock-item-alert" : ""}`}
               onClick={() => openParkingFromDock(pathname)}
             >
               <span className="tc-ops-dock-icon">🅿️</span>
@@ -216,7 +218,7 @@ export default function GlobalBottomBar() {
           {!isTarotistaPanel ? (
             <button
               type="button"
-              className={`tc-ops-dock-item ${leads > 0 ? "tc-ops-dock-item-alert" : ""}`}
+              className={`tc-ops-dock-item ${captacionActive ? "tc-ops-dock-item-active" : ""} ${leads > 0 ? "tc-ops-dock-item-alert" : ""}`}
               onClick={() => openCaptacionFromDock(pathname)}
             >
               <span className="tc-ops-dock-icon">🔥</span>
