@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useOps } from "@/hooks/useOps";
 import { sortItems } from "@/lib/priority-engine";
@@ -87,6 +87,57 @@ function priorityBorder(priority?: InboxItem["priority"]) {
   if (priority === "high") return "rgba(255,120,120,0.34)";
   if (priority === "medium") return "rgba(215,181,109,0.34)";
   return "rgba(255,255,255,0.10)";
+}
+
+
+function priorityLabel(priority?: InboxItem["priority"]) {
+  if (priority === "high") return "URGENTE";
+  if (priority === "medium") return "Prioridad media";
+  return "Baja prioridad";
+}
+
+function priorityBadgeStyle(priority?: InboxItem["priority"]): CSSProperties {
+  if (priority === "high") {
+    return {
+      border: "1px solid rgba(255,120,120,0.40)",
+      background: "rgba(255,120,120,0.16)",
+      color: "#ffd6d6",
+      boxShadow: "0 0 18px rgba(255,120,120,0.12)",
+    };
+  }
+
+  if (priority === "medium") {
+    return {
+      border: "1px solid rgba(215,181,109,0.34)",
+      background: "rgba(215,181,109,0.12)",
+      color: "#f5dfaa",
+    };
+  }
+
+  return {
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.06)",
+    color: "rgba(255,255,255,0.72)",
+  };
+}
+
+function priorityItemStyle(priority?: InboxItem["priority"]): CSSProperties {
+  if (priority === "high") {
+    return {
+      border: `1px solid ${priorityBorder(priority)}`,
+      borderRadius: 12,
+      padding: 10,
+      background: "linear-gradient(135deg, rgba(255,120,120,0.13), rgba(0,0,0,0.10))",
+      boxShadow: "0 0 0 1px rgba(255,120,120,0.05), 0 10px 24px rgba(255,120,120,0.08)",
+    };
+  }
+
+  return {
+    border: `1px solid ${priorityBorder(priority)}`,
+    borderRadius: 12,
+    padding: 10,
+    background: "rgba(0,0,0,0.10)",
+  };
 }
 
 function toneStyle(tone: InboxSection["tone"]) {
@@ -474,16 +525,34 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
               <div style={{ display: "grid", gap: 8 }}>
                 {visibleItems.length ? (
                   visibleItems.map((item) => (
-                    <div
-                      key={item.id}
-                      style={{
-                        border: `1px solid ${priorityBorder(item.priority)}`,
-                        borderRadius: 12,
-                        padding: 10,
-                        background: "rgba(0,0,0,0.10)",
-                      }}
-                    >
-                      <div style={{ fontWeight: 900, fontSize: 13, lineHeight: 1.25 }}>{item.title}</div>
+                    <div key={item.id} style={priorityItemStyle(item.priority)}>
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: 8,
+                        }}
+                      >
+                        <div style={{ fontWeight: 900, fontSize: 13, lineHeight: 1.25, minWidth: 0 }}>{item.title}</div>
+                        {item.priority ? (
+                          <span
+                            style={{
+                              ...priorityBadgeStyle(item.priority),
+                              borderRadius: 999,
+                              padding: "2px 7px",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              letterSpacing: 0.3,
+                              whiteSpace: "nowrap",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {priorityLabel(item.priority)}
+                          </span>
+                        ) : null}
+                      </div>
+
                       {item.subtitle ? (
                         <div className="tc-sub" style={{ marginTop: 4 }}>
                           {item.subtitle}
