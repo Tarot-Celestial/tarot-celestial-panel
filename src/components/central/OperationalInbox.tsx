@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { getAnalytics } from "@/lib/analytics-lite";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useOps } from "@/hooks/useOps";
 import { sortItems, type Priority } from "@/lib/priority-engine";
