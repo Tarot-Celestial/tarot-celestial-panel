@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
+import ClienteSidebar from "@/components/crm/ClienteSidebar";
+import ClienteTimeline from "@/components/crm/ClienteTimeline";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -1655,6 +1657,28 @@ console.log("URL CRM 👉", url);
 
   const visibleNotes = crmNotesExpanded ? crmNotes : crmNotes.slice(0, 3);
 
+  const crmSelectedEtiquetaNames = crmClienteEtiquetasSel
+    .map((id: any) => crmEtiquetasOpts.find((e: any) => String(e.id) === String(id))?.nombre)
+    .filter(Boolean) as string[];
+
+  function scrollToCRMSection(id: string) {
+    if (typeof document === "undefined") return;
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function callSelectedClient(autoCall = false) {
+    return sendNumberToSoftphone(String(crmClienteFicha?.telefono || crmEditTelefono || ""), autoCall, {
+      cliente_id: String(crmClienteFicha?.id || crmClienteSelId || ""),
+      telefono: String(crmClienteFicha?.telefono || crmEditTelefono || ""),
+      nombre: String(crmClienteFicha?.nombre || crmEditNombre || ""),
+      apellido: String(crmClienteFicha?.apellido || crmEditApellido || ""),
+      minutos_free_pendientes: Number(String(crmSendMinFree).replace(",", ".")) || 0,
+      minutos_normales_pendientes: Number(String(crmSendMinNormales).replace(",", ".")) || 0,
+      tarotista_worker_id: String(crmTarotistaSendId || ""),
+      tarotista_nombre: String((crmTarotistasOpts.find((t: any) => String(t.id) === String(crmTarotistaSendId))?.display_name) || ""),
+    });
+  }
+
   return (
     <div style={{ display: "grid", gap: 18 }}>
       <div
@@ -1940,6 +1964,39 @@ console.log("URL CRM 👉", url);
             <div className="tc-sub">Cargando ficha...</div>
           ) : (
             <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "minmax(260px, 340px) minmax(0, 1fr)",
+                  gap: 14,
+                  alignItems: "start",
+                  marginBottom: 14,
+                }}
+              >
+                <ClienteSidebar
+                  cliente={crmClienteFicha}
+                  pagos={crmPagos}
+                  notas={crmNotes}
+                  etiquetas={crmSelectedEtiquetaNames}
+                  dialDisabled={!normalizeDialPhone(String(crmClienteFicha?.telefono || crmEditTelefono || ""))}
+                  onCall={() => callSelectedClient(false)}
+                  onAutoCall={() => callSelectedClient(true)}
+                  onRegisterCall={() => setCrmRegistrarOpen(true)}
+                  onGoToReservation={() => scrollToCRMSection("crm-reserva-card")}
+                  onGoToNotes={() => {
+                    scrollToCRMSection("crm-notes-card");
+                    setTimeout(() => crmNewNoteRef.current?.focus(), 250);
+                  }}
+                />
+                <ClienteTimeline
+                  cliente={crmClienteFicha}
+                  pagos={crmPagos}
+                  notas={crmNotes}
+                  loadingPagos={crmPagosLoading}
+                  loadingNotas={crmNotesLoading}
+                />
+              </div>
+
               <div className="tc-grid-4">
                 <div><div className="tc-sub">Nombre</div><input className="tc-input" value={crmEditNombre} onChange={(e) => setCrmEditNombre(e.target.value)} placeholder="Nombre" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Apellido</div><input className="tc-input" value={crmEditApellido} onChange={(e) => setCrmEditApellido(e.target.value)} placeholder="Apellido" style={{ width: "100%", marginTop: 6 }} /></div>
@@ -1984,7 +2041,7 @@ console.log("URL CRM 👉", url);
                 </div>
               </div>
 
-<div className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+<div id="crm-notes-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 16 }}>📝 Historial de notas</div>
