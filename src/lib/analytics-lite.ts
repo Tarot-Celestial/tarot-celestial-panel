@@ -16,14 +16,13 @@ export function getAnalytics({ leads, outboundItems, chatItems }: any) {
     );
   }).length;
 
-  const leads = leadRows.length || 0;
+  const leadsCount = leadRows.length || 0;
 
   return {
-    leads,
-    calls: callRows.length || 0,
-    chats: chatRows.length || 0,
-    revenue: Number(revenue.toFixed(2)),
-    convertedLeads,
-    conversionRate: leads ? Math.round((convertedLeads / leads) * 100) : 0,
-  };
+  leads: leadsCount,
+  calls: callRows.length || 0,
+  chats: chatRows.length || 0,
+  revenue,
+  convertedLeads,
+};
 }
