@@ -1,11 +1,11 @@
 "use client";
 
-import type { ComponentType } from "react";
+import type { LucideIcon } from "lucide-react";
 
 export type CentralNavItem<T extends string = string> = {
   key: T;
   label: string;
-  icon: ComponentType<{ size?: number }>;
+  icon: LucideIcon; ✅
   kicker?: string;
 };
 
