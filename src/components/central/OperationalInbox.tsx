@@ -29,7 +29,7 @@ type OperationalInboxProps = {
   compact?: boolean;
 };
 
-type InboxItem = {
+export type InboxItem = {
   id: string;
   title: string;
   subtitle?: string;
