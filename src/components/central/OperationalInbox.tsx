@@ -429,8 +429,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
 
   
   const analytics = getAnalytics({ leads, outboundItems, chatItems });
-  const goals = getGoals(analytics);
-
+  
 
   const sections = useMemo<InboxSection[]>(() => {
     const onlineRows = (ops.presences.rows || []).filter((r) => r.online);
