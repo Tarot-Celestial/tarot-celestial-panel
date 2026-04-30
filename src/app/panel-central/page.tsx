@@ -6,6 +6,8 @@ export const dynamic = "force-dynamic";
 import AppHeader from "@/components/AppHeader";
 import CentralHero from "@/features/central/CentralHero";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
+import { ChatProvider } from "@/providers/ChatProvider";
+import { useChat } from "@/hooks/useChat";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -276,16 +278,17 @@ function CentralPage() {
     return (obBatches || []).map((b: any) => String(b?.id || "")).filter(Boolean).join(",");
   }, [obBatches]);
 
-  // ✅ CHAT (central/admin ve todos)
-  const [chatLoading, setChatLoading] = useState(false);
-  const [chatMsg, setChatMsg] = useState("");
-  const [threads, setThreads] = useState<ChatThread[]>([]);
+  // ✅ CHAT (central/admin ve todos) - migrado a ChatProvider
+  const chat = useChat();
+  const chatLoading = chat.loading;
+  const chatMsg = chat.message;
+  const threads = chat.threads as ChatThread[];
+  const selectedThreadId = chat.selectedThreadId;
+  const setSelectedThreadId = chat.setSelectedThreadId;
+  const messages = chat.messages as ChatMessage[];
   const [threadQ, setThreadQ] = useState("");
-  const [selectedThreadId, setSelectedThreadId] = useState<string>("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [msgText, setMsgText] = useState("");
   const msgEndRef = useRef<HTMLDivElement | null>(null);
-  const chatChannelRef = useRef<any>(null);
 
   // ✅ NUEVO: abrir chat directamente con tarotista
   const [newChatWorkerId, setNewChatWorkerId] = useState<string>("");
@@ -703,151 +706,26 @@ function CentralPage() {
     }
   }
 
-  // ---------------- CHAT helpers ----------------
+  // ---------------- CHAT helpers (migrado a ChatProvider) ----------------
   async function loadChatThreads(silent = false) {
-    if (!silent) {
-      setChatLoading(true);
-      setChatMsg("");
-    }
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/central/chat/threads", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const list: ChatThread[] = (j.threads || j.rows || []).map((t: any) => ({
-        id: String(t.id),
-        title: t.title != null ? String(t.title) : null,
-        tarotist_display_name: t.tarotist_display_name != null ? String(t.tarotist_display_name) : null,
-        tarotist_worker_id: t.tarotist_worker_id != null ? String(t.tarotist_worker_id) : null,
-        last_message_text: t.last_message_text != null ? String(t.last_message_text) : null,
-        last_message_at: t.last_message_at != null ? String(t.last_message_at) : null,
-        unread_count: t.unread_count != null ? Number(t.unread_count) : null,
-      }));
-
-      list.sort((a, b) => {
-        const at = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
-        const bt = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
-        return bt - at;
-      });
-
-      setThreads(list);
-
-      // si el seleccionado ya no existe, pillamos el primero
-      if (selectedThreadId) {
-        const stillExists = list.some((t) => String(t.id) === String(selectedThreadId));
-        if (!stillExists) setSelectedThreadId(list[0]?.id || "");
-      } else {
-        if (list.length) setSelectedThreadId(list[0].id);
-      }
-
-      if (!silent) {
-        setChatMsg(list.length ? `✅ Chats cargados (${list.length})` : "⚠️ No hay chats todavía");
-        setTimeout(() => setChatMsg(""), 1200);
-      }
-    } catch (e: any) {
-      setThreads([]);
-      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
+    await chat.loadThreads(silent);
   }
 
   async function loadChatMessages(threadId: string, silent = false) {
-    if (!threadId) return;
-    if (!silent) {
-      setChatLoading(true);
-      setChatMsg("");
-    }
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch(`/api/central/chat/messages?thread_id=${encodeURIComponent(threadId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const list: ChatMessage[] = (j.messages || j.rows || []).map((m: any) => ({
-        id: String(m.id),
-        thread_id: String(m.thread_id || threadId),
-        sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-        sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-        text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : ""),
-        created_at: m.created_at != null ? String(m.created_at) : null,
-      }));
-
-      list.sort((a, b) => {
-        const at = a.created_at ? new Date(a.created_at).getTime() : 0;
-        const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
-        return at - bt;
-      });
-
-      setMessages(list);
-      if (!silent) setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-    } catch (e: any) {
-      setMessages([]);
-      if (!silent) setChatMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setChatLoading(false);
-    }
+    await chat.loadMessages(threadId, silent);
+    if (!silent) setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
   }
 
   async function sendChatMessage() {
     const text = msgText.trim();
-    if (!text) return;
-    if (!selectedThreadId) return;
+    if (!text || !selectedThreadId) return;
 
-    const tmpId = `tmp-${Date.now()}`;
-    const optimistic: ChatMessage = {
-      id: tmpId,
-      thread_id: selectedThreadId,
-      text,
-      created_at: new Date().toISOString(),
-      sender_worker_id: "me",
-      sender_display_name: "Yo",
-    };
-    setMessages((prev) => [...(prev || []), optimistic]);
     setMsgText("");
-    setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-
     try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/central/chat/send", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ thread_id: selectedThreadId, text }),
-      });
-
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const saved = j.message || j.item || null;
-      if (saved?.id) {
-        const normalized: ChatMessage = {
-          id: String(saved.id),
-          thread_id: String(saved.thread_id || selectedThreadId),
-          sender_worker_id: saved.sender_worker_id != null ? String(saved.sender_worker_id) : null,
-          sender_display_name: saved.sender_display_name != null ? String(saved.sender_display_name) : null,
-          text: saved.text != null ? String(saved.text) : (saved.body != null ? String(saved.body) : text),
-          created_at: saved.created_at != null ? String(saved.created_at) : new Date().toISOString(),
-        };
-        setMessages((prev) => (prev || []).map((m) => (m.id === tmpId ? normalized : m)));
-      } else {
-        loadChatMessages(selectedThreadId, true);
-      }
-
-      loadChatThreads(true);
+      await chat.sendMessage(text);
+      setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e: any) {
-      setMessages((prev) => (prev || []).filter((m) => m.id !== tmpId));
+      setMsgText(text);
       alert(`Error: ${e?.message || "ERR"}`);
     }
   }
@@ -861,84 +739,16 @@ function CentralPage() {
         return;
       }
 
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("NO_AUTH");
-
-      const res = await fetch("/api/central/chat/open", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ tarotist_worker_id: newChatWorkerId }),
-      });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const tid = String(j.thread?.id || j.thread_id || "");
+      const tid = await chat.openThreadWithTarotist(newChatWorkerId);
       if (!tid) throw new Error("NO_THREAD_ID");
-
-      // refresca threads y selecciona el creado
-      await loadChatThreads(true);
-      setSelectedThreadId(tid);
-      await loadChatMessages(tid, true);
 
       setNewChatMsg("✅ Chat abierto");
       setTimeout(() => setNewChatMsg(""), 1200);
+      setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
     } catch (e: any) {
       setNewChatMsg(`❌ ${e?.message || "Error"}`);
     }
   }
-
-  // realtime chat_messages (INSERT) para el thread seleccionado
-  useEffect(() => {
-    if (!ok) return;
-
-    if (chatChannelRef.current) {
-      sb.removeChannel(chatChannelRef.current);
-      chatChannelRef.current = null;
-    }
-
-    if (!selectedThreadId) return;
-
-    const ch = sb
-      .channel(`central-chat-${selectedThreadId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "chat_messages", filter: `thread_id=eq.${selectedThreadId}` },
-        (payload) => {
-          const m: any = payload.new;
-
-          setMessages((prev) => {
-            const exists = (prev || []).some((x: any) => String(x.id) === String(m.id));
-            if (exists) return prev;
-
-            const msg: ChatMessage = {
-              id: String(m.id),
-              thread_id: String(m.thread_id),
-              sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-              sender_display_name: m.sender_display_name != null ? String(m.sender_display_name) : null,
-              text: m.text != null ? String(m.text) : (m.body != null ? String(m.body) : ""),
-              created_at: m.created_at != null ? String(m.created_at) : null,
-            };
-
-            return [...(prev || []), msg];
-          });
-
-          loadChatThreads(true);
-          setTimeout(() => msgEndRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
-        }
-      )
-      .subscribe();
-
-    chatChannelRef.current = ch;
-
-    return () => {
-      if (chatChannelRef.current) {
-        sb.removeChannel(chatChannelRef.current);
-        chatChannelRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, selectedThreadId]);
 
   // ---------------- INIT LOADS ----------------
   useEffect(() => {
@@ -2056,7 +1866,9 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
 export default function Page() {
   return (
     <Suspense fallback={<div style={{ padding: 40 }}>Cargando…</div>}>
-      <CentralPage />
+      <ChatProvider>
+        <CentralPage />
+      </ChatProvider>
     </Suspense>
   );
 }
