@@ -7,6 +7,7 @@ import { sortItems, type Priority } from "@/lib/priority-engine";
 import { getSuggestion, type Suggestion } from "@/lib/suggestion-engine";
 import { evaluateSla, type SlaStatus } from "@/lib/sla-engine";
 import { getLoadSummary } from "@/lib/load-engine";
+import { getOperatorControlSummary } from "@/lib/operator-score-engine";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -415,6 +416,17 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     });
   }, [chatItems, incidentItems.length, ops.counters.chatUnread, ops.counters.parking, ops.expected.rows, ops.presences.rows, outboundItems]);
 
+  const operatorControl = useMemo(() => {
+    return getOperatorControlSummary({
+      presences: ops.presences.rows || [],
+      expected: ops.expected.rows || [],
+      outboundItems,
+      chatItems,
+      parkingCount: ops.counters.parking || 0,
+      offlineExpected: loadSummary.offlineExpected,
+    });
+  }, [chatItems, loadSummary.offlineExpected, ops.counters.parking, ops.expected.rows, ops.presences.rows, outboundItems]);
+
   const sections = useMemo<InboxSection[]>(() => {
     const onlineRows = (ops.presences.rows || []).filter((r) => r.online);
     const expectedRows = ops.expected.rows || [];
@@ -610,6 +622,35 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         ]),
       },
       {
+        key: "operator-control",
+        title: "Control operadores",
+        icon: "🎯",
+        count: operatorControl.alertItems.length || operatorControl.topOperators.length,
+        tone: operatorControl.alertItems.length ? "red" : "blue",
+        action: "team",
+        empty: "Sin alertas de carga ahora mismo.",
+        items: sortItems([
+          ...operatorControl.alertItems.map((alert) =>
+            withSla({
+              ...alert,
+              action: alert.action,
+              type: "team",
+            })
+          ),
+          ...operatorControl.topOperators.map((op) =>
+            withSla({
+              id: `operator-${op.id}`,
+              title: `${op.name} · carga ${op.score}`,
+              subtitle: `${op.online ? "Online" : "Offline"} · ${op.calls} llamada(s) · ${op.chats} chat(s)`,
+              meta: op.level === "high" ? "Carga alta" : op.level === "medium" ? "Carga media" : "Carga baja",
+              priority: op.level === "high" ? "medium" : "low",
+              action: "team",
+              type: "team",
+            })
+          ),
+        ]),
+      },
+      {
         key: "incidents",
         title: "Incidencias",
         icon: "⚠️",
@@ -652,7 +693,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       },
       ...baseSections,
     ];
-  }, [chatItems, incidentItems, leads, loadSummary, mode, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
+  }, [chatItems, incidentItems, leads, loadSummary, mode, operatorControl, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
 
   const aggressiveFocusItems = useMemo(() => {
     return sortItems(
@@ -699,6 +740,8 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         <span className="tc-chip">{metricLabel(chatItems.length || ops.counters.chatUnread || 0, "Chats")}</span>
         <span className="tc-chip">{metricLabel(incidentItems.length, "Avisos")}</span>
         <span className="tc-chip" title={`Score operativo: ${loadSummary.pressureScore.toFixed(1)}`}>{loadSummary.label}</span>
+        <span className="tc-chip">Operadores: {operatorControl.operators.length}</span>
+        {operatorControl.overloaded ? <span className="tc-chip">Saturada: {operatorControl.overloaded.name}</span> : null}
       </div>
 
       {topAggressiveItem ? (
