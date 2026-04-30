@@ -10,6 +10,7 @@ import { getSuggestion, type Suggestion } from "@/lib/suggestion-engine";
 import { evaluateSla, type SlaStatus } from "@/lib/sla-engine";
 import { getLoadSummary } from "@/lib/load-engine";
 import { getOperatorControlSummary } from "@/lib/operator-score-engine";
+import { revenueLabel, revenueProfile } from "@/lib/revenue-engine";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -39,6 +40,12 @@ export type InboxItem = {
   type?: "parking" | "lead" | "chat" | "call" | "incident" | "team" | "attendance";
   rank?: string | null;
   value?: number | null;
+  cliente_revenue_total?: number | null;
+  cliente_revenue_30d?: number | null;
+  cliente_completed_payments_count?: number | null;
+  cliente_first_payment_at?: string | null;
+  cliente_last_payment_at?: string | null;
+  converted_first_payment?: boolean | null;
   next_contact_at?: string | null;
   created_at?: string | null;
   last_activity_at?: string | null;
@@ -112,7 +119,9 @@ function getLeadRank(lead: any) {
 
 function getLeadValue(lead: any) {
   return Number(
-    lead?.valor_total ||
+    lead?.cliente_revenue_total ||
+      lead?.cliente_revenue_30d ||
+      lead?.valor_total ||
       lead?.total_spent ||
       lead?.importe_total ||
       lead?.cliente?.rango_gasto_mes_anterior ||
@@ -544,18 +553,32 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             const value = getLeadValue(lead);
             const dueNow = lead.next_contact_at && new Date(lead.next_contact_at).getTime() <= Date.now();
             const rankText = rankLabel(rank);
+            const revenue = revenueProfile(lead);
+            const revenueText = revenueLabel(lead);
             return withSla({
               id: String(lead.id),
               title: normalizeLeadName(lead),
-              subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
-              meta: [lead.next_contact_at ? `Próximo contacto ${timeAgo(lead.next_contact_at)}` : timeAgo(lead.created_at), rankText]
+              subtitle: revenue.hasFirstPayment
+                ? "Conversión: primer pago confirmado"
+                : lead.workflow_state
+                ? `Estado: ${lead.workflow_state}`
+                : lead.estado
+                ? `Estado: ${lead.estado}`
+                : "Lead pendiente",
+              meta: [lead.next_contact_at ? `Próximo contacto ${timeAgo(lead.next_contact_at)}` : timeAgo(lead.created_at), rankText, revenueText]
                 .filter(Boolean)
                 .join(" · "),
-              priority: dueNow || String(rank || "").toLowerCase() === "oro" ? "high" : "medium",
+              priority: dueNow || revenue.hasFirstPayment || revenue.isHighValue ? "high" : "medium",
               action: "leads",
               type: "lead",
               rank,
               value,
+              cliente_revenue_total: lead.cliente_revenue_total,
+              cliente_revenue_30d: lead.cliente_revenue_30d,
+              cliente_completed_payments_count: lead.cliente_completed_payments_count,
+              cliente_first_payment_at: lead.cliente_first_payment_at,
+              cliente_last_payment_at: lead.cliente_last_payment_at,
+              converted_first_payment: lead.converted_first_payment,
               next_contact_at: lead.next_contact_at,
               created_at: lead.created_at,
               last_activity_at: lead.updated_at || lead.last_activity_at,
@@ -757,6 +780,8 @@ const nextSuggestion = nextBestItem
       <span className="tc-chip">Leads: {analytics.leads}</span>
       <span className="tc-chip">Llamadas: {analytics.calls}</span>
       <span className="tc-chip">Chats: {analytics.chats}</span>
+      <span className="tc-chip">Conversión: {analytics.convertedLeads}/{analytics.leads} ({analytics.conversionRate}%)</span>
+      <span className="tc-chip">Revenue leads: {analytics.revenue.toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</span>
     </div>
   </div>
 )}

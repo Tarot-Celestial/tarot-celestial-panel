@@ -126,6 +126,112 @@ async function fetchFallback() {
   }));
 }
 
+
+function cleanNum(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function paymentMoveKey(clienteId: string, amount: number, dateValue: string | null | undefined) {
+  const day = dateValue ? String(dateValue).slice(0, 10) : "sin-fecha";
+  return clienteId + "::" + amount.toFixed(2) + "::" + day;
+}
+
+async function enrichWithRevenue(rows: AnyRow[]) {
+  const clienteIds = Array.from(
+    new Set(rows.map((x: AnyRow) => String(x?.cliente_id || x?.cliente?.id || "").trim()).filter(Boolean))
+  );
+
+  if (!clienteIds.length) return rows;
+
+  const since30Iso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const [{ data: pagos }, { data: rendimiento }] = await Promise.all([
+    supabase
+      .from("crm_cliente_pagos")
+      .select("cliente_id, importe, estado, created_at")
+      .in("cliente_id", clienteIds)
+      .eq("estado", "completed")
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("rendimiento_llamadas")
+      .select("cliente_id, importe, fecha_hora")
+      .in("cliente_id", clienteIds)
+      .gt("importe", 0)
+      .order("fecha_hora", { ascending: true }),
+  ]);
+
+  const byCliente = new Map<string, any>();
+  const seen = new Set<string>();
+
+  function ensure(clienteId: string) {
+    if (!byCliente.has(clienteId)) {
+      byCliente.set(clienteId, {
+        cliente_revenue_total: 0,
+        cliente_revenue_30d: 0,
+        cliente_completed_payments_count: 0,
+        cliente_first_payment_at: null,
+        cliente_last_payment_at: null,
+        converted_first_payment: false,
+      });
+    }
+    return byCliente.get(clienteId);
+  }
+
+  function addMove(clienteIdRaw: any, amountRaw: any, dateRaw: any) {
+    const clienteId = String(clienteIdRaw || "").trim();
+    const amount = cleanNum(amountRaw);
+    const dateValue = dateRaw ? String(dateRaw) : null;
+    if (!clienteId || !(amount > 0)) return;
+
+    const key = paymentMoveKey(clienteId, amount, dateValue);
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const row = ensure(clienteId);
+    row.cliente_revenue_total += amount;
+    if (dateValue && dateValue >= since30Iso) row.cliente_revenue_30d += amount;
+    row.cliente_completed_payments_count += 1;
+    row.converted_first_payment = true;
+
+    if (!row.cliente_first_payment_at || new Date(dateValue || 0).getTime() < new Date(row.cliente_first_payment_at || 0).getTime()) {
+      row.cliente_first_payment_at = dateValue;
+    }
+    if (!row.cliente_last_payment_at || new Date(dateValue || 0).getTime() > new Date(row.cliente_last_payment_at || 0).getTime()) {
+      row.cliente_last_payment_at = dateValue;
+    }
+  }
+
+  for (const pago of pagos || []) addMove((pago as any)?.cliente_id, (pago as any)?.importe, (pago as any)?.created_at);
+  for (const row of rendimiento || []) addMove((row as any)?.cliente_id, (row as any)?.importe, (row as any)?.fecha_hora);
+
+  return rows.map((row: AnyRow) => {
+    const clienteId = String(row?.cliente_id || row?.cliente?.id || "").trim();
+    const revenue = byCliente.get(clienteId);
+    if (!revenue) {
+      return {
+        ...row,
+        cliente_revenue_total: 0,
+        cliente_revenue_30d: 0,
+        cliente_completed_payments_count: 0,
+        cliente_first_payment_at: null,
+        cliente_last_payment_at: null,
+        converted_first_payment: false,
+      };
+    }
+
+    return {
+      ...row,
+      cliente_revenue_total: Number(cleanNum(revenue.cliente_revenue_total).toFixed(2)),
+      cliente_revenue_30d: Number(cleanNum(revenue.cliente_revenue_30d).toFixed(2)),
+      cliente_completed_payments_count: cleanNum(revenue.cliente_completed_payments_count),
+      cliente_first_payment_at: revenue.cliente_first_payment_at,
+      cliente_last_payment_at: revenue.cliente_last_payment_at,
+      converted_first_payment: Boolean(revenue.converted_first_payment),
+    };
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -138,6 +244,8 @@ export async function GET(req: NextRequest) {
     } catch {
       raw = await fetchFallback();
     }
+
+    raw = await enrichWithRevenue(raw);
 
     let items: LeadItem[] = raw.map((item) => ({
       ...item,
