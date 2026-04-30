@@ -79,7 +79,7 @@ async function safeJson(res: Response) {
 
 function normalizeLeadName(row: any) {
   const c = row?.cliente || {};
-  return [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim() || c?.telefono || row?.campaign_name || "Lead pendiente";
+  const build = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim() || c?.telefono || row?.campaign_name || "Lead pendiente";
 }
 
 function priorityBorder(priority?: InboxItem["priority"]) {
@@ -95,6 +95,8 @@ function toneStyle(tone: InboxSection["tone"]) {
   if (tone === "blue") return { border: "rgba(120,190,255,0.22)", bg: "rgba(120,190,255,0.07)" };
   return { border: "rgba(215,181,109,0.24)", bg: "rgba(215,181,109,0.08)" };
 }
+
+import { sortItems } from "@/lib/priority-engine";
 
 export default function OperationalInbox({ mode, onAction, compact = false }: OperationalInboxProps) {
   const ops = useOps();
@@ -206,7 +208,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     const offlineExpected = expectedRows.filter((r) => r.online === false).length;
 
     if (mode === "tarotista") {
-      return [
+      const build = [
         {
           key: "turno",
           title: "Mi turno",
@@ -215,7 +217,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: ops.attendance.online ? "green" : "purple",
           action: "attendance",
           empty: "Conéctate cuando estés dentro de tu turno.",
-          items: [
+          items: sortItems([
             {
               id: "attendance",
               title: ops.attendance.online ? "Estás conectada" : "No estás conectada",
@@ -233,7 +235,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: "gold",
           action: "calls",
           empty: "No tienes llamadas asignadas para hoy.",
-          items: outboundItems.map((it: any) => ({
+          items: sortItems(outboundItems.map((it: any)) => ({
             id: String(it.id),
             title: it.customer_name || it.phone || "Cliente pendiente",
             subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
@@ -249,7 +251,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: incidentItems.length ? "red" : "green",
           action: "incidents",
           empty: "No tienes incidencias este mes.",
-          items: incidentItems.map((it: any) => ({
+          items: sortItems(incidentItems.map((it: any)) => ({
             id: String(it.id),
             title: it.reason || it.title || "Incidencia",
             subtitle: it.amount ? `Importe: ${it.amount}€` : "Aviso operativo",
@@ -260,7 +262,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       ];
     }
 
-    return [
+    const build = [
       {
         key: "leads",
         title: "Leads pendientes",
@@ -269,7 +271,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "gold",
         action: "leads",
         empty: "No hay leads pendientes.",
-        items: leads.map((lead: any) => ({
+        items: sortItems(leads.map((lead: any)) => ({
           id: String(lead.id),
           title: normalizeLeadName(lead),
           subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
@@ -306,7 +308,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "purple",
         action: "chat",
         empty: "No hay chats pendientes visibles.",
-        items: chatItems.map((t: any) => ({
+        items: sortItems(chatItems.map((t: any)) => ({
           id: String(t.id),
           title: t.tarotist_display_name || t.cliente_nombre || t.title || "Chat activo",
           subtitle: t.last_message_text || t.last_message_preview || "Sin vista previa",
@@ -322,7 +324,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "blue",
         action: "team",
         empty: "No hay presencia activa registrada.",
-        items: [
+        items: sortItems([
           {
             id: "online",
             title: `${onlineRows.length} conectadas ahora`,
@@ -340,7 +342,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: incidentItems.length ? "red" : "green",
         action: "incidents",
         empty: mode === "admin" ? "No hay incidencias recientes." : "Gestiona incidencias desde su pestaña.",
-        items: incidentItems.map((it: any) => ({
+        items: sortItems(incidentItems.map((it: any)) => ({
           id: String(it.id),
           title: it.display_name || it.reason || "Incidencia",
           subtitle: it.reason || it.title || "Pendiente de revisión",
@@ -356,7 +358,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "gold",
         action: "calls",
         empty: mode === "admin" ? "Vista supervisor sin lote central asignado." : "No hay llamadas pendientes para hoy.",
-        items: outboundItems.map((it: any) => ({
+        items: sortItems(outboundItems.map((it: any)) => ({
           id: String(it.id),
           title: it.customer_name || it.phone || "Cliente pendiente",
           subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
