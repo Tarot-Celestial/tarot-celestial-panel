@@ -701,15 +701,28 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     ];
   }, [chatItems, incidentItems, leads, loadSummary, mode, operatorControl, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
 
-  const aggressiveFocusItems = useMemo(() => {
-    return sortItems(
-      sections
-        .filter((section) => section.key !== "focus-now")
-        .flatMap((section) => section.items.map((item) => ({ ...item, action: item.action || section.action })))
-    ).filter((item) => item.priority === "critical" || item.priority === "high");
-  }, [sections]);
+  const decisionItems = useMemo(() => {
+  return sortByDecision(
+    sections.flatMap((section) =>
+      section.items.map((item) => ({
+        ...item,
+        action: item.action || section.action,
+      }))
+    ),
+    { loadLevel: loadSummary.level }
+  );
+}, [sections, loadSummary.level]);
 
-  const topAggressiveItem = aggressiveFocusItems[0] || null;
+  const nextBestItem = useMemo(() => {
+  return getNextBestAction(decisionItems, {
+    loadLevel: loadSummary.level,
+  });
+}, [decisionItems, loadSummary.level]);
+
+const nextSuggestion = nextBestItem
+  ? getSuggestion(nextBestItem, nextBestItem.action)
+  : null;
+
   const topAggressiveSuggestion = topAggressiveItem ? getSuggestion(topAggressiveItem, topAggressiveItem.action) : null;
 
   return (
@@ -761,43 +774,56 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         {operatorControl.overloaded ? <span className="tc-chip">Saturada: {operatorControl.overloaded.name}</span> : null}
       </div>
 
-      {topAggressiveItem ? (
-        <div
-          style={{
-            border: "2px solid rgba(255,82,82,0.58)",
-            background: "linear-gradient(135deg, rgba(255,82,82,0.18), rgba(215,181,109,0.07))",
-            borderRadius: 18,
-            padding: 14,
-            marginBottom: 12,
-            boxShadow: "0 0 0 1px rgba(255,82,82,0.08), 0 18px 42px rgba(255,82,82,0.18)",
-          }}
-        >
-          <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 950, letterSpacing: 0.2 }}>🚨 ACCIÓN CRÍTICA AHORA</div>
-              <div style={{ marginTop: 6, fontWeight: 900 }}>{topAggressiveItem.title}</div>
-              {topAggressiveItem.subtitle ? <div className="tc-sub" style={{ marginTop: 4 }}>{topAggressiveItem.subtitle}</div> : null}
-              {topAggressiveSuggestion?.reason ? (
-                <div className="tc-sub" style={{ marginTop: 4, color: "#f5dfaa" }}>{topAggressiveSuggestion.reason}</div>
-              ) : null}
-              {topAggressiveItem.sla?.breached && topAggressiveItem.sla.reason ? (
-                <div className="tc-sub" style={{ marginTop: 4, color: "#ffd6d6" }}>{topAggressiveItem.sla.reason}</div>
-              ) : null}
-            </div>
+      {nextBestItem ? (
+  <div
+    style={{
+      border: "2px solid rgba(255,82,82,0.58)",
+      background: "linear-gradient(135deg, rgba(255,82,82,0.18), rgba(215,181,109,0.07))",
+      borderRadius: 18,
+      padding: 14,
+      marginBottom: 12,
+      boxShadow: "0 18px 42px rgba(255,82,82,0.18)",
+    }}
+  >
+    <div className="tc-row" style={{ justifyContent: "space-between", gap: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 950 }}>🧠 SISTEMA RECOMIENDA</div>
 
-            {topAggressiveSuggestion ? (
-              <button
-                type="button"
-                className="tc-btn tc-btn-gold"
-                onClick={() => fireAction(topAggressiveSuggestion.action as InboxAction)}
-                style={{ alignSelf: "center", boxShadow: "0 0 18px rgba(215,181,109,0.18)" }}
-              >
-                {topAggressiveSuggestion.label}
-              </button>
-            ) : null}
-          </div>
+        <div style={{ marginTop: 6, fontWeight: 900 }}>
+          {nextBestItem.title}
         </div>
-      ) : null}
+
+        {nextBestItem.subtitle && (
+          <div className="tc-sub" style={{ marginTop: 4 }}>
+            {nextBestItem.subtitle}
+          </div>
+        )}
+
+        {nextSuggestion?.reason && (
+          <div className="tc-sub" style={{ marginTop: 4, color: "#f5dfaa" }}>
+            {nextSuggestion.reason}
+          </div>
+        )}
+
+        {nextBestItem.sla?.breached && nextBestItem.sla.reason && (
+          <div className="tc-sub" style={{ marginTop: 4, color: "#ffd6d6" }}>
+            {nextBestItem.sla.reason}
+          </div>
+        )}
+      </div>
+
+      {nextSuggestion && (
+        <button
+          type="button"
+          className="tc-btn tc-btn-gold"
+          onClick={() => fireAction(nextSuggestion.action as InboxAction)}
+        >
+          {nextSuggestion.label}
+        </button>
+      )}
+    </div>
+  </div>
+) : null}
 
       <div
         style={{
