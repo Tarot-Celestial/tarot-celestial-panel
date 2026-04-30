@@ -11,6 +11,7 @@ import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import { useAttendance } from "@/hooks/useAttendance";
+import { useOps } from "@/hooks/useOps";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
@@ -247,20 +248,21 @@ function CentralPage() {
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
   const attendance = useAttendance();
+  const ops = useOps();
   const attOnline = attendance.online;
   const attStatus = attendance.status;
   const attBeatRef = useRef<any>(null);
 
-  // ✅ presencias tarotistas
-  const [presLoading, setPresLoading] = useState(false);
-  const [presMsg, setPresMsg] = useState("");
-  const [presences, setPresences] = useState<PresenceRow[]>([]);
+  // ✅ presencias tarotistas (migrado a OpsProvider)
+  const presLoading = ops.presences.loading;
+  const presMsg = ops.presences.error ? `❌ ${ops.presences.error}` : "";
+  const presences = ops.presences.rows as PresenceRow[];
   const [presQ, setPresQ] = useState("");
 
-  // ✅ deberían estar conectadas
-  const [expLoading, setExpLoading] = useState(false);
-  const [expMsg, setExpMsg] = useState("");
-  const [expected, setExpected] = useState<ExpectedRow[]>([]);
+  // ✅ deberían estar conectadas (migrado a OpsProvider)
+  const expLoading = ops.expected.loading;
+  const expMsg = ops.expected.error ? `❌ ${ops.expected.error}` : "";
+  const expected = ops.expected.rows as ExpectedRow[];
   const [expQ, setExpQ] = useState("");
 
   // ✅ outbound calls (central)
@@ -598,92 +600,14 @@ function CentralPage() {
   }
 
   async function loadPresences(silent = false) {
-    if (presLoading && !silent) return;
-    if (!silent) {
-      setPresLoading(true);
-      setPresMsg("");
-    }
-
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/central/attendance/online", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setPresences([]);
-        setPresMsg(`❌ No se pudo cargar presencias: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      const rows: PresenceRow[] = (j.rows || []).map((r: any) => {
-        const last = r.last_event_at ? String(r.last_event_at) : null;
-        return {
-          worker_id: String(r.worker_id),
-          display_name: String(r.display_name || "—"),
-          team_key: r.team_key ? String(r.team_key) : null,
-          online: !!r.online,
-          status: String(r.status || (r.online ? "working" : "offline")),
-          last_event_at: last,
-          last_seen_seconds: secondsAgo(last),
-        };
-      });
-
-      setPresences(rows);
-      if (!silent) setPresMsg(`✅ Presencias actualizadas (${rows.length})`);
-      if (!silent) setTimeout(() => setPresMsg(""), 1200);
-    } catch (e: any) {
-      setPresences([]);
-      setPresMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setPresLoading(false);
-    }
+    ops.refreshPresences();
   }
+
 
   async function loadExpected(silent = false) {
-    if (expLoading && !silent) return;
-    if (!silent) {
-      setExpLoading(true);
-      setExpMsg("");
-    }
-
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/central/attendance/expected", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-
-      if (!j?._ok || !j?.ok) {
-        setExpected([]);
-        setExpMsg(`❌ No se pudo cargar “deberían”: ${j?.error || `HTTP ${j?._status}`}`);
-        return;
-      }
-
-      const rows: ExpectedRow[] = (j.rows || j.expected || []).map((r: any) => ({
-        worker_id: String(r.worker_id || r.id || ""),
-        display_name: String(r.display_name || r.name || "—"),
-        start_time: r.start_time ? String(r.start_time) : null,
-        end_time: r.end_time ? String(r.end_time) : null,
-        timezone: r.timezone ? String(r.timezone) : null,
-        schedule_id: r.schedule_id ? String(r.schedule_id) : null,
-        online: r.online != null ? !!r.online : undefined,
-        status: r.status != null ? String(r.status) : null,
-      }));
-
-      setExpected(rows);
-      if (!silent) setExpMsg(`✅ Deberían: ${rows.length}`);
-      if (!silent) setTimeout(() => setExpMsg(""), 1200);
-    } catch (e: any) {
-      setExpected([]);
-      setExpMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setExpLoading(false);
-    }
+    ops.refreshExpected();
   }
+
 
   async function loadOutboundPending(silent = false) {
     if (obLoading && !silent) return;
@@ -1022,8 +946,6 @@ function CentralPage() {
     refreshRanking();
     loadTarotists();
     loadAttendanceMe(true);
-    loadPresences(true);
-    loadExpected(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
@@ -1045,19 +967,6 @@ function CentralPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadPresences(true), 20_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
-
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadExpected(true), 30_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok]);
 
   useEffect(() => {
     if (!ok) return;
