@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useOps } from "@/hooks/useOps";
+import { sortItems } from "@/lib/priority-engine";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -79,7 +80,7 @@ async function safeJson(res: Response) {
 
 function normalizeLeadName(row: any) {
   const c = row?.cliente || {};
-  const build = [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim() || c?.telefono || row?.campaign_name || "Lead pendiente";
+  return [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim() || c?.telefono || row?.campaign_name || "Lead pendiente";
 }
 
 function priorityBorder(priority?: InboxItem["priority"]) {
@@ -95,8 +96,6 @@ function toneStyle(tone: InboxSection["tone"]) {
   if (tone === "blue") return { border: "rgba(120,190,255,0.22)", bg: "rgba(120,190,255,0.07)" };
   return { border: "rgba(215,181,109,0.24)", bg: "rgba(215,181,109,0.08)" };
 }
-
-import { sortItems } from "@/lib/priority-engine";
 
 export default function OperationalInbox({ mode, onAction, compact = false }: OperationalInboxProps) {
   const ops = useOps();
@@ -116,10 +115,12 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         window.dispatchEvent(new CustomEvent("tc-open-captacion"));
         window.dispatchEvent(new CustomEvent("go-to-captacion"));
       }
+
       if (action === "parking") {
         window.dispatchEvent(new CustomEvent("tc-open-parking"));
         window.dispatchEvent(new CustomEvent("go-to-parking"));
       }
+
       if (action === "chat") window.dispatchEvent(new CustomEvent("tc-open-chat"));
       if (action === "crm") window.dispatchEvent(new CustomEvent("tc-open-crm-tab"));
     },
@@ -149,13 +150,19 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           headers: authHeaders,
           cache: "no-store",
         });
+
         const outJson = await safeJson(outRes);
         const items = (outJson?.batches || []).flatMap((b: any) =>
           (b?.outbound_batch_items || []).map((it: any) => ({ ...it, _sender: b?.sender, _batch_id: b?.id }))
         );
+
         setOutboundItems(items.slice(0, 8));
 
-        const chatRes = await fetch(`/api/central/chat/threads?t=${Date.now()}`, { headers: authHeaders, cache: "no-store" });
+        const chatRes = await fetch(`/api/central/chat/threads?t=${Date.now()}`, {
+          headers: authHeaders,
+          cache: "no-store",
+        });
+
         const chatJson = await safeJson(chatRes);
         setChatItems(Array.isArray(chatJson?.threads || chatJson?.rows) ? (chatJson.threads || chatJson.rows).slice(0, 6) : []);
         setIncidentItems([]);
@@ -169,8 +176,10 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             cache: "no-store",
           }),
         ]);
+
         const chatJson = await safeJson(chatRes);
         const incJson = await safeJson(incRes);
+
         setChatItems(Array.isArray(chatJson?.threads) ? chatJson.threads.slice(0, 6) : []);
         setIncidentItems(Array.isArray(incJson?.incidents) ? incJson.incidents.slice(0, 8) : []);
         setOutboundItems([]);
@@ -178,11 +187,19 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
 
       if (mode === "tarotista" && authHeaders) {
         const [outRes, incRes] = await Promise.all([
-          fetch(`/api/me/outbound?date=${encodeURIComponent(today)}&t=${Date.now()}`, { headers: authHeaders, cache: "no-store" }),
-          fetch(`/api/incidents/my?month=${encodeURIComponent(month)}&t=${Date.now()}`, { headers: authHeaders, cache: "no-store" }),
+          fetch(`/api/me/outbound?date=${encodeURIComponent(today)}&t=${Date.now()}`, {
+            headers: authHeaders,
+            cache: "no-store",
+          }),
+          fetch(`/api/incidents/my?month=${encodeURIComponent(month)}&t=${Date.now()}`, {
+            headers: authHeaders,
+            cache: "no-store",
+          }),
         ]);
+
         const outJson = await safeJson(outRes);
         const incJson = await safeJson(incRes);
+
         setOutboundItems(Array.isArray(outJson?.batch?.outbound_batch_items) ? outJson.batch.outbound_batch_items.slice(0, 8) : []);
         setIncidentItems(Array.isArray(incJson?.incidents) ? incJson.incidents.slice(0, 6) : []);
         setChatItems([]);
@@ -198,7 +215,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), mode === "tarotista" ? 45000 : 30000);
+    const id = window.setInterval(() => void load(), mode === "tarotista" ? 45_000 : 30_000);
     return () => window.clearInterval(id);
   }, [load, mode]);
 
@@ -208,7 +225,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     const offlineExpected = expectedRows.filter((r) => r.online === false).length;
 
     if (mode === "tarotista") {
-      const build = [
+      return [
         {
           key: "turno",
           title: "Mi turno",
@@ -217,13 +234,16 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: ops.attendance.online ? "green" : "purple",
           action: "attendance",
           empty: "Conéctate cuando estés dentro de tu turno.",
-          iitems: [
-  {
-    id: "my-status",
-    label: ops.attendance.online ? "Estás online" : "Estás offline",
-    priority: ops.attendance.online ? "low" : "medium",
-  }
-],
+          items: [
+            {
+              id: "my-status",
+              title: ops.attendance.online ? "Estás online" : "Estás offline",
+              subtitle: ops.attendance.status ? `Estado: ${ops.attendance.status}` : undefined,
+              priority: ops.attendance.online ? "low" : "medium",
+            },
+          ],
+        },
+        {
           key: "assigned-calls",
           title: "Mis llamadas",
           icon: "📞",
@@ -232,13 +252,15 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           action: "calls",
           empty: "No tienes llamadas asignadas para hoy.",
           items: sortItems(
-  outboundItems.map((it: any) => ({
-    id: String(it.id),
-    title: it.customer_name || it.phone || "Cliente pendiente",
-    subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
-    priority: "medium",
-  }))
-),
+            outboundItems.map((it: any) => ({
+              id: String(it.id),
+              title: it.customer_name || it.phone || "Cliente pendiente",
+              subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada asignada",
+              meta: it.current_status || "Pendiente",
+              priority: it.priority === "high" ? "high" : "medium",
+            }))
+          ),
+        },
         {
           key: "my-incidents",
           title: "Mis avisos",
@@ -247,18 +269,20 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: incidentItems.length ? "red" : "green",
           action: "incidents",
           empty: "No tienes incidencias este mes.",
-          items: sortItems(incidentItems.map((it: any)) => ({
-            id: String(it.id),
-            title: it.reason || it.title || "Incidencia",
-            subtitle: it.amount ? `Importe: ${it.amount}€` : "Aviso operativo",
-            meta: timeAgo(it.created_at),
-            priority: "medium",
-          })),
+          items: sortItems(
+            incidentItems.map((it: any) => ({
+              id: String(it.id),
+              title: it.reason || it.title || "Incidencia",
+              subtitle: it.amount ? `Importe: ${it.amount}€` : "Aviso operativo",
+              meta: timeAgo(it.created_at),
+              priority: "medium",
+            }))
+          ),
         },
       ];
     }
 
-    const build = [
+    return [
       {
         key: "leads",
         title: "Leads pendientes",
@@ -267,13 +291,15 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "gold",
         action: "leads",
         empty: "No hay leads pendientes.",
-        items: sortItems(leads.map((lead: any)) => ({
-          id: String(lead.id),
-          title: normalizeLeadName(lead),
-          subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
-          meta: lead.next_contact_at ? `Próximo contacto ${timeAgo(lead.next_contact_at)}` : timeAgo(lead.created_at),
-          priority: lead.next_contact_at && new Date(lead.next_contact_at).getTime() <= Date.now() ? "high" : "medium",
-        })),
+        items: sortItems(
+          leads.map((lead: any) => ({
+            id: String(lead.id),
+            title: normalizeLeadName(lead),
+            subtitle: lead.workflow_state ? `Estado: ${lead.workflow_state}` : lead.estado ? `Estado: ${lead.estado}` : "Lead pendiente",
+            meta: lead.next_contact_at ? `Próximo contacto ${timeAgo(lead.next_contact_at)}` : timeAgo(lead.created_at),
+            priority: lead.next_contact_at && new Date(lead.next_contact_at).getTime() <= Date.now() ? "high" : "medium",
+          }))
+        ),
       },
       {
         key: "parking",
@@ -304,13 +330,15 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "purple",
         action: "chat",
         empty: "No hay chats pendientes visibles.",
-        items: sortItems(chatItems.map((t: any)) => ({
-          id: String(t.id),
-          title: t.tarotist_display_name || t.cliente_nombre || t.title || "Chat activo",
-          subtitle: t.last_message_text || t.last_message_preview || "Sin vista previa",
-          meta: timeAgo(t.last_message_at),
-          priority: t.unread_count ? "high" : "low",
-        })),
+        items: sortItems(
+          chatItems.map((t: any) => ({
+            id: String(t.id),
+            title: t.tarotist_display_name || t.cliente_nombre || t.title || "Chat activo",
+            subtitle: t.last_message_text || t.last_message_preview || "Sin vista previa",
+            meta: timeAgo(t.last_message_at),
+            priority: t.unread_count ? "high" : "low",
+          }))
+        ),
       },
       {
         key: "team",
@@ -328,7 +356,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             meta: offlineExpected ? `${offlineExpected} ausencias detectadas` : "Sin ausencias detectadas",
             priority: offlineExpected ? "medium" : "low",
           },
-        ],
+        ]),
       },
       {
         key: "incidents",
@@ -338,13 +366,15 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: incidentItems.length ? "red" : "green",
         action: "incidents",
         empty: mode === "admin" ? "No hay incidencias recientes." : "Gestiona incidencias desde su pestaña.",
-        items: sortItems(incidentItems.map((it: any)) => ({
-          id: String(it.id),
-          title: it.display_name || it.reason || "Incidencia",
-          subtitle: it.reason || it.title || "Pendiente de revisión",
-          meta: it.amount ? `${it.amount}€ · ${timeAgo(it.created_at)}` : timeAgo(it.created_at),
-          priority: "medium",
-        })),
+        items: sortItems(
+          incidentItems.map((it: any) => ({
+            id: String(it.id),
+            title: it.display_name || it.reason || "Incidencia",
+            subtitle: it.reason || it.title || "Pendiente de revisión",
+            meta: it.amount ? `${it.amount}€ · ${timeAgo(it.created_at)}` : timeAgo(it.created_at),
+            priority: "medium",
+          }))
+        ),
       },
       {
         key: "calls",
@@ -354,13 +384,15 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         tone: "gold",
         action: "calls",
         empty: mode === "admin" ? "Vista supervisor sin lote central asignado." : "No hay llamadas pendientes para hoy.",
-        items: sortItems(outboundItems.map((it: any)) => ({
-          id: String(it.id),
-          title: it.customer_name || it.phone || "Cliente pendiente",
-          subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
-          meta: it._sender?.display_name ? `Asignado por ${it._sender.display_name}` : it.current_status || "Pendiente",
-          priority: it.priority === "high" ? "high" : "medium",
-        })),
+        items: sortItems(
+          outboundItems.map((it: any) => ({
+            id: String(it.id),
+            title: it.customer_name || it.phone || "Cliente pendiente",
+            subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
+            meta: it._sender?.display_name ? `Asignado por ${it._sender.display_name}` : it.current_status || "Pendiente",
+            priority: it.priority === "high" ? "high" : "medium",
+          }))
+        ),
       },
     ];
   }, [chatItems, incidentItems, leads, mode, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
@@ -434,7 +466,9 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                   <span>{section.icon}</span>
                   <span>{section.title}</span>
                 </span>
-                <span className="tc-chip" style={{ padding: "3px 8px" }}>{section.count}</span>
+                <span className="tc-chip" style={{ padding: "3px 8px" }}>
+                  {section.count}
+                </span>
               </button>
 
               <div style={{ display: "grid", gap: 8 }}>
@@ -450,8 +484,16 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
                       }}
                     >
                       <div style={{ fontWeight: 900, fontSize: 13, lineHeight: 1.25 }}>{item.title}</div>
-                      {item.subtitle ? <div className="tc-sub" style={{ marginTop: 4 }}>{item.subtitle}</div> : null}
-                      {item.meta ? <div className="tc-sub" style={{ marginTop: 4, opacity: 0.78 }}>{item.meta}</div> : null}
+                      {item.subtitle ? (
+                        <div className="tc-sub" style={{ marginTop: 4 }}>
+                          {item.subtitle}
+                        </div>
+                      ) : null}
+                      {item.meta ? (
+                        <div className="tc-sub" style={{ marginTop: 4, opacity: 0.78 }}>
+                          {item.meta}
+                        </div>
+                      ) : null}
                     </div>
                   ))
                 ) : (
