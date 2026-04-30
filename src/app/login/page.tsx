@@ -114,12 +114,7 @@ export default function LoginPage() {
             Tarot Celestial
             <span>Control total de llamadas, chats y equipo.</span>
           </h1>
-
-          <p className="tc-login-copy">
-            Accede al panel interno para gestionar la operación en directo con
-            Supabase, realtime, roles y decisiones basadas en prioridad.
-          </p>
-
+          
           <div className="tc-login-trust-row">
             {TRUST_POINTS.map((item) => (
               <span key={item} className="tc-login-trust-chip">
@@ -172,10 +167,6 @@ export default function LoginPage() {
               {loading ? "✦" : "→"}
             </span>
           </button>
-
-          <div className="tc-login-footnote">
-            Sistema privado · roles sincronizados con workers
-          </div>
         </form>
       </section>
     </main>
