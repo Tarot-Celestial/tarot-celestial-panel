@@ -11,7 +11,7 @@ type TabKey =
   | "resumen"
   | "clientes"
   | "bonos"
-  | "ranking""use client";
+  | "ranking";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
