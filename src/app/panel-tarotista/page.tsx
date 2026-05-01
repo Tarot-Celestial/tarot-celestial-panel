@@ -11,19 +11,6 @@ type TabKey =
   | "resumen"
   | "clientes"
   | "bonos"
-  | "ranking";
-
-import { useEffect, useMemo, useRef, useState } from "react";
-import AppHeader from "@/components/AppHeader";
-import OperationalInbox from "@/components/central/OperationalInbox";
-import { supabaseBrowser } from "@/lib/supabase-browser";
-
-const sb = supabaseBrowser();
-
-type TabKey =
-  | "resumen"
-  | "clientes"
-  | "bonos"
   | "ranking"
   | "equipos"
   | "facturas"
@@ -2132,7 +2119,7 @@ export default function Tarotista() {
                                   {hasBreakdown ? (
                                     <div className="tc-sub" style={{ marginTop: 6 }}>
                                       {String(meta.code || "").toUpperCase()} · {minutes} min
-{canSeeMoney && (<> × {eur(rate)} = <b>{eur(calc)}</b></>)} · {minutes} min{canSeeMoney ? <> × {eur(rate)} = <b>{eur(calc)}</b></div></> : null}
+{canSeeMoney ? <> × {eur(rate)} = <b>{eur(calc)}</b></> : null}
                                     </div>
                                   ) : null}
                                 </td>
