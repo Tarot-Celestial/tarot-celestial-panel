@@ -76,12 +76,27 @@ export async function POST(req: Request) {
     }
 
     // 📝 Historial
+    const descripcionCanje = `Canjeado ${recompensa.nombre} por ${minutosOtorgados} minutos free.`;
+
     await gate.admin.from("cliente_puntos_historial").insert({
       cliente_id: gate.cliente.id,
       tipo: "canjeado",
       puntos: coste,
-      descripcion: `Canjeado ${recompensa.nombre} por ${minutosOtorgados} minutos free.`,
+      descripcion: descripcionCanje,
     });
+
+    // ✅ Nota automática visible en el CRM del cliente
+    // El CRM de este proyecto lee las notas desde crm_client_notes.
+    const { error: noteError } = await gate.admin.from("crm_client_notes").insert({
+      cliente_id: gate.cliente.id,
+      texto: `🎁 Cliente canjea ${coste} puntos por ${minutosOtorgados} minutos`,
+      author_user_id: null,
+      author_name: "Sistema",
+      author_email: null,
+      is_pinned: false,
+    });
+
+    if (noteError) throw noteError;
 
     return NextResponse.json({
       ok: true,
