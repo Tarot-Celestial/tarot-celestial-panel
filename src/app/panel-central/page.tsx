@@ -972,10 +972,17 @@ function CentralPage() {
 
   return (
     <>
+      <div className="tc-premium-bg" aria-hidden="true">
+        <div className="tc-premium-orb tc-premium-orb-one" />
+        <div className="tc-premium-orb tc-premium-orb-two" />
+        <div className="tc-premium-orb tc-premium-orb-three" />
+        <div className="tc-login-stars" />
+        <div className="tc-login-grid" />
+      </div>
       <AppHeader />
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
-      <div className="tc-shell">
+      <div className="tc-shell tc-shell-premium">
         <CentralSidebar items={CENTRAL_NAV} activeTab={tab} onTabChange={setTab} />
 
         <main className="tc-main">

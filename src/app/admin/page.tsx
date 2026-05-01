@@ -1331,11 +1331,18 @@ function AdminPage() {
 
   return (
     <>
+      <div className="tc-premium-bg" aria-hidden="true">
+        <div className="tc-premium-orb tc-premium-orb-one" />
+        <div className="tc-premium-orb tc-premium-orb-two" />
+        <div className="tc-premium-orb tc-premium-orb-three" />
+        <div className="tc-login-stars" />
+        <div className="tc-login-grid" />
+      </div>
       <AppHeader />
       <ReservasGlobalWatcher enabled={ok} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="admin" />
 
-      <div className="tc-shell">
+      <div className="tc-shell tc-shell-premium">
         <aside className="tc-sidebar">
           <div className="tc-sidebar-card">
             <div className="tc-sidebar-title">Navegación admin</div>

@@ -1175,6 +1175,13 @@ export default function Tarotista() {
 
   return (
     <>
+      <div className="tc-premium-bg" aria-hidden="true">
+        <div className="tc-premium-orb tc-premium-orb-one" />
+        <div className="tc-premium-orb tc-premium-orb-two" />
+        <div className="tc-premium-orb tc-premium-orb-three" />
+        <div className="tc-login-stars" />
+        <div className="tc-login-grid" />
+      </div>
       <AppHeader />
 
       {popupOpen && incomingPopup ? (
@@ -1323,7 +1330,7 @@ export default function Tarotista() {
       {!ok ? (
         <div style={{ padding: 40 }}>Cargando…</div>
       ) : (
-        <div className="tc-wrap">
+        <div className="tc-wrap tc-wrap-premium">
           <div className="tc-container">
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
