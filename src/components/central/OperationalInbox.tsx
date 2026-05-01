@@ -606,7 +606,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             type: "call",
             created_at: it.created_at,
             last_activity_at: it.last_call_at || it.updated_at,
-          }))
+          })
         ),
       },
       {
