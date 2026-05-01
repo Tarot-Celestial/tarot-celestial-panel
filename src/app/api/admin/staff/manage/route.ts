@@ -104,24 +104,41 @@ export async function POST(req: Request) {
       }
 
       const patch: any = {};
-      if (body?.display_name !== undefined) patch.display_name = String(body.display_name || "").trim();
-      if (body?.role !== undefined) patch.role = String(body.role || "").trim();
-      if (body?.team !== undefined) patch.team = String(body.team || "").trim() || null;
-      if (body?.email !== undefined) patch.email = String(body.email || "").trim() || null;
-      if (body?.tarotista_level !== undefined) {
+
+      if (body?.display_name !== undefined) {
+        const displayName = String(body.display_name || "").trim();
+        if (!displayName) {
+          return NextResponse.json({ ok: false, error: "DISPLAY_NAME_REQUIRED" }, { status: 400 });
+        }
+        patch.display_name = displayName;
+      }
+
+      if (body?.role !== undefined) {
+        const role = String(body.role || "").trim();
+        if (!["admin", "central", "tarotista"].includes(role)) {
+          return NextResponse.json({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
+        }
+        patch.role = role;
+        patch.tarotista_level = role === "tarotista" ? (Number(body?.tarotista_level || 1) === 2 ? 2 : 1) : null;
+      } else if (body?.tarotista_level !== undefined) {
         const nextLevel = Number(body.tarotista_level || 1);
         patch.tarotista_level = nextLevel === 2 ? 2 : 1;
       }
+
+      if (body?.team !== undefined) patch.team = String(body.team || "").trim() || null;
+      if (body?.email !== undefined) patch.email = String(body.email || "").trim() || null;
       if (body?.is_active !== undefined) patch.is_active = !!body.is_active;
 
-      const { error } = await admin
+      const { data, error } = await admin
         .from("workers")
         .update(patch)
-        .eq("id", worker_id);
+        .eq("id", worker_id)
+        .select("id, user_id, display_name, role, team, email, is_active, tarotista_level, created_at")
+        .maybeSingle();
 
       if (error) throw error;
 
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, worker: data });
     }
 
     if (action === "disable_worker") {

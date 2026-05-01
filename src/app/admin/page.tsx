@@ -994,7 +994,6 @@ function AdminPage() {
       setEditingWorkerRole("tarotista");
       setEditingWorkerTeam("");
       setEditingWorkerEmail("");
-    setEditingWorkerLevel(1);
       setEditingWorkerLevel(1);
     } catch (e: any) {
       setStaffMsg(`❌ ${e?.message || "Error"}`);
@@ -1016,6 +1015,7 @@ function AdminPage() {
     setEditingWorkerRole("tarotista");
     setEditingWorkerTeam("");
     setEditingWorkerEmail("");
+    setEditingWorkerLevel(1);
   }
 
   function prepareScheduleForWorker(worker: any) {
@@ -1291,14 +1291,19 @@ function AdminPage() {
       .slice(0, 5);
   }, [statsMergedRows]);
 
+  const activeWorkers = useMemo(() => {
+    return (staffWorkers || []).filter((w: any) => w?.is_active !== false);
+  }, [staffWorkers]);
+
   const filteredWorkers = useMemo(() => {
     const q = staffQ.trim().toLowerCase();
-    if (!q) return staffWorkers || [];
-    return (staffWorkers || []).filter((w: any) => {
+    const base = activeWorkers || [];
+    if (!q) return base;
+    return base.filter((w: any) => {
       const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
       return text.includes(q);
     });
-  }, [staffWorkers, staffQ]);
+  }, [activeWorkers, staffQ]);
 
   const staffOperationalWorkers = useMemo(() => {
     return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
@@ -1782,7 +1787,7 @@ function AdminPage() {
                           <td><div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                             <button className="tc-btn" onClick={() => startEditWorker(w)}>Editar</button>
                             <button className="tc-btn tc-btn-gold" onClick={() => setPasswordWorkerId(String(w.id || ""))}>Contraseña</button>
-                            {w.is_active ? <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>Baja</button> : <button className="tc-btn tc-btn-ok" onClick={() => toggleWorker(w, true)}>Activar</button>}
+                            <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>Dar de baja</button>
                           </div></td>
                         </tr>
                       ))}
