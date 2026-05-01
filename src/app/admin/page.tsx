@@ -272,16 +272,6 @@ function AdminPage() {
   const [stFrom, setStFrom] = useState<string>("");
   const [stTo, setStTo] = useState<string>("");
 
-  const [ckTemplateKey, setCkTemplateKey] = useState<"tarotista" | "central">("tarotista");
-  const [ckLoading, setCkLoading] = useState(false);
-  const [ckMsg, setCkMsg] = useState("");
-  const [ckTemplate, setCkTemplate] = useState<any>(null);
-  const [ckItems, setCkItems] = useState<any[]>([]);
-  const [ckQ, setCkQ] = useState("");
-
-  const [ckNewLabel, setCkNewLabel] = useState("");
-  const [ckNewSort, setCkNewSort] = useState<string>("10");
-
   const [accLoading, setAccLoading] = useState(false);
   const [accMsg, setAccMsg] = useState("");
   const [accTotals, setAccTotals] = useState<any>({ income: 0, expense: 0, net: 0 });
@@ -503,73 +493,6 @@ function AdminPage() {
         );
       }
     }, 250);
-  }
-
-  async function loadAccounting(silent = false) {
-    if (accLoading && !silent) return;
-    if (!silent) {
-      setAccLoading(true);
-      setAccMsg("");
-    }
-
-    try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/admin/accounting?month=${encodeURIComponent(month)}&months_back=12`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setAccTotals(j.totals || { income: 0, expense: 0, net: 0 });
-      setAccEntries(j.entries || []);
-      setAccMonths(j.months || []);
-      setAccBreakdown(j.breakdown || { income: [], expense: [] });
-
-      if (!silent) setAccMsg("✅ Contabilidad cargada.");
-    } catch (e: any) {
-      if (!silent) setAccMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      if (!silent) setAccLoading(false);
-    }
-  }
-
-  async function createAccountingEntry(payload: any) {
-    const token = await getTokenOrLogin();
-    if (!token) return;
-
-    const r = await fetch("/api/admin/accounting", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    const j = await safeJson(r);
-    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-    await loadAccounting(true);
-    setAccMsg("✅ Movimiento guardado.");
-  }
-
-  async function deleteAccountingEntry(id: string) {
-    if (!confirm("¿Borrar este movimiento?")) return;
-
-    const token = await getTokenOrLogin();
-    if (!token) return;
-
-    const r = await fetch("/api/admin/accounting/delete", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-
-    const j = await safeJson(r);
-    if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-    await loadAccounting(true);
-    setAccMsg("✅ Movimiento borrado.");
   }
 
   async function syncNow() {
@@ -1240,108 +1163,7 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
-  async function loadChecklistAdmin() {
-    if (ckLoading) return;
-    setCkLoading(true);
-    setCkMsg("");
-    try {
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/admin/checklists/items?template_key=${encodeURIComponent(ckTemplateKey)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
-
-      setCkTemplate(j.template || null);
-      setCkItems(j.items || []);
-      setCkMsg(`✅ Cargados ${(j.items || []).length} items (${ckTemplateKey})`);
-    } catch (e: any) {
-      setCkTemplate(null);
-      setCkItems([]);
-      setCkMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      setCkLoading(false);
-    }
-  }
-
-  async function saveChecklistItem(item: any) {
-    try {
-      setCkMsg("");
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const payload = {
-        template_key: ckTemplateKey,
-        id: item?.id || "",
-        label: String(item?.label || "").trim(),
-        sort: Number(item?.sort ?? 0),
-      };
-
-      const r = await fetch("/api/admin/checklists/items", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setCkMsg(payload.id ? "✅ Item guardado." : "✅ Item creado.");
-      await loadChecklistAdmin();
-    } catch (e: any) {
-      setCkMsg(`❌ ${e?.message || "Error"}`);
-    }
-  }
-
-  async function deleteChecklistItem(id: string) {
-    if (!confirm("¿Borrar este item del checklist?")) return;
-    try {
-      setCkMsg("");
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch("/api/admin/checklists/items", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete_item", id }),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setCkMsg("✅ Item borrado.");
-      await loadChecklistAdmin();
-    } catch (e: any) {
-      setCkMsg(`❌ ${e?.message || "Error"}`);
-    }
-  }
-
-  async function addChecklistItem() {
-    const label = ckNewLabel.trim();
-    const sort = Number(String(ckNewSort).replace(",", "."));
-    if (!label) return setCkMsg("⚠️ Escribe un texto para el item.");
-    if (!isFinite(sort)) return setCkMsg("⚠️ Sort inválido.");
-
-    await saveChecklistItem({ id: "", label, sort });
-    setCkNewLabel("");
-    setCkNewSort(String(sort + 10));
-  }
-
-  useEffect(() => {
-    if (!ok) return;
-    if (tab === "checklists") loadChecklistAdmin();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, tab, ckTemplateKey]);
-
-  const ckFiltered = useMemo(() => {
-    const qq = ckQ.trim().toLowerCase();
-    if (!qq) return ckItems || [];
-    return (ckItems || []).filter((x: any) => String(x.label || "").toLowerCase().includes(qq));
-  }, [ckItems, ckQ]);
-
-  const expectedNow = useMemo(() => {
+    const expectedNow = useMemo(() => {
     return (attExpected || []).map((x: any) => ({
       ...x,
       is_online: typeof x.online === "boolean" ? !!x.online : !!x.is_online,
@@ -2980,65 +2802,6 @@ function ScheduleRow({
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function ChecklistRow({
-  item,
-  onSave,
-  onDelete,
-}: {
-  item: any;
-  onSave: (next: any) => void;
-  onDelete: () => void;
-}) {
-  const [label, setLabel] = useState<string>(String(item.label || ""));
-  const [sort, setSort] = useState<string>(String(item.sort ?? 0));
-  const [msg, setMsg] = useState<string>("");
-
-  useEffect(() => {
-    setLabel(String(item.label || ""));
-    setSort(String(item.sort ?? 0));
-  }, [item?.id]);
-
-  function save() {
-    setMsg("");
-    const s = Number(String(sort).replace(",", "."));
-    if (!String(label).trim()) return setMsg("⚠️ Falta texto");
-    if (!isFinite(s)) return setMsg("⚠️ Sort inválido");
-    onSave({ ...item, label: String(label).trim(), sort: s });
-    setMsg("✅ Guardando…");
-    setTimeout(() => setMsg(""), 1200);
-  }
-
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 260 }}>
-          <div className="tc-sub">Texto</div>
-          <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
-        </div>
-
-        <div style={{ width: 140 }}>
-          <div className="tc-sub">Sort</div>
-          <input className="tc-input" value={sort} onChange={(e) => setSort(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
-        </div>
-
-        <div className="tc-row" style={{ gap: 8, alignItems: "flex-end" }}>
-          <button className="tc-btn tc-btn-ok" onClick={save}>Guardar</button>
-          <button className="tc-btn tc-btn-danger" onClick={onDelete}>Borrar</button>
-        </div>
-      </div>
-
-      {msg ? <div className="tc-sub" style={{ marginTop: 8, opacity: 0.85 }}>{msg}</div> : null}
     </div>
   );
 }
