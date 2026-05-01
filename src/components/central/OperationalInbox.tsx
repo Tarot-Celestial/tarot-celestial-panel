@@ -588,27 +588,44 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
         ),
       },
       {
-        key: "calls",
-        title: "Llamadas pendientes",
-        icon: "📞",
-        count: outboundItems.length,
-        tone: "gold",
-        action: "calls",
-        empty: mode === "admin" ? "Vista supervisor sin lote central asignado." : "No hay llamadas pendientes para hoy.",
         items: sortItems(
-          outboundItems.map((it: any) => withSla({
-            id: String(it.id),
-            title: it.customer_name || it.phone || "Cliente pendiente",
-            subtitle: it.phone ? `Teléfono: ${it.phone}` : "Llamada pendiente",
-            meta: it._sender?.display_name ? `Asignado por ${it._sender.display_name}` : it.current_status || "Pendiente",
-            priority: it.priority === "high" ? "high" : "medium",
-            action: "calls",
-            type: "call",
-            created_at: it.created_at,
-            last_activity_at: it.last_call_at || it.updated_at,
-          })
-        ),
-      },
+  leads.map((lead: any) => {
+    const probability = getConversionProbability(lead);
+
+    const revenue =
+      Number(lead?.cliente_revenue_total) ||
+      Number(lead?.cliente_revenue_30d) ||
+      20;
+
+    const expectedValue = probability * revenue;
+
+    return withSla({
+      id: String(lead.id),
+      title: normalizeLeadName(lead),
+
+      subtitle: `Prob: ${Math.round(probability * 100)}% · Valor: ${expectedValue.toFixed(0)}€`,
+
+      meta: lead.workflow_state
+        ? `Estado: ${lead.workflow_state}`
+        : "Lead pendiente",
+
+      priority:
+        expectedValue > 50
+          ? "high"
+          : expectedValue > 20
+          ? "medium"
+          : "low",
+
+      action: "leads",
+      type: "lead",
+
+      value: expectedValue,
+
+      created_at: lead.created_at,
+      last_activity_at: lead.updated_at,
+    });
+  })
+),
       {
         key: "chat",
         title: mode === "admin" ? "Chats activos" : "Chats central",
