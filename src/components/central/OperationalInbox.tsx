@@ -623,9 +623,8 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
 
       created_at: lead.created_at,
       last_activity_at: lead.updated_at,
-    });
-  })
-),
+      })
+      ),
       {
         key: "chat",
         title: mode === "admin" ? "Chats activos" : "Chats central",
