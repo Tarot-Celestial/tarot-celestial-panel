@@ -180,6 +180,7 @@ export default function Tarotista() {
   const [ackNote, setAckNote] = useState<string>("");
 
   const [myWorkerId, setMyWorkerId] = useState<string>("");
+  const [tarotistaLevel, setTarotistaLevel] = useState<1 | 2>(1);
 
   const [clLoading, setClLoading] = useState(false);
   const [clMsg, setClMsg] = useState("");
@@ -243,6 +244,8 @@ export default function Tarotista() {
 
   const bonusTotal = bonusCaptadas + bonusRanking;
   const totalPreview = payMinutes + bonusTotal - incidenciasLive;
+  const canSeeMoney = tarotistaLevel !== 2;
+  const money = (n: any) => (canSeeMoney ? eur(n) : "Oculto nivel 2");
 
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
@@ -471,6 +474,7 @@ export default function Tarotista() {
 
       const wid = sJ?.worker?.id ? String(sJ.worker.id) : "";
       if (wid) setMyWorkerId(wid);
+      setTarotistaLevel(Number(sJ?.worker?.tarotista_level || 1) === 2 ? 2 : 1);
 
       if (incJ?._ok && incJ?.ok) setIncidents(incJ.incidents || []);
       else setIncidents([]);
@@ -1585,15 +1589,15 @@ export default function Tarotista() {
                   <div className="tc-hr" />
 
                   <div className="tc-kpis">
-                    <Kpi label="Pago por minutos" value={eur(payMinutes)} />
-                    <Kpi label="Bono captadas" value={eur(bonusCaptadas)} />
-                    <Kpi label="Bono ranking (hoy)" value={eur(bonusRanking)} />
-                    <Kpi label="Incidencias (en vivo)" value={`- ${eur(incidenciasLive)}`} />
-                    <Kpi label="Total estimado" value={eur(totalPreview)} highlight />
+                    <Kpi label="Pago por minutos" value={money(payMinutes)} />
+                    <Kpi label="Bono captadas" value={money(bonusCaptadas)} />
+                    <Kpi label="Bono ranking (hoy)" value={money(bonusRanking)} />
+                    <Kpi label="Incidencias (en vivo)" value={canSeeMoney ? `- ${eur(incidenciasLive)}` : "Oculto nivel 2"} />
+                    <Kpi label="Total estimado" value={money(totalPreview)} highlight />
                   </div>
 
                   <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
-                    Bonos totales del mes: <b>{eur(bonusTotal)}</b>
+                    Bonos totales del mes: <b>{money(bonusTotal)}</b>
                   </div>
                 </div>
 
@@ -1619,7 +1623,7 @@ export default function Tarotista() {
                         >
                           <div className="tc-row" style={{ justifyContent: "space-between" }}>
                             <div style={{ fontWeight: 900 }}>{i.title || i.reason || "Incidencia"}</div>
-                            <div style={{ fontWeight: 900 }}>-{eur(i.amount)}</div>
+                            <div style={{ fontWeight: 900 }}>{canSeeMoney ? `-${eur(i.amount)}` : "Oculto nivel 2"}</div>
                           </div>
                           {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
                         </div>
@@ -1738,7 +1742,7 @@ export default function Tarotista() {
                 <div className="tc-card">
                   <div className="tc-title">💰 Bono captadas</div>
                   <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Tu tramo actual: <b>{tier.label}</b>
+                    Tu tramo actual: <b>{canSeeMoney ? tier.label : `${captadas} captadas`}</b>
                   </div>
 
                   <div className="tc-hr" />
@@ -1769,7 +1773,7 @@ export default function Tarotista() {
                       />
                     </div>
                     <div className="tc-sub" style={{ marginTop: 8 }}>
-                      Bono actual del mes: <b>{eur(bonusCaptadas)}</b>
+                      Bono actual del mes: <b>{money(bonusCaptadas)}</b>
                     </div>
                   </div>
 
@@ -1780,19 +1784,19 @@ export default function Tarotista() {
                     <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
                       <div className="tc-row" style={{ justifyContent: "space-between" }}>
                         <span>0–9 captadas</span>
-                        <b>0,50€</b>
+                        <b>{canSeeMoney ? "0,50€" : "—"}</b>
                       </div>
                       <div className="tc-row" style={{ justifyContent: "space-between" }}>
                         <span>10–19 captadas</span>
-                        <b>1,00€</b>
+                        <b>{canSeeMoney ? "1,00€" : "—"}</b>
                       </div>
                       <div className="tc-row" style={{ justifyContent: "space-between" }}>
                         <span>20–29 captadas</span>
-                        <b>1,50€</b>
+                        <b>{canSeeMoney ? "1,50€" : "—"}</b>
                       </div>
                       <div className="tc-row" style={{ justifyContent: "space-between" }}>
                         <span>30+ captadas</span>
-                        <b>2,00€</b>
+                        <b>{canSeeMoney ? "2,00€" : "—"}</b>
                       </div>
                     </div>
                   </div>
@@ -1817,18 +1821,18 @@ export default function Tarotista() {
                     <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
                       <div>
                         <div className="tc-sub">Bono ranking acumulado (según posición actual)</div>
-                        <div style={{ fontWeight: 900, fontSize: 26, marginTop: 6 }}>{eur(bonusRanking)}</div>
+                        <div style={{ fontWeight: 900, fontSize: 26, marginTop: 6 }}>{money(bonusRanking)}</div>
                       </div>
 
                       <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
                         <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                          Captadas: <b>{eur(brCaptadas)}</b>
+                          Captadas: <b>{money(brCaptadas)}</b>
                         </span>
                         <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                          Cliente: <b>{eur(brCliente)}</b>
+                          Cliente: <b>{money(brCliente)}</b>
                         </span>
                         <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                          Repite: <b>{eur(brRepite)}</b>
+                          Repite: <b>{money(brRepite)}</b>
                         </span>
                       </div>
                     </div>
@@ -1836,20 +1840,20 @@ export default function Tarotista() {
                     <div className="tc-hr" style={{ margin: "12px 0" }} />
 
                     <div style={{ display: "grid", gap: 8 }}>
-                      <RankLiveRow label="🏆 Captadas" pos={posCaptadas} amount={brCaptadas} />
-                      <RankLiveRow label="👑 Cliente" pos={posCliente} amount={brCliente} />
-                      <RankLiveRow label="🔁 Repite" pos={posRepite} amount={brRepite} />
+                      <RankLiveRow label="🏆 Captadas" pos={posCaptadas} amount={canSeeMoney ? brCaptadas : 0} hideMoney={!canSeeMoney} />
+                      <RankLiveRow label="👑 Cliente" pos={posCliente} amount={canSeeMoney ? brCliente : 0} hideMoney={!canSeeMoney} />
+                      <RankLiveRow label="🔁 Repite" pos={posRepite} amount={canSeeMoney ? brRepite : 0} hideMoney={!canSeeMoney} />
                     </div>
 
                     <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
-                      Premio: 🥇 6€ · 🥈 4€ · 🥉 2€ · fuera del top 3 = 0€
+                      Premio: {canSeeMoney ? "🥇 6€ · 🥈 4€ · 🥉 2€ · fuera del top 3 = 0€" : "oculto para nivel 2"}
                     </div>
                   </div>
 
                   <div className="tc-hr" />
 
                   <div className="tc-sub">
-                    Consejo: céntrate en <b>% Repite</b> y <b>% Cliente</b> para ganar los 6€ y además ayudar a tu equipo.
+                    Consejo: céntrate en <b>% Repite</b> y <b>% Cliente</b> para mejorar tu posición y además ayudar a tu equipo.
                   </div>
                 </div>
               </div>
@@ -1876,7 +1880,7 @@ export default function Tarotista() {
               <div className="tc-card">
                 <div className="tc-title">🔥💧 Competición por equipos</div>
                 <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Score = media %Cliente + media %Repite (por equipo). Ganador: central +40€.
+                  Score = media %Cliente + media %Repite (por equipo). Ganador: central {canSeeMoney ? "+40€" : ""}.
                 </div>
 
                 <div className="tc-hr" />
@@ -2050,7 +2054,7 @@ export default function Tarotista() {
                         <div className="tc-sub">
                           Estado: <b>{getInvoiceVisibleStatus(invoice)}</b> · Aceptación: <b>{invoice.worker_ack || "pending"}</b>
                         </div>
-                        <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{eur(invoice.total || 0)}</div>
+                        <div style={{ fontWeight: 900, fontSize: 22, marginTop: 6 }}>{money(invoice.total || 0)}</div>
                         {invoice.worker_ack_note ? (
                           <div className="tc-sub" style={{ marginTop: 6 }}>
                             Nota enviada: <b>{invoice.worker_ack_note}</b>
@@ -2107,11 +2111,11 @@ export default function Tarotista() {
                                   <b>{l.label}</b>
                                   {hasBreakdown ? (
                                     <div className="tc-sub" style={{ marginTop: 6 }}>
-                                      {String(meta.code || "").toUpperCase()} · {minutes} min × {eur(rate)} = <b>{eur(calc)}</b>
+                                      {String(meta.code || "").toUpperCase()} · {minutes} min{canSeeMoney ? <> × {eur(rate)} = <b>{eur(calc)}</b></> : null}
                                     </div>
                                   ) : null}
                                 </td>
-                                <td style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(l.amount)}</td>
+                                <td style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{canSeeMoney ? eur(l.amount) : (hasBreakdown ? `${minutes} min` : "Oculto nivel 2")}</td>
                               </tr>
                             );
                           })}
@@ -2151,7 +2155,7 @@ export default function Tarotista() {
                           >
                             <div className="tc-row" style={{ justifyContent: "space-between" }}>
                               <div style={{ fontWeight: 900 }}>{i.title || i.reason || "Incidencia"}</div>
-                              <div style={{ fontWeight: 900 }}>-{eur(i.amount)}</div>
+                              <div style={{ fontWeight: 900 }}>{canSeeMoney ? `-${eur(i.amount)}` : "Oculto nivel 2"}</div>
                             </div>
                             {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
                           </div>
@@ -2242,7 +2246,7 @@ function TeamCard({
   );
 }
 
-function RankLiveRow({ label, pos, amount }: { label: string; pos: number | null; amount: number }) {
+function RankLiveRow({ label, pos, amount, hideMoney }: { label: string; pos: number | null; amount: number; hideMoney?: boolean }) {
   const p = pos ?? null;
   const medal = medalForPos(p);
   const note = p ? `Posición actual: ${p}º` : "Fuera del Top 3";
@@ -2265,10 +2269,10 @@ function RankLiveRow({ label, pos, amount }: { label: string; pos: number | null
       <div>
         <div style={{ fontWeight: 900 }}>{label}</div>
         <div className="tc-sub" style={{ marginTop: 4 }}>
-          {medal} {note} · Premio: <b>{eur(expected)}</b>
+          {medal} {note} · Premio: <b>{hideMoney ? "Oculto nivel 2" : eur(expected)}</b>
         </div>
       </div>
-      <div style={{ fontWeight: 900, fontSize: 18 }}>{eur(amount)}</div>
+      <div style={{ fontWeight: 900, fontSize: 18 }}>{hideMoney ? "Oculto nivel 2" : eur(amount)}</div>
     </div>
   );
 }

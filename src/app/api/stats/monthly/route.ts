@@ -86,14 +86,18 @@ export async function GET(req: Request) {
       repite: posRepite ? bonusForPos(posRepite) : 0,
     };
 
+    const tarotistaLevel = Number(me.tarotista_level || 1);
+    const moneyPatch = tarotistaLevel === 2
+      ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
+      : { bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0), bonus_ranking_breakdown };
+
     return NextResponse.json({
       ok: true,
       month,
-      worker: { id: me.id, display_name: me.display_name, team: me.team },
+      worker: { id: me.id, display_name: me.display_name, team: me.team, role: me.role, tarotista_level: tarotistaLevel },
       stats: {
         ...mine,
-        bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0),
-        bonus_ranking_breakdown,
+        ...moneyPatch,
       },
       totals,
     });

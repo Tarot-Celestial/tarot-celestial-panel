@@ -18,7 +18,7 @@ import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import OperatorPanel from "@/components/panel/OperatorPanel";
-import { BarChart3, BookOpen, CalendarDays, CreditCard, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -29,6 +29,7 @@ const ADMIN_NAV = [
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo" },
+  { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
   { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago" },
@@ -97,6 +98,7 @@ type TabKey =
   | "editor"
   | "estadisticas"
   | "asistencia"
+  | "trabajadores"
   | "clientes"
   | "crm"
   | "chat"
@@ -290,6 +292,7 @@ function AdminPage() {
   const [newWorkerRole, setNewWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
   const [newWorkerTeam, setNewWorkerTeam] = useState("");
   const [newWorkerEmail, setNewWorkerEmail] = useState("");
+  const [newWorkerLevel, setNewWorkerLevel] = useState<1 | 2>(1);
 
   const [scheduleWorkerId, setScheduleWorkerId] = useState("");
   const [scheduleDay, setScheduleDay] = useState("1");
@@ -302,6 +305,9 @@ function AdminPage() {
   const [editingWorkerRole, setEditingWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
   const [editingWorkerTeam, setEditingWorkerTeam] = useState("");
   const [editingWorkerEmail, setEditingWorkerEmail] = useState("");
+  const [editingWorkerLevel, setEditingWorkerLevel] = useState<1 | 2>(1);
+  const [passwordWorkerId, setPasswordWorkerId] = useState("");
+  const [passwordValue, setPasswordValue] = useState("");
 
   useEffect(() => {
     try {
@@ -938,6 +944,7 @@ function AdminPage() {
           role: newWorkerRole,
           team: newWorkerTeam,
           email: newWorkerEmail,
+          tarotista_level: newWorkerLevel,
         }),
       });
 
@@ -948,6 +955,7 @@ function AdminPage() {
       setNewWorkerRole("tarotista");
       setNewWorkerTeam("");
       setNewWorkerEmail("");
+      setNewWorkerLevel(1);
       await loadStaff(true);
       setStaffMsg("✅ Trabajador creado.");
     } catch (e: any) {
@@ -972,6 +980,7 @@ function AdminPage() {
           role: editingWorkerRole,
           team: editingWorkerTeam,
           email: editingWorkerEmail,
+          tarotista_level: editingWorkerLevel,
         }),
       });
 
@@ -985,6 +994,8 @@ function AdminPage() {
       setEditingWorkerRole("tarotista");
       setEditingWorkerTeam("");
       setEditingWorkerEmail("");
+    setEditingWorkerLevel(1);
+      setEditingWorkerLevel(1);
     } catch (e: any) {
       setStaffMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -996,6 +1007,7 @@ function AdminPage() {
     setEditingWorkerRole((worker.role || "tarotista") as any);
     setEditingWorkerTeam(String(worker.team || ""));
     setEditingWorkerEmail(String(worker.email || ""));
+    setEditingWorkerLevel(Number(worker.tarotista_level || 1) === 2 ? 2 : 1);
   }
 
   function cancelEditWorker() {
@@ -1030,6 +1042,37 @@ function AdminPage() {
 
       await loadStaff(true);
       setStaffMsg(enable ? "✅ Trabajador activado." : "✅ Trabajador desactivado.");
+    } catch (e: any) {
+      setStaffMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function changeWorkerPassword() {
+    if (!passwordWorkerId || passwordValue.length < 6) {
+      setStaffMsg("⚠️ Selecciona trabajador y una contraseña de mínimo 6 caracteres.");
+      return;
+    }
+
+    try {
+      setStaffMsg("");
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const r = await fetch("/api/admin/staff/manage", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "change_password",
+          worker_id: passwordWorkerId,
+          password: passwordValue,
+        }),
+      });
+
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
+
+      setPasswordValue("");
+      setStaffMsg("✅ Contraseña actualizada.");
     } catch (e: any) {
       setStaffMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -1146,8 +1189,8 @@ function AdminPage() {
 
   useEffect(() => {
     if (!ok) return;
-    if (tab === "asistencia") {
-      loadAttendance();
+    if (tab === "asistencia" || tab === "trabajadores") {
+      if (tab === "asistencia") loadAttendance();
       loadStaff();
 
       if (!stFrom && !stTo) {
@@ -1704,6 +1747,78 @@ function AdminPage() {
           )}
 
 
+          {tab === "trabajadores" && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title">👥 Trabajadores</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Gestiona roles, nivel de tarotista, estado y contraseñas. {staffMsg ? "· " + staffMsg : ""}
+                    </div>
+                  </div>
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadStaff(false)} disabled={staffLoading}>
+                    {staffLoading ? "Cargando…" : "Recargar"}
+                  </button>
+                </div>
+                <div className="tc-hr" />
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <input className="tc-input" value={staffQ} onChange={(e) => setStaffQ(e.target.value)} placeholder="Buscar por nombre, rol, equipo o email…" style={{ width: 340, maxWidth: "100%" }} />
+                  <div className="tc-sub">Total: <b>{filteredWorkers.length}</b></div>
+                </div>
+                <div className="tc-hr" />
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead><tr><th>Nombre</th><th>Rol</th><th>Nivel tarotista</th><th>Equipo</th><th>Email</th><th>Estado</th><th>Acciones</th></tr></thead>
+                    <tbody>
+                      {(filteredWorkers || []).map((w: any) => (
+                        <tr key={w.id}>
+                          <td><b>{w.display_name || "—"}</b></td>
+                          <td>{w.role || "—"}</td>
+                          <td>{String(w.role || "") === "tarotista" ? <span className="tc-chip">Nivel {Number(w.tarotista_level || 1) === 2 ? "2 · sin euros" : "1 · completo"}</span> : <span className="tc-muted">—</span>}</td>
+                          <td>{w.team || "—"}</td>
+                          <td>{w.email || "—"}</td>
+                          <td><span className="tc-chip">{w.is_active ? "Activo" : "Inactivo"}</span></td>
+                          <td><div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                            <button className="tc-btn" onClick={() => startEditWorker(w)}>Editar</button>
+                            <button className="tc-btn tc-btn-gold" onClick={() => setPasswordWorkerId(String(w.id || ""))}>Contraseña</button>
+                            {w.is_active ? <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>Baja</button> : <button className="tc-btn tc-btn-ok" onClick={() => toggleWorker(w, true)}>Activar</button>}
+                          </div></td>
+                        </tr>
+                      ))}
+                      {(!filteredWorkers || filteredWorkers.length === 0) && <tr><td colSpan={7} className="tc-muted">No hay trabajadores.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="tc-grid-2">
+                <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>➕ Crear trabajador</div><div className="tc-hr" />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <input className="tc-input" value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="Nombre" />
+                    <select className="tc-select" value={newWorkerRole} onChange={(e) => setNewWorkerRole(e.target.value as any)}><option value="tarotista">tarotista</option><option value="central">central</option><option value="admin">admin</option></select>
+                    {newWorkerRole === "tarotista" && <select className="tc-select" value={newWorkerLevel} onChange={(e) => setNewWorkerLevel(Number(e.target.value) === 2 ? 2 : 1)}><option value={1}>Nivel 1 · ve ganancias y euros</option><option value={2}>Nivel 2 · solo minutos y rankings</option></select>}
+                    <input className="tc-input" value={newWorkerTeam} onChange={(e) => setNewWorkerTeam(e.target.value)} placeholder="Equipo" />
+                    <input className="tc-input" value={newWorkerEmail} onChange={(e) => setNewWorkerEmail(e.target.value)} placeholder="Email" />
+                    <button className="tc-btn tc-btn-ok" onClick={createWorker}>Crear trabajador</button>
+                  </div></div>
+                <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>🔐 Cambiar contraseña</div><div className="tc-hr" />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <select className="tc-select" value={passwordWorkerId} onChange={(e) => setPasswordWorkerId(e.target.value)}><option value="">Selecciona trabajador</option>{(filteredWorkers || []).map((w: any) => <option key={w.id} value={w.id}>{w.display_name || w.email || w.id}</option>)}</select>
+                    <input className="tc-input" type="password" value={passwordValue} onChange={(e) => setPasswordValue(e.target.value)} placeholder="Nueva contraseña · mínimo 6 caracteres" />
+                    <button className="tc-btn tc-btn-gold" onClick={changeWorkerPassword}>Actualizar contraseña</button>
+                    <div className="tc-sub">Necesita que el trabajador tenga <b>user_id</b> asociado en Supabase Auth.</div>
+                  </div></div>
+              </div>
+              {editingWorkerId ? <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>✏️ Editar trabajador</div><div className="tc-hr" />
+                <div className="tc-grid-4">
+                  <input className="tc-input" value={editingWorkerName} onChange={(e) => setEditingWorkerName(e.target.value)} placeholder="Nombre" />
+                  <select className="tc-select" value={editingWorkerRole} onChange={(e) => setEditingWorkerRole(e.target.value as any)}><option value="tarotista">tarotista</option><option value="central">central</option><option value="admin">admin</option></select>
+                  <select className="tc-select" value={editingWorkerLevel} onChange={(e) => setEditingWorkerLevel(Number(e.target.value) === 2 ? 2 : 1)} disabled={editingWorkerRole !== "tarotista"}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select>
+                  <input className="tc-input" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} placeholder="Equipo" />
+                  <input className="tc-input" value={editingWorkerEmail} onChange={(e) => setEditingWorkerEmail(e.target.value)} placeholder="Email" />
+                </div><div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}><button className="tc-btn" onClick={cancelEditWorker}>Cancelar</button><button className="tc-btn tc-btn-ok" onClick={updateWorker}>Guardar cambios</button></div></div> : null}
+            </div>
+          )}
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
               <div className="tc-card">

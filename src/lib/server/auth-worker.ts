@@ -40,7 +40,7 @@ export async function workerFromRequest(req: Request) {
   if (uid) {
     const byUid = await admin
       .from('workers')
-      .select('id, user_id, role, display_name, email, team, is_active')
+      .select('id, user_id, role, display_name, email, team, is_active, tarotista_level')
       .eq('user_id', uid)
       .maybeSingle();
     if (byUid.error) throw byUid.error;
@@ -50,7 +50,7 @@ export async function workerFromRequest(req: Request) {
   if (!me && email) {
     const byEmail = await admin
       .from('workers')
-      .select('id, user_id, role, display_name, email, team, is_active')
+      .select('id, user_id, role, display_name, email, team, is_active, tarotista_level')
       .eq('email', email)
       .maybeSingle();
     if (byEmail.error) throw byEmail.error;

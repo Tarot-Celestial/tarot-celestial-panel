@@ -69,6 +69,7 @@ export async function POST(req: Request) {
       const role = String(body?.role || "tarotista").trim();
       const team = String(body?.team || "").trim() || null;
       const email = String(body?.email || "").trim() || null;
+      const tarotista_level = Number(body?.tarotista_level || 1);
 
       if (!display_name) {
         return NextResponse.json({ ok: false, error: "DISPLAY_NAME_REQUIRED" }, { status: 400 });
@@ -85,6 +86,7 @@ export async function POST(req: Request) {
           role,
           team,
           email,
+          tarotista_level: role === "tarotista" ? (tarotista_level === 2 ? 2 : 1) : null,
           is_active: true,
         })
         .select("*")
@@ -106,6 +108,10 @@ export async function POST(req: Request) {
       if (body?.role !== undefined) patch.role = String(body.role || "").trim();
       if (body?.team !== undefined) patch.team = String(body.team || "").trim() || null;
       if (body?.email !== undefined) patch.email = String(body.email || "").trim() || null;
+      if (body?.tarotista_level !== undefined) {
+        const nextLevel = Number(body.tarotista_level || 1);
+        patch.tarotista_level = nextLevel === 2 ? 2 : 1;
+      }
       if (body?.is_active !== undefined) patch.is_active = !!body.is_active;
 
       const { error } = await admin
@@ -151,6 +157,26 @@ export async function POST(req: Request) {
         .eq("id", worker_id);
 
       if (error) throw error;
+
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === "change_password") {
+      const worker_id = String(body?.worker_id || "");
+      const password = String(body?.password || "");
+      if (!worker_id) return NextResponse.json({ ok: false, error: "WORKER_ID_REQUIRED" }, { status: 400 });
+      if (password.length < 6) return NextResponse.json({ ok: false, error: "PASSWORD_MIN_6" }, { status: 400 });
+
+      const { data: worker, error: wErr } = await admin
+        .from("workers")
+        .select("id, user_id, email")
+        .eq("id", worker_id)
+        .maybeSingle();
+      if (wErr) throw wErr;
+      if (!worker?.user_id) return NextResponse.json({ ok: false, error: "WORKER_WITHOUT_AUTH_USER" }, { status: 400 });
+
+      const { error: authErr } = await admin.auth.admin.updateUserById(String(worker.user_id), { password });
+      if (authErr) throw authErr;
 
       return NextResponse.json({ ok: true });
     }

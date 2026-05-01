@@ -59,7 +59,7 @@ export async function GET(req: Request) {
 
     const { data: workers, error: workersErr } = await admin
       .from("workers")
-      .select("id, user_id, display_name, role, team, email, is_active, created_at")
+      .select("id, user_id, display_name, role, team, email, is_active, tarotista_level, created_at")
       .order("display_name", { ascending: true });
 
     if (workersErr) throw workersErr;

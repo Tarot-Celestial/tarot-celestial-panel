@@ -11,6 +11,8 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
     const admin = getAdminClient();
+    const tarotistaLevel = Number((me as any)?.tarotista_level || 1);
+    const canSeeMoney = !(me.role === 'tarotista' && tarotistaLevel === 2);
 
     const { data: invoice, error: invErr } = await admin
       .from('invoices')
@@ -31,7 +33,17 @@ export async function GET(req: Request) {
       .order('created_at', { ascending: true });
     if (linesErr) throw linesErr;
 
-    return NextResponse.json({ ok: true, invoice, lines: lines || [] });
+    if (!canSeeMoney) {
+      const safeInvoice = invoice ? { ...invoice, total: null, money_hidden: true } : null;
+      const safeLines = (lines || []).map((line: any) => {
+        const meta = { ...(line.meta || {}) };
+        delete meta.rate;
+        return { ...line, amount: null, meta, money_hidden: true };
+      });
+      return NextResponse.json({ ok: true, invoice: safeInvoice, lines: safeLines, money_hidden: true });
+    }
+
+    return NextResponse.json({ ok: true, invoice, lines: lines || [], money_hidden: false });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'ERR' }, { status: 500 });
   }
