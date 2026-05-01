@@ -1212,7 +1212,6 @@ function AdminPage() {
     pollRef.current = setInterval(() => {
       if (tab === "facturas") listInvoices(true);
       if (tab === "estadisticas") loadAdminStats(true);
-      if (tab === "contabilidad") loadAccounting(true);
     }, 8000);
 
     return () => {
