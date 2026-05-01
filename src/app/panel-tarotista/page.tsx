@@ -1639,7 +1639,7 @@ export default function Tarotista() {
                   )}
                 </div>
                 </div>
-              </div></>
+              </div>
             )}
 
             {tab === "clientes" && (
@@ -2170,14 +2170,14 @@ export default function Tarotista() {
                         ))
                       )}
                     </div>
-                  </div></>
+                  </div>
                 )}
               </div>
             )}
           </div>
         </div>
       )}
-    </div></>
+    </div>
   );
 }
 
