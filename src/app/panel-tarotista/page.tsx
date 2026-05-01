@@ -224,20 +224,9 @@ export default function Tarotista() {
   const [closeManualOverride, setCloseManualOverride] = useState(false);
   const [closeMsg, setCloseMsg] = useState("");
 
-  const incidenciasLive = useMemo(() => {
-    return (
-<div className="tc-shell">
-<aside className="tc-sidebar">
-<div className="tc-sidebar-card">
-<div className="tc-sidebar-nav">
-{NAV.map(item=>(
-<button key={item.key} className={`tc-sidebtn ${tab===item.key?"tc-sidebtn-active":""}`} onClick={()=>setTab(item.key as any)}>
-{item.label}
-</button>
-))}
-</div></div></aside>
-<main className="tc-main">incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
-  }, [incidents]);
+ const incidenciasLive = useMemo(() => {
+  return (incidents || []).reduce((a, x) => a + Number(x.amount || 0), 0);
+}, [incidents]);
 
   const s = stats?.stats || {};
   const captadas = Number(s?.captadas_total || 0);
