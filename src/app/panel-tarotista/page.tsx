@@ -17,6 +17,17 @@ type TabKey =
   | "checklist"
   | "chat";
 
+const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string }> = [
+  { key: "resumen", label: "📊 Resumen", kicker: "Actividad y métricas" },
+  { key: "clientes", label: "📤 Clientes", kicker: "Listas enviadas" },
+  { key: "chat", label: "💬 Chat", kicker: "Central en directo" },
+  { key: "bonos", label: "💰 Bonos", kicker: "Captadas y tramos" },
+  { key: "ranking", label: "🏆 Ranking", kicker: "Top del mes" },
+  { key: "equipos", label: "🔥💧 Equipos", kicker: "Competición" },
+  { key: "checklist", label: "✅ Checklist", kicker: "Turno actual" },
+  { key: "facturas", label: "🧾 Factura", kicker: "Resumen mensual" },
+];
+
 function monthKeyNow() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -1330,9 +1341,31 @@ export default function Tarotista() {
       {!ok ? (
         <div style={{ padding: 40 }}>Cargando…</div>
       ) : (
-        <div className="tc-wrap tc-wrap-premium">
-          <div className="tc-container">
-            <div className="tc-card">
+        <div className="tc-shell tc-shell-premium">
+          <aside className="tc-sidebar">
+            <div className="tc-sidebar-card">
+              <div className="tc-sidebar-title">Panel tarotista</div>
+              <div className="tc-sidebar-nav">
+                {TAROTISTA_NAV.map((item) => (
+                  <button
+                    key={item.key}
+                    className={`tc-sidebtn ${tab === item.key ? "tc-sidebtn-active" : ""}`}
+                    onClick={() => setTab(item.key)}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div className="tc-sidebtn-main">{item.label}</div>
+                      <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                    </div>
+                    <span className="tc-sidebtn-dot" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+
+          <main className="tc-main">
+            <div className="tc-container">
+              <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title" style={{ fontSize: 18 }}>
@@ -1432,32 +1465,6 @@ export default function Tarotista() {
 
               {attMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{attMsg}</div> : null}
 
-              <div style={{ marginTop: 12 }} className="tc-tabs">
-                <button className={`tc-tab ${tab === "resumen" ? "tc-tab-active" : ""}`} onClick={() => setTab("resumen")}>
-                  📊 Resumen
-                </button>
-                <button className={`tc-tab ${tab === "clientes" ? "tc-tab-active" : ""}`} onClick={() => setTab("clientes")}>
-                  📤 Clientes
-                </button>
-                <button className={`tc-tab ${tab === "chat" ? "tc-tab-active" : ""}`} onClick={() => setTab("chat")}>
-                  💬 Chat
-                </button>
-                <button className={`tc-tab ${tab === "bonos" ? "tc-tab-active" : ""}`} onClick={() => setTab("bonos")}>
-                  💰 Bonos
-                </button>
-                <button className={`tc-tab ${tab === "ranking" ? "tc-tab-active" : ""}`} onClick={() => setTab("ranking")}>
-                  🏆 Ranking
-                </button>
-                <button className={`tc-tab ${tab === "equipos" ? "tc-tab-active" : ""}`} onClick={() => setTab("equipos")}>
-                  🔥💧 Equipos
-                </button>
-                <button className={`tc-tab ${tab === "checklist" ? "tc-tab-active" : ""}`} onClick={() => setTab("checklist")}>
-                  ✅ Checklist
-                </button>
-                <button className={`tc-tab ${tab === "facturas" ? "tc-tab-active" : ""}`} onClick={() => setTab("facturas")}>
-                  🧾 Factura
-                </button>
-              </div>
             </div>
 
             {tab === "chat" && (
@@ -1639,7 +1646,7 @@ export default function Tarotista() {
                   )}
                 </div>
                 </div>
-              </div>
+              </>
             )}
 
             {tab === "clientes" && (
@@ -2170,14 +2177,15 @@ export default function Tarotista() {
                         ))
                       )}
                     </div>
-                  </div>
+                  </>
                 )}
               </div>
             )}
-          </div>
+            </div>
+          </main>
         </div>
       )}
-    </div>
+    </>
   );
 }
 

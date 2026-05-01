@@ -1440,3 +1440,32 @@ a{ color: inherit; text-decoration: none; }
   .tc-premium-orb{ width:260px; height:260px; }
   .tc-shell-premium .tc-admin-toolbar{ border-radius:24px; }
 }
+
+/* Sidebar scroll fix: admin + tarotista */
+.tc-sidebar{
+  align-self:start;
+  min-height:0;
+  max-height:calc(100vh - 108px);
+}
+.tc-sidebar-card,
+.tc-shell-premium .tc-sidebar-card{
+  min-height:0;
+  max-height:calc(100vh - 108px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(244,216,159,.45) rgba(255,255,255,.06);
+}
+.tc-sidebar-card::-webkit-scrollbar{ width:8px; }
+.tc-sidebar-card::-webkit-scrollbar-track{ background:rgba(255,255,255,.05); border-radius:999px; }
+.tc-sidebar-card::-webkit-scrollbar-thumb{ background:rgba(244,216,159,.38); border-radius:999px; }
+.tc-sidebar-nav{ padding-bottom:10px; }
+@media (max-width:1180px){
+  .tc-sidebar,
+  .tc-sidebar-card,
+  .tc-shell-premium .tc-sidebar-card{
+    max-height:none;
+    overflow:visible;
+  }
+}
