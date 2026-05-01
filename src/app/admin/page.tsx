@@ -1237,7 +1237,6 @@ function AdminPage() {
       }
     }
     if (tab === "estadisticas") loadAdminStats(false);
-    if (tab === "contabilidad") loadAccounting(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
