@@ -1,5 +1,4 @@
 import type { InboxItem } from "@/components/central/OperationalInbox";
-import { revenueScore } from "@/lib/revenue-engine";
 
 type ScoreContext = {
   loadLevel?: "low" | "medium" | "high" | "critical";
@@ -28,15 +27,10 @@ export function scoreItem(item: InboxItem, ctx?: ScoreContext): number {
   score += PRIORITY_WEIGHT[item.priority || "low"];
   score += TYPE_WEIGHT[item.type || ""] || 0;
 
-  if (item.value) score += Math.min(item.value / 10, 50);
-
-  // Dinero real: primer pago, facturación histórica/30d y rango económico.
-  // La conversión para este negocio es primer pago confirmado.
-  score += revenueScore(item);
-
-  const rank = String(item.rank || "").toLowerCase();
-  if (rank === "oro" || rank === "gold") score += 40;
-  if (rank === "plata" || rank === "silver") score += 20;
+  // 🔥 CLAVE: expected value real
+  if (item.value) {
+    score += Math.min(item.value, 100);
+  }
 
   if (item.sla?.breached) score += 80;
 
