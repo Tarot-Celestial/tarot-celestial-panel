@@ -541,52 +541,52 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
             : [],
       },
       {
-        key: "leads",
-        title: "Leads pendientes",
-        icon: "🔥",
-        count: ops.counters.leads || leads.length,
-        tone: "gold",
+  key: "leads",
+  title: "Leads pendientes",
+  icon: "🔥",
+  count: ops.counters.leads || leads.length,
+  tone: "gold",
+  action: "leads",
+  empty: "No hay leads pendientes.",
+  items: sortItems(
+    leads.map((lead: any) => {
+      const probability = getConversionProbability(lead);
+
+      const revenue =
+        Number(lead?.cliente_revenue_total) ||
+        Number(lead?.cliente_revenue_30d) ||
+        20;
+
+      const expectedValue = probability * revenue;
+
+      return withSla({
+        id: String(lead.id),
+        title: normalizeLeadName(lead),
+
+        subtitle: `Prob: ${Math.round(probability * 100)}% · Valor: ${expectedValue.toFixed(0)}€`,
+
+        meta: lead.workflow_state
+          ? `Estado: ${lead.workflow_state}`
+          : "Lead pendiente",
+
+        priority:
+          expectedValue > 50
+            ? "high"
+            : expectedValue > 20
+            ? "medium"
+            : "low",
+
         action: "leads",
-        empty: "No hay leads pendientes.",
-        items: sortItems(
-          leads.map((lead: any) => {
-  const probability = getConversionProbability(lead);
+        type: "lead",
 
-  const revenue =
-    Number(lead?.cliente_revenue_total) ||
-    Number(lead?.cliente_revenue_30d) ||
-    20;
+        value: expectedValue,
 
-  const expectedValue = probability * revenue;
-
-  return withSla({
-    id: String(lead.id),
-    title: normalizeLeadName(lead),
-
-    subtitle: `Prob: ${Math.round(probability * 100)}% · Valor: ${expectedValue.toFixed(0)}€`,
-
-    meta: lead.workflow_state
-      ? `Estado: ${lead.workflow_state}`
-      : "Lead pendiente",
-
-    priority:
-      expectedValue > 50
-        ? "high"
-        : expectedValue > 20
-        ? "medium"
-        : "low",
-
-    action: "leads",
-    type: "lead",
-
-    value: expectedValue,
-
-    created_at: lead.created_at,
-    last_activity_at: lead.updated_at,
-  });
-});)
-        ),
-      },
+        created_at: lead.created_at,
+        last_activity_at: lead.updated_at,
+      });
+    })
+  ),
+},
       {
         items: sortItems(
   leads.map((lead: any) => {
