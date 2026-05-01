@@ -7,8 +7,6 @@ import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
-import AdminAccountingTab from "@/components/admin/AdminAccountingTab";
-import AdminPaymentsTab from "@/components/admin/AdminPaymentsTab";
 import AdminClientesTab from "@/components/admin/AdminClientesTab";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
@@ -20,8 +18,7 @@ import AdminChatPanel from "@/components/admin/AdminChatPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import OperatorPanel from "@/components/panel/OperatorPanel";
-import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, BookOpen, CalendarDays, CheckSquare, CreditCard, Database, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Wallet } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, CreditCard, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -31,10 +28,7 @@ const ADMIN_NAV = [
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
-  { key: "contabilidad", icon: Wallet, label: "Contabilidad", kicker: "Ingresos y gastos" },
-  { key: "pagos", icon: Wallet, label: "Pagos", kicker: "Control de pagos" },
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo" },
-  { key: "checklists", icon: CheckSquare, label: "Checklists", kicker: "Plantillas y tareas" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
   { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago" },
@@ -42,7 +36,6 @@ const ADMIN_NAV = [
   { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
   { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día" },
-  { key: "sync", icon: Database, label: "Sistema", kicker: "Sync y mantenimiento" },
 ] as const;
 
 function monthKeyNow() {
@@ -103,18 +96,14 @@ type TabKey =
   | "facturas"
   | "editor"
   | "estadisticas"
-  | "contabilidad"
-  | "pagos"
   | "asistencia"
-  | "checklists"
   | "clientes"
   | "crm"
   | "chat"
   | "captacion"
   | "rendimiento"
   | "reservas"
-  | "diario"
-  | "sync";
+  | "diario";
 
 function ackLabel(v: any) {
   const s = String(v || "pending");
@@ -1510,92 +1499,24 @@ function AdminPage() {
         </aside>
 
         <main className="tc-main">
-          {tab !== "panel" && (
-          <section className="tc-hero">
-            <div className="tc-hero-top">
-              <div>
-                <div className="tc-hero-title">👑 Admin — Tarot Celestial</div>
-                
-              </div>
-
-              <div className="tc-row">
-                <span className="tc-chip">Mes</span>
-                <input
-                  className="tc-input"
-                  value={month}
-                  onChange={(e) => setMonth(e.target.value)}
-                  placeholder="2026-02"
-                  style={{ width: 120 }}
-                />
-                <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
-                  {listLoading ? "Cargando…" : "Refrescar"}
-                </button>
-              </div>
+          <section className="tc-admin-toolbar">
+            <div>
+              <div className="tc-admin-toolbar-title">Panel admin</div>
+              <div className="tc-sub">Control operativo, facturación y métricas en una vista limpia.</div>
             </div>
-
-            <div className="tc-hero-kpis">
-              <div className="tc-kpi-panel tc-kpi-panel-main">
-                <div className="tc-kpi-label">Resumen ejecutivo</div>
-                <div className="tc-kpi-value">{eur(totalSum)}</div>
-                <div className="tc-kpi-note">Facturación visible del mes {month}</div>
-                <div className="tc-row" style={{ marginTop: 12, gap: 8, flexWrap: "wrap" }}>
-                  <span className="tc-chip">Facturas: {(invoices || []).length}</span>
-                  <span className="tc-chip">Aceptadas: {statsComputed.accepted}</span>
-                  <span className="tc-chip">Pendientes: {statsComputed.pending}</span>
-                </div>
-              </div>
-              <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Captadas mes</div>
-                <div className="tc-kpi-value">{String(heroMetrics.captadas_mes || 0)}</div>
-                <div className="tc-kpi-note">Leads de Facebook convertidos este mes</div>
-              </div>
-              <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Leads este mes</div>
-                <div className="tc-kpi-value">{String(heroMetrics.leads_mes || 0)}</div>
-                <div className="tc-kpi-note">Total de leads entrados este mes</div>
-              </div>
-              <div className="tc-kpi-panel">
-                <div className="tc-kpi-label">Facturación</div>
-                <div className="tc-kpi-value" style={{ fontSize: 20 }}>{eur(heroMetrics.facturacion_mes || 0)}</div>
-                <div className="tc-kpi-note">Total desde rendimiento de llamadas</div>
-              </div>
+            <div className="tc-row">
+              <span className="tc-chip">Mes</span>
+              <input className="tc-input" value={month} onChange={(e) => setMonth(e.target.value)} placeholder="2026-02" style={{ width: 120 }} />
+              <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
+                {listLoading ? "Cargando…" : "Refrescar"}
+              </button>
             </div>
           </section>
-          )}
 
           <div className="tc-main-content">
-{tab === "dashboard" && (
-            <>
-              <OperationalInbox
-                mode="admin"
-                onAction={(action) => {
-                  if (action === "leads") setTab("captacion");
-                  if (action === "parking") setTab("panel");
-                  if (action === "chat") setTab("chat");
-                  if (action === "team") setTab("asistencia");
-                  if (action === "incidents") setTab("pagos");
-                  if (action === "crm") setTab("crm");
-                }}
-              />
-              <DashboardPanel month={month} />
-            </>
-          )}
-          {tab === "panel" && (
-            <>
-              <OperationalInbox
-                mode="admin"
-                onAction={(action) => {
-                  if (action === "leads") setTab("captacion");
-                  if (action === "parking") setTab("panel");
-                  if (action === "chat") setTab("chat");
-                  if (action === "team") setTab("asistencia");
-                  if (action === "incidents") setTab("pagos");
-                  if (action === "crm") setTab("crm");
-                }}
-              />
-              <OperatorPanel mode="admin" />
-            </>
-          )}
+{tab === "dashboard" && <DashboardPanel month={month} />}
+
+          {tab === "panel" && <OperatorPanel mode="admin" />}
 
           {tab === "facturas" && (
             <div className="tc-card">
@@ -1962,24 +1883,6 @@ function AdminPage() {
             </div>
           )}
 
-          {tab === "contabilidad" && (
-            <AdminAccountingTab
-              month={month}
-              loading={accLoading}
-              msg={accMsg}
-              totals={accTotals}
-              entries={accEntries}
-              months={accMonths}
-              breakdown={accBreakdown}
-              onRefresh={() => loadAccounting(false)}
-              onCreate={createAccountingEntry}
-              onDelete={deleteAccountingEntry}
-            />
-          )}
-
-          {tab === "pagos" && (
-            <AdminPaymentsTab month={month} />
-          )}
 
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
@@ -2673,97 +2576,6 @@ function AdminPage() {
             </div>
           )}
 
-          {tab === "checklists" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">✅ Checklists (plantillas)</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Aquí defines qué items aparecen en el checklist de <b>tarotista</b> o <b>central</b>.
-                    {ckMsg ? ` · ${ckMsg}` : ""}
-                  </div>
-                </div>
-
-                <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                  <select
-                    className="tc-select"
-                    value={ckTemplateKey}
-                    onChange={(e) => setCkTemplateKey(e.target.value as any)}
-                    style={{ minWidth: 220 }}
-                  >
-                    <option value="tarotista">tarotista</option>
-                    <option value="central">central</option>
-                  </select>
-
-                  <button className="tc-btn tc-btn-gold" onClick={loadChecklistAdmin} disabled={ckLoading}>
-                    {ckLoading ? "Cargando…" : "Recargar"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <input
-                  className="tc-input"
-                  value={ckQ}
-                  onChange={(e) => setCkQ(e.target.value)}
-                  placeholder="Buscar item…"
-                  style={{ width: 320, maxWidth: "100%" }}
-                />
-
-                <div className="tc-sub" style={{ opacity: 0.9 }}>
-                  Plantilla: <b>{ckTemplate?.title || "—"}</b> · Items: <b>{(ckItems || []).length}</b>
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir item</div>
-              <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap", gap: 8 }}>
-                <input
-                  className="tc-input"
-                  value={ckNewLabel}
-                  onChange={(e) => setCkNewLabel(e.target.value)}
-                  placeholder="Texto del item…"
-                  style={{ width: 420, maxWidth: "100%" }}
-                />
-                <input
-                  className="tc-input"
-                  value={ckNewSort}
-                  onChange={(e) => setCkNewSort(e.target.value)}
-                  placeholder="Sort"
-                  style={{ width: 120 }}
-                />
-                <button className="tc-btn tc-btn-ok" onClick={addChecklistItem} disabled={ckLoading}>
-                  Añadir
-                </button>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(ckFiltered || []).map((it: any) => (
-                  <ChecklistRow
-                    key={it.id}
-                    item={it}
-                    onSave={(next) => saveChecklistItem(next)}
-                    onDelete={() => deleteChecklistItem(String(it.id))}
-                  />
-                ))}
-
-                {(!ckFiltered || ckFiltered.length === 0) && (
-                  <div className="tc-sub">No hay items (o no coinciden con la búsqueda).</div>
-                )}
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-sub" style={{ opacity: 0.85 }}>
-                Nota: al borrar un item, también se eliminan los “checks” ya marcados en turnos anteriores para ese item.
-              </div>
-            </div>
-          )}
 
           {tab === "clientes" && (
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
@@ -2789,24 +2601,6 @@ function AdminPage() {
           {tab === "reservas" && <ReservasPanel mode="admin" />}
           {tab === "diario" && <DiarioPanel />}
 
-          {tab === "sync" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <div className="tc-title">🔄 Sincronización</div>
-                  <div className="tc-sub">Importa/actualiza llamadas desde Google Sheets</div>
-                </div>
-
-                <button className="tc-btn tc-btn-gold" onClick={syncNow} disabled={syncLoading}>
-                  {syncLoading ? "Sincronizando…" : "Sincronizar ahora"}
-                </button>
-              </div>
-
-              <div style={{ marginTop: 10 }} className="tc-sub">
-                {syncMsg || "Haz sync antes de generar facturas para que cuadren minutos/captadas."}
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>

@@ -346,7 +346,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   }, [filtered]);
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="tc-captacion-shell">
       <div style={panelStyle}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div>
@@ -361,7 +361,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           </div>
         </div>
 
-        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: 12 }}>
+        <div className="tc-captacion-kpis">
           <div style={kpiStyle}><div style={kpiLabel}>En vista</div><div style={kpiValue}>{stats.total}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Llamar hoy</div><div style={kpiValue}>{stats.hoy}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Nuevos</div><div style={kpiValue}>{stats.nuevos}</div></div>
@@ -389,9 +389,9 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           {filtered.map((lead) => <LeadCard key={lead.id} lead={lead} busyId={busyId} onAction={act} onOpenClient={openClient} />)}
         </div>
       ) : (
-        <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 14, alignItems: "start" }}>
+        <div className="tc-captacion-board">
           {columns.map((column) => (
-            <div key={column.key} style={columnStyle}>
+            <div key={column.key} className="tc-captacion-column">
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 800 }}>{column.title}</div>
@@ -430,7 +430,7 @@ function LeadCard({
   const disabled = busyId === lead.id;
 
   return (
-    <div style={{ borderRadius: 18, padding: 14, background: tone.bg, border: tone.border }}>
+    <div className="tc-captacion-lead-card" style={{ background: tone.bg, border: tone.border }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
         <div>
           <div style={{ fontSize: 17, fontWeight: 800 }}>{fullName(lead)}</div>
