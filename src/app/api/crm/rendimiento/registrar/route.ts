@@ -7,14 +7,16 @@ export const runtime = "nodejs";
 const MONTH_TAGS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
 async function syncClienteMonthTag(admin: any, clienteId: string) {
-  const monthName = MONTH_TAGS[new Date().getMonth()];
+  const fecha = new Date();
+
+const monthName = `${MONTH_TAGS[fecha.getMonth()]} ${fecha.getFullYear()}`;
 
   const { data: allTags } = await admin
     .from("crm_etiquetas")
     .select("id,nombre");
 
   const monthTags = (allTags || []).filter((t: any) =>
-    MONTH_TAGS.some((m) => String(t?.nombre || '').toLowerCase() === m.toLowerCase())
+    MONTH_TAGS.some((m) =>   String(t?.nombre || '').toLowerCase().startsWith(m.toLowerCase()) )
   );
 
   let currentMonthTag = monthTags.find((t: any) =>
