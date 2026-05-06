@@ -49,6 +49,64 @@ export const CLIENTE_PACKS: ClientePack[] = [
   },
 ];
 
+
+const CRM_MONTH_LABELS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+async function syncClientMonthlyTag(admin: any, clienteId: string) {
+  const now = new Date();
+  const currentMonthLabel = CRM_MONTH_LABELS[now.getMonth()];
+
+  const { data: allTags, error: tagsError } = await admin
+    .from("crm_etiquetas")
+    .select("id, nombre");
+
+  if (tagsError) throw tagsError;
+
+  const monthTags = (allTags || []).filter((tag: any) =>
+    CRM_MONTH_LABELS.includes(String(tag?.nombre || "").trim())
+  );
+
+  let currentMonthTag = monthTags.find(
+    (tag: any) => String(tag?.nombre || "").trim() === currentMonthLabel
+  );
+
+  if (!currentMonthTag) {
+    const { data: createdTag, error: createTagError } = await admin
+      .from("crm_etiquetas")
+      .insert({ nombre: currentMonthLabel })
+      .select("id, nombre")
+      .single();
+
+    if (createTagError) throw createTagError;
+    currentMonthTag = createdTag;
+  }
+
+  const monthTagIds = monthTags
+    .map((tag: any) => String(tag?.id || ""))
+    .filter(Boolean);
+
+  if (currentMonthTag?.id) {
+    monthTagIds.push(String(currentMonthTag.id));
+  }
+
+  if (monthTagIds.length > 0) {
+    await admin
+      .from("crm_cliente_etiquetas")
+      .delete()
+      .eq("cliente_id", clienteId)
+      .in("etiqueta_id", Array.from(new Set(monthTagIds)));
+  }
+
+  if (currentMonthTag?.id) {
+    await admin
+      .from("crm_cliente_etiquetas")
+      .insert({
+        cliente_id: clienteId,
+        etiqueta_id: currentMonthTag.id,
+      });
+  }
+}
+
 export function getClientePack(packId: string | null | undefined): ClientePack | null {
   return CLIENTE_PACKS.find((pack) => pack.id === String(packId || "").trim()) || null;
 }
@@ -239,6 +297,8 @@ export async function applyClientPurchase(
       updated_at: nowIso,
     })
     .eq("id", params.clienteId);
+
+  await syncClientMonthlyTag(admin, params.clienteId);
 
   await admin.from("cliente_puntos_historial").insert({
     cliente_id: params.clienteId,
