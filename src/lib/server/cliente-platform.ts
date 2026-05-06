@@ -49,64 +49,6 @@ export const CLIENTE_PACKS: ClientePack[] = [
   },
 ];
 
-
-const CRM_MONTH_LABELS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-
-async function syncClientMonthlyTag(admin: any, clienteId: string) {
-  const now = new Date();
-  const currentMonthLabel = CRM_MONTH_LABELS[now.getMonth()];
-
-  const { data: allTags, error: tagsError } = await admin
-    .from("crm_etiquetas")
-    .select("id, nombre");
-
-  if (tagsError) throw tagsError;
-
-  const monthTags = (allTags || []).filter((tag: any) =>
-    CRM_MONTH_LABELS.includes(String(tag?.nombre || "").trim())
-  );
-
-  let currentMonthTag = monthTags.find(
-    (tag: any) => String(tag?.nombre || "").trim() === currentMonthLabel
-  );
-
-  if (!currentMonthTag) {
-    const { data: createdTag, error: createTagError } = await admin
-      .from("crm_etiquetas")
-      .insert({ nombre: currentMonthLabel })
-      .select("id, nombre")
-      .single();
-
-    if (createTagError) throw createTagError;
-    currentMonthTag = createdTag;
-  }
-
-  const monthTagIds = monthTags
-    .map((tag: any) => String(tag?.id || ""))
-    .filter(Boolean);
-
-  if (currentMonthTag?.id) {
-    monthTagIds.push(String(currentMonthTag.id));
-  }
-
-  if (monthTagIds.length > 0) {
-    await admin
-      .from("crm_cliente_etiquetas")
-      .delete()
-      .eq("cliente_id", clienteId)
-      .in("etiqueta_id", Array.from(new Set(monthTagIds)));
-  }
-
-  if (currentMonthTag?.id) {
-    await admin
-      .from("crm_cliente_etiquetas")
-      .insert({
-        cliente_id: clienteId,
-        etiqueta_id: currentMonthTag.id,
-      });
-  }
-}
-
 export function getClientePack(packId: string | null | undefined): ClientePack | null {
   return CLIENTE_PACKS.find((pack) => pack.id === String(packId || "").trim()) || null;
 }
@@ -179,6 +121,51 @@ export function currentRankBenefits(rank: string | null | undefined) {
   return ["3 pases GRATIS cada mes de 7 minutos"];
 }
 
+
+const CRM_MONTH_TAGS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+export async function syncClientMonthTag(admin: any, clienteId: string) {
+  const monthName = CRM_MONTH_TAGS[new Date().getMonth()];
+
+  const { data: allTags } = await admin
+    .from("crm_etiquetas")
+    .select("id,nombre")
+    .in("nombre", CRM_MONTH_TAGS);
+
+  let currentTag = (allTags || []).find((x: any) => String(x?.nombre || "").toLowerCase() === monthName.toLowerCase());
+
+  if (!currentTag) {
+    const { data: created } = await admin
+      .from("crm_etiquetas")
+      .insert({ nombre: monthName })
+      .select("id,nombre")
+      .single();
+
+    currentTag = created;
+  }
+
+  const monthTagIds = (allTags || []).map((x: any) => String(x.id));
+
+  if (monthTagIds.length) {
+    await admin
+      .from("crm_cliente_etiquetas")
+      .delete()
+      .eq("cliente_id", clienteId)
+      .in("etiqueta_id", monthTagIds);
+  }
+
+  if (currentTag?.id) {
+    await admin
+      .from("crm_cliente_etiquetas")
+      .upsert({
+        cliente_id: clienteId,
+        etiqueta_id: currentTag.id,
+      }, {
+        onConflict: 'cliente_id,etiqueta_id'
+      });
+  }
+}
+
 export async function createClientNotification(
   admin: any,
   payload: {
@@ -223,6 +210,8 @@ export async function touchClientActivity(
   }
 
   await admin.from("crm_clientes").update(patch).eq("id", clienteId);
+
+  await syncClientMonthTag(admin, clienteId);
 }
 
 export async function applyClientPurchase(
@@ -298,8 +287,6 @@ export async function applyClientPurchase(
     })
     .eq("id", params.clienteId);
 
-  await syncClientMonthlyTag(admin, params.clienteId);
-
   await admin.from("cliente_puntos_historial").insert({
     cliente_id: params.clienteId,
     tipo: "ganado",
@@ -324,6 +311,8 @@ export async function applyClientPurchase(
 
   // No persistimos aquí el rango CRM para no sobrescribir el recálculo manual del panel.
   // El rango puede seguir mostrándose en vivo en la experiencia cliente sin tocar los KPIs de CRM.
+
+  await syncClientMonthTag(admin, params.clienteId);
 
   const nombre = [clienteActual?.nombre, clienteActual?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
 
