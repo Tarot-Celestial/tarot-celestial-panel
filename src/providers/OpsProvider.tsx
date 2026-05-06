@@ -89,11 +89,11 @@ function defaultListState<T>(): OpsListState<T> {
   };
 }
 
-const PARKING_REFRESH_MS = 2500;
-const LEADS_REFRESH_MS = 8000;
-const ATTENDANCE_REFRESH_MS = 15000;
-const PRESENCES_REFRESH_MS = 20000;
-const EXPECTED_REFRESH_MS = 30000;
+const PARKING_REFRESH_MS = 30000;
+const LEADS_REFRESH_MS = 30000;
+const ATTENDANCE_REFRESH_MS = 60000;
+const PRESENCES_REFRESH_MS = 60000;
+const EXPECTED_REFRESH_MS = 120000;
 
 const OpsContext = createContext<OpsContextValue | null>(null);
 
@@ -122,19 +122,46 @@ export function OpsProvider({ children }: { children: ReactNode }) {
   const attendanceInFlightRef = useRef(false);
   const presencesInFlightRef = useRef(false);
   const expectedInFlightRef = useRef(false);
+  const parkingDisabledUntilRef = useRef(0);
 
   const fetchParking = useCallback(async () => {
     if (parkingInFlightRef.current) return;
+    if (Date.now() < parkingDisabledUntilRef.current) return;
     parkingInFlightRef.current = true;
 
     try {
-      const res = await fetch(`/api/asterisk/parking?t=${Date.now()}`, { cache: "no-store" });
+      const token = await getAccessToken();
+      if (!mountedRef.current) return;
+
+      if (!token) {
+        parkingDisabledUntilRef.current = Date.now() + 120_000;
+        setCounters((prev) => (prev.parking === 0 ? prev : { ...prev, parking: 0 }));
+        return;
+      }
+
+      const res = await fetch(`/api/asterisk/parking?t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        parkingDisabledUntilRef.current = Date.now() + 120_000;
+        if (mountedRef.current) setCounters((prev) => (prev.parking === 0 ? prev : { ...prev, parking: 0 }));
+        return;
+      }
+
+      if (!res.ok) {
+        parkingDisabledUntilRef.current = Date.now() + 60_000;
+        return;
+      }
+
       const json = await res.json().catch(() => null);
       const calls = Array.isArray(json?.calls) ? json.calls : [];
 
       if (!mountedRef.current) return;
       setCounters((prev) => (prev.parking === calls.length ? prev : { ...prev, parking: calls.length }));
     } catch {
+      parkingDisabledUntilRef.current = Date.now() + 60_000;
       if (mountedRef.current) {
         setCounters((prev) => (prev.parking === 0 ? prev : { ...prev, parking: 0 }));
       }

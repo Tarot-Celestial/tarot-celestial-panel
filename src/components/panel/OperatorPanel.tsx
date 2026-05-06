@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { Copy, Phone, Plus, RefreshCw, Save, Settings2, Smartphone, Trash2, Users2, X } from "lucide-react";
 
 const sb = supabaseBrowser();
+const OPERATOR_REFRESH_MS = 30000;
 
 type OperatorPanelProps = {
   mode: "admin" | "central";
@@ -201,6 +202,8 @@ function cleanPhone(value: string) {
 }
 
 export default function OperatorPanel({ mode }: OperatorPanelProps) {
+  const panelInFlightRef = useRef(false);
+  const parkingDisabledUntilRef = useRef(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -294,7 +297,7 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   useEffect(() => {
   void loadAll();
 
-  const id = window.setInterval(() => void loadAll(), 2000);
+  const id = window.setInterval(() => void loadAll(), OPERATOR_REFRESH_MS);
   return () => window.clearInterval(id);
 }, []);
 
@@ -307,8 +310,6 @@ export default function OperatorPanel({ mode }: OperatorPanelProps) {
   }
 
   const token = data?.session?.access_token;
-
-  console.log("TOKEN:", token); // 👈 MUY IMPORTANTE
 
   if (!token) {
     console.error("NO SESSION TOKEN");
@@ -355,11 +356,17 @@ if (!token) {
   }
 
   async function loadAll() {
-    await loadData();
+    if (panelInFlightRef.current) return;
+    panelInFlightRef.current = true;
 
     try {
+      await loadData();
+
+      if (Date.now() < parkingDisabledUntilRef.current) return;
+
       const token = await getToken();
       if (!token) {
+        parkingDisabledUntilRef.current = Date.now() + 120_000;
         setParkingCalls([]);
         setIncomingCalls([]);
         return;
@@ -369,16 +376,33 @@ if (!token) {
         cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (res.status === 401 || res.status === 403) {
+        parkingDisabledUntilRef.current = Date.now() + 120_000;
+        setParkingCalls([]);
+        setIncomingCalls([]);
+        setAsteriskPanelError("Sesión caducada o sin permisos para leer Asterisk.");
+        return;
+      }
+
+      if (!res.ok) {
+        parkingDisabledUntilRef.current = Date.now() + 60_000;
+        setAsteriskPanelError(`Asterisk no responde correctamente (${res.status}).`);
+        return;
+      }
+
       const json = await res.json().catch(() => null);
 
       setParkingCalls(Array.isArray(json?.calls) ? json.calls : []);
       setIncomingCalls(Array.isArray(json?.incomingCalls) ? json.incomingCalls : []);
       setAsteriskPanelError(json?.ok ? "" : String(json?.asteriskParking?.error || json?.asteriskIncoming?.error || json?.error || "No se pudo leer Asterisk"));
     } catch (e: any) {
-      console.log("Asterisk panel error", e);
+      parkingDisabledUntilRef.current = Date.now() + 60_000;
       setParkingCalls([]);
       setIncomingCalls([]);
       setAsteriskPanelError(e?.message || "No se pudo leer Asterisk");
+    } finally {
+      panelInFlightRef.current = false;
     }
   }
   

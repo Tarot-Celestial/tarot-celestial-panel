@@ -28,6 +28,7 @@ const HISTORY_STORAGE_KEY = "tc_softphone_history_v1";
 const POSITION_STORAGE_KEY = "tc_softphone_position_v1";
 const DEFAULT_SERVER = "wss://sip.clientestarotcelestial.es/ws";
 const DEFAULT_DOMAIN = "sip.clientestarotcelestial.es";
+const SIP_ENABLED = process.env.NEXT_PUBLIC_ENABLE_SIP === "true";
 
 type PhoneStatus = "offline" | "connecting" | "registered" | "calling" | "ringing" | "in_call" | "ended" | "error";
 
@@ -513,7 +514,7 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
   }, [open, incoming, showHangupButton, number]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !SIP_ENABLED) return;
     const id = window.setInterval(() => {
       if (runtimeRef.current.manualDisconnect) return;
       if (!config.username || !config.password || !config.domain || !config.server) return;
@@ -523,7 +524,7 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
       if ((!ua || !transportConnected || ["offline", "error"].includes(statusRef.current)) && !connectingRef.current && !hasActive) {
         void connect(true);
       }
-    }, 15000);
+    }, 60000);
     return () => window.clearInterval(id);
   }, [hydrated, config.username, config.password, config.domain, config.server]);
 
@@ -551,7 +552,7 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
           await hydrateFromPanel(true);
         }
 
-        if (shouldRegister && !isConnected && !connectingRef.current && (config.username && config.password)) {
+        if (SIP_ENABLED && shouldRegister && !isConnected && !connectingRef.current && (config.username && config.password)) {
           void connect(true);
         }
         if (!shouldRegister && isConnected && !showHangupButton) {
@@ -565,7 +566,7 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
     };
 
     void syncPresence();
-    const id = window.setInterval(syncPresence, 6000);
+    const id = window.setInterval(syncPresence, 60000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -1057,6 +1058,13 @@ export default function IPPhoneBar({ forcedOpen, onOpenChange }: { forcedOpen?: 
   }
 
   async function connect(isReconnect = false) {
+    if (!SIP_ENABLED) {
+      runtimeRef.current.manualDisconnect = true;
+      setStatus("offline");
+      setStatusText("SIP desactivado temporalmente");
+      if (!isReconnect) setMsg("SIP está desactivado temporalmente para estabilizar el panel.");
+      return false;
+    }
     if (connectingRef.current) return true;
     if (!config.username || !config.password || !config.domain || !config.server) {
       setStatus("error");
