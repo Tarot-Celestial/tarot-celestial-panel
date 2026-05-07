@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -22,17 +22,17 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
-const DashboardPanel = dynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
-const OperatorPanel = dynamic(() => import("@/components/panel/OperatorPanel"), { ssr:false });
-const AdminClientesTab = dynamic(() => import("@/components/admin/AdminClientesTab"), { ssr:false });
-const CRMClientesPanel = dynamic(() => import("@/components/crm/CRMClientesPanel"), { ssr:false });
-const ReservasPanel = dynamic(() => import("@/components/reservas/ReservasPanel"), { ssr:false });
-const ReservasGlobalWatcher = dynamic(() => import("@/components/reservas/ReservasGlobalWatcher"), { ssr:false });
-const DiarioPanel = dynamic(() => import("@/components/diario/DiarioPanel"), { ssr:false });
-const PaymentMotivationWatcher = dynamic(() => import("@/components/motivation/PaymentMotivationWatcher"), { ssr:false });
-const AdminChatPanel = dynamic(() => import("@/components/admin/AdminChatPanel"), { ssr:false });
-const RendimientoPanel = dynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
-const CaptacionPanel = dynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
+const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
+const OperatorPanel = nextDynamic(() => import("@/components/panel/OperatorPanel"), { ssr:false });
+const AdminClientesTab = nextDynamic(() => import("@/components/admin/AdminClientesTab"), { ssr:false });
+const CRMClientesPanel = nextDynamic(() => import("@/components/crm/CRMClientesPanel"), { ssr:false });
+const ReservasPanel = nextDynamic(() => import("@/components/reservas/ReservasPanel"), { ssr:false });
+const ReservasGlobalWatcher = nextDynamic(() => import("@/components/reservas/ReservasGlobalWatcher"), { ssr:false });
+const DiarioPanel = nextDynamic(() => import("@/components/diario/DiarioPanel"), { ssr:false });
+const PaymentMotivationWatcher = nextDynamic(() => import("@/components/motivation/PaymentMotivationWatcher"), { ssr:false });
+const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPanel"), { ssr:false });
+const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
+const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
