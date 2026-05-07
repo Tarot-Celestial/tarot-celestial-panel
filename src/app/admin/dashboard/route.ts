@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/server/auth-worker';
 import { summarizeRendimientoRows } from '@/lib/server/rendimiento-metrics';
