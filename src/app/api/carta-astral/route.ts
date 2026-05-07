@@ -2,167 +2,85 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type CartaInput = {
-  nombre?: string;
-  email?: string;
-  fecha?: string;
-  hora?: string;
-  ciudad?: string;
-  objetivo?: string;
-  genero?: string;
-};
-
-const SIGNS = [
-  { name: "Aries", from: [3, 21], to: [4, 19], element: "Fuego", key: "inicio, valentía y acción", gift: "abrir caminos donde otras personas dudan" },
-  { name: "Tauro", from: [4, 20], to: [5, 20], element: "Tierra", key: "presencia, calma y materialización", gift: "convertir deseos en algo estable y real" },
-  { name: "Géminis", from: [5, 21], to: [6, 20], element: "Aire", key: "mente, comunicación y versatilidad", gift: "unir ideas, personas y oportunidades" },
-  { name: "Cáncer", from: [6, 21], to: [7, 22], element: "Agua", key: "intuición, memoria y protección", gift: "crear hogar emocional allí donde estés" },
-  { name: "Leo", from: [7, 23], to: [8, 22], element: "Fuego", key: "brillo, creatividad y liderazgo", gift: "recordar a los demás su propia luz" },
-  { name: "Virgo", from: [8, 23], to: [9, 22], element: "Tierra", key: "orden, servicio y mejora", gift: "sanar el caos con precisión y sensibilidad" },
-  { name: "Libra", from: [9, 23], to: [10, 22], element: "Aire", key: "belleza, equilibrio y vínculos", gift: "armonizar espacios, relaciones y decisiones" },
-  { name: "Escorpio", from: [10, 23], to: [11, 21], element: "Agua", key: "profundidad, transformación y magnetismo", gift: "renacer con más poder después de cada cierre" },
-  { name: "Sagitario", from: [11, 22], to: [12, 21], element: "Fuego", key: "expansión, fe y aventura", gift: "dar sentido a lo vivido y abrir horizontes" },
-  { name: "Capricornio", from: [12, 22], to: [1, 19], element: "Tierra", key: "estructura, ambición y legado", gift: "construir algo duradero incluso en tiempos difíciles" },
-  { name: "Acuario", from: [1, 20], to: [2, 18], element: "Aire", key: "visión, libertad e innovación", gift: "ver el futuro antes de que otros se atrevan" },
-  { name: "Piscis", from: [2, 19], to: [3, 20], element: "Agua", key: "sensibilidad, sueños y compasión", gift: "traducir lo invisible en amor y creatividad" },
+const signos = [
+  "Aries", "Tauro", "Géminis", "Cáncer", "Leo", "Virgo", "Libra", "Escorpio", "Sagitario", "Capricornio", "Acuario", "Piscis",
 ];
 
-const ELEMENT_COLORS: Record<string, string> = {
-  Fuego: "dorado intenso y granate",
-  Tierra: "verde profundo y marfil",
-  Aire: "azul claro y plata",
-  Agua: "violeta, índigo y perla",
-};
+const meses = [
+  ["Capricornio", 20], ["Acuario", 19], ["Piscis", 20], ["Aries", 20], ["Tauro", 21], ["Géminis", 21],
+  ["Cáncer", 23], ["Leo", 23], ["Virgo", 23], ["Libra", 23], ["Escorpio", 22], ["Sagitario", 22],
+] as const;
 
-const MOON_ARCHETYPES = [
-  "Luna Guardiana: necesitas seguridad emocional antes de abrirte del todo.",
-  "Luna Visionaria: tu intuición aparece como ideas repentinas y señales sutiles.",
-  "Luna Magnética: sientes profundamente y atraes vínculos intensos.",
-  "Luna Sanadora: vienes a ordenar heridas antiguas con ternura y paciencia.",
-];
-
-function clean(v: unknown) {
-  return String(v ?? "").trim();
+function sunSign(date: string) {
+  const d = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "Solar";
+  const month = d.getMonth();
+  const day = d.getDate();
+  const [current, cutoff] = meses[month];
+  if (day < cutoff) return current;
+  return signos[(signos.indexOf(current) + 1) % signos.length];
 }
 
-function isInRange(month: number, day: number, from: number[], to: number[]) {
-  const value = month * 100 + day;
-  const start = from[0] * 100 + from[1];
-  const end = to[0] * 100 + to[1];
-  if (start <= end) return value >= start && value <= end;
-  return value >= start || value <= end;
+function pick<T>(arr: T[], seed: number) {
+  return arr[Math.abs(seed) % arr.length];
 }
 
-function sunSign(fecha: string) {
-  const parts = fecha.split("-").map(Number);
-  const month = parts[1];
-  const day = parts[2];
-  return SIGNS.find((s) => isInRange(month, day, s.from, s.to)) || SIGNS[0];
-}
-
-function lifePath(fecha: string) {
-  const digits = fecha.replace(/\D/g, "").split("").map(Number);
-  let n = digits.reduce((a, b) => a + b, 0);
-  while (n > 9 && ![11, 22, 33].includes(n)) {
-    n = String(n).split("").map(Number).reduce((a, b) => a + b, 0);
-  }
-  return n;
-}
-
-function pseudoAscendente(hora: string, baseIndex: number) {
-  const hour = Number((hora || "00:00").split(":")[0] || 0);
-  const index = (baseIndex + Math.floor(hour / 2)) % SIGNS.length;
-  return SIGNS[index];
-}
-
-function moonArchetype(fecha: string, hora: string) {
-  const seed = fecha.replace(/\D/g, "").split("").reduce((a, b) => a + Number(b), 0) + Number((hora || "0").slice(0, 2));
-  return MOON_ARCHETYPES[seed % MOON_ARCHETYPES.length];
-}
-
-function buildReading(input: Required<CartaInput>) {
-  const sun = sunSign(input.fecha);
-  const sunIndex = SIGNS.findIndex((s) => s.name === sun.name);
-  const asc = pseudoAscendente(input.hora, Math.max(0, sunIndex));
-  const path = lifePath(input.fecha);
-  const moon = moonArchetype(input.fecha, input.hora);
-  const color = ELEMENT_COLORS[sun.element] || "violeta y oro";
-  const objetivo = input.objetivo || "claridad espiritual, amor y propósito";
-
-  return {
-    titulo: `Carta Astral Premium de ${input.nombre}`,
-    subtitulo: `${sun.name} con ascendente simbólico ${asc.name}`,
-    resumen: `Tu energía central nace bajo ${sun.name}, signo de ${sun.element}, con una vibración orientada a ${sun.key}. Esta lectura híbrida combina cálculo astrológico básico, numerología y una interpretación espiritual personalizada para ${objetivo}.`,
-    ficha: {
-      nombre: input.nombre,
-      email: input.email,
-      fecha: input.fecha,
-      hora: input.hora,
-      ciudad: input.ciudad,
-      signoSolar: sun.name,
-      elemento: sun.element,
-      ascendenteSimbolico: asc.name,
-      numeroCaminoVida: path,
-      paletaEnergetica: color,
-    },
-    secciones: [
-      {
-        titulo: "Tu esencia solar",
-        texto: `Como ${sun.name}, tu alma se expresa a través de ${sun.key}. Tu don principal es ${sun.gift}. Cuando estás en equilibrio, transmites una sensación de dirección muy clara: sabes detectar qué te alimenta y qué te apaga. Tu reto aparece cuando dudas de tu propio ritmo y permites que expectativas externas definan tu camino.`,
-      },
-      {
-        titulo: "Ascendente simbólico y primera impresión",
-        texto: `El ascendente simbólico calculado para esta lectura es ${asc.name}. Esto habla de cómo te percibe el mundo cuando entras en una etapa nueva: ${asc.key}. Aunque tu signo solar describe tu centro, este ascendente muestra la puerta por la que los demás llegan a ti.`,
-      },
-      {
-        titulo: "Clima emocional lunar",
-        texto: `${moon} En relaciones, necesitas que tus emociones sean recibidas sin juicio. Cuando reprimes demasiado lo que sientes, el cuerpo y la intuición empiezan a hablar más fuerte que la mente.`,
-      },
-      {
-        titulo: "Amor y vínculos",
-        texto: `En el amor buscas una conexión que no solo sea intensa, sino también coherente. Tu carta sugiere que atraes personas que despiertan partes dormidas de ti. La clave es no confundir química con destino: una relación sana debe darte paz además de magnetismo.`,
-      },
-      {
-        titulo: "Trabajo, dinero y misión",
-        texto: `Tu camino profesional mejora cuando unes intuición con estructura. El número ${path} de camino de vida marca una etapa donde debes dejar de dispersarte y elegir una dirección que tenga sentido interno. La abundancia llega cuando tu servicio, tu imagen y tu energía diaria apuntan al mismo objetivo.`,
-      },
-      {
-        titulo: "Mensaje espiritual canalizado",
-        texto: `Hay una versión de ti que ya sabe lo que debe cerrar. Esta carta te invita a dejar de pedir permiso para evolucionar. En los próximos meses, tu energía se ordena cuando eliges menos ruido, más verdad y relaciones donde no tengas que minimizar tu luz.`,
-      },
-      {
-        titulo: "Ritual recomendado",
-        texto: `Durante 7 noches, escribe una frase comenzando por “me permito”. Enciende una vela blanca o dorada, coloca un vaso de agua cerca y cierra con tres respiraciones profundas. Tu intención: limpiar acuerdos antiguos y abrir una etapa con más claridad.`,
-      },
-    ],
-    afirmaciones: [
-      "Honro mi historia, pero no vivo limitada por ella.",
-      "Mi intuición merece espacio, tiempo y confianza.",
-      "Elijo vínculos que celebran mi evolución.",
-    ],
-    disclaimer: "Esta carta es una lectura espiritual y simbólica. No sustituye asesoramiento médico, legal, financiero ni psicológico profesional.",
-  };
+function seedFrom(input: string) {
+  return Array.from(input).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
 }
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => ({}))) as CartaInput;
-    const input = {
-      nombre: clean(body.nombre),
-      email: clean(body.email),
-      fecha: clean(body.fecha),
-      hora: clean(body.hora),
-      ciudad: clean(body.ciudad),
-      objetivo: clean(body.objetivo),
-      genero: clean(body.genero),
-    };
+    const body = await req.json().catch(() => ({}));
+    const nombre = String(body?.nombre || "").trim();
+    const email = String(body?.email || "").trim();
+    const fechaNacimiento = String(body?.fechaNacimiento || "").trim();
+    const horaNacimiento = String(body?.horaNacimiento || "").trim();
+    const ciudadNacimiento = String(body?.ciudadNacimiento || "").trim();
+    const temaPrincipal = String(body?.temaPrincipal || "general").trim();
+    const pregunta = String(body?.pregunta || "").trim();
 
-    if (!input.nombre || !input.email || !input.fecha || !input.hora || !input.ciudad) {
-      return NextResponse.json({ ok: false, error: "FALTAN_DATOS" }, { status: 400 });
+    if (!nombre || !email || !fechaNacimiento || !horaNacimiento || !ciudadNacimiento) {
+      return NextResponse.json({ ok: false, error: "Faltan datos para crear la muestra." }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true, carta: buildReading(input) });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    const signo = sunSign(fechaNacimiento);
+    const seed = seedFrom(`${nombre}-${email}-${fechaNacimiento}-${horaNacimiento}-${ciudadNacimiento}-${temaPrincipal}`);
+    const luna = pick(["Luna de Agua", "Luna de Fuego", "Luna de Tierra", "Luna de Aire", "Luna Intuitiva", "Luna Protectora"], seed + 3);
+    const asc = pick(["Ascendente Magnético", "Ascendente Serena/o", "Ascendente Visionario", "Ascendente Sanador", "Ascendente Solar", "Ascendente Misterioso"], seed + 7);
+    const arquetipo = pick(["La Sacerdotisa", "La Estrella", "El Sol Interior", "La Emperatriz", "El Ermitaño Luminoso", "La Templanza"], seed + 11);
+
+    const temaTexto: Record<string, string> = {
+      amor: "En el amor, tu carta habla de vínculos que deben sentirse seguros, honestos y elegidos desde la calma. Cuando dudas de tu valor, puedes atraer relaciones que te obligan a demostrar demasiado.",
+      dinero: "En dinero y abundancia, tu cielo pide ordenar tu energía antes de tomar decisiones. Cuando confías en tu intuición práctica, detectas oportunidades que otros no ven.",
+      vocacion: "En vocación, aparece un llamado a usar tu sensibilidad como brújula. Tu camino crece cuando mezclas intuición, servicio y una estructura clara.",
+      sanacion: "En sanación emocional, la carta muestra una etapa de cierre de patrones antiguos. No estás perdiendo fuerza: estás recuperando energía que antes entregabas de más.",
+      general: "Tu lectura general muestra un momento de reajuste interno. Hay una versión de ti más clara, más intuitiva y más valiente esperando espacio para expresarse.",
+    };
+
+    const resumen = `${nombre}, esta muestra de tu carta astral parte de tu Sol en ${signo}, una energía que marca tu forma natural de brillar y tomar decisiones. Tu ${luna} describe un mundo emocional profundo: sientes mucho, aunque no siempre lo enseñes. Tu ${asc} habla de cómo los demás perciben tu campo energético al conocerte. ${temaTexto[temaPrincipal] || temaTexto.general}${pregunta ? ` Sobre tu pregunta, “${pregunta}”, la carta sugiere mirar primero qué parte de ti busca seguridad antes de pedir una respuesta externa.` : ""}`;
+
+    const puntos = [
+      { titulo: "☉ Sol", valor: signo, detalle: "Tu esencia, identidad y manera de recuperar poder personal." },
+      { titulo: "☾ Luna", valor: luna, detalle: "Tu necesidad emocional y lo que te calma por dentro." },
+      { titulo: "↟ Ascendente", valor: asc, detalle: "La energía que proyectas al mundo y cómo te leen los demás." },
+    ];
+
+    const mensaje = pick([
+      "No estás tarde: estás llegando a una versión de ti que ya no acepta migajas emocionales.",
+      "Tu intuición no está exagerando; solo necesita silencio para convertirse en decisión.",
+      "El amor que viene para ti requiere que dejes de perseguir claridad en personas confusas.",
+      "Tu abundancia empieza cuando tu energía deja de dispersarse en lo que ya no te elige.",
+    ], seed + 15);
+
+    const ritual = pick([
+      "Escribe una intención en papel blanco, colócala bajo una vela dorada durante 7 minutos y repite: ‘elijo verme con claridad’. Luego guarda el papel en un lugar privado.",
+      "Antes de dormir, pon una mano en el pecho y otra en el vientre. Respira 9 veces y pregunta: ‘¿qué verdad estoy evitando escuchar?’ Anota la primera frase que aparezca.",
+      "Durante tres noches, escribe una cosa que sueltas y una que eliges. La repetición abre una puerta simbólica de cierre y atracción.",
+    ], seed + 19);
+
+    return NextResponse.json({ ok: true, arquetipo, resumen, puntos, mensaje, ritual });
+  } catch (error: any) {
+    return NextResponse.json({ ok: false, error: error?.message || "Error generando carta astral." }, { status: 500 });
   }
 }
