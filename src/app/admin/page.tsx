@@ -347,8 +347,8 @@ function AdminPage() {
 
   useEffect(() => {
   (async () => {
-    const { data } = await sb.auth.getUser();
-    const user = data?.user;
+    const { data } = await sb.auth.getSession();
+    const user = data.session?.user;
 
     if (!user) {
       window.location.href = "/login";
