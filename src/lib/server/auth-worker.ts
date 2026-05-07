@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export function getEnv(name: string) {
   const value = process.env[name];
@@ -22,7 +23,7 @@ export async function authFromBearer(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const { data, error } = await userClient.auth.getUser();
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
   return {
     uid: data.user?.id || null,
