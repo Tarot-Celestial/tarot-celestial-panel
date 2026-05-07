@@ -5,7 +5,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { Copy, Phone, Plus, RefreshCw, Save, Settings2, Smartphone, Trash2, Users2, X } from "lucide-react";
 
 const sb = supabaseBrowser();
-const OPERATOR_REFRESH_MS = 30000;
+const OPERATOR_REFRESH_MS = 60000;
 const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true";
 
 type OperatorPanelProps = {

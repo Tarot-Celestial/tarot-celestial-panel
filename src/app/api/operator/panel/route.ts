@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { createClient } from "@supabase/supabase-js";
 import { amiAction, amiCommand, getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { getWorkerByUserOrEmailCached, getWorkersListCached } from "@/lib/server/worker-cache";
 const execAsync = promisify(exec);
 
 export const runtime = "nodejs";
@@ -503,13 +504,10 @@ async function getAuthContext(req: Request) {
 
 const auth = req.headers.get("authorization") || "";
 
-console.log("AUTH HEADER:", auth); // 👈 AÑADE ESTA LÍNEA
-
 const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
 
 if (!token) {
-  console.log("❌ NO TOKEN DETECTADO"); // 👈 OPCIONAL PERO ÚTIL
-  return { ok: false as const, error: "NO_TOKEN" as const };
+return { ok: false as const, error: "NO_TOKEN" as const };
 }
 
   const userClient = createClient(url, anon, {
@@ -524,24 +522,7 @@ if (!token) {
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
 
-  let me: MeWorker | null = null;
-
-  const byUser = await admin
-    .from("workers")
-    .select("id, user_id, role, display_name, email")
-    .eq("user_id", uid)
-    .maybeSingle();
-
-  if (byUser.data) {
-    me = byUser.data as MeWorker;
-  } else if (email) {
-    const byEmail = await admin
-      .from("workers")
-      .select("id, user_id, role, display_name, email")
-      .eq("email", email)
-      .maybeSingle();
-    me = (byEmail.data as MeWorker | null) || null;
-  }
+  const me = (await getWorkerByUserOrEmailCached(admin, uid, email, "id, user_id, role, display_name, email")) as MeWorker | null;
 
   if (!me) return { ok: false as const, error: "NO_WORKER" as const };
 
@@ -612,13 +593,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const { data: workers, error: workersErr } = await admin
-      .from("workers")
-      .select("id, user_id, display_name, role, email, team, is_active, created_at")
-      .in("role", ["admin", "central", "tarotista"])
-      .order("display_name", { ascending: true });
-
-    if (workersErr) throw workersErr;
+    const workers = await getWorkersListCached(admin);
 
    // await ensureDefaultExtensions(admin);
     const extensionsResult = await readExtensions(admin);

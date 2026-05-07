@@ -146,7 +146,7 @@ export default function GlobalBottomBar() {
     const sb = supabaseBrowser();
     void refreshPresence();
 
-    const interval = window.setInterval(() => void refreshPresence(), 5000);
+    const interval = window.setInterval(() => void refreshPresence(), 30000);
     const onFocus = () => void refreshPresence();
     const onAttendanceChanged = () => void refreshPresence();
 

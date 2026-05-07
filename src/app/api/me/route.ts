@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { getWorkerByUserIdCached } from "@/lib/server/worker-cache";
 
 export const runtime = "nodejs";
 
@@ -44,13 +45,7 @@ export async function GET(req: Request) {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    const { data: worker, error } = await admin
-      .from("workers")
-      .select("id, display_name, role, team, email, user_id")
-      .eq("user_id", uid)
-      .maybeSingle();
-
-    if (error) throw error;
+    const worker = await getWorkerByUserIdCached(admin, uid, "id, display_name, role, team, email, user_id");
     if (!worker?.id) {
       return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
     }

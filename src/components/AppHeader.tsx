@@ -108,7 +108,7 @@ export default function AppHeader() {
 
   useEffect(() => {
     syncEstado();
-    const i = setInterval(syncEstado, 10000);
+    const i = setInterval(syncEstado, 60000);
     return () => clearInterval(i);
   }, []);
 
@@ -162,7 +162,7 @@ export default function AppHeader() {
   useEffect(() => {
     if (!notifUserId) return;
     loadNotifications();
-    const i = setInterval(loadNotifications, 15000);
+    const i = setInterval(loadNotifications, 30000);
     return () => clearInterval(i);
   }, [notifUserId, role]);
 
