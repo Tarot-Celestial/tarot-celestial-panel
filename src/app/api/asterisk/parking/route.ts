@@ -5,7 +5,7 @@ import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
-const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true" || process.env.ENABLE_ASTERISK === "true";
+const ASTERISK_ENABLED = false;
 
 function getEnv(name: string) {
   const value = process.env[name];

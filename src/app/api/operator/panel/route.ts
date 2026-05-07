@@ -9,6 +9,8 @@ const execAsync = promisify(exec);
 
 export const runtime = "nodejs";
 
+const TELEPHONY_DISABLED = true;
+
 type Role = "admin" | "central" | "tarotista";
 
 type RoutingRow = {
@@ -583,6 +585,21 @@ async function readQueues(admin: any) {
 
 export async function GET(req: Request) {
   try {
+    if (TELEPHONY_DISABLED) {
+      return NextResponse.json({
+        ok: true,
+        disabled: true,
+        me: null,
+        workers: [],
+        extensions: [],
+        asteriskLive: { ok: false, error: "SIP/Parking desactivado temporalmente" },
+        routing: [],
+        queues: [],
+        queueMembers: [],
+        realtimeSync: [],
+      });
+    }
+
     const gate = await getAuthContext(req);
     if (!gate.ok) {
       return NextResponse.json({ ok: false, error: gate.error }, { status: 401 });
@@ -640,6 +657,15 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    if (TELEPHONY_DISABLED) {
+      return NextResponse.json({
+        ok: true,
+        disabled: true,
+        skipped: true,
+        message: "SIP/Parking desactivado temporalmente",
+      });
+    }
+
     const gate = await getAuthContext(req);
     if (!gate.ok) {
       return NextResponse.json({ ok: false, error: gate.error }, { status: 401 });
