@@ -420,13 +420,13 @@ function AdminPage() {
 
     const timer = setInterval(() => {
       loadLatestCrmCloseNotif(true);
-    }, 10000);
+    }, 60000);
 
     return () => {
       clearInterval(timer);
       sb.removeChannel(channel);
     };
-  }, [ok, crmDismissedIds]);
+  }, [ok]);
 
 
   async function loadLatestCrmCloseNotif(silent = false) {

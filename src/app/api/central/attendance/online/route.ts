@@ -42,7 +42,7 @@ export async function GET(req: Request) {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    // Verificar que es central
+    // Verificar que es central o admin
     const { data: me, error: em } = await admin
       .from("workers")
       .select("id, role")
@@ -51,7 +51,7 @@ export async function GET(req: Request) {
 
     if (em) throw em;
     if (!me?.id) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
-    if (String(me.role) !== "central") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!["central", "admin"].includes(String(me.role))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     // 1) Traer tarotistas
     const { data: ws, error: ew } = await admin

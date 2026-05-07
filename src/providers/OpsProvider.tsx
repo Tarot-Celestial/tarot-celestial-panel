@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { usePathname } from "next/navigation";
 
 export type OpsCounters = {
   parking: number;
@@ -89,12 +90,12 @@ function defaultListState<T>(): OpsListState<T> {
   };
 }
 
-const PARKING_REFRESH_MS = 30000;
+const PARKING_REFRESH_MS = 60000;
 const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true";
-const LEADS_REFRESH_MS = 30000;
-const ATTENDANCE_REFRESH_MS = 60000;
-const PRESENCES_REFRESH_MS = 60000;
-const EXPECTED_REFRESH_MS = 120000;
+const LEADS_REFRESH_MS = 60000;
+const ATTENDANCE_REFRESH_MS = 120000;
+const PRESENCES_REFRESH_MS = 120000;
+const EXPECTED_REFRESH_MS = 300000;
 
 const OpsContext = createContext<OpsContextValue | null>(null);
 
@@ -112,6 +113,12 @@ function secondsAgo(ts: string | null) {
 }
 
 export function OpsProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const isAdminPath = pathname?.startsWith("/admin") ?? false;
+  const isCentralPath = pathname?.startsWith("/panel-central") ?? false;
+  const isTarotistaPath = pathname?.startsWith("/panel-tarotista") ?? false;
+  const shouldRunOps = isAdminPath || isCentralPath || isTarotistaPath;
+
   const [counters, setCounters] = useState<OpsCounters>(DEFAULT_COUNTERS);
   const [attendance, setAttendance] = useState<OpsAttendance>(DEFAULT_ATTENDANCE);
   const [presences, setPresences] = useState<OpsListState<OpsPresenceRow>>(() => defaultListState<OpsPresenceRow>());
@@ -386,12 +393,26 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     mountedRef.current = true;
-    const sb = supabaseBrowser();
 
-    refreshCounters();
-    refreshAttendance();
-    refreshPresences();
-    refreshExpected();
+    if (!shouldRunOps) {
+      return () => {
+        mountedRef.current = false;
+      };
+    }
+
+    const sb = supabaseBrowser();
+    const needsCentralPresence = isCentralPath;
+    const needsOwnAttendance = isCentralPath || isTarotistaPath;
+
+    // No bloquear el primer render: las lecturas operativas arrancan en background.
+    const initialTimer = window.setTimeout(() => {
+      refreshCounters();
+      if (needsOwnAttendance) refreshAttendance();
+      if (needsCentralPresence) {
+        refreshPresences();
+        refreshExpected();
+      }
+    }, 1500);
 
     const leadsChannel = sb
       .channel("tc_ops_captacion_leads")
@@ -400,28 +421,31 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
     const parkingInterval = ASTERISK_ENABLED ? window.setInterval(() => void fetchParking(), PARKING_REFRESH_MS) : null;
     const leadsInterval = window.setInterval(() => void fetchLeads(), LEADS_REFRESH_MS);
-    const attendanceInterval = window.setInterval(() => void fetchAttendance(), ATTENDANCE_REFRESH_MS);
-    const presencesInterval = window.setInterval(() => void fetchPresences(), PRESENCES_REFRESH_MS);
-    const expectedInterval = window.setInterval(() => void fetchExpected(), EXPECTED_REFRESH_MS);
+    const attendanceInterval = needsOwnAttendance ? window.setInterval(() => void fetchAttendance(), ATTENDANCE_REFRESH_MS) : null;
+    const presencesInterval = needsCentralPresence ? window.setInterval(() => void fetchPresences(), PRESENCES_REFRESH_MS) : null;
+    const expectedInterval = needsCentralPresence ? window.setInterval(() => void fetchExpected(), EXPECTED_REFRESH_MS) : null;
 
-    const onFocus = () => {
+    const refreshVisibleOps = () => {
+      if (document.visibilityState !== "visible") return;
       refreshCounters();
-      refreshAttendance();
-      refreshPresences();
-      refreshExpected();
-    };
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        refreshCounters();
-        refreshAttendance();
+      if (needsOwnAttendance) refreshAttendance();
+      if (needsCentralPresence) {
         refreshPresences();
         refreshExpected();
       }
     };
+    const onFocus = () => refreshVisibleOps();
+    const onVisible = () => refreshVisibleOps();
     const onCountersRefresh = () => refreshCounters();
-    const onAttendanceRefresh = () => refreshAttendance();
-    const onPresencesRefresh = () => refreshPresences();
-    const onExpectedRefresh = () => refreshExpected();
+    const onAttendanceRefresh = () => {
+      if (needsOwnAttendance) refreshAttendance();
+    };
+    const onPresencesRefresh = () => {
+      if (needsCentralPresence) refreshPresences();
+    };
+    const onExpectedRefresh = () => {
+      if (needsCentralPresence) refreshExpected();
+    };
 
     window.addEventListener("focus", onFocus);
     window.addEventListener("tc-counters-refresh", onCountersRefresh as EventListener);
@@ -432,11 +456,12 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mountedRef.current = false;
+      window.clearTimeout(initialTimer);
       if (parkingInterval) window.clearInterval(parkingInterval);
       window.clearInterval(leadsInterval);
-      window.clearInterval(attendanceInterval);
-      window.clearInterval(presencesInterval);
-      window.clearInterval(expectedInterval);
+      if (attendanceInterval) window.clearInterval(attendanceInterval);
+      if (presencesInterval) window.clearInterval(presencesInterval);
+      if (expectedInterval) window.clearInterval(expectedInterval);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("tc-counters-refresh", onCountersRefresh as EventListener);
       window.removeEventListener("tc-attendance-refresh", onAttendanceRefresh as EventListener);
@@ -451,10 +476,13 @@ export function OpsProvider({ children }: { children: ReactNode }) {
     fetchLeads,
     fetchParking,
     fetchPresences,
+    isCentralPath,
+    isTarotistaPath,
     refreshAttendance,
     refreshCounters,
     refreshExpected,
     refreshPresences,
+    shouldRunOps,
   ]);
 
   const value = useMemo<OpsContextValue>(
