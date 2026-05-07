@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -16,7 +17,7 @@ async function requireAdmin(req: Request) {
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
 
-  const { data: user } = await admin.auth.getUser(token);
+  const { data: user } = getAuthUserFromRequest(req);
   const uid = user?.user?.id;
 
   const { data: me } = await admin

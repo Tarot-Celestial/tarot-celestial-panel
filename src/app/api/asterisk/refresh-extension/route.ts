@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -26,7 +27,7 @@ async function getAuthContext(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data: userData } = await userClient.auth.getUser();
+  const { data: userData } = getAuthUserFromRequest(req);
   const uid = userData?.user?.id || null;
   const email = userData?.user?.email || null;
   if (!uid) return { ok: false as const, error: "BAD_TOKEN" };

@@ -1,8 +1,7 @@
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabaseClient";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const runtime = "nodejs";
 

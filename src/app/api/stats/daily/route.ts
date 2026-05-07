@@ -1,8 +1,7 @@
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,

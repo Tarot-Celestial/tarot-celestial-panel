@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminSupabase } from "@/lib/server/cliente-auth-password";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export async function GET(req: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await sb.auth.getUser(token);
+    } = getAuthUserFromRequest(req);
 
     if (error || !user) {
       return NextResponse.json({ ok: false }, { status: 401 });

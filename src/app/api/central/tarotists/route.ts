@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ async function getMeFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data } = await userClient.auth.getUser();
+  const { data } = getAuthUserFromRequest(req);
   const uid = data?.user?.id || null;
   if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };
 

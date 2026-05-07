@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -24,7 +25,7 @@ async function uidFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data, error } = await sb.auth.getUser();
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
   return data.user?.id || null;
 }

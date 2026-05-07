@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -30,7 +31,7 @@ async function uidFromBearer(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data, error } = await sb.auth.getUser();
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
   return data.user?.id || null;
 }

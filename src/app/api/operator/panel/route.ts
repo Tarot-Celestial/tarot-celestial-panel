@@ -3,6 +3,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { createClient } from "@supabase/supabase-js";
 import { amiAction, amiCommand, getAsteriskLiveSnapshot, refreshPjsipRealtimeObject } from "@/lib/server/asterisk-ami";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 const execAsync = promisify(exec);
 
 export const runtime = "nodejs";
@@ -516,7 +517,7 @@ if (!token) {
     auth: { persistSession: false },
   });
 
-  const { data: userData } = await userClient.auth.getUser();
+  const { data: userData } = getAuthUserFromRequest(req);
   const uid = userData?.user?.id || null;
   const email = userData?.user?.email || null;
   if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };

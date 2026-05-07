@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { hangupActiveTransferChannels } from "@/lib/server/asterisk-ami";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,7 @@ async function getWorker(req: Request, db: any) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data } = await userClient.auth.getUser();
+  const { data } = getAuthUserFromRequest(req);
   const uid = data.user?.id || null;
   if (!uid) return null;
 

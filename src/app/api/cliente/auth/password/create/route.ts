@@ -6,6 +6,7 @@ import {
   findClienteByPhoneForAuth,
   normalizePhoneDigits,
 } from "@/lib/server/cliente-auth-password";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
       const {
         data: { user },
         error,
-      } = await sb.auth.getUser(token);
+      } = getAuthUserFromRequest(req);
 
       if (error || !user) {
         return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 function getSupabase() {
   return createClient(
@@ -19,7 +20,7 @@ export async function GET(req: Request) {
     const token = auth.replace("Bearer ", "");
     const sb = getSupabase();
 
-    const { data: userData } = await sb.auth.getUser(token);
+    const { data: userData } = getAuthUserFromRequest(req);
     if (!userData?.user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }

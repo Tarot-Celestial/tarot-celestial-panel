@@ -1,6 +1,7 @@
 // src/app/api/central/chat/open/route.ts
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
     const token = bearerToken(req);
     if (!token) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
 
-    const { data: u, error: uErr } = await admin.auth.getUser(token);
+    const { data: u, error: uErr } = getAuthUserFromRequest(req);
     if (uErr || !u?.user) return NextResponse.json({ ok: false, error: "BAD_TOKEN" }, { status: 401 });
 
     // central/admin

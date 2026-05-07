@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -23,7 +24,7 @@ async function getAdminFromToken(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data: u } = await userClient.auth.getUser();
+  const { data: u } = getAuthUserFromRequest(req);
   const uid = u?.user?.id || null;
   const email = u?.user?.email || null;
 

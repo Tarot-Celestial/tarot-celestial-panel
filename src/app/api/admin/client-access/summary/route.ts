@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ async function requireAdmin(req: Request) {
   if (!token) throw new Error("NO_AUTH");
 
   const admin = adminClient();
-  const { data: userData, error: userError } = await admin.auth.getUser(token);
+  const { data: userData, error: userError } = getAuthUserFromRequest(req);
   if (userError) throw userError;
 
   const uid = userData.user?.id;
