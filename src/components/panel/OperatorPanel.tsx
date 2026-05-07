@@ -6,6 +6,7 @@ import { Copy, Phone, Plus, RefreshCw, Save, Settings2, Smartphone, Trash2, User
 
 const sb = supabaseBrowser();
 const OPERATOR_REFRESH_MS = 30000;
+const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true";
 
 type OperatorPanelProps = {
   mode: "admin" | "central";
@@ -361,6 +362,13 @@ if (!token) {
 
     try {
       await loadData();
+
+      if (!ASTERISK_ENABLED) {
+        setParkingCalls([]);
+        setIncomingCalls([]);
+        setAsteriskPanelError("Asterisk/SIP desactivado temporalmente para estabilizar el panel.");
+        return;
+      }
 
       if (Date.now() < parkingDisabledUntilRef.current) return;
 

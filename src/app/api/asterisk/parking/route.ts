@@ -4,6 +4,8 @@ import { getAsteriskIncomingSnapshot, getAsteriskLiveSnapshot, getAsteriskParkin
 
 export const runtime = "nodejs";
 
+const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true" || process.env.ENABLE_ASTERISK === "true";
+
 function getEnv(name: string) {
   const value = process.env[name];
   if (!value) throw new Error(`Missing env var: ${name}`);
@@ -52,6 +54,16 @@ async function getAuthContext(req: Request) {
 
 export async function GET(req: Request) {
   try {
+    if (!ASTERISK_ENABLED) {
+      return NextResponse.json({
+        ok: true,
+        disabled: true,
+        calls: [],
+        incomingCalls: [],
+        liveExtensions: {},
+        message: "Asterisk/SIP desactivado temporalmente",
+      });
+    }
     const gate = await getAuthContext(req);
     if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: 401 });
 

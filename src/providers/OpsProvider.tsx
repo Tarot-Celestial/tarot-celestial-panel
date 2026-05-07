@@ -90,6 +90,7 @@ function defaultListState<T>(): OpsListState<T> {
 }
 
 const PARKING_REFRESH_MS = 30000;
+const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true";
 const LEADS_REFRESH_MS = 30000;
 const ATTENDANCE_REFRESH_MS = 60000;
 const PRESENCES_REFRESH_MS = 60000;
@@ -125,6 +126,10 @@ export function OpsProvider({ children }: { children: ReactNode }) {
   const parkingDisabledUntilRef = useRef(0);
 
   const fetchParking = useCallback(async () => {
+    if (!ASTERISK_ENABLED) {
+      setCounters((prev) => (prev.parking === 0 ? prev : { ...prev, parking: 0 }));
+      return;
+    }
     if (parkingInFlightRef.current) return;
     if (Date.now() < parkingDisabledUntilRef.current) return;
     parkingInFlightRef.current = true;
@@ -393,7 +398,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => void fetchLeads())
       .subscribe();
 
-    const parkingInterval = window.setInterval(() => void fetchParking(), PARKING_REFRESH_MS);
+    const parkingInterval = ASTERISK_ENABLED ? window.setInterval(() => void fetchParking(), PARKING_REFRESH_MS) : null;
     const leadsInterval = window.setInterval(() => void fetchLeads(), LEADS_REFRESH_MS);
     const attendanceInterval = window.setInterval(() => void fetchAttendance(), ATTENDANCE_REFRESH_MS);
     const presencesInterval = window.setInterval(() => void fetchPresences(), PRESENCES_REFRESH_MS);
@@ -427,7 +432,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mountedRef.current = false;
-      window.clearInterval(parkingInterval);
+      if (parkingInterval) window.clearInterval(parkingInterval);
       window.clearInterval(leadsInterval);
       window.clearInterval(attendanceInterval);
       window.clearInterval(presencesInterval);
