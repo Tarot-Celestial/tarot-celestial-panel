@@ -347,36 +347,50 @@ function AdminPage() {
 
   useEffect(() => {
   (async () => {
-    const { data } = await sb.auth.getSession();
-    const user = data.session?.user;
+    try {
+      const cachedRole = sessionStorage.getItem("tc_admin_role");
+      const cachedTs = Number(sessionStorage.getItem("tc_admin_role_ts") || "0");
 
-    if (!user) {
-      window.location.href = "/login";
-      return;
+      if (cachedRole === "admin" && Date.now() - cachedTs < 300000) {
+        setOk(true);
+        return;
+      }
+
+      const { data } = await sb.auth.getSession();
+      const user = data.session?.user;
+
+      if (!user) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const { data: worker, error } = await sb
+        .from("workers")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error || !worker) {
+        console.error("❌ No se encontró worker:", error);
+        window.location.href = "/login";
+        return;
+      }
+
+      const role = worker.role?.toLowerCase();
+
+      sessionStorage.setItem("tc_admin_role", role || "");
+      sessionStorage.setItem("tc_admin_role_ts", String(Date.now()));
+
+      if (role !== "admin") {
+        window.location.href =
+          role === "central" ? "/panel-central" : "/panel-tarotista";
+        return;
+      }
+
+      setOk(true);
+    } catch (e) {
+      console.error("admin auth error", e);
     }
-
-    // 🔥 SACAMOS ROLE REAL DE LA TABLA workers
-    const { data: worker, error } = await sb
-      .from("workers")
-      .select("role")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    if (error || !worker) {
-      console.error("❌ No se encontró worker:", error);
-      window.location.href = "/login";
-      return;
-    }
-
-    const role = worker.role?.toLowerCase();
-
-    if (role !== "admin") {
-      window.location.href =
-        role === "central" ? "/panel-central" : "/panel-tarotista";
-      return;
-    }
-
-    setOk(true);
   })();
 }, []);
 
@@ -1178,7 +1192,7 @@ function AdminPage() {
     pollRef.current = setInterval(() => {
       if (tab === "facturas") listInvoices(true);
       if (tab === "estadisticas") loadAdminStats(true);
-    }, 8000);
+    }, 60000);
 
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -2940,3 +2954,4 @@ export default function Page() {
     </Suspense>
   );
 }
+
