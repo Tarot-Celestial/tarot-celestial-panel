@@ -574,10 +574,11 @@ function AdminPage() {
       throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
     }
 
-    // 🔥 ARREGLO REAL
-    const count = j?.created ?? 0;
+    const created = Number(j?.created || 0);
+    const updated = Number(j?.updated || 0);
+    const sourceRows = Number(j?.source_rows || 0);
 
-    setGenMsg(`✅ Facturas generadas para ${month}. Total: ${count}`);
+    setGenMsg(`✅ Facturas generadas para ${month}. Nuevas: ${created} · Actualizadas: ${updated} · Registros de rendimiento usados: ${sourceRows}`);
 
     await listInvoices();
     setTab("facturas");

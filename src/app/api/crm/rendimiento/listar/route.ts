@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server';
-import { getAdminClient, workerFromRequest } from '@/lib/server/auth-worker';
+import { getAdminClient, normalizeText, workerFromRequest } from '@/lib/server/auth-worker';
 
 export const runtime = 'nodejs';
 
-function isDate(value: string | null) {
-  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value);
+function addDays(date: string, days: number) {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function cleanDate(value: string | null) {
+  const raw = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : '';
 }
 
 export async function GET(req: Request) {
@@ -16,32 +23,50 @@ export async function GET(req: Request) {
     }
 
     const url = new URL(req.url);
-    const from = url.searchParams.get('from');
-    const to = url.searchParams.get('to');
-    const limitParam = Number(url.searchParams.get('limit') || 0);
-    const limit = Math.min(Math.max(limitParam || 2000, 1), 10000);
+    const from = cleanDate(url.searchParams.get('from'));
+    const to = cleanDate(url.searchParams.get('to'));
+    const tarotista = normalizeText(url.searchParams.get('tarotista'));
+    const telefonista = normalizeText(url.searchParams.get('telefonista'));
+    const codigo = normalizeText(url.searchParams.get('codigo'));
+    const limitParam = Math.min(Math.max(Number(url.searchParams.get('limit') || 10000) || 10000, 1), 50000);
 
     const admin = getAdminClient();
-    let query = admin
-      .from('rendimiento_llamadas')
-      .select('*')
-      .order('fecha_hora', { ascending: false })
-      .limit(limit);
+    const pageSize = 1000;
+    const allRows: any[] = [];
 
-    if (isDate(from)) query = query.gte('fecha', from);
-    if (isDate(to)) query = query.lte('fecha', to);
+    for (let offset = 0; offset < limitParam; offset += pageSize) {
+      let query = admin
+        .from('rendimiento_llamadas')
+        .select('*')
+        .order('fecha_hora', { ascending: false });
 
-    const { data, error } = await query;
-    if (error) throw error;
+      if (from) query = query.gte('fecha_hora', `${from}T00:00:00.000Z`);
+      if (to) query = query.lt('fecha_hora', `${addDays(to, 1)}T00:00:00.000Z`);
+
+      const { data, error } = await query.range(offset, Math.min(offset + pageSize - 1, limitParam - 1));
+      if (error) throw error;
+      const chunk = data || [];
+      allRows.push(...chunk);
+      if (chunk.length < pageSize) break;
+    }
+
+    const filtered = allRows.filter((row: any) => {
+      const tarotistaText = normalizeText([row.tarotista_nombre, row.tarotista_manual_call].filter(Boolean).join(' '));
+      const telefonistaText = normalizeText(row.telefonista_nombre);
+      const codigoText = normalizeText([row.resumen_codigo, row.codigo_1, row.codigo_2, row.tipo_registro].filter(Boolean).join(' '));
+      return (
+        (!tarotista || tarotistaText.includes(tarotista)) &&
+        (!telefonista || telefonistaText.includes(telefonista)) &&
+        (!codigo || codigoText.includes(codigo))
+      );
+    });
 
     return NextResponse.json({
       ok: true,
-      data: data || [],
-      filters: {
-        from: isDate(from) ? from : null,
-        to: isDate(to) ? to : null,
-        limit,
-      },
+      data: filtered,
+      loaded: allRows.length,
+      returned: filtered.length,
+      filters: { from, to, tarotista, telefonista, codigo, limit: limitParam },
       viewer: {
         role: me.role || null,
         worker_id: me.id || null,

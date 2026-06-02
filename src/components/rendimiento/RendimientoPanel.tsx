@@ -82,24 +82,26 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     return data.session?.access_token || "";
   }
 
-  async function fetchData(options?: { keepLoadingState?: boolean; from?: string; to?: string }) {
+  async function fetchData() {
     const token = await getToken();
     if (!token) return;
-    if (!options?.keepLoadingState) setLoading(true);
+    setLoading(true);
     setMsg("");
     try {
-      const from = options?.from ?? fFrom;
-      const to = options?.to ?? fTo;
-      const params = new URLSearchParams({ mode, limit: "10000" });
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
+      const params = new URLSearchParams({ mode, limit: "50000" });
+      if (fFrom) params.set("from", fFrom);
+      if (fTo) params.set("to", fTo);
+      if (fTarotista.trim()) params.set("tarotista", fTarotista.trim());
+      if (fTelefonista.trim()) params.set("telefonista", fTelefonista.trim());
+      if (fCodigo.trim()) params.set("codigo", fCodigo.trim());
 
       const res = await fetch(`/api/crm/rendimiento/listar?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const json = await res.json();
       if (!res.ok || json?.ok === false) throw new Error(json?.error || "No se pudo cargar rendimiento");
       setRows(dedupeRows(json.data || []));
-      const rangeText = from || to ? ` (${from || "inicio"} → ${to || "hoy"})` : "";
-      setMsg(`✅ ${Array.isArray(json.data) ? json.data.length : 0} registros cargados${rangeText}.`);
+      const loaded = Number(json.loaded || json.data?.length || 0);
+      const returned = Number(json.returned || json.data?.length || 0);
+      setMsg(`✅ ${returned} registros mostrados (${loaded} revisados).`);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
       setRows([]);
@@ -112,6 +114,13 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const id = window.setTimeout(() => fetchData(), 450);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fFrom, fTo, fTarotista, fTelefonista, fCodigo]);
 
   function updateField(id: string, field: keyof Row, value: any) {
     setRows((prev) => prev.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r)));
@@ -180,7 +189,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
           <div className="tc-title">📊 Rendimiento</div>
           <div className="tc-sub" style={{ marginTop: 6 }}>Tabla completa de llamadas y cobros registrados.</div>
         </div>
-        <button className="tc-btn tc-btn-gold" onClick={() => fetchData({ keepLoadingState: true })}>Actualizar</button>
+        <button className="tc-btn tc-btn-gold" onClick={fetchData}>Actualizar</button>
       </div>
 
       <div className="tc-sub" style={{ marginTop: 10 }}>{msg || " "}</div>
@@ -200,16 +209,18 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         <input className="tc-input" style={{ width: 150 }} placeholder="Código" value={fCodigo} onChange={(e) => setFCodigo(e.target.value)} />
         <input className="tc-input" style={{ width: 160 }} type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
         <input className="tc-input" style={{ width: 160 }} type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} />
-        <button className="tc-btn" onClick={() => fetchData({ keepLoadingState: true })}>Aplicar fechas</button>
+        <button className="tc-btn tc-btn-gold" onClick={fetchData}>Aplicar filtros</button>
         <button
           className="tc-btn"
           onClick={() => {
+            setFTarotista("");
+            setFTelefonista("");
+            setFCodigo("");
             setFFrom("");
             setFTo("");
-            fetchData({ keepLoadingState: true, from: "", to: "" });
           }}
         >
-          Limpiar fechas
+          Limpiar
         </button>
       </div>
 

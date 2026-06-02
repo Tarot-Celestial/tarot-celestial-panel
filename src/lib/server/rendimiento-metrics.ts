@@ -47,51 +47,36 @@ function emptyBreakdown(): ParsedBreakdown {
   return { free: 0, rueda: 0, cliente: 0, repite: 0, call_fixed: 0, otros: 0 };
 }
 
-function toNum(value: unknown): number {
-  return Number(String(value ?? '').replace('€', '').replace(',', '.').trim()) || 0;
+function breakdownTotal(parsed: ParsedBreakdown) {
+  return Object.values(parsed).reduce((acc, n) => acc + (Number(n || 0) || 0), 0);
 }
 
-function codeBucket(rawCode: unknown): keyof ParsedBreakdown {
-  const text = normalizeText(rawCode).replace(/[_-]+/g, ' ');
-  const compact = text.replace(/\s+/g, '');
-
-  if (!text) return 'otros';
-  if (compact === 'free' || compact === '7free' || text.includes(' free') || text.includes('free ')) return 'free';
+function classifyCode(raw: unknown): keyof ParsedBreakdown | null {
+  const code = normalizeText(raw).replace(/\s+/g, '');
+  const text = normalizeText(raw);
+  if (!code && !text) return null;
+  if (code === 'free' || code === '7free' || text.includes('free')) return 'free';
   if (text.includes('rueda')) return 'rueda';
-  if (text.includes('repite')) return 'repite';
   if (text.includes('cliente')) return 'cliente';
+  if (text.includes('repite')) return 'repite';
   if (text.includes('call')) return 'call_fixed';
   return 'otros';
 }
 
-function addTo(result: ParsedBreakdown, rawCode: unknown, rawMinutes: unknown) {
-  const minutes = roundMoney(toNum(rawMinutes));
-  if (minutes <= 0) return;
-  const bucket = codeBucket(rawCode);
-  result[bucket] = roundMoney(Number(result[bucket] || 0) + minutes);
-}
-
-function extractMinutesFromText(part: string, bucket: keyof ParsedBreakdown): number {
-  const normalized = normalizeText(part);
-  const allNumbers = Array.from(String(part || '').matchAll(/\d+(?:[\.,]\d+)?/g)).map((m) => toNum(m[0]));
-  if (!allNumbers.length) return 0;
-
-  // Evita contar el "7" de etiquetas como "7 free" como si fueran minutos.
-  if (bucket === 'free' && normalized.replace(/\s+/g, '').includes('7free') && allNumbers.length > 1 && allNumbers[0] === 7) {
-    return allNumbers[1];
-  }
-
-  // En textos tipo "Cliente 12 min" o "12 Cliente" normalmente solo hay un número.
-  return allNumbers[0];
+function addToBreakdown(target: ParsedBreakdown, code: keyof ParsedBreakdown | null, minutes: number) {
+  const safeMinutes = Number(minutes || 0) || 0;
+  if (!safeMinutes) return;
+  target[code || 'otros'] = roundMoney(Number(target[code || 'otros'] || 0) + safeMinutes);
 }
 
 export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbackTipo = '') {
   const result = emptyBreakdown();
   const raw = String(resumen || '').trim();
+  const safeFallback = Number(fallbackTiempo || 0) || 0;
 
   if (!raw) {
-    if (normalizeText(fallbackTipo) === '7free') result.free = roundMoney(fallbackTiempo);
-    else if (fallbackTiempo > 0) result.otros = roundMoney(fallbackTiempo);
+    const typeCode = classifyCode(fallbackTipo);
+    if (safeFallback > 0) addToBreakdown(result, typeCode, safeFallback);
     return result;
   }
 
@@ -101,24 +86,39 @@ export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbac
     .filter(Boolean);
 
   for (const part of parts) {
-    const bucket = codeBucket(part);
-    const minutes = extractMinutesFromText(part, bucket);
-    if (!minutes) continue;
-    result[bucket] = roundMoney(Number(result[bucket] || 0) + minutes);
+    const txt = normalizeText(part);
+    const code = classifyCode(part);
+    const numberMatch = part.match(/\d+(?:[\.,]\d+)?/);
+    let mins = Number(numberMatch?.[0]?.replace(',', '.') || 0) || 0;
+
+    // Casos habituales: "Cliente", "Repite", "Rueda", "Free", "Call" sin número.
+    // En esos casos el minuto real es el campo tiempo del registro.
+    if (!mins && parts.length === 1 && safeFallback > 0 && code) mins = safeFallback;
+
+    // "7 free" debe contar 7 minutos free, pero "free" sin número usa tiempo.
+    if (!mins) continue;
+    if (txt.includes('free')) addToBreakdown(result, 'free', mins);
+    else if (txt.includes('rueda')) addToBreakdown(result, 'rueda', mins);
+    else if (txt.includes('cliente')) addToBreakdown(result, 'cliente', mins);
+    else if (txt.includes('repite')) addToBreakdown(result, 'repite', mins);
+    else if (txt.includes('call')) addToBreakdown(result, 'call_fixed', mins);
+    else addToBreakdown(result, code, mins);
   }
 
-  const parsedTotal = Object.values(result).reduce((acc, n) => acc + Number(n || 0), 0);
-  if (parsedTotal === 0 && fallbackTiempo > 0) {
-    if (normalizeText(fallbackTipo) === '7free') result.free = roundMoney(fallbackTiempo);
-    else result.otros = roundMoney(fallbackTiempo);
+  if (breakdownTotal(result) === 0 && safeFallback > 0) {
+    addToBreakdown(result, classifyCode(raw) || classifyCode(fallbackTipo), safeFallback);
   }
 
   return result;
 }
 
-function parseCodeSlot(rawCode: unknown, rawMinutes: unknown) {
+function parseCodeSlot(rawCode: unknown, rawMinutes: unknown, fallbackMinutes = 0) {
   const result = emptyBreakdown();
-  addTo(result, rawCode, rawMinutes);
+  const hasCode = String(rawCode || '').trim().length > 0;
+  const minsFromSlot = Number(rawMinutes || 0) || 0;
+  const mins = minsFromSlot || (hasCode ? Number(fallbackMinutes || 0) || 0 : 0);
+  if (!mins) return result;
+  addToBreakdown(result, classifyCode(rawCode), mins);
   return result;
 }
 
@@ -134,27 +134,32 @@ function sumParsed(a: ParsedBreakdown, b: ParsedBreakdown) {
 }
 
 function parseRowBreakdown(row: RendimientoRow) {
+  const tiempo = Number(row.tiempo || 0) || 0;
+  const code1 = String(row.codigo_1 || '').trim();
+  const code2 = String(row.codigo_2 || '').trim();
+  const mins1 = Number(row.minutos_1 || 0) || 0;
+  const mins2 = Number(row.minutos_2 || 0) || 0;
+
+  // Si viene código por columnas, respetamos esos minutos. Si solo hay un código sin minutos,
+  // usamos tiempo para que coincida con lo que se ve manualmente en Rendimiento.
+  const onlyOneCodeWithoutMinutes = Boolean((code1 && !code2 && !mins1 && !mins2) || (code2 && !code1 && !mins1 && !mins2));
   const fromSlots = sumParsed(
-    parseCodeSlot(row.codigo_1, row.minutos_1),
-    parseCodeSlot(row.codigo_2, row.minutos_2)
+    parseCodeSlot(row.codigo_1, row.minutos_1, onlyOneCodeWithoutMinutes && code1 ? tiempo : 0),
+    parseCodeSlot(row.codigo_2, row.minutos_2, onlyOneCodeWithoutMinutes && code2 ? tiempo : 0)
   );
 
-  const slotTotal = Object.values(fromSlots).reduce((acc, n) => acc + Number(n || 0), 0);
+  const slotTotal = breakdownTotal(fromSlots);
   if (slotTotal > 0) return fromSlots;
 
-  return parseResumenCodigo(
-    row.resumen_codigo,
-    Number(row.tiempo || 0) || 0,
-    String(row.tipo_registro || '')
-  );
+  return parseResumenCodigo(row.resumen_codigo, tiempo, String(row.tipo_registro || ''));
 }
 
 export function resolveTarotistaWorkerId(row: RendimientoRow, workerIdByName: Map<string, string>) {
   if (row.tarotista_worker_id) return String(row.tarotista_worker_id);
   const byName = workerIdByName.get(normalizeText(row.tarotista_nombre));
   if (byName) return byName;
-  const byManual = workerIdByName.get(normalizeText(row.tarotista_manual_call));
-  if (byManual) return byManual;
+  const byManualName = workerIdByName.get(normalizeText(row.tarotista_manual_call));
+  if (byManualName) return byManualName;
   return null;
 }
 
@@ -170,14 +175,27 @@ export async function listTarotistaWorkers() {
 
 export async function listRendimientoRows(start: string, endExclusive: string) {
   const admin = getAdminClient();
-  const { data, error } = await admin
-    .from('rendimiento_llamadas')
-    .select('*')
-    .gte('fecha', start)
-    .lt('fecha', endExclusive)
-    .order('fecha_hora', { ascending: true });
-  if (error) throw error;
-  return (data || []) as RendimientoRow[];
+  const startIso = `${start}T00:00:00.000Z`;
+  const endIso = `${endExclusive}T00:00:00.000Z`;
+  const pageSize = 1000;
+  const allRows: RendimientoRow[] = [];
+
+  for (let from = 0; from < 50000; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await admin
+      .from('rendimiento_llamadas')
+      .select('*')
+      .gte('fecha_hora', startIso)
+      .lt('fecha_hora', endIso)
+      .order('fecha_hora', { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const chunk = (data || []) as RendimientoRow[];
+    allRows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+
+  return allRows;
 }
 
 export function aggregateRendimientoByTarotista(rows: RendimientoRow[], workers: WorkerLite[]) {
@@ -221,7 +239,7 @@ export function aggregateRendimientoByTarotista(rows: RendimientoRow[], workers:
     const importe = Number(row.importe || 0) || 0;
     const parsed = parseRowBreakdown(row);
     if (special) {
-      const totalParsedMinutes = Object.values(parsed).reduce((acc, value) => acc + (Number(value || 0) || 0), 0);
+      const totalParsedMinutes = breakdownTotal(parsed);
       const fallbackCall = Number(row.tiempo || 0) || 0;
       const callMinutes = roundMoney(totalParsedMinutes > 0 ? totalParsedMinutes : fallbackCall);
       parsed.free = 0;
@@ -232,7 +250,7 @@ export function aggregateRendimientoByTarotista(rows: RendimientoRow[], workers:
       parsed.call_fixed = callMinutes;
     }
 
-    const entries = Object.entries(parsed) as Array<[string, number]>;
+    const entries = Object.entries(parsed) as Array<[keyof ParsedBreakdown, number]>;
     const rowMinutes = entries.reduce((acc, [, mins]) => acc + Number(mins || 0), 0);
 
     agg.calls_total += 1;
@@ -277,7 +295,7 @@ export function summarizeRendimientoRows(rows: RendimientoRow[]) {
   const total_minutos = roundMoney(
     rows.reduce((acc, row) => {
       const parsed = parseRowBreakdown(row);
-      return acc + Object.values(parsed).reduce((a, n) => a + Number(n || 0), 0);
+      return acc + breakdownTotal(parsed);
     }, 0)
   );
   const total_captadas = rows.filter((row) => Boolean(row.captado)).length;
