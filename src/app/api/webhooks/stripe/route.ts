@@ -138,7 +138,7 @@ export async function POST(req: Request) {
         // ✅ 2. NUEVO → CREAR NOTA EN CRM
         await admin.from("crm_client_notes").insert({
           cliente_id: clienteId,
-          texto: `Ha comprado ${pack.nombre} (${amountTotal || pack.priceUsd}€) a través del panel cliente`,
+          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${amountTotal || pack.priceUsd}€) a través del panel cliente`,
           author_user_id: null,
           author_name: "Sistema",
           author_email: null,

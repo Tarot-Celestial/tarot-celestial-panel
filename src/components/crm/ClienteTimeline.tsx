@@ -8,7 +8,7 @@ type TimelineItem = {
   subtitle?: string;
   body?: string;
   date?: string | null;
-  tone?: "gold" | "green" | "blue" | "red" | "muted";
+  tone?: "gold" | "green" | "blue" | "purple" | "red" | "muted";
 };
 
 type ClienteTimelineProps = {
@@ -57,6 +57,7 @@ function toneStyle(tone: TimelineItem["tone"]) {
   if (tone === "green") return { border: "rgba(105,240,177,.24)", bg: "rgba(105,240,177,.08)" };
   if (tone === "blue") return { border: "rgba(122,162,255,.24)", bg: "rgba(122,162,255,.08)" };
   if (tone === "red") return { border: "rgba(255,90,106,.24)", bg: "rgba(255,90,106,.08)" };
+  if (tone === "purple") return { border: "rgba(181,156,255,.32)", bg: "rgba(181,156,255,.12)" };
   if (tone === "gold") return { border: "rgba(215,181,109,.28)", bg: "rgba(215,181,109,.10)" };
   return { border: "rgba(255,255,255,.12)", bg: "rgba(255,255,255,.035)" };
 }
@@ -109,15 +110,25 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
   });
 
   (notas || []).forEach((nota: any, index: number) => {
+    const body = nota?.texto || nota?.text || nota?.nota || "—";
+    const bodyLower = String(body || "").toLowerCase();
+    const isWebPurchaseNote =
+      bodyLower.includes("compra web") ||
+      bodyLower.includes("panel cliente") ||
+      bodyLower.includes("a través del panel") ||
+      bodyLower.includes("a traves del panel") ||
+      bodyLower.includes("stripe checkout") ||
+      bodyLower.includes("checkout completado");
+
     items.push({
       id: `note-${nota?.id || index}`,
       type: "note",
-      icon: nota?.is_pinned ? "📌" : "📝",
-      title: nota?.is_pinned ? "Nota anclada" : "Nota CRM",
+      icon: nota?.is_pinned ? "📌" : isWebPurchaseNote ? "🟣" : "📝",
+      title: nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
       subtitle: nota?.author_name || nota?.author_email || "Usuario",
-      body: nota?.texto || nota?.text || nota?.nota || "—",
+      body,
       date: getNoteDate(nota),
-      tone: nota?.is_pinned ? "gold" : "muted",
+      tone: nota?.is_pinned ? "gold" : isWebPurchaseNote ? "purple" : "muted",
     });
   });
 

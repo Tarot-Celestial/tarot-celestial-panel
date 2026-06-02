@@ -11,6 +11,21 @@ import ClienteTimeline from "@/components/crm/ClienteTimeline";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
+  if (
+    s.includes("compra web") ||
+    s.includes("panel cliente") ||
+    s.includes("a través del panel") ||
+    s.includes("a traves del panel") ||
+    s.includes("stripe checkout") ||
+    s.includes("checkout completado")
+  ) {
+    return {
+      chip: "Compra web",
+      border: "1px solid rgba(181,156,255,.32)",
+      bg: "linear-gradient(135deg, rgba(181,156,255,.18), rgba(120,90,220,.08))",
+      color: "#eadfff",
+    };
+  }
   if (s.includes("compra registrada")) return { chip: "Compra", border: "1px solid rgba(105,240,177,.26)", bg: "linear-gradient(135deg, rgba(105,240,177,.12), rgba(255,255,255,.03))", color: "#b7ffe0" };
   if (s.includes("7 free")) return { chip: "7 Free", border: "1px solid rgba(255,90,106,.22)", bg: "linear-gradient(135deg, rgba(255,90,106,.12), rgba(255,255,255,.03))", color: "#ffc1c7" };
   if (s.includes("cliente usa") || s.includes("uso actual:")) return { chip: "Minutos", border: "1px solid rgba(122,162,255,.22)", bg: "linear-gradient(135deg, rgba(122,162,255,.12), rgba(255,255,255,.03))", color: "#c9d9ff" };
