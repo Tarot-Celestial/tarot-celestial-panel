@@ -196,6 +196,7 @@ export async function POST(req: Request) {
         minuteLine({ invoice_id: "__pending__", kind: "minutes_cliente", label: "Minutos Cliente", code: "cliente", minutes: Number(row.minutes_cliente || 0) }),
         minuteLine({ invoice_id: "__pending__", kind: "minutes_repite", label: "Minutos Repite", code: "repite", minutes: Number(row.minutes_repite || 0) }),
         minuteLine({ invoice_id: "__pending__", kind: "minutes_call", label: "Minutos Call", code: "call_fixed", minutes: Number(row.minutes_call_fixed || 0), specialCall: true }),
+        minuteLine({ invoice_id: "__pending__", kind: "minutes_otros", label: "Minutos otros / no facturables", code: "otros", minutes: Number(row.minutes_otros || 0) }),
         bonusCaptadasLine("__pending__", Number(row.captadas_total || 0)),
       ].filter(Boolean) as InvoiceLinePayload[];
 

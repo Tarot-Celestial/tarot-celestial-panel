@@ -82,17 +82,24 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     return data.session?.access_token || "";
   }
 
-  async function fetchData() {
+  async function fetchData(options?: { keepLoadingState?: boolean; from?: string; to?: string }) {
     const token = await getToken();
     if (!token) return;
-    setLoading(true);
+    if (!options?.keepLoadingState) setLoading(true);
     setMsg("");
     try {
-      const res = await fetch(`/api/crm/rendimiento/listar?mode=${mode}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const from = options?.from ?? fFrom;
+      const to = options?.to ?? fTo;
+      const params = new URLSearchParams({ mode, limit: "10000" });
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+
+      const res = await fetch(`/api/crm/rendimiento/listar?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const json = await res.json();
       if (!res.ok || json?.ok === false) throw new Error(json?.error || "No se pudo cargar rendimiento");
       setRows(dedupeRows(json.data || []));
-      setMsg(`✅ ${Array.isArray(json.data) ? json.data.length : 0} registros cargados.`);
+      const rangeText = from || to ? ` (${from || "inicio"} → ${to || "hoy"})` : "";
+      setMsg(`✅ ${Array.isArray(json.data) ? json.data.length : 0} registros cargados${rangeText}.`);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
       setRows([]);
@@ -173,7 +180,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
           <div className="tc-title">📊 Rendimiento</div>
           <div className="tc-sub" style={{ marginTop: 6 }}>Tabla completa de llamadas y cobros registrados.</div>
         </div>
-        <button className="tc-btn tc-btn-gold" onClick={fetchData}>Actualizar</button>
+        <button className="tc-btn tc-btn-gold" onClick={() => fetchData({ keepLoadingState: true })}>Actualizar</button>
       </div>
 
       <div className="tc-sub" style={{ marginTop: 10 }}>{msg || " "}</div>
@@ -193,6 +200,17 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         <input className="tc-input" style={{ width: 150 }} placeholder="Código" value={fCodigo} onChange={(e) => setFCodigo(e.target.value)} />
         <input className="tc-input" style={{ width: 160 }} type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
         <input className="tc-input" style={{ width: 160 }} type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} />
+        <button className="tc-btn" onClick={() => fetchData({ keepLoadingState: true })}>Aplicar fechas</button>
+        <button
+          className="tc-btn"
+          onClick={() => {
+            setFFrom("");
+            setFTo("");
+            fetchData({ keepLoadingState: true, from: "", to: "" });
+          }}
+        >
+          Limpiar fechas
+        </button>
       </div>
 
       <div style={{ overflowX: "auto" }}>

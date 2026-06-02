@@ -34,20 +34,64 @@ type WorkerLite = {
   team?: string | null;
 };
 
-export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbackTipo = '') {
-  const result = {
-    free: 0,
-    rueda: 0,
-    cliente: 0,
-    repite: 0,
-    call_fixed: 0,
-    otros: 0,
-  };
+type ParsedBreakdown = {
+  free: number;
+  rueda: number;
+  cliente: number;
+  repite: number;
+  call_fixed: number;
+  otros: number;
+};
 
+function emptyBreakdown(): ParsedBreakdown {
+  return { free: 0, rueda: 0, cliente: 0, repite: 0, call_fixed: 0, otros: 0 };
+}
+
+function toNum(value: unknown): number {
+  return Number(String(value ?? '').replace('€', '').replace(',', '.').trim()) || 0;
+}
+
+function codeBucket(rawCode: unknown): keyof ParsedBreakdown {
+  const text = normalizeText(rawCode).replace(/[_-]+/g, ' ');
+  const compact = text.replace(/\s+/g, '');
+
+  if (!text) return 'otros';
+  if (compact === 'free' || compact === '7free' || text.includes(' free') || text.includes('free ')) return 'free';
+  if (text.includes('rueda')) return 'rueda';
+  if (text.includes('repite')) return 'repite';
+  if (text.includes('cliente')) return 'cliente';
+  if (text.includes('call')) return 'call_fixed';
+  return 'otros';
+}
+
+function addTo(result: ParsedBreakdown, rawCode: unknown, rawMinutes: unknown) {
+  const minutes = roundMoney(toNum(rawMinutes));
+  if (minutes <= 0) return;
+  const bucket = codeBucket(rawCode);
+  result[bucket] = roundMoney(Number(result[bucket] || 0) + minutes);
+}
+
+function extractMinutesFromText(part: string, bucket: keyof ParsedBreakdown): number {
+  const normalized = normalizeText(part);
+  const allNumbers = Array.from(String(part || '').matchAll(/\d+(?:[\.,]\d+)?/g)).map((m) => toNum(m[0]));
+  if (!allNumbers.length) return 0;
+
+  // Evita contar el "7" de etiquetas como "7 free" como si fueran minutos.
+  if (bucket === 'free' && normalized.replace(/\s+/g, '').includes('7free') && allNumbers.length > 1 && allNumbers[0] === 7) {
+    return allNumbers[1];
+  }
+
+  // En textos tipo "Cliente 12 min" o "12 Cliente" normalmente solo hay un número.
+  return allNumbers[0];
+}
+
+export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbackTipo = '') {
+  const result = emptyBreakdown();
   const raw = String(resumen || '').trim();
+
   if (!raw) {
-    if (normalizeText(fallbackTipo) === '7free') result.free = fallbackTiempo;
-    else if (fallbackTiempo > 0) result.otros = fallbackTiempo;
+    if (normalizeText(fallbackTipo) === '7free') result.free = roundMoney(fallbackTiempo);
+    else if (fallbackTiempo > 0) result.otros = roundMoney(fallbackTiempo);
     return result;
   }
 
@@ -57,51 +101,28 @@ export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbac
     .filter(Boolean);
 
   for (const part of parts) {
-    const mins = Number(part.match(/\d+(?:[\.,]\d+)?/)?.[0]?.replace(',', '.') || 0) || 0;
-    const txt = normalizeText(part);
-    if (!mins) continue;
-    if (txt.includes('free')) result.free += mins;
-    else if (txt.includes('rueda')) result.rueda += mins;
-    else if (txt.includes('cliente')) result.cliente += mins;
-    else if (txt.includes('repite')) result.repite += mins;
-    else if (txt.includes('call')) result.call_fixed += mins;
-    else result.otros += mins;
+    const bucket = codeBucket(part);
+    const minutes = extractMinutesFromText(part, bucket);
+    if (!minutes) continue;
+    result[bucket] = roundMoney(Number(result[bucket] || 0) + minutes);
   }
 
-  if (
-    result.free + result.rueda + result.cliente + result.repite + result.call_fixed + result.otros === 0 &&
-    fallbackTiempo > 0
-  ) {
-    if (normalizeText(fallbackTipo) === '7free') result.free = fallbackTiempo;
-    else result.otros = fallbackTiempo;
+  const parsedTotal = Object.values(result).reduce((acc, n) => acc + Number(n || 0), 0);
+  if (parsedTotal === 0 && fallbackTiempo > 0) {
+    if (normalizeText(fallbackTipo) === '7free') result.free = roundMoney(fallbackTiempo);
+    else result.otros = roundMoney(fallbackTiempo);
   }
 
   return result;
 }
 
 function parseCodeSlot(rawCode: unknown, rawMinutes: unknown) {
-  const result = {
-    free: 0,
-    rueda: 0,
-    cliente: 0,
-    repite: 0,
-    call_fixed: 0,
-    otros: 0,
-  };
-  const mins = Number(rawMinutes || 0) || 0;
-  if (!mins) return result;
-
-  const code = normalizeText(rawCode);
-  if (code === 'free' || code === '7free') result.free = mins;
-  else if (code === 'rueda') result.rueda = mins;
-  else if (code === 'cliente') result.cliente = mins;
-  else if (code === 'repite') result.repite = mins;
-  else if (code.includes('call')) result.call_fixed = mins;
-  else result.otros = mins;
+  const result = emptyBreakdown();
+  addTo(result, rawCode, rawMinutes);
   return result;
 }
 
-function sumParsed(a: ReturnType<typeof parseResumenCodigo>, b: ReturnType<typeof parseResumenCodigo>) {
+function sumParsed(a: ParsedBreakdown, b: ParsedBreakdown) {
   return {
     free: roundMoney((a.free || 0) + (b.free || 0)),
     rueda: roundMoney((a.rueda || 0) + (b.rueda || 0)),
@@ -132,6 +153,8 @@ export function resolveTarotistaWorkerId(row: RendimientoRow, workerIdByName: Ma
   if (row.tarotista_worker_id) return String(row.tarotista_worker_id);
   const byName = workerIdByName.get(normalizeText(row.tarotista_nombre));
   if (byName) return byName;
+  const byManual = workerIdByName.get(normalizeText(row.tarotista_manual_call));
+  if (byManual) return byManual;
   return null;
 }
 
@@ -147,13 +170,11 @@ export async function listTarotistaWorkers() {
 
 export async function listRendimientoRows(start: string, endExclusive: string) {
   const admin = getAdminClient();
-  const startIso = `${start}T00:00:00.000Z`;
-  const endIso = `${endExclusive}T00:00:00.000Z`;
   const { data, error } = await admin
     .from('rendimiento_llamadas')
     .select('*')
-    .gte('fecha_hora', startIso)
-    .lt('fecha_hora', endIso)
+    .gte('fecha', start)
+    .lt('fecha', endExclusive)
     .order('fecha_hora', { ascending: true });
   if (error) throw error;
   return (data || []) as RendimientoRow[];
