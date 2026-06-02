@@ -66,6 +66,7 @@ function inputStyle() {
 }
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
+  const [hydrated, setHydrated] = useState(false);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -109,6 +110,10 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
 
   useEffect(() => {
     fetchData();
