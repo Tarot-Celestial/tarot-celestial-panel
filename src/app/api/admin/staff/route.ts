@@ -61,7 +61,7 @@ export async function GET(req: Request) {
     const { data: workers, error: workersErr } = await admin
       .from("workers")
       .select("id, user_id, display_name, role, team, email, is_active, tarotista_level, created_at")
-      .eq("is_active", true)
+      .or("is_active.is.null,is_active.eq.true")
       .order("display_name", { ascending: true });
 
     if (workersErr) throw workersErr;

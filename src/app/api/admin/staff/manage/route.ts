@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { clearWorkerCache } from "@/lib/server/worker-cache";
 
 export const runtime = "nodejs";
 
@@ -157,8 +158,25 @@ export async function POST(req: Request) {
 
       await admin
         .from("shift_schedules")
-        .update({ is_active: false })
+        .update({ active: false })
         .eq("worker_id", worker_id);
+
+      await admin
+        .from("attendance_state")
+        .upsert({
+          worker_id,
+          is_online: false,
+          status: "offline",
+          last_event_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "worker_id" });
+
+      await admin
+        .from("cliente_chat_tarotistas")
+        .update({ chat_enabled: false, is_online: false, is_busy: false, updated_at: new Date().toISOString() })
+        .eq("worker_id", worker_id);
+
+      clearWorkerCache();
 
       return NextResponse.json({ ok: true });
     }
@@ -175,6 +193,8 @@ export async function POST(req: Request) {
         .eq("id", worker_id);
 
       if (error) throw error;
+
+      clearWorkerCache();
 
       return NextResponse.json({ ok: true });
     }

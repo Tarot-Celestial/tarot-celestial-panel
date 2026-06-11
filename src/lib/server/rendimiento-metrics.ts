@@ -167,8 +167,9 @@ export async function listTarotistaWorkers() {
   const admin = getAdminClient();
   const { data, error } = await admin
     .from('workers')
-    .select('id, display_name, role, team')
-    .eq('role', 'tarotista');
+    .select('id, display_name, role, team, is_active')
+    .eq('role', 'tarotista')
+    .or('is_active.is.null,is_active.eq.true');
   if (error) throw error;
   return (data || []) as WorkerLite[];
 }

@@ -185,7 +185,15 @@ export async function POST(req: Request) {
 
     let tarotistaNombre: string | null = null;
     if (tarotistaWorkerId) {
-      const { data: tarotista } = await admin.from("workers").select("display_name").eq("id", tarotistaWorkerId).maybeSingle();
+      const { data: tarotista, error: tarotistaError } = await admin
+        .from("workers")
+        .select("display_name, is_active, role")
+        .eq("id", tarotistaWorkerId)
+        .maybeSingle();
+      if (tarotistaError) throw tarotistaError;
+      if (!tarotista || tarotista.is_active === false || String(tarotista.role || "") !== "tarotista") {
+        return NextResponse.json({ ok: false, error: "TAROTISTA_INACTIVA" }, { status: 400 });
+      }
       tarotistaNombre = tarotista?.display_name || null;
     }
     if (!tarotistaNombre && tarotistaManualCall) tarotistaNombre = tarotistaManualCall;

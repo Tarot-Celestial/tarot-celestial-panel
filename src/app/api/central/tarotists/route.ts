@@ -65,6 +65,7 @@ export async function GET(req: Request) {
       .from("workers")
       .select("id, display_name, role, is_active")
       .eq("role", "tarotista")
+      .or("is_active.is.null,is_active.eq.true")
       .order("display_name", { ascending: true });
 
     if (error) throw error;

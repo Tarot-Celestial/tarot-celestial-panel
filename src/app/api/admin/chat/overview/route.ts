@@ -12,7 +12,7 @@ export async function GET(req: Request) {
 
     const admin = supabaseAdmin();
     const [workersRes, statusRes, threadsRes, creditsRes] = await Promise.all([
-      admin.from("workers").select("id, display_name, role, team, is_active").eq("role", "tarotista").eq("is_active", true).order("display_name", { ascending: true }),
+      admin.from("workers").select("id, display_name, role, team, is_active").eq("role", "tarotista").or("is_active.is.null,is_active.eq.true").order("display_name", { ascending: true }),
       admin.from("cliente_chat_tarotistas").select("worker_id, is_online, is_busy, chat_enabled, visible_name, welcome_message, updated_at"),
       admin
         .from("cliente_chat_threads")

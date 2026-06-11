@@ -60,6 +60,13 @@ export default function LoginPage() {
         return;
       }
 
+      if (worker?.is_active === false) {
+        await sb.auth.signOut();
+        setErr("Este usuario está dado de baja y no puede acceder al panel.");
+        setLoading(false);
+        return;
+      }
+
       // 🔥 NORMALIZAR ROLE
       const role = worker?.role?.toLowerCase();
 

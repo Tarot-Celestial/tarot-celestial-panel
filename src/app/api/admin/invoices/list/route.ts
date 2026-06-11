@@ -53,6 +53,15 @@ export async function GET(req: Request) {
     const u = new URL(req.url);
     const month = u.searchParams.get("month") || monthKeyNow();
 
+    const { data: activeWorkers, error: activeWorkersError } = await admin
+      .from("workers")
+      .select("id")
+      .or("is_active.is.null,is_active.eq.true");
+
+    if (activeWorkersError) throw activeWorkersError;
+
+    const activeWorkerIds = new Set((activeWorkers || []).map((w: any) => String(w.id)));
+
     // usamos la view v_invoice_full si existe; si no, leemos join directo
     const { data, error } = await admin
       .from("v_invoice_full")
@@ -80,8 +89,9 @@ export async function GET(req: Request) {
       if (workerIds.length) {
         const { data: workersData, error: ew } = await admin
           .from("workers")
-          .select("id, display_name, role")
-          .in("id", workerIds);
+          .select("id, display_name, role, is_active")
+          .in("id", workerIds)
+          .or("is_active.is.null,is_active.eq.true");
 
         if (ew) throw ew;
         ws = workersData || [];
@@ -90,7 +100,9 @@ export async function GET(req: Request) {
       const wm = new Map<string, any>();
       for (const w of ws || []) wm.set(String(w.id), w);
 
-      const merged = (i2 || []).map((x: any) => ({
+      const merged = (i2 || [])
+        .filter((x: any) => activeWorkerIds.has(String(x.worker_id)))
+        .map((x: any) => ({
         invoice_id: x.id,
         worker_id: x.worker_id,
         display_name: wm.get(String(x.worker_id))?.display_name || "—",
@@ -108,7 +120,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, month, invoices: merged });
     }
 
-    return NextResponse.json({ ok: true, month, invoices: data || [] });
+    const visibleInvoices = (data || []).filter((x: any) => activeWorkerIds.has(String(x.worker_id)));
+    return NextResponse.json({ ok: true, month, invoices: visibleInvoices });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

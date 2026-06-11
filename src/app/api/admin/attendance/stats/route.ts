@@ -159,8 +159,10 @@ export async function GET(req: Request) {
     const rangeEnd = new Date(`${toYMD}T23:59:59Z`);
 
     // workers a calcular
-    const wQuery = admin.from("workers").select("id, display_name, role, team");
-    const { data: workers, error: ew } = worker_id ? await wQuery.eq("id", worker_id) : await wQuery;
+    let wQuery = admin.from("workers").select("id, display_name, role, team, is_active");
+    if (worker_id) wQuery = wQuery.eq("id", worker_id).or("is_active.is.null,is_active.eq.true");
+    else wQuery = wQuery.or("is_active.is.null,is_active.eq.true");
+    const { data: workers, error: ew } = await wQuery;
     if (ew) throw ew;
 
     const ids = (workers || []).map((w: any) => String(w.id));

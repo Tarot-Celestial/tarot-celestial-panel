@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     const shift_key = String(sk || "");
 
     // tarotistas del mismo equipo del central (si admin, devuelve todas)
-    let q = admin.from("workers").select("id, display_name, team, role, shift_type").eq("role", "tarotista");
+    let q = admin.from("workers").select("id, display_name, team, role, shift_type, is_active").eq("role", "tarotista").or("is_active.is.null,is_active.eq.true");
     if (me.role === "central") q = q.eq("team", me.team);
 
     const { data: tarotists, error: et } = await q.order("display_name", { ascending: true });

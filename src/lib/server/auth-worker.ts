@@ -59,6 +59,7 @@ export async function workerFromRequest(req: Request) {
   }
 
   if (!me) return null;
+  if (me.is_active === false) return null;
   return { ...me, resolved_uid: uid || null, resolved_email: email || null };
 }
 
