@@ -100,7 +100,7 @@ export default function ClienteTarotistasPage() {
               <MoonStar size={22} /> Tarotistas disponibles
             </div>
             <div className="tc-sub" style={{ marginTop: 7, maxWidth: 760 }}>
-              Las tarjetas se ordenan por disponibilidad y rango. El rango se calcula automáticamente con la puntuación de calidad del mes: media entre % Cliente y % Repite.
+              Las tarjetas se ordenan por disponibilidad y rango. El rango se calcula por % de minutos Cliente: por encima del 25% es Rango A. La nota pública usa % Cliente y % Repite.
             </div>
           </div>
           <button className="tc-btn" onClick={loadData} disabled={loading}>

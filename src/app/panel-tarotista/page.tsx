@@ -1600,7 +1600,7 @@ export default function Tarotista() {
                     <Kpi label="Puntuación pública" value={myPublicRangeScore > 0 ? `${myPublicRangeScore.toLocaleString("es-ES", { maximumFractionDigits: 1 })}/10` : "Sin datos"} />
                   </div>
                   <div className="tc-sub" style={{ marginTop: 12 }}>
-                    Este rango aparece también en el panel cliente. Se recalcula con tu puntuación mensual basada en % Cliente y % Repite, y sirve para motivarte a subir o mantener posición.
+                    Este rango aparece también en el panel cliente. Rango A se consigue superando el 25% de minutos Cliente; la puntuación pública se calcula con % Cliente y % Repite.
                     {myPublicRangePosition && myPublicRangeTotal ? ` Posición interna: ${myPublicRangePosition}/${myPublicRangeTotal}.` : ""}
                   </div>
                 </div>

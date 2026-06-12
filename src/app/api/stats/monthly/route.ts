@@ -10,28 +10,36 @@ import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWork
 
 export const runtime = 'nodejs';
 
-function tarotistaAverageScore(row: any) {
+function tarotistaPublicScore(row: any) {
   const calls = Math.max(0, Number(row?.calls_total || 0));
   const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
   const pctRepite = Math.max(0, Math.min(100, Number(row?.pct_repite || 0)));
 
-  // Puntuación pública 1-10 basada SOLO en % Cliente y % Repite.
+  // Nota pública 7.0-9.9 basada SOLO en % Cliente y % Repite.
   // No usa euros, importes ni factura.
-  if (!calls && !pctCliente && !pctRepite) return 0;
-  const raw = ((pctCliente + pctRepite) / 2) / 10;
-  return Math.max(1, Math.min(10, Math.round(raw * 10) / 10));
+  if (!calls && !pctCliente && !pctRepite) return 7;
+  const rawQuality = (pctCliente + pctRepite) / 2;
+  const score = 7 + ((rawQuality / 100) * 2.9);
+  return Math.max(7, Math.min(9.9, Math.round(score * 10) / 10));
+}
+
+function tarotistaRangeByClientePct(row: any): 'A' | 'B' {
+  const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
+  return pctCliente > 25 ? 'A' : 'B';
 }
 
 function buildTarotistaRanges(rows: any[]) {
   const sorted = (rows || [])
-    .map((row) => ({ worker_id: String(row.worker_id), score: tarotistaAverageScore(row), puntuacion: tarotistaAverageScore(row) }))
-    .filter((row) => row.score > 0)
+    .map((row) => ({
+      worker_id: String(row.worker_id),
+      score: tarotistaPublicScore(row),
+      puntuacion: tarotistaPublicScore(row),
+      rango: tarotistaRangeByClientePct(row),
+    }))
     .sort((a, b) => b.score - a.score);
-  const midpoint = sorted.length ? Math.ceil(sorted.length / 2) : 0;
-  const rangoA = new Set(sorted.slice(0, midpoint).map((row) => row.worker_id));
   const byWorker = new Map<string, any>();
   sorted.forEach((row, index) => {
-    byWorker.set(row.worker_id, { ...row, position: index + 1, rango: rangoA.has(row.worker_id) ? 'A' : 'B', total_compared: sorted.length });
+    byWorker.set(row.worker_id, { ...row, position: index + 1, total_compared: sorted.length });
   });
   return byWorker;
 }

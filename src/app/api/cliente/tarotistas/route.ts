@@ -72,16 +72,22 @@ function isCallName(value: unknown) {
   return name === "call" || /^call\s*\d*$/i.test(name) || name.includes(" call ");
 }
 
-function averageScore(row: any) {
+function publicScore(row: any) {
   const calls = Math.max(0, Number(row?.calls_total || 0));
   const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
   const pctRepite = Math.max(0, Math.min(100, Number(row?.pct_repite || 0)));
 
-  // Puntuación pública 1-10 basada SOLO en calidad de rendimiento:
-  // media de % Cliente y % Repite. No usa euros, importes ni factura.
-  if (!calls && !pctCliente && !pctRepite) return 0;
-  const raw = ((pctCliente + pctRepite) / 2) / 10;
-  return Math.max(1, Math.min(10, Math.round(raw * 10) / 10));
+  // Nota pública para cliente: siempre entre 7.0 y 9.9.
+  // Se calcula con la media entre % Cliente y % Repite, sin usar euros/importes/factura.
+  if (!calls && !pctCliente && !pctRepite) return 7;
+  const rawQuality = (pctCliente + pctRepite) / 2;
+  const score = 7 + ((rawQuality / 100) * 2.9);
+  return Math.max(7, Math.min(9.9, Math.round(score * 10) / 10));
+}
+
+function rangeByClientePct(row: any): "A" | "B" {
+  const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
+  return pctCliente > 25 ? "A" : "B";
 }
 
 export async function GET(req: Request) {
@@ -116,15 +122,6 @@ export async function GET(req: Request) {
     const metricByWorker = new Map<string, any>();
     for (const row of aggregated || []) metricByWorker.set(String(row.worker_id), row);
 
-    const scoreList = aggregated
-      .filter((row: any) => !isCallName(row?.display_name))
-      .map((row: any) => ({ worker_id: String(row.worker_id), score: averageScore(row) }))
-      .sort((a, b) => b.score - a.score);
-
-    const positiveScores = scoreList.filter((x) => x.score > 0);
-    const midpoint = positiveScores.length ? Math.ceil(positiveScores.length / 2) : 0;
-    const rangoAIds = new Set(positiveScores.slice(0, midpoint).map((x) => x.worker_id));
-
     const tarotistas: TarotistaCard[] = (workers || [])
       .filter((worker: any) => worker?.is_active !== false)
       .filter((worker: any) => String(worker?.role || "tarotista") === "tarotista")
@@ -134,11 +131,11 @@ export async function GET(req: Request) {
         const status = statusByWorker.get(workerId) || null;
         const meta = getChatWorkerStatusMeta(status || { is_online: false, is_busy: false, chat_enabled: false });
         const metric = metricByWorker.get(workerId) || {};
-        const score = averageScore(metric);
+        const score = publicScore(metric);
         const name = cleanName(status?.visible_name || worker?.display_name || "Tarotista Celestial");
         const idx = hashIndex(workerId + name, SPECIALTIES.length);
         const available = Boolean(status?.chat_enabled !== false && status?.is_online && !status?.is_busy);
-        const rango: "A" | "B" = rangoAIds.has(workerId) ? "A" : "B";
+        const rango: "A" | "B" = rangeByClientePct(metric);
         const calls = Number(metric?.calls_total || 0) || 0;
         const puntuacion = score;
 
