@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronRight, LogOut, Sparkles, UserCircle2, WandSparkles } from "lucide-react";
+import { BellRing, ChevronRight, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useEffect } from "react";
 
@@ -94,6 +94,11 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               <Link className={`tc-nav-link ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                   <WandSparkles size={16} /> Oráculo
+                </span>
+              </Link>
+              <Link className={`tc-nav-link ${pathname === "/cliente/tarotistas" ? "tc-nav-link-active" : ""}`} href="/cliente/tarotistas">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  <MoonStar size={16} /> Tarotistas
                 </span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/perfil" ? "tc-nav-link-active" : ""}`} href="/cliente/perfil">

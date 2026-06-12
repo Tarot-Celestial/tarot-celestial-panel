@@ -10,6 +10,32 @@ import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWork
 
 export const runtime = 'nodejs';
 
+function tarotistaAverageScore(row: any) {
+  const calls = Math.max(0, Number(row?.calls_total || 0));
+  const minutes = Math.max(0, Number(row?.minutes_total || 0));
+  const revenue = Math.max(0, Number(row?.revenue_total || 0));
+  const captadas = Math.max(0, Number(row?.captadas_total || 0));
+  const pctCliente = Math.max(0, Number(row?.pct_cliente || 0));
+  const pctRepite = Math.max(0, Number(row?.pct_repite || 0));
+  const mediaImporte = calls > 0 ? revenue / calls : 0;
+  const mediaMinutos = calls > 0 ? minutes / calls : 0;
+  return roundMoney(mediaImporte * 10 + mediaMinutos + captadas * 2 + pctCliente * 0.15 + pctRepite * 0.12);
+}
+
+function buildTarotistaRanges(rows: any[]) {
+  const sorted = (rows || [])
+    .map((row) => ({ worker_id: String(row.worker_id), score: tarotistaAverageScore(row), media_importe: Number(row.calls_total || 0) > 0 ? roundMoney(Number(row.revenue_total || 0) / Number(row.calls_total || 0)) : 0 }))
+    .filter((row) => row.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const midpoint = sorted.length ? Math.ceil(sorted.length / 2) : 0;
+  const rangoA = new Set(sorted.slice(0, midpoint).map((row) => row.worker_id));
+  const byWorker = new Map<string, any>();
+  sorted.forEach((row, index) => {
+    byWorker.set(row.worker_id, { ...row, position: index + 1, rango: rangoA.has(row.worker_id) ? 'A' : 'B', total_compared: sorted.length });
+  });
+  return byWorker;
+}
+
 export async function GET(req: Request) {
   try {
     const me = await workerFromRequest(req);
@@ -31,6 +57,8 @@ export async function GET(req: Request) {
         bonus_captadas: bonusCaptadas,
       };
     });
+
+    const tarotistaRanges = buildTarotistaRanges(rows);
 
     const topCaptadas = [...rows].sort((a, b) => Number(b.captadas_total || 0) - Number(a.captadas_total || 0));
     const topCliente = [...rows].sort((a, b) => Number(b.pct_cliente || 0) - Number(a.pct_cliente || 0));
@@ -87,6 +115,7 @@ export async function GET(req: Request) {
     };
 
     const tarotistaLevel = Number(me.tarotista_level || 1);
+    const myRange = tarotistaRanges.get(String(me.id)) || { rango: 'B', score: 0, media_importe: 0, position: null, total_compared: tarotistaRanges.size };
     const moneyPatch = tarotistaLevel === 2
       ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
       : { bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0), bonus_ranking_breakdown };
@@ -98,6 +127,11 @@ export async function GET(req: Request) {
       stats: {
         ...mine,
         ...moneyPatch,
+        tarotista_rango: myRange.rango,
+        tarotista_rango_score: myRange.score,
+        tarotista_rango_media: myRange.media_importe,
+        tarotista_rango_position: myRange.position,
+        tarotista_rango_total: myRange.total_compared,
       },
       totals,
     });
