@@ -12,19 +12,19 @@ export const runtime = 'nodejs';
 
 function tarotistaAverageScore(row: any) {
   const calls = Math.max(0, Number(row?.calls_total || 0));
-  const minutes = Math.max(0, Number(row?.minutes_total || 0));
-  const revenue = Math.max(0, Number(row?.revenue_total || 0));
-  const captadas = Math.max(0, Number(row?.captadas_total || 0));
-  const pctCliente = Math.max(0, Number(row?.pct_cliente || 0));
-  const pctRepite = Math.max(0, Number(row?.pct_repite || 0));
-  const mediaImporte = calls > 0 ? revenue / calls : 0;
-  const mediaMinutos = calls > 0 ? minutes / calls : 0;
-  return roundMoney(mediaImporte * 10 + mediaMinutos + captadas * 2 + pctCliente * 0.15 + pctRepite * 0.12);
+  const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
+  const pctRepite = Math.max(0, Math.min(100, Number(row?.pct_repite || 0)));
+
+  // Puntuación pública 1-10 basada SOLO en % Cliente y % Repite.
+  // No usa euros, importes ni factura.
+  if (!calls && !pctCliente && !pctRepite) return 0;
+  const raw = ((pctCliente + pctRepite) / 2) / 10;
+  return Math.max(1, Math.min(10, Math.round(raw * 10) / 10));
 }
 
 function buildTarotistaRanges(rows: any[]) {
   const sorted = (rows || [])
-    .map((row) => ({ worker_id: String(row.worker_id), score: tarotistaAverageScore(row), media_importe: Number(row.calls_total || 0) > 0 ? roundMoney(Number(row.revenue_total || 0) / Number(row.calls_total || 0)) : 0 }))
+    .map((row) => ({ worker_id: String(row.worker_id), score: tarotistaAverageScore(row), puntuacion: tarotistaAverageScore(row) }))
     .filter((row) => row.score > 0)
     .sort((a, b) => b.score - a.score);
   const midpoint = sorted.length ? Math.ceil(sorted.length / 2) : 0;
@@ -115,7 +115,7 @@ export async function GET(req: Request) {
     };
 
     const tarotistaLevel = Number(me.tarotista_level || 1);
-    const myRange = tarotistaRanges.get(String(me.id)) || { rango: 'B', score: 0, media_importe: 0, position: null, total_compared: tarotistaRanges.size };
+    const myRange = tarotistaRanges.get(String(me.id)) || { rango: 'B', score: 0, puntuacion: 0, position: null, total_compared: tarotistaRanges.size };
     const moneyPatch = tarotistaLevel === 2
       ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
       : { bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0), bonus_ranking_breakdown };
@@ -129,7 +129,8 @@ export async function GET(req: Request) {
         ...moneyPatch,
         tarotista_rango: myRange.rango,
         tarotista_rango_score: myRange.score,
-        tarotista_rango_media: myRange.media_importe,
+        tarotista_rango_media: myRange.puntuacion,
+        tarotista_rango_puntuacion: myRange.puntuacion,
         tarotista_rango_position: myRange.position,
         tarotista_rango_total: myRange.total_compared,
       },

@@ -12,6 +12,7 @@ type TarotistaCard = {
   team?: string | null;
   rango: "A" | "B";
   media: number;
+  puntuacion: number;
   score: number;
   llamadas_mes: number;
   minutos_mes: number;
@@ -73,17 +74,14 @@ function isCallName(value: unknown) {
 
 function averageScore(row: any) {
   const calls = Math.max(0, Number(row?.calls_total || 0));
-  const minutes = Math.max(0, Number(row?.minutes_total || 0));
-  const revenue = Math.max(0, Number(row?.revenue_total || 0));
-  const captadas = Math.max(0, Number(row?.captadas_total || 0));
-  const pctCliente = Math.max(0, Number(row?.pct_cliente || 0));
-  const pctRepite = Math.max(0, Number(row?.pct_repite || 0));
+  const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
+  const pctRepite = Math.max(0, Math.min(100, Number(row?.pct_repite || 0)));
 
-  const mediaImporte = calls > 0 ? revenue / calls : 0;
-  const mediaMinutos = calls > 0 ? minutes / calls : 0;
-
-  // Media interna equilibrada: dinero generado por llamada + calidad de minutos + captación.
-  return roundMoney(mediaImporte * 10 + mediaMinutos + captadas * 2 + pctCliente * 0.15 + pctRepite * 0.12);
+  // Puntuación pública 1-10 basada SOLO en calidad de rendimiento:
+  // media de % Cliente y % Repite. No usa euros, importes ni factura.
+  if (!calls && !pctCliente && !pctRepite) return 0;
+  const raw = ((pctCliente + pctRepite) / 2) / 10;
+  return Math.max(1, Math.min(10, Math.round(raw * 10) / 10));
 }
 
 export async function GET(req: Request) {
@@ -142,15 +140,15 @@ export async function GET(req: Request) {
         const available = Boolean(status?.chat_enabled !== false && status?.is_online && !status?.is_busy);
         const rango: "A" | "B" = rangoAIds.has(workerId) ? "A" : "B";
         const calls = Number(metric?.calls_total || 0) || 0;
-        const revenue = Number(metric?.revenue_total || 0) || 0;
-        const media = calls > 0 ? roundMoney(revenue / calls) : 0;
+        const puntuacion = score;
 
         return {
           id: workerId,
           nombre: name,
           team: worker?.team || null,
           rango,
-          media,
+          media: puntuacion,
+          puntuacion,
           score,
           llamadas_mes: calls,
           minutos_mes: roundMoney(Number(metric?.minutes_total || 0) || 0),

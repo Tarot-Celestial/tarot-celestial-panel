@@ -13,6 +13,7 @@ type Tarotista = {
   team?: string | null;
   rango: "A" | "B";
   media: number;
+  puntuacion: number;
   score: number;
   llamadas_mes: number;
   minutos_mes: number;
@@ -28,8 +29,9 @@ type Tarotista = {
   iniciales: string;
 };
 
-function eur(value: number) {
-  return Number(value || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+function score10(value: number) {
+  const n = Number(value || 0);
+  return n > 0 ? `${n.toLocaleString("es-ES", { maximumFractionDigits: 1 })}/10` : "Sin datos";
 }
 
 export default function ClienteTarotistasPage() {
@@ -87,7 +89,7 @@ export default function ClienteTarotistasPage() {
       eyebrow="Guía espiritual"
       summaryItems={[
         { label: "Disponibles ahora", value: String(summary.disponibles), meta: "conectadas en directo" },
-        { label: "Rango A", value: String(summary.rango_a), meta: "mejor media del mes" },
+        { label: "Rango A", value: String(summary.rango_a), meta: "mejor puntuación" },
         { label: "Rango B", value: String(summary.rango_b), meta: "en evolución" },
       ]}
     >
@@ -98,7 +100,7 @@ export default function ClienteTarotistasPage() {
               <MoonStar size={22} /> Tarotistas disponibles
             </div>
             <div className="tc-sub" style={{ marginTop: 7, maxWidth: 760 }}>
-              Las tarjetas se ordenan por disponibilidad y rango. El rango se calcula automáticamente con las medias reales de rendimiento del mes.
+              Las tarjetas se ordenan por disponibilidad y rango. El rango se calcula automáticamente con la puntuación de calidad del mes: media entre % Cliente y % Repite.
             </div>
           </div>
           <button className="tc-btn" onClick={loadData} disabled={loading}>
@@ -202,7 +204,7 @@ export default function ClienteTarotistasPage() {
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  <MiniMetric label="Media" value={eur(tarotista.media)} />
+                  <MiniMetric label="Puntuación" value={score10(tarotista.puntuacion ?? tarotista.media)} />
                   <MiniMetric label="Mes" value={`${tarotista.llamadas_mes} consultas`} />
                 </div>
 

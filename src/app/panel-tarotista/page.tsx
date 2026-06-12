@@ -247,7 +247,7 @@ export default function Tarotista() {
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
   const myPublicRange = String(s?.tarotista_rango || "B").toUpperCase() === "A" ? "A" : "B";
-  const myPublicRangeMedia = Number(s?.tarotista_rango_media || 0);
+  const myPublicRangeScore = Number(s?.tarotista_rango_puntuacion ?? s?.tarotista_rango_media ?? 0);
   const myPublicRangePosition = s?.tarotista_rango_position ? Number(s.tarotista_rango_position) : null;
   const myPublicRangeTotal = Number(s?.tarotista_rango_total || 0);
 
@@ -1597,10 +1597,10 @@ export default function Tarotista() {
                     <Kpi label="% Cliente" value={pct(s?.pct_cliente || 0)} />
                     <Kpi label="% Repite" value={pct(s?.pct_repite || 0)} />
                     <Kpi label="Rango público" value={`Rango ${myPublicRange}`} highlight={myPublicRange === "A"} />
-                    <Kpi label="Media pública" value={eur(myPublicRangeMedia)} />
+                    <Kpi label="Puntuación pública" value={myPublicRangeScore > 0 ? `${myPublicRangeScore.toLocaleString("es-ES", { maximumFractionDigits: 1 })}/10` : "Sin datos"} />
                   </div>
                   <div className="tc-sub" style={{ marginTop: 12 }}>
-                    Este rango aparece también en el panel cliente. Se recalcula con tu media mensual y sirve para motivarte a subir o mantener posición.
+                    Este rango aparece también en el panel cliente. Se recalcula con tu puntuación mensual basada en % Cliente y % Repite, y sirve para motivarte a subir o mantener posición.
                     {myPublicRangePosition && myPublicRangeTotal ? ` Posición interna: ${myPublicRangePosition}/${myPublicRangeTotal}.` : ""}
                   </div>
                 </div>
