@@ -52,6 +52,7 @@ const CODIGO_OPTIONS = [
   { value: "RUEDA", label: "Rueda" },
   { value: "CLIENTE", label: "Cliente" },
   { value: "REPITE", label: "Repite" },
+  { value: "CALL", label: "CALL · 0,06 €/min" },
 ] as const;
 
 const PAGO_OPTIONS = ["TPV", "PAYPAL", "BIZUM", "OTROS"] as const;

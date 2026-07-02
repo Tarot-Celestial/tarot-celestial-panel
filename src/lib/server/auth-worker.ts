@@ -98,12 +98,15 @@ export function isSpecialCallName(val: unknown): boolean {
 }
 
 export function rateForCode(rawCode: unknown, specialCall = false): number {
-  if (specialCall) return 0.12;
-  const code = normalizeText(rawCode);
+  // Código CALL: se paga a 0,06 €/minuto.
+  // `specialCall` se mantiene por compatibilidad con registros antiguos de CALL/manual.
+  if (specialCall) return 0.06;
+  const code = normalizeText(rawCode).replace(/[^a-z0-9]/g, '');
   if (code === 'free' || code === '7free') return 0.04;
   if (code === 'rueda') return 0.08;
   if (code === 'cliente') return 0.10;
   if (code === 'repite') return 0.12;
+  if (code === 'call' || code === 'callfixed' || code.includes('call')) return 0.06;
   return 0;
 }
 
