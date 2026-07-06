@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import TCToaster from "@/components/ui/TCToaster";
+import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
@@ -357,6 +358,7 @@ export default function AppHeader() {
             </div>
 
             <div className="tc-row" style={{ gap: 10, flexWrap: "wrap", position: "relative" }}>
+              <BrandSwitcher />
               <div style={{ position: "relative" }}>
                 <button className="tc-btn" onClick={() => setNotifOpen((v) => !v)}>
                   🔔

@@ -8,6 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -256,6 +257,24 @@ export default function CRMClientesPanel({
   const searchParams = useSearchParams();
   const rankFromUrl = normalizeRankParam(searchParams?.get("rango"));
   const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(rankFromUrl);
+  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
+
+  useEffect(() => {
+    setActiveBrand(getActiveBrand());
+    function onBrandChanged(e: any) {
+      const next = String(e?.detail?.brand || "celestial").toLowerCase() === "orion" ? "orion" : "celestial";
+      setActiveBrand(next);
+      setCrmRows([]);
+      setCrmClienteSelId("");
+      setCrmClienteFicha(null);
+      setCrmMsg(`Vista cambiada a Tarot ${next === "orion" ? "Orion" : "Celestial"}. Pulsa Buscar para cargar clientes.`);
+      if (crmNewOrigen === "manual" || crmNewOrigen === "tarot_celestial" || crmNewOrigen === "tarot_orion") {
+        setCrmNewOrigen(next === "orion" ? "tarot_orion" : "tarot_celestial");
+      }
+    }
+    window.addEventListener("tc-brand-changed", onBrandChanged as EventListener);
+    return () => window.removeEventListener("tc-brand-changed", onBrandChanged as EventListener);
+  }, [crmNewOrigen]);
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);
@@ -304,7 +323,7 @@ export default function CRMClientesPanel({
   const [crmNewPais, setCrmNewPais] = useState("España");
   const [crmNewEmail, setCrmNewEmail] = useState("");
   const [crmNewNotas, setCrmNewNotas] = useState("");
-  const [crmNewOrigen, setCrmNewOrigen] = useState("manual");
+  const [crmNewOrigen, setCrmNewOrigen] = useState("tarot_celestial");
   const [crmNewDeuda, setCrmNewDeuda] = useState("0");
   const [crmNewMinFree, setCrmNewMinFree] = useState("0");
   const [crmNewMinNormales, setCrmNewMinNormales] = useState("0");
@@ -640,7 +659,7 @@ export default function CRMClientesPanel({
       try {
         const token = await getTokenOrLogin();
         if (!token) return;
-        const r = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(phone)}`, {
+        const r = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(phone)}&marca=${encodeURIComponent(getActiveBrand())}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -681,7 +700,7 @@ export default function CRMClientesPanel({
       try {
         const token = await getTokenOrLogin();
         if (!token) return;
-        const r = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(phoneFromUrl)}`, {
+        const r = await fetch(`/api/crm/clientes/buscar?telefono=${encodeURIComponent(phoneFromUrl)}&marca=${encodeURIComponent(getActiveBrand())}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -839,6 +858,7 @@ export default function CRMClientesPanel({
       }
       if (pais) params.set("pais", pais);
       if (crmWebFilter !== "todos") params.set("web_filter", crmWebFilter);
+      params.set("marca", activeBrand);
       if (forcedRank && ["bronce", "plata", "oro"].includes(forcedRank)) {
   params.set("rango", forcedRank);
 }
@@ -920,7 +940,7 @@ console.log("URL CRM 👉", url);
           pais: crmNewPais.trim() || "España",
           email: crmNewEmail.trim(),
           notas: crmNewNotas.trim(),
-          origen: crmNewOrigen.trim() || "manual",
+          origen: crmNewOrigen.trim() || (getActiveBrand() === "orion" ? "tarot_orion" : "tarot_celestial"),
           deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
           minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
