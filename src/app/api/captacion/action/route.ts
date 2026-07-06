@@ -132,45 +132,45 @@ export async function POST(req: Request) {
       const nextAttempt = currentAttempt + 1;
       const shouldClose = nextAttempt > maxAttempts;
       patch.intento_actual = shouldClose ? maxAttempts : nextAttempt;
-      patch.estado = shouldClose ? "no_interesado" : "no_contesta";
+      patch.estado = shouldClose ? "no_interesado" : "pend_free";
       patch.next_contact_at = shouldClose ? nowIso : addDays(1);
       patch.closed_at = shouldClose ? nowIso : null;
       patch.contacted_at = null;
-      crmPatch.lead_status = shouldClose ? "no_interesado" : "no_contesta";
+      crmPatch.lead_status = shouldClose ? "no_interesado" : "pend_free";
       message = shouldClose
         ? "🙅 Lead cerrado tras 3 intentos sin respuesta."
         : `📞 Marcado como no contesta. Próximo intento listo para ${new Date(String(patch.next_contact_at)).toLocaleString("es-ES")}.`;
     } else if (action === "pendiente_free") {
-      patch.estado = "pendiente_free";
+      patch.estado = "pend_free";
       patch.contacted_at = nowIso;
       patch.closed_at = null;
       patch.next_contact_at = addDays(1);
-      crmPatch.lead_status = "pendiente_free";
+      crmPatch.lead_status = "pend_free";
       crmPatch.lead_contacted_at = nowIso;
       message = "🕯️ Lead pasado a pendiente de free.";
     } else if (action === "hizo_free") {
-      patch.estado = "hizo_free";
+      patch.estado = "pend_cap";
       patch.contacted_at = nowIso;
       patch.closed_at = null;
       patch.intento_actual = 1;
       patch.max_intentos = 3;
       patch.next_contact_at = addDays(7);
-      crmPatch.lead_status = "hizo_free";
+      crmPatch.lead_status = "pend_cap";
       crmPatch.lead_contacted_at = nowIso;
-      message = "🔮 Cliente marcado como hizo free. Recontacto semanal programado.";
+      message = "🔮 Cliente pasado a Pend Cap. Recontacto de promo programado.";
     } else if (action === "recontacto") {
       const nextAttempt = currentAttempt + 1;
       const shouldClose = nextAttempt > maxAttempts;
       patch.intento_actual = shouldClose ? maxAttempts : nextAttempt;
-      patch.estado = shouldClose ? "no_interesado" : "recontacto";
+      patch.estado = shouldClose ? "no_interesado" : "pend_cap";
       patch.contacted_at = nowIso;
       patch.closed_at = shouldClose ? nowIso : null;
       patch.next_contact_at = shouldClose ? nowIso : addDays(7);
-      crmPatch.lead_status = shouldClose ? "no_interesado" : "recontacto";
+      crmPatch.lead_status = shouldClose ? "no_interesado" : "pend_cap";
       crmPatch.lead_contacted_at = nowIso;
       message = shouldClose
         ? "🙅 Seguimiento post-free agotado. Lead cerrado como no interesado."
-        : "📆 Recontacto semanal registrado.";
+        : "📆 Recontacto Pend Cap registrado.";
     } else if (action === "captado") {
       patch.estado = "captado";
       patch.contacted_at = nowIso;
@@ -180,7 +180,7 @@ export async function POST(req: Request) {
       patch.max_intentos = maxAttempts;
       crmPatch.lead_status = "captado";
       crmPatch.lead_contacted_at = nowIso;
-      message = "💰 Cliente marcado como captado.";
+      message = "💰 Cliente marcado como Cliente.";
     } else if (action === "no_interesado") {
       patch.estado = "no_interesado";
       patch.closed_at = nowIso;

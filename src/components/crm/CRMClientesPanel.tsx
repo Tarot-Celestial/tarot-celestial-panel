@@ -274,7 +274,7 @@ export default function CRMClientesPanel({
     }
     window.addEventListener("tc-brand-changed", onBrandChanged as EventListener);
     return () => window.removeEventListener("tc-brand-changed", onBrandChanged as EventListener);
-  }, [crmNewOrigen]);
+  }, []);
 
   const [crmEtiquetasOpts, setCrmEtiquetasOpts] = useState<any[]>([]);
   const [crmEtiquetasLoading, setCrmEtiquetasLoading] = useState(false);

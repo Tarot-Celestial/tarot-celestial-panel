@@ -35,10 +35,10 @@ type Lead = {
 const sb = supabaseBrowser();
 
 const columns = [
-  { key: "nuevo", title: "Nuevos", subtitle: "Entraron y toca primer contacto" },
-  { key: "no_contesta", title: "No contesta", subtitle: "Reintentos de llamada" },
-  { key: "pendiente_free", title: "Pendiente free", subtitle: "Contestó y falta hacer la free" },
-  { key: "hizo_free", title: "Post-free", subtitle: "Hizo free, falta convertir" },
+  { key: "nuevo", title: "1 · Cliente nuevo", subtitle: "Primer contacto para ofrecer la consulta gratis" },
+  { key: "pend_free", title: "2 · Pend free", subtitle: "No responde o queda pendiente de hacer la free" },
+  { key: "pend_cap", title: "3 · Pend cap", subtitle: "Ya hizo la free y falta vender promo bienvenida" },
+  { key: "cliente", title: "4 · Cliente", subtitle: "Ya pagó / captado" },
 ] as const;
 
 type ColumnKey = (typeof columns)[number]["key"];
@@ -76,22 +76,21 @@ function relativeDue(value?: string | null) {
   return `En ${label}`;
 }
 
-function workflowState(lead: Lead): ColumnKey | "captado" | "cerrado" {
+function workflowState(lead: Lead): ColumnKey | "cerrado" {
   const state = String(lead.workflow_state || lead.estado || "nuevo").toLowerCase();
-  if (state === "pendiente_free") return "pendiente_free";
-  if (["hizo_free", "recontacto"].includes(state)) return "hizo_free";
-  if (state === "captado") return "captado";
+  if (["cliente", "captado"].includes(state)) return "cliente";
+  if (["pend_cap", "hizo_free", "recontacto"].includes(state)) return "pend_cap";
+  if (["pend_free", "pendiente_free", "no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(state) || Number(lead.intento_actual || 1) > 1) return "pend_free";
   if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(state) || !!lead.closed_at) return "cerrado";
-  if (["no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(state) || Number(lead.intento_actual || 1) > 1) return "no_contesta";
   return "nuevo";
 }
 
 function stateChip(state: string) {
-  if (state === "nuevo") return { label: "Nuevo", bg: "rgba(139,92,246,.18)", border: "1px solid rgba(139,92,246,.35)" };
-  if (state === "no_contesta") return { label: "No contesta", bg: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.35)" };
-  if (state === "pendiente_free") return { label: "Pendiente free", bg: "rgba(14,165,233,.18)", border: "1px solid rgba(14,165,233,.35)" };
-  if (state === "hizo_free" || state === "recontacto") return { label: "Post-free", bg: "rgba(236,72,153,.18)", border: "1px solid rgba(236,72,153,.35)" };
-  if (state === "captado") return { label: "Captado", bg: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.35)" };
+  const phase = workflowState({ estado: state } as Lead);
+  if (phase === "nuevo") return { label: "Cliente nuevo", bg: "rgba(139,92,246,.18)", border: "1px solid rgba(139,92,246,.35)" };
+  if (phase === "pend_free") return { label: "Pend free", bg: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.35)" };
+  if (phase === "pend_cap") return { label: "Pend cap", bg: "rgba(236,72,153,.18)", border: "1px solid rgba(236,72,153,.35)" };
+  if (phase === "cliente") return { label: "Cliente", bg: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.35)" };
   return { label: "Cerrado", bg: "rgba(239,68,68,.18)", border: "1px solid rgba(239,68,68,.35)" };
 }
 
@@ -99,6 +98,7 @@ function cardTone(lead: Lead) {
   const next = lead.next_contact_at ? new Date(lead.next_contact_at).getTime() : null;
   if (next && next <= Date.now()) return { bg: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.24)" };
   if (workflowState(lead) === "nuevo") return { bg: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.2)" };
+  if (workflowState(lead) === "pend_cap") return { bg: "rgba(236,72,153,.07)", border: "1px solid rgba(236,72,153,.18)" };
   return { bg: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)" };
 }
 
@@ -147,8 +147,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
             const shouldClose = nextAttempt > maxAttempts;
             return {
               ...lead,
-              estado: shouldClose ? "no_interesado" : "no_contesta",
-              workflow_state: shouldClose ? "no_interesado" : "no_contesta",
+              estado: shouldClose ? "no_interesado" : "pend_free",
+              workflow_state: shouldClose ? "no_interesado" : "pend_free",
               intento_actual: shouldClose ? maxAttempts : nextAttempt,
               next_contact_at: shouldClose ? nowIso : lead.next_contact_at,
               contacted_at: null,
@@ -162,8 +162,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           if (action === "pendiente_free") {
             return {
               ...lead,
-              estado: "pendiente_free",
-              workflow_state: "pendiente_free",
+              estado: "pend_free",
+              workflow_state: "pend_free",
               contacted_at: nowIso,
               closed_at: null,
               last_result: "pendiente_free",
@@ -175,8 +175,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
           if (action === "hizo_free") {
             return {
               ...lead,
-              estado: "hizo_free",
-              workflow_state: "hizo_free",
+              estado: "pend_cap",
+              workflow_state: "pend_cap",
               contacted_at: nowIso,
               closed_at: null,
               intento_actual: 1,
@@ -192,8 +192,8 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
             const shouldClose = nextAttempt > maxAttempts;
             return {
               ...lead,
-              estado: shouldClose ? "no_interesado" : "recontacto",
-              workflow_state: shouldClose ? "no_interesado" : "recontacto",
+              estado: shouldClose ? "no_interesado" : "pend_cap",
+              workflow_state: shouldClose ? "no_interesado" : "pend_cap",
               intento_actual: shouldClose ? maxAttempts : nextAttempt,
               contacted_at: nowIso,
               closed_at: shouldClose ? nowIso : null,
@@ -298,7 +298,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => {
   setTimeout(() => {
     load(false);
-  }, 500);
+  }, 1500);
 })
       .subscribe();
     return () => {
@@ -333,12 +333,13 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       total: filtered.length,
       hoy: pendientesHoy,
       nuevos: filtered.filter((x) => workflowState(x) === "nuevo").length,
-      postFree: filtered.filter((x) => workflowState(x) === "hizo_free").length,
+      pendFree: filtered.filter((x) => workflowState(x) === "pend_free").length,
+      pendCap: filtered.filter((x) => workflowState(x) === "pend_cap").length,
     };
   }, [filtered]);
 
   const byColumn = useMemo(() => {
-    const map: Record<string, Lead[]> = { nuevo: [], no_contesta: [], pendiente_free: [], hizo_free: [], captado: [], cerrado: [] };
+    const map: Record<string, Lead[]> = { nuevo: [], pend_free: [], pend_cap: [], cliente: [], cerrado: [] };
     for (const lead of filtered) {
       map[workflowState(lead)].push(lead);
     }
@@ -351,7 +352,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 28, fontWeight: 800 }}>📞 Captación</div>
-            <div style={{ opacity: 0.72, marginTop: 6 }}>Seguimiento claro desde lead nuevo hasta captado, con control de free y reintentos.</div>
+            <div style={{ opacity: 0.72, marginTop: 6 }}>Cola operativa en 4 fases: Cliente nuevo → Pend free → Pend cap → Cliente.</div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={() => setView("pendientes")} style={buttonStyle(view === "pendientes" ? "linear-gradient(135deg,#8b5cf6,#6366f1)" : "rgba(255,255,255,.08)")}>Pendientes</button>
@@ -364,9 +365,10 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         <div className="tc-captacion-kpis">
           <div style={kpiStyle}><div style={kpiLabel}>En vista</div><div style={kpiValue}>{stats.total}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Llamar hoy</div><div style={kpiValue}>{stats.hoy}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Nuevos</div><div style={kpiValue}>{stats.nuevos}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Post-free</div><div style={kpiValue}>{stats.postFree}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Captados</div><div style={kpiValue}>{items.filter((x) => workflowState(x) === "captado").length}</div></div>
+          <div style={kpiStyle}><div style={kpiLabel}>Cliente nuevo</div><div style={kpiValue}>{stats.nuevos}</div></div>
+          <div style={kpiStyle}><div style={kpiLabel}>Pend free</div><div style={kpiValue}>{stats.pendFree}</div></div>
+          <div style={kpiStyle}><div style={kpiLabel}>Pend cap</div><div style={kpiValue}>{stats.pendCap}</div></div>
+          <div style={kpiStyle}><div style={kpiLabel}>Clientes</div><div style={kpiValue}>{items.filter((x) => workflowState(x) === "cliente").length}</div></div>
           <div style={kpiStyle}><div style={kpiLabel}>Cerrados</div><div style={kpiValue}>{items.filter((x) => workflowState(x) === "cerrado").length}</div></div>
         </div>
 
@@ -452,17 +454,17 @@ function LeadCard({
           <button disabled={phone(lead) === "Sin teléfono"} style={miniButton("#0ea5e9", phone(lead) === "Sin teléfono")}>Llamar</button>
         </a>
 
-        {phase !== "cerrado" && phase !== "captado" ? (
+        {phase !== "cerrado" && phase !== "cliente" ? (
           <>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "no_contesta")} style={miniButton("#f59e0b", disabled)}>No contesta</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "pendiente_free")} style={miniButton("#38bdf8", disabled)}>Pendiente free</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, phase === "hizo_free" ? "recontacto" : "hizo_free")} style={miniButton("#ec4899", disabled)}>{phase === "hizo_free" ? "Recontacto" : "Hizo free"}</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "captado")} style={miniButton("#22c55e", disabled)}>Captado</button>
+            <button disabled={disabled} onClick={() => onAction(lead.id, "no_contesta")} style={miniButton("#f59e0b", disabled)}>No responde → Pend free</button>
+            <button disabled={disabled} onClick={() => onAction(lead.id, "pendiente_free")} style={miniButton("#38bdf8", disabled)}>Pend free</button>
+            <button disabled={disabled} onClick={() => onAction(lead.id, phase === "pend_cap" ? "recontacto" : "hizo_free")} style={miniButton("#ec4899", disabled)}>{phase === "pend_cap" ? "Recontacto promo" : "Free hecha → Pend cap"}</button>
+            <button disabled={disabled} onClick={() => onAction(lead.id, "captado")} style={miniButton("#22c55e", disabled)}>Cliente</button>
             <button disabled={disabled} onClick={() => onAction(lead.id, "no_interesado")} style={miniButton("#ef4444", disabled)}>No interesa</button>
           </>
         ) : null}
 
-        {(phase === "cerrado" || phase === "captado") ? (
+        {(phase === "cerrado" || phase === "cliente") ? (
           <button disabled={disabled} onClick={() => onAction(lead.id, "reabrir")} style={miniButton("#6366f1", disabled)}>Reabrir</button>
         ) : null}
       </div>

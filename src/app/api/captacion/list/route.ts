@@ -33,10 +33,9 @@ function norm(value: unknown) {
 function computeWorkflowState(item: AnyRow) {
   const estado = norm(item?.estado);
 
-  if (estado === "pendiente_free") return "pendiente_free";
-  if (estado === "hizo_free" || estado === "recontacto") return "hizo_free";
-  if (estado === "no_contesta") return "no_contesta";
-  if (estado === "captado") return "captado";
+  if (["pend_free", "pendiente_free", "no_contesta", "sin_respuesta"].includes(estado)) return "pend_free";
+  if (["pend_cap", "hizo_free", "recontacto"].includes(estado)) return "pend_cap";
+  if (["cliente", "captado"].includes(estado)) return "cliente";
 
   if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)) {
     return "cerrado";
@@ -49,7 +48,7 @@ function isClosed(item: AnyRow) {
   const estado = norm(item?.estado);
   return Boolean(
     item?.closed_at ||
-    ["captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)
+    ["cliente", "captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)
   );
 }
 
@@ -89,7 +88,8 @@ async function fetchWithJoin() {
         created_at
       )
     `)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(300);
 
   if (error) throw error;
   return Array.isArray(data) ? data : [];
@@ -99,7 +99,8 @@ async function fetchFallback() {
   const { data, error } = await supabase
     .from("captacion_leads")
     .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .limit(300);
 
   if (error) throw error;
 
@@ -245,7 +246,8 @@ export async function GET(req: NextRequest) {
       raw = await fetchFallback();
     }
 
-    raw = await enrichWithRevenue(raw);
+    // Importante para Supabase Nano: la vista de captación no necesita calcular ingresos
+    // de cada cliente en cada refresco. Evitamos agregaciones pesadas en pagos/rendimiento.
 
     let items: LeadItem[] = raw.map((item) => ({
       ...item,
