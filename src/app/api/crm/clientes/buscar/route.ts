@@ -95,7 +95,7 @@ export async function GET(req: Request) {
 
     let query = admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at, minutos_free, minutos_normales, deuda")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at")
       .order("updated_at", { ascending: false, nullsFirst: false })
       .limit(120);
 
