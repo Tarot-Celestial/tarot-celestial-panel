@@ -95,10 +95,9 @@ export async function GET(req: Request) {
 
     let query = admin
       .from("crm_clientes")
-      .select("*")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email, pais, notas, origen, updated_at, created_at, onboarding_completado, total_accesos, ultimo_acceso_at, ultima_actividad_at, minutos_free, minutos_normales, deuda")
       .order("updated_at", { ascending: false, nullsFirst: false })
-      .order("nombre", { ascending: true })
-      .limit(1000);
+      .limit(120);
 
     if (clienteIdsFiltro) query = query.in("id", clienteIdsFiltro);
 
@@ -127,7 +126,6 @@ export async function GET(req: Request) {
       for (const candidate of phoneCandidates) {
         phoneOrParts.push(`telefono_normalizado.eq.${candidate}`);
         phoneOrParts.push(`telefono.eq.${candidate}`);
-        phoneOrParts.push(`telefono.ilike.%${candidate}%`);
       }
 
       query = query.or(phoneOrParts.join(","));
@@ -156,6 +154,8 @@ export async function GET(req: Request) {
 
     if (brandFilter === "celestial") {
       clientes = clientes.filter((c: any) => !String(c?.origen || "").toLowerCase().includes("orion"));
+    } else {
+      clientes = clientes.filter((c: any) => String(c?.origen || "").toLowerCase().includes("orion"));
     }
 
     const ids = clientes.map((c: any) => String(c.id)).filter(Boolean);

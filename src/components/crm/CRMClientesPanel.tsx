@@ -258,6 +258,10 @@ export default function CRMClientesPanel({
   const rankFromUrl = normalizeRankParam(searchParams?.get("rango"));
   const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(rankFromUrl);
   const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
+  const [crmNewOrigen, setCrmNewOrigen] = useState(() =>
+    getActiveBrand() === "orion" ? "tarot_orion" : "tarot_celestial"
+  );
+  const brandAutoSearchRef = useRef(false);
 
   useEffect(() => {
     setActiveBrand(getActiveBrand());
@@ -267,10 +271,14 @@ export default function CRMClientesPanel({
       setCrmRows([]);
       setCrmClienteSelId("");
       setCrmClienteFicha(null);
-      setCrmMsg(`Vista cambiada a Tarot ${next === "orion" ? "Orion" : "Celestial"}. Pulsa Buscar para cargar clientes.`);
-      if (crmNewOrigen === "manual" || crmNewOrigen === "tarot_celestial" || crmNewOrigen === "tarot_orion") {
-        setCrmNewOrigen(next === "orion" ? "tarot_orion" : "tarot_celestial");
-      }
+      setCrmMsg(`Vista cambiada a Tarot ${next === "orion" ? "Orion" : "Celestial"}. Cargando clientes de esta marca…`);
+      setCrmNewOrigen((prev) => {
+        const current = String(prev || "").toLowerCase();
+        if (!current || current === "manual" || current === "tarot_celestial" || current === "tarot_orion") {
+          return next === "orion" ? "tarot_orion" : "tarot_celestial";
+        }
+        return prev;
+      });
     }
     window.addEventListener("tc-brand-changed", onBrandChanged as EventListener);
     return () => window.removeEventListener("tc-brand-changed", onBrandChanged as EventListener);
@@ -323,7 +331,6 @@ export default function CRMClientesPanel({
   const [crmNewPais, setCrmNewPais] = useState("España");
   const [crmNewEmail, setCrmNewEmail] = useState("");
   const [crmNewNotas, setCrmNewNotas] = useState("");
-  const [crmNewOrigen, setCrmNewOrigen] = useState("tarot_celestial");
   const [crmNewDeuda, setCrmNewDeuda] = useState("0");
   const [crmNewMinFree, setCrmNewMinFree] = useState("0");
   const [crmNewMinNormales, setCrmNewMinNormales] = useState("0");
@@ -864,8 +871,6 @@ export default function CRMClientesPanel({
 }
       
       const url = `/api/crm/clientes/buscar?${params.toString()}`;
-console.log("URL CRM 👉", url);
-      
       const r = await fetch(url, {
   headers: { Authorization: `Bearer ${token}` },
 });
@@ -883,6 +888,16 @@ console.log("URL CRM 👉", url);
       if (!silent) setCrmLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!brandAutoSearchRef.current) {
+      brandAutoSearchRef.current = true;
+      return;
+    }
+
+    searchCRM(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBrand]);
 
   async function importCRM() {
     try {
