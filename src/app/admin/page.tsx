@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 
@@ -763,7 +764,7 @@ function AdminPage() {
       if (!token) return;
 
       const [statsRes, rankRes, invRes, vipRes, heroRes] = await Promise.all([
-        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, {
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}&brand=${getActiveBrand()}`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`/api/rankings/monthly?month=${encodeURIComponent(month)}`, {

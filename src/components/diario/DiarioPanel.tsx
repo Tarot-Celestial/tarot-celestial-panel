@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 
 const sb = supabaseBrowser();
 
@@ -121,6 +122,7 @@ function RankingList({ title, rows, emptyText }: { title: string; rows: Generate
 }
 
 export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
+  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [modo, setModo] = useState<"hoy" | "ayer" | "fecha">("hoy");
   const [fecha, setFecha] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [rows, setRows] = useState<DiarioRow[]>([]);
@@ -130,6 +132,13 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [q, setQ] = useState("");
+
+  useEffect(() => {
+    setActiveBrand(getActiveBrand());
+    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    window.addEventListener("tc-brand-changed", onBrand as EventListener);
+    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
+  }, []);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -154,6 +163,7 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
       const params = new URLSearchParams();
       params.set("mode", modo);
       if (modo === "fecha" && fecha) params.set("date", fecha);
+      params.set("brand", activeBrand);
 
       const r = await fetch(`/api/crm/diario/listar?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -187,7 +197,7 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
   useEffect(() => {
     loadDiario(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modo, fecha]);
+  }, [modo, fecha, activeBrand]);
 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();

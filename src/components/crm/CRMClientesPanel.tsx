@@ -989,7 +989,16 @@ export default function CRMClientesPanel({
         } catch {}
       }
 
-      setCrmCreateMsg("✅ Cliente creado correctamente");
+      const cross = j?.cross_brand_warning;
+      if (cross) {
+        const otherLabel = cross.brand === "orion" ? "Orion" : "Celestial";
+        const tags = Array.isArray(cross.etiquetas) && cross.etiquetas.length
+          ? ` Etiquetas en ${otherLabel}: ${cross.etiquetas.join(", ")}.`
+          : ` No tiene etiquetas en ${otherLabel}.`;
+        setCrmCreateMsg(`⚠️ Cliente creado. Este teléfono ya era cliente de Tarot ${otherLabel}.${tags}`);
+      } else {
+        setCrmCreateMsg("✅ Cliente creado correctamente");
+      }
       setCrmNewNombre("");
       setCrmNewApellido("");
       setCrmNewTelefono("");

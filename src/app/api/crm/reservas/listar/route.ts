@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { brandFromRequest, filterRowsByBrand } from "@/lib/server/brand-filter";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -46,13 +47,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
+    const brand = brandFromRequest(req);
     const { data, error } = await db
       .from("reservas")
       .select("*")
       .order("fecha_reserva", { ascending: true });
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, reservas: data || [] });
+    const reservas = await filterRowsByBrand(db, data || [], brand);
+    return NextResponse.json({ ok: true, brand, reservas });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

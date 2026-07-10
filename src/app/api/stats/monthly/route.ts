@@ -7,6 +7,8 @@ import {
   workerFromRequest,
 } from '@/lib/server/auth-worker';
 import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { brandFromRequest, filterRowsByBrand } from '@/lib/server/brand-filter';
+import { getAdminClient } from '@/lib/server/auth-worker';
 
 export const runtime = 'nodejs';
 
@@ -53,11 +55,13 @@ export async function GET(req: Request) {
     const month = normalizeMonthKey(url.searchParams.get('month'));
     const { start, endExclusive } = monthRange(month);
 
-    const [workers, rendimientoRows] = await Promise.all([
+    const brand = brandFromRequest(req);
+    const [workers, rendimientoRowsRaw] = await Promise.all([
       listTarotistaWorkers(),
       listRendimientoRows(start, endExclusive),
     ]);
 
+    const rendimientoRows = await filterRowsByBrand(getAdminClient(), rendimientoRowsRaw, brand);
     const rows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row) => {
       const bonusCaptadas = roundMoney(Number(row.captadas_total || 0) * captadasTier(Number(row.captadas_total || 0)));
       return {
@@ -90,7 +94,7 @@ export async function GET(req: Request) {
     totals.avg_pct_repite = roundMoney(rows.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / count);
 
     if (me.role === 'admin' || me.role === 'central') {
-      return NextResponse.json({ ok: true, month, totals, rows });
+      return NextResponse.json({ ok: true, month, brand, totals, rows });
     }
 
     const bonusForPos = (pos: number) => (pos === 1 ? 6 : pos === 2 ? 4 : pos === 3 ? 2 : 0);

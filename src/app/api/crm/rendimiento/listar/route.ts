@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient, normalizeText, workerFromRequest } from '@/lib/server/auth-worker';
+import { brandFromRequest, filterRowsByBrand } from "@/lib/server/brand-filter";
 
 export const runtime = 'nodejs';
 
@@ -30,6 +31,7 @@ export async function GET(req: Request) {
     const codigo = normalizeText(url.searchParams.get('codigo'));
     const limitParam = Math.min(Math.max(Number(url.searchParams.get('limit') || 10000) || 10000, 1), 50000);
 
+    const brand = brandFromRequest(req);
     const admin = getAdminClient();
     const pageSize = 1000;
     const allRows: any[] = [];
@@ -50,7 +52,8 @@ export async function GET(req: Request) {
       if (chunk.length < pageSize) break;
     }
 
-    const filtered = allRows.filter((row: any) => {
+    const brandRows = await filterRowsByBrand(admin, allRows, brand);
+    const filtered = brandRows.filter((row: any) => {
       const tarotistaText = normalizeText([row.tarotista_nombre, row.tarotista_manual_call].filter(Boolean).join(' '));
       const telefonistaText = normalizeText(row.telefonista_nombre);
       const codigoText = normalizeText([row.resumen_codigo, row.codigo_1, row.codigo_2, row.tipo_registro].filter(Boolean).join(' '));
@@ -64,7 +67,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       data: filtered,
-      loaded: allRows.length,
+      loaded: brandRows.length,
+      brand,
       returned: filtered.length,
       filters: { from, to, tarotista, telefonista, codigo, limit: limitParam },
       viewer: {

@@ -2,6 +2,7 @@
 
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 
 type Lead = {
   id: string;
@@ -103,6 +104,7 @@ function cardTone(lead: Lead) {
 }
 
 export default function CaptacionPanel({ onOpenClient }: Props) {
+  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [items, setItems] = useState<Lead[]>([]);
   const [view, setView] = useState<"pendientes" | "todos" | "cerrados">("pendientes");
   const [query, setQuery] = useState("");
@@ -110,11 +112,18 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   const [busyId, setBusyId] = useState("");
   const [msg, setMsg] = useState("");
 
+  useEffect(() => {
+    setActiveBrand(getActiveBrand());
+    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    window.addEventListener("tc-brand-changed", onBrand as EventListener);
+    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
+  }, []);
+
   async function load(showSpinner = false) {
     try {
       if (showSpinner) setLoading(true);
       setMsg("");
-      const res = await fetch(`/api/captacion/list?scope=${view}&t=${Date.now()}`, {
+      const res = await fetch(`/api/captacion/list?scope=${view}&brand=${activeBrand}&t=${Date.now()}`, {
   cache: "no-store",
 });
       const json = await res.json().catch(() => null);
@@ -285,12 +294,12 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
 
   useEffect(() => {
     load(true);
-  }, [view]);
+  }, [view, activeBrand]);
 
   useEffect(() => {
     const timer = setInterval(() => load(false), 20000);
     return () => clearInterval(timer);
-  }, [view]);
+  }, [view, activeBrand]);
 
   useEffect(() => {
     const channel = sb
@@ -304,7 +313,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     return () => {
       sb.removeChannel(channel);
     };
-  }, [view]);
+  }, [view, activeBrand]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

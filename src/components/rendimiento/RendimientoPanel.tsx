@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 
 const sb = supabaseBrowser();
 
@@ -67,6 +68,7 @@ function inputStyle() {
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [hydrated, setHydrated] = useState(false);
+  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -83,6 +85,13 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     return data.session?.access_token || "";
   }
 
+  useEffect(() => {
+    setActiveBrand(getActiveBrand());
+    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    window.addEventListener("tc-brand-changed", onBrand as EventListener);
+    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
+  }, []);
+
   async function fetchData() {
     const token = await getToken();
     if (!token) return;
@@ -95,6 +104,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       if (fTarotista.trim()) params.set("tarotista", fTarotista.trim());
       if (fTelefonista.trim()) params.set("telefonista", fTelefonista.trim());
       if (fCodigo.trim()) params.set("codigo", fCodigo.trim());
+      params.set("brand", activeBrand);
 
       const res = await fetch(`/api/crm/rendimiento/listar?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const json = await res.json();
@@ -118,7 +128,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, activeBrand]);
 
   useEffect(() => {
     if (!hydrated) return;

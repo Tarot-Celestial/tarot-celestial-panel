@@ -91,19 +91,47 @@ export async function POST(req: Request) {
 
     const admin = adminClient();
 
-    const { data: existing, error: existingError } = await admin
+    const targetIsOrion = String(origen || "").toLowerCase().includes("orion");
+    const { data: existingRows, error: existingError } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono")
-      .eq("telefono", telefono)
-      .maybeSingle();
+      .select("id, nombre, apellido, telefono, telefono_normalizado, origen")
+      .or(`telefono.eq.${telefono},telefono_normalizado.eq.${telefono_normalizado}`);
 
     if (existingError) throw existingError;
 
-    if (existing) {
+    const sameBrand = (existingRows || []).find((row: any) => {
+      const rowIsOrion = String(row?.origen || "").toLowerCase().includes("orion");
+      return rowIsOrion === targetIsOrion;
+    });
+
+    if (sameBrand) {
       return NextResponse.json(
-        { ok: false, error: "CLIENTE_YA_EXISTE", cliente: existing },
+        { ok: false, error: "CLIENTE_YA_EXISTE_EN_ESTA_MARCA", cliente: sameBrand },
         { status: 409 }
       );
+    }
+
+    const otherBrandClients = (existingRows || []).filter((row: any) => {
+      const rowIsOrion = String(row?.origen || "").toLowerCase().includes("orion");
+      return rowIsOrion !== targetIsOrion;
+    });
+
+    let crossBrandInfo: any = null;
+    if (otherBrandClients.length) {
+      const otherIds = otherBrandClients.map((row: any) => String(row.id));
+      const [{ data: rels }, { data: tags }] = await Promise.all([
+        admin.from("crm_cliente_etiquetas").select("cliente_id, etiqueta_id").in("cliente_id", otherIds),
+        admin.from("crm_etiquetas").select("id, nombre"),
+      ]);
+      const tagNameById = new Map((tags || []).map((tag: any) => [String(tag.id), String(tag.nombre || "")]));
+      const etiquetas = Array.from(new Set((rels || []).map((rel: any) => tagNameById.get(String(rel.etiqueta_id))).filter(Boolean)));
+      const other = otherBrandClients[0];
+      crossBrandInfo = {
+        brand: targetIsOrion ? "celestial" : "orion",
+        cliente_id: other.id,
+        nombre: [other.nombre, other.apellido].filter(Boolean).join(" ").trim(),
+        etiquetas,
+      };
     }
 
      const payload: any = {
@@ -132,6 +160,7 @@ export async function POST(req: Request) {
       ok: true,
       cliente,
       msg: "Cliente creado correctamente",
+      cross_brand_warning: crossBrandInfo,
     });
   } catch (e: any) {
     return NextResponse.json(

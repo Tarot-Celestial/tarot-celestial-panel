@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BellRing, Send } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 
 const sb = supabaseBrowser();
 
@@ -48,6 +49,7 @@ function isPendingReserva(v: any) {
 }
 
 export default function DashboardPanel({ month }: DashboardPanelProps) {
+  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -60,6 +62,13 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [pushBody, setPushBody] = useState("");
   const [pushSending, setPushSending] = useState(false);
   const [pushMsg, setPushMsg] = useState("");
+
+  useEffect(() => {
+    setActiveBrand(getActiveBrand());
+    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    window.addEventListener("tc-brand-changed", onBrand as EventListener);
+    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
+  }, []);
 
   async function getTokenOrLogin() {
     const { data } = await sb.auth.getSession();
@@ -82,19 +91,19 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       if (!token) return;
 
       const [invRes, statsRes, reservasRes, diarioRes, accessRes] = await Promise.all([
-        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
+        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, {
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch("/api/crm/reservas/listar", {
+        fetch(`/api/crm/reservas/listar?brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch("/api/crm/diario/listar?mode=hoy", {
+        fetch(`/api/crm/diario/listar?mode=hoy&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
@@ -144,7 +153,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
     loadDashboard(false);
     const t = setInterval(() => loadDashboard(true), 20000);
     return () => clearInterval(t);
-  }, [month]);
+  }, [month, activeBrand]);
 
   const totalFacturacion = useMemo(
     () => (invoices || []).reduce((acc: number, x: any) => acc + (Number(x?.total) || 0), 0),

@@ -4,6 +4,7 @@ export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { brandFromRequest, originMatchesBrand } from "@/lib/server/brand-filter";
 
 function env(name: string) {
   const v = process.env[name];
@@ -237,6 +238,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const scope = norm(searchParams.get("scope") || "pendientes");
+    const brand = brandFromRequest(req);
 
     let raw: AnyRow[] = [];
 
@@ -248,6 +250,8 @@ export async function GET(req: NextRequest) {
 
     // Importante para Supabase Nano: la vista de captación no necesita calcular ingresos
     // de cada cliente en cada refresco. Evitamos agregaciones pesadas en pagos/rendimiento.
+
+    raw = raw.filter((item: AnyRow) => originMatchesBrand(item?.cliente?.origen || item?.origen, brand));
 
     let items: LeadItem[] = raw.map((item) => ({
       ...item,
@@ -277,7 +281,7 @@ export async function GET(req: NextRequest) {
       return bCreated - aCreated;
     });
 
-    return new NextResponse(JSON.stringify({ ok: true, items }), {
+    return new NextResponse(JSON.stringify({ ok: true, brand, items }), {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
       },

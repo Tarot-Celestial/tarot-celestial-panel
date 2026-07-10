@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
+import { getActiveBrand } from "@/components/global/BrandSwitcher";
 
 const sb = supabaseBrowser();
 
@@ -108,6 +109,7 @@ export default function ReservasPanel({
   mode = "admin",
   embedded = false,
 }: ReservasPanelProps) {
+  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -128,6 +130,13 @@ export default function ReservasPanel({
     return token;
   }
 
+  useEffect(() => {
+    setActiveBrand(getActiveBrand());
+    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    window.addEventListener("tc-brand-changed", onBrand as EventListener);
+    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
+  }, []);
+
   async function loadReservas(silent = false) {
     try {
       if (!silent) {
@@ -138,7 +147,7 @@ export default function ReservasPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const r = await fetch("/api/crm/reservas/listar", {
+      const r = await fetch(`/api/crm/reservas/listar?brand=${activeBrand}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });

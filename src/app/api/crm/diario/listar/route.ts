@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { brandFromRequest, filterRowsByBrand } from "@/lib/server/brand-filter";
 
 export const runtime = "nodejs";
 
@@ -124,6 +125,7 @@ export async function GET(req: Request) {
     const { start, end } = dayRange(mode, dateValue);
     const { start: monthStart, end: monthEnd } = monthRange(mode, dateValue);
     const supabase = adminClient();
+    const brand = brandFromRequest(req);
 
     const [{ data: rendimiento, error: rendError }, { data: pagos, error: pagosError }, monthlyRendimiento] = await Promise.all([
       supabase
@@ -145,7 +147,11 @@ export async function GET(req: Request) {
     if (rendError) throw rendError;
     if (pagosError) throw pagosError;
 
-    const clienteIds = Array.from(new Set([...(rendimiento || []), ...(pagos || [])].map((x: any) => String(x?.cliente_id || "")).filter(Boolean)));
+    const rendimientoBrand = await filterRowsByBrand(supabase, rendimiento || [], brand);
+    const pagosBrand = await filterRowsByBrand(supabase, pagos || [], brand);
+    const monthlyRendimientoBrand = await filterRowsByBrand(supabase, monthlyRendimiento || [], brand);
+
+    const clienteIds = Array.from(new Set([...rendimientoBrand, ...pagosBrand].map((x: any) => String(x?.cliente_id || "")).filter(Boolean)));
     const workerIds = Array.from(new Set((pagos || []).map((x: any) => String(x?.created_by_user_id || "")).filter(Boolean)));
 
     const [{ data: clientes }, { data: workers }] = await Promise.all([
@@ -161,7 +167,7 @@ export async function GET(req: Request) {
     const workerMap = new Map<string, any>((workers || []).map((w: any) => [String(w.id), w]));
 
     const rows = [
-      ...(rendimiento || []).map((row: any) => {
+      ...rendimientoBrand.map((row: any) => {
         const c = clientMap.get(String(row.cliente_id || ""));
         const nombre = cleanName(row.cliente_nombre, [c?.nombre, c?.apellido].filter(Boolean).join(" ").trim() || "Cliente");
         return {
@@ -177,7 +183,7 @@ export async function GET(req: Request) {
           estado: "completed",
         };
       }),
-      ...(pagos || []).map((row: any) => {
+      ...pagosBrand.map((row: any) => {
         const c = clientMap.get(String(row.cliente_id || ""));
         const w = workerMap.get(String(row.created_by_user_id || ""));
         const isWeb = !row.created_by_user_id || String(row.created_by_role || "").toLowerCase().includes("web") || String(row.metodo || "").toLowerCase().includes("paypal");
@@ -211,7 +217,8 @@ export async function GET(req: Request) {
       ok: true,
       rows: completedRows,
       byCentral: Array.from(byCentralMap.values()).sort((a, b) => b.importe - a.importe),
-      monthlySummary: buildMonthlySummary(monthlyRendimiento, monthStart),
+      monthlySummary: buildMonthlySummary(monthlyRendimientoBrand, monthStart),
+      brand,
       totals: {
         total_clientes: uniqueClients.size,
         total_pagos: completedRows.length,
