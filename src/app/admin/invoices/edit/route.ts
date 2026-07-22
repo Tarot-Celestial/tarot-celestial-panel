@@ -144,13 +144,25 @@ export async function POST(req: Request) {
 
       const { data: currentLine, error: currentErr } = await admin
         .from("invoice_lines")
-        .select("id, meta, amount")
+        .select("id, kind, meta, amount")
         .eq("id", line_id)
         .maybeSingle();
 
       if (currentErr) throw currentErr;
       if (!currentLine) {
         return NextResponse.json({ ok: false, error: "LINE_NOT_FOUND" }, { status: 404 });
+      }
+
+      const isProtectedSalary =
+        String(currentLine.kind || "") === "salary_base" ||
+        currentLine?.meta?.locked === true ||
+        currentLine?.meta?.protected === true;
+
+      if (isProtectedSalary) {
+        return NextResponse.json(
+          { ok: false, error: "El sueldo fijo está protegido y no se puede modificar." },
+          { status: 400 }
+        );
       }
 
       const patch: any = {};
@@ -191,6 +203,29 @@ export async function POST(req: Request) {
       const line_id = String(body?.line_id || "");
       if (!line_id) {
         return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
+      }
+
+      const { data: currentLine, error: currentErr } = await admin
+        .from("invoice_lines")
+        .select("id, kind, meta")
+        .eq("id", line_id)
+        .maybeSingle();
+
+      if (currentErr) throw currentErr;
+      if (!currentLine) {
+        return NextResponse.json({ ok: false, error: "LINE_NOT_FOUND" }, { status: 404 });
+      }
+
+      const isProtectedSalary =
+        String(currentLine.kind || "") === "salary_base" ||
+        currentLine?.meta?.locked === true ||
+        currentLine?.meta?.protected === true;
+
+      if (isProtectedSalary) {
+        return NextResponse.json(
+          { ok: false, error: "El sueldo fijo está protegido y no se puede borrar." },
+          { status: 400 }
+        );
       }
 
       const { error } = await admin.from("invoice_lines").delete().eq("id", line_id);

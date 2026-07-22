@@ -5,6 +5,7 @@ import {
   normalizeMonthKey,
   rateForCode,
   roundMoney,
+  normalizeText,
 } from "@/lib/server/auth-worker";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import {
@@ -22,6 +23,46 @@ type InvoiceLinePayload = {
   amount: number;
   meta: Record<string, any>;
 };
+
+
+const FIXED_SALARIES: Record<string, number> = {
+  maria: 400,
+  yamile: 400,
+  michael: 280,
+};
+
+function fixedSalaryForName(name: unknown) {
+  return FIXED_SALARIES[normalizeText(name)] || 0;
+}
+
+function salaryBaseLine(invoice_id: string, amount: number): InvoiceLinePayload {
+  return {
+    invoice_id,
+    kind: "salary_base",
+    label: "Sueldo fijo mensual",
+    amount: roundMoney(amount),
+    meta: {
+      code: "salary_base",
+      source: "fixed_salary",
+      locked: true,
+      protected: true,
+    },
+  };
+}
+
+function fixedBonusLine(invoice_id: string, amount = 0): InvoiceLinePayload {
+  return {
+    invoice_id,
+    kind: "salary_bonus",
+    label: "Bonus",
+    amount: roundMoney(amount),
+    meta: {
+      code: "salary_bonus",
+      source: "manual_bonus",
+      optional: true,
+    },
+  };
+}
 
 function buildMonthLabel(monthKey: string) {
   const [year, month] = String(monthKey || "").split("-").map(Number);
@@ -171,10 +212,26 @@ export async function POST(req: Request) {
     const { start, endExclusive } = monthRange(month);
     const admin = gate.admin;
 
-    const [workers, rendimientoRows] = await Promise.all([
+    const [tarotistaWorkers, rendimientoRows, activeWorkersResult] = await Promise.all([
       listTarotistaWorkers(),
       listRendimientoRows(start, endExclusive),
+      admin
+        .from("workers")
+        .select("id, display_name, role, team, is_active")
+        .or("is_active.is.null,is_active.eq.true"),
     ]);
+
+    if (activeWorkersResult.error) throw activeWorkersResult.error;
+
+    const fixedSalaryWorkers = (activeWorkersResult.data || []).filter(
+      (worker: any) => fixedSalaryForName(worker?.display_name) > 0
+    );
+
+    const workersById = new Map<string, any>();
+    for (const worker of [...(tarotistaWorkers || []), ...fixedSalaryWorkers]) {
+      if (worker?.id) workersById.set(String(worker.id), worker);
+    }
+    const workers = Array.from(workersById.values());
 
     const aggregatedRows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row: any) => ({
       ...row,
@@ -190,15 +247,48 @@ export async function POST(req: Request) {
       const workerId = String(row.worker_id || "").trim();
       if (!workerId) continue;
 
-      const preliminaryLines = [
-        minuteLine({ invoice_id: "__pending__", kind: "minutes_free", label: "Minutos Free", code: "free", minutes: Number(row.minutes_free || 0) }),
-        minuteLine({ invoice_id: "__pending__", kind: "minutes_rueda", label: "Minutos Rueda", code: "rueda", minutes: Number(row.minutes_rueda || 0) }),
-        minuteLine({ invoice_id: "__pending__", kind: "minutes_cliente", label: "Minutos Cliente", code: "cliente", minutes: Number(row.minutes_cliente || 0) }),
-        minuteLine({ invoice_id: "__pending__", kind: "minutes_repite", label: "Minutos Repite", code: "repite", minutes: Number(row.minutes_repite || 0) }),
-        minuteLine({ invoice_id: "__pending__", kind: "minutes_call", label: "Minutos CALL", code: "CALL", minutes: Number(row.minutes_call_fixed || 0), specialCall: true }),
-        minuteLine({ invoice_id: "__pending__", kind: "minutes_otros", label: "Minutos otros / no facturables", code: "otros", minutes: Number(row.minutes_otros || 0) }),
-        bonusCaptadasLine("__pending__", Number(row.captadas_total || 0)),
-      ].filter(Boolean) as InvoiceLinePayload[];
+      const fixedSalary = fixedSalaryForName(row.display_name);
+      let existingBonus = 0;
+
+      if (fixedSalary > 0) {
+        const { data: previousInvoices, error: previousInvoicesError } = await admin
+          .from("invoices")
+          .select("id")
+          .eq("worker_id", workerId)
+          .eq("month_key", month)
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        if (previousInvoicesError) throw previousInvoicesError;
+
+        const previousInvoiceId = previousInvoices?.[0]?.id;
+        if (previousInvoiceId) {
+          const { data: bonusRows, error: bonusRowsError } = await admin
+            .from("invoice_lines")
+            .select("amount")
+            .eq("invoice_id", previousInvoiceId)
+            .eq("kind", "salary_bonus")
+            .limit(1);
+
+          if (bonusRowsError) throw bonusRowsError;
+          existingBonus = roundMoney(bonusRows?.[0]?.amount || 0);
+        }
+      }
+
+      const preliminaryLines = fixedSalary > 0
+        ? [
+            salaryBaseLine("__pending__", fixedSalary),
+            fixedBonusLine("__pending__", existingBonus),
+          ]
+        : [
+            minuteLine({ invoice_id: "__pending__", kind: "minutes_free", label: "Minutos Free", code: "free", minutes: Number(row.minutes_free || 0) }),
+            minuteLine({ invoice_id: "__pending__", kind: "minutes_rueda", label: "Minutos Rueda", code: "rueda", minutes: Number(row.minutes_rueda || 0) }),
+            minuteLine({ invoice_id: "__pending__", kind: "minutes_cliente", label: "Minutos Cliente", code: "cliente", minutes: Number(row.minutes_cliente || 0) }),
+            minuteLine({ invoice_id: "__pending__", kind: "minutes_repite", label: "Minutos Repite", code: "repite", minutes: Number(row.minutes_repite || 0) }),
+            minuteLine({ invoice_id: "__pending__", kind: "minutes_call", label: "Minutos CALL", code: "CALL", minutes: Number(row.minutes_call_fixed || 0), specialCall: true }),
+            minuteLine({ invoice_id: "__pending__", kind: "minutes_otros", label: "Minutos otros / no facturables", code: "otros", minutes: Number(row.minutes_otros || 0) }),
+            bonusCaptadasLine("__pending__", Number(row.captadas_total || 0)),
+          ].filter(Boolean) as InvoiceLinePayload[];
 
       const total = roundMoney(preliminaryLines.reduce((acc, line) => acc + Number(line.amount || 0), 0));
       const invoice = await upsertInvoice(admin, workerId, month, total);

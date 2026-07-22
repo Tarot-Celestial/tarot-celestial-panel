@@ -1559,6 +1559,40 @@ function AdminPage() {
 
                   <div className="tc-hr" />
 
+                  {(selLines || []).some((line: any) => String(line?.kind || "") === "salary_base") && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: 10,
+                        padding: 14,
+                        marginBottom: 12,
+                        borderRadius: 16,
+                        background: "linear-gradient(135deg, rgba(181,156,255,.14), rgba(255,215,130,.08))",
+                        border: "1px solid rgba(181,156,255,.28)",
+                      }}
+                    >
+                      <div>
+                        <div className="tc-sub">Sueldo fijo protegido</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_base")?.amount || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="tc-sub">Bonus opcional</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_bonus")?.amount || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="tc-sub">Total de la factura</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur(selInvoice?.total || 0)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: "grid", gap: 10 }}>
                     {(selLines || []).map((l: any) => (
                       <LineEditor
@@ -1585,6 +1619,7 @@ function AdminPage() {
                       <option value="minutes_cliente">minutes_cliente</option>
                       <option value="minutes_repite">minutes_repite</option>
                       <option value="salary_base">salary_base</option>
+                      <option value="salary_bonus">salary_bonus</option>
                     </select>
 
                     <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
@@ -2757,6 +2792,11 @@ function LineEditor({
 
   const meta = line?.meta || {};
   const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
+  const isProtectedSalary =
+    String(line?.kind || "") === "salary_base" ||
+    meta?.locked === true ||
+    meta?.protected === true;
+  const isSalaryBonus = String(line?.kind || "") === "salary_bonus";
 
   const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
   const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
@@ -2776,6 +2816,8 @@ function LineEditor({
   const code = String(meta.code || "").toUpperCase();
 
   function saveLine() {
+    if (isProtectedSalary) return;
+
     if (hasBreakdown) {
       const nextMeta = {
         ...meta,
@@ -2821,7 +2863,25 @@ function LineEditor({
       </div>
 
       <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-        <input className="tc-input" value={label} onChange={(e) => setLabel(e.target.value)} style={{ width: "100%" }} />
+        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input
+            className="tc-input"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            disabled={isProtectedSalary || isSalaryBonus}
+            style={{ width: "100%", opacity: isProtectedSalary ? 0.8 : 1 }}
+          />
+          {isProtectedSalary && (
+            <span className="tc-chip" style={{ padding: "5px 9px" }}>
+              🔒 Importe fijo protegido
+            </span>
+          )}
+          {isSalaryBonus && (
+            <span className="tc-chip" style={{ padding: "5px 9px" }}>
+              Bonus opcional · editable por factura
+            </span>
+          )}
+        </div>
 
         {hasBreakdown ? (
           <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
@@ -2863,15 +2923,30 @@ function LineEditor({
           </div>
         ) : (
           <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
-            <input className="tc-input" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 160 }} />
+            <div>
+              <div className="tc-sub">
+                {isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
+              </div>
+              <input
+                className="tc-input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={isProtectedSalary}
+                style={{ width: 160, marginTop: 6, opacity: isProtectedSalary ? 0.75 : 1 }}
+              />
+            </div>
 
             <div className="tc-row">
-              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
-                Guardar
-              </button>
-              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-                Borrar
-              </button>
+              {!isProtectedSalary && (
+                <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                  Guardar
+                </button>
+              )}
+              {!isProtectedSalary && !isSalaryBonus && (
+                <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                  Borrar
+                </button>
+              )}
             </div>
           </div>
         )}
