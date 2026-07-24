@@ -71,7 +71,7 @@ export async function GET(req: Request) {
 
     const { data: entries, error } = await gate.admin
       .from("accounting_entries")
-      .select("id, kind, concept, amount, month_key, note, created_at")
+      .select("id, kind, concept, amount, month_key, note, created_at, entry_date, movement, business, origin, destination, payment_method, movement_type, operation_mode")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -121,8 +121,15 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const month_key = normalizeMonthKey(body?.month_key || monthKeyNow());
-    const concept = String(body?.concept || "").trim();
+    const movement = String(body?.movement || body?.entry_type || "Gasto").trim();
     const entry_type = String(body?.entry_type || "expense").trim().toLowerCase();
+    const concept = String(body?.movement_type || body?.concept || "").trim();
+    const business = String(body?.business || "").trim() || null;
+    const origin = String(body?.origin || "").trim() || null;
+    const destination = String(body?.destination || "").trim() || null;
+    const payment_method = String(body?.payment_method || "").trim() || null;
+    const operation_mode = String(body?.operation_mode || "").trim() || null;
+    const entry_date = String(body?.entry_date || "").trim() || null;
     const note = String(body?.note || "").trim() || null;
     const amount = roundMoney(body?.amount_eur ?? body?.amount ?? 0);
 
@@ -133,8 +140,22 @@ export async function POST(req: Request) {
 
     const { data, error } = await gate.admin
       .from("accounting_entries")
-      .insert({ month_key, kind, concept, amount, note })
-      .select("id, kind, concept, amount, month_key, note, created_at")
+      .insert({
+        month_key,
+        kind,
+        concept,
+        amount,
+        note,
+        entry_date,
+        movement,
+        business,
+        origin,
+        destination,
+        payment_method,
+        movement_type: concept,
+        operation_mode,
+      })
+      .select("id, kind, concept, amount, month_key, note, created_at, entry_date, movement, business, origin, destination, payment_method, movement_type, operation_mode")
       .maybeSingle();
 
     if (error) throw error;

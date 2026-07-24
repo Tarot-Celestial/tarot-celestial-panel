@@ -31,10 +31,10 @@ export const CLIENTE_PACKS: ClientePack[] = [
   },
   {
     id: "pack_40_mas_10",
-    nombre: "40 + 10 minutos de regalo",
+    nombre: "30 + 10 minutos de regalo",
     descripcion: "Uno de los packs más rentables dentro del panel.",
     priceUsd: 22,
-    totalMinutes: 50,
+    totalMinutes: 40,
     bonusMinutes: 10,
     highlight: true,
   },
