@@ -77,7 +77,7 @@ export async function POST(req: Request) {
 
     const clienteId = existingByPhone?.id || existingByEmail?.id || null;
 
-    const payload = {
+    const basePayload = {
       nombre,
       email,
       pais,
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
     if (crmClienteId) {
       const { data: updatedCliente, error: crmErr } = await admin
         .from("crm_clientes")
-        .update(payload)
+        .update({ ...basePayload, regalo_bienvenida_elegible: true })
         .eq("id", crmClienteId)
         .select("id")
         .single();
@@ -103,7 +103,11 @@ export async function POST(req: Request) {
     } else {
       const { data: insertedCliente, error: crmErr } = await admin
         .from("crm_clientes")
-        .insert(payload)
+        .insert({
+          ...basePayload,
+          regalo_bienvenida_elegible: true,
+          regalo_bienvenida_otorgado: false,
+        })
         .select("id")
         .single();
 

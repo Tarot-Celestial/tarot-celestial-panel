@@ -17,6 +17,7 @@ type ClienteRow = Record<string, any> & {
   puntos?: number | null;
   minutos_free_pendientes?: number | null;
   minutos_normales_pendientes?: number | null;
+  regalo_bienvenida_elegible?: boolean | null;
   regalo_bienvenida_otorgado?: boolean | null;
 };
 
@@ -134,7 +135,9 @@ function buildRankProgress(last30DaysSpend: number, last30DaysPurchases: number,
 async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) {
   const cliente = gate.cliente;
   if (!cliente?.id) return { cliente, welcomeGift: null as any };
-  if (cliente.regalo_bienvenida_otorgado) return { cliente, welcomeGift: null as any };
+  if (!cliente.regalo_bienvenida_elegible || cliente.regalo_bienvenida_otorgado) {
+    return { cliente, welcomeGift: null as any };
+  }
 
   const nextFree = toNum(cliente.minutos_free_pendientes) + 10;
   const nowIso = new Date().toISOString();
@@ -148,6 +151,7 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
       updated_at: nowIso,
     })
     .eq("id", cliente.id)
+    .eq("regalo_bienvenida_elegible", true)
     .eq("regalo_bienvenida_otorgado", false)
     .select("*")
     .maybeSingle();
@@ -165,29 +169,39 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
     return { cliente: (refreshed || cliente) as ClienteRow, welcomeGift: null as any };
   }
 
-  await gate.admin.from("cliente_puntos_historial").insert({
-    cliente_id: cliente.id,
-    tipo: "regalo_bienvenida",
-    puntos: 0,
-    descripcion: "Felicidades, acabas de ganar 10 minutos gratis de consulta.",
-  });
-
-  await gate.admin.from("cliente_notificaciones").insert({
-    cliente_id: cliente.id,
-    tipo: "welcome_gift",
-    titulo: "Has recibido 10 minutos gratis",
-    mensaje: "Felicidades, acabas de ganar 10 minutos gratis de consulta.",
-    leida: false,
-    created_at: nowIso,
-  });
+  await Promise.allSettled([
+    gate.admin.from("cliente_puntos_historial").insert({
+      cliente_id: cliente.id,
+      tipo: "regalo_bienvenida",
+      puntos: 0,
+      descripcion: "Regalo de bienvenida: +10 minutos free.",
+      created_at: nowIso,
+    }),
+    gate.admin.from("cliente_notificaciones").insert({
+      cliente_id: cliente.id,
+      tipo: "welcome_gift",
+      titulo: "Has recibido 10 minutos gratis",
+      mensaje: "Como agradecimiento por registrarte, hemos añadido 10 minutos free a tu cuenta.",
+      leida: false,
+      created_at: nowIso,
+    }),
+    gate.admin.from("crm_client_notes").insert({
+      cliente_id: cliente.id,
+      texto: "🎁 Regalo de bienvenida por registro: +10 minutos free.",
+      author_user_id: null,
+      author_name: "Tarot Celestial",
+      author_email: null,
+      is_pinned: false,
+    }),
+  ]);
 
   return {
     cliente: updated as ClienteRow,
     welcomeGift: {
       granted: true,
       minutes: 10,
-      title: "Felicidades",
-      message: "Acabas de ganar 10 minutos gratis de consulta.",
+      title: "¡Bienvenido a Tarot Celestial!",
+      message: "Como agradecimiento por registrarte, acabamos de añadir 10 minutos totalmente gratis a tu cuenta.",
     },
   };
 }

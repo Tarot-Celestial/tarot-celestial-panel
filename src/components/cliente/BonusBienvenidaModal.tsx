@@ -53,14 +53,16 @@ export default function BonusBienvenidaModal({ open, minutes = 10, onClose }: Pr
           <div className="tc-chip" style={{ width: "fit-content", margin: "0 auto", display: "inline-flex", gap: 8, alignItems: "center" }}>
             <Sparkles size={14} /> Regalo de bienvenida
           </div>
-          <div className="tc-title" style={{ fontSize: 32 }}>Felicidades</div>
-          <div style={{ fontSize: 19, fontWeight: 800 }}>Acabas de ganar {minutes} minutos gratis de consulta.</div>
+          <div className="tc-title" style={{ fontSize: 32 }}>🎉 ¡Bienvenido a Tarot Celestial!</div>
+          <div style={{ fontSize: 19, fontWeight: 800 }}>
+            Como agradecimiento por registrarte, acabamos de añadir {minutes} minutos totalmente gratis a tu cuenta.
+          </div>
           <div className="tc-muted">
-            Ya los hemos añadido a tus minutos free pendientes para que puedas disfrutarlos en tu próxima consulta.
+            Ya puedes utilizarlos en tu primera consulta. ¡Disfrútalos!
           </div>
         </div>
         <div className="tc-row" style={{ justifyContent: "center" }}>
-          <button className="tc-btn tc-btn-gold" onClick={onClose}>¡Qué bien!</button>
+          <button className="tc-btn tc-btn-gold" onClick={onClose}>Comenzar</button>
         </div>
       </div>
     </div>
