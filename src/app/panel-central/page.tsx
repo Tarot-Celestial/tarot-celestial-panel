@@ -23,11 +23,12 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, CalendarDays, CheckSquare, Headphones, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
+import { BarChart3, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
 
 const sb = supabaseBrowser();
 
 const TABS = [
+  "central",
   "panel",
   "equipo",
   "crm",
@@ -46,6 +47,7 @@ const TABS = [
 type TabKey = typeof TABS[number];
 
 const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
+  { key: "central", label: "Central", icon: LayoutDashboard },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -998,6 +1000,7 @@ function CentralPage() {
           />
 
           <div className="tc-main-content">
+          {tab === "central" && <div className="tc-card" />}
 {tab === "panel" && (
             <>
               <OperationalInbox
