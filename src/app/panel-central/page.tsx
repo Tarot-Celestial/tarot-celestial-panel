@@ -4,7 +4,6 @@
 export const dynamic = "force-dynamic";
 
 import AppHeader from "@/components/AppHeader";
-import CentralHero from "@/features/central/CentralHero";
 import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperatorProgress } from "@/features/central/CentralProgressHeader";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import { ChatProvider } from "@/providers/ChatProvider";
@@ -1004,23 +1003,10 @@ function CentralPage() {
         <CentralSidebar items={CENTRAL_NAV} activeTab={tab} onTabChange={setTab} />
 
         <main className="tc-main">
-          {tab === "central" ? (
-            <CentralProgressHeader
-              progress={centralProgress}
-              profile={centralProfile}
-            />
-          ) : (
-            <CentralHero
-              statusLabel={attLabel(attOnline, attStatus)}
-              statusStyle={attStyle(attOnline, attStatus)}
-              statusTitle={attStatus}
-              month={month}
-              onMonthChange={setMonth}
-              onRefreshRanking={refreshRanking}
-              threadCount={threads.length || 0}
-              activeTab={tab}
-            />
-          )}
+          <CentralProgressHeader
+            progress={centralProgress}
+            profile={centralProfile}
+          />
 
           <div className="tc-main-content">
           {tab === "central" && <div aria-label="Contenido futuro de Central" />}
