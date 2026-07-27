@@ -159,7 +159,8 @@ a{ color: inherit; text-decoration: none; }
 }
 
 
-.crm-master-detail{ display:grid; grid-template-columns:420px 1fr; gap:20px; align-items:start; }
+.crm-master-detail{ display:grid; grid-template-columns:420px minmax(0,1fr); gap:20px; align-items:start; min-width:0; }
+.crm-master-detail > *{ min-width:0; max-width:100%; }
 @media (max-width: 1180px){
   .crm-master-detail{ grid-template-columns:1fr !important; }
 }

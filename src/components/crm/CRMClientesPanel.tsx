@@ -2002,7 +2002,7 @@ export default function CRMClientesPanel({
 
         </div>
 
-        <div style={{ display: "grid", gap: 16 }}>
+        <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
 
       {(crmFichaLoading || crmClienteFicha) && (
         <div className="tc-card" style={{ marginTop: 12 }}>
@@ -2100,7 +2100,7 @@ export default function CRMClientesPanel({
                 </div>
               </div>
 
-<div id="crm-notes-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
+<div id="crm-notes-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)", width: "100%", maxWidth: "100%", minWidth: 0, overflow: "hidden" }}>
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
                     <div className="tc-title" style={{ fontSize: 16 }}>📝 Historial de notas</div>
@@ -2133,7 +2133,7 @@ export default function CRMClientesPanel({
 
                 <div className="tc-hr" />
 
-                <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ display: "grid", gap: 10, width: "100%", maxWidth: "100%", minWidth: 0 }}>
                   {crmNotesLoading ? (
                     <div className="tc-sub">Cargando notas...</div>
                   ) : crmNotes.length === 0 ? (
@@ -2150,26 +2150,31 @@ export default function CRMClientesPanel({
                           padding: 12,
                           background: n?.is_pinned ? "linear-gradient(135deg, rgba(215,181,109,.10), rgba(255,255,255,.025))" : tone.bg,
                           boxShadow: n?.is_pinned ? "0 10px 26px rgba(0,0,0,.16)" : "none",
+                          width: "100%",
+                          maxWidth: "100%",
+                          minWidth: 0,
+                          boxSizing: "border-box",
+                          overflow: "hidden",
                         }}
                       >
-                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                            <div style={{ fontWeight: 800 }}>{n.author_name || n.author_email || "Usuario"}</div>
+                        <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
+                          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", minWidth: 0, maxWidth: "100%" }}>
+                            <div style={{ fontWeight: 800, minWidth: 0, maxWidth: "100%", overflowWrap: "anywhere", wordBreak: "break-word" }}>{n.author_name || n.author_email || "Usuario"}</div>
                             <span className="tc-chip" style={{ border: tone.border, background: tone.bg, color: tone.color }}>{tone.chip}</span>
                             {n?.is_pinned ? (
                               <span className="tc-chip" style={{ background: "rgba(215,181,109,.14)", border: "1px solid rgba(215,181,109,.22)" }}>📌 Anclada</span>
                             ) : null}
                           </div>
-                          <div className="tc-sub">
+                          <div className="tc-sub" style={{ flex: "0 1 auto", minWidth: 0, maxWidth: "100%", overflowWrap: "anywhere", wordBreak: "break-word" }}>
                             {n.created_at ? new Date(n.created_at).toLocaleString("es-ES") : "—"}
                           </div>
                         </div>
                         {!!n.author_email && (
-                          <div className="tc-sub" style={{ marginTop: 4 }}>{n.author_email}</div>
+                          <div className="tc-sub" style={{ marginTop: 4, maxWidth: "100%", overflowWrap: "anywhere", wordBreak: "break-word" }}>{n.author_email}</div>
                         )}
 
                         {crmEditingNoteId === String(n.id) ? (
-                          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                          <div style={{ marginTop: 10, display: "grid", gap: 8, minWidth: 0, maxWidth: "100%" }}>
                             <div className="tc-row" style={{ justifyContent: "space-between", gap: 8 }}>
                               <div className="tc-sub">Usa <b>**texto**</b> para negrita o pulsa el botón.</div>
                               <button type="button" className="tc-btn" onClick={applyBoldToEditingNote}>Negrita</button>
@@ -2179,7 +2184,7 @@ export default function CRMClientesPanel({
                               className="tc-input"
                               value={crmEditingNoteText}
                               onChange={(e) => setCrmEditingNoteText(e.target.value)}
-                              style={{ width: "100%", minHeight: 120, lineHeight: 1.45 }}
+                              style={{ width: "100%", maxWidth: "100%", minWidth: 0, minHeight: 120, lineHeight: 1.45, resize: "vertical" }}
                             />
                             <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8 }}>
                               <button className="tc-btn" onClick={cancelEditCRMNote} disabled={crmUpdatingNote}>Cancelar</button>
@@ -2189,12 +2194,12 @@ export default function CRMClientesPanel({
                             </div>
                           </div>
                         ) : (
-                          <div style={{ marginTop: 8, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                          <div style={{ marginTop: 8, maxWidth: "100%", minWidth: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", wordBreak: "break-word", lineHeight: 1.5 }}>
                             {renderNoteText(n.texto || "—")}
                           </div>
                         )}
 
-                        <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+                        <div className="tc-row" style={{ justifyContent: "flex-end", gap: 8, marginTop: 10, flexWrap: "wrap", minWidth: 0 }}>
                           <button
                             className="tc-btn"
                             onClick={() => togglePinCRMNote(n)}
