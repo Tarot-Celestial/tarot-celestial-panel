@@ -22,7 +22,11 @@ async function uidFromBearer(req: Request) {
 
   const auth = req.headers.get("authorization") || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return { uid: null as string | null, email: null as string | null };
+  if (!token) return {
+    uid: null as string | null,
+    email: null as string | null,
+    avatarUrl: null as string | null,
+  };
 
   const userClient = createClient(url, anon, {
     global: { headers: { Authorization: `Bearer ${token}` } },
@@ -31,12 +35,19 @@ async function uidFromBearer(req: Request) {
 
   const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
-  return { uid: data.user?.id || null, email: data.user?.email || null };
+  const metadata = data.user?.user_metadata || {};
+  const avatarUrl = metadata.avatar_url || metadata.picture || metadata.photo_url || null;
+
+  return {
+    uid: data.user?.id || null,
+    email: data.user?.email || null,
+    avatarUrl: avatarUrl ? String(avatarUrl) : null,
+  };
 }
 
 export async function GET(req: Request) {
   try {
-    const { uid, email } = await uidFromBearer(req);
+    const { uid, email, avatarUrl } = await uidFromBearer(req);
     if (!uid) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     }
@@ -57,6 +68,7 @@ export async function GET(req: Request) {
       display_name: worker.display_name || "Usuario",
       team: worker.team || "",
       email: worker.email || email || "",
+      avatar_url: avatarUrl,
       month_key: monthKeyNow(),
       worker,
       user: { id: uid, email: email || worker.email || "" },

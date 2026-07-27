@@ -28,7 +28,19 @@ function pathLabel(pathname: string) {
   return pathname.replaceAll("/", " · ").replace(/^ · /, "");
 }
 
-export default function AppHeader() {
+type AppHeaderIdentity = {
+  display_name?: string | null;
+  role?: string | null;
+  team?: string | null;
+  worker?: Record<string, unknown> | null;
+  user?: Record<string, unknown> | null;
+};
+
+type AppHeaderProps = {
+  onIdentityLoaded?: (identity: AppHeaderIdentity) => void;
+};
+
+export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   const pathname = usePathname();
 
   const [name, setName] = useState("Cargando…");
@@ -65,6 +77,7 @@ export default function AppHeader() {
       setRole(me.role || "");
       setTeam(me.team || "");
       setNotifUserId(String(me?.user?.id || me?.id || ""));
+      onIdentityLoaded?.(me);
     })();
 
     return () => sub.subscription.unsubscribe();

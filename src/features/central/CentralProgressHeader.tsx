@@ -27,9 +27,8 @@ function formatXp(value: number) {
 }
 
 function getInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return "TC";
-  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  const firstCharacter = name.trim().charAt(0);
+  return firstCharacter ? firstCharacter.toUpperCase() : "T";
 }
 
 export default function CentralProgressHeader({

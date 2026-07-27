@@ -8,7 +8,7 @@ import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperato
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
@@ -202,12 +202,32 @@ function CentralPage() {
     loyaltyIndex: 87,
   };
 
-  const centralProfile: CentralOperatorProfile = {
-    name: "María",
-    role: "Telefonista Experta",
-    level: "Oro",
-    photoUrl: null,
-  };
+  const [connectedOperator, setConnectedOperator] = useState<any>(null);
+
+  const handleIdentityLoaded = useCallback((identity: any) => {
+    setConnectedOperator(identity || null);
+  }, []);
+
+  const centralProfile: CentralOperatorProfile = useMemo(() => {
+    const worker = connectedOperator?.worker || {};
+    const displayName = String(
+      connectedOperator?.display_name || worker?.display_name || "Telefonista"
+    ).trim() || "Telefonista";
+
+    const photoUrl =
+      worker?.photo_url ||
+      worker?.avatar_url ||
+      connectedOperator?.photo_url ||
+      connectedOperator?.avatar_url ||
+      null;
+
+    return {
+      name: displayName,
+      role: String(worker?.job_title || worker?.category || "Telefonista Experta"),
+      level: (worker?.level || "Oro") as CentralOperatorProfile["level"],
+      photoUrl: photoUrl ? String(photoUrl) : null,
+    };
+  }, [connectedOperator]);
 
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
@@ -996,7 +1016,7 @@ function CentralPage() {
         <div className="tc-login-stars" />
         <div className="tc-login-grid" />
       </div>
-      <AppHeader />
+      <AppHeader onIdentityLoaded={handleIdentityLoaded} />
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
       <div className="tc-shell tc-shell-premium">
