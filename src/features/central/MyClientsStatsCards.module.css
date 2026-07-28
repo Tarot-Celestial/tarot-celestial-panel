@@ -47,8 +47,8 @@
 
 .levelCard { --accent: 157, 103, 255; }
 .activeCard { --accent: 55, 211, 133; }
-.followUpCard { --accent: 244, 181, 61; }
-.coinsCard { --accent: 226, 81, 198; }
+.followUpCard { --accent: 239, 68, 68; }
+.coinsCard { --accent: 245, 190, 55; }
 
 .cardTop {
   position: relative;

@@ -8,7 +8,6 @@ import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperato
 import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
 import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
-import MyClientsPlaceholder from "@/features/central/MyClientsPlaceholder";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
@@ -1106,10 +1105,7 @@ function CentralPage() {
 
           <div className="tc-main-content">
           {tab === "mis-clientas" && (
-            <>
-              <MyClientsPlaceholder />
-              <MyClientsStatsCards data={myClientsStats} />
-            </>
+            <MyClientsStatsCards data={myClientsStats} />
           )}
 
           {tab === "central" && (
