@@ -77,6 +77,10 @@ function formatXp(value: number) {
   return new Intl.NumberFormat("es-ES").format(value);
 }
 
+function isMissionComplete(currentProgress: number, targetProgress: number) {
+  return targetProgress > 0 && currentProgress >= targetProgress;
+}
+
 function NotificationIcon({ type }: { type: RecentNotificationType }) {
   if (type === "urgent") return <CircleAlert size={18} />;
   if (type === "opportunity") return <Target size={18} />;
@@ -152,7 +156,7 @@ export default function CentralDailyOverview({
         <div className={styles.missionList}>
           {data.missions.map((mission) => {
             const missionPercent = percent(mission.progress, mission.target);
-            const complete = mission.completed || mission.progress >= mission.target;
+            const complete = isMissionComplete(mission.progress, mission.target);
 
             return (
               <div className={`${styles.mission} ${complete ? styles.missionComplete : ""}`} key={mission.id}>
@@ -161,7 +165,14 @@ export default function CentralDailyOverview({
                     <h3>{mission.name}</h3>
                     <p>{mission.description}</p>
                   </div>
-                  <span className={styles.missionReward}>+{formatXp(mission.rewardXp)} XP</span>
+                  <span className={`${styles.missionReward} ${complete ? styles.missionRewardComplete : ""}`}>
+                    +{formatXp(mission.rewardXp)} XP
+                    {complete && (
+                      <span className={styles.completedCheck} aria-label="Misión completada">
+                        <Check size={14} strokeWidth={3} />
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className={styles.missionProgressMeta}>
                   <span>{complete ? "Completada" : "En progreso"}</span>
@@ -187,7 +198,6 @@ export default function CentralDailyOverview({
             <span className={styles.kicker}>ACTIVIDAD</span>
             <h2>Notificaciones recientes</h2>
           </div>
-          <button type="button" onClick={onViewAllNotifications}>Ver todas</button>
         </header>
 
         <div className={styles.notificationList}>
@@ -220,6 +230,11 @@ export default function CentralDailyOverview({
           <Bell size={14} />
           <span>Las alertas críticas destacarán aquí automáticamente.</span>
         </div>
+
+        <button className={`${styles.panelButton} ${styles.notificationsButton}`} type="button" onClick={onViewAllNotifications}>
+          VER TODAS
+          <ChevronRight size={15} />
+        </button>
       </article>
     </section>
   );
