@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 import AppHeader from "@/components/AppHeader";
 import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperatorProgress } from "@/features/central/CentralProgressHeader";
 import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
+import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
@@ -220,6 +221,35 @@ function CentralPage() {
     informationNotifications: 1,
     earnedMoney: 1248,
     earnedMoneyThisWeek: 220,
+  };
+
+  // Contenido visual provisional para la segunda fase de la pantalla Central.
+  // La estructura tipada permitirá conectarlo después con CRM, XP, misiones y eventos.
+  const centralDailyOverview: CentralDailyOverviewData = {
+    dailySummary: {
+      title: "Tu resumen de hoy",
+      subtitle: "Sigue así, cada acción te acerca más a tus metas y recompensas.",
+      completed: 3,
+      target: 5,
+      dailyXp: 450,
+      actions: [
+        { id: "daily-followups", label: "3 seguimientos realizados", rewardXp: 150, completed: true },
+        { id: "daily-client", label: "1 nueva clienta captada", rewardXp: 200, completed: true },
+        { id: "daily-next", label: "Realiza 5 seguimientos más", rewardXp: 100 },
+      ],
+    },
+    missions: [
+      { id: "mission-followup", name: "Reina del seguimiento", description: "Realiza 10 seguimientos", progress: 7, target: 10, rewardXp: 250 },
+      { id: "mission-connection", name: "Conexión especial", description: "Consigue 3 segundas consultas", progress: 2, target: 3, rewardXp: 200 },
+      { id: "mission-productive", name: "Día productivo", description: "Realiza 5 acciones en un día", progress: 5, target: 5, rewardXp: 150, completed: true },
+    ],
+    notifications: [
+      { id: "notification-urgent", type: "urgent", title: "Seguimiento urgente", description: "María C. lleva 5 días sin contacto.", createdAtLabel: "Hace 10 min", actionLabel: "REVISAR SEGUIMIENTO" },
+      { id: "notification-opportunity", type: "opportunity", title: "Segunda consulta pendiente", description: "Ana G. mostró interés en volver.", createdAtLabel: "Hace 45 min", observation: "Mostró interés y quiere volver mañana." },
+      { id: "notification-achievement", type: "achievement", title: "¡Logro desbloqueado!", description: "Experta en conexiones.", createdAtLabel: "Hace 2 h" },
+      { id: "notification-information", type: "information", title: "Nueva clienta registrada", description: "Lucía R. se registró.", createdAtLabel: "Hace 3 h" },
+      { id: "notification-sale", type: "sale", title: "Venta realizada", description: "Paquete de 60 minutos a Marta P.", createdAtLabel: "Hace 4 h" },
+    ],
   };
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
@@ -1050,10 +1080,13 @@ function CentralPage() {
 
           <div className="tc-main-content">
           {tab === "central" && (
-            <CentralStatsCards
-              data={centralStats}
-              onViewClients={() => setTab("crm")}
-            />
+            <>
+              <CentralStatsCards
+                data={centralStats}
+                onViewClients={() => setTab("crm")}
+              />
+              <CentralDailyOverview data={centralDailyOverview} />
+            </>
           )}
 {tab === "panel" && (
             <>

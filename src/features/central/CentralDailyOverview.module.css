@@ -1,0 +1,469 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr) minmax(0, 1.08fr);
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 18px;
+}
+
+.panel {
+  --accent: 215, 181, 109;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 500px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(var(--accent), 0.25);
+  border-radius: 24px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 88% 5%, rgba(var(--accent), 0.13), transparent 34%),
+    linear-gradient(155deg, rgba(24, 22, 39, 0.98), rgba(12, 12, 23, 0.99));
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 12% auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent), 0.9), transparent);
+}
+
+.panel:hover {
+  transform: translateY(-3px);
+  border-color: rgba(var(--accent), 0.42);
+  box-shadow:
+    0 25px 58px rgba(0, 0, 0, 0.31),
+    0 0 34px rgba(var(--accent), 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.summaryPanel { --accent: 158, 104, 255; }
+.missionsPanel { --accent: 221, 176, 88; }
+.notificationsPanel { --accent: 75, 164, 255; }
+
+.panelHeader,
+.notificationHeader {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.panelHeader > div:first-child,
+.notificationHeader > div:first-child {
+  min-width: 0;
+}
+
+.kicker {
+  display: block;
+  margin-bottom: 7px;
+  color: rgb(var(--accent));
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+}
+
+.panel h2,
+.notificationHeader h2 {
+  margin: 0;
+  color: #fff;
+  font-size: clamp(18px, 1.4vw, 23px);
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.panelHeader p {
+  max-width: 360px;
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.headerIcon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(var(--accent), 0.34);
+  border-radius: 16px;
+  color: rgb(var(--accent));
+  background: rgba(var(--accent), 0.1);
+  box-shadow: 0 12px 30px rgba(var(--accent), 0.1);
+}
+
+.dailyActions {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.dailyAction {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.actionState {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(var(--accent), 0.28);
+  border-radius: 9px;
+  color: rgba(var(--accent), 0.9);
+  background: rgba(var(--accent), 0.08);
+}
+
+.actionState.done {
+  color: #9fffc4;
+  border-color: rgba(91, 224, 143, 0.32);
+  background: rgba(91, 224, 143, 0.1);
+}
+
+.actionLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dailyAction strong {
+  white-space: nowrap;
+  color: rgb(var(--accent));
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.summaryFooter {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.progressHeading,
+.missionProgressMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+}
+
+.progressHeading strong,
+.missionProgressMeta strong {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.progressTrack,
+.missionTrack {
+  height: 9px;
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.progressTrack span,
+.missionTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(var(--accent), 0.6), rgb(var(--accent)));
+  box-shadow: 0 0 16px rgba(var(--accent), 0.36);
+}
+
+.xpEarned {
+  margin-top: 10px;
+  color: rgb(var(--accent));
+  font-size: 10px;
+  font-weight: 850;
+  text-align: right;
+}
+
+.missionList {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 11px;
+  margin-top: 20px;
+}
+
+.mission {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.missionComplete {
+  border-color: rgba(84, 222, 143, 0.24);
+  background: rgba(84, 222, 143, 0.045);
+}
+
+.missionTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.missionTop > div {
+  min-width: 0;
+}
+
+.mission h3,
+.notification h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.mission p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.missionReward {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: rgb(var(--accent));
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.missionProgressMeta {
+  margin-top: 11px;
+}
+
+.panelButton {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--accent), 0.27);
+  border-radius: 13px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(var(--accent), 0.085);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.panelButton:hover {
+  border-color: rgba(var(--accent), 0.5);
+  background: rgba(var(--accent), 0.15);
+}
+
+.notificationHeader button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: rgba(var(--accent), 0.9);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.notificationHeader button:hover {
+  color: #fff;
+}
+
+.notificationList {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 9px;
+  margin-top: 19px;
+}
+
+.notification {
+  --notice: 92, 184, 255;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 11px;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid rgba(var(--notice), 0.2);
+  border-left: 3px solid rgb(var(--notice));
+  border-radius: 14px;
+  background: linear-gradient(90deg, rgba(var(--notice), 0.09), rgba(255, 255, 255, 0.018));
+}
+
+.notification_urgent { --notice: 255, 80, 106; }
+.notification_opportunity { --notice: 255, 190, 78; }
+.notification_achievement { --notice: 177, 104, 255; }
+.notification_information { --notice: 81, 169, 255; }
+.notification_sale { --notice: 69, 215, 139; }
+
+.notificationIcon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(var(--notice), 0.28);
+  border-radius: 11px;
+  color: rgb(var(--notice));
+  background: rgba(var(--notice), 0.1);
+}
+
+.notificationBody {
+  min-width: 0;
+}
+
+.notificationTitleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notificationTitleRow time {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 8px;
+}
+
+.notification p {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: rgba(255, 255, 255, 0.53);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.observation {
+  margin-top: 7px;
+  padding: 7px 8px;
+  border-left: 2px solid rgba(var(--notice), 0.5);
+  border-radius: 0 8px 8px 0;
+  color: rgba(255, 255, 255, 0.59);
+  background: rgba(var(--notice), 0.055);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.notificationAction {
+  display: inline-flex;
+  margin-top: 7px;
+  color: rgb(var(--notice));
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+
+.notificationFooter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 16px;
+  color: rgba(255, 255, 255, 0.33);
+  font-size: 8px;
+}
+
+@media (max-width: 1320px) {
+  .layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .notificationsPanel {
+    grid-column: 1 / -1;
+    min-height: auto;
+  }
+
+  .notificationList {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 850px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .notificationsPanel {
+    grid-column: auto;
+  }
+
+  .panel {
+    min-height: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .panel {
+    padding: 16px;
+    border-radius: 20px;
+  }
+
+  .notificationList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dailyAction {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .dailyAction strong {
+    grid-column: 2;
+  }
+
+  .missionTop,
+  .notificationTitleRow {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .panelButton {
+    transition: none;
+  }
+
+  .panel:hover {
+    transform: none;
+  }
+}
