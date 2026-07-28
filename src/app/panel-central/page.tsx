@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 
 import AppHeader from "@/components/AppHeader";
 import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperatorProgress } from "@/features/central/CentralProgressHeader";
+import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
@@ -200,6 +201,25 @@ function CentralPage() {
     totalXp: 5420,
     activeStreakDays: 12,
     loyaltyIndex: 87,
+  };
+
+  // Datos provisionales y tipados para la primera fase visual de Proyecto Leonaris.
+  // Se sustituirán por los motores reales de XP, clientes, notificaciones y facturación.
+  const centralStats: CentralStatsData = {
+    totalXp: 5420,
+    xpToday: 320,
+    currentLevel: "Oro",
+    currentLevelXp: 870,
+    nextLevelXp: 1000,
+    nextLevelName: "Diamante",
+    activeClients: 24,
+    activeClientsThisWeek: 5,
+    notificationTotal: 8,
+    urgentNotifications: 3,
+    followUpNotifications: 4,
+    informationNotifications: 1,
+    earnedMoney: 1248,
+    earnedMoneyThisWeek: 220,
   };
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
@@ -1029,7 +1049,12 @@ function CentralPage() {
           />
 
           <div className="tc-main-content">
-          {tab === "central" && <div aria-label="Contenido futuro de Central" />}
+          {tab === "central" && (
+            <CentralStatsCards
+              data={centralStats}
+              onViewClients={() => setTab("crm")}
+            />
+          )}
 {tab === "panel" && (
             <>
               <OperationalInbox

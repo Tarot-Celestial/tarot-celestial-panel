@@ -1,0 +1,303 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(185px, 1fr));
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+}
+
+.card {
+  --accent: 215, 181, 109;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 260px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(var(--accent), 0.28);
+  border-radius: 22px;
+  padding: 17px;
+  background:
+    radial-gradient(circle at 82% 8%, rgba(var(--accent), 0.18), transparent 34%),
+    linear-gradient(150deg, rgba(25, 23, 42, 0.97), rgba(13, 12, 25, 0.98));
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--accent), 0.92), transparent);
+  opacity: 0.85;
+}
+
+.card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(var(--accent), 0.48);
+  box-shadow:
+    0 24px 54px rgba(0, 0, 0, 0.3),
+    0 0 30px rgba(var(--accent), 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.xpCard { --accent: 157, 103, 255; }
+.clientsCard { --accent: 65, 167, 255; }
+.notificationsCard { --accent: 241, 72, 128; }
+.moneyCard { --accent: 55, 211, 133; }
+.levelCard { --accent: 228, 177, 79; }
+
+.levelBronce { --accent: 184, 115, 51; }
+.levelPlata { --accent: 194, 205, 218; }
+.levelOro { --accent: 228, 177, 79; }
+.levelPlatino { --accent: 92, 188, 205; }
+.levelDiamante { --accent: 104, 177, 255; }
+.levelLeyenda,
+.levelLegendario { --accent: 190, 104, 255; }
+.levelCelestial { --accent: 241, 211, 126; }
+
+.cardTop {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cardTop > div:first-child {
+  min-width: 0;
+}
+
+.eyebrow {
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.value,
+.levelValue {
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+  color: #fff;
+  font-size: clamp(25px, 2vw, 34px);
+  font-weight: 950;
+  line-height: 1;
+  text-shadow: 0 0 22px rgba(var(--accent), 0.2);
+}
+
+.levelValue {
+  color: rgb(var(--accent));
+  letter-spacing: 0.06em;
+}
+
+.positive {
+  margin-top: 9px;
+  color: rgb(var(--accent));
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.muted {
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 11px;
+}
+
+.iconBox {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(var(--accent), 0.34);
+  border-radius: 16px;
+  color: rgb(var(--accent));
+  background: rgba(var(--accent), 0.12);
+  box-shadow: 0 10px 28px rgba(var(--accent), 0.1);
+}
+
+.levelBadge {
+  transform: rotate(2deg);
+}
+
+.visualArea {
+  display: flex;
+  min-height: 74px;
+  flex: 1;
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+.miniChart {
+  width: 100%;
+  height: 58px;
+  overflow: visible;
+}
+
+.chartLine {
+  fill: none;
+  stroke: rgb(var(--accent));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 5px rgba(var(--accent), 0.5));
+}
+
+.chartArea {
+  fill: rgba(var(--accent), 0.09);
+  stroke: none;
+}
+
+.progressMeta {
+  display: grid;
+  gap: 4px;
+  margin-top: 24px;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.progressMeta span:last-child {
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 10px;
+}
+
+.progressTrack {
+  height: 9px;
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.progressTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(var(--accent), 0.66), rgb(var(--accent)));
+  box-shadow: 0 0 16px rgba(var(--accent), 0.38);
+}
+
+.ringVisual {
+  width: 88px;
+  height: 88px;
+  display: grid;
+  flex: 1;
+  place-items: center;
+  align-self: center;
+  margin: 10px 0 4px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(20, 19, 34, 1) 54%, transparent 56%),
+    conic-gradient(rgb(var(--accent)) 0 72%, rgba(var(--accent), 0.13) 72% 100%);
+  box-shadow: 0 0 24px rgba(var(--accent), 0.1);
+}
+
+.ringCore {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.notificationList {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  margin-top: 17px;
+}
+
+.notificationList div {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 11px;
+}
+
+.notificationList strong {
+  color: #fff;
+  font-size: 12px;
+}
+
+.urgentDot,
+.followDot,
+.infoDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.urgentDot { background: #ff4b68; box-shadow: 0 0 8px rgba(255, 75, 104, 0.7); }
+.followDot { background: #ffb44b; box-shadow: 0 0 8px rgba(255, 180, 75, 0.6); }
+.infoDot { background: #5eb8ff; box-shadow: 0 0 8px rgba(94, 184, 255, 0.6); }
+
+.cardButton {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 100%;
+  min-height: 38px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 9px 11px;
+  border: 1px solid rgba(var(--accent), 0.25);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.88);
+  background: rgba(var(--accent), 0.08);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.cardButton:hover {
+  border-color: rgba(var(--accent), 0.48);
+  color: #fff;
+  background: rgba(var(--accent), 0.15);
+}
+
+@media (max-width: 1450px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card {
+    min-height: 245px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .cardButton {
+    transition: none;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+}
