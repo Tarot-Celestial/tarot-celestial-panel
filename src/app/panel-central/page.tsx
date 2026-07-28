@@ -8,10 +8,11 @@ import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperato
 import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
 import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
+import MyClientsPlaceholder from "@/features/central/MyClientsPlaceholder";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import { useAttendance } from "@/hooks/useAttendance";
@@ -25,12 +26,13 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users } from "lucide-react";
+import { BarChart3, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
 const TABS = [
   "central",
+  "mis-clientas",
   "panel",
   "equipo",
   "crm",
@@ -50,6 +52,7 @@ type TabKey = typeof TABS[number];
 
 const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "central", label: "Central", icon: LayoutDashboard },
+  { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -193,6 +196,8 @@ type ChatMessage = {
 
 function CentralPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
 
@@ -302,6 +307,14 @@ function CentralPage() {
       setTab(requestedTab as TabKey);
     }
   }, [searchParams]);
+
+  const handleSidebarTabChange = useCallback((nextTab: TabKey) => {
+    setTab(nextTab);
+
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.set("tab", nextTab);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams]);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -1070,7 +1083,7 @@ function CentralPage() {
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
       <div className="tc-shell tc-shell-premium">
-        <CentralSidebar items={CENTRAL_NAV} activeTab={tab} onTabChange={setTab} />
+        <CentralSidebar items={CENTRAL_NAV} activeTab={tab} onTabChange={handleSidebarTabChange} />
 
         <main className="tc-main">
           <CentralProgressHeader
@@ -1079,6 +1092,8 @@ function CentralPage() {
           />
 
           <div className="tc-main-content">
+          {tab === "mis-clientas" && <MyClientsPlaceholder />}
+
           {tab === "central" && (
             <>
               <CentralStatsCards
