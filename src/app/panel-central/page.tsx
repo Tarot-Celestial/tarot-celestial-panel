@@ -9,6 +9,7 @@ import CentralStatsCards, { type CentralStatsData } from "@/features/central/Cen
 import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import MyClientsPlaceholder from "@/features/central/MyClientsPlaceholder";
+import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
@@ -226,6 +227,18 @@ function CentralPage() {
     informationNotifications: 1,
     earnedMoney: 1248,
     earnedMoneyThisWeek: 220,
+  };
+
+  // Datos visuales provisionales para la primera fila de la pestaña Mis clientas.
+  // Quedan tipados para conectarlos más adelante con XP, CRM y Coins reales.
+  const myClientsStats: MyClientsStatsData = {
+    currentLevel: 1,
+    currentLevelXp: 0,
+    nextLevelXp: 100,
+    activeClients: 28,
+    activeClientsThisWeek: 4,
+    clientsWithoutFollowUp: 7,
+    availableCoins: 125,
   };
 
   // Contenido visual provisional para la segunda fase de la pantalla Central.
@@ -1092,7 +1105,12 @@ function CentralPage() {
           />
 
           <div className="tc-main-content">
-          {tab === "mis-clientas" && <MyClientsPlaceholder />}
+          {tab === "mis-clientas" && (
+            <>
+              <MyClientsPlaceholder />
+              <MyClientsStatsCards data={myClientsStats} />
+            </>
+          )}
 
           {tab === "central" && (
             <>
