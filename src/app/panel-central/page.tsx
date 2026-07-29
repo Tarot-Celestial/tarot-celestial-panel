@@ -9,6 +9,7 @@ import CentralStatsCards, { type CentralStatsData } from "@/features/central/Cen
 import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
+import MyClientsList from "@/features/central/MyClientsList";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
@@ -1105,7 +1106,18 @@ function CentralPage() {
 
           <div className="tc-main-content">
           {tab === "mis-clientas" && (
-            <MyClientsStatsCards data={myClientsStats} />
+            <>
+              <MyClientsStatsCards data={myClientsStats} />
+              <MyClientsList
+                onNewClient={() => handleSidebarTabChange("crm")}
+                onOpenClient={(clientId) => {
+                  handleSidebarTabChange("crm");
+                  window.setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: String(clientId) } }));
+                  }, 250);
+                }}
+              />
+            </>
           )}
 
           {tab === "central" && (
