@@ -1,0 +1,39 @@
+.profile { width: 100%; min-width: 0; margin-top: 20px; }
+.backButton { display:inline-flex; align-items:center; gap:8px; min-height:40px; padding:0 13px; border:1px solid rgba(157,103,255,.25); border-radius:12px; color:#d8c9ff; background:rgba(157,103,255,.07); font:inherit; font-size:13px; font-weight:800; cursor:pointer; }
+.hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,320px); gap:18px; margin-top:14px; }
+.identity,.purchaseCard,.tabPanel,.stateCard { border:1px solid rgba(157,103,255,.28); border-radius:24px; background:radial-gradient(circle at 90% 0%,rgba(157,103,255,.12),transparent 35%),linear-gradient(150deg,rgba(23,21,38,.98),rgba(11,11,22,.98)); box-shadow:0 18px 48px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.04); }
+.identity { position:relative; display:flex; align-items:center; gap:18px; min-width:0; padding:24px; }
+.avatar { width:82px; height:82px; flex:0 0 82px; display:grid; place-items:center; overflow:hidden; border:1px solid rgba(190,151,255,.48); border-radius:22px; color:#f5efff; background:linear-gradient(135deg,rgba(157,103,255,.35),rgba(75,43,128,.28)); font-size:25px; font-weight:950; box-shadow:0 0 28px rgba(157,103,255,.18); }
+.avatar img { width:100%; height:100%; object-fit:cover; }
+.identityCopy { min-width:0; flex:1; }
+.nameRow { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.nameRow h2 { margin:0; min-width:0; color:#fff; font-size:clamp(1.55rem,2.6vw,2.35rem); font-weight:950; overflow-wrap:anywhere; }
+.status { display:inline-flex; align-items:center; min-height:28px; padding:0 11px; border-radius:999px; font-size:12px; font-weight:900; }
+.active { color:#8ef4b4; border:1px solid rgba(74,222,128,.35); background:rgba(34,197,94,.11); }
+.warm { color:#ffd978; border:1px solid rgba(245,190,60,.38); background:rgba(245,158,11,.11); }
+.cold { color:#a9d7ff; border:1px solid rgba(96,165,250,.36); background:rgba(59,130,246,.11); }
+.risk { color:#ff999f; border:1px solid rgba(248,113,113,.4); background:rgba(239,68,68,.11); }
+.neutral { color:#d6d2df; border:1px solid rgba(203,213,225,.24); background:rgba(148,163,184,.08); }
+.contactLine { display:flex; align-items:center; gap:8px; min-width:0; margin-top:10px; color:rgba(255,255,255,.65); font-size:13px; font-weight:700; }
+.contactLine span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.whatsapp { color:#52dc8d; flex:0 0 auto; }
+.moreButton { width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; border:1px solid rgba(255,255,255,.1); border-radius:13px; color:#d9c7ff; background:rgba(255,255,255,.045); cursor:pointer; }
+.purchaseCard { display:flex; align-items:center; gap:15px; padding:22px; border-color:rgba(215,181,109,.28); background:radial-gradient(circle at 90% 0%,rgba(215,181,109,.13),transparent 38%),linear-gradient(150deg,rgba(27,24,35,.98),rgba(12,11,19,.98)); }
+.purchaseIcon { width:48px; height:48px; flex:0 0 48px; display:grid; place-items:center; border:1px solid rgba(215,181,109,.35); border-radius:15px; color:#f3d78d; background:rgba(215,181,109,.09); }
+.purchaseCard>div:last-child { min-width:0; display:flex; flex-direction:column; gap:7px; }
+.purchaseLabel { color:#d9bc77; font-size:10px; font-weight:950; letter-spacing:.11em; }
+.purchaseCard strong { color:#fff; font-size:18px; font-weight:950; overflow-wrap:anywhere; }
+.purchaseCard small { display:flex; align-items:center; gap:6px; color:rgba(255,255,255,.57); font-size:12px; font-weight:750; }
+.tabs { display:flex; gap:8px; margin-top:18px; overflow-x:auto; padding:4px; border:1px solid rgba(157,103,255,.18); border-radius:16px; background:rgba(12,11,22,.8); }
+.tabs button { flex:1 0 auto; min-height:42px; padding:0 16px; border:0; border-radius:12px; color:rgba(255,255,255,.55); background:transparent; font:inherit; font-size:13px; font-weight:850; cursor:pointer; }
+.tabs button:hover { color:#fff; background:rgba(157,103,255,.07); }
+.tabs .activeTab { color:#fff; background:linear-gradient(135deg,rgba(142,84,255,.78),rgba(91,51,181,.78)); box-shadow:0 8px 20px rgba(105,62,207,.18); }
+.tabPanel { min-height:210px; margin-top:16px; padding:26px; }
+.tabPanel span { color:#fff; font-size:18px; font-weight:950; }
+.tabPanel p { margin:9px 0 0; color:rgba(255,255,255,.56); font-size:13px; font-weight:700; }
+.stateCard { min-height:220px; margin-top:20px; padding:30px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; text-align:center; color:rgba(255,255,255,.66); font-size:14px; font-weight:750; }
+.stateCard strong { color:#fff; font-size:19px; font-weight:950; }
+.stateCard button { margin-top:8px; display:inline-flex; align-items:center; gap:8px; min-height:40px; padding:0 14px; border:1px solid rgba(157,103,255,.3); border-radius:12px; color:#fff; background:rgba(157,103,255,.12); font:inherit; font-weight:850; cursor:pointer; }
+@media (max-width:900px){ .hero{grid-template-columns:1fr;} }
+@media (max-width:620px){ .identity{align-items:flex-start; padding:18px; flex-wrap:wrap;} .avatar{width:66px;height:66px;flex-basis:66px;border-radius:18px;} .moreButton{position:absolute;top:16px;right:16px;} .identityCopy{flex-basis:calc(100% - 84px);padding-right:44px;} .purchaseCard{padding:18px;} }
+@media (prefers-reduced-motion:reduce){ .tabs button,.backButton,.moreButton{transition:none;} }

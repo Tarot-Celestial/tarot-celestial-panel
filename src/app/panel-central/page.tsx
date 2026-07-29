@@ -10,6 +10,7 @@ import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
+import MyClientProfile from "@/features/central/MyClientProfile";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
@@ -1108,15 +1109,27 @@ function CentralPage() {
           {tab === "mis-clientas" && (
             <>
               <MyClientsStatsCards data={myClientsStats} />
-              <MyClientsList
-                onNewClient={() => handleSidebarTabChange("crm")}
-                onOpenClient={(clientId) => {
-                  handleSidebarTabChange("crm");
-                  window.setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: String(clientId) } }));
-                  }, 250);
-                }}
-              />
+              {searchParams?.get("cliente") ? (
+                <MyClientProfile
+                  clientId={String(searchParams.get("cliente"))}
+                  onBack={() => {
+                    const params = new URLSearchParams(searchParams?.toString() || "");
+                    params.set("tab", "mis-clientas");
+                    params.delete("cliente");
+                    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+                  }}
+                />
+              ) : (
+                <MyClientsList
+                  onNewClient={() => handleSidebarTabChange("crm")}
+                  onOpenClient={(clientId) => {
+                    const params = new URLSearchParams(searchParams?.toString() || "");
+                    params.set("tab", "mis-clientas");
+                    params.set("cliente", String(clientId));
+                    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+                  }}
+                />
+              )}
             </>
           )}
 
