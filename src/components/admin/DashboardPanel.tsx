@@ -1,12 +1,57 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { BellRing, Send } from "lucide-react";
+import {
+  Activity,
+  BellRing,
+  CalendarClock,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
+  Euro,
+  Gamepad2,
+  Info,
+  LogIn,
+  Minus,
+  MousePointerClick,
+  Radio,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+  TriangleAlert,
+  Trophy,
+  UserRoundCheck,
+  UserRoundX,
+  Users,
+  Wifi,
+  Zap,
+} from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
+import styles from "./DashboardPanel.module.css";
 
 const sb = supabaseBrowser();
+
+type DashboardPanelProps = {
+  month: string;
+};
+
+type TrendDirection = "up" | "down" | "neutral";
+type ComparisonTone = "positive" | "negative" | "neutral";
+type KpiAccent = "gold" | "purple" | "green" | "blue" | "pink" | "orange";
+
+type ComparisonData = {
+  trend: TrendDirection;
+  tone: ComparisonTone;
+  percentage: number | null;
+  hasPrevious: boolean;
+  previous: number | null;
+};
 
 async function safeJson(res: Response) {
   const txt = await res.text();
@@ -32,9 +77,24 @@ function numES(n: any, digits = 0) {
   });
 }
 
-type DashboardPanelProps = {
-  month: string;
-};
+function previousMonthKey(month: string) {
+  const [yearRaw, monthRaw] = String(month || "").split("-");
+  const year = Number(yearRaw);
+  const monthNumber = Number(monthRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(monthNumber)) return month;
+  const date = new Date(Date.UTC(year, monthNumber - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(month: string) {
+  const [yearRaw, monthRaw] = String(month || "").split("-");
+  const year = Number(yearRaw);
+  const monthNumber = Number(monthRaw);
+  if (!Number.isFinite(year) || !Number.isFinite(monthNumber)) return month;
+  return new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric", timeZone: "UTC" }).format(
+    new Date(Date.UTC(year, monthNumber - 1, 1))
+  );
+}
 
 function minsUntil(dateValue: any) {
   if (!dateValue) return null;
@@ -48,6 +108,193 @@ function isPendingReserva(v: any) {
   return ["pendiente", "pending", "confirmada", "confirmado", "programada", "activa"].includes(s);
 }
 
+function reservationMonth(row: any) {
+  const raw = String(row?.fecha_reserva || "").trim();
+  if (/^\d{4}-\d{2}/.test(raw)) return raw.slice(0, 7);
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) return "";
+  return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function buildComparison(current: number, previous: number | null, positiveWhenUp = true): ComparisonData {
+  if (previous === null || previous === undefined || !Number.isFinite(Number(previous))) {
+    return { trend: "neutral", tone: "neutral", percentage: null, hasPrevious: false, previous: null };
+  }
+
+  const currentValue = Number(current) || 0;
+  const previousValue = Number(previous) || 0;
+  const trend: TrendDirection = currentValue > previousValue ? "up" : currentValue < previousValue ? "down" : "neutral";
+  const percentage = previousValue === 0
+    ? currentValue === 0
+      ? 0
+      : null
+    : ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
+
+  const tone: ComparisonTone = trend === "neutral"
+    ? "neutral"
+    : (trend === "up") === positiveWhenUp
+      ? "positive"
+      : "negative";
+
+  return {
+    trend,
+    tone,
+    percentage,
+    hasPrevious: true,
+    previous: previousValue,
+  };
+}
+
+function comparisonText(comparison: ComparisonData) {
+  if (!comparison.hasPrevious) return "Sin datos anteriores";
+  if (comparison.percentage === null) {
+    if (comparison.trend === "up") return "Nuevo periodo";
+    if (comparison.trend === "down") return "Sin actividad";
+    return "Sin variación";
+  }
+  if (Math.abs(comparison.percentage) < 0.005) return "Sin variación";
+  return `${comparison.percentage > 0 ? "+" : ""}${numES(comparison.percentage, 2)} %`;
+}
+
+function relativeTime(value: any) {
+  if (!value) return "Sin actividad registrada";
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return "Sin actividad registrada";
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return "Ahora mismo";
+  if (minutes < 60) return `Hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "Hace 1 día";
+  return `Hace ${days} días`;
+}
+
+function clientActivityStatus(row: any) {
+  const source = row?.ultima_actividad_at || row?.ultimo_acceso_at;
+  const timestamp = source ? new Date(source).getTime() : 0;
+  const elapsed = timestamp ? Date.now() - timestamp : Number.POSITIVE_INFINITY;
+  const minute = 60 * 1000;
+  const day = 24 * 60 * minute;
+
+  if (elapsed <= 3 * minute) return { key: "online", label: "Online", detail: relativeTime(source) };
+  if (elapsed <= day) return { key: "recent", label: "Actividad reciente", detail: relativeTime(source) };
+  if (elapsed > 7 * day) return { key: "inactive", label: "Inactividad prolongada", detail: relativeTime(source) };
+  return { key: "offline", label: "Offline", detail: relativeTime(source) };
+}
+
+function toneClass(tone: ComparisonTone) {
+  if (tone === "positive") return styles.tonePositive;
+  if (tone === "negative") return styles.toneNegative;
+  return styles.toneNeutral;
+}
+
+function accentClass(accent: KpiAccent) {
+  if (accent === "gold") return styles.accentGold;
+  if (accent === "green") return styles.accentGreen;
+  if (accent === "blue") return styles.accentBlue;
+  if (accent === "pink") return styles.accentPink;
+  if (accent === "orange") return styles.accentOrange;
+  return styles.accentPurple;
+}
+
+function TrendIcon({ trend, size = 15 }: { trend: TrendDirection; size?: number }) {
+  if (trend === "up") return <TrendingUp size={size} aria-hidden="true" />;
+  if (trend === "down") return <TrendingDown size={size} aria-hidden="true" />;
+  return <Minus size={size} aria-hidden="true" />;
+}
+
+function Sparkline({ current, comparison }: { current: number; comparison: ComparisonData }) {
+  const previous = comparison.hasPrevious ? Number(comparison.previous || 0) : null;
+  const currentValue = Math.max(0, Number(current) || 0);
+  const values = previous === null ? [currentValue, currentValue] : [Math.max(0, previous), currentValue];
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const range = Math.max(maxValue - minValue, 1);
+  const yFor = (value: number) => 26 - ((value - minValue) / range) * 16;
+  const previousY = previous === null || values[0] === values[1] ? 18 : yFor(values[0]);
+  const currentY = previous === null || values[0] === values[1] ? 18 : yFor(values[1]);
+  const path = `M 4 ${previousY.toFixed(2)} C 28 ${previousY.toFixed(2)}, 64 ${currentY.toFixed(2)}, 96 ${currentY.toFixed(2)}`;
+
+  return (
+    <svg className={styles.sparkline} viewBox="0 0 100 34" role="img" aria-label="Tendencia del indicador">
+      <path className={styles.sparkArea} d={`${path} L 96 32 L 4 32 Z`} />
+      <path className={styles.sparkLine} d={path} />
+      <circle className={styles.sparkPoint} cx="4" cy={previousY} r="2.4" />
+      <circle className={styles.sparkPoint} cx="96" cy={currentY} r="2.9" />
+    </svg>
+  );
+}
+
+function GameKpi({
+  label,
+  value,
+  numericValue,
+  icon,
+  accent = "purple",
+  comparison,
+  periodLabel,
+  previousDisplay,
+  meta,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  numericValue: number;
+  icon: ReactNode;
+  accent?: KpiAccent;
+  comparison: ComparisonData;
+  periodLabel: string;
+  previousDisplay?: string;
+  meta?: string;
+  compact?: boolean;
+}) {
+  return (
+    <article className={`${styles.kpiCard} ${accentClass(accent)} ${toneClass(comparison.tone)} ${compact ? styles.kpiCompact : ""}`}>
+      <div className={styles.kpiGlow} />
+      <div className={styles.kpiTopline}>
+        <span className={styles.kpiIcon}>{icon}</span>
+        <span className={styles.kpiSignal}><Radio size={11} aria-hidden="true" /> En vivo</span>
+      </div>
+      <div className={styles.kpiLabel}>{label}</div>
+      <div className={styles.kpiValue}>{value}</div>
+      <div className={styles.kpiVisualRow}>
+        <Sparkline current={numericValue} comparison={comparison} />
+        <div className={styles.kpiTrendCopy}>
+          <strong><TrendIcon trend={comparison.trend} /> {comparisonText(comparison)}</strong>
+          <span>{periodLabel}</span>
+        </div>
+      </div>
+      <div className={styles.kpiFoot}>
+        <span>{previousDisplay ? `Anterior: ${previousDisplay}` : comparison.hasPrevious ? "Periodo anterior disponible" : "Histórico no disponible"}</span>
+        {meta ? <span>{meta}</span> : null}
+      </div>
+    </article>
+  );
+}
+
+function AlertIcon({ tone }: { tone: "danger" | "warning" | "success" | "info" }) {
+  if (tone === "danger") return <ShieldAlert size={20} aria-hidden="true" />;
+  if (tone === "warning") return <TriangleAlert size={20} aria-hidden="true" />;
+  if (tone === "success") return <CheckCircle2 size={20} aria-hidden="true" />;
+  return <Info size={20} aria-hidden="true" />;
+}
+
+function alertToneClass(tone: "danger" | "warning" | "success" | "info") {
+  if (tone === "danger") return styles.alertDanger;
+  if (tone === "warning") return styles.alertWarning;
+  if (tone === "success") return styles.alertSuccess;
+  return styles.alertInfo;
+}
+
+function alertStatusLabel(tone: "danger" | "warning" | "success" | "info") {
+  if (tone === "danger") return "Urgente";
+  if (tone === "warning") return "Preventivo";
+  if (tone === "success") return "Positivo";
+  return "Informativo";
+}
+
 export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [loading, setLoading] = useState(false);
@@ -55,13 +302,19 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [statsRows, setStatsRows] = useState<any[]>([]);
   const [statsTotals, setStatsTotals] = useState<any>(null);
+  const [previousStatsRows, setPreviousStatsRows] = useState<any[]>([]);
+  const [previousStatsLoaded, setPreviousStatsLoaded] = useState(false);
   const [reservas, setReservas] = useState<any[]>([]);
   const [diarioRows, setDiarioRows] = useState<any[]>([]);
+  const [yesterdayRows, setYesterdayRows] = useState<any[]>([]);
+  const [yesterdayLoaded, setYesterdayLoaded] = useState(false);
   const [clientAccess, setClientAccess] = useState<any>(null);
   const [pushTitle, setPushTitle] = useState("Aviso Tarot Celestial");
   const [pushBody, setPushBody] = useState("");
   const [pushSending, setPushSending] = useState(false);
   const [pushMsg, setPushMsg] = useState("");
+
+  const previousMonth = useMemo(() => previousMonthKey(month), [month]);
 
   useEffect(() => {
     setActiveBrand(getActiveBrand());
@@ -90,12 +343,16 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const [invRes, statsRes, reservasRes, diarioRes, accessRes] = await Promise.all([
+      const [invRes, statsRes, previousStatsRes, reservasRes, diarioRes, yesterdayRes, accessRes] = await Promise.all([
         fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
         fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(previousMonth)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
@@ -107,6 +364,10 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
+        fetch(`/api/crm/diario/listar?mode=ayer&brand=${activeBrand}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }),
         fetch("/api/admin/client-access/summary", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
@@ -115,8 +376,10 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
 
       const invJ = await safeJson(invRes);
       const statsJ = await safeJson(statsRes);
+      const previousStatsJ = await safeJson(previousStatsRes);
       const reservasJ = await safeJson(reservasRes);
       const diarioJ = await safeJson(diarioRes);
+      const yesterdayJ = await safeJson(yesterdayRes);
       const accessJ = await safeJson(accessRes);
 
       if (!invJ?._ok || !invJ?.ok) throw new Error(invJ?.error || `HTTP ${invJ?._status}`);
@@ -132,17 +395,29 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       setDiarioRows(Array.isArray(diarioJ.rows) ? diarioJ.rows : []);
       setClientAccess(accessJ || null);
 
-      if (!silent) setMsg("✅ Dashboard actualizado");
+      const previousStatsOk = Boolean(previousStatsJ?._ok && previousStatsJ?.ok);
+      setPreviousStatsLoaded(previousStatsOk);
+      setPreviousStatsRows(previousStatsOk && Array.isArray(previousStatsJ.rows) ? previousStatsJ.rows : []);
+
+      const yesterdayOk = Boolean(yesterdayJ?._ok && yesterdayJ?.ok);
+      setYesterdayLoaded(yesterdayOk);
+      setYesterdayRows(yesterdayOk && Array.isArray(yesterdayJ.rows) ? yesterdayJ.rows : []);
+
+      if (!silent) setMsg("Dashboard sincronizado con los datos reales del sistema.");
     } catch (e: any) {
       if (!silent) {
-        setMsg(`❌ ${e?.message || "Error cargando dashboard"}`);
+        setMsg(`No se pudo actualizar: ${e?.message || "Error cargando dashboard"}`);
         tcToast({ title: "Error en dashboard", description: String(e?.message || "No se pudo cargar"), tone: "error" });
       }
       setInvoices([]);
       setStatsRows([]);
       setStatsTotals(null);
+      setPreviousStatsRows([]);
+      setPreviousStatsLoaded(false);
       setReservas([]);
       setDiarioRows([]);
+      setYesterdayRows([]);
+      setYesterdayLoaded(false);
       setClientAccess(null);
     } finally {
       if (!silent) setLoading(false);
@@ -151,23 +426,42 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
 
   useEffect(() => {
     loadDashboard(false);
-    const t = setInterval(() => loadDashboard(true), 20000);
-    return () => clearInterval(t);
-  }, [month, activeBrand]);
+    const timer = setInterval(() => loadDashboard(true), 20000);
+    return () => clearInterval(timer);
+  }, [month, previousMonth, activeBrand]);
 
   const totalFacturacion = useMemo(
-    () => (invoices || []).reduce((acc: number, x: any) => acc + (Number(x?.total) || 0), 0),
+    () => invoices.reduce((acc: number, row: any) => acc + (Number(row?.total) || 0), 0),
     [invoices]
   );
 
+  const previousInvoiceData = useMemo(() => {
+    const withHistory = invoices.filter((row: any) => Boolean(row?.has_previous_invoice));
+    if (!withHistory.length) return { total: null as number | null, count: 0 };
+    return {
+      total: withHistory.reduce((acc: number, row: any) => acc + (Number(row?.previous_total) || 0), 0),
+      count: withHistory.length,
+    };
+  }, [invoices]);
+
   const pendientes = useMemo(
-    () => (reservas || []).filter((x: any) => isPendingReserva(x?.estado)).length,
+    () => reservas.filter((row: any) => isPendingReserva(row?.estado)).length,
     [reservas]
   );
 
+  const pendingSelectedMonth = useMemo(
+    () => reservas.filter((row: any) => isPendingReserva(row?.estado) && reservationMonth(row) === month).length,
+    [reservas, month]
+  );
+
+  const pendingPreviousMonth = useMemo(
+    () => reservas.filter((row: any) => isPendingReserva(row?.estado) && reservationMonth(row) === previousMonth).length,
+    [reservas, previousMonth]
+  );
+
   const reservasProximas = useMemo(() => {
-    return [...(reservas || [])]
-      .filter((x: any) => isPendingReserva(x?.estado))
+    return [...reservas]
+      .filter((row: any) => isPendingReserva(row?.estado))
       .sort((a: any, b: any) => {
         const at = a?.fecha_reserva ? new Date(a.fecha_reserva).getTime() : 0;
         const bt = b?.fecha_reserva ? new Date(b.fecha_reserva).getTime() : 0;
@@ -176,11 +470,29 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       .slice(0, 5);
   }, [reservas]);
 
+  const facturacionComparison = useMemo(
+    () => buildComparison(totalFacturacion, previousInvoiceData.total, true),
+    [totalFacturacion, previousInvoiceData]
+  );
+  const clientsTodayComparison = useMemo(
+    () => buildComparison(diarioRows.length, yesterdayLoaded ? yesterdayRows.length : null, true),
+    [diarioRows.length, yesterdayLoaded, yesterdayRows.length]
+  );
+  const reservasComparison = useMemo(
+    () => buildComparison(pendingSelectedMonth, pendingPreviousMonth, false),
+    [pendingSelectedMonth, pendingPreviousMonth]
+  );
+  const tarotistasComparison = useMemo(
+    () => buildComparison(statsRows.length, previousStatsLoaded ? previousStatsRows.length : null, true),
+    [statsRows.length, previousStatsLoaded, previousStatsRows.length]
+  );
+  const noHistoricalComparison = useMemo(() => buildComparison(0, null), []);
+
   const alertas = useMemo(() => {
     const items: { title: string; description: string; tone: "danger" | "warning" | "success" | "info" }[] = [];
 
-    const verySoon = reservasProximas.filter((r: any) => {
-      const mins = minsUntil(r?.fecha_reserva);
+    const verySoon = reservasProximas.filter((row: any) => {
+      const mins = minsUntil(row?.fecha_reserva);
       return mins !== null && mins >= -2 && mins <= 10;
     });
 
@@ -192,7 +504,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       });
     }
 
-    if ((diarioRows || []).length >= 5) {
+    if (diarioRows.length >= 5) {
       items.push({
         title: "Buen ritmo de compras",
         description: `Hoy han comprado ${diarioRows.length} clientes.`,
@@ -217,7 +529,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       });
     }
 
-    const top = [...(statsRows || [])].sort((a: any, b: any) => Number(b?.captadas_total || 0) - Number(a?.captadas_total || 0))[0];
+    const top = [...statsRows].sort((a: any, b: any) => Number(b?.captadas_total || 0) - Number(a?.captadas_total || 0))[0];
     if (top && Number(top?.captadas_total || 0) >= 3) {
       items.push({
         title: "Tarotista destacada",
@@ -226,7 +538,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       });
     }
 
-    if ((diarioRows || []).length === 0 && new Date().getHours() >= 12) {
+    if (diarioRows.length === 0 && new Date().getHours() >= 12) {
       items.push({
         title: "Sin compras hoy",
         description: "Todavía no hay compras registradas hoy. Revisa seguimientos, cobros o captación.",
@@ -244,7 +556,6 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
 
     return items;
   }, [reservasProximas, diarioRows, pendientes, statsRows, statsTotals]);
-
 
   async function sendClientPush() {
     try {
@@ -270,179 +581,305 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
 
       const sent = Number(json?.sent || 0);
       const total = Number(json?.total || 0);
-      setPushMsg(`✅ Notificación enviada. ${sent}/${total} dispositivos recibieron el envío.`);
+      setPushMsg(`Notificación enviada. ${sent}/${total} dispositivos recibieron el envío.`);
       setPushBody("");
       tcToast({ title: "Notificación enviada", description: `${sent}/${total} dispositivos`, tone: "success" });
     } catch (e: any) {
       const errorText = String(e?.message || "No se pudo enviar la notificación");
-      setPushMsg(`❌ ${errorText}`);
+      setPushMsg(`Error: ${errorText}`);
       tcToast({ title: "Error enviando push", description: errorText, tone: "error" });
     } finally {
       setPushSending(false);
     }
   }
 
+  const selectedMonthLabel = monthLabel(month);
+  const previousMonthLabel = monthLabel(previousMonth);
+  const accessTotals = clientAccess?.totals || {};
+
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <div
-        className="tc-card"
-        style={{
-          padding: 24,
-          borderRadius: 26,
-          background:
-            "radial-gradient(circle at top right, rgba(181,156,255,.18), transparent 26%), radial-gradient(circle at top left, rgba(215,181,109,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03))",
-        }}
-      >
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div>
-            <div className="tc-title" style={{ fontSize: 26 }}>📊 Dashboard ejecutivo</div>
-            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 860 }}>
-              Vista rápida del negocio: facturación del mes, clientes activos hoy, reservas pendientes y accesos al panel cliente.
+    <div className={styles.dashboard}>
+      <section className={styles.heroCard}>
+        <div className={styles.heroGlow} />
+        <div className={styles.heroGrid} />
+        <div className={styles.heroContent}>
+          <div className={styles.heroMain}>
+            <span className={styles.eyebrow}><Gamepad2 size={13} aria-hidden="true" /> Centro de mando</span>
+            <div className={styles.heroTitleRow}>
+              <span className={styles.heroIcon}><Zap size={25} aria-hidden="true" /></span>
+              <div>
+                <h2>Dashboard ejecutivo</h2>
+                <p>Indicadores reales, actividad operativa y señales inteligentes del negocio.</p>
+              </div>
             </div>
           </div>
-
-          <button className="tc-btn tc-btn-gold" onClick={() => loadDashboard(false)} disabled={loading}>
-            {loading ? "Actualizando..." : "Actualizar dashboard"}
-          </button>
-        </div>
-
-        <div className="tc-sub" style={{ marginTop: 10 }}>{msg || " "}</div>
-      </div>
-
-      <div className="tc-grid-4">
-        <DashKpi label="Facturación visible" value={eur(totalFacturacion)} highlight />
-        <DashKpi label="Clientes hoy" value={String(diarioRows.length)} />
-        <DashKpi label="Reservas pendientes" value={String(pendientes)} />
-        <DashKpi label="Tarotistas con datos" value={String(statsRows.length)} />
-        <DashKpi label="Clientes online" value={String(clientAccess?.totals?.online_now || 0)} />
-        <DashKpi label="Accesos hoy" value={String(clientAccess?.totals?.active_today || 0)} />
-      </div>
-
-
-      <div className="tc-card" style={{ borderRadius: 24 }}>
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div>
-            <div className="tc-title" style={{ fontSize: 16 }}>🔔 Enviar notificación a clientes</div>
-            <div className="tc-sub" style={{ marginTop: 6 }}>Envía un texto push a todos los clientes que ya tengan activadas las notificaciones en su dispositivo.</div>
-          </div>
-          <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><BellRing size={14} /> Push manual</div>
-        </div>
-        <div className="tc-hr" />
-        <div style={{ display: "grid", gap: 10 }}>
-          <input
-            className="tc-input"
-            value={pushTitle}
-            onChange={(e) => setPushTitle(e.target.value)}
-            placeholder="Título de la notificación"
-            style={{ maxWidth: 520 }}
-          />
-          <textarea
-            className="tc-textarea"
-            value={pushBody}
-            onChange={(e) => setPushBody(e.target.value)}
-            placeholder="Escribe el mensaje que verán los clientes..."
-            rows={4}
-            style={{ minHeight: 110 }}
-          />
-          <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div className="tc-sub">También se guarda en el historial interno de notificaciones del cliente.</div>
-            <button className="tc-btn tc-btn-gold" onClick={sendClientPush} disabled={pushSending || !pushTitle.trim() || !pushBody.trim()}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><Send size={15} /> {pushSending ? "Enviando..." : "Enviar notificación"}</span>
+          <div className={styles.heroActions}>
+            <span className={styles.periodBadge}><Clock3 size={14} aria-hidden="true" /> {selectedMonthLabel}</span>
+            <button className={`tc-btn tc-btn-gold ${styles.primaryButton}`} onClick={() => loadDashboard(false)} disabled={loading}>
+              <RefreshCw size={16} className={loading ? styles.spinning : ""} aria-hidden="true" />
+              {loading ? "Actualizando..." : "Actualizar dashboard"}
             </button>
           </div>
-          {pushMsg ? <div className="tc-sub" style={{ color: pushMsg.startsWith("✅") ? "#9ee6b3" : "#ff9baa" }}>{pushMsg}</div> : null}
         </div>
-      </div>
+        <div className={styles.syncBar}>
+          <span className={styles.syncDot} />
+          <span>{msg || "Sincronización automática cada 20 segundos"}</span>
+          <span className={styles.syncSource}>Supabase · Facturas · Reservas · Actividad</span>
+        </div>
+      </section>
 
-      <div className="tc-card" style={{ borderRadius: 24 }}>
-        <div className="tc-title" style={{ fontSize: 16 }}>🚨 Alertas inteligentes</div>
-        <div className="tc-sub" style={{ marginTop: 6 }}>
-          Señales rápidas del negocio que requieren atención o indican buen rendimiento.
+      <section className={styles.kpiGrid} aria-label="Estadísticas principales del Dashboard">
+        <GameKpi
+          label="Facturación visible"
+          value={eur(totalFacturacion)}
+          numericValue={totalFacturacion}
+          icon={<Euro size={21} aria-hidden="true" />}
+          accent="gold"
+          comparison={facturacionComparison}
+          periodLabel="vs mes anterior"
+          previousDisplay={facturacionComparison.hasPrevious ? eur(previousInvoiceData.total || 0) : undefined}
+          meta={`${invoices.length} facturas`}
+        />
+        <GameKpi
+          label="Clientes hoy"
+          value={String(diarioRows.length)}
+          numericValue={diarioRows.length}
+          icon={<Users size={21} aria-hidden="true" />}
+          accent="green"
+          comparison={clientsTodayComparison}
+          periodLabel="vs ayer"
+          previousDisplay={clientsTodayComparison.hasPrevious ? String(yesterdayRows.length) : undefined}
+          meta="Compras registradas"
+        />
+        <GameKpi
+          label="Reservas pendientes"
+          value={String(pendingSelectedMonth)}
+          numericValue={pendingSelectedMonth}
+          icon={<CalendarClock size={21} aria-hidden="true" />}
+          accent="orange"
+          comparison={reservasComparison}
+          periodLabel="vs mes anterior"
+          previousDisplay={String(pendingPreviousMonth)}
+          meta={`${pendientes} activas totales`}
+        />
+        <GameKpi
+          label="Tarotistas con datos"
+          value={String(statsRows.length)}
+          numericValue={statsRows.length}
+          icon={<Trophy size={21} aria-hidden="true" />}
+          accent="purple"
+          comparison={tarotistasComparison}
+          periodLabel="vs mes anterior"
+          previousDisplay={tarotistasComparison.hasPrevious ? String(previousStatsRows.length) : undefined}
+          meta="Rendimiento mensual"
+        />
+        <GameKpi
+          label="Clientes online"
+          value={String(accessTotals?.online_now || 0)}
+          numericValue={Number(accessTotals?.online_now || 0)}
+          icon={<Wifi size={21} aria-hidden="true" />}
+          accent="blue"
+          comparison={noHistoricalComparison}
+          periodLabel="snapshot actual"
+          meta="Ventana de 3 minutos"
+        />
+        <GameKpi
+          label="Accesos hoy"
+          value={String(accessTotals?.active_today || 0)}
+          numericValue={Number(accessTotals?.active_today || 0)}
+          icon={<LogIn size={21} aria-hidden="true" />}
+          accent="pink"
+          comparison={noHistoricalComparison}
+          periodLabel="sin registro histórico diario"
+          meta="Dato real disponible"
+        />
+      </section>
+
+      <section className={styles.panelCard}>
+        <div className={styles.panelGlow} />
+        <div className={styles.sectionHeading}>
+          <div className={styles.sectionTitleGroup}>
+            <span className={`${styles.sectionIcon} ${styles.iconPurple}`}><BellRing size={20} aria-hidden="true" /></span>
+            <div>
+              <span className={styles.sectionKicker}>Acción directa</span>
+              <h3>Enviar notificación a clientes</h3>
+              <p>Envía un push a los clientes que ya tienen activadas las notificaciones.</p>
+            </div>
+          </div>
+          <span className={styles.gameChip}><Sparkles size={13} aria-hidden="true" /> Push manual</span>
         </div>
-        <div className="tc-hr" />
-        <div className="tc-grid-3">
-          {alertas.map((a, idx) => (
-            <div
-              key={idx}
-              style={{
-                borderRadius: 18,
-                padding: 16,
-                border:
-                  a.tone === "danger"
-                    ? "1px solid rgba(255,90,106,.28)"
-                    : a.tone === "warning"
-                    ? "1px solid rgba(215,181,109,.28)"
-                    : a.tone === "success"
-                    ? "1px solid rgba(105,240,177,.26)"
-                    : "1px solid rgba(181,156,255,.26)",
-                background:
-                  a.tone === "danger"
-                    ? "linear-gradient(180deg, rgba(255,90,106,.12), rgba(255,255,255,.03))"
-                    : a.tone === "warning"
-                    ? "linear-gradient(180deg, rgba(215,181,109,.12), rgba(255,255,255,.03))"
-                    : a.tone === "success"
-                    ? "linear-gradient(180deg, rgba(105,240,177,.10), rgba(255,255,255,.03))"
-                    : "linear-gradient(180deg, rgba(181,156,255,.10), rgba(255,255,255,.03))",
-              }}
+
+        <div className={styles.pushGrid}>
+          <label className={styles.fieldGroup}>
+            <span>Título</span>
+            <input
+              className={`tc-input ${styles.gameInput}`}
+              value={pushTitle}
+              onChange={(event) => setPushTitle(event.target.value)}
+              placeholder="Título de la notificación"
+            />
+          </label>
+          <label className={`${styles.fieldGroup} ${styles.messageField}`}>
+            <span>Mensaje</span>
+            <textarea
+              className={`tc-textarea ${styles.gameTextarea}`}
+              value={pushBody}
+              onChange={(event) => setPushBody(event.target.value)}
+              placeholder="Escribe el mensaje que verán los clientes..."
+              rows={4}
+            />
+          </label>
+          <div className={styles.pushFooter}>
+            <div className={styles.pushHint}><CircleAlert size={15} aria-hidden="true" /> También se guarda en el historial interno del cliente.</div>
+            <button
+              className={`tc-btn tc-btn-gold ${styles.primaryButton}`}
+              onClick={sendClientPush}
+              disabled={pushSending || !pushTitle.trim() || !pushBody.trim()}
             >
-              <div style={{ fontWeight: 900 }}>{a.title}</div>
-              <div className="tc-sub" style={{ marginTop: 8 }}>{a.description}</div>
+              <Send size={16} aria-hidden="true" /> {pushSending ? "Enviando..." : "Enviar notificación"}
+            </button>
+          </div>
+          {pushMsg ? (
+            <div className={`${styles.pushMessage} ${pushMsg.startsWith("Error") ? styles.pushError : styles.pushSuccess}`}>
+              {pushMsg}
             </div>
+          ) : null}
+        </div>
+      </section>
+
+      <section className={styles.panelCard}>
+        <div className={styles.sectionHeading}>
+          <div className={styles.sectionTitleGroup}>
+            <span className={`${styles.sectionIcon} ${styles.iconOrange}`}><ShieldAlert size={20} aria-hidden="true" /></span>
+            <div>
+              <span className={styles.sectionKicker}>Sistema de señales</span>
+              <h3>Alertas inteligentes</h3>
+              <p>Lecturas automáticas generadas con la lógica y los datos actuales del negocio.</p>
+            </div>
+          </div>
+          <span className={styles.liveBadge}><span /> {alertas.length} señales activas</span>
+        </div>
+
+        <div className={styles.alertGrid}>
+          {alertas.map((alerta, index) => (
+            <article key={`${alerta.title}-${index}`} className={`${styles.alertCard} ${alertToneClass(alerta.tone)}`}>
+              <div className={styles.alertTopline}>
+                <span className={styles.alertIcon}><AlertIcon tone={alerta.tone} /></span>
+                <span className={styles.alertStatus}>{alertStatusLabel(alerta.tone)}</span>
+              </div>
+              <h4>{alerta.title}</h4>
+              <p>{alerta.description}</p>
+              <div className={styles.alertPulse}><span /> Señal calculada en tiempo real</div>
+            </article>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="tc-card" style={{ borderRadius: 24 }}>
-        <div className="tc-title" style={{ fontSize: 16 }}>👁️ Actividad panel cliente</div>
-        <div className="tc-sub" style={{ marginTop: 6 }}>Control de accesos, actividad reciente y clientes conectados en este momento.</div>
-        <div className="tc-hr" />
-        <div className="tc-grid-4">
-          <DashKpi label="Online ahora" value={String(clientAccess?.totals?.online_now || 0)} highlight />
-          <DashKpi label="Activos hoy" value={String(clientAccess?.totals?.active_today || 0)} />
-          <DashKpi label="Inactivos 7d" value={String(clientAccess?.totals?.inactive_7d || 0)} />
-          <DashKpi label="Accesos totales" value={String(clientAccess?.totals?.total_accesses || 0)} />
-        </div>
-        <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-          {(clientAccess?.latest || []).slice(0, 6).map((row: any) => (
-            <div key={row.id} style={{ border: "1px solid rgba(255,255,255,.08)", borderRadius: 16, padding: 12, background: "rgba(255,255,255,.03)" }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                <div style={{ fontWeight: 800 }}>{[row?.nombre, row?.apellido].filter(Boolean).join(" ").trim() || "Cliente"}</div>
-                <div className="tc-chip">{row?.ultima_actividad_at && Date.now() - new Date(row.ultima_actividad_at).getTime() <= 180000 ? "Online" : "Offline"}</div>
-              </div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Último acceso: {row?.ultimo_acceso_at ? new Date(row.ultimo_acceso_at).toLocaleString("es-ES") : "—"} · Actividad: {row?.ultima_actividad_at ? new Date(row.ultima_actividad_at).toLocaleString("es-ES") : "—"}
-              </div>
+      <section className={styles.panelCard}>
+        <div className={styles.sectionHeading}>
+          <div className={styles.sectionTitleGroup}>
+            <span className={`${styles.sectionIcon} ${styles.iconGreen}`}><Activity size={20} aria-hidden="true" /></span>
+            <div>
+              <span className={styles.sectionKicker}>Presencia digital</span>
+              <h3>Actividad panel cliente</h3>
+              <p>Accesos, actividad reciente y estado de conexión detectado por la lógica actual.</p>
             </div>
-          ))}
-          {!clientAccess?.latest?.length ? <div className="tc-sub">Todavía no hay actividad de clientes para mostrar.</div> : null}
+          </div>
+          <span className={styles.gameChip}><Radio size={13} aria-hidden="true" /> Estado en vivo</span>
         </div>
-      </div>
-    </div>
-  );
-}
 
-function DashKpi({
-  label,
-  value,
-  highlight = false,
-}: {
-  label: string;
-  value: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className="tc-card"
-      style={{
-        padding: 18,
-        borderRadius: 20,
-        background: highlight
-          ? "linear-gradient(180deg, rgba(215,181,109,.12), rgba(255,255,255,.03))"
-          : "linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.025))",
-      }}
-    >
-      <div className="tc-sub">{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 900, marginTop: 10 }}>{value}</div>
+        <div className={`${styles.kpiGrid} ${styles.activityKpiGrid}`}>
+          <GameKpi
+            label="Online ahora"
+            value={String(accessTotals?.online_now || 0)}
+            numericValue={Number(accessTotals?.online_now || 0)}
+            icon={<Wifi size={19} aria-hidden="true" />}
+            accent="green"
+            comparison={noHistoricalComparison}
+            periodLabel="snapshot actual"
+            meta="Últimos 3 min"
+            compact
+          />
+          <GameKpi
+            label="Activos hoy"
+            value={String(accessTotals?.active_today || 0)}
+            numericValue={Number(accessTotals?.active_today || 0)}
+            icon={<UserRoundCheck size={19} aria-hidden="true" />}
+            accent="blue"
+            comparison={noHistoricalComparison}
+            periodLabel="sin histórico diario"
+            meta="Acceso reciente"
+            compact
+          />
+          <GameKpi
+            label="Inactivos 7d"
+            value={String(accessTotals?.inactive_7d || 0)}
+            numericValue={Number(accessTotals?.inactive_7d || 0)}
+            icon={<UserRoundX size={19} aria-hidden="true" />}
+            accent="orange"
+            comparison={noHistoricalComparison}
+            periodLabel="sin snapshot anterior"
+            meta="Lógica existente"
+            compact
+          />
+          <GameKpi
+            label="Accesos totales"
+            value={numES(accessTotals?.total_accesses || 0)}
+            numericValue={Number(accessTotals?.total_accesses || 0)}
+            icon={<MousePointerClick size={19} aria-hidden="true" />}
+            accent="purple"
+            comparison={noHistoricalComparison}
+            periodLabel="acumulado real"
+            meta="Sin serie histórica"
+            compact
+          />
+        </div>
+
+        <div className={styles.activityList}>
+          {(clientAccess?.latest || []).slice(0, 6).map((row: any) => {
+            const status = clientActivityStatus(row);
+            const fullName = [row?.nombre, row?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
+            return (
+              <article key={row.id} className={`${styles.activityRow} ${styles[`status_${status.key}`] || ""}`}>
+                <div className={styles.avatar}>{fullName.slice(0, 1).toUpperCase()}</div>
+                <div className={styles.activityIdentity}>
+                  <strong>{fullName}</strong>
+                  <span>{status.detail}</span>
+                </div>
+                <div className={styles.activityDates}>
+                  <div>
+                    <span>Último acceso</span>
+                    <strong>{row?.ultimo_acceso_at ? new Date(row.ultimo_acceso_at).toLocaleString("es-ES") : "—"}</strong>
+                  </div>
+                  <div>
+                    <span>Última actividad</span>
+                    <strong>{row?.ultima_actividad_at ? new Date(row.ultima_actividad_at).toLocaleString("es-ES") : "—"}</strong>
+                  </div>
+                </div>
+                <div className={styles.activityState}>
+                  <span className={styles.stateDot} />
+                  <div>
+                    <strong>{status.label}</strong>
+                    <span>{status.detail}</span>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+          {!clientAccess?.latest?.length ? (
+            <div className={styles.emptyState}>
+              <Activity size={24} aria-hidden="true" />
+              <strong>Sin actividad reciente</strong>
+              <span>Todavía no hay registros de clientes para mostrar.</span>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <div className={styles.dataNotice}>
+        <CheckCircle2 size={16} aria-hidden="true" />
+        <span>Comparaciones activas: facturación {selectedMonthLabel} vs {previousMonthLabel}, clientes de hoy vs ayer, reservas y tarotistas vs mes anterior.</span>
+      </div>
     </div>
   );
 }
