@@ -4,6 +4,21 @@ import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 
+type InvoiceSummary = {
+  invoice_id: string;
+  worker_id: string;
+  display_name: string;
+  role: string;
+  month_key: string;
+  status: string;
+  total: number;
+  updated_at?: string | null;
+  created_at?: string | null;
+  worker_ack?: string | null;
+  worker_ack_at?: string | null;
+  worker_ack_note?: string | null;
+};
+
 function getEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -18,7 +33,7 @@ async function uidFromBearer(req: Request) {
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
   if (!token) return { uid: null as string | null };
 
-  const userClient = createClient(supabaseUrl, anonKey, {
+  createClient(supabaseUrl, anonKey, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
@@ -29,6 +44,109 @@ async function uidFromBearer(req: Request) {
 function monthKeyNow() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function previousMonthKey(monthKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ""));
+  if (!match) return monthKeyNow();
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const previous = new Date(Date.UTC(year, month - 2, 1));
+  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function safeNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function percentageChange(current: number, previous: number, hasPrevious: boolean) {
+  if (!hasPrevious) return null;
+  if (previous === 0) return current === 0 ? 0 : null;
+  return Math.round((((current - previous) / Math.abs(previous)) * 100) * 100) / 100;
+}
+
+function directionFromValues(current: number, previous: number, hasPrevious: boolean) {
+  if (!hasPrevious || Math.abs(current - previous) < 0.005) return "neutral";
+  return current > previous ? "up" : "down";
+}
+
+function minutesFromMeta(meta: unknown) {
+  if (!meta) return 0;
+  if (typeof meta === "object") return safeNumber((meta as Record<string, unknown>).minutes);
+  if (typeof meta !== "string") return 0;
+  try {
+    const parsed = JSON.parse(meta);
+    return safeNumber(parsed?.minutes);
+  } catch {
+    return 0;
+  }
+}
+
+async function loadInvoiceMinutes(admin: any, invoiceIds: string[]) {
+  const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)));
+  const totals = new Map<string, number>();
+  if (!uniqueIds.length) return totals;
+
+  const { data, error } = await admin
+    .from("invoice_lines")
+    .select("invoice_id, kind, meta")
+    .in("invoice_id", uniqueIds);
+
+  if (error) throw error;
+
+  for (const line of data || []) {
+    const invoiceId = String(line?.invoice_id || "");
+    const kind = String(line?.kind || "");
+    if (!invoiceId || !kind.startsWith("minutes_")) continue;
+    const minutes = minutesFromMeta(line?.meta);
+    totals.set(invoiceId, (totals.get(invoiceId) || 0) + minutes);
+  }
+
+  return totals;
+}
+
+async function loadInvoicesWithoutView(admin: any, month: string, activeWorkerIds: Set<string>) {
+  const { data: invoices, error: invoicesError } = await admin
+    .from("invoices")
+    .select("id, worker_id, month_key, status, total, updated_at, created_at, worker_ack, worker_ack_at, worker_ack_note")
+    .eq("month_key", month);
+
+  if (invoicesError) throw invoicesError;
+
+  const workerIds = Array.from(new Set((invoices || []).map((x: any) => x.worker_id).filter(Boolean)));
+  let workers: any[] = [];
+
+  if (workerIds.length) {
+    const { data: workersData, error: workersError } = await admin
+      .from("workers")
+      .select("id, display_name, role, is_active")
+      .in("id", workerIds)
+      .or("is_active.is.null,is_active.eq.true");
+
+    if (workersError) throw workersError;
+    workers = workersData || [];
+  }
+
+  const workersById = new Map<string, any>();
+  for (const worker of workers) workersById.set(String(worker.id), worker);
+
+  return (invoices || [])
+    .filter((invoice: any) => activeWorkerIds.has(String(invoice.worker_id)))
+    .map((invoice: any) => ({
+      invoice_id: String(invoice.id),
+      worker_id: String(invoice.worker_id),
+      display_name: workersById.get(String(invoice.worker_id))?.display_name || "—",
+      role: workersById.get(String(invoice.worker_id))?.role || "—",
+      month_key: invoice.month_key,
+      status: invoice.status,
+      total: safeNumber(invoice.total),
+      updated_at: invoice.updated_at,
+      created_at: invoice.created_at,
+      worker_ack: invoice.worker_ack || null,
+      worker_ack_at: invoice.worker_ack_at || null,
+      worker_ack_note: invoice.worker_ack_note || null,
+    })) as InvoiceSummary[];
 }
 
 export async function GET(req: Request) {
@@ -50,8 +168,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
-    const u = new URL(req.url);
-    const month = u.searchParams.get("month") || monthKeyNow();
+    const requestUrl = new URL(req.url);
+    const month = requestUrl.searchParams.get("month") || monthKeyNow();
+    const previousMonth = previousMonthKey(month);
 
     const { data: activeWorkers, error: activeWorkersError } = await admin
       .from("workers")
@@ -60,68 +179,88 @@ export async function GET(req: Request) {
 
     if (activeWorkersError) throw activeWorkersError;
 
-    const activeWorkerIds = new Set((activeWorkers || []).map((w: any) => String(w.id)));
+    const activeWorkerIds = new Set((activeWorkers || []).map((worker: any) => String(worker.id)));
 
-    // usamos la view v_invoice_full si existe; si no, leemos join directo
-    const { data, error } = await admin
+    const { data: viewRows, error: viewError } = await admin
       .from("v_invoice_full")
-      .select(
-        "invoice_id,worker_id,display_name,role,month_key,status,total,updated_at,created_at,worker_ack,worker_ack_at,worker_ack_note"
-      )
+      .select("invoice_id,worker_id,display_name,role,month_key,status,total,updated_at,created_at,worker_ack,worker_ack_at,worker_ack_note")
       .eq("month_key", month)
       .order("role", { ascending: true })
       .order("display_name", { ascending: true });
 
-    if (error) {
-      // fallback sin la view
-      const { data: i2, error: e2 } = await admin
-        .from("invoices")
-        .select(
-          "id, worker_id, month_key, status, total, updated_at, created_at, worker_ack, worker_ack_at, worker_ack_note"
-        )
-        .eq("month_key", month);
+    const currentInvoices: InvoiceSummary[] = viewError
+      ? await loadInvoicesWithoutView(admin, month, activeWorkerIds)
+      : (viewRows || [])
+          .filter((invoice: any) => activeWorkerIds.has(String(invoice.worker_id)))
+          .map((invoice: any) => ({
+            ...invoice,
+            invoice_id: String(invoice.invoice_id),
+            worker_id: String(invoice.worker_id),
+            total: safeNumber(invoice.total),
+          }));
 
-      if (e2) throw e2;
+    const { data: previousInvoicesData, error: previousInvoicesError } = await admin
+      .from("invoices")
+      .select("id, worker_id, total, created_at")
+      .eq("month_key", previousMonth)
+      .order("created_at", { ascending: true });
 
-      const workerIds = Array.from(new Set((i2 || []).map((x: any) => x.worker_id).filter(Boolean)));
+    if (previousInvoicesError) throw previousInvoicesError;
 
-      let ws: any[] = [];
-      if (workerIds.length) {
-        const { data: workersData, error: ew } = await admin
-          .from("workers")
-          .select("id, display_name, role, is_active")
-          .in("id", workerIds)
-          .or("is_active.is.null,is_active.eq.true");
-
-        if (ew) throw ew;
-        ws = workersData || [];
-      }
-
-      const wm = new Map<string, any>();
-      for (const w of ws || []) wm.set(String(w.id), w);
-
-      const merged = (i2 || [])
-        .filter((x: any) => activeWorkerIds.has(String(x.worker_id)))
-        .map((x: any) => ({
-        invoice_id: x.id,
-        worker_id: x.worker_id,
-        display_name: wm.get(String(x.worker_id))?.display_name || "—",
-        role: wm.get(String(x.worker_id))?.role || "—",
-        month_key: x.month_key,
-        status: x.status,
-        total: x.total,
-        updated_at: x.updated_at,
-        created_at: x.created_at,
-        worker_ack: x.worker_ack || null,
-        worker_ack_at: x.worker_ack_at || null,
-        worker_ack_note: x.worker_ack_note || null,
-      }));
-
-      return NextResponse.json({ ok: true, month, invoices: merged });
+    const previousByWorker = new Map<string, { invoice_id: string; total: number }>();
+    for (const invoice of previousInvoicesData || []) {
+      const workerId = String(invoice?.worker_id || "");
+      if (!workerId || previousByWorker.has(workerId)) continue;
+      previousByWorker.set(workerId, {
+        invoice_id: String(invoice.id),
+        total: safeNumber(invoice.total),
+      });
     }
 
-    const visibleInvoices = (data || []).filter((x: any) => activeWorkerIds.has(String(x.worker_id)));
-    return NextResponse.json({ ok: true, month, invoices: visibleInvoices });
+    const minuteTotals = await loadInvoiceMinutes(admin, [
+      ...currentInvoices.map((invoice) => invoice.invoice_id),
+      ...Array.from(previousByWorker.values()).map((invoice) => invoice.invoice_id),
+    ]);
+
+    const enrichedInvoices = currentInvoices.map((invoice) => {
+      const previous = previousByWorker.get(invoice.worker_id) || null;
+      const currentMinutes = safeNumber(minuteTotals.get(invoice.invoice_id));
+      const previousMinutes = previous ? safeNumber(minuteTotals.get(previous.invoice_id)) : 0;
+      const isCentral = String(invoice.role || "").toLowerCase() === "central";
+      const totalChangePct = percentageChange(safeNumber(invoice.total), previous?.total || 0, Boolean(previous));
+      const minutesChangePct = isCentral
+        ? null
+        : percentageChange(currentMinutes, previousMinutes, Boolean(previous));
+
+      return {
+        ...invoice,
+        previous_month_key: previousMonth,
+        previous_total: previous ? previous.total : null,
+        current_minutes: currentMinutes,
+        previous_minutes: previous ? previousMinutes : null,
+        total_change_pct: totalChangePct,
+        minutes_change_pct: minutesChangePct,
+        total_trend: directionFromValues(safeNumber(invoice.total), previous?.total || 0, Boolean(previous)),
+        minutes_trend: isCentral
+          ? "neutral"
+          : directionFromValues(currentMinutes, previousMinutes, Boolean(previous)),
+        has_previous_invoice: Boolean(previous),
+        trend_basis: isCentral ? "fixed_salary" : "minutes",
+      };
+    });
+
+    enrichedInvoices.sort((a, b) => {
+      const roleCompare = String(a.role || "").localeCompare(String(b.role || ""), "es");
+      if (roleCompare !== 0) return roleCompare;
+      return String(a.display_name || "").localeCompare(String(b.display_name || ""), "es");
+    });
+
+    return NextResponse.json({
+      ok: true,
+      month,
+      previous_month: previousMonth,
+      invoices: enrichedInvoices,
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

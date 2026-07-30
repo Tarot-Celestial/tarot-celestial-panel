@@ -155,6 +155,73 @@ function ackStyle(v: any) {
   };
 }
 
+function formatComparisonPercent(value: any, trend: string, hasPrevious: boolean) {
+  if (!hasPrevious) return "Sin histórico";
+  if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+    return trend === "up" ? "Nuevo" : trend === "down" ? "Sin actividad" : "0,00 %";
+  }
+  const numeric = Number(value) || 0;
+  return `${numeric > 0 ? "+" : ""}${numES(numeric, 2)} %`;
+}
+
+function trendSymbol(trend: string) {
+  if (trend === "up") return "↗";
+  if (trend === "down") return "↘";
+  return "→";
+}
+
+function InvoiceMiniTrend({ invoice }: { invoice: any }) {
+  const trend = String(invoice?.minutes_trend || "neutral");
+  const hasPrevious = Boolean(invoice?.has_previous_invoice) && invoice?.previous_minutes !== null;
+  const current = Math.max(0, Number(invoice?.current_minutes || 0));
+  const previous = Math.max(0, Number(invoice?.previous_minutes || 0));
+  const maxValue = Math.max(current, previous, 1);
+  const previousY = hasPrevious ? 28 - (previous / maxValue) * 20 : 18;
+  const currentY = hasPrevious ? 28 - (current / maxValue) * 20 : 18;
+  const path = `M 4 ${previousY.toFixed(2)} C 24 ${previousY.toFixed(2)}, 54 ${currentY.toFixed(2)}, 80 ${currentY.toFixed(2)}`;
+  const percentLabel = formatComparisonPercent(invoice?.minutes_change_pct, trend, hasPrevious);
+  const fixedSalary = String(invoice?.trend_basis || "") === "fixed_salary";
+
+  return (
+    <div
+      className={`tc-invoice-mini-trend tc-invoice-trend-${trend}`}
+      title={
+        fixedSalary
+          ? "Perfil central con importe fijo: no existe tendencia por minutos."
+          : hasPrevious
+            ? `${numES(current, 0)} min este mes frente a ${numES(previous, 0)} min el mes anterior.`
+            : "No existe una factura del mes anterior para calcular la tendencia."
+      }
+    >
+      <svg viewBox="0 0 84 34" role="img" aria-label={`Tendencia ${trend}`}>
+        <path className="tc-invoice-spark-area" d={`${path} L 80 32 L 4 32 Z`} />
+        <path className="tc-invoice-spark-line" d={path} />
+        <circle className="tc-invoice-spark-dot" cx="4" cy={previousY} r="2.4" />
+        <circle className="tc-invoice-spark-dot" cx="80" cy={currentY} r="2.8" />
+      </svg>
+      <div className="tc-invoice-trend-copy">
+        <strong>{trendSymbol(trend)} {fixedSalary ? "Fijo" : percentLabel}</strong>
+        <span>{fixedSalary ? "Central" : hasPrevious ? `${numES(current, 0)} min` : "Sin datos"}</span>
+      </div>
+    </div>
+  );
+}
+
+function PreviousMonthComparison({ invoice }: { invoice: any }) {
+  const hasPrevious = Boolean(invoice?.has_previous_invoice);
+  const trend = String(invoice?.total_trend || "neutral");
+  const percentLabel = formatComparisonPercent(invoice?.total_change_pct, trend, hasPrevious);
+
+  return (
+    <div className={`tc-invoice-comparison tc-invoice-trend-${trend}`}>
+      <span className="tc-invoice-comparison-label">
+        {hasPrevious ? `Mes anterior: ${eur(invoice?.previous_total || 0)}` : "Mes anterior: sin factura"}
+      </span>
+      <strong>{trendSymbol(trend)} {percentLabel}</strong>
+    </div>
+  );
+}
+
 function AdminPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
@@ -272,6 +339,16 @@ function AdminPage() {
 
   const totalSum = useMemo(() => {
     return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
+  }, [invoices]);
+
+  const invoiceSummary = useMemo(() => {
+    const rows = invoices || [];
+    return {
+      count: rows.length,
+      accepted: rows.filter((x: any) => String(x?.worker_ack || "pending") === "accepted").length,
+      rising: rows.filter((x: any) => String(x?.minutes_trend || "neutral") === "up").length,
+      pending: rows.filter((x: any) => !x?.worker_ack || String(x.worker_ack) === "pending").length,
+    };
   }, [invoices]);
 
   const [attLoading, setAttLoading] = useState(false);
@@ -1425,95 +1502,162 @@ function AdminPage() {
           {tab === "panel" && <OperatorPanel mode="admin" />}
 
           {tab === "facturas" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <div className="tc-title">🧾 Facturas del mes</div>
-                  <div className="tc-sub">Genera y revisa. Click para editar. (Se actualiza “en directo”)</div>
+            <div className="tc-invoice-game">
+              <section className="tc-invoice-hero-card">
+                <div className="tc-invoice-hero-glow" aria-hidden="true" />
+                <div className="tc-invoice-hero-content">
+                  <div>
+                    <div className="tc-invoice-eyebrow">Centro de recompensas · {month}</div>
+                    <div className="tc-invoice-title-row">
+                      <div className="tc-invoice-title-icon">✦</div>
+                      <div>
+                        <h2>Facturas del mes</h2>
+                        <p>Genera, compara y revisa las facturas reales del equipo.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="tc-invoice-actions">
+                    <button className="tc-btn tc-invoice-btn-primary" onClick={generateInvoices} disabled={genLoading}>
+                      <span>⚡</span>{genLoading ? "Generando…" : "Generar facturas"}
+                    </button>
+                    <button className="tc-btn tc-invoice-btn-secondary" onClick={() => listInvoices()} disabled={listLoading}>
+                      <span>◈</span>{listLoading ? "Cargando…" : "Actualizar resumen"}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="tc-row">
-                  <button className="tc-btn tc-btn-ok" onClick={generateInvoices} disabled={genLoading}>
-                    {genLoading ? "Generando…" : "Generar facturas"}
-                  </button>
-                  <button className="tc-btn tc-btn-gold" onClick={() => listInvoices()} disabled={listLoading}>
-                    {listLoading ? "Cargando…" : "Ver resumen"}
-                  </button>
+                <div className="tc-invoice-system-message">
+                  <span className="tc-invoice-system-dot" />
+                  {genMsg || listMsg || "Datos conectados con las facturas reales del mes seleccionado."}
                 </div>
-              </div>
+              </section>
 
-              <div style={{ marginTop: 10 }} className="tc-sub">{genMsg || listMsg || " "}</div>
+              <section className="tc-invoice-kpi-grid" aria-label="Resumen de facturación">
+                <article className="tc-invoice-kpi-card tc-invoice-kpi-gold">
+                  <span className="tc-invoice-kpi-icon">€</span>
+                  <div>
+                    <small>Total del mes</small>
+                    <strong>{eur(totalSum)}</strong>
+                    <span>Importe real acumulado</span>
+                  </div>
+                </article>
+                <article className="tc-invoice-kpi-card tc-invoice-kpi-purple">
+                  <span className="tc-invoice-kpi-icon">▦</span>
+                  <div>
+                    <small>Facturas activas</small>
+                    <strong>{invoiceSummary.count}</strong>
+                    <span>Trabajadores facturados</span>
+                  </div>
+                </article>
+                <article className="tc-invoice-kpi-card tc-invoice-kpi-green">
+                  <span className="tc-invoice-kpi-icon">✓</span>
+                  <div>
+                    <small>Aceptadas</small>
+                    <strong>{invoiceSummary.accepted}</strong>
+                    <span>{invoiceSummary.pending} pendientes</span>
+                  </div>
+                </article>
+                <article className="tc-invoice-kpi-card tc-invoice-kpi-blue">
+                  <span className="tc-invoice-kpi-icon">↗</span>
+                  <div>
+                    <small>Mejoran en minutos</small>
+                    <strong>{invoiceSummary.rising}</strong>
+                    <span>Respecto al mes anterior</span>
+                  </div>
+                </article>
+              </section>
 
-              <div className="tc-hr" />
+              <section className="tc-invoice-table-card">
+                <div className="tc-invoice-table-heading">
+                  <div>
+                    <span className="tc-invoice-table-kicker">Clasificación mensual</span>
+                    <h3>Resumen individual</h3>
+                  </div>
+                  <div className="tc-invoice-live-badge"><span /> Sincronizado</div>
+                </div>
 
-              <div className="tc-sub">
-                Total sumado: <b>{eur(totalSum)}</b> · Click en una fila para editar
-              </div>
-
-              <div style={{ overflowX: "auto", marginTop: 8 }}>
-                <table className="tc-table">
-                  <thead>
-                    <tr>
-                      <th>Trabajador</th>
-                      <th>Rol</th>
-                      <th>Estado</th>
-                      <th>Aceptación</th>
-                      <th>Total</th>
-                      <th>PDF</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(invoices || []).map((x: any) => (
-                      <tr
-                        key={x.invoice_id}
-                        className="tc-click"
-                        onClick={() => loadInvoice(x.invoice_id)}
-                        style={{ background: selId === x.invoice_id ? "rgba(181,156,255,0.10)" : "transparent" }}
-                      >
-                        <td><b>{x.display_name}</b></td>
-                        <td className="tc-muted">{x.role}</td>
-                        <td className="tc-muted">{x.status}</td>
-                        <td>
-                          <span
-                            className="tc-chip"
-                            style={{
-                              ...ackStyle(x.worker_ack),
-                              padding: "6px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                            }}
-                            title={x.worker_ack_note || ""}
-                          >
-                            {ackLabel(x.worker_ack)}
-                          </span>
-                        </td>
-                        <td><b>{eur(x.total || 0)}</b></td>
-                        <td>
-                          <button
-                            className="tc-btn tc-btn-gold"
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadInvoicePdf(x.invoice_id);
-                            }}
-                          >
-                            Descargar
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {(!invoices || invoices.length === 0) && (
+                <div className="tc-invoice-table-scroll">
+                  <table className="tc-table tc-invoice-table">
+                    <thead>
                       <tr>
-                        <td colSpan={6} className="tc-muted">No hay facturas cargadas. Pulsa “Ver resumen”.</td>
+                        <th>Trabajador</th>
+                        <th>Rol</th>
+                        <th>Estado</th>
+                        <th>Aceptación</th>
+                        <th>Comparación anterior mes</th>
+                        <th>Total y tendencia</th>
+                        <th>PDF</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(invoices || []).map((x: any, index: number) => (
+                        <tr
+                          key={x.invoice_id}
+                          className={`tc-click ${selId === x.invoice_id ? "tc-invoice-row-selected" : ""}`}
+                          onClick={() => loadInvoice(x.invoice_id)}
+                        >
+                          <td>
+                            <div className="tc-invoice-worker-cell">
+                              <span className="tc-invoice-rank">{String(index + 1).padStart(2, "0")}</span>
+                              <span className="tc-invoice-avatar">{String(x.display_name || "?").trim().charAt(0).toUpperCase()}</span>
+                              <div>
+                                <b>{x.display_name}</b>
+                                <small>Factura {x.month_key || month}</small>
+                              </div>
+                            </div>
+                          </td>
+                          <td><span className="tc-invoice-role-badge">{x.role}</span></td>
+                          <td><span className={`tc-invoice-status tc-invoice-status-${String(x.status || "draft").toLowerCase()}`}>{x.status}</span></td>
+                          <td>
+                            <span
+                              className="tc-chip tc-invoice-ack"
+                              style={ackStyle(x.worker_ack)}
+                              title={x.worker_ack_note || ""}
+                            >
+                              {ackLabel(x.worker_ack)}
+                            </span>
+                          </td>
+                          <td><PreviousMonthComparison invoice={x} /></td>
+                          <td>
+                            <div className="tc-invoice-total-cell">
+                              <strong>{eur(x.total || 0)}</strong>
+                              <InvoiceMiniTrend invoice={x} />
+                            </div>
+                          </td>
+                          <td>
+                            <button
+                              className="tc-btn tc-invoice-pdf-btn"
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                downloadInvoicePdf(x.invoice_id);
+                              }}
+                            >
+                              <span>⇩</span> Descargar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!invoices || invoices.length === 0) && (
+                        <tr>
+                          <td colSpan={7}>
+                            <div className="tc-invoice-empty">
+                              <span>◇</span>
+                              <strong>No hay facturas cargadas</strong>
+                              <small>Pulsa «Actualizar resumen» o genera las facturas del mes.</small>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
 
-              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.8 }}>
-                Tip: si una tarotista rechaza, verás el motivo al pasar el ratón por “Aceptación”.
-              </div>
+                <div className="tc-invoice-table-footnote">
+                  <span>ⓘ</span> La mini gráfica compara minutos reales. En perfiles centrales con sueldo fijo se muestra estado neutro.
+                </div>
+              </section>
             </div>
           )}
 

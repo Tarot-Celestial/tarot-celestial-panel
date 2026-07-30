@@ -27,12 +27,15 @@ type InvoiceLinePayload = {
 
 const FIXED_SALARIES: Record<string, number> = {
   maria: 400,
+  yami: 400,
   yamile: 400,
   michael: 280,
 };
 
-function fixedSalaryForName(name: unknown) {
-  return FIXED_SALARIES[normalizeText(name)] || 0;
+function fixedSalaryForWorker(worker: any) {
+  const configuredSalary = roundMoney(Number(worker?.salary_base || 0));
+  if (configuredSalary > 0) return configuredSalary;
+  return FIXED_SALARIES[normalizeText(worker?.display_name)] || 0;
 }
 
 function salaryBaseLine(invoice_id: string, amount: number): InvoiceLinePayload {
@@ -217,14 +220,14 @@ export async function POST(req: Request) {
       listRendimientoRows(start, endExclusive),
       admin
         .from("workers")
-        .select("id, display_name, role, team, is_active")
+        .select("id, display_name, role, team, is_active, salary_base")
         .or("is_active.is.null,is_active.eq.true"),
     ]);
 
     if (activeWorkersResult.error) throw activeWorkersResult.error;
 
     const fixedSalaryWorkers = (activeWorkersResult.data || []).filter(
-      (worker: any) => fixedSalaryForName(worker?.display_name) > 0
+      (worker: any) => fixedSalaryForWorker(worker) > 0
     );
 
     const workersById = new Map<string, any>();
@@ -247,7 +250,7 @@ export async function POST(req: Request) {
       const workerId = String(row.worker_id || "").trim();
       if (!workerId) continue;
 
-      const fixedSalary = fixedSalaryForName(row.display_name);
+      const fixedSalary = fixedSalaryForWorker(workersById.get(workerId));
       let existingBonus = 0;
 
       if (fixedSalary > 0) {
