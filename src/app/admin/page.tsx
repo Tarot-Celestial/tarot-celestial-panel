@@ -24,6 +24,7 @@ import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboar
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
+const StatisticsPanel = nextDynamic(() => import("@/components/admin/StatisticsPanel"), { ssr:false });
 const OperatorPanel = nextDynamic(() => import("@/components/panel/OperatorPanel"), { ssr:false });
 const AdminClientesTab = nextDynamic(() => import("@/components/admin/AdminClientesTab"), { ssr:false });
 const CRMClientesPanel = nextDynamic(() => import("@/components/crm/CRMClientesPanel"), { ssr:false });
@@ -56,6 +57,13 @@ const ADMIN_NAV = [
 function monthKeyNow() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function previousMonthKey(monthKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ""));
+  if (!match) return monthKeyNow();
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function eur(n: any) {
@@ -286,8 +294,12 @@ function AdminPage() {
   const [statsMsg, setStatsMsg] = useState("");
   const [statsTotals, setStatsTotals] = useState<any>(null);
   const [statsRows, setStatsRows] = useState<any[]>([]);
+  const [statsPreviousTotals, setStatsPreviousTotals] = useState<any>(null);
+  const [statsPreviousRows, setStatsPreviousRows] = useState<any[]>([]);
+  const [statsPreviousInvoiceSummary, setStatsPreviousInvoiceSummary] = useState<any>(null);
   const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
   const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
+  const [statsLiveStatus, setStatsLiveStatus] = useState<"connecting" | "live" | "updating" | "reconnecting" | "offline">("connecting");
   const [heroVipCount, setHeroVipCount] = useState(0);
   const [heroMetrics, setHeroMetrics] = useState<any>({ leads_mes: 0, captadas_mes: 0, facturacion_mes: 0 });
 
@@ -336,6 +348,13 @@ function AdminPage() {
 
   const pollRef = useRef<any>(null);
   const lastMonthRef = useRef<string>("");
+  const statsFetchInFlightRef = useRef(false);
+  const statsRefreshQueuedRef = useRef(false);
+  const statsRealtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statsSelectedMonthRef = useRef(month);
+  const statsViewActiveRef = useRef(false);
+  statsSelectedMonthRef.current = month;
+  statsViewActiveRef.current = ok && tab === "estadisticas";
 
   const totalSum = useMemo(() => {
     return (invoices || []).reduce((a, x) => a + Number(x.total || 0), 0);
@@ -829,31 +848,37 @@ function AdminPage() {
     }
   }
 
-  async function loadAdminStats(silent = false) {
-    if (statsLoading && !silent) return;
+  async function loadAdminStats(
+    silent = false,
+    source: "manual" | "initial" | "realtime" = "manual"
+  ) {
+    if (statsFetchInFlightRef.current) {
+      statsRefreshQueuedRef.current = true;
+      return;
+    }
+
+    statsFetchInFlightRef.current = true;
+    const requestMonth = statsSelectedMonthRef.current;
     if (!silent) {
       setStatsLoading(true);
       setStatsMsg("");
     }
+    if (source === "realtime") setStatsLiveStatus("updating");
 
     try {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const [statsRes, rankRes, invRes, vipRes, heroRes] = await Promise.all([
-        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}&brand=${getActiveBrand()}`, {
+      const [statsRes, rankRes, invRes] = await Promise.all([
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(requestMonth)}&brand=${getActiveBrand()}&t=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
         }),
-        fetch(`/api/rankings/monthly?month=${encodeURIComponent(month)}`, {
+        fetch(`/api/rankings/monthly?month=${encodeURIComponent(requestMonth)}&t=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
         }),
-        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`/api/admin/crm/clientes-alertas`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch(`/api/admin/dashboard?month=${encodeURIComponent(month)}&t=${Date.now()}`, {
+        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(requestMonth)}&t=${Date.now()}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
@@ -862,33 +887,44 @@ function AdminPage() {
       const statsJ = await safeJson(statsRes);
       const rankJ = await safeJson(rankRes);
       const invJ = await safeJson(invRes);
-      const vipJ = await safeJson(vipRes);
-      const heroJ = await safeJson(heroRes);
 
       if (!statsJ?._ok || !statsJ?.ok) throw new Error(statsJ?.error || `HTTP ${statsJ?._status}`);
       if (!rankJ?._ok || !rankJ?.ok) throw new Error(rankJ?.error || `HTTP ${rankJ?._status}`);
       if (!invJ?._ok || !invJ?.ok) throw new Error(invJ?.error || `HTTP ${invJ?._status}`);
-      if (!heroJ?._ok || !heroJ?.ok) throw new Error(heroJ?.error || `HTTP ${heroJ?._status}`);
+
+      if (requestMonth !== statsSelectedMonthRef.current) {
+        statsRefreshQueuedRef.current = true;
+        return;
+      }
 
       setStatsTotals(statsJ.totals || null);
       setStatsRows(statsJ.rows || []);
+      setStatsPreviousTotals(
+        statsJ.previous
+          ? { ...(statsJ.previous.totals || {}), month: statsJ.previous.month || invJ.previous_month || "" }
+          : null
+      );
+      setStatsPreviousRows(statsJ.previous?.rows || []);
+      setStatsPreviousInvoiceSummary(invJ.previous_summary || null);
       setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
       setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
       setInvoices(invJ.invoices || []);
-      setHeroVipCount(Number(vipJ?.summary?.clientesVip || 0));
-      setHeroMetrics({
-        leads_mes: Number(heroJ?.leads_mes || 0),
-        captadas_mes: Number(heroJ?.captadas_mes || 0),
-        facturacion_mes: Number(heroJ?.facturacion_mes || 0),
-      });
 
-      if (!silent) setStatsMsg("✅ Estadísticas cargadas.");
+      if (!silent) setStatsMsg("✅ Estadísticas sincronizadas con datos reales.");
+      if (source === "realtime") setStatsLiveStatus("live");
     } catch (e: any) {
       if (!silent) setStatsMsg(`❌ ${e?.message || "Error"}`);
-      setHeroVipCount(0);
-      setHeroMetrics({ leads_mes: 0, captadas_mes: 0, facturacion_mes: 0 });
+      if (source === "realtime") setStatsLiveStatus("offline");
     } finally {
+      statsFetchInFlightRef.current = false;
       if (!silent) setStatsLoading(false);
+
+      if (statsRefreshQueuedRef.current) {
+        statsRefreshQueuedRef.current = false;
+        window.setTimeout(() => {
+          if (statsViewActiveRef.current) void loadAdminStats(true, "realtime");
+        }, 80);
+      }
     }
   }
 
@@ -1285,7 +1321,6 @@ function AdminPage() {
 
     pollRef.current = setInterval(() => {
       if (tab === "facturas") listInvoices(true);
-      if (tab === "estadisticas") loadAdminStats(true);
     }, 180000);
 
     return () => {
@@ -1310,7 +1345,58 @@ function AdminPage() {
         setStTo(to);
       }
     }
-    if (tab === "estadisticas") loadAdminStats(false);
+    if (tab === "estadisticas") loadAdminStats(false, "initial");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month]);
+
+
+  useEffect(() => {
+    if (!ok || tab !== "estadisticas") return;
+
+    let active = true;
+    const selectedMonths = new Set([month, previousMonthKey(month)]);
+    setStatsLiveStatus("connecting");
+
+    const eventBelongsToSelectedPeriod = (table: string, payload: any) => {
+      if (table === "workers") return true;
+      const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old || {};
+      if (table === "invoices") return selectedMonths.has(String(row?.month_key || ""));
+      const rawDate = String(row?.fecha_hora || row?.fecha || row?.created_at || "");
+      if (!rawDate) return true;
+      return Array.from(selectedMonths).some((key) => rawDate.startsWith(key));
+    };
+
+    const scheduleRefresh = (table: string, payload: any) => {
+      if (!active || !eventBelongsToSelectedPeriod(table, payload)) return;
+      setStatsLiveStatus("updating");
+      if (statsRealtimeTimerRef.current) window.clearTimeout(statsRealtimeTimerRef.current);
+      statsRealtimeTimerRef.current = window.setTimeout(() => {
+        statsRealtimeTimerRef.current = null;
+        if (active) void loadAdminStats(true, "realtime");
+      }, 700);
+    };
+
+    const channel = sb
+      .channel(`admin-statistics-${month}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleRefresh("rendimiento_llamadas", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleRefresh("invoices", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleRefresh("workers", payload))
+      .subscribe((status: any) => {
+        if (!active) return;
+        if (status === "SUBSCRIBED") setStatsLiveStatus("live");
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setStatsLiveStatus("reconnecting");
+        else if (status === "CLOSED") setStatsLiveStatus("offline");
+      });
+
+    return () => {
+      active = false;
+      if (statsRealtimeTimerRef.current) {
+        window.clearTimeout(statsRealtimeTimerRef.current);
+        statsRealtimeTimerRef.current = null;
+      }
+      void sb.removeChannel(channel);
+    };
+    // La suscripción se recrea únicamente al entrar en Estadísticas o cambiar el mes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
@@ -1779,193 +1865,21 @@ function AdminPage() {
           )}
 
           {tab === "estadisticas" && (
-            <div style={{ display: "grid", gap: 16 }}>
-              <div className="tc-card">
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title">📈 Estadísticas del mes</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Vista global clara de producción, facturación y estado de facturas
-                      {statsMsg ? ` · ${statsMsg}` : ""}
-                    </div>
-                  </div>
-
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadAdminStats(false)} disabled={statsLoading}>
-                    {statsLoading ? "Cargando…" : "Actualizar estadísticas"}
-                  </button>
-                </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-title" style={{ fontSize: 14 }}>Resumen general</div>
-                <div className="tc-grid-4" style={{ marginTop: 12 }}>
-                  <KpiBox label="Tarotistas con datos" value={String(statsComputed.workers)} />
-                  <KpiBox label="Minutos totales" value={numES(statsTotals?.minutes_total || 0, 0)} />
-                  <KpiBox label="Llamadas totales" value={numES(statsTotals?.calls_total || 0, 0)} />
-                  <KpiBox label="Captadas totales" value={numES(statsTotals?.captadas_total || 0, 0)} />
-                </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-title" style={{ fontSize: 14 }}>Dinero y productividad</div>
-                <div className="tc-grid-4" style={{ marginTop: 12 }}>
-                  <KpiBox label="Pago por minutos" value={eur(statsTotals?.pay_minutes || 0)} />
-                  <KpiBox label="Bonus captadas" value={eur(statsTotals?.bonus_captadas || 0)} />
-                  <KpiBox label="Facturación total" value={eur(statsComputed.invoice_total || 0)} highlight />
-                  <KpiBox label="Factura media" value={eur(statsComputed.factura_media || 0)} />
-                  <KpiBox label="Minutos por tarotista" value={numES(statsComputed.minutes_per_worker || 0, 0)} />
-                  <KpiBox label="Llamadas por tarotista" value={numES(statsComputed.calls_per_worker || 0, 2)} />
-                  <KpiBox label="Captadas por tarotista" value={numES(statsComputed.captadas_per_worker || 0, 2)} />
-                  <KpiBox label="Captadas / 100 min" value={numES(statsComputed.captadas_per_100_min || 0, 2)} />
-                </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-title" style={{ fontSize: 14 }}>Calidad y facturas</div>
-                <div className="tc-grid-4" style={{ marginTop: 12 }}>
-                  <KpiBox label="% Cliente medio" value={`${numES(statsTotals?.avg_pct_cliente || 0, 2)}%`} />
-                  <KpiBox label="% Repite medio" value={`${numES(statsTotals?.avg_pct_repite || 0, 2)}%`} />
-                  <KpiBox label="Facturas aceptadas" value={String(statsComputed.accepted)} />
-                  <KpiBox label="Facturas pendientes" value={String(statsComputed.pending)} />
-                </div>
-              </div>
-
-              <div className="tc-grid-3">
-                <TopStatsCard
-                  title="🏆 Top captadas"
-                  items={(statsTop?.captadas || []).map((x: any) => `${x.display_name} (${x.captadas_total})`)}
-                />
-                <TopStatsCard
-                  title="👑 Top % cliente"
-                  items={(statsTop?.cliente || []).map((x: any) => `${x.display_name} (${numES(x.pct_cliente || 0, 2)}%)`)}
-                />
-                <TopStatsCard
-                  title="🔁 Top % repite"
-                  items={(statsTop?.repite || []).map((x: any) => `${x.display_name} (${numES(x.pct_repite || 0, 2)}%)`)}
-                />
-              </div>
-
-              <div className="tc-grid-2">
-                <div className="tc-card">
-                  <div className="tc-title" style={{ fontSize: 14 }}>🔥💧 Equipos</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Comparativa clara entre fuego y agua
-                  </div>
-                  <div className="tc-hr" />
-                  <div className="tc-kpis">
-                    <KpiMini label="Fuego score" value={numES(statsTeams?.fuego?.score || 0, 2)} />
-                    <KpiMini label="Fuego miembros" value={String(statsTeams?.fuego?.members || 0)} />
-                    <KpiMini label="Agua score" value={numES(statsTeams?.agua?.score || 0, 2)} />
-                    <KpiMini label="Agua miembros" value={String(statsTeams?.agua?.members || 0)} />
-                    <KpiMini label="Ganador" value={String(statsTeams?.winner || "empate")} />
-                    <KpiMini label="Revisión" value={String(statsComputed.review)} />
-                  </div>
-                </div>
-
-                <div className="tc-card">
-                  <div className="tc-title" style={{ fontSize: 14 }}>⏱️ Top por minutos</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Las 5 tarotistas con más producción del mes
-                  </div>
-                  <div className="tc-hr" />
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {(topWorkersByMinutes || []).map((r: any, i: number) => (
-                      <div
-                        key={r.worker_id}
-                        style={{
-                          border: "1px solid rgba(255,255,255,0.10)",
-                          borderRadius: 14,
-                          padding: 10,
-                          background: "rgba(255,255,255,0.03)",
-                        }}
-                      >
-                        <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
-                          <div>
-                            <div style={{ fontWeight: 900 }}>
-                              {i + 1}. {r.display_name}
-                            </div>
-                            <div className="tc-sub" style={{ marginTop: 4 }}>
-                              Equipo: <b>{r.team || "—"}</b> · Captadas: <b>{numES(r.captadas_total || 0, 0)}</b>
-                            </div>
-                          </div>
-                          <div style={{ textAlign: "right" }}>
-                            <div style={{ fontWeight: 900 }}>{numES(r.minutes_total || 0, 0)} min</div>
-                            <div className="tc-sub">{eur(r.invoice_total || 0)}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {(!topWorkersByMinutes || topWorkersByMinutes.length === 0) && (
-                      <div className="tc-sub">Sin datos.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="tc-card">
-                <div className="tc-title">📋 Rendimiento por tarotista</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Tabla completa con producción, calidad, dinero y aceptación de factura
-                </div>
-
-                <div className="tc-hr" />
-
-                <div style={{ overflowX: "auto" }}>
-                  <table className="tc-table">
-                    <thead>
-                      <tr>
-                        <th>Tarotista</th>
-                        <th>Equipo</th>
-                        <th>Minutos</th>
-                        <th>Llamadas</th>
-                        <th>Captadas</th>
-                        <th>% Cliente</th>
-                        <th>% Repite</th>
-                        <th>Pago minutos</th>
-                        <th>Bonus captadas</th>
-                        <th>Factura</th>
-                        <th>Aceptación</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(statsMergedRows || []).map((r: any) => (
-                        <tr key={r.worker_id}>
-                          <td><b>{r.display_name}</b></td>
-                          <td className="tc-muted">{r.team || "—"}</td>
-                          <td>{numES(r.minutes_total || 0, 0)}</td>
-                          <td>{numES(r.calls_total || 0, 0)}</td>
-                          <td><b>{numES(r.captadas_total || 0, 0)}</b></td>
-                          <td>{numES(r.pct_cliente || 0, 2)}%</td>
-                          <td>{numES(r.pct_repite || 0, 2)}%</td>
-                          <td>{eur(r.pay_minutes || 0)}</td>
-                          <td>{eur(r.bonus_captadas || 0)}</td>
-                          <td><b>{eur(r.invoice_total || 0)}</b></td>
-                          <td>
-                            <span
-                              className="tc-chip"
-                              style={{
-                                ...ackStyle(r.worker_ack),
-                                padding: "6px 10px",
-                                borderRadius: 999,
-                                fontSize: 12,
-                              }}
-                              title={r.worker_ack_note || ""}
-                            >
-                              {ackLabel(r.worker_ack)}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                      {(!statsMergedRows || statsMergedRows.length === 0) && (
-                        <tr>
-                          <td colSpan={11} className="tc-muted">No hay estadísticas para este mes.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+            <StatisticsPanel
+              month={month}
+              loading={statsLoading}
+              message={statsMsg}
+              liveStatus={statsLiveStatus}
+              totals={statsTotals}
+              previousTotals={statsPreviousTotals}
+              rows={statsRows}
+              previousRows={statsPreviousRows}
+              top={statsTop}
+              teams={statsTeams}
+              invoices={invoices}
+              previousInvoiceSummary={statsPreviousInvoiceSummary}
+              onRefresh={() => void loadAdminStats(false, "manual")}
+            />
           )}
 
 

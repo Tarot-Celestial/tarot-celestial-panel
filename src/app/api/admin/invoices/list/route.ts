@@ -179,7 +179,7 @@ export async function GET(req: Request) {
 
     if (activeWorkersError) throw activeWorkersError;
 
-    const activeWorkerIds = new Set((activeWorkers || []).map((worker: any) => String(worker.id)));
+    const activeWorkerIds = new Set<string>((activeWorkers || []).map((worker: any) => String(worker.id)));
 
     const { data: viewRows, error: viewError } = await admin
       .from("v_invoice_full")
@@ -201,19 +201,21 @@ export async function GET(req: Request) {
 
     const { data: previousInvoicesData, error: previousInvoicesError } = await admin
       .from("invoices")
-      .select("id, worker_id, total, created_at")
+      .select("id, worker_id, total, created_at, worker_ack")
       .eq("month_key", previousMonth)
       .order("created_at", { ascending: true });
 
     if (previousInvoicesError) throw previousInvoicesError;
 
-    const previousByWorker = new Map<string, { invoice_id: string; total: number }>();
+    const previousByWorker = new Map<string, { invoice_id: string; total: number; worker_ack: string | null }>();
     for (const invoice of previousInvoicesData || []) {
       const workerId = String(invoice?.worker_id || "");
       if (!workerId || previousByWorker.has(workerId)) continue;
+      if (!activeWorkerIds.has(workerId)) continue;
       previousByWorker.set(workerId, {
         invoice_id: String(invoice.id),
         total: safeNumber(invoice.total),
+        worker_ack: invoice.worker_ack || null,
       });
     }
 
@@ -255,10 +257,22 @@ export async function GET(req: Request) {
       return String(a.display_name || "").localeCompare(String(b.display_name || ""), "es");
     });
 
+    const previousInvoices = Array.from(previousByWorker.values());
+    const previousSummary = {
+      month: previousMonth,
+      count: previousInvoices.length,
+      invoice_total: previousInvoices.reduce((sum, invoice) => sum + safeNumber(invoice.total), 0),
+      accepted: previousInvoices.filter((invoice) => String(invoice.worker_ack || "") === "accepted").length,
+      rejected: previousInvoices.filter((invoice) => String(invoice.worker_ack || "") === "rejected").length,
+      review: previousInvoices.filter((invoice) => String(invoice.worker_ack || "") === "review").length,
+      pending: previousInvoices.filter((invoice) => !invoice.worker_ack || String(invoice.worker_ack) === "pending").length,
+    };
+
     return NextResponse.json({
       ok: true,
       month,
       previous_month: previousMonth,
+      previous_summary: previousSummary,
       invoices: enrichedInvoices,
     });
   } catch (e: any) {

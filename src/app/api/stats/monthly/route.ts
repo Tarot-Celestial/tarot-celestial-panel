@@ -12,6 +12,13 @@ import { getAdminClient } from '@/lib/server/auth-worker';
 
 export const runtime = 'nodejs';
 
+function previousMonthKey(monthKey: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ''));
+  if (!match) return normalizeMonthKey(null);
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 function tarotistaPublicScore(row: any) {
   const calls = Math.max(0, Number(row?.calls_total || 0));
   const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
@@ -46,6 +53,35 @@ function buildTarotistaRanges(rows: any[]) {
   return byWorker;
 }
 
+function buildSnapshot(month: string, rendimientoRows: any[], workers: any[]) {
+  const rows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row) => {
+    const bonusCaptadas = roundMoney(Number(row.captadas_total || 0) * captadasTier(Number(row.captadas_total || 0)));
+    return {
+      ...row,
+      bonus_captadas: bonusCaptadas,
+    };
+  });
+
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.minutes_total = roundMoney(acc.minutes_total + Number(row.minutes_total || 0));
+      acc.calls_total += Number(row.calls_total || 0);
+      acc.captadas_total += Number(row.captadas_total || 0);
+      acc.pay_minutes = roundMoney(acc.pay_minutes + Number(row.pay_minutes || 0));
+      acc.bonus_captadas = roundMoney(acc.bonus_captadas + Number(row.bonus_captadas || 0));
+      acc.revenue_total = roundMoney(acc.revenue_total + Number(row.revenue_total || 0));
+      return acc;
+    },
+    { minutes_total: 0, calls_total: 0, captadas_total: 0, pay_minutes: 0, bonus_captadas: 0, revenue_total: 0 }
+  );
+
+  const count = rows.length || 1;
+  totals.avg_pct_cliente = roundMoney(rows.reduce((a, r) => a + Number(r.pct_cliente || 0), 0) / count);
+  totals.avg_pct_repite = roundMoney(rows.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / count);
+
+  return { month, totals, rows };
+}
+
 export async function GET(req: Request) {
   try {
     const me = await workerFromRequest(req);
@@ -53,48 +89,45 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
-    const { start, endExclusive } = monthRange(month);
-
+    const previousMonth = previousMonthKey(month);
+    const currentRange = monthRange(month);
+    const previousRange = monthRange(previousMonth);
+    const includePrevious = me.role === 'admin' || me.role === 'central';
     const brand = brandFromRequest(req);
-    const [workers, rendimientoRowsRaw] = await Promise.all([
+    const admin = getAdminClient();
+
+    const [workers, currentRowsRaw, previousRowsRaw] = await Promise.all([
       listTarotistaWorkers(),
-      listRendimientoRows(start, endExclusive),
+      listRendimientoRows(currentRange.start, currentRange.endExclusive),
+      includePrevious
+        ? listRendimientoRows(previousRange.start, previousRange.endExclusive)
+        : Promise.resolve([]),
     ]);
 
-    const rendimientoRows = await filterRowsByBrand(getAdminClient(), rendimientoRowsRaw, brand);
-    const rows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row) => {
-      const bonusCaptadas = roundMoney(Number(row.captadas_total || 0) * captadasTier(Number(row.captadas_total || 0)));
-      return {
-        ...row,
-        bonus_captadas: bonusCaptadas,
-      };
-    });
+    const [currentFilteredRows, previousFilteredRows] = await Promise.all([
+      filterRowsByBrand(admin, currentRowsRaw, brand),
+      includePrevious ? filterRowsByBrand(admin, previousRowsRaw, brand) : Promise.resolve([]),
+    ]);
+
+    const current = buildSnapshot(month, currentFilteredRows, workers);
+    const previous = includePrevious ? buildSnapshot(previousMonth, previousFilteredRows, workers) : null;
+    const rows = current.rows;
+    const totals = current.totals;
 
     const tarotistaRanges = buildTarotistaRanges(rows);
-
     const topCaptadas = [...rows].sort((a, b) => Number(b.captadas_total || 0) - Number(a.captadas_total || 0));
     const topCliente = [...rows].sort((a, b) => Number(b.pct_cliente || 0) - Number(a.pct_cliente || 0));
     const topRepite = [...rows].sort((a, b) => Number(b.pct_repite || 0) - Number(a.pct_repite || 0));
 
-    const totals = rows.reduce(
-      (acc, row) => {
-        acc.minutes_total = roundMoney(acc.minutes_total + Number(row.minutes_total || 0));
-        acc.calls_total += Number(row.calls_total || 0);
-        acc.captadas_total += Number(row.captadas_total || 0);
-        acc.pay_minutes = roundMoney(acc.pay_minutes + Number(row.pay_minutes || 0));
-        acc.bonus_captadas = roundMoney(acc.bonus_captadas + Number(row.bonus_captadas || 0));
-        acc.revenue_total = roundMoney(acc.revenue_total + Number(row.revenue_total || 0));
-        return acc;
-      },
-      { minutes_total: 0, calls_total: 0, captadas_total: 0, pay_minutes: 0, bonus_captadas: 0, revenue_total: 0 }
-    );
-
-    const count = rows.length || 1;
-    totals.avg_pct_cliente = roundMoney(rows.reduce((a, r) => a + Number(r.pct_cliente || 0), 0) / count);
-    totals.avg_pct_repite = roundMoney(rows.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / count);
-
-    if (me.role === 'admin' || me.role === 'central') {
-      return NextResponse.json({ ok: true, month, brand, totals, rows });
+    if (includePrevious) {
+      return NextResponse.json({
+        ok: true,
+        month,
+        brand,
+        totals,
+        rows,
+        previous,
+      });
     }
 
     const bonusForPos = (pos: number) => (pos === 1 ? 6 : pos === 2 ? 4 : pos === 3 ? 2 : 0);
