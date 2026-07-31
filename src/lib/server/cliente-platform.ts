@@ -266,6 +266,12 @@ export async function applyClientPurchase(
       estado: "completed",
       notas: params.notas || `Compra automatizada desde panel cliente · ${packName}`,
       referencia_externa: params.paymentRef,
+      pack_id: params.packId,
+      pack_name: packName,
+      paid_minutes: pack ? Math.max(0, totalMinutes - Number(pack.bonusMinutes || 0)) : minutesSplit.normal,
+      bonus_minutes: pack ? Math.max(0, Number(pack.bonusMinutes || 0)) : minutesSplit.free,
+      stripe_session_id: params.stripeSessionId || null,
+      payment_intent: params.paymentIntent || null,
       created_by_user_id: null,
       created_by_role: "cliente_webhook",
     })

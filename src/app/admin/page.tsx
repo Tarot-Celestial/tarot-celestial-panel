@@ -35,6 +35,7 @@ const PaymentMotivationWatcher = nextDynamic(() => import("@/components/motivati
 const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPanel"), { ssr:false });
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
+const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -69,6 +70,22 @@ function previousMonthKey(monthKey: string) {
 function eur(n: any) {
   const x = Number(n) || 0;
   return x.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
+}
+
+function storedMoney(n: any, currency = "EUR") {
+  const x = Number(n) || 0;
+  if (currency === "MULTI") return `${numES(x, 2)} · varias monedas`;
+  try {
+    return x.toLocaleString("es-ES", { style: "currency", currency: currency || "EUR" });
+  } catch {
+    return `${numES(x, 2)} ${currency || "EUR"}`;
+  }
+}
+
+function storedCurrencyBreakdown(values: Record<string, number> | null | undefined) {
+  const entries = Object.entries(values || {});
+  if (!entries.length) return storedMoney(0, "EUR");
+  return entries.map(([currency, total]) => storedMoney(total, currency)).join(" · ");
 }
 
 function numES(n: any, digits = 2) {
@@ -134,6 +151,7 @@ function ackLabel(v: any) {
   if (s === "accepted") return "✅ Aceptada";
   if (s === "rejected") return "❌ Rechazada";
   if (s === "review") return "🟡 Revisión";
+  if (s === "not_applicable") return "◇ No aplica";
   return "⏳ Pendiente";
 }
 
@@ -155,6 +173,12 @@ function ackStyle(v: any) {
     return {
       background: "rgba(215,181,109,0.10)",
       border: "1px solid rgba(215,181,109,0.25)",
+    };
+  }
+  if (s === "not_applicable") {
+    return {
+      background: "rgba(181,156,255,0.08)",
+      border: "1px solid rgba(181,156,255,0.22)",
     };
   }
   return {
@@ -218,12 +242,17 @@ function InvoiceMiniTrend({ invoice }: { invoice: any }) {
 function PreviousMonthComparison({ invoice }: { invoice: any }) {
   const hasPrevious = Boolean(invoice?.has_previous_invoice);
   const trend = String(invoice?.total_trend || "neutral");
-  const percentLabel = formatComparisonPercent(invoice?.total_change_pct, trend, hasPrevious);
+  const percentLabel = invoice?.comparison_note
+    ? String(invoice.comparison_note)
+    : formatComparisonPercent(invoice?.total_change_pct, trend, hasPrevious);
+  const previousValue = invoice?.is_collaborator
+    ? storedCurrencyBreakdown(invoice?.previous_generated_by_currency)
+    : eur(invoice?.previous_total || 0);
 
   return (
     <div className={`tc-invoice-comparison tc-invoice-trend-${trend}`}>
       <span className="tc-invoice-comparison-label">
-        {hasPrevious ? `Mes anterior: ${eur(invoice?.previous_total || 0)}` : "Mes anterior: sin factura"}
+        {hasPrevious ? `Mes anterior: ${previousValue}` : "Mes anterior: sin datos"}
       </span>
       <strong>{trendSymbol(trend)} {percentLabel}</strong>
     </div>
@@ -286,6 +315,7 @@ function AdminPage() {
   const [selInvoice, setSelInvoice] = useState<any>(null);
   const [selWorker, setSelWorker] = useState<any>(null);
   const [selLines, setSelLines] = useState<any[]>([]);
+  const [selCollaboratorReport, setSelCollaboratorReport] = useState<any>(null);
   const [newLabel, setNewLabel] = useState("Ajuste");
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
@@ -351,6 +381,7 @@ function AdminPage() {
   const statsFetchInFlightRef = useRef(false);
   const statsRefreshQueuedRef = useRef(false);
   const statsRealtimeTimerRef = useRef<number | null>(null);
+  const invoiceRealtimeTimerRef = useRef<number | null>(null);
   const statsSelectedMonthRef = useRef(month);
   const statsViewActiveRef = useRef(false);
   statsSelectedMonthRef.current = month;
@@ -714,11 +745,54 @@ function AdminPage() {
     }
   }
 
+  async function loadCollaboratorReport(invoiceId: string, silent = false) {
+    const parts = String(invoiceId || "").split(":");
+    const collaboratorId = parts[1] || "";
+    const reportMonth = parts[2] || month;
+    if (!collaboratorId) throw new Error("COLLABORATOR_ID_INVALID");
+
+    if (!silent) {
+      setSelLoading(true);
+      setSelMsg("");
+    }
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+      const r = await fetch(
+        `/api/admin/invoices/collaborator?collaborator_id=${encodeURIComponent(collaboratorId)}&month=${encodeURIComponent(reportMonth)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const j = await safeJson(r);
+      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
+
+      setSelId(invoiceId);
+      setSelCollaboratorReport(j.report);
+      setSelInvoice(null);
+      setSelWorker(null);
+      setSelLines([]);
+      if (!silent) setTab("editor");
+    } catch (e: any) {
+      if (!silent) setSelMsg(`❌ ${e?.message || "Error"}`);
+      throw e;
+    } finally {
+      if (!silent) setSelLoading(false);
+    }
+  }
+
   async function loadInvoice(invoice_id: string) {
     if (!invoice_id) return;
+    if (String(invoice_id).startsWith("collaborator:")) {
+      try {
+        await loadCollaboratorReport(invoice_id, false);
+      } catch {}
+      return;
+    }
+
     setSelLoading(true);
     setSelMsg("");
     setSelId(invoice_id);
+    setSelCollaboratorReport(null);
     try {
       const token = await getTokenOrLogin();
       if (!token) return;
@@ -826,7 +900,13 @@ function AdminPage() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const r = await fetch(`/api/admin/invoices/pdf?invoice_id=${encodeURIComponent(invoiceId)}`, {
+      let endpoint = `/api/admin/invoices/pdf?invoice_id=${encodeURIComponent(invoiceId)}`;
+      if (String(invoiceId).startsWith("collaborator:")) {
+        const [, collaboratorId, reportMonth] = String(invoiceId).split(":");
+        endpoint = `/api/admin/invoices/collaborator/pdf?collaborator_id=${encodeURIComponent(collaboratorId || "")}&month=${encodeURIComponent(reportMonth || month)}`;
+      }
+
+      const r = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -1331,6 +1411,73 @@ function AdminPage() {
   }, [ok, tab, month, selId]);
 
   useEffect(() => {
+    if (!ok || tab !== "editor" || !String(selId || "").startsWith("collaborator:")) return;
+    const [, collaboratorId, reportMonth] = String(selId).split(":");
+    if (!collaboratorId || reportMonth === month) return;
+    const nextId = `collaborator:${collaboratorId}:${month}`;
+    setSelId(nextId);
+    void loadCollaboratorReport(nextId, false).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month, selId]);
+
+  useEffect(() => {
+    const collaboratorOpen = tab === "editor" && String(selId || "").startsWith("collaborator:");
+    if (!ok || (tab !== "facturas" && !collaboratorOpen)) return;
+
+    let active = true;
+    const selectedMonths = new Set([month, previousMonthKey(month)]);
+
+    const eventBelongsToInvoicePeriod = (table: string, payload: any) => {
+      if (["workers", "billing_collaborators", "crm_cliente_etiquetas", "invoice_lines"].includes(table)) return true;
+      const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old || {};
+      if (table === "invoices") return selectedMonths.has(String(row?.month_key || ""));
+      const rawDate = String(row?.fecha_hora || row?.fecha || row?.created_at || row?.updated_at || "");
+      if (!rawDate) return true;
+      return Array.from(selectedMonths).some((key) => rawDate.startsWith(key));
+    };
+
+    const scheduleInvoiceRefresh = (table: string, payload: any) => {
+      if (!active || !eventBelongsToInvoicePeriod(table, payload)) return;
+      if (invoiceRealtimeTimerRef.current !== null) {
+        window.clearTimeout(invoiceRealtimeTimerRef.current);
+        invoiceRealtimeTimerRef.current = null;
+      }
+      invoiceRealtimeTimerRef.current = window.setTimeout(() => {
+        invoiceRealtimeTimerRef.current = null;
+        if (!active) return;
+        void listInvoices(true);
+        if (collaboratorOpen && selId) {
+          const [, collaboratorId] = String(selId).split(":");
+          const liveId = collaboratorId ? `collaborator:${collaboratorId}:${month}` : selId;
+          void loadCollaboratorReport(liveId, true).catch(() => undefined);
+        }
+      }, 700);
+    };
+
+    const channel = sb
+      .channel(`admin-invoices-live-${month}-${collaboratorOpen ? "detail" : "list"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleInvoiceRefresh("invoices", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoice_lines" }, (payload: any) => scheduleInvoiceRefresh("invoice_lines", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleInvoiceRefresh("workers", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "billing_collaborators" }, (payload: any) => scheduleInvoiceRefresh("billing_collaborators", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_etiquetas" }, (payload: any) => scheduleInvoiceRefresh("crm_cliente_etiquetas", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, (payload: any) => scheduleInvoiceRefresh("crm_cliente_pagos", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleInvoiceRefresh("rendimiento_llamadas", payload))
+      .subscribe();
+
+    return () => {
+      active = false;
+      if (invoiceRealtimeTimerRef.current !== null) {
+        window.clearTimeout(invoiceRealtimeTimerRef.current);
+        invoiceRealtimeTimerRef.current = null;
+      }
+      void sb.removeChannel(channel);
+    };
+    // Un único canal para la lista o el detalle de colaborador; se limpia al cambiar de vista o mes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab, month, selId]);
+
+  useEffect(() => {
     if (!ok) return;
     if (tab === "asistencia" || tab === "trabajadores") {
       if (tab === "asistencia") loadAttendance();
@@ -1634,9 +1781,9 @@ function AdminPage() {
                 <article className="tc-invoice-kpi-card tc-invoice-kpi-purple">
                   <span className="tc-invoice-kpi-icon">▦</span>
                   <div>
-                    <small>Facturas activas</small>
+                    <small>Registros activos</small>
                     <strong>{invoiceSummary.count}</strong>
-                    <span>Trabajadores facturados</span>
+                    <span>Equipo y colaboradores</span>
                   </div>
                 </article>
                 <article className="tc-invoice-kpi-card tc-invoice-kpi-green">
@@ -1692,7 +1839,7 @@ function AdminPage() {
                               <span className="tc-invoice-avatar">{String(x.display_name || "?").trim().charAt(0).toUpperCase()}</span>
                               <div>
                                 <b>{x.display_name}</b>
-                                <small>Factura {x.month_key || month}</small>
+                                <small>{x.is_collaborator ? `${x.tag_name || "Etiqueta vinculada"} · En vivo` : `Factura ${x.month_key || month}`}</small>
                               </div>
                             </div>
                           </td>
@@ -1710,7 +1857,8 @@ function AdminPage() {
                           <td><PreviousMonthComparison invoice={x} /></td>
                           <td>
                             <div className="tc-invoice-total-cell">
-                              <strong>{eur(x.total || 0)}</strong>
+                              <strong>{x.is_collaborator ? storedCurrencyBreakdown(x.generated_by_currency) : eur(x.total || 0)}</strong>
+                              {x.is_collaborator ? <small style={{ color: "#aaa1b6" }}>{x.remuneration_configured ? `Pago: ${eur(x.payable_total || 0)}` : "Pago a Mario: sin fórmula"}</small> : null}
                               <InvoiceMiniTrend invoice={x} />
                             </div>
                           </td>
@@ -1744,13 +1892,27 @@ function AdminPage() {
                 </div>
 
                 <div className="tc-invoice-table-footnote">
-                  <span>ⓘ</span> La mini gráfica compara minutos reales. En perfiles centrales con sueldo fijo se muestra estado neutro.
+                  <span>ⓘ</span> La mini gráfica compara minutos reales. En centrales se muestra estado neutro; en colaboradores el total visible es facturación generada y no remuneración.
                 </div>
               </section>
             </div>
           )}
 
           {tab === "editor" && (
+            selCollaboratorReport ? (
+              <CollaboratorBillingReport
+                report={selCollaboratorReport}
+                loading={selLoading}
+                message={selMsg}
+                onRefresh={() => {
+                  if (selId) void loadCollaboratorReport(selId, false);
+                }}
+                onDownload={() => {
+                  if (selId) void downloadInvoicePdf(selId);
+                }}
+                onBack={() => setTab("facturas")}
+              />
+            ) : (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
@@ -1865,6 +2027,7 @@ function AdminPage() {
                 </>
               )}
             </div>
+            )
           )}
 
           {tab === "estadisticas" && (

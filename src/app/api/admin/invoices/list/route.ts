@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { collaboratorReportToInvoiceRow, listActiveCollaborators, loadCollaboratorMonthlyReport } from "@/lib/server/collaborator-billing";
 
 export const runtime = "nodejs";
 
@@ -251,7 +252,15 @@ export async function GET(req: Request) {
       };
     });
 
-    enrichedInvoices.sort((a, b) => {
+    const collaborators = await listActiveCollaborators(admin);
+    const collaboratorRows = [];
+    for (const collaborator of collaborators) {
+      const report = await loadCollaboratorMonthlyReport(admin, collaborator.id, month);
+      collaboratorRows.push(collaboratorReportToInvoiceRow(report));
+    }
+
+    const allRows = [...enrichedInvoices, ...collaboratorRows];
+    allRows.sort((a, b) => {
       const roleCompare = String(a.role || "").localeCompare(String(b.role || ""), "es");
       if (roleCompare !== 0) return roleCompare;
       return String(a.display_name || "").localeCompare(String(b.display_name || ""), "es");
@@ -273,7 +282,7 @@ export async function GET(req: Request) {
       month,
       previous_month: previousMonth,
       previous_summary: previousSummary,
-      invoices: enrichedInvoices,
+      invoices: allRows,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
