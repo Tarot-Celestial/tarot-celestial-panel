@@ -326,10 +326,14 @@ function clientName(client: any, fallback: unknown) {
   return joined || String(fallback || client?.telefono || "Cliente").trim() || "Cliente";
 }
 
-function isTestRecord(row: any, name: string) {
+function isExplicitTestRecord(row: any) {
+  if (row?.is_test === true || row?.es_prueba === true || row?.test_mode === true) return true;
+
+  // Nunca se descarta una llamada por el nombre visible del cliente. Un cliente
+  // real puede llamarse "PRUEBA" y seguir teniendo UUID, minutos, importe y una
+  // etiqueta CALL MARIO válidos. Solo se excluyen marcas estructuradas o textos
+  // técnicos que identifiquen expresamente el registro como demo/test.
   const haystack = normalizeText([
-    name,
-    row?.cliente_nombre,
     row?.tipo_registro,
     row?.notas,
     row?.notes,
@@ -643,44 +647,45 @@ function explicitCollaboratorMatch(row: any, definition: CollaboratorDefinition)
   return rowCollaboratorId === definition.id || rowSourceTagId === definition.tag_id;
 }
 
-function occurredBeforeSourceTracking(row: any, definition: CollaboratorDefinition, dateValue: unknown) {
-  const trackingStartMs = definition.source_tracking_started_at
-    ? new Date(definition.source_tracking_started_at).getTime()
-    : Number.NaN;
-  const rowMs = new Date(String(dateValue || "")).getTime();
-  if (!Number.isFinite(trackingStartMs) || !Number.isFinite(rowMs)) return true;
-  return rowMs < trackingStartMs;
-}
-
-function performanceBelongsToCollaborator(row: any, definition: CollaboratorDefinition) {
+function performanceBelongsToCollaborator(
+  row: any,
+  definition: CollaboratorDefinition,
+  taggedClientIds: Set<string>
+) {
   const explicitMatch = explicitCollaboratorMatch(row, definition);
   if (explicitMatch !== null) return explicitMatch;
 
-  // Compatibilidad histórica: antes de activar el origen por llamada, el informe
-  // se basaba exclusivamente en que el cliente tuviera la etiqueta del colaborador.
-  return occurredBeforeSourceTracking(row, definition, row?.fecha_hora || row?.fecha);
+  // Rendimiento es la fuente operativa principal. Si la llamada no conserva aún
+  // los campos de origen, se incluye mediante la relación real cliente -> etiqueta.
+  // Esto recupera también registros existentes posteriores a la activación del
+  // seguimiento por llamada, sin depender de una nota o de un texto visible.
+  return taggedClientIds.has(String(row?.cliente_id || "").trim());
 }
 
 function crmPaymentBelongsToCollaborator(
   row: any,
   payment: PaymentEntry,
   definition: CollaboratorDefinition,
-  performancePayments: PaymentEntry[]
+  performancePayments: PaymentEntry[],
+  taggedClientIds: Set<string>
 ) {
   const explicitMatch = explicitCollaboratorMatch(row, definition);
   if (explicitMatch !== null) return explicitMatch;
-  if (occurredBeforeSourceTracking(row, definition, row?.created_at || row?.updated_at)) return true;
 
-  // Tras activar el seguimiento por llamada, un cobro sin origen explícito solo
-  // se incluye si coincide con el cobro real guardado en una llamada CALL MARIO.
+  // Los pagos estructurados de clientes que tienen la etiqueta real CALL MARIO
+  // pertenecen al informe. Si la etiqueta aún no está disponible, se conserva la
+  // asociación segura mediante una llamada de Rendimiento ya atribuida a Mario.
+  if (taggedClientIds.has(String(row?.cliente_id || "").trim())) return true;
   return performancePayments.some((candidate) => samePayment(candidate, payment));
 }
 
 async function loadPeriod(admin: any, definition: CollaboratorDefinition, month: string, taggedClientIds: string[]) {
   const range = monthRange(month);
+  const taggedClientIdSet = new Set(taggedClientIds.map((id) => String(id || "").trim()).filter(isUuidText));
 
-  // Fuente principal: relaciones explícitas guardadas en cada llamada/cobro.
-  // La etiqueta del cliente se mantiene únicamente como compatibilidad histórica.
+  // Fuente operativa principal: rendimiento_llamadas. Las relaciones explícitas
+  // se consultan junto con todas las llamadas de clientes cuya etiqueta real es la
+  // del colaborador; ambas fuentes se fusionan por el ID estable de la llamada.
   const [directPerformanceRows, directCrmPaymentRows] = await Promise.all([
     loadRowsBySource(admin, "rendimiento_llamadas", definition, range),
     loadRowsBySource(admin, "crm_cliente_pagos", definition, range),
@@ -714,10 +719,9 @@ async function loadPeriod(admin: any, definition: CollaboratorDefinition, month:
   const services: ServiceEntry[] = [];
   const performancePayments: PaymentEntry[] = [];
   for (const row of performanceRows) {
-    if (!performanceBelongsToCollaborator(row, definition)) continue;
+    if (!performanceBelongsToCollaborator(row, definition, taggedClientIdSet)) continue;
     const client = clients.get(String(row?.cliente_id || ""));
-    const name = clientName(client, row?.cliente_nombre);
-    if (isTestRecord(row, name)) continue;
+    if (isExplicitTestRecord(row)) continue;
     const service = buildService(row, client);
     if (service) services.push(service);
     const payment = paymentFromPerformance(row, client);
@@ -729,9 +733,9 @@ async function loadPeriod(admin: any, definition: CollaboratorDefinition, month:
       row,
       payment: paymentFromCrm(row, clients.get(String(row?.cliente_id || ""))),
     }))
-    .filter(({ payment }: { payment: PaymentEntry }) => !isTestRecord(payment, payment.cliente_nombre))
+    .filter(({ row }: { row: any }) => !isExplicitTestRecord(row))
     .filter(({ row, payment }: { row: any; payment: PaymentEntry }) => (
-      crmPaymentBelongsToCollaborator(row, payment, definition, performancePayments)
+      crmPaymentBelongsToCollaborator(row, payment, definition, performancePayments, taggedClientIdSet)
     ))
     .map(({ payment }: { payment: PaymentEntry }) => payment);
 
@@ -781,7 +785,7 @@ export async function loadCollaboratorMonthlyReport(
     payments: current.payments.filter((payment) => payment.status_group !== "failed"),
     remuneration,
     sync: {
-      source: "rendimiento_llamadas(billing_collaborator_id/source_tag_id) + crm_cliente_pagos + crm_cliente_etiquetas(histórico)",
+      source: "rendimiento_llamadas + crm_cliente_etiquetas(CALL MARIO) + crm_cliente_pagos",
       generated_at: new Date().toISOString(),
       tagged_clients: clientIds.length,
     },
