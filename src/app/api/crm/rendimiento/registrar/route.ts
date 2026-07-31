@@ -125,12 +125,25 @@ function pointsFromAmount(amount: number) {
   return Math.max(0, Math.floor(Number(amount || 0) * 10));
 }
 
-function buildNota({ clienteCompra, usoTipo, importe, formaPago, guardadosFree, guardadosNormales, resumenCodigo, tarotistaNombre, nextFree, nextNormales }: any) {
+function buildNota({
+  clienteCompra,
+  usoTipo,
+  importe,
+  formaPago,
+  guardadosFree,
+  guardadosNormales,
+  resumenCodigo,
+  tarotistaNombre,
+  nextFree,
+  nextNormales,
+  origenColaborador,
+}: any) {
+  const origen = origenColaborador ? ` Origen: ${origenColaborador}.` : "";
   if (!clienteCompra && usoTipo === "7free") {
-    return `Cliente usa 7 free con ${tarotistaNombre || "tarotista sin indicar"}.`;
+    return `Cliente usa 7 free con ${tarotistaNombre || "tarotista sin indicar"}.${origen}`;
   }
   if (!clienteCompra && usoTipo === "minutos") {
-    return `Cliente usa ${resumenCodigo || "minutos"} con ${tarotistaNombre || "tarotista sin indicar"}. Pendiente CRM: ${nextFree || 0} free y ${nextNormales || 0} normales.`;
+    return `Cliente usa ${resumenCodigo || "minutos"} con ${tarotistaNombre || "tarotista sin indicar"}. Pendiente CRM: ${nextFree || 0} free y ${nextNormales || 0} normales.${origen}`;
   }
   const partes = [
     `Compra registrada por ${Number(importe || 0).toFixed(2)} € vía ${formaPago || "sin método"}.`,
@@ -138,6 +151,7 @@ function buildNota({ clienteCompra, usoTipo, importe, formaPago, guardadosFree, 
   ];
   if (resumenCodigo) partes.push(`Uso actual: ${resumenCodigo}.`);
   partes.push(`Tarotista: ${tarotistaNombre || "sin indicar"}.`);
+  if (origenColaborador) partes.push(`Origen: ${origenColaborador}.`);
   return partes.join(" ").replace(/\s+/g, " ").trim();
 }
 
@@ -163,6 +177,7 @@ export async function POST(req: Request) {
     const guardadosNormales = toNum(body?.guardados_normales);
     const tarotistaWorkerId = cleanText(body?.tarotista_worker_id);
     const tarotistaManualCall = cleanText(body?.tarotista_manual_call);
+    const collaboratorSource = cleanText(body?.collaborator_source);
     const formaPago = cleanText(body?.forma_pago);
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
@@ -173,6 +188,12 @@ export async function POST(req: Request) {
     if (clienteCompra && !(formaPago && importe > 0)) {
       return NextResponse.json({ ok: false, error: "PAGO_REQUIRED" }, { status: 400 });
     }
+    if (collaboratorSource && collaboratorSource !== "CALL_MARIO") {
+      return NextResponse.json({ ok: false, error: "COLLABORATOR_SOURCE_INVALID" }, { status: 400 });
+    }
+    if (collaboratorSource === "CALL_MARIO" && !tarotistaWorkerId) {
+      return NextResponse.json({ ok: false, error: "MARIO_TAROTISTA_REQUIRED" }, { status: 400 });
+    }
 
     const admin = adminClient();
     const { data: cliente, error: clienteError } = await admin
@@ -182,6 +203,49 @@ export async function POST(req: Request) {
       .maybeSingle();
     if (clienteError) throw clienteError;
     if (!cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+
+    let billingCollaboratorId: string | null = null;
+    let sourceTagId: string | null = null;
+    let collaboratorDisplayName: string | null = null;
+
+    if (collaboratorSource === "CALL_MARIO") {
+      const { data: activeCollaborators, error: collaboratorError } = await admin
+        .from("billing_collaborators")
+        .select("id, display_name, tag_id, is_active")
+        .eq("is_active", true);
+      if (collaboratorError) throw collaboratorError;
+
+      const configuredTagIds = Array.from(new Set(
+        (activeCollaborators || []).map((row: any) => String(row?.tag_id || "")).filter(Boolean)
+      ));
+      if (!configuredTagIds.length) {
+        return NextResponse.json({ ok: false, error: "MARIO_COLLABORATOR_NOT_CONFIGURED" }, { status: 409 });
+      }
+
+      const { data: marioTags, error: marioTagError } = await admin
+        .from("crm_etiquetas")
+        .select("id, nombre")
+        .in("id", configuredTagIds)
+        .ilike("nombre", "CALL MARIO")
+        .limit(1);
+      if (marioTagError) throw marioTagError;
+
+      const marioTag = marioTags?.[0] || null;
+      if (!marioTag?.id) {
+        return NextResponse.json({ ok: false, error: "CALL_MARIO_TAG_NOT_CONFIGURED" }, { status: 409 });
+      }
+
+      const collaborator = (activeCollaborators || []).find(
+        (row: any) => String(row?.tag_id || "") === String(marioTag.id)
+      );
+      if (!collaborator?.id) {
+        return NextResponse.json({ ok: false, error: "MARIO_COLLABORATOR_NOT_CONFIGURED" }, { status: 409 });
+      }
+
+      billingCollaboratorId = String(collaborator.id);
+      sourceTagId = String(marioTag.id);
+      collaboratorDisplayName = String(collaborator.display_name || marioTag.nombre || "Mario");
+    }
 
     let tarotistaNombre: string | null = null;
     if (tarotistaWorkerId) {
@@ -235,6 +299,8 @@ export async function POST(req: Request) {
         tarotista_nombre: tarotistaNombre,
         tarotista_manual_call: tarotistaManualCall,
         llamada_call: esCall,
+        billing_collaborator_id: billingCollaboratorId,
+        source_tag_id: sourceTagId,
         tipo_registro: clienteCompra ? "compra" : usoTipo,
         cliente_compra_minutos: clienteCompra,
         usa_7_free: !clienteCompra && usoTipo === "7free",
@@ -270,7 +336,19 @@ export async function POST(req: Request) {
 
     await syncClienteMonthTag(admin, clienteId);
 
-    const notaTexto = buildNota({ clienteCompra, usoTipo, importe, formaPago, guardadosFree, guardadosNormales, resumenCodigo, tarotistaNombre, nextFree, nextNormales });
+    const notaTexto = buildNota({
+      clienteCompra,
+      usoTipo,
+      importe,
+      formaPago,
+      guardadosFree,
+      guardadosNormales,
+      resumenCodigo,
+      tarotistaNombre,
+      nextFree,
+      nextNormales,
+      origenColaborador: collaboratorDisplayName ? "CALL MARIO" : null,
+    });
     const { error: noteError } = await admin.from("crm_client_notes").insert({
       cliente_id: clienteId,
       texto: notaTexto,
@@ -302,7 +380,13 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ok: true, data: inserted, message: "✅ Llamada registrada correctamente" });
+    return NextResponse.json({
+      ok: true,
+      data: inserted,
+      message: collaboratorDisplayName
+        ? "✅ Llamada registrada y vinculada a CALL MARIO"
+        : "✅ Llamada registrada correctamente",
+    });
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });

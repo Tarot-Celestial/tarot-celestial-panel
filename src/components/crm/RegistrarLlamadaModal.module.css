@@ -1,0 +1,520 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(139, 92, 246, 0.16), transparent 38%),
+    rgba(5, 4, 12, 0.82);
+  backdrop-filter: blur(12px);
+}
+
+.modal {
+  position: relative;
+  isolation: isolate;
+  width: min(760px, 96vw);
+  max-height: 90vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  border: 1px solid rgba(238, 211, 151, 0.28);
+  border-radius: 26px;
+  color: #fff;
+  background:
+    linear-gradient(120deg, rgba(255,255,255,.035), transparent 32%),
+    radial-gradient(circle at 92% -8%, rgba(139, 92, 246, .24), transparent 38%),
+    linear-gradient(150deg, rgba(28, 20, 48, .985), rgba(11, 8, 22, .995));
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, .6),
+    0 0 0 1px rgba(255,255,255,.025) inset,
+    0 1px 0 rgba(255,255,255,.08) inset,
+    0 0 42px rgba(139,92,246,.11);
+}
+
+.modal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .34;
+  background-image:
+    linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+  background-size: 38px 38px;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+.modalGlow {
+  position: absolute;
+  z-index: -1;
+  width: 300px;
+  height: 300px;
+  top: -210px;
+  right: -70px;
+  border-radius: 999px;
+  background: rgba(211, 176, 255, .38);
+  filter: blur(70px);
+  pointer-events: none;
+}
+
+.header,
+.progressSection,
+.footer {
+  position: relative;
+  z-index: 1;
+}
+
+.header {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  background: linear-gradient(90deg, rgba(255,255,255,.025), transparent);
+}
+
+.headerRow,
+.progressRow,
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 21px;
+  font-weight: 950;
+  letter-spacing: -.025em;
+}
+
+.titleIcon {
+  display: grid;
+  place-items: center;
+  width: 39px;
+  height: 39px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(244, 216, 159, .38);
+  border-radius: 13px;
+  background: linear-gradient(145deg, rgba(215,181,109,.24), rgba(139,92,246,.27));
+  box-shadow: 0 10px 28px rgba(139,92,246,.18), inset 0 1px rgba(255,255,255,.11);
+}
+
+.subtitle,
+.stepSubtitle,
+.selectorHint {
+  color: rgba(255,255,255,.63);
+  line-height: 1.5;
+}
+
+.subtitle { margin-top: 6px; font-size: 12px; }
+
+.progressSection {
+  padding: 13px 20px;
+  border-bottom: 1px solid rgba(255,255,255,.065);
+  background: rgba(4, 3, 10, .18);
+}
+
+.progressRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.stepLabel,
+.fieldLabel {
+  color: rgba(244,216,159,.82);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.progressTrack {
+  height: 9px;
+  margin-top: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 999px;
+  background: rgba(255,255,255,.055);
+  box-shadow: inset 0 1px 5px rgba(0,0,0,.35);
+}
+
+.progressFill {
+  position: relative;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8d5cf6, #d4a957 58%, #f8df9f);
+  box-shadow: 0 0 18px rgba(208,165,86,.45);
+  transition: width .22s ease;
+}
+
+.progressFill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+  animation: shimmer 2.1s linear infinite;
+}
+
+.balanceBadge {
+  padding: 9px 12px;
+  border: 1px solid rgba(181,156,255,.23);
+  border-radius: 12px;
+  color: rgba(238,232,255,.8);
+  background: rgba(139,92,246,.09);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.body {
+  min-height: 0;
+  padding: 20px;
+  overflow-y: auto;
+  scrollbar-color: rgba(181,156,255,.5) rgba(255,255,255,.04);
+}
+
+.step { animation: fadeStep .2s ease; }
+.stepTitle {
+  color: #fff;
+  font-size: clamp(20px, 3vw, 25px);
+  font-weight: 950;
+  letter-spacing: -.03em;
+}
+.stepSubtitle { margin-top: 7px; max-width: 630px; font-size: 13px; }
+
+.choiceButton {
+  width: 100%;
+  min-height: 54px;
+  padding: 14px 16px !important;
+  border: 1px solid rgba(255,255,255,.11) !important;
+  border-radius: 16px;
+  color: rgba(255,255,255,.88);
+  background: linear-gradient(145deg, rgba(255,255,255,.055), rgba(255,255,255,.025)) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.045), 0 10px 25px rgba(0,0,0,.12);
+  font: inherit;
+  font-weight: 850;
+  text-align: left;
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.choiceButton:hover,
+.choiceButton:focus-visible {
+  transform: translateY(-2px);
+  border-color: rgba(189,165,255,.45) !important;
+  background: linear-gradient(145deg, rgba(139,92,246,.15), rgba(215,181,109,.08)) !important;
+  box-shadow: 0 13px 30px rgba(0,0,0,.2), 0 0 24px rgba(139,92,246,.1);
+  outline: none;
+}
+
+.choiceSelected {
+  border-color: rgba(244,216,159,.52) !important;
+  color: #fff0c8;
+  background: linear-gradient(145deg, rgba(215,181,109,.19), rgba(139,92,246,.13)) !important;
+  box-shadow: 0 0 0 2px rgba(215,181,109,.08), 0 14px 32px rgba(0,0,0,.2), 0 0 26px rgba(215,181,109,.08);
+}
+
+.fieldGroup { position: relative; display: grid; gap: 12px; margin-top: 18px; }
+
+.gameInput {
+  width: 100% !important;
+  border: 1px solid rgba(189,165,255,.26) !important;
+  border-radius: 15px !important;
+  color: #f8f4ff !important;
+  background: linear-gradient(145deg, rgba(34,25,54,.98), rgba(17,13,29,.99)) !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.06), 0 10px 26px rgba(0,0,0,.16) !important;
+}
+
+.gameInput:hover { border-color: rgba(189,165,255,.44) !important; }
+.gameInput:focus,
+.gameInput:focus-visible {
+  border-color: rgba(244,216,159,.62) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(215,181,109,.12), 0 0 28px rgba(139,92,246,.12), inset 0 1px rgba(255,255,255,.07) !important;
+}
+.gameInput:disabled {
+  color: rgba(255,255,255,.42) !important;
+  background: rgba(255,255,255,.035) !important;
+  cursor: not-allowed;
+  opacity: .68;
+}
+
+.gameSelect {
+  position: relative;
+  z-index: 1;
+  min-height: 48px;
+  padding: 0 44px 0 14px !important;
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+/*
+ * Los option necesitan fondo y texto explícitos. El select heredaba texto blanco
+ * de .tc-input, mientras algunos navegadores abrían el menú con fondo claro.
+ */
+.gameSelect option,
+.gameSelect optgroup {
+  color: #f8f4ff !important;
+  background-color: #171120 !important;
+  font-weight: 700;
+}
+.gameSelect option:checked {
+  color: #fff1bd !important;
+  background-color: #4a3472 !important;
+}
+.gameSelect option:disabled {
+  color: #82788e !important;
+  background-color: #171120 !important;
+}
+.gameSelect:disabled { cursor: not-allowed; }
+
+
+.selectorHint {
+  margin-top: 9px;
+  padding: 9px 11px;
+  border-left: 2px solid rgba(181,156,255,.45);
+  border-radius: 0 10px 10px 0;
+  background: rgba(139,92,246,.055);
+  font-size: 11px;
+}
+
+.marioOriginCard,
+.marioSummary {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid rgba(244,216,159,.26);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 10% 0%, rgba(244,216,159,.15), transparent 42%),
+    linear-gradient(135deg, rgba(139,92,246,.12), rgba(215,181,109,.08));
+  box-shadow: inset 0 1px rgba(255,255,255,.06), 0 12px 30px rgba(0,0,0,.13);
+}
+
+.marioOriginCard { padding: 14px; }
+.marioOriginCard strong,
+.marioOriginCard span { display: block; }
+.marioOriginCard strong { color: #fff0c6; font-size: 13px; }
+.marioOriginCard div > span { margin-top: 4px; color: rgba(255,255,255,.61); font-size: 11px; line-height: 1.45; }
+.marioIcon {
+  display: grid !important;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: #26170b;
+  background: linear-gradient(145deg, #f5dfa3, #b98732);
+  box-shadow: 0 0 22px rgba(215,181,109,.24);
+}
+
+.marioSummary {
+  width: fit-content;
+  margin-top: 10px;
+  padding: 8px 11px;
+  color: #f4dda2;
+  font-size: 11px;
+}
+
+.message {
+  margin-top: 16px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255,196,105,.22);
+  border-radius: 13px;
+  color: #f6d79c;
+  background: rgba(206,146,52,.08);
+  font-size: 12px;
+}
+
+.footer {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255,255,255,.08);
+  background: rgba(5,4,12,.38);
+}
+.footerActions { display: flex; gap: 9px; flex-wrap: wrap; }
+.gameButton {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 14px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform .18s ease, filter .18s ease, box-shadow .18s ease;
+}
+.gameButton:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.05); }
+.gameButton:focus-visible { outline: 2px solid rgba(244,216,159,.72); outline-offset: 2px; }
+.gameButton:disabled { cursor: not-allowed; opacity: .58; }
+.primaryButton {
+  color: #241709;
+  border: 1px solid rgba(255,237,190,.62);
+  background: linear-gradient(135deg, #f8e4b1, #d3a553 72%, #b47d27);
+  box-shadow: 0 14px 32px rgba(215,181,109,.23), inset 0 1px rgba(255,255,255,.58);
+}
+.secondaryButton {
+  color: rgba(242,236,255,.88);
+  border: 1px solid rgba(181,156,255,.28);
+  background: linear-gradient(135deg, rgba(139,92,246,.15), rgba(255,255,255,.035));
+  box-shadow: inset 0 1px rgba(255,255,255,.06);
+}
+
+@keyframes fadeStep {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); }
+}
+
+@media (max-width: 700px) {
+  .overlay { padding: 8px; align-items: flex-end; }
+  .modal { width: 100%; max-height: 94vh; border-radius: 22px 22px 12px 12px; }
+  .header, .progressSection, .body, .footer { padding-left: 14px; padding-right: 14px; }
+  .headerRow { align-items: flex-start; }
+  .title { font-size: 18px; }
+  .titleIcon { width: 35px; height: 35px; }
+  .progressRow { grid-template-columns: 1fr; }
+  .balanceBadge { width: fit-content; white-space: normal; }
+  .footer { align-items: stretch; }
+  .footerActions { flex: 1; }
+  .footerActions .gameButton { flex: 1; }
+}
+
+/* Selector personalizado del paso Tarotista: evita diferencias de color del
+   menú nativo entre Chrome, Windows y otros navegadores. */
+.dropdown {
+  position: relative;
+  margin-top: 7px;
+}
+
+.dropdownTrigger {
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid rgba(189,165,255,.3);
+  border-radius: 15px;
+  color: #f8f4ff;
+  background: linear-gradient(145deg, rgba(34,25,54,.99), rgba(17,13,29,.99));
+  box-shadow: inset 0 1px rgba(255,255,255,.065), 0 10px 26px rgba(0,0,0,.18);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.dropdownTrigger:hover {
+  transform: translateY(-1px);
+  border-color: rgba(189,165,255,.52);
+  box-shadow: inset 0 1px rgba(255,255,255,.07), 0 13px 30px rgba(0,0,0,.22), 0 0 24px rgba(139,92,246,.09);
+}
+
+.dropdownTrigger:focus-visible,
+.dropdownTriggerOpen {
+  border-color: rgba(244,216,159,.65);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(215,181,109,.12), 0 0 30px rgba(139,92,246,.14), inset 0 1px rgba(255,255,255,.08);
+}
+
+.dropdownValue { color: #fff; font-weight: 800; }
+.dropdownPlaceholder { color: rgba(255,255,255,.56); }
+.dropdownChevron {
+  flex: 0 0 auto;
+  color: #ebd49c;
+  font-size: 18px;
+  transition: transform .18s ease;
+}
+.dropdownTriggerOpen .dropdownChevron { transform: rotate(180deg); }
+
+.dropdownMenu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  left: 0;
+  right: 0;
+  max-height: min(300px, 42vh);
+  overflow-y: auto;
+  padding: 7px;
+  border: 1px solid rgba(189,165,255,.32);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 95% 0%, rgba(139,92,246,.18), transparent 38%),
+    #151020;
+  box-shadow: 0 24px 55px rgba(0,0,0,.5), inset 0 1px rgba(255,255,255,.07);
+  scrollbar-color: rgba(181,156,255,.55) rgba(255,255,255,.035);
+  animation: dropdownIn .16s ease;
+}
+
+.dropdownOption {
+  width: 100%;
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: rgba(249,246,255,.88);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  text-align: left;
+  cursor: pointer;
+  transition: color .14s ease, background .14s ease, border-color .14s ease, transform .14s ease;
+}
+
+.dropdownOption:hover,
+.dropdownOption:focus-visible,
+.dropdownOptionActive {
+  color: #fff;
+  border-color: rgba(181,156,255,.25);
+  background: linear-gradient(135deg, rgba(139,92,246,.18), rgba(255,255,255,.045));
+  outline: none;
+  transform: translateX(2px);
+}
+
+.dropdownOptionSelected {
+  color: #fff0bd;
+  border-color: rgba(244,216,159,.34);
+  background: linear-gradient(135deg, rgba(215,181,109,.18), rgba(139,92,246,.14));
+}
+
+.dropdownOptionMario {
+  color: #ffe7a7;
+  border-color: rgba(215,181,109,.18);
+  background: linear-gradient(135deg, rgba(215,181,109,.1), rgba(139,92,246,.07));
+}
+
+.dropdownOption:active {
+  transform: translateX(2px) scale(.99);
+  background: rgba(215,181,109,.2);
+}
+
+.dropdownOption:disabled {
+  color: rgba(255,255,255,.34);
+  background: rgba(255,255,255,.025);
+  cursor: not-allowed;
+  opacity: .62;
+  transform: none;
+}
+
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-5px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}

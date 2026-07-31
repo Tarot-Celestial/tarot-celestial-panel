@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import styles from "./RegistrarLlamadaModal.module.css";
 
 type ClienteLite = {
   id: string;
@@ -17,6 +18,129 @@ type TarotistaOpt = {
   display_name?: string | null;
   state?: string | null;
 };
+
+type GameSelectOption = {
+  value: string;
+  label: string;
+  disabled?: boolean;
+  special?: "mario" | "manual";
+};
+
+function GameSelect({
+  value,
+  options,
+  placeholder,
+  ariaLabel,
+  onChange,
+}: {
+  value: string;
+  options: GameSelectOption[];
+  placeholder: string;
+  ariaLabel: string;
+  onChange: (value: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selected = options.find((option) => option.value === value) || null;
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setExpanded(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [expanded]);
+
+  function openList() {
+    const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
+    const firstEnabled = options.findIndex((option) => !option.disabled);
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : firstEnabled);
+    setExpanded(true);
+  }
+
+  function moveActive(direction: 1 | -1) {
+    if (!options.length) return;
+    let next = activeIndex;
+    for (let attempt = 0; attempt < options.length; attempt += 1) {
+      next = (next + direction + options.length) % options.length;
+      if (!options[next]?.disabled) {
+        setActiveIndex(next);
+        return;
+      }
+    }
+  }
+
+  function handleTriggerKeyDown(event: any) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!expanded) openList();
+      else moveActive(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!expanded) openList();
+      else if (activeIndex >= 0 && !options[activeIndex]?.disabled) {
+        onChange(options[activeIndex].value);
+        setExpanded(false);
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setExpanded(false);
+    }
+  }
+
+  return (
+    <div className={styles.dropdown} ref={rootRef}>
+      <button
+        type="button"
+        className={`${styles.dropdownTrigger} ${expanded ? styles.dropdownTriggerOpen : ""}`}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={expanded}
+        onClick={() => (expanded ? setExpanded(false) : openList())}
+        onKeyDown={handleTriggerKeyDown}
+      >
+        <span className={selected ? styles.dropdownValue : styles.dropdownPlaceholder}>
+          {selected?.label || placeholder}
+        </span>
+        <span className={styles.dropdownChevron} aria-hidden="true">⌄</span>
+      </button>
+
+      {expanded && (
+        <div className={styles.dropdownMenu} role="listbox" aria-label={ariaLabel}>
+          {options.map((option, index) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              disabled={option.disabled}
+              className={[
+                styles.dropdownOption,
+                option.value === value ? styles.dropdownOptionSelected : "",
+                activeIndex === index ? styles.dropdownOptionActive : "",
+                option.special === "mario" ? styles.dropdownOptionMario : "",
+              ].filter(Boolean).join(" ")}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => {
+                onChange(option.value);
+                setExpanded(false);
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <b aria-hidden="true">✓</b>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 type Props = {
   open: boolean;
@@ -56,6 +180,8 @@ const CODIGO_OPTIONS = [
 ] as const;
 
 const PAGO_OPTIONS = ["TPV", "PAYPAL", "BIZUM", "OTROS"] as const;
+const CALL_MANUAL_VALUE = "CALL";
+const CALL_MARIO_VALUE = "CALL_MARIO";
 const CLASIF_OPTIONS = [
   { value: "nada", label: "Nada" },
   { value: "promo", label: "Promo" },
@@ -87,6 +213,7 @@ export default function RegistrarLlamadaModal({
   const [codigo2, setCodigo2] = useState<(typeof CODIGO_OPTIONS)[number]["value"] | "">("");
 
   const [tarotistaId, setTarotistaId] = useState("");
+  const [marioTarotistaId, setMarioTarotistaId] = useState("");
   const [tarotistaCallManual, setTarotistaCallManual] = useState("");
   const [formaPago, setFormaPago] = useState<(typeof PAGO_OPTIONS)[number] | "">("");
   const [importe, setImporte] = useState("");
@@ -107,6 +234,7 @@ export default function RegistrarLlamadaModal({
     setMinutos2("0");
     setCodigo2("");
     setTarotistaId("");
+    setMarioTarotistaId("");
     setTarotistaCallManual("");
     setFormaPago("");
     setImporte("");
@@ -125,8 +253,11 @@ export default function RegistrarLlamadaModal({
       }
       if (usoSinCompra === "7free" || usoSinCompra === "minutos") {
         list.push({ key: "tarotista", title: "Tarotista que atiende", subtitle: "Selecciona la tarotista que ha recibido la llamada." });
-        if (tarotistaId === "CALL") {
+        if (tarotistaId === CALL_MANUAL_VALUE) {
           list.push({ key: "call_manual", title: "Nombre tarotista CALL", subtitle: "Escribe el nombre manual que quieres guardar en rendimiento." });
+        }
+        if (tarotistaId === CALL_MARIO_VALUE) {
+          list.push({ key: "mario_tarotista", title: "Tarotista real que atiende", subtitle: "CALL MARIO indica el origen. Selecciona ahora quién prestó realmente el servicio." });
         }
       }
     }
@@ -139,8 +270,11 @@ export default function RegistrarLlamadaModal({
       if (compraDestino) {
         list.push({ key: "codigos", title: "¿Qué código de minutos usa?", subtitle: "Registra aquí los minutos utilizados en esta llamada." });
         list.push({ key: "tarotista", title: "Tarotista que atiende", subtitle: "Selecciona la tarotista que ha atendido la llamada." });
-        if (tarotistaId === "CALL") {
+        if (tarotistaId === CALL_MANUAL_VALUE) {
           list.push({ key: "call_manual", title: "Nombre tarotista CALL", subtitle: "Escribe el nombre manual de la tarotista CALL." });
+        }
+        if (tarotistaId === CALL_MARIO_VALUE) {
+          list.push({ key: "mario_tarotista", title: "Tarotista real que atiende", subtitle: "CALL MARIO indica el colaborador de origen; selecciona la tarotista que realizó la consulta." });
         }
         list.push({ key: "pago", title: "Forma de pago", subtitle: "Elige cómo se ha cobrado esta compra." });
         list.push({ key: "importe", title: "Importe cobrado", subtitle: "Indica el importe final de la operación." });
@@ -159,9 +293,32 @@ export default function RegistrarLlamadaModal({
   }, [clienteCompra, usoSinCompra, minutos1, minutos2]);
 
   const tarotistaLabel = useMemo(() => {
-    if (tarotistaId === "CALL") return tarotistaCallManual.trim() || "CALL";
-    return tarotistas.find((t) => String(t.id) === String(tarotistaId))?.display_name || "—";
-  }, [tarotistaId, tarotistaCallManual, tarotistas]);
+    if (tarotistaId === CALL_MANUAL_VALUE) return tarotistaCallManual.trim() || "CALL";
+    const realTarotistaId = tarotistaId === CALL_MARIO_VALUE ? marioTarotistaId : tarotistaId;
+    return tarotistas.find((t) => String(t.id) === String(realTarotistaId))?.display_name || "—";
+  }, [tarotistaId, marioTarotistaId, tarotistaCallManual, tarotistas]);
+
+  const isMarioCall = tarotistaId === CALL_MARIO_VALUE;
+
+  const tarotistaSelectOptions = useMemo<GameSelectOption[]>(() => [
+    { value: CALL_MARIO_VALUE, label: "✦ CALL MARIO · colaborador", special: "mario" },
+    { value: CALL_MANUAL_VALUE, label: "CALL · tarotista manual", special: "manual" },
+    ...tarotistas.map((tarotista) => ({
+      value: String(tarotista.id),
+      label: `${tarotista.display_name || tarotista.id}${tarotista.state ? ` · ${tarotista.state}` : ""}`,
+    })),
+  ], [tarotistas]);
+
+  const realTarotistaOptions = useMemo<GameSelectOption[]>(() => tarotistas.map((tarotista) => ({
+    value: String(tarotista.id),
+    label: `${tarotista.display_name || tarotista.id}${tarotista.state ? ` · ${tarotista.state}` : ""}`,
+  })), [tarotistas]);
+
+  function changeTarotistaChoice(value: string) {
+    setTarotistaId(value);
+    if (value !== CALL_MARIO_VALUE) setMarioTarotistaId("");
+    if (value !== CALL_MANUAL_VALUE) setTarotistaCallManual("");
+  }
 
   function currentStepIsValid() {
     switch (current?.key) {
@@ -179,6 +336,8 @@ export default function RegistrarLlamadaModal({
         return Boolean(tarotistaId);
       case "call_manual":
         return Boolean(tarotistaCallManual.trim());
+      case "mario_tarotista":
+        return Boolean(marioTarotistaId);
       case "pago":
         return Boolean(formaPago);
       case "importe":
@@ -212,6 +371,8 @@ export default function RegistrarLlamadaModal({
       const token = await getToken();
       if (!token) return;
 
+      const actualTarotistaWorkerId = isMarioCall ? marioTarotistaId : (tarotistaId && tarotistaId !== CALL_MANUAL_VALUE ? tarotistaId : null);
+
       const payload = {
         cliente_id: cliente.id,
         cliente_compra_minutos: clienteCompra === "si",
@@ -224,8 +385,9 @@ export default function RegistrarLlamadaModal({
         minutos_1: toNum(minutos1),
         codigo_2: codigo2 || null,
         minutos_2: toNum(minutos2),
-        tarotista_worker_id: tarotistaId && tarotistaId !== "CALL" ? tarotistaId : null,
-        tarotista_manual_call: tarotistaId === "CALL" ? tarotistaCallManual.trim() : null,
+        tarotista_worker_id: actualTarotistaWorkerId,
+        tarotista_manual_call: tarotistaId === CALL_MANUAL_VALUE ? tarotistaCallManual.trim() : null,
+        collaborator_source: isMarioCall ? CALL_MARIO_VALUE : null,
         forma_pago: clienteCompra === "si" ? formaPago || null : null,
         importe: clienteCompra === "si" ? toNum(importe) : 0,
         clasificacion,
@@ -259,83 +421,56 @@ export default function RegistrarLlamadaModal({
   const normalesPend = toNum(cliente.minutos_normales_pendientes);
 
   const content = (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 2147483647,
-        background: "rgba(5,5,10,.78)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-        backdropFilter: "blur(8px)",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: "min(760px, 96vw)",
-          maxHeight: "90vh",
-          overflow: "hidden",
-          borderRadius: 24,
-          border: "1px solid rgba(255,255,255,.10)",
-          background: "linear-gradient(180deg, rgba(15,15,25,.98), rgba(10,10,18,.98))",
-          boxShadow: "0 30px 80px rgba(0,0,0,.55)",
-          display: "grid",
-          gridTemplateRows: "auto auto 1fr auto",
-          transform: open ? "translateY(0px) scale(1)" : "translateY(14px) scale(.98)",
-          transition: "all .18s ease",
-        }}
-      >
-        <div style={{ padding: 18, borderBottom: "1px solid rgba(255,255,255,.08)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+    <div className={styles.overlay} onClick={onClose}>
+      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
+        <div className={styles.modalGlow} aria-hidden="true" />
+        <div className={styles.header}>
+          <div className={styles.headerRow}>
             <div>
-              <div className="tc-title" style={{ fontSize: 20 }}>📞 Registrar llamada</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>{clienteNombre} · {cliente.telefono || "Sin teléfono"}</div>
+              <div className={styles.title}><span className={styles.titleIcon}>📞</span><span>Registrar llamada</span></div>
+              <div className={styles.subtitle}>{clienteNombre} · {cliente.telefono || "Sin teléfono"}</div>
             </div>
-            <button className="tc-btn" type="button" onClick={onClose}>Cerrar</button>
+            <button className={`${styles.gameButton} ${styles.secondaryButton}`} type="button" onClick={onClose}>Cerrar</button>
           </div>
         </div>
 
-        <div style={{ padding: "12px 18px", borderBottom: "1px solid rgba(255,255,255,.06)", display: "grid", gap: 10 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12, alignItems: "center" }}>
+        <div className={styles.progressSection}>
+          <div className={styles.progressRow}>
             <div>
-              <div className="tc-sub">Paso {step + 1} de {steps.length}</div>
-              <div style={{ height: 8, borderRadius: 999, overflow: "hidden", background: "rgba(255,255,255,.08)", marginTop: 8 }}>
-                <div style={{ width: `${((step + 1) / steps.length) * 100}%`, height: "100%", background: "linear-gradient(90deg, rgba(215,181,109,.9), rgba(255,226,156,.9))", transition: "width .22s ease" }} />
+              <div className={styles.stepLabel}>Paso {step + 1} de {steps.length}</div>
+              <div className={styles.progressTrack}>
+                <div className={styles.progressFill} style={{ width: `${((step + 1) / steps.length) * 100}%` }} />
               </div>
             </div>
-            <div className="tc-sub" style={{ whiteSpace: "nowrap" }}>
+            <div className={styles.balanceBadge}>
               Pendiente CRM: {fmtMinutes(freePend)} free · {fmtMinutes(normalesPend)} normales
             </div>
           </div>
         </div>
 
-        <div style={{ padding: 18, overflowY: "auto" }}>
-          <div key={current?.key} style={{ animation: "tcFadeStep .18s ease" }}>
-            <div className="tc-title" style={{ fontSize: 22 }}>{current?.title}</div>
-            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 620 }}>{current?.subtitle}</div>
+        <div className={styles.body}>
+          <div key={current?.key} className={styles.step}>
+            <div className={styles.stepTitle}>{current?.title}</div>
+            <div className={styles.stepSubtitle}>{current?.subtitle}</div>
 
             {current?.key === "compra" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                <button type="button" className="tc-btn" onClick={() => setClienteCompra("si")} style={{ padding: 16, border: clienteCompra === "si" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "si" ? "rgba(215,181,109,.14)" : undefined }}>Sí, compra minutos</button>
-                <button type="button" className="tc-btn" onClick={() => setClienteCompra("no")} style={{ padding: 16, border: clienteCompra === "no" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "no" ? "rgba(215,181,109,.14)" : undefined }}>No compra minutos</button>
+                <button type="button" className={`${styles.choiceButton} ${clienteCompra === "si" ? styles.choiceSelected : ""}`} onClick={() => setClienteCompra("si")} style={{ padding: 16, border: clienteCompra === "si" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "si" ? "rgba(215,181,109,.14)" : undefined }}>Sí, compra minutos</button>
+                <button type="button" className={`${styles.choiceButton} ${clienteCompra === "no" ? styles.choiceSelected : ""}`} onClick={() => setClienteCompra("no")} style={{ padding: 16, border: clienteCompra === "no" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "no" ? "rgba(215,181,109,.14)" : undefined }}>No compra minutos</button>
               </div>
             )}
 
             {current?.key === "uso" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                <button type="button" className="tc-btn" onClick={() => setUsoSinCompra("minutos")} style={{ padding: 16, border: usoSinCompra === "minutos" ? "1px solid rgba(215,181,109,.55)" : undefined, background: usoSinCompra === "minutos" ? "rgba(215,181,109,.14)" : undefined }}>Usa minutos</button>
-                <button type="button" className="tc-btn" onClick={() => setUsoSinCompra("7free")} style={{ padding: 16, border: usoSinCompra === "7free" ? "1px solid rgba(215,181,109,.55)" : undefined, background: usoSinCompra === "7free" ? "rgba(215,181,109,.14)" : undefined }}>Usa 7 free</button>
+                <button type="button" className={`${styles.choiceButton} ${usoSinCompra === "minutos" ? styles.choiceSelected : ""}`} onClick={() => setUsoSinCompra("minutos")} style={{ padding: 16, border: usoSinCompra === "minutos" ? "1px solid rgba(215,181,109,.55)" : undefined, background: usoSinCompra === "minutos" ? "rgba(215,181,109,.14)" : undefined }}>Usa minutos</button>
+                <button type="button" className={`${styles.choiceButton} ${usoSinCompra === "7free" ? styles.choiceSelected : ""}`} onClick={() => setUsoSinCompra("7free")} style={{ padding: 16, border: usoSinCompra === "7free" ? "1px solid rgba(215,181,109,.55)" : undefined, background: usoSinCompra === "7free" ? "rgba(215,181,109,.14)" : undefined }}>Usa 7 free</button>
               </div>
             )}
 
             {current?.key === "compra_destino" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                <button type="button" className="tc-btn" onClick={() => setCompraDestino("usar_todo")} style={{ padding: 16, border: compraDestino === "usar_todo" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "usar_todo" ? "rgba(215,181,109,.14)" : undefined }}>Usa todos los minutos</button>
-                <button type="button" className="tc-btn" onClick={() => setCompraDestino("guardar")} style={{ padding: 16, border: compraDestino === "guardar" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "guardar" ? "rgba(215,181,109,.14)" : undefined }}>Guarda minutos</button>
+                <button type="button" className={`${styles.choiceButton} ${compraDestino === "usar_todo" ? styles.choiceSelected : ""}`} onClick={() => setCompraDestino("usar_todo")} style={{ padding: 16, border: compraDestino === "usar_todo" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "usar_todo" ? "rgba(215,181,109,.14)" : undefined }}>Usa todos los minutos</button>
+                <button type="button" className={`${styles.choiceButton} ${compraDestino === "guardar" ? styles.choiceSelected : ""}`} onClick={() => setCompraDestino("guardar")} style={{ padding: 16, border: compraDestino === "guardar" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "guardar" ? "rgba(215,181,109,.14)" : undefined }}>Guarda minutos</button>
               </div>
             )}
 
@@ -343,11 +478,11 @@ export default function RegistrarLlamadaModal({
               <div className="tc-grid-2" style={{ marginTop: 18 }}>
                 <div>
                   <div className="tc-sub">Minutos free que guarda</div>
-                  <input className="tc-input" value={guardarFree} onChange={(e) => setGuardarFree(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+                  <input className={`${styles.gameInput} tc-input`} value={guardarFree} onChange={(e) => setGuardarFree(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
                 </div>
                 <div>
                   <div className="tc-sub">Minutos normales que guarda</div>
-                  <input className="tc-input" value={guardarNormales} onChange={(e) => setGuardarNormales(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+                  <input className={`${styles.gameInput} tc-input`} value={guardarNormales} onChange={(e) => setGuardarNormales(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
                 </div>
               </div>
             )}
@@ -357,11 +492,11 @@ export default function RegistrarLlamadaModal({
                 <div className="tc-grid-2">
                   <div>
                     <div className="tc-sub">Minutos bloque 1</div>
-                    <input className="tc-input" value={minutos1} onChange={(e) => setMinutos1(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+                    <input className={`${styles.gameInput} tc-input`} value={minutos1} onChange={(e) => setMinutos1(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
                   </div>
                   <div>
                     <div className="tc-sub">Código bloque 1</div>
-                    <select className="tc-input" value={codigo1} onChange={(e) => setCodigo1(e.target.value as any)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
+                    <select className={`${styles.gameInput} ${styles.gameSelect} tc-input`} value={codigo1} onChange={(e) => setCodigo1(e.target.value as any)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
                       {CODIGO_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
                   </div>
@@ -370,11 +505,11 @@ export default function RegistrarLlamadaModal({
                 <div className="tc-grid-2">
                   <div>
                     <div className="tc-sub">Minutos bloque 2</div>
-                    <input className="tc-input" value={minutos2} onChange={(e) => setMinutos2(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
+                    <input className={`${styles.gameInput} tc-input`} value={minutos2} onChange={(e) => setMinutos2(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
                   </div>
                   <div>
                     <div className="tc-sub">Código bloque 2</div>
-                    <select className="tc-input" value={codigo2} onChange={(e) => setCodigo2(e.target.value as any)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
+                    <select className={`${styles.gameInput} ${styles.gameSelect} tc-input`} value={codigo2} onChange={(e) => setCodigo2(e.target.value as any)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
                       <option value="">Sin segundo bloque</option>
                       {CODIGO_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
@@ -387,28 +522,51 @@ export default function RegistrarLlamadaModal({
 
             {current?.key === "tarotista" && (
               <div style={{ marginTop: 18 }}>
-                <div className="tc-sub">Tarotista</div>
-                <select className="tc-input" value={tarotistaId} onChange={(e) => setTarotistaId(e.target.value)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
-                  <option value="">Selecciona tarotista</option>
-                  <option value="CALL">CALL</option>
-                  {tarotistas.map((t) => (
-                    <option key={t.id} value={t.id}>{t.display_name || t.id}{t.state ? ` · ${t.state}` : ""}</option>
-                  ))}
-                </select>
+                <div className={styles.fieldLabel}>Tarotista u origen</div>
+                <GameSelect
+                  value={tarotistaId}
+                  options={tarotistaSelectOptions}
+                  placeholder="Selecciona una opción"
+                  ariaLabel="Tarotista que atiende u origen de la llamada"
+                  onChange={changeTarotistaChoice}
+                />
+                <div className={styles.selectorHint}>
+                  CALL MARIO identifica el origen del cliente; la tarotista real se selecciona en el siguiente paso.
+                </div>
+              </div>
+            )}
+
+            {current?.key === "mario_tarotista" && (
+              <div className={styles.fieldGroup}>
+                <div className={styles.marioOriginCard}>
+                  <span className={styles.marioIcon}>✦</span>
+                  <div>
+                    <strong>Origen vinculado: CALL MARIO</strong>
+                    <span>Se guardará el ID real del colaborador y de su etiqueta sin sustituir a la tarotista.</span>
+                  </div>
+                </div>
+                <div className={styles.fieldLabel}>Tarotista que realizó la consulta</div>
+                <GameSelect
+                  value={marioTarotistaId}
+                  options={realTarotistaOptions}
+                  placeholder="Selecciona la tarotista real"
+                  ariaLabel="Tarotista real que atendió la llamada de CALL MARIO"
+                  onChange={setMarioTarotistaId}
+                />
               </div>
             )}
 
             {current?.key === "call_manual" && (
               <div style={{ marginTop: 18 }}>
                 <div className="tc-sub">Nombre tarotista CALL</div>
-                <input className="tc-input" value={tarotistaCallManual} onChange={(e) => setTarotistaCallManual(e.target.value)} placeholder="Ej: Call400" style={{ width: "100%", marginTop: 6 }} />
+                <input className={`${styles.gameInput} tc-input`} value={tarotistaCallManual} onChange={(e) => setTarotistaCallManual(e.target.value)} placeholder="Ej: Call400" style={{ width: "100%", marginTop: 6 }} />
               </div>
             )}
 
             {current?.key === "pago" && (
               <div style={{ marginTop: 18 }}>
                 <div className="tc-sub">Forma de pago</div>
-                <select className="tc-input" value={formaPago} onChange={(e) => setFormaPago(e.target.value as any)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
+                <select className={`${styles.gameInput} ${styles.gameSelect} tc-input`} value={formaPago} onChange={(e) => setFormaPago(e.target.value as any)} style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}>
                   <option value="">Selecciona método</option>
                   {PAGO_OPTIONS.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
                 </select>
@@ -418,14 +576,14 @@ export default function RegistrarLlamadaModal({
             {current?.key === "importe" && (
               <div style={{ marginTop: 18 }}>
                 <div className="tc-sub">Importe (€)</div>
-                <input className="tc-input" value={importe} onChange={(e) => setImporte(e.target.value)} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
+                <input className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => setImporte(e.target.value)} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
               </div>
             )}
 
             {current?.key === "clasificacion" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
                 {CLASIF_OPTIONS.map((opt) => (
-                  <button key={opt.value} type="button" className="tc-btn" onClick={() => setClasificacion(opt.value)} style={{ padding: 16, border: clasificacion === opt.value ? "1px solid rgba(215,181,109,.55)" : undefined, background: clasificacion === opt.value ? "rgba(215,181,109,.14)" : undefined }}>{opt.label}</button>
+                  <button key={opt.value} type="button" className={`${styles.choiceButton} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)} style={{ padding: 16, border: clasificacion === opt.value ? "1px solid rgba(215,181,109,.55)" : undefined, background: clasificacion === opt.value ? "rgba(215,181,109,.14)" : undefined }}>{opt.label}</button>
                 ))}
               </div>
             )}
@@ -445,9 +603,15 @@ export default function RegistrarLlamadaModal({
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
                   <div className="tc-sub">Resumen operativo</div>
                   <div style={{ marginTop: 4 }}>
-                    Tiempo: {fmtMinutes(minutosConsumidos)} min · Tarotista: {tarotistaLabel}
+                    Tiempo: {fmtMinutes(minutosConsumidos)} min · Tarotista real: {tarotistaLabel}
                     {clienteCompra === "si" ? ` · Pago: ${formaPago || "—"} · Importe: ${toNum(importe).toFixed(2)} €` : ""}
                   </div>
+                  {isMarioCall && (
+                    <div className={styles.marioSummary}>
+                      <span>✦</span>
+                      <strong>Origen: CALL MARIO</strong>
+                    </div>
+                  )}
                   {clienteCompra === "si" && compraDestino === "guardar" && (
                     <div className="tc-sub" style={{ marginTop: 8 }}>
                       Guarda: {fmtMinutes(guardarFree)} free · {fmtMinutes(guardarNormales)} normales
@@ -465,29 +629,23 @@ export default function RegistrarLlamadaModal({
               </div>
             )}
 
-            {!!msg && <div className="tc-sub" style={{ marginTop: 16 }}>{msg}</div>}
+            {!!msg && <div className={styles.message}>{msg}</div>}
           </div>
         </div>
 
-        <div style={{ padding: 18, borderTop: "1px solid rgba(255,255,255,.08)", display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+        <div className={styles.footer}>
           <div>
-            {step > 0 && <button type="button" className="tc-btn" onClick={back}>Atrás</button>}
+            {step > 0 && <button type="button" className={`${styles.gameButton} ${styles.secondaryButton}`} onClick={back}>Atrás</button>}
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className={styles.footerActions}>
             {current?.key !== "resumen" ? (
-              <button type="button" className="tc-btn tc-btn-gold" onClick={next}>Siguiente</button>
+              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={next}>Siguiente</button>
             ) : (
-              <button type="button" className="tc-btn tc-btn-gold" onClick={submit} disabled={loading}>{loading ? "Guardando..." : "Registrar llamada"}</button>
+              <button type="button" className={`${styles.gameButton} ${styles.primaryButton}`} onClick={submit} disabled={loading}>{loading ? "Guardando..." : "Registrar llamada"}</button>
             )}
           </div>
         </div>
       </div>
-      <style jsx global>{`
-        @keyframes tcFadeStep {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 

@@ -9,6 +9,7 @@ export type CollaboratorDefinition = {
   is_active: boolean;
   remuneration_type: string | null;
   remuneration_value: number | null;
+  source_tracking_started_at: string | null;
 };
 
 type DateRange = {
@@ -141,7 +142,7 @@ function isMissingRelationError(error: any) {
 export async function listActiveCollaborators(admin: any): Promise<CollaboratorDefinition[]> {
   const { data, error } = await admin
     .from("billing_collaborators")
-    .select("id, display_name, role, tag_id, is_active, remuneration_type, remuneration_value")
+    .select("id, display_name, role, tag_id, is_active, remuneration_type, remuneration_value, source_tracking_started_at")
     .eq("is_active", true)
     .order("display_name", { ascending: true });
 
@@ -172,6 +173,7 @@ export async function listActiveCollaborators(admin: any): Promise<CollaboratorD
     remuneration_value: row.remuneration_value === null || row.remuneration_value === undefined
       ? null
       : safeNumber(row.remuneration_value),
+    source_tracking_started_at: row.source_tracking_started_at ? String(row.source_tracking_started_at) : null,
   }));
 }
 
@@ -386,7 +388,6 @@ function mergePayments(crmPayments: PaymentEntry[], performancePayments: Payment
   for (const candidate of performancePayments) {
     const duplicateIndex = crmPayments.findIndex((payment, index) => (
       !matchedCrmIndexes.has(index)
-      && payment.status_group === "completed"
       && samePayment(payment, candidate)
     ));
 
@@ -538,6 +539,46 @@ function calculatePayable(definition: CollaboratorDefinition, generatedTotal: nu
   };
 }
 
+function explicitCollaboratorMatch(row: any, definition: CollaboratorDefinition) {
+  const rowCollaboratorId = String(row?.billing_collaborator_id || "").trim();
+  const rowSourceTagId = String(row?.source_tag_id || "").trim();
+  if (!rowCollaboratorId && !rowSourceTagId) return null;
+  return rowCollaboratorId === definition.id || rowSourceTagId === definition.tag_id;
+}
+
+function occurredBeforeSourceTracking(row: any, definition: CollaboratorDefinition, dateValue: unknown) {
+  const trackingStartMs = definition.source_tracking_started_at
+    ? new Date(definition.source_tracking_started_at).getTime()
+    : Number.NaN;
+  const rowMs = new Date(String(dateValue || "")).getTime();
+  if (!Number.isFinite(trackingStartMs) || !Number.isFinite(rowMs)) return true;
+  return rowMs < trackingStartMs;
+}
+
+function performanceBelongsToCollaborator(row: any, definition: CollaboratorDefinition) {
+  const explicitMatch = explicitCollaboratorMatch(row, definition);
+  if (explicitMatch !== null) return explicitMatch;
+
+  // Compatibilidad histórica: antes de activar el origen por llamada, el informe
+  // se basaba exclusivamente en que el cliente tuviera la etiqueta del colaborador.
+  return occurredBeforeSourceTracking(row, definition, row?.fecha_hora || row?.fecha);
+}
+
+function crmPaymentBelongsToCollaborator(
+  row: any,
+  payment: PaymentEntry,
+  definition: CollaboratorDefinition,
+  performancePayments: PaymentEntry[]
+) {
+  const explicitMatch = explicitCollaboratorMatch(row, definition);
+  if (explicitMatch !== null) return explicitMatch;
+  if (occurredBeforeSourceTracking(row, definition, row?.created_at || row?.updated_at)) return true;
+
+  // Tras activar el seguimiento por llamada, un cobro sin origen explícito solo
+  // se incluye si coincide con el cobro real guardado en una llamada CALL MARIO.
+  return performancePayments.some((candidate) => samePayment(candidate, payment));
+}
+
 async function loadPeriod(admin: any, definition: CollaboratorDefinition, month: string, clientIds: string[], clients: Map<string, any>) {
   const range = monthRange(month);
   if (!clientIds.length) return { services: [] as ServiceEntry[], payments: [] as PaymentEntry[], summary: emptySummary() };
@@ -550,6 +591,7 @@ async function loadPeriod(admin: any, definition: CollaboratorDefinition, month:
   const services: ServiceEntry[] = [];
   const performancePayments: PaymentEntry[] = [];
   for (const row of performanceRows) {
+    if (!performanceBelongsToCollaborator(row, definition)) continue;
     const client = clients.get(String(row?.cliente_id || ""));
     const name = clientName(client, row?.cliente_nombre);
     if (isTestRecord(row, name)) continue;
@@ -560,8 +602,15 @@ async function loadPeriod(admin: any, definition: CollaboratorDefinition, month:
   }
 
   const crmPayments = (crmPaymentRows || [])
-    .map((row: any) => paymentFromCrm(row, clients.get(String(row?.cliente_id || ""))))
-    .filter((payment: PaymentEntry) => !isTestRecord(payment, payment.cliente_nombre));
+    .map((row: any) => ({
+      row,
+      payment: paymentFromCrm(row, clients.get(String(row?.cliente_id || ""))),
+    }))
+    .filter(({ payment }: { payment: PaymentEntry }) => !isTestRecord(payment, payment.cliente_nombre))
+    .filter(({ row, payment }: { row: any; payment: PaymentEntry }) => (
+      crmPaymentBelongsToCollaborator(row, payment, definition, performancePayments)
+    ))
+    .map(({ payment }: { payment: PaymentEntry }) => payment);
 
   const payments = mergePayments(crmPayments, performancePayments);
   services.sort((a, b) => String(b.service_at).localeCompare(String(a.service_at)));
@@ -610,7 +659,7 @@ export async function loadCollaboratorMonthlyReport(
     payments: current.payments.filter((payment) => payment.status_group !== "failed"),
     remuneration,
     sync: {
-      source: "crm_cliente_etiquetas + rendimiento_llamadas + crm_cliente_pagos",
+      source: "crm_cliente_etiquetas + rendimiento_llamadas(source_tag_id/billing_collaborator_id) + crm_cliente_pagos",
       generated_at: new Date().toISOString(),
       tagged_clients: clientIds.length,
     },
