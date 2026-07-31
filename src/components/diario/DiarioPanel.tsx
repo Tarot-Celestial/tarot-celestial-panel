@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   Building2,
   CalendarDays,
@@ -23,6 +23,7 @@ import {
   WifiOff,
   Zap,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./DiarioPanel.module.css";
@@ -30,7 +31,7 @@ import styles from "./DiarioPanel.module.css";
 const sb = supabaseBrowser();
 const MADRID_TIME_ZONE = "Europe/Madrid";
 
-type IconComponent = ComponentType<{ size?: number; strokeWidth?: number; className?: string }>;
+type IconComponent = LucideIcon;
 type LiveStatus = "connecting" | "live" | "updating" | "reconnecting" | "offline";
 type LoadSource = "initial" | "manual" | "realtime";
 
