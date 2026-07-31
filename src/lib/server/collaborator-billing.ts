@@ -110,13 +110,49 @@ function safeNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuidText(value: unknown) {
+  return UUID_PATTERN.test(String(value || "").trim());
+}
+
+const BUSINESS_TIME_ZONE = "Europe/Madrid";
+
+function madridMonthBoundary(year: number, monthIndex: number) {
+  const utcGuess = Date.UTC(year, monthIndex, 1, 0, 0, 0);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(
+    formatter.formatToParts(new Date(utcGuess))
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const representedAsUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return new Date(utcGuess - (representedAsUtc - utcGuess));
+}
+
 function monthRange(monthKey: string): DateRange {
   const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ""));
   if (!match) throw new Error("INVALID_MONTH");
   const year = Number(match[1]);
   const month = Number(match[2]);
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 1));
+  const start = madridMonthBoundary(year, month - 1);
+  const end = madridMonthBoundary(year, month);
   return { startIso: start.toISOString(), endIso: end.toISOString() };
 }
 
@@ -227,6 +263,64 @@ async function loadRowsByClients(admin: any, table: string, clientIds: string[],
   return result;
 }
 
+function isMissingSourceColumnError(error: any) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+  return code === "42703" || code === "PGRST100" || message.includes("billing_collaborator_id") || message.includes("source_tag_id");
+}
+
+async function loadRowsBySource(admin: any, table: string, definition: CollaboratorDefinition, range: DateRange) {
+  const result: any[] = [];
+  const dateColumn = table === "rendimiento_llamadas" ? "fecha_hora" : "created_at";
+  const pageSize = 1000;
+
+  for (let from = 0; from < 50000; from += pageSize) {
+    const { data, error } = await admin
+      .from(table)
+      .select("*")
+      .or(`billing_collaborator_id.eq.${definition.id},source_tag_id.eq.${definition.tag_id}`)
+      .gte(dateColumn, range.startIso)
+      .lt(dateColumn, range.endIso)
+      .order(dateColumn, { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      // crm_cliente_pagos puede no tener todavía las columnas de origen en una
+      // instalación antigua. En ese caso se mantiene la asociación segura por
+      // cliente y por coincidencia con la llamada, sin romper todo el informe.
+      if (table === "crm_cliente_pagos" && isMissingSourceColumnError(error)) return [];
+      throw error;
+    }
+
+    const rows = data || [];
+    result.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+
+  return result;
+}
+
+function mergeRowsById(...groups: any[][]) {
+  const seen = new Set<string>();
+  const merged: any[] = [];
+  for (const rows of groups) {
+    for (const row of rows || []) {
+      const id = String(row?.id || "").trim();
+      const key = id || JSON.stringify([
+        row?.cliente_id,
+        row?.fecha_hora || row?.created_at || row?.fecha,
+        row?.importe,
+        row?.billing_collaborator_id,
+        row?.source_tag_id,
+      ]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+  }
+  return merged;
+}
+
 function clientName(client: any, fallback: unknown) {
   const joined = [client?.nombre, client?.apellido].filter(Boolean).join(" ").trim();
   return joined || String(fallback || client?.telefono || "Cliente").trim() || "Cliente";
@@ -246,7 +340,10 @@ function isTestRecord(row: any, name: string) {
 
 function normalizeStatus(value: unknown): PaymentEntry["status_group"] {
   const status = normalizeText(value);
-  if (["completed", "complete", "paid", "captured", "approved", "succeeded", "success", "completado", "finalizado"].includes(status)) return "completed";
+  if ([
+    "completed", "complete", "paid", "captured", "approved", "succeeded", "success",
+    "completado", "finalizado", "pagado", "aprobado", "confirmado", "procesado",
+  ].includes(status)) return "completed";
   if (["refunded", "refund", "reembolsado", "reembolso", "reversed", "chargeback"].includes(status)) return "refunded";
   if (["cancelled", "canceled", "cancelado", "anulado", "void", "voided"].includes(status)) return "cancelled";
   if (["failed", "error", "declined", "rechazado", "fallido"].includes(status)) return "failed";
@@ -579,14 +676,40 @@ function crmPaymentBelongsToCollaborator(
   return performancePayments.some((candidate) => samePayment(candidate, payment));
 }
 
-async function loadPeriod(admin: any, definition: CollaboratorDefinition, month: string, clientIds: string[], clients: Map<string, any>) {
+async function loadPeriod(admin: any, definition: CollaboratorDefinition, month: string, taggedClientIds: string[]) {
   const range = monthRange(month);
-  if (!clientIds.length) return { services: [] as ServiceEntry[], payments: [] as PaymentEntry[], summary: emptySummary() };
 
-  const [performanceRows, crmPaymentRows] = await Promise.all([
-    loadRowsByClients(admin, "rendimiento_llamadas", clientIds, range),
-    loadRowsByClients(admin, "crm_cliente_pagos", clientIds, range),
+  // Fuente principal: relaciones explícitas guardadas en cada llamada/cobro.
+  // La etiqueta del cliente se mantiene únicamente como compatibilidad histórica.
+  const [directPerformanceRows, directCrmPaymentRows] = await Promise.all([
+    loadRowsBySource(admin, "rendimiento_llamadas", definition, range),
+    loadRowsBySource(admin, "crm_cliente_pagos", definition, range),
   ]);
+
+  // Si la etiqueta todavía no se ha reflejado, el UUID del cliente se recupera
+  // directamente de la llamada/cobro marcado. Así también se puede localizar el
+  // cobro estructurado correspondiente y conservar referencia y estado reales.
+  const sourceClientIds = Array.from(new Set([
+    ...taggedClientIds,
+    ...directPerformanceRows.map((row: any) => String(row?.cliente_id || "").trim()),
+    ...directCrmPaymentRows.map((row: any) => String(row?.cliente_id || "").trim()),
+  ].filter(isUuidText)));
+
+  const [clientPerformanceRows, clientCrmPaymentRows] = sourceClientIds.length
+    ? await Promise.all([
+        loadRowsByClients(admin, "rendimiento_llamadas", sourceClientIds, range),
+        loadRowsByClients(admin, "crm_cliente_pagos", sourceClientIds, range),
+      ])
+    : [[], []];
+
+  const performanceRows = mergeRowsById(directPerformanceRows, clientPerformanceRows);
+  const crmPaymentRows = mergeRowsById(directCrmPaymentRows, clientCrmPaymentRows);
+  const relatedClientIds = Array.from(new Set([
+    ...sourceClientIds,
+    ...performanceRows.map((row: any) => String(row?.cliente_id || "").trim()),
+    ...crmPaymentRows.map((row: any) => String(row?.cliente_id || "").trim()),
+  ].filter(isUuidText)));
+  const clients = await loadClients(admin, relatedClientIds);
 
   const services: ServiceEntry[] = [];
   const performancePayments: PaymentEntry[] = [];
@@ -630,12 +753,11 @@ export async function loadCollaboratorMonthlyReport(
   if (!definition.tag_id) throw new Error("COLLABORATOR_WITHOUT_TAG");
 
   const clientIds = await loadTaggedClientIds(admin, definition.tag_id);
-  const clients = await loadClients(admin, clientIds);
   const previousMonth = previousMonthKey(month);
-  const current = await loadPeriod(admin, definition, month, clientIds, clients);
+  const current = await loadPeriod(admin, definition, month, clientIds);
   const previous = options?.includePrevious === false
     ? null
-    : await loadPeriod(admin, definition, previousMonth, clientIds, clients);
+    : await loadPeriod(admin, definition, previousMonth, clientIds);
 
   const previousHasData = Boolean(previous && (previous.services.length > 0 || previous.payments.length > 0));
   const previousSummary = previousHasData ? previous?.summary || null : null;
@@ -659,7 +781,7 @@ export async function loadCollaboratorMonthlyReport(
     payments: current.payments.filter((payment) => payment.status_group !== "failed"),
     remuneration,
     sync: {
-      source: "crm_cliente_etiquetas + rendimiento_llamadas(source_tag_id/billing_collaborator_id) + crm_cliente_pagos",
+      source: "rendimiento_llamadas(billing_collaborator_id/source_tag_id) + crm_cliente_pagos + crm_cliente_etiquetas(histórico)",
       generated_at: new Date().toISOString(),
       tagged_clients: clientIds.length,
     },

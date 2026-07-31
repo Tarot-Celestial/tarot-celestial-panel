@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/require-admin";
 import { loadCollaboratorMonthlyReport } from "@/lib/server/collaborator-billing";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function normalizeMonth(value: string) {
   if (!/^\d{4}-\d{2}$/.test(value)) throw new Error("INVALID_MONTH");
@@ -25,7 +26,10 @@ export async function GET(req: Request) {
     }
 
     const report = await loadCollaboratorMonthlyReport(gate.admin, collaboratorId, month);
-    return NextResponse.json({ ok: true, report });
+    return NextResponse.json(
+      { ok: true, report },
+      { headers: { "Cache-Control": "no-store, max-age=0" } }
+    );
   } catch (e: any) {
     const message = e?.message || "COLLABORATOR_REPORT_ERROR";
     const status = message === "COLLABORATOR_NOT_FOUND" ? 404 : message === "INVALID_MONTH" ? 400 : 500;

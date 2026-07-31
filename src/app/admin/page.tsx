@@ -761,7 +761,7 @@ function AdminPage() {
       if (!token) return;
       const r = await fetch(
         `/api/admin/invoices/collaborator?collaborator_id=${encodeURIComponent(collaboratorId)}&month=${encodeURIComponent(reportMonth)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
       );
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
