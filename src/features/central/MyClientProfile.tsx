@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import MyClientSummary from "./MyClientSummary";
+import MyClientNotes from "./MyClientNotes";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientProfile.module.css";
 
@@ -239,6 +240,14 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             clientId={clientId}
             lastPurchaseAt={purchase?.created_at}
             summary={summary}
+            onRefresh={() => load(false)}
+          />
+        </div>
+      ) : activeTab === "notas" ? (
+        <div className={styles.summaryPanel}>
+          <MyClientNotes
+            clientId={clientId}
+            notes={summary.notes || []}
             onRefresh={() => load(false)}
           />
         </div>
