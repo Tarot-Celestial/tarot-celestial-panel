@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import MyClientSummary from "./MyClientSummary";
 import MyClientNotes from "./MyClientNotes";
+import MyClientPurchases from "./MyClientPurchases";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientProfile.module.css";
 
@@ -240,6 +241,15 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             clientId={clientId}
             lastPurchaseAt={purchase?.created_at}
             summary={summary}
+            onRefresh={() => load(false)}
+          />
+        </div>
+      ) : activeTab === "compras" ? (
+        <div className={styles.summaryPanel}>
+          <MyClientPurchases
+            clientId={clientId}
+            client={client}
+            tarotists={(summary.available_tarotists || []).map((item: any) => ({ id: item.id, display_name: item.name }))}
             onRefresh={() => load(false)}
           />
         </div>
