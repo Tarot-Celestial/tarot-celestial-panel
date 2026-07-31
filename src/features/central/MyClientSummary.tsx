@@ -12,11 +12,14 @@ import {
   MoreHorizontal,
   PhoneCall,
   Plus,
+  X,
   ShoppingBag,
   Sparkles,
   Star,
   UserRound,
 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientSummary.module.css";
 
@@ -24,8 +27,16 @@ type NoteRow = {
   id: string;
   texto?: string | null;
   author_name?: string | null;
+  author_email?: string | null;
   is_pinned?: boolean | null;
   created_at?: string | null;
+  updated_at?: string | null;
+  type?: string | null;
+  tipo?: string | null;
+  origin?: string | null;
+  origen?: string | null;
+  is_automatic?: boolean | null;
+  automatic?: boolean | null;
 };
 
 type InteractionRow = {
@@ -58,7 +69,8 @@ type SummaryData = {
   captured_at?: string | null;
   captured_by?: { id?: string | null; display_name?: string | null } | null;
   fidelity_index?: number | null;
-  favorite_tarotists?: Array<{ name: string; count: number }>;
+  favorite_tarotists?: Array<{ id: string; tarotist_id: string; name: string; created_at?: string | null }>;
+  available_tarotists?: Array<{ id: string; name: string }>;
   notes?: NoteRow[];
   interactions?: InteractionRow[];
   calls?: CallRow[];
@@ -75,8 +87,10 @@ type SummaryData = {
 };
 
 type Props = {
+  clientId: string;
   lastPurchaseAt?: string | null;
   summary: SummaryData;
+  onRefresh: () => Promise<void> | void;
 };
 
 function formatDate(value?: string | null, withTime = false) {
@@ -106,14 +120,49 @@ function money(value?: number, currency = "EUR") {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(Number(value || 0));
 }
 
-export default function MyClientSummary({ lastPurchaseAt, summary }: Props) {
+async function accessToken() {
+  const { data } = await supabaseBrowser().auth.getSession();
+  return data.session?.access_token || null;
+}
+
+export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onRefresh }: Props) {
   const lifecycle = getClientLifecycleStatus(lastPurchaseAt);
   const notes = summary.notes || [];
   const interactions = summary.interactions || [];
   const calls = summary.calls || [];
   const payments = summary.payments || [];
   const favorites = summary.favorite_tarotists || [];
+  const availableTarotists = summary.available_tarotists || [];
   const totals = summary.totals || {};
+  const [favoritePickerOpen, setFavoritePickerOpen] = useState(false);
+  const [favoriteBusy, setFavoriteBusy] = useState("");
+  const [favoriteError, setFavoriteError] = useState("");
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const favoriteIds = useMemo(() => new Set(favorites.map((item) => String(item.tarotist_id))), [favorites]);
+
+  async function changeFavorite(tarotistId: string, method: "POST" | "DELETE") {
+    setFavoriteBusy(tarotistId);
+    setFavoriteError("");
+    try {
+      const token = await accessToken();
+      if (!token) throw new Error("No se pudo validar la sesión.");
+      const response = await fetch("/api/central/my-clients/favorites", {
+        method,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: clientId, tarotist_id: tarotistId }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error === "ALREADY_FAVORITE" ? "Esta tarotista ya está añadida." : payload?.error || "No se pudo actualizar la favorita.");
+      }
+      await onRefresh();
+      if (method === "POST") setFavoritePickerOpen(false);
+    } catch (error: any) {
+      setFavoriteError(error?.message || "No se pudo actualizar la favorita.");
+    } finally {
+      setFavoriteBusy("");
+    }
+  }
 
   const activity = [
     ...payments.slice(0, 4).map((item) => ({ id: `payment-${item.id}`, type: "Compra", text: `Compra registrada${item.importe != null ? ` · ${money(Number(item.importe), String(item.moneda || "EUR").toUpperCase())}` : ""}`, at: item.created_at, icon: ShoppingBag })),
@@ -160,15 +209,42 @@ export default function MyClientSummary({ lastPurchaseAt, summary }: Props) {
           <article className={styles.panelCard}>
             <div className={styles.sectionHeader}>
               <div><Star size={19} /><h3>Tarotistas favoritas</h3></div>
-              <button type="button" disabled><Plus size={16} /> Añadir favorita</button>
+              <button type="button" onClick={() => setFavoritePickerOpen((open) => !open)}><Plus size={16} /> Añadir favorita</button>
             </div>
+            {favoritePickerOpen && (
+              <div className={styles.favoritePicker}>
+                <strong>Selecciona una tarotista</strong>
+                <div>
+                  {availableTarotists.map((tarotist) => (
+                    <button
+                      key={tarotist.id}
+                      type="button"
+                      disabled={favoriteIds.has(String(tarotist.id)) || favoriteBusy === tarotist.id}
+                      onClick={() => changeFavorite(tarotist.id, "POST")}
+                    >
+                      <span className={styles.smallAvatar}>{tarotist.name.charAt(0).toUpperCase()}</span>
+                      <span>{tarotist.name}</span>
+                      <small>{favoriteIds.has(String(tarotist.id)) ? "Ya añadida" : "Añadir"}</small>
+                    </button>
+                  ))}
+                </div>
+                {!availableTarotists.length && <p>No hay tarotistas activas disponibles.</p>}
+              </div>
+            )}
+            {favoriteError && <div className={styles.inlineError}>{favoriteError}</div>}
             {favorites.length ? (
               <div className={styles.favoriteList}>
                 {favorites.map((favorite) => (
-                  <div key={favorite.name} className={styles.favoriteRow}>
+                  <div key={favorite.id} className={styles.favoriteRow}>
                     <span className={styles.smallAvatar}>{favorite.name.charAt(0).toUpperCase()}</span>
                     <strong>{favorite.name}</strong>
-                    <small>{favorite.count} {favorite.count === 1 ? "consulta" : "consultas"}</small>
+                    <button
+                      type="button"
+                      className={styles.removeFavorite}
+                      aria-label={`Quitar ${favorite.name} de favoritas`}
+                      disabled={favoriteBusy === favorite.tarotist_id}
+                      onClick={() => changeFavorite(favorite.tarotist_id, "DELETE")}
+                    ><X size={15} /></button>
                   </div>
                 ))}
               </div>
@@ -178,14 +254,29 @@ export default function MyClientSummary({ lastPurchaseAt, summary }: Props) {
           <article className={styles.panelCard}>
             <div className={styles.sectionHeader}><div><FileText size={19} /><h3>Notas</h3></div></div>
             {notes.length ? (
-              <div className={styles.noteList}>
-                {notes.slice(0, 3).map((note) => (
-                  <div key={note.id} className={styles.noteRow}>
-                    <div><strong>{note.is_pinned ? "Nota anclada" : note.author_name || "Nota CRM"}</strong><small>{formatDate(note.created_at, true)}</small></div>
-                    <p>{note.texto || "Sin contenido"}</p>
-                  </div>
-                ))}
-              </div>
+              <>
+                <div className={styles.noteList}>
+                  {(showAllNotes ? notes : notes.slice(0, 3)).map((note) => {
+                    const noteType = note.tipo || note.type || (note.is_automatic || note.automatic ? "Automática" : "Manual");
+                    const noteOrigin = note.origen || note.origin;
+                    return (
+                      <div key={note.id} className={styles.noteRow}>
+                        <div>
+                          <strong>{note.is_pinned ? "Nota anclada" : note.author_name || note.author_email || "Nota CRM"}</strong>
+                          <small>{formatDate(note.created_at, true)}</small>
+                        </div>
+                        <div className={styles.noteMeta}><span>{noteType}</span>{noteOrigin && <span>{noteOrigin}</span>}</div>
+                        <p>{note.texto || "Sin contenido"}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+                {notes.length > 3 && (
+                  <button type="button" className={styles.showMoreNotes} onClick={() => setShowAllNotes((show) => !show)}>
+                    {showAllNotes ? "Ver menos" : `Ver todas las notas (${notes.length})`}
+                  </button>
+                )}
+              </>
             ) : <div className={styles.emptyState}>No hay notas registradas para esta clienta.</div>}
           </article>
         </section>

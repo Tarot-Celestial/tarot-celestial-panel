@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     const [clientResult, paymentsResult, notesResult, interactionsResult, callsResult] = await Promise.all([
       admin.from("crm_clientes").select("*").eq("id", id).maybeSingle(),
       admin.from("crm_cliente_pagos").select("id, cliente_id, importe, moneda, metodo, estado, notas, referencia_externa, created_at").eq("cliente_id", id).order("created_at", { ascending: false }).limit(100),
-      admin.from("crm_client_notes").select("id, texto, author_name, author_email, is_pinned, created_at, updated_at").eq("cliente_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }).limit(12),
+      admin.from("crm_client_notes").select("*").eq("cliente_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
       admin.from("crm_interacciones").select("id, estado, notas_central, origen, tarotista_worker_id, created_at, cerrado_at").eq("cliente_id", id).order("created_at", { ascending: false }).limit(30),
       admin.from("rendimiento_llamadas").select("id, fecha_hora, fecha, importe, forma_pago, resumen_codigo, cliente_compra_minutos, telefonista_nombre, tarotista_nombre").eq("cliente_id", id).order("fecha_hora", { ascending: false }).limit(30),
     ]);
@@ -61,20 +61,29 @@ export async function GET(req: Request) {
     const latestPurchase = payments[0] || null;
     const totalSpent = payments.reduce((sum: number, payment: any) => sum + (Number(payment.importe) || 0), 0);
 
-    const tarotistaIds = Array.from(new Set(interactions.map((row: any) => String(row.tarotista_worker_id || "")).filter(Boolean)));
-    const workerNames = new Map<string, string>();
-    if (tarotistaIds.length) {
-      const { data: tarotistas } = await admin.from("workers").select("id, display_name").in("id", tarotistaIds);
-      for (const tarotista of tarotistas || []) workerNames.set(String(tarotista.id), String(tarotista.display_name || "Tarotista"));
-    }
+    const { data: availableTarotists, error: tarotistsError } = await admin
+      .from("workers")
+      .select("id, display_name, role, is_active")
+      .eq("role", "tarotista")
+      .eq("is_active", true)
+      .order("display_name", { ascending: true });
+    if (tarotistsError) throw tarotistsError;
 
-    const favoriteMap = new Map<string, { name: string; count: number }>();
-    for (const interaction of interactions) {
-      const name = workerNames.get(String((interaction as any).tarotista_worker_id || ""));
-      if (!name) continue;
-      const current = favoriteMap.get(name) || { name, count: 0 };
-      current.count += 1;
-      favoriteMap.set(name, current);
+    let savedFavorites: any[] = [];
+    const favoriteResult = await admin
+      .from("client_favorite_tarotists")
+      .select("id, client_id, tarotist_worker_id, created_at")
+      .eq("client_id", id)
+      .order("created_at", { ascending: true });
+
+    if (!favoriteResult.error) {
+      const nameById = new Map((availableTarotists || []).map((row: any) => [String(row.id), String(row.display_name || "Tarotista")]));
+      savedFavorites = (favoriteResult.data || []).map((row: any) => ({
+        id: row.id,
+        tarotist_id: row.tarotist_worker_id,
+        name: nameById.get(String(row.tarotist_worker_id)) || "Tarotista",
+        created_at: row.created_at,
+      }));
     }
 
     return NextResponse.json({
@@ -86,7 +95,8 @@ export async function GET(req: Request) {
         captured_at: clientResult.data.created_at || null,
         captured_by: null,
         fidelity_index: null,
-        favorite_tarotists: Array.from(favoriteMap.values()).sort((a, b) => b.count - a.count).slice(0, 3),
+        favorite_tarotists: savedFavorites,
+        available_tarotists: (availableTarotists || []).map((row: any) => ({ id: row.id, name: row.display_name || "Tarotista" })),
         notes,
         interactions,
         calls,

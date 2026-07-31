@@ -9,7 +9,7 @@ import {
   Phone,
   ShoppingBag,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import MyClientSummary from "./MyClientSummary";
 import { getClientLifecycleStatus } from "./clientLifecycle";
@@ -37,7 +37,8 @@ type SummaryData = {
   captured_at?: string | null;
   captured_by?: { id?: string | null; display_name?: string | null } | null;
   fidelity_index?: number | null;
-  favorite_tarotists?: Array<{ name: string; count: number }>;
+  favorite_tarotists?: Array<{ id: string; tarotist_id: string; name: string; created_at?: string | null }>;
+  available_tarotists?: Array<{ id: string; name: string }>;
   notes?: any[];
   interactions?: any[];
   calls?: any[];
@@ -103,38 +104,52 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError("");
-      try {
-        const accessToken = await token();
-        if (!accessToken) throw new Error("No se pudo validar la sesión.");
-        const response = await fetch(`/api/central/my-clients/detail?id=${encodeURIComponent(clientId)}`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-          cache: "no-store",
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.ok) {
-          throw new Error(payload?.error === "CLIENT_NOT_FOUND" ? "La clienta no existe o ya no está disponible." : payload?.error || "No se pudo cargar la ficha.");
-        }
-        if (!cancelled) {
-          setClient(payload.cliente || null);
-          setPurchase(payload.ultima_compra || null);
-          setSummary(payload.resumen || {});
-        }
-      } catch (loadError: any) {
-        if (!cancelled) setError(loadError?.message || "No se pudo cargar la ficha.");
-      } finally {
-        if (!cancelled) setLoading(false);
+  const load = useCallback(async (showLoader = true) => {
+    if (showLoader) setLoading(true);
+    setError("");
+    try {
+      const accessToken = await token();
+      if (!accessToken) throw new Error("No se pudo validar la sesión.");
+      const response = await fetch(`/api/central/my-clients/detail?id=${encodeURIComponent(clientId)}`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.error === "CLIENT_NOT_FOUND" ? "La clienta no existe o ya no está disponible." : payload?.error || "No se pudo cargar la ficha.");
       }
+      setClient(payload.cliente || null);
+      setPurchase(payload.ultima_compra || null);
+      setSummary(payload.resumen || {});
+    } catch (loadError: any) {
+      setError(loadError?.message || "No se pudo cargar la ficha.");
+    } finally {
+      if (showLoader) setLoading(false);
     }
-
-    void load();
-    return () => { cancelled = true; };
   }, [clientId]);
+
+  useEffect(() => {
+    void load(true);
+  }, [load]);
+
+  useEffect(() => {
+    const supabase = supabaseBrowser();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void load(false), 250);
+    };
+    const channel = supabase
+      .channel(`my-client-summary-${clientId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_notes", filter: `cliente_id=eq.${clientId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_favorite_tarotists", filter: `client_id=eq.${clientId}` }, refresh)
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [clientId, load]);
 
   const status = useMemo(() => getClientLifecycleStatus(purchase?.created_at), [purchase?.created_at]);
   const name = getName(client);
@@ -221,8 +236,10 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
       {activeTab === "resumen" ? (
         <div className={styles.summaryPanel}>
           <MyClientSummary
+            clientId={clientId}
             lastPurchaseAt={purchase?.created_at}
             summary={summary}
+            onRefresh={() => load(false)}
           />
         </div>
       ) : (
