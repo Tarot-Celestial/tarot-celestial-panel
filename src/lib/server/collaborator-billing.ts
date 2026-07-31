@@ -55,6 +55,35 @@ type ServiceEntry = {
   source: string;
 };
 
+type ExclusionScope = "service" | "payment" | "all";
+
+type CollaboratorReportExclusion = {
+  id: string;
+  collaborator_id: string;
+  record_type: "service" | "payment";
+  source_table: "rendimiento_llamadas" | "crm_cliente_pagos";
+  source_record_id: string;
+  exclusion_scope: ExclusionScope;
+  month_key: string;
+  deletion_reason: string;
+  deletion_note: string | null;
+  deleted_at: string;
+  deleted_by_worker_id: string;
+  deleted_by_name: string | null;
+};
+
+export type CreateCollaboratorExclusionInput = {
+  collaboratorId: string;
+  recordType: "service" | "payment";
+  sourceTable: "rendimiento_llamadas" | "crm_cliente_pagos";
+  sourceRecordId: string;
+  monthKey: string;
+  deletionReason: string;
+  deletionNote?: string | null;
+  deletedByWorkerId: string;
+  deletedByName?: string | null;
+};
+
 type Summary = {
   clients_total: number;
   services_total: number;
@@ -173,6 +202,137 @@ function isMissingRelationError(error: any) {
   const code = String(error?.code || "");
   const message = String(error?.message || "").toLowerCase();
   return code === "42P01" || code === "PGRST205" || message.includes("does not exist") || message.includes("schema cache");
+}
+
+const ALLOWED_DELETION_REASONS = new Set([
+  "registro_prueba",
+  "registro_duplicado",
+  "importe_incorrecto",
+  "cliente_incorrecto",
+  "operacion_anulada",
+  "otro",
+]);
+
+function exclusionKey(sourceTable: string, sourceRecordId: string) {
+  return `${String(sourceTable || "").trim()}:${String(sourceRecordId || "").trim()}`;
+}
+
+async function loadCollaboratorExclusions(admin: any, collaboratorId: string): Promise<CollaboratorReportExclusion[]> {
+  const { data, error } = await admin
+    .from("billing_collaborator_report_exclusions")
+    .select("id, collaborator_id, record_type, source_table, source_record_id, exclusion_scope, month_key, deletion_reason, deletion_note, deleted_at, deleted_by_worker_id, deleted_by_name")
+    .eq("collaborator_id", collaboratorId);
+
+  if (error) {
+    if (isMissingRelationError(error)) return [];
+    throw error;
+  }
+
+  return (data || []).map((row: any) => ({
+    id: String(row.id || ""),
+    collaborator_id: String(row.collaborator_id || ""),
+    record_type: row.record_type === "payment" ? "payment" : "service",
+    source_table: row.source_table === "crm_cliente_pagos" ? "crm_cliente_pagos" : "rendimiento_llamadas",
+    source_record_id: String(row.source_record_id || ""),
+    exclusion_scope: ["service", "payment", "all"].includes(String(row.exclusion_scope))
+      ? String(row.exclusion_scope) as ExclusionScope
+      : "all",
+    month_key: String(row.month_key || ""),
+    deletion_reason: String(row.deletion_reason || ""),
+    deletion_note: row.deletion_note ? String(row.deletion_note) : null,
+    deleted_at: String(row.deleted_at || ""),
+    deleted_by_worker_id: String(row.deleted_by_worker_id || ""),
+    deleted_by_name: row.deleted_by_name ? String(row.deleted_by_name) : null,
+  }));
+}
+
+function buildExclusionScopes(exclusions: CollaboratorReportExclusion[]) {
+  const services = new Set<string>();
+  const payments = new Set<string>();
+
+  for (const exclusion of exclusions) {
+    const key = exclusionKey(exclusion.source_table, exclusion.source_record_id);
+    if (!key || key.endsWith(":")) continue;
+    if (exclusion.exclusion_scope === "service" || exclusion.exclusion_scope === "all") services.add(key);
+    if (exclusion.exclusion_scope === "payment" || exclusion.exclusion_scope === "all") payments.add(key);
+  }
+
+  return { services, payments };
+}
+
+export async function findCollaboratorReportExclusion(
+  admin: any,
+  collaboratorId: string,
+  sourceTable: string,
+  sourceRecordId: string
+) {
+  const { data, error } = await admin
+    .from("billing_collaborator_report_exclusions")
+    .select("id, exclusion_scope, deletion_reason, deleted_at")
+    .eq("collaborator_id", collaboratorId)
+    .eq("source_table", sourceTable)
+    .eq("source_record_id", sourceRecordId)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingRelationError(error)) return null;
+    throw error;
+  }
+  return data || null;
+}
+
+export async function createCollaboratorReportExclusion(admin: any, input: CreateCollaboratorExclusionInput) {
+  const collaboratorId = String(input.collaboratorId || "").trim();
+  const sourceRecordId = String(input.sourceRecordId || "").trim();
+  const monthKey = String(input.monthKey || "").trim();
+  const deletedByWorkerId = String(input.deletedByWorkerId || "").trim();
+  const recordType = input.recordType;
+  const sourceTable = input.sourceTable;
+  const deletionReason = String(input.deletionReason || "").trim();
+  const deletionNote = String(input.deletionNote || "").trim().slice(0, 300) || null;
+
+  if (!isUuidText(collaboratorId)) throw new Error("INVALID_COLLABORATOR_ID");
+  if (!sourceRecordId) throw new Error("INVALID_SOURCE_RECORD_ID");
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) throw new Error("INVALID_MONTH");
+  if (!deletedByWorkerId) throw new Error("INVALID_DELETED_BY");
+  if (!["service", "payment"].includes(recordType)) throw new Error("INVALID_RECORD_TYPE");
+  if (!["rendimiento_llamadas", "crm_cliente_pagos"].includes(sourceTable)) throw new Error("INVALID_SOURCE_TABLE");
+  if (!ALLOWED_DELETION_REASONS.has(deletionReason)) throw new Error("INVALID_DELETION_REASON");
+
+  const existing = await findCollaboratorReportExclusion(admin, collaboratorId, sourceTable, sourceRecordId);
+  if (existing) return { created: false, exclusion: existing };
+
+  // Un registro de rendimiento puede alimentar simultáneamente la fila de servicio
+  // y el cobro derivado. En ese caso la exclusión debe ser única y coherente.
+  const exclusionScope: ExclusionScope = sourceTable === "rendimiento_llamadas" ? "all" : "payment";
+
+  const { data, error } = await admin
+    .from("billing_collaborator_report_exclusions")
+    .insert({
+      collaborator_id: collaboratorId,
+      record_type: recordType,
+      source_table: sourceTable,
+      source_record_id: sourceRecordId,
+      exclusion_scope: exclusionScope,
+      month_key: monthKey,
+      deletion_reason: deletionReason,
+      deletion_note: deletionNote,
+      deleted_by_worker_id: deletedByWorkerId,
+      deleted_by_name: input.deletedByName ? String(input.deletedByName).slice(0, 160) : null,
+    })
+    .select("id, exclusion_scope, deletion_reason, deleted_at")
+    .single();
+
+  if (error) {
+    if (isMissingRelationError(error)) throw new Error("COLLABORATOR_EXCLUSIONS_MIGRATION_REQUIRED");
+    if (String(error?.code || "") === "23505") {
+      const duplicate = await findCollaboratorReportExclusion(admin, collaboratorId, sourceTable, sourceRecordId);
+      return { created: false, exclusion: duplicate };
+    }
+    throw error;
+  }
+
+  return { created: true, exclusion: data };
 }
 
 export async function listActiveCollaborators(admin: any): Promise<CollaboratorDefinition[]> {
@@ -679,9 +839,10 @@ function crmPaymentBelongsToCollaborator(
   return performancePayments.some((candidate) => samePayment(candidate, payment));
 }
 
-async function loadPeriod(admin: any, definition: CollaboratorDefinition, month: string, taggedClientIds: string[]) {
+async function loadPeriod(admin: any, definition: CollaboratorDefinition, month: string, taggedClientIds: string[], exclusions: CollaboratorReportExclusion[]) {
   const range = monthRange(month);
   const taggedClientIdSet = new Set(taggedClientIds.map((id) => String(id || "").trim()).filter(isUuidText));
+  const exclusionScopes = buildExclusionScopes(exclusions);
 
   // Fuente operativa principal: rendimiento_llamadas. Las relaciones explícitas
   // se consultan junto con todas las llamadas de clientes cuya etiqueta real es la
@@ -723,9 +884,9 @@ async function loadPeriod(admin: any, definition: CollaboratorDefinition, month:
     const client = clients.get(String(row?.cliente_id || ""));
     if (isExplicitTestRecord(row)) continue;
     const service = buildService(row, client);
-    if (service) services.push(service);
+    if (service && !exclusionScopes.services.has(exclusionKey(service.source, service.id))) services.push(service);
     const payment = paymentFromPerformance(row, client);
-    if (payment) performancePayments.push(payment);
+    if (payment && !exclusionScopes.payments.has(exclusionKey(payment.source, payment.id))) performancePayments.push(payment);
   }
 
   const crmPayments = (crmPaymentRows || [])
@@ -737,7 +898,8 @@ async function loadPeriod(admin: any, definition: CollaboratorDefinition, month:
     .filter(({ row, payment }: { row: any; payment: PaymentEntry }) => (
       crmPaymentBelongsToCollaborator(row, payment, definition, performancePayments, taggedClientIdSet)
     ))
-    .map(({ payment }: { payment: PaymentEntry }) => payment);
+    .map(({ payment }: { payment: PaymentEntry }) => payment)
+    .filter((payment: PaymentEntry) => !exclusionScopes.payments.has(exclusionKey(payment.source, payment.id)));
 
   const payments = mergePayments(crmPayments, performancePayments);
   services.sort((a, b) => String(b.service_at).localeCompare(String(a.service_at)));
@@ -756,12 +918,15 @@ export async function loadCollaboratorMonthlyReport(
   if (!definition) throw new Error("COLLABORATOR_NOT_FOUND");
   if (!definition.tag_id) throw new Error("COLLABORATOR_WITHOUT_TAG");
 
-  const clientIds = await loadTaggedClientIds(admin, definition.tag_id);
+  const [clientIds, exclusions] = await Promise.all([
+    loadTaggedClientIds(admin, definition.tag_id),
+    loadCollaboratorExclusions(admin, definition.id),
+  ]);
   const previousMonth = previousMonthKey(month);
-  const current = await loadPeriod(admin, definition, month, clientIds);
+  const current = await loadPeriod(admin, definition, month, clientIds, exclusions);
   const previous = options?.includePrevious === false
     ? null
-    : await loadPeriod(admin, definition, previousMonth, clientIds);
+    : await loadPeriod(admin, definition, previousMonth, clientIds, exclusions);
 
   const previousHasData = Boolean(previous && (previous.services.length > 0 || previous.payments.length > 0));
   const previousSummary = previousHasData ? previous?.summary || null : null;

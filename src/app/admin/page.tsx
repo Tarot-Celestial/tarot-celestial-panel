@@ -780,6 +780,55 @@ function AdminPage() {
     }
   }
 
+  async function deleteCollaboratorReportRecord(payload: {
+    recordType: "service" | "payment";
+    source: "rendimiento_llamadas" | "crm_cliente_pagos";
+    recordId: string;
+    reason: string;
+    note?: string;
+  }) {
+    if (!selId || !String(selId).startsWith("collaborator:")) throw new Error("COLLABORATOR_ID_INVALID");
+    const [, collaboratorId, reportMonth] = String(selId).split(":");
+    if (!collaboratorId) throw new Error("COLLABORATOR_ID_INVALID");
+
+    setSelLoading(true);
+    setSelMsg("");
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) throw new Error("NO_AUTH");
+
+      const response = await fetch("/api/admin/invoices/collaborator", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          collaborator_id: collaboratorId,
+          month: reportMonth || month,
+          record_type: payload.recordType,
+          source: payload.source,
+          record_id: payload.recordId,
+          reason: payload.reason,
+          note: payload.note || null,
+        }),
+      });
+
+      const result = await safeJson(response);
+      if (!result?._ok || !result?.ok) {
+        throw new Error(result?.error || `HTTP ${result?._status}. ${result?._raw || "(vacía)"}`);
+      }
+
+      if (result.report) setSelCollaboratorReport(result.report);
+      await listInvoices(true);
+    } catch (error: any) {
+      console.error("[Mario report delete]", error);
+      throw error;
+    } finally {
+      setSelLoading(false);
+    }
+  }
+
   async function loadInvoice(invoice_id: string) {
     if (!invoice_id) return;
     if (String(invoice_id).startsWith("collaborator:")) {
@@ -1428,7 +1477,7 @@ function AdminPage() {
     const selectedMonths = new Set([month, previousMonthKey(month)]);
 
     const eventBelongsToInvoicePeriod = (table: string, payload: any) => {
-      if (["workers", "billing_collaborators", "crm_cliente_etiquetas", "invoice_lines"].includes(table)) return true;
+      if (["workers", "billing_collaborators", "billing_collaborator_report_exclusions", "crm_cliente_etiquetas", "invoice_lines"].includes(table)) return true;
       const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old || {};
       if (table === "invoices") return selectedMonths.has(String(row?.month_key || ""));
       const rawDate = String(row?.fecha_hora || row?.fecha || row?.created_at || row?.updated_at || "");
@@ -1460,6 +1509,7 @@ function AdminPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "invoice_lines" }, (payload: any) => scheduleInvoiceRefresh("invoice_lines", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleInvoiceRefresh("workers", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "billing_collaborators" }, (payload: any) => scheduleInvoiceRefresh("billing_collaborators", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "billing_collaborator_report_exclusions" }, (payload: any) => scheduleInvoiceRefresh("billing_collaborator_report_exclusions", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_etiquetas" }, (payload: any) => scheduleInvoiceRefresh("crm_cliente_etiquetas", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, (payload: any) => scheduleInvoiceRefresh("crm_cliente_pagos", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleInvoiceRefresh("rendimiento_llamadas", payload))
@@ -1910,6 +1960,7 @@ function AdminPage() {
                 onDownload={() => {
                   if (selId) void downloadInvoicePdf(selId);
                 }}
+                onDeleteRecord={deleteCollaboratorReportRecord}
                 onBack={() => setTab("facturas")}
               />
             ) : (
