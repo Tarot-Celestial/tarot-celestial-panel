@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import MyClientSummary from "./MyClientSummary";
+import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientProfile.module.css";
 
 type ClientData = Record<string, any> & {
@@ -30,6 +32,26 @@ type PurchaseData = {
   notas?: string | null;
   referencia_externa?: string | null;
 } | null;
+
+type SummaryData = {
+  captured_at?: string | null;
+  captured_by?: { id?: string | null; display_name?: string | null } | null;
+  fidelity_index?: number | null;
+  favorite_tarotists?: Array<{ name: string; count: number }>;
+  notes?: any[];
+  interactions?: any[];
+  calls?: any[];
+  payments?: any[];
+  totals?: {
+    purchases?: number;
+    spent?: number;
+    calls?: number;
+    consultations?: number;
+    followUps?: number;
+    messages?: number;
+    minutes?: number | null;
+  };
+};
 
 type TabKey = "resumen" | "seguimientos" | "compras" | "notas" | "preferencias" | "actividad";
 
@@ -61,23 +83,6 @@ function getPhoto(client: ClientData | null) {
   return client?.avatar_url || client?.photo_url || client?.foto_url || null;
 }
 
-function daysSince(value?: string | null) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const diff = Date.now() - date.getTime();
-  return Math.max(0, Math.floor(diff / 86_400_000));
-}
-
-function getStatus(purchase: PurchaseData) {
-  const days = daysSince(purchase?.created_at);
-  if (days === null) return { label: "Sin compra", tone: "neutral" as const };
-  if (days <= 30) return { label: "Activa", tone: "active" as const };
-  if (days <= 40) return { label: "Tibia", tone: "warm" as const };
-  if (days < 50) return { label: "Fría", tone: "cold" as const };
-  return { label: "En riesgo", tone: "risk" as const };
-}
-
 function formatDate(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -93,6 +98,7 @@ async function token() {
 export default function MyClientProfile({ clientId, onBack }: Props) {
   const [client, setClient] = useState<ClientData | null>(null);
   const [purchase, setPurchase] = useState<PurchaseData>(null);
+  const [summary, setSummary] = useState<SummaryData>({});
   const [activeTab, setActiveTab] = useState<TabKey>("resumen");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -117,6 +123,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
         if (!cancelled) {
           setClient(payload.cliente || null);
           setPurchase(payload.ultima_compra || null);
+          setSummary(payload.resumen || {});
         }
       } catch (loadError: any) {
         if (!cancelled) setError(loadError?.message || "No se pudo cargar la ficha.");
@@ -129,7 +136,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
     return () => { cancelled = true; };
   }, [clientId]);
 
-  const status = useMemo(() => getStatus(purchase), [purchase]);
+  const status = useMemo(() => getClientLifecycleStatus(purchase?.created_at), [purchase?.created_at]);
   const name = getName(client);
   const photo = getPhoto(client);
   const purchaseDate = formatDate(purchase?.created_at);
@@ -211,10 +218,19 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
         ))}
       </nav>
 
-      <div className={styles.tabPanel}>
-        <span>{TABS.find((tab) => tab.key === activeTab)?.label}</span>
-        <p>Este apartado se desarrollará en una próxima fase.</p>
-      </div>
+      {activeTab === "resumen" ? (
+        <div className={styles.summaryPanel}>
+          <MyClientSummary
+            lastPurchaseAt={purchase?.created_at}
+            summary={summary}
+          />
+        </div>
+      ) : (
+        <div className={styles.tabPanel}>
+          <span>{TABS.find((tab) => tab.key === activeTab)?.label}</span>
+          <p>Este apartado se desarrollará en una próxima fase.</p>
+        </div>
+      )}
     </section>
   );
 }

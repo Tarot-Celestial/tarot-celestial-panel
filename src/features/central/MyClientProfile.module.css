@@ -37,3 +37,4 @@
 @media (max-width:900px){ .hero{grid-template-columns:1fr;} }
 @media (max-width:620px){ .identity{align-items:flex-start; padding:18px; flex-wrap:wrap;} .avatar{width:66px;height:66px;flex-basis:66px;border-radius:18px;} .moreButton{position:absolute;top:16px;right:16px;} .identityCopy{flex-basis:calc(100% - 84px);padding-right:44px;} .purchaseCard{padding:18px;} }
 @media (prefers-reduced-motion:reduce){ .tabs button,.backButton,.moreButton{transition:none;} }
+.summaryPanel{margin-top:16px;min-width:0}.idle{color:#ffd978;border:1px solid rgba(245,190,60,.38);background:rgba(245,158,11,.11)}.inactive{color:#ff999f;border:1px solid rgba(248,113,113,.4);background:rgba(239,68,68,.11)}
