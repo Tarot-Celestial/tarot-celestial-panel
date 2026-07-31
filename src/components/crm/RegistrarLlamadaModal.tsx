@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./RegistrarLlamadaModal.module.css";
 
@@ -41,17 +41,89 @@ function GameSelect({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [menuLayout, setMenuLayout] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    placement: "top" | "bottom";
+  } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const selected = options.find((option) => option.value === value) || null;
+
+  const updateMenuPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const viewportMargin = 10;
+    const gap = 7;
+    const desiredHeight = 300;
+    const minimumHeight = 96;
+    const spaceBelow = Math.max(0, viewportHeight - rect.bottom - viewportMargin - gap);
+    const spaceAbove = Math.max(0, rect.top - viewportMargin - gap);
+    const placement = spaceBelow < 190 && spaceAbove > spaceBelow ? "top" : "bottom";
+    const availableHeight = placement === "top" ? spaceAbove : spaceBelow;
+    const viewportLimit = Math.max(minimumHeight, viewportHeight - viewportMargin * 2);
+    const maxHeight = Math.max(
+      Math.min(minimumHeight, viewportLimit),
+      Math.min(desiredHeight, availableHeight, viewportLimit),
+    );
+    const width = Math.min(rect.width, viewportWidth - viewportMargin * 2);
+    const left = Math.min(
+      Math.max(viewportMargin, rect.left),
+      Math.max(viewportMargin, viewportWidth - viewportMargin - width),
+    );
+    const preferredTop = placement === "top"
+      ? rect.top - gap - maxHeight
+      : rect.bottom + gap;
+    const top = Math.min(
+      Math.max(viewportMargin, preferredTop),
+      Math.max(viewportMargin, viewportHeight - viewportMargin - maxHeight),
+    );
+
+    setMenuLayout({ top, left, width, maxHeight, placement });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!expanded) {
+      setMenuLayout(null);
+      return;
+    }
+
+    updateMenuPosition();
+    window.addEventListener("resize", updateMenuPosition);
+    window.addEventListener("scroll", updateMenuPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateMenuPosition);
+      window.removeEventListener("scroll", updateMenuPosition, true);
+    };
+  }, [expanded, updateMenuPosition]);
 
   useEffect(() => {
     if (!expanded) return;
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setExpanded(false);
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !menuRef.current?.contains(target)) {
+        setExpanded(false);
+      }
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded || activeIndex < 0) return;
+    const activeOption = menuRef.current?.querySelector<HTMLElement>(
+      `[data-option-index="${activeIndex}"]`,
+    );
+    activeOption?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, expanded]);
 
   function openList() {
     const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
@@ -97,6 +169,7 @@ function GameSelect({
   return (
     <div className={styles.dropdown} ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`${styles.dropdownTrigger} ${expanded ? styles.dropdownTriggerOpen : ""}`}
         aria-label={ariaLabel}
@@ -111,11 +184,24 @@ function GameSelect({
         <span className={styles.dropdownChevron} aria-hidden="true">⌄</span>
       </button>
 
-      {expanded && (
-        <div className={styles.dropdownMenu} role="listbox" aria-label={ariaLabel}>
+      {expanded && menuLayout && createPortal(
+        <div
+          ref={menuRef}
+          className={`${styles.dropdownMenu} ${menuLayout.placement === "top" ? styles.dropdownMenuTop : ""}`}
+          role="listbox"
+          aria-label={ariaLabel}
+          style={{
+            top: menuLayout.top,
+            left: menuLayout.left,
+            width: menuLayout.width,
+            maxHeight: menuLayout.maxHeight,
+          }}
+          onWheel={(event) => event.stopPropagation()}
+        >
           {options.map((option, index) => (
             <button
               key={option.value}
+              data-option-index={index}
               type="button"
               role="option"
               aria-selected={option.value === value}
@@ -136,7 +222,8 @@ function GameSelect({
               {option.value === value && <b aria-hidden="true">✓</b>}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

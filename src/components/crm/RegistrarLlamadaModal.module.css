@@ -175,6 +175,7 @@
   min-height: 0;
   padding: 20px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-color: rgba(181,156,255,.5) rgba(255,255,255,.04);
 }
 
@@ -441,13 +442,11 @@
 .dropdownTriggerOpen .dropdownChevron { transform: rotate(180deg); }
 
 .dropdownMenu {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 7px);
-  left: 0;
-  right: 0;
-  max-height: min(300px, 42vh);
+  position: fixed;
+  z-index: 2147483647;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   padding: 7px;
   border: 1px solid rgba(189,165,255,.32);
   border-radius: 16px;
@@ -457,6 +456,11 @@
   box-shadow: 0 24px 55px rgba(0,0,0,.5), inset 0 1px rgba(255,255,255,.07);
   scrollbar-color: rgba(181,156,255,.55) rgba(255,255,255,.035);
   animation: dropdownIn .16s ease;
+  contain: layout paint;
+}
+
+.dropdownMenuTop {
+  animation-name: dropdownInTop;
 }
 
 .dropdownOption {
@@ -516,5 +520,10 @@
 
 @keyframes dropdownIn {
   from { opacity: 0; transform: translateY(-5px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes dropdownInTop {
+  from { opacity: 0; transform: translateY(5px) scale(.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
