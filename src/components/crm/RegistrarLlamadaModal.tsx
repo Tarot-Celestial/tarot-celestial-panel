@@ -167,6 +167,26 @@ function toNum(v: any) {
   return Number.isFinite(n) ? n : 0;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown) {
+  return UUID_PATTERN.test(String(value ?? "").trim());
+}
+
+function friendlySubmitError(error: unknown) {
+  const message = String(error || "").trim();
+  if (["CLIENTE_REQUIRED", "CLIENTE_UUID_INVALID", "CLIENTE_NO_ENCONTRADO"].includes(message)) {
+    return "No se pudo identificar correctamente al cliente. Recarga la ficha e inténtalo de nuevo.";
+  }
+  if (message === "MARIO_COLLABORATOR_NOT_CONFIGURED" || message === "CALL_MARIO_TAG_NOT_CONFIGURED") {
+    return "CALL MARIO no está configurado correctamente. Revisa la migración de Supabase antes de registrar la llamada.";
+  }
+  if (message === "CALL_REGISTER_FAILED") {
+    return "No se pudo registrar la llamada. No se aplicaron cambios; inténtalo de nuevo.";
+  }
+  return message || "Error registrando llamada";
+}
+
 function fmtMinutes(v: any) {
   return String(toNum(v)).replace(".00", "");
 }
@@ -200,6 +220,7 @@ export default function RegistrarLlamadaModal({
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const submitInFlightRef = useRef(false);
 
   const [clienteCompra, setClienteCompra] = useState<"si" | "no" | "">("");
   const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "7free" | "">("");
@@ -223,6 +244,7 @@ export default function RegistrarLlamadaModal({
     if (!open) return;
     setStep(0);
     setLoading(false);
+    submitInFlightRef.current = false;
     setMsg("");
     setClienteCompra("");
     setUsoSinCompra("");
@@ -364,8 +386,16 @@ export default function RegistrarLlamadaModal({
   }
 
   async function submit() {
-    if (!cliente?.id) return;
+    if (submitInFlightRef.current) return;
+
+    const clienteId = String(cliente?.id || "").trim();
+    if (!isUuid(clienteId)) {
+      console.error("[RegistrarLlamadaModal] cliente.id no es un UUID válido", { cliente_id: clienteId });
+      setMsg("❌ No se pudo identificar correctamente al cliente. Recarga la ficha e inténtalo de nuevo.");
+      return;
+    }
     try {
+      submitInFlightRef.current = true;
       setLoading(true);
       setMsg("");
       const token = await getToken();
@@ -374,7 +404,7 @@ export default function RegistrarLlamadaModal({
       const actualTarotistaWorkerId = isMarioCall ? marioTarotistaId : (tarotistaId && tarotistaId !== CALL_MANUAL_VALUE ? tarotistaId : null);
 
       const payload = {
-        cliente_id: cliente.id,
+        cliente_id: clienteId,
         cliente_compra_minutos: clienteCompra === "si",
         uso_tipo: clienteCompra === "no" ? usoSinCompra : "compra",
         guarda_minutos: clienteCompra === "si" && compraDestino === "guardar",
@@ -408,8 +438,10 @@ export default function RegistrarLlamadaModal({
       if (onSuccess) await onSuccess(j?.message || "✅ Llamada registrada correctamente");
       onClose();
     } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error registrando llamada"}`);
+      console.error("[RegistrarLlamadaModal] error registrando llamada", e);
+      setMsg(`❌ ${friendlySubmitError(e?.message)}`);
     } finally {
+      submitInFlightRef.current = false;
       setLoading(false);
     }
   }

@@ -112,6 +112,19 @@ function cleanText(v: any) {
   return s || null;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown): value is string {
+  return UUID_PATTERN.test(String(value ?? "").trim());
+}
+
+function clientIdentificationError() {
+  return NextResponse.json(
+    { ok: false, error: "CLIENTE_UUID_INVALID" },
+    { status: 400 }
+  );
+}
+
 function joinClienteName(cliente: any) {
   return [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || cliente?.telefono || "Cliente";
 }
@@ -164,8 +177,15 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const clienteId = String(body?.cliente_id || "").trim();
-    if (!clienteId) return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
+    const requestedClienteId = String(body?.cliente_id || "").trim();
+    if (!requestedClienteId) return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
+    if (!isUuid(requestedClienteId)) {
+      console.error("[CRM registrar llamada] cliente_id recibido no es un UUID válido", {
+        cliente_id: requestedClienteId,
+        collaborator_source: body?.collaborator_source || null,
+      });
+      return clientIdentificationError();
+    }
 
     const clienteCompra = Boolean(body?.cliente_compra_minutos);
     const usoTipo = String(body?.uso_tipo || "").trim();
@@ -199,10 +219,21 @@ export async function POST(req: Request) {
     const { data: cliente, error: clienteError } = await admin
       .from("crm_clientes")
 .select("id, nombre, apellido, telefono, minutos_free_pendientes, minutos_normales_pendientes, puntos")
-      .eq("id", clienteId)
+      .eq("id", requestedClienteId)
       .maybeSingle();
-    if (clienteError) throw clienteError;
+    if (clienteError) {
+      console.error("[CRM registrar llamada] error resolviendo el cliente", clienteError);
+      return clientIdentificationError();
+    }
     if (!cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+
+    // A partir de aquí se usa exclusivamente el ID devuelto por crm_clientes.
+    // Así cliente, colaborador y tarotista nunca comparten el mismo identificador.
+    const clienteId = String(cliente.id || "").trim();
+    if (!isUuid(clienteId)) {
+      console.error("[CRM registrar llamada] crm_clientes devolvió un ID no UUID", { cliente_id: clienteId });
+      return clientIdentificationError();
+    }
 
     let billingCollaboratorId: string | null = null;
     let sourceTagId: string | null = null;
@@ -322,7 +353,21 @@ export async function POST(req: Request) {
         recuperado,
       }])
       .select();
-    if (insertError) return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
+    if (insertError) {
+      console.error("[CRM registrar llamada] fallo insertando rendimiento_llamadas", {
+        message: insertError.message,
+        code: insertError.code,
+        details: insertError.details,
+        hint: insertError.hint,
+        cliente_id: clienteId,
+        billing_collaborator_id: billingCollaboratorId,
+        source_tag_id: sourceTagId,
+      });
+      if (/cliente_id/i.test(String(insertError.message || "")) && /uuid/i.test(String(insertError.message || ""))) {
+        return clientIdentificationError();
+      }
+      return NextResponse.json({ ok: false, error: "CALL_REGISTER_FAILED" }, { status: 500 });
+    }
 
     const { error: updateError } = await admin
       .from("crm_clientes")
@@ -389,7 +434,11 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    const technicalMessage = String(e?.message || "");
+    if (/cliente_id/i.test(technicalMessage) && /uuid/i.test(technicalMessage)) {
+      return clientIdentificationError();
+    }
+    return NextResponse.json({ ok: false, error: "CALL_REGISTER_FAILED" }, { status: 500 });
   }
 }
 
