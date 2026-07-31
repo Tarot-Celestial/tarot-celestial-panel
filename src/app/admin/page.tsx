@@ -350,7 +350,7 @@ function AdminPage() {
   const lastMonthRef = useRef<string>("");
   const statsFetchInFlightRef = useRef(false);
   const statsRefreshQueuedRef = useRef(false);
-  const statsRealtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statsRealtimeTimerRef = useRef<number | null>(null);
   const statsSelectedMonthRef = useRef(month);
   const statsViewActiveRef = useRef(false);
   statsSelectedMonthRef.current = month;
@@ -1369,7 +1369,10 @@ function AdminPage() {
     const scheduleRefresh = (table: string, payload: any) => {
       if (!active || !eventBelongsToSelectedPeriod(table, payload)) return;
       setStatsLiveStatus("updating");
-      if (statsRealtimeTimerRef.current) window.clearTimeout(statsRealtimeTimerRef.current);
+      if (statsRealtimeTimerRef.current !== null) {
+        window.clearTimeout(statsRealtimeTimerRef.current);
+        statsRealtimeTimerRef.current = null;
+      }
       statsRealtimeTimerRef.current = window.setTimeout(() => {
         statsRealtimeTimerRef.current = null;
         if (active) void loadAdminStats(true, "realtime");
@@ -1390,7 +1393,7 @@ function AdminPage() {
 
     return () => {
       active = false;
-      if (statsRealtimeTimerRef.current) {
+      if (statsRealtimeTimerRef.current !== null) {
         window.clearTimeout(statsRealtimeTimerRef.current);
         statsRealtimeTimerRef.current = null;
       }
