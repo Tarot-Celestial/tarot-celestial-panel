@@ -219,7 +219,7 @@ export async function POST(req: Request) {
     const admin = adminClient();
     const { data: cliente, error: clienteError } = await admin
       .from("crm_clientes")
-.select("id, nombre, apellido, telefono, minutos_free_pendientes, minutos_normales_pendientes, puntos")
+.select("id, nombre, apellido, telefono, origen, minutos_free_pendientes, minutos_normales_pendientes, puntos")
       .eq("id", requestedClienteId)
       .maybeSingle();
     if (clienteError) {
@@ -401,10 +401,11 @@ export async function POST(req: Request) {
       created_by_user_id: me.id,
       created_by_role: me.role,
       points_to_add: clienteCompra && importe > 0 ? pointsFromAmount(importe) : 0,
+      business: String(cliente?.origen || "celestial"),
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v2",
+      "crm_register_call_atomic_v3",
       { p_payload: atomicPayload },
     );
 
@@ -440,6 +441,11 @@ export async function POST(req: Request) {
       ok: true,
       data: inserted,
       payment: economicPayment,
+      operation_id: operationId || null,
+      rendimiento_id: result?.rendimiento?.id || null,
+      payment_id: result?.payment?.id || null,
+      created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
+      business: String(cliente?.origen || "celestial"),
       message: collaboratorDisplayName
         ? "✅ Llamada registrada y vinculada a CALL MARIO"
         : "✅ Llamada registrada correctamente",

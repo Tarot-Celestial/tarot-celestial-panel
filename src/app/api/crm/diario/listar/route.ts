@@ -354,34 +354,27 @@ export async function GET(req: Request) {
     const clientMap = new Map<string, any>((clients || []).map((client: any) => [String(client.id), client]));
     const workerMap = new Map<string, any>((workers || []).map((worker: any) => [String(worker.id), worker]));
 
-    const hydrateDailyRows = (rendimientoRows: any[], paymentRows: any[]): DailyRow[] => [
-      ...rendimientoRows.map((row: any) => {
-        const clientId = String(row.cliente_id || "").trim();
-        const client = clientMap.get(clientId);
-        const name = cleanName(row.cliente_nombre, [client?.nombre, client?.apellido].filter(Boolean).join(" ").trim() || "Cliente");
-        const phone = String(client?.telefono || "").trim() || null;
-        return {
-          id: `rend-${row.id}`,
-          source: "operador" as const,
-          cliente_id: clientId || null,
-          client_key: clientId || `${name.toLowerCase()}|${phone || ""}`,
-          nombre: name,
-          telefono: phone,
-          fecha_pago: row.fecha_hora || row.fecha || null,
-          importe: Number(row.importe || 0),
-          metodo: cleanName(row.forma_pago || row.resumen_codigo, "Rendimiento"),
-          central: cleanName(row.telefonista_nombre, "Central sin asignar"),
-          tarotista: cleanName(row.tarotista_nombre || row.tarotista_manual_call, "—"),
-          estado: "completed",
-        };
-      }),
-      ...paymentRows.map((row: any) => {
+    const hydrateDailyRows = (rendimientoRows: any[], paymentRows: any[]): DailyRow[] => {
+      const rendimientoById = new Map(
+        (rendimientoRows || []).map((row: any) => [String(row?.id || ""), row])
+      );
+      const linkedRendimientoIds = new Set(
+        (paymentRows || [])
+          .map((row: any) => String(row?.source_rendimiento_id || "").trim())
+          .filter(Boolean)
+      );
+
+      const officialPayments: DailyRow[] = (paymentRows || []).map((row: any) => {
         const clientId = String(row.cliente_id || "").trim();
         const client = clientMap.get(clientId);
         const worker = workerMap.get(String(row.created_by_user_id || ""));
+        const linkedRendimiento = rendimientoById.get(String(row.source_rendimiento_id || ""));
         const role = String(row.created_by_role || "").toLowerCase();
         const isWeb = !row.created_by_user_id || role.includes("web") || role.includes("cliente");
-        const name = cleanName([client?.nombre, client?.apellido].filter(Boolean).join(" ").trim(), "Cliente");
+        const name = cleanName(
+          linkedRendimiento?.cliente_nombre || [client?.nombre, client?.apellido].filter(Boolean).join(" ").trim(),
+          "Cliente"
+        );
         const phone = String(client?.telefono || "").trim() || null;
         return {
           id: `pago-${row.id}`,
@@ -390,30 +383,55 @@ export async function GET(req: Request) {
           client_key: clientId || `${name.toLowerCase()}|${phone || ""}`,
           nombre: name,
           telefono: phone,
-          fecha_pago: row.created_at || null,
+          fecha_pago: row.created_at || linkedRendimiento?.fecha_hora || linkedRendimiento?.fecha || null,
           importe: Number(row.importe || 0),
-          metodo: cleanName(row.metodo || row.referencia_externa, "Pago web"),
-          central: isWeb ? "Web automática" : cleanName(worker?.display_name, "Central sin asignar"),
-          tarotista: null,
+          metodo: cleanName(row.metodo || linkedRendimiento?.forma_pago || row.referencia_externa, "Pago"),
+          central: isWeb
+            ? "Web automática"
+            : cleanName(linkedRendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
+          tarotista: linkedRendimiento
+            ? cleanName(linkedRendimiento.tarotista_nombre || linkedRendimiento.tarotista_manual_call, "—")
+            : null,
           estado: normalizeState(row.estado),
         };
-      }),
-    ].sort((a, b) => new Date(b.fecha_pago || 0).getTime() - new Date(a.fecha_pago || 0).getTime());
+      });
 
-    // Los cobros creados desde Registrar llamada tienen una fila operativa en
-    // rendimiento_llamadas y una fila económica oficial en crm_cliente_pagos.
-    // En Diario se conserva la fila operativa (incluye tarotista y telefonista)
-    // y se excluye únicamente su pago enlazado para no duplicar el importe.
-    const withoutLinkedCallPayments = (rows: any[]) => rows.filter((row: any) =>
-      !String(row?.source_rendimiento_id || "").trim()
-    );
+      // Compatibilidad histórica: una fila de Rendimiento sin pago oficial enlazado
+      // sigue visible en Diario. Las llamadas nuevas con cobro usan exclusivamente
+      // crm_cliente_pagos como fuente económica para impedir duplicados.
+      const legacyRendimiento: DailyRow[] = (rendimientoRows || [])
+        .filter((row: any) => !linkedRendimientoIds.has(String(row?.id || "")))
+        .map((row: any) => {
+          const clientId = String(row.cliente_id || "").trim();
+          const client = clientMap.get(clientId);
+          const name = cleanName(
+            row.cliente_nombre,
+            [client?.nombre, client?.apellido].filter(Boolean).join(" ").trim() || "Cliente"
+          );
+          const phone = String(client?.telefono || "").trim() || null;
+          return {
+            id: `rend-${row.id}`,
+            source: "operador" as const,
+            cliente_id: clientId || null,
+            client_key: clientId || `${name.toLowerCase()}|${phone || ""}`,
+            nombre: name,
+            telefono: phone,
+            fecha_pago: row.fecha_hora || row.fecha || null,
+            importe: Number(row.importe || 0),
+            metodo: cleanName(row.forma_pago || row.resumen_codigo, "Rendimiento"),
+            central: cleanName(row.telefonista_nombre, "Central sin asignar"),
+            tarotista: cleanName(row.tarotista_nombre || row.tarotista_manual_call, "—"),
+            estado: "completed",
+          };
+        });
 
-    const currentDaily = buildDailyResult(
-      hydrateDailyRows(currentRendimiento, withoutLinkedCallPayments(currentPagos))
-    );
-    const previousDaily = buildDailyResult(
-      hydrateDailyRows(previousRendimiento, withoutLinkedCallPayments(previousPagos))
-    );
+      return [...officialPayments, ...legacyRendimiento].sort(
+        (a, b) => new Date(b.fecha_pago || 0).getTime() - new Date(a.fecha_pago || 0).getTime()
+      );
+    };
+
+    const currentDaily = buildDailyResult(hydrateDailyRows(currentRendimiento, currentPagos));
+    const previousDaily = buildDailyResult(hydrateDailyRows(previousRendimiento, previousPagos));
     const currentMonthSummary = buildMonthlySummary(monthlyCurrent, selectedMonth);
     const previousMonthSummary = buildMonthlySummary(monthlyPrevious, comparisonMonth);
 
