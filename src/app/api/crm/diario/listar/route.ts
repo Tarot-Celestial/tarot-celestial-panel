@@ -13,6 +13,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 type GeneratedRow = { name: string; count: number; importe: number };
 type DailyRow = {
   id: string;
+  payment_id: string;
+  source_rendimiento_id: string | null;
   source: "operador" | "web";
   cliente_id: string | null;
   client_key: string;
@@ -140,6 +142,8 @@ async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, paym
     const telefono = String(client?.telefono || "").trim() || null;
     return {
       id: `pago-${payment.id}`,
+      payment_id: String(payment.id),
+      source_rendimiento_id: isUuid(payment.source_rendimiento_id) ? String(payment.source_rendimiento_id) : null,
       source: isWeb ? "web" : "operador",
       cliente_id: clientId || null,
       client_key: clientId || `${nombre.toLowerCase()}|${telefono || ""}`,

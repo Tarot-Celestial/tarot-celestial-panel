@@ -20,6 +20,8 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
+  X,
+  AlertTriangle,
   WifiOff,
   Zap,
 } from "lucide-react";
@@ -41,6 +43,8 @@ type DiarioPanelProps = {
 
 type DiarioRow = {
   id: string;
+  payment_id: string;
+  source_rendimiento_id?: string | null;
   source: "operador" | "web";
   cliente_id?: string | null;
   nombre: string;
@@ -365,6 +369,9 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
   const [period, setPeriod] = useState<PeriodInfo>(EMPTY_PERIOD);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [movementToDelete, setMovementToDelete] = useState<DiarioRow | null>(null);
+  const [deletingMovement, setDeletingMovement] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [query, setQuery] = useState("");
   const [liveStatus, setLiveStatus] = useState<LiveStatus>("connecting");
   const realtimeTimerRef = useRef<number | null>(null);
@@ -561,6 +568,45 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
       broadcast?.close();
     };
   }, []);
+
+
+  const cancelEconomicMovement = useCallback(async () => {
+    if (!movementToDelete?.payment_id || deletingMovement) return;
+    setDeletingMovement(true);
+    setDeleteError("");
+
+    try {
+      const token = await getTokenOrLogin();
+      if (!token) return;
+
+      const response = await fetch("/api/crm/diario/cancelar-movimiento", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ payment_id: movementToDelete.payment_id }),
+      });
+      const json = await safeJson(response);
+      if (!json?._ok || !json?.ok) throw new Error(json?.error || "No se pudo eliminar el movimiento");
+
+      setMovementToDelete(null);
+      setMessage("Movimiento económico eliminado correctamente");
+      await loadDiario(true, "manual");
+
+      window.dispatchEvent(new CustomEvent("tc-payment-recorded", { detail: { type: "payment-cancelled", paymentId: movementToDelete.payment_id } }));
+      try {
+        const broadcast = new BroadcastChannel("tc-payments");
+        broadcast.postMessage({ type: "payment-recorded", action: "cancelled", paymentId: movementToDelete.payment_id });
+        broadcast.close();
+      } catch {}
+    } catch (error: any) {
+      console.error("[Diario] Error eliminando movimiento", error);
+      setDeleteError(error?.message || "No se pudo eliminar el movimiento económico");
+    } finally {
+      setDeletingMovement(false);
+    }
+  }, [deletingMovement, getTokenOrLogin, loadDiario, movementToDelete]);
 
   const filteredRows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -780,7 +826,20 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
                     <td>{row.tarotista || "—"}</td>
                     <td><span className={`${styles.methodBadge} ${styles[`method_${method}`]}`}>{row.metodo || "—"}</span></td>
                     <td><span className={`${styles.stateBadge} ${styles[`state_${state}`]}`}>{row.estado || "—"}</span></td>
-                    <td><strong className={styles.amountCell}>{eur(row.importe || 0)}</strong></td>
+                    <td>
+                      <div className={styles.amountActionCell}>
+                        <strong className={styles.amountCell}>{eur(row.importe || 0)}</strong>
+                        <button
+                          type="button"
+                          className={styles.deleteMovementButton}
+                          onClick={() => { setDeleteError(""); setMovementToDelete(row); }}
+                          aria-label={`Eliminar movimiento de ${row.nombre}`}
+                          title="Eliminar movimiento"
+                        >
+                          <X size={15} />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
@@ -791,6 +850,40 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
           </table>
         </div>
       </section>
+
+      {movementToDelete && (
+        <div className={styles.modalBackdrop} role="presentation" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !deletingMovement) setMovementToDelete(null);
+        }}>
+          <section className={styles.confirmModal} role="dialog" aria-modal="true" aria-labelledby="delete-movement-title">
+            <div className={styles.confirmModalIcon}><AlertTriangle size={24} /></div>
+            <div className={styles.confirmModalHeader}>
+              <h3 id="delete-movement-title">Eliminar movimiento económico</h3>
+              <p>Esta operación dejará de contabilizarse en el Diario y en todas las estadísticas económicas, pero conservará su trazabilidad para auditoría.</p>
+            </div>
+
+            <dl className={styles.movementDetails}>
+              <div><dt>Cliente</dt><dd>{movementToDelete.nombre || "—"}</dd></div>
+              <div><dt>Fecha</dt><dd>{formatDate(movementToDelete.fecha_pago)}</dd></div>
+              <div><dt>Importe</dt><dd>{eur(movementToDelete.importe || 0)}</dd></div>
+              <div><dt>Método de pago</dt><dd>{movementToDelete.metodo || "—"}</dd></div>
+              <div><dt>Telefonista</dt><dd>{movementToDelete.central || "—"}</dd></div>
+              <div><dt>Tarotista</dt><dd>{movementToDelete.tarotista || "—"}</dd></div>
+            </dl>
+
+            {deleteError && <div className={styles.deleteError}>{deleteError}</div>}
+
+            <div className={styles.confirmModalActions}>
+              <button type="button" className={styles.cancelDeleteButton} onClick={() => setMovementToDelete(null)} disabled={deletingMovement}>
+                Cancelar
+              </button>
+              <button type="button" className={styles.confirmDeleteButton} onClick={() => void cancelEconomicMovement()} disabled={deletingMovement}>
+                {deletingMovement ? <><LoaderCircle size={16} className={styles.spin} /> Eliminando…</> : "Eliminar definitivamente"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
