@@ -9,6 +9,7 @@ import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
+import { Clock3, ShieldCheck } from "lucide-react";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -178,19 +179,55 @@ function rankMeta(rank: string | null | undefined) {
   };
 }
 
-function rankChip(rank: string | null | undefined) {
+function rankChip(rank: string | null | undefined, cliente?: any, showAdminDetail = false) {
   const meta = rankMeta(rank);
+  const hasOverride = Boolean(cliente?.has_manual_override);
+  const overrideType = String(cliente?.override_type || "").toLowerCase();
+  const expiresAt = cliente?.override_expires_at ? new Date(cliente.override_expires_at) : null;
+  const expiresLabel = expiresAt && !Number.isNaN(expiresAt.getTime())
+    ? expiresAt.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })
+    : "Sin vencimiento";
+  const automaticMeta = rankMeta(cliente?.rango_automatico);
+  const interventionLabel = overrideType === "penalty"
+    ? "Penalización temporal"
+    : overrideType === "permanent"
+      ? "Asignación administrativa permanente"
+      : "Asignación temporal";
+  const tooltip = hasOverride
+    ? [
+        `Rango efectivo: ${meta.label}`,
+        `Rango automático: ${automaticMeta.label}`,
+        `Tipo: ${interventionLabel}`,
+        overrideType === "permanent" ? null : `Finaliza: ${expiresLabel}`,
+        showAdminDetail && cliente?.override_reason ? `Motivo: ${cliente.override_reason}` : null,
+      ].filter(Boolean).join("\n")
+    : `Rango automático: ${meta.label}`;
+
   return (
     <span
       className="tc-chip"
+      title={tooltip}
+      aria-label={tooltip.replace(/\n/g, ". ")}
       style={{
         background: meta.chipBg,
-        border: meta.chipBorder,
+        border: hasOverride ? `1px solid ${overrideType === "penalty" ? "rgba(251,146,60,.72)" : "rgba(216,180,254,.72)"}` : meta.chipBorder,
+        boxShadow: hasOverride ? "0 0 0 1px rgba(255,255,255,.05), 0 0 14px rgba(168,85,247,.18)" : undefined,
         color: "white",
         fontWeight: 800,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        flexWrap: "wrap",
+        maxWidth: "100%",
       }}
     >
-      {meta.icon} {meta.label}
+      <span>{meta.icon} {meta.label}</span>
+      {hasOverride ? (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, letterSpacing: ".04em", textTransform: "uppercase", opacity: .92 }}>
+          {overrideType === "permanent" ? <ShieldCheck size={12} aria-hidden="true" /> : <Clock3 size={12} aria-hidden="true" />}
+          {overrideType === "permanent" ? "Admin" : "Temporal"}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -262,6 +299,7 @@ export default function CRMClientesPanel({
     getActiveBrand() === "orion" ? "tarot_orion" : "tarot_celestial"
   );
   const brandAutoSearchRef = useRef(false);
+  const crmSearchRefreshRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     setActiveBrand(getActiveBrand());
@@ -888,6 +926,43 @@ export default function CRMClientesPanel({
       if (!silent) setCrmLoading(false);
     }
   }
+
+  useEffect(() => {
+    crmSearchRefreshRef.current = () => {
+      if (crmRows.length > 0 || crmQuery.trim() || crmPhoneFilter.trim() || crmTagFilter.trim() || crmCountryFilter.trim()) {
+        void searchCRM(true);
+      }
+    };
+  });
+
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const channel = sb
+      .channel(`crm-effective-ranks-${mode}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides" }, () => {
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => crmSearchRefreshRef.current(), 250);
+      })
+      .subscribe();
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void sb.removeChannel(channel);
+    };
+  }, [mode]);
+
+  // Al vencer una intervención no hay un evento de base de datos. Programamos una
+  // única recarga para la fecha de expiración más próxima del listado visible.
+  useEffect(() => {
+    const now = Date.now();
+    const nextExpiry = crmRows
+      .map((row: any) => row?.has_manual_override && row?.override_expires_at ? new Date(row.override_expires_at).getTime() : NaN)
+      .filter((value: number) => Number.isFinite(value) && value > now)
+      .sort((a: number, b: number) => a - b)[0];
+    if (!nextExpiry) return;
+    const timer = setTimeout(() => crmSearchRefreshRef.current(), Math.min(nextExpiry - now + 250, 2_147_000_000));
+    return () => clearTimeout(timer);
+  }, [crmRows]);
 
   useEffect(() => {
     if (!brandAutoSearchRef.current) {
@@ -2649,7 +2724,7 @@ export default function CRMClientesPanel({
                         <span className="tc-sub">Accesos: {webMeta.accessCount}</span>
                       </div>
                     </td>
-                    <td>{rankChip(r.rango_actual)}</td>
+                    <td>{rankChip(r.rango_efectivo || r.rango_actual, r, mode === "admin")}</td>
                     <td>{r.minutos_free_pendientes ?? 0}</td>
                     <td>{r.minutos_normales_pendientes ?? 0}</td>
                     <td>{eur(r.deuda_pendiente || 0)}</td>

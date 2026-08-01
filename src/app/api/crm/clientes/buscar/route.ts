@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { normalizeClientRank } from "@/lib/server/client-rank-effective";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
@@ -179,15 +180,50 @@ export async function GET(req: Request) {
       byCliente.set(cid, Array.from(new Set(arr)));
     }
 
-    const totals = await loadRolling30ClientTotals(admin, clientes, sinceIso, new Date().toISOString());
+    const nowIso = new Date().toISOString();
+    const [totals, overridesResult] = await Promise.all([
+      loadRolling30ClientTotals(admin, clientes, sinceIso, nowIso),
+      admin
+        .from("client_rank_overrides")
+        .select("id,client_id,assigned_rank,intervention_type,starts_at,ends_at,reason,notes,created_at")
+        .in("client_id", ids)
+        .eq("active", true)
+        .lte("starts_at", nowIso)
+        .or(`ends_at.is.null,ends_at.gt.${nowIso}`)
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (overridesResult.error && overridesResult.error.code !== "42P01") throw overridesResult.error;
+
+    // Una sola consulta para todos los resultados: evita N+1 y mantiene el mismo
+    // criterio de vigencia utilizado por loadEffectiveClientRank().
+    const overrideByClient = new Map<string, any>();
+    for (const item of overridesResult.data || []) {
+      const clientId = String(item?.client_id || "");
+      const assignedRank = normalizeClientRank(item?.assigned_rank);
+      if (!clientId || !assignedRank || overrideByClient.has(clientId)) continue;
+      overrideByClient.set(clientId, { ...item, assigned_rank: assignedRank });
+    }
 
     clientes = clientes
       .map((c: any) => {
-        const rankInfo = totals.get(String(c.id)) || { total: 0, compras: 0 };
+        const clientId = String(c.id);
+        const rankInfo = totals.get(clientId) || { total: 0, compras: 0 };
+        const automaticRank = normalizeClientRank(calcClientRank(rankInfo.total));
+        const override = overrideByClient.get(clientId) || null;
+        const effectiveRank = override?.assigned_rank || automaticRank;
         return {
           ...c,
-          etiquetas: byCliente.get(String(c.id)) || [],
-          rango_actual: calcClientRank(rankInfo.total),
+          etiquetas: byCliente.get(clientId) || [],
+          // Compatibilidad: los listados existentes leen rango_actual.
+          rango_actual: effectiveRank,
+          rango_automatico: automaticRank,
+          rango_efectivo: effectiveRank,
+          has_manual_override: Boolean(override),
+          override_type: override?.intervention_type || null,
+          override_starts_at: override?.starts_at || null,
+          override_expires_at: override?.ends_at || null,
+          override_reason: override?.reason || null,
           rango_gasto_mes_anterior: Number(rankInfo.total.toFixed(2)),
           rango_compras_mes_anterior: rankInfo.compras,
           rango_actual_desde: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
@@ -195,7 +231,7 @@ export async function GET(req: Request) {
         };
       })
       .filter((c: any) => {
-        if (rango && ["bronce", "plata", "oro"].includes(rango) && c.rango_actual !== rango) return false;
+        if (rango && ["bronce", "plata", "oro"].includes(rango) && c.rango_efectivo !== rango) return false;
         const web = clientWebMeta(c);
         if (webFilter === "registrados") return web.registered;
         if (webFilter === "no_registrados") return !web.registered;
