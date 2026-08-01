@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
@@ -18,6 +18,7 @@ type HeaderNotif = {
   created_at?: string | null;
   synthetic?: boolean | null;
   kind?: string | null;
+  client_id?: string | null;
 };
 
 function pathLabel(pathname: string) {
@@ -42,6 +43,7 @@ type AppHeaderProps = {
 
 export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   const pathname = usePathname();
+  const router = useRouter();
 
   const [name, setName] = useState("Cargando…");
   const [role, setRole] = useState("");
@@ -401,7 +403,13 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                     {notifications.map((n) => (
                       <div
                         key={n.id}
-                        onClick={() => markAsRead(String(n.id))}
+                        onClick={() => {
+                          void markAsRead(String(n.id));
+                          if (n.kind === "client_followup" && n.client_id) {
+                            setNotifOpen(false);
+                            router.push(`/panel-central?tab=mis-clientas&cliente=${encodeURIComponent(String(n.client_id))}`);
+                          }
+                        }}
                         style={{
                           cursor: "pointer",
                           padding: 10,

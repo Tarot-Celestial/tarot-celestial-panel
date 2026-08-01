@@ -61,6 +61,28 @@ export async function GET(req: Request) {
 
     if (worker?.role === "admin" || worker?.role === "central") {
       const now = new Date();
+      const { data: reminders } = await admin
+        .from("crm_client_followups")
+        .select("id, client_id, reason, description, priority, reminder_at, scheduled_at, status, crm_clientes:client_id(nombre, apellido)")
+        .eq("worker_id", worker.id)
+        .neq("status", "completado")
+        .or(`reminder_at.lte.${now.toISOString()},and(reminder_at.is.null,scheduled_at.lte.${now.toISOString()})`)
+        .order("reminder_at", { ascending: true })
+        .limit(10);
+      for (const reminder of reminders || []) {
+        const client: any = reminder.crm_clientes || {};
+        const name = [client.nombre, client.apellido].filter(Boolean).join(" ") || "Clienta";
+        notifications.push({
+          id: `virtual:followup:${reminder.id}`,
+          title: String(reminder.priority || "").toLowerCase() === "urgente" ? "Seguimiento urgente" : "Seguimiento pendiente",
+          message: `${name}: ${reminder.reason || reminder.description || "Seguimiento programado"}`,
+          created_at: reminder.reminder_at || reminder.scheduled_at || now.toISOString(),
+          read: false,
+          synthetic: true,
+          kind: "client_followup",
+          client_id: reminder.client_id,
+        });
+      }
       const soon = new Date(now.getTime() + 15 * 60000).toISOString();
       const { data: reservas } = await admin
         .from("reservas")
