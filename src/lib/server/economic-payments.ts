@@ -11,15 +11,15 @@ export type EconomicPayment = {
   source_rendimiento_id?: string | null;
 };
 
-const INVALID_STATES = new Set([
-  "cancelled", "canceled", "cancelado", "cancelada", "anulado", "anulada",
-  "failed", "fallido", "fallida", "error", "refunded", "reembolsado",
-  "reembolsada", "pending", "pendiente", "rejected", "rechazado", "rechazada",
+const VALID_STATES = new Set([
+  "completed", "completado", "completada",
+  "paid", "pagado", "pagada",
+  "confirmed", "confirmado", "confirmada",
 ]);
 
 export function isValidEconomicPayment(row: Pick<EconomicPayment, "estado">) {
-  const state = String(row?.estado || "completed").trim().toLowerCase();
-  return !INVALID_STATES.has(state);
+  const state = String(row?.estado || "").trim().toLowerCase();
+  return VALID_STATES.has(state);
 }
 
 export async function loadOfficialPayments(

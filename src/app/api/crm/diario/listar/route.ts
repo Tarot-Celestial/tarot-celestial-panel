@@ -1,14 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { brandFromRequest, filterRowsByBrand } from "@/lib/server/brand-filter";
+import { isValidEconomicPayment } from "@/lib/server/economic-payments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const MADRID_TIME_ZONE = "Europe/Madrid";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-type AdminClient = ReturnType<typeof adminClient>;
 type GeneratedRow = { name: string; count: number; importe: number };
 type DailyRow = {
   id: string;
@@ -29,515 +30,185 @@ function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } }
+    { auth: { persistSession: false } },
   );
 }
 
-function pad2(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-function dateKey(year: number, month: number, day: number) {
-  return `${year}-${pad2(month)}-${pad2(day)}`;
-}
-
+function pad2(value: number) { return String(value).padStart(2, "0"); }
+function dateKey(year: number, month: number, day: number) { return `${year}-${pad2(month)}-${pad2(day)}`; }
 function parseDateKey(value: string) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
+  const year = Number(match[1]); const month = Number(match[2]); const day = Number(match[3]);
   const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   if (month < 1 || month > 12 || day < 1 || day > maxDay) return null;
   return { year, month, day };
 }
-
 function madridTodayKey() {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: MADRID_TIME_ZONE,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: MADRID_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
-
 function shiftDateKey(value: string, days: number) {
-  const parsed = parseDateKey(value);
-  if (!parsed) return madridTodayKey();
+  const parsed = parseDateKey(value); if (!parsed) return madridTodayKey();
   const shifted = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day + days));
   return dateKey(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, shifted.getUTCDate());
 }
-
 function selectedDateKey(mode: string, rawDate: string | null) {
   const today = madridTodayKey();
   if (mode === "ayer") return shiftDateKey(today, -1);
   if (mode === "fecha" && rawDate && parseDateKey(rawDate)) return rawDate;
   return today;
 }
-
 function previousMonthEquivalentKey(value: string) {
-  const parsed = parseDateKey(value);
-  if (!parsed) return value;
-  const previousMonthAnchor = new Date(Date.UTC(parsed.year, parsed.month - 2, 1));
-  const year = previousMonthAnchor.getUTCFullYear();
-  const month = previousMonthAnchor.getUTCMonth() + 1;
+  const parsed = parseDateKey(value); if (!parsed) return value;
+  const anchor = new Date(Date.UTC(parsed.year, parsed.month - 2, 1));
+  const year = anchor.getUTCFullYear(); const month = anchor.getUTCMonth() + 1;
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
   return dateKey(year, month, Math.min(parsed.day, lastDay));
 }
-
 function previousMonthKey(value: string) {
-  const parsed = parseDateKey(`${value}-01`);
-  if (!parsed) return value;
+  const parsed = parseDateKey(`${value}-01`); if (!parsed) return value;
   const previous = new Date(Date.UTC(parsed.year, parsed.month - 2, 1));
   return `${previous.getUTCFullYear()}-${pad2(previous.getUTCMonth() + 1)}`;
 }
-
 function timeZoneOffsetMs(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(date);
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const hour = Number(values.hour) === 24 ? 0 : Number(values.hour);
-  const representedAsUtc = Date.UTC(
-    Number(values.year),
-    Number(values.month) - 1,
-    Number(values.day),
-    hour,
-    Number(values.minute),
-    Number(values.second)
-  );
+  const representedAsUtc = Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day), Number(values.hour) === 24 ? 0 : Number(values.hour), Number(values.minute), Number(values.second));
   return representedAsUtc - date.getTime();
 }
-
 function madridMidnightUtc(value: string) {
-  const parsed = parseDateKey(value);
-  if (!parsed) throw new Error("Fecha no válida");
-  let utc = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 0, 0, 0));
-  for (let index = 0; index < 2; index += 1) {
-    utc = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 0, 0, 0) - timeZoneOffsetMs(utc, MADRID_TIME_ZONE));
-  }
+  const parsed = parseDateKey(value); if (!parsed) throw new Error("Fecha no válida");
+  let utc = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
+  for (let i = 0; i < 2; i += 1) utc = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day) - timeZoneOffsetMs(utc, MADRID_TIME_ZONE));
   return utc;
 }
-
-function dayRangeFromKey(value: string) {
-  return {
-    start: madridMidnightUtc(value),
-    end: madridMidnightUtc(shiftDateKey(value, 1)),
-  };
-}
-
+function dayRangeFromKey(value: string) { return { start: madridMidnightUtc(value), end: madridMidnightUtc(shiftDateKey(value, 1)) }; }
 function monthRangeFromKey(month: string) {
-  const startKey = `${month}-01`;
-  const parsed = parseDateKey(startKey);
-  if (!parsed) throw new Error("Mes no válido");
-  const nextMonth = new Date(Date.UTC(parsed.year, parsed.month, 1));
-  const nextKey = dateKey(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth() + 1, 1);
-  return { start: madridMidnightUtc(startKey), end: madridMidnightUtc(nextKey) };
+  const parsed = parseDateKey(`${month}-01`); if (!parsed) throw new Error("Mes no válido");
+  const next = new Date(Date.UTC(parsed.year, parsed.month, 1));
+  return { start: madridMidnightUtc(`${month}-01`), end: madridMidnightUtc(dateKey(next.getUTCFullYear(), next.getUTCMonth() + 1, 1)) };
 }
+function cleanName(value: unknown, fallback = "—") { const text = String(value || "").trim(); return text || fallback; }
+function roundMoney(value: unknown) { return Math.round((Number(value) || 0) * 100) / 100; }
+function isUuid(value: unknown) { return UUID_RE.test(String(value || "").trim()); }
 
-function cleanName(value: unknown, fallback = "—") {
-  const text = String(value || "").trim();
-  return text || fallback;
-}
-
-function roundMoney(value: unknown) {
-  return Math.round((Number(value) || 0) * 100) / 100;
-}
-
-function normalizeState(value: unknown) {
-  return String(value || "completed").trim().toLowerCase();
-}
-
-function normalizePaidRow(row: { estado?: unknown }) {
-  const state = normalizeState(row?.estado);
-  return ![
-    "cancelled",
-    "canceled",
-    "cancelado",
-    "cancelada",
-    "anulado",
-    "anulada",
-    "rechazado",
-    "rechazada",
-    "failed",
-    "fallido",
-    "fallida",
-    "error",
-    "refunded",
-    "reembolsado",
-    "reembolsada",
-    "pending",
-    "pendiente",
-  ].includes(state);
-}
-
-function isUuid(value: unknown) {
-  return UUID_RE.test(String(value || "").trim());
-}
-
-async function fetchDailySources(supabase: AdminClient, start: Date, end: Date) {
-  const [{ data: rendimiento, error: rendimientoError }, { data: pagos, error: pagosError }] = await Promise.all([
-    supabase
-      .from("rendimiento_llamadas")
-      .select("id, cliente_id, cliente_nombre, telefonista_nombre, tarotista_nombre, tarotista_manual_call, fecha_hora, fecha, importe, forma_pago, resumen_codigo, cliente_compra_minutos")
-      .gte("fecha_hora", start.toISOString())
-      .lt("fecha_hora", end.toISOString())
-      .or("cliente_compra_minutos.eq.true,importe.gt.0")
-      .order("fecha_hora", { ascending: false }),
-    supabase
+async function fetchPayments(supabase: ReturnType<typeof adminClient>, start: Date, end: Date) {
+  const rows: any[] = [];
+  for (let offset = 0; offset < 50000; offset += 1000) {
+    const { data, error } = await supabase
       .from("crm_cliente_pagos")
-      .select("id, cliente_id, importe, moneda, metodo, estado, created_at, created_by_user_id, created_by_role, referencia_externa, source_rendimiento_id")
-      .gte("created_at", start.toISOString())
-      .lt("created_at", end.toISOString())
-      .order("created_at", { ascending: false }),
+      .select("id,cliente_id,importe,moneda,metodo,estado,created_at,created_by_user_id,created_by_role,referencia_externa,source_rendimiento_id")
+      .gte("created_at", start.toISOString()).lt("created_at", end.toISOString())
+      .order("created_at", { ascending: false }).range(offset, offset + 999);
+    if (error) throw error;
+    const chunk = data || []; rows.push(...chunk); if (chunk.length < 1000) break;
+  }
+  return rows;
+}
+
+async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, payments: any[]): Promise<DailyRow[]> {
+  const validPayments = payments.filter(isValidEconomicPayment).filter((row) => Number(row?.importe || 0) > 0);
+  const clientIds = Array.from(new Set(validPayments.map((row) => String(row?.cliente_id || "")).filter(isUuid)));
+  const rendimientoIds = Array.from(new Set(validPayments.map((row) => String(row?.source_rendimiento_id || "")).filter(isUuid)));
+  const creatorIds = Array.from(new Set(validPayments.map((row) => String(row?.created_by_user_id || "")).filter(isUuid)));
+
+  const [clientsRes, rendimientoRes, workersByIdRes, workersByUserRes] = await Promise.all([
+    clientIds.length ? supabase.from("crm_clientes").select("id,nombre,apellido,telefono,email").in("id", clientIds) : Promise.resolve({ data: [], error: null }),
+    rendimientoIds.length ? supabase.from("rendimiento_llamadas").select("id,cliente_nombre,telefonista_nombre,tarotista_nombre,tarotista_manual_call,fecha_hora,fecha,forma_pago").in("id", rendimientoIds) : Promise.resolve({ data: [], error: null }),
+    creatorIds.length ? supabase.from("workers").select("id,user_id,display_name,email").in("id", creatorIds) : Promise.resolve({ data: [], error: null }),
+    creatorIds.length ? supabase.from("workers").select("id,user_id,display_name,email").in("user_id", creatorIds) : Promise.resolve({ data: [], error: null }),
   ]);
+  for (const result of [clientsRes, rendimientoRes, workersByIdRes, workersByUserRes]) if (result.error) throw result.error;
 
-  if (rendimientoError) throw rendimientoError;
-  if (pagosError) throw pagosError;
-  return { rendimiento: rendimiento || [], pagos: pagos || [] };
-}
-
-async function fetchAllRendimiento(supabase: AdminClient, startIso: string, endIso: string) {
-  const pageSize = 1000;
-  const maxRows = 50000;
-  const allRows: any[] = [];
-
-  for (let offset = 0; offset < maxRows; offset += pageSize) {
-    const { data, error } = await supabase
-      .from("rendimiento_llamadas")
-      .select(
-        "id, cliente_id, cliente_nombre, telefonista_worker_id, telefonista_nombre, tarotista_worker_id, tarotista_nombre, tarotista_manual_call, fecha_hora, fecha, importe, forma_pago, resumen_codigo, cliente_compra_minutos"
-      )
-      .gte("fecha_hora", startIso)
-      .lt("fecha_hora", endIso)
-      .gt("importe", 0)
-      .order("fecha_hora", { ascending: false })
-      .range(offset, Math.min(offset + pageSize - 1, maxRows - 1));
-
-    if (error) throw error;
-    const chunk = data || [];
-    allRows.push(...chunk);
-    if (chunk.length < pageSize) break;
+  const clientMap = new Map<string, any>((clientsRes.data || []).map((row: any) => [String(row.id), row]));
+  const rendimientoMap = new Map<string, any>((rendimientoRes.data || []).map((row: any) => [String(row.id), row]));
+  const workerMap = new Map<string, any>();
+  for (const row of [...(workersByIdRes.data || []), ...(workersByUserRes.data || [])] as any[]) {
+    workerMap.set(String(row.id), row); if (row.user_id) workerMap.set(String(row.user_id), row);
   }
 
-  return allRows;
-}
-
-async function fetchAllPayments(supabase: AdminClient, startIso: string, endIso: string) {
-  const pageSize = 1000;
-  const maxRows = 50000;
-  const allRows: any[] = [];
-
-  for (let offset = 0; offset < maxRows; offset += pageSize) {
-    const { data, error } = await supabase
-      .from("crm_cliente_pagos")
-      .select("id, cliente_id, importe, moneda, metodo, estado, created_at, created_by_user_id, created_by_role, referencia_externa, source_rendimiento_id")
-      .gte("created_at", startIso)
-      .lt("created_at", endIso)
-      .order("created_at", { ascending: false })
-      .range(offset, Math.min(offset + pageSize - 1, maxRows - 1));
-
-    if (error) throw error;
-    const chunk = data || [];
-    allRows.push(...chunk);
-    if (chunk.length < pageSize) break;
-  }
-
-  return allRows;
+  return validPayments.map((payment: any) => {
+    const clientId = String(payment.cliente_id || "");
+    const client = clientMap.get(clientId);
+    const rendimiento = rendimientoMap.get(String(payment.source_rendimiento_id || ""));
+    const worker = workerMap.get(String(payment.created_by_user_id || ""));
+    const role = String(payment.created_by_role || "").toLowerCase();
+    const isWeb = !payment.created_by_user_id || role.includes("web") || role.includes("cliente");
+    const nombre = cleanName(rendimiento?.cliente_nombre || [client?.nombre, client?.apellido].filter(Boolean).join(" "), "Cliente");
+    const telefono = String(client?.telefono || "").trim() || null;
+    return {
+      id: `pago-${payment.id}`,
+      source: isWeb ? "web" : "operador",
+      cliente_id: clientId || null,
+      client_key: clientId || `${nombre.toLowerCase()}|${telefono || ""}`,
+      nombre,
+      telefono,
+      fecha_pago: payment.created_at,
+      importe: Number(payment.importe || 0),
+      metodo: cleanName(payment.metodo || rendimiento?.forma_pago, "Pago"),
+      central: isWeb ? "Web automática" : cleanName(rendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
+      tarotista: rendimiento ? cleanName(rendimiento.tarotista_nombre || rendimiento.tarotista_manual_call, "—") : null,
+      estado: String(payment.estado || "completed").trim().toLowerCase(),
+    } as DailyRow;
+  }).sort((a, b) => new Date(b.fecha_pago || 0).getTime() - new Date(a.fecha_pago || 0).getTime());
 }
 
 function addGenerated(map: Map<string, GeneratedRow>, rawName: unknown, amount: number, fallback: string) {
-  const name = cleanName(rawName, fallback);
-  const current = map.get(name) || { name, count: 0, importe: 0 };
-  current.count += 1;
-  current.importe = roundMoney(current.importe + amount);
-  map.set(name, current);
+  const name = cleanName(rawName, fallback); const current = map.get(name) || { name, count: 0, importe: 0 };
+  current.count += 1; current.importe = roundMoney(current.importe + amount); map.set(name, current);
 }
-
-function buildMonthlySummary(rows: DailyRow[], month: string) {
-  const paidRows = (rows || []).filter(normalizePaidRow);
-  const byTelefonista = new Map<string, GeneratedRow>();
-  const byTarotista = new Map<string, GeneratedRow>();
-
-  for (const row of paidRows) {
-    const amount = Number(row.importe || 0) || 0;
-    if (amount <= 0) continue;
-    addGenerated(byTelefonista, row.central, amount, row.source === "web" ? "Web automática" : "Telefonista sin asignar");
-    addGenerated(byTarotista, row.tarotista, amount, "Tarotista sin asignar");
-  }
-
-  const sortByAmount = (a: GeneratedRow, b: GeneratedRow) => b.importe - a.importe;
-  return {
-    month,
-    total_importe_rendimiento: roundMoney(paidRows.reduce((sum, row) => sum + (Number(row.importe || 0) || 0), 0)),
-    total_registros_rendimiento: paidRows.length,
-    byTelefonista: Array.from(byTelefonista.values()).sort(sortByAmount),
-    byTarotista: Array.from(byTarotista.values()).sort(sortByAmount),
-  };
-}
-
-function mergePreviousRanking(currentRows: GeneratedRow[], previousRows: GeneratedRow[]) {
-  const previousMap = new Map(previousRows.map((row) => [row.name, row]));
-  return currentRows.map((row) => ({
-    ...row,
-    previous_count: previousMap.get(row.name)?.count ?? 0,
-    previous_importe: previousMap.get(row.name)?.importe ?? 0,
-  }));
-}
-
 function buildDailyResult(rows: DailyRow[]) {
-  const completedRows = rows.filter(normalizePaidRow);
-  const uniqueClients = new Set(completedRows.map((row) => row.client_key));
-  const byCentralMap = new Map<string, GeneratedRow>();
-
-  for (const row of completedRows) {
-    addGenerated(byCentralMap, row.central, Number(row.importe || 0), row.source === "web" ? "Web automática" : "Central sin asignar");
-  }
-
-  return {
-    rows: completedRows,
-    totals: {
-      total_clientes: uniqueClients.size,
-      total_pagos: completedRows.length,
-      total_importe: roundMoney(completedRows.reduce((sum, row) => sum + Number(row.importe || 0), 0)),
-    },
-    byCentral: Array.from(byCentralMap.values()).sort((a, b) => b.importe - a.importe),
-  };
+  const uniqueClients = new Set(rows.map((row) => row.client_key)); const byCentral = new Map<string, GeneratedRow>();
+  for (const row of rows) addGenerated(byCentral, row.central, row.importe, row.source === "web" ? "Web automática" : "Central sin asignar");
+  return { rows, totals: { total_clientes: uniqueClients.size, total_pagos: rows.length, total_importe: roundMoney(rows.reduce((sum, row) => sum + row.importe, 0)) }, byCentral: Array.from(byCentral.values()).sort((a, b) => b.importe - a.importe) };
 }
-
-function mergePreviousCentral(currentRows: GeneratedRow[], previousRows: GeneratedRow[]) {
-  const previousMap = new Map(previousRows.map((row) => [row.name, row]));
-  return currentRows.map((row) => ({
-    ...row,
-    previous_count: previousMap.get(row.name)?.count ?? 0,
-    previous_importe: previousMap.get(row.name)?.importe ?? 0,
-  }));
+function buildMonthlySummary(rows: DailyRow[], month: string) {
+  const byTelefonista = new Map<string, GeneratedRow>(); const byTarotista = new Map<string, GeneratedRow>();
+  for (const row of rows) { addGenerated(byTelefonista, row.central, row.importe, row.source === "web" ? "Web automática" : "Telefonista sin asignar"); addGenerated(byTarotista, row.tarotista, row.importe, "Tarotista sin asignar"); }
+  const sort = (a: GeneratedRow, b: GeneratedRow) => b.importe - a.importe;
+  return { month, total_importe_rendimiento: roundMoney(rows.reduce((sum, row) => sum + row.importe, 0)), total_registros_rendimiento: rows.length, byTelefonista: Array.from(byTelefonista.values()).sort(sort), byTarotista: Array.from(byTarotista.values()).sort(sort) };
+}
+function mergePrevious(current: GeneratedRow[], previous: GeneratedRow[]) {
+  const map = new Map(previous.map((row) => [row.name, row]));
+  return current.map((row) => ({ ...row, previous_count: map.get(row.name)?.count ?? 0, previous_importe: map.get(row.name)?.importe ?? 0 }));
 }
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const mode = String(searchParams.get("mode") || "hoy");
-    const selectedDay = selectedDateKey(mode, searchParams.get("date"));
-    const comparisonDay = previousMonthEquivalentKey(selectedDay);
-    const selectedMonth = selectedDay.slice(0, 7);
-    const comparisonMonth = previousMonthKey(selectedMonth);
-    const selectedDayRange = dayRangeFromKey(selectedDay);
-    const comparisonDayRange = dayRangeFromKey(comparisonDay);
-    const selectedMonthRange = monthRangeFromKey(selectedMonth);
-    const comparisonMonthRange = monthRangeFromKey(comparisonMonth);
-    const supabase = adminClient();
-    const brand = brandFromRequest(req);
+    const { searchParams } = new URL(req.url); const mode = String(searchParams.get("mode") || "hoy");
+    const selectedDay = selectedDateKey(mode, searchParams.get("date")); const comparisonDay = previousMonthEquivalentKey(selectedDay);
+    const selectedMonth = selectedDay.slice(0, 7); const comparisonMonth = previousMonthKey(selectedMonth);
+    const ranges = { currentDay: dayRangeFromKey(selectedDay), previousDay: dayRangeFromKey(comparisonDay), currentMonth: monthRangeFromKey(selectedMonth), previousMonth: monthRangeFromKey(comparisonMonth) };
+    const supabase = adminClient(); const brand = brandFromRequest(req);
 
-    const [currentSources, previousSources, monthlyCurrentSources, monthlyPreviousSources] = await Promise.all([
-      fetchDailySources(supabase, selectedDayRange.start, selectedDayRange.end),
-      fetchDailySources(supabase, comparisonDayRange.start, comparisonDayRange.end),
-      Promise.all([
-        fetchAllRendimiento(supabase, selectedMonthRange.start.toISOString(), selectedMonthRange.end.toISOString()),
-        fetchAllPayments(supabase, selectedMonthRange.start.toISOString(), selectedMonthRange.end.toISOString()),
-      ]),
-      Promise.all([
-        fetchAllRendimiento(supabase, comparisonMonthRange.start.toISOString(), comparisonMonthRange.end.toISOString()),
-        fetchAllPayments(supabase, comparisonMonthRange.start.toISOString(), comparisonMonthRange.end.toISOString()),
-      ]),
+    const [currentDayRaw, previousDayRaw, currentMonthRaw, previousMonthRaw] = await Promise.all([
+      fetchPayments(supabase, ranges.currentDay.start, ranges.currentDay.end), fetchPayments(supabase, ranges.previousDay.start, ranges.previousDay.end),
+      fetchPayments(supabase, ranges.currentMonth.start, ranges.currentMonth.end), fetchPayments(supabase, ranges.previousMonth.start, ranges.previousMonth.end),
+    ]);
+    const [currentDayPayments, previousDayPayments, currentMonthPayments, previousMonthPayments] = await Promise.all([
+      filterRowsByBrand(supabase, currentDayRaw, brand), filterRowsByBrand(supabase, previousDayRaw, brand),
+      filterRowsByBrand(supabase, currentMonthRaw, brand), filterRowsByBrand(supabase, previousMonthRaw, brand),
+    ]);
+    const [currentRows, previousRows, currentMonthRows, previousMonthRows] = await Promise.all([
+      hydratePaymentRows(supabase, currentDayPayments), hydratePaymentRows(supabase, previousDayPayments),
+      hydratePaymentRows(supabase, currentMonthPayments), hydratePaymentRows(supabase, previousMonthPayments),
     ]);
 
-    const [
-      currentRendimiento,
-      currentPagos,
-      previousRendimiento,
-      previousPagos,
-      monthlyCurrentRendimiento,
-      monthlyCurrentPagos,
-      monthlyPreviousRendimiento,
-      monthlyPreviousPagos,
-    ] = await Promise.all([
-      filterRowsByBrand(supabase, currentSources.rendimiento, brand),
-      filterRowsByBrand(supabase, currentSources.pagos, brand),
-      filterRowsByBrand(supabase, previousSources.rendimiento, brand),
-      filterRowsByBrand(supabase, previousSources.pagos, brand),
-      filterRowsByBrand(supabase, monthlyCurrentSources[0], brand),
-      filterRowsByBrand(supabase, monthlyCurrentSources[1], brand),
-      filterRowsByBrand(supabase, monthlyPreviousSources[0], brand),
-      filterRowsByBrand(supabase, monthlyPreviousSources[1], brand),
-    ]);
-
-    const allDailyRows = [
-      ...currentRendimiento,
-      ...currentPagos,
-      ...previousRendimiento,
-      ...previousPagos,
-      ...monthlyCurrentRendimiento,
-      ...monthlyCurrentPagos,
-      ...monthlyPreviousRendimiento,
-      ...monthlyPreviousPagos,
-    ];
-    const clientIds = Array.from(
-      new Set(allDailyRows.map((row: any) => String(row?.cliente_id || "").trim()).filter(isUuid))
-    );
-    const workerIds = Array.from(
-      new Set([
-        ...currentPagos,
-        ...previousPagos,
-        ...monthlyCurrentPagos,
-        ...monthlyPreviousPagos,
-      ].map((row: any) => String(row?.created_by_user_id || "").trim()).filter(isUuid))
-    );
-
-    const [{ data: clients, error: clientsError }, { data: workers, error: workersError }] = await Promise.all([
-      clientIds.length
-        ? supabase.from("crm_clientes").select("id, nombre, apellido, telefono, email").in("id", clientIds)
-        : Promise.resolve({ data: [] as any[], error: null }),
-      workerIds.length
-        ? supabase.from("workers").select("id, display_name, role, email").in("id", workerIds)
-        : Promise.resolve({ data: [] as any[], error: null }),
-    ]);
-
-    if (clientsError) throw clientsError;
-    if (workersError) throw workersError;
-
-    const clientMap = new Map<string, any>((clients || []).map((client: any) => [String(client.id), client]));
-    const workerMap = new Map<string, any>((workers || []).map((worker: any) => [String(worker.id), worker]));
-
-    const hydrateDailyRows = (rendimientoRows: any[], paymentRows: any[]): DailyRow[] => {
-      const rendimientoById = new Map(
-        (rendimientoRows || []).map((row: any) => [String(row?.id || ""), row])
-      );
-      const linkedRendimientoIds = new Set(
-        (paymentRows || [])
-          .map((row: any) => String(row?.source_rendimiento_id || "").trim())
-          .filter(Boolean)
-      );
-
-      const officialPayments: DailyRow[] = (paymentRows || [])
-        // Una referencia creada por Registrar llamada debe conservar siempre su
-        // relación con Rendimiento. Si la relación falta, es un pago huérfano
-        // histórico (normalmente porque se borró solo Rendimiento) y no debe
-        // reaparecer ni afectar a los totales hasta que sea revisado.
-        .filter((row: any) => {
-          const reference = String(row?.referencia_externa || "").trim().toLowerCase();
-          const linkedId = String(row?.source_rendimiento_id || "").trim();
-          return !(reference.startsWith("registrar_llamada:") && !linkedId);
-        })
-        .map((row: any) => {
-        const clientId = String(row.cliente_id || "").trim();
-        const client = clientMap.get(clientId);
-        const worker = workerMap.get(String(row.created_by_user_id || ""));
-        const linkedRendimiento = rendimientoById.get(String(row.source_rendimiento_id || ""));
-        const role = String(row.created_by_role || "").toLowerCase();
-        const isWeb = !row.created_by_user_id || role.includes("web") || role.includes("cliente");
-        const name = cleanName(
-          linkedRendimiento?.cliente_nombre || [client?.nombre, client?.apellido].filter(Boolean).join(" ").trim(),
-          "Cliente"
-        );
-        const phone = String(client?.telefono || "").trim() || null;
-        return {
-          id: `pago-${row.id}`,
-          source: isWeb ? ("web" as const) : ("operador" as const),
-          cliente_id: clientId || null,
-          client_key: clientId || `${name.toLowerCase()}|${phone || ""}`,
-          nombre: name,
-          telefono: phone,
-          fecha_pago: row.created_at || linkedRendimiento?.fecha_hora || linkedRendimiento?.fecha || null,
-          importe: Number(row.importe || 0),
-          metodo: cleanName(row.metodo || linkedRendimiento?.forma_pago || row.referencia_externa, "Pago"),
-          central: isWeb
-            ? "Web automática"
-            : cleanName(linkedRendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
-          tarotista: linkedRendimiento
-            ? cleanName(linkedRendimiento.tarotista_nombre || linkedRendimiento.tarotista_manual_call, "—")
-            : null,
-          estado: normalizeState(row.estado),
-        };
-      });
-
-      // Compatibilidad histórica: una fila de Rendimiento sin pago oficial enlazado
-      // sigue visible en Diario. Las llamadas nuevas con cobro usan exclusivamente
-      // crm_cliente_pagos como fuente económica para impedir duplicados.
-      const legacyRendimiento: DailyRow[] = (rendimientoRows || [])
-        .filter((row: any) => !linkedRendimientoIds.has(String(row?.id || "")))
-        .map((row: any) => {
-          const clientId = String(row.cliente_id || "").trim();
-          const client = clientMap.get(clientId);
-          const name = cleanName(
-            row.cliente_nombre,
-            [client?.nombre, client?.apellido].filter(Boolean).join(" ").trim() || "Cliente"
-          );
-          const phone = String(client?.telefono || "").trim() || null;
-          return {
-            id: `rend-${row.id}`,
-            source: "operador" as const,
-            cliente_id: clientId || null,
-            client_key: clientId || `${name.toLowerCase()}|${phone || ""}`,
-            nombre: name,
-            telefono: phone,
-            fecha_pago: row.fecha_hora || row.fecha || null,
-            importe: Number(row.importe || 0),
-            metodo: cleanName(row.forma_pago || row.resumen_codigo, "Rendimiento"),
-            central: cleanName(row.telefonista_nombre, "Central sin asignar"),
-            tarotista: cleanName(row.tarotista_nombre || row.tarotista_manual_call, "—"),
-            estado: "completed",
-          };
-        });
-
-      return [...officialPayments, ...legacyRendimiento].sort(
-        (a, b) => new Date(b.fecha_pago || 0).getTime() - new Date(a.fecha_pago || 0).getTime()
-      );
-    };
-
-    const currentDaily = buildDailyResult(hydrateDailyRows(currentRendimiento, currentPagos));
-    const previousDaily = buildDailyResult(hydrateDailyRows(previousRendimiento, previousPagos));
-    const currentMonthSummary = buildMonthlySummary(
-      hydrateDailyRows(monthlyCurrentRendimiento, monthlyCurrentPagos),
-      selectedMonth,
-    );
-    const previousMonthSummary = buildMonthlySummary(
-      hydrateDailyRows(monthlyPreviousRendimiento, monthlyPreviousPagos),
-      comparisonMonth,
-    );
-
+    const currentDaily = buildDailyResult(currentRows); const previousDaily = buildDailyResult(previousRows);
+    const currentMonthly = buildMonthlySummary(currentMonthRows, selectedMonth); const previousMonthly = buildMonthlySummary(previousMonthRows, comparisonMonth);
     const response = NextResponse.json({
       ok: true,
-      rows: currentDaily.rows.map(({ client_key: _clientKey, ...row }) => row),
-      totals: currentDaily.totals,
-      byCentral: mergePreviousCentral(currentDaily.byCentral, previousDaily.byCentral),
-      dailyComparison: {
-        date: comparisonDay,
-        totals: previousDaily.totals,
-      },
-      monthlySummary: {
-        ...currentMonthSummary,
-        previous_month: comparisonMonth,
-        previous_total_importe_rendimiento: previousMonthSummary.total_importe_rendimiento,
-        previous_total_registros_rendimiento: previousMonthSummary.total_registros_rendimiento,
-        byTelefonista: mergePreviousRanking(currentMonthSummary.byTelefonista, previousMonthSummary.byTelefonista),
-        byTarotista: mergePreviousRanking(currentMonthSummary.byTarotista, previousMonthSummary.byTarotista),
-      },
-      period: {
-        mode,
-        selected_date: selectedDay,
-        comparison_date: comparisonDay,
-        selected_month: selectedMonth,
-        comparison_month: comparisonMonth,
-        time_zone: MADRID_TIME_ZONE,
-      },
-      brand,
+      rows: currentDaily.rows.map(({ client_key: _key, ...row }) => row), totals: currentDaily.totals,
+      byCentral: mergePrevious(currentDaily.byCentral, previousDaily.byCentral), dailyComparison: { date: comparisonDay, totals: previousDaily.totals },
+      monthlySummary: { ...currentMonthly, previous_month: comparisonMonth, previous_total_importe_rendimiento: previousMonthly.total_importe_rendimiento, previous_total_registros_rendimiento: previousMonthly.total_registros_rendimiento, byTelefonista: mergePrevious(currentMonthly.byTelefonista, previousMonthly.byTelefonista), byTarotista: mergePrevious(currentMonthly.byTarotista, previousMonthly.byTarotista) },
+      period: { mode, selected_date: selectedDay, comparison_date: comparisonDay, selected_month: selectedMonth, comparison_month: comparisonMonth, time_zone: MADRID_TIME_ZONE }, brand,
     });
-    response.headers.set("Cache-Control", "no-store, max-age=0");
-    return response;
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate"); return response;
   } catch (error: any) {
     console.error("[Diario] Error cargando datos", error);
     const response = NextResponse.json({ ok: false, error: error?.message || "Error cargando diario" }, { status: 500 });
-    response.headers.set("Cache-Control", "no-store, max-age=0");
-    return response;
+    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate"); return response;
   }
 }
