@@ -150,6 +150,7 @@ type PurchaseRow = {
   method: string;
   status: string;
   reference: string | null;
+  source_rendimiento_id?: string | null;
   notes: string | null;
   package: string | null;
   minutes_free: number;
@@ -209,7 +210,7 @@ export async function GET(req: Request) {
     if (paymentsResult.error) throw paymentsResult.error;
     if (callsResult.error) throw callsResult.error;
 
-    const paymentRows: PurchaseRow[] = (paymentsResult.data || [])
+    const rawPaymentRows: PurchaseRow[] = (paymentsResult.data || [])
       .map((row: any) => {
         const minutes = extractStructuredMinutes(row);
         return {
@@ -221,6 +222,7 @@ export async function GET(req: Request) {
           method: normalizeMethod(row.metodo),
           status: String(row.estado || "unknown"),
           reference: text(row.referencia_externa ?? row.paypal_capture_id ?? row.paypal_order_id),
+          source_rendimiento_id: text(row.source_rendimiento_id),
           notes: text(row.notas),
           package: extractStructuredPackage(row),
           minutes_free: minutes.free,
@@ -253,10 +255,30 @@ export async function GET(req: Request) {
           tarotist: text(row.tarotista_nombre),
         };
       })
-      .filter((row: PurchaseRow) => Boolean(getDate(row.created_at)))
-      .filter((row: PurchaseRow) => !duplicateOperationalPurchase(row, paymentRows));
+      .filter((row: PurchaseRow) => Boolean(getDate(row.created_at)));
 
-    const allRows = [...paymentRows, ...operationalRows].sort(
+    const operationalById = new Map(operationalRows.map((row) => [row.id, row]));
+    const paymentRows: PurchaseRow[] = rawPaymentRows.map((payment) => {
+      const linkedId = payment.source_rendimiento_id || "";
+      const linked = linkedId ? operationalById.get(linkedId) : null;
+      if (!linked) return payment;
+      return {
+        ...payment,
+        minutes_free: linked.minutes_free,
+        minutes_normal: linked.minutes_normal,
+        minutes_total: linked.minutes_total,
+        package: linked.package || payment.package,
+        registered_by: linked.registered_by || payment.registered_by,
+        tarotist: linked.tarotist,
+      };
+    });
+
+    const unlinkedOperationalRows = operationalRows.filter((row) => {
+      if (paymentRows.some((payment) => payment.source_rendimiento_id === row.id)) return false;
+      return !duplicateOperationalPurchase(row, paymentRows);
+    });
+
+    const allRows = [...paymentRows, ...unlinkedOperationalRows].sort(
       (a, b) => (getDate(b.created_at)?.getTime() || 0) - (getDate(a.created_at)?.getTime() || 0)
     );
 

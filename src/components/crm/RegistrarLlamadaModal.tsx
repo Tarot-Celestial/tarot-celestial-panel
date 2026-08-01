@@ -308,6 +308,7 @@ export default function RegistrarLlamadaModal({
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const submitInFlightRef = useRef(false);
+  const operationIdRef = useRef("");
 
   const [clienteCompra, setClienteCompra] = useState<"si" | "no" | "">("");
   const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "7free" | "">("");
@@ -332,6 +333,9 @@ export default function RegistrarLlamadaModal({
     setStep(0);
     setLoading(false);
     submitInFlightRef.current = false;
+    operationIdRef.current = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setMsg("");
     setClienteCompra("");
     setUsoSinCompra("");
@@ -491,6 +495,7 @@ export default function RegistrarLlamadaModal({
       const actualTarotistaWorkerId = isMarioCall ? marioTarotistaId : (tarotistaId && tarotistaId !== CALL_MANUAL_VALUE ? tarotistaId : null);
 
       const payload = {
+        operation_id: operationIdRef.current,
         cliente_id: clienteId,
         cliente_compra_minutos: clienteCompra === "si",
         uso_tipo: clienteCompra === "no" ? usoSinCompra : "compra",

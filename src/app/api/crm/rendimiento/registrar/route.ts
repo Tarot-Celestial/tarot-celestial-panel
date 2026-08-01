@@ -188,6 +188,7 @@ export async function POST(req: Request) {
     }
 
     const clienteCompra = Boolean(body?.cliente_compra_minutos);
+    const operationId = String(body?.operation_id || "").trim();
     const usoTipo = String(body?.uso_tipo || "").trim();
     const codigo1 = cleanText(body?.codigo_1);
     const codigo2 = cleanText(body?.codigo_2);
@@ -233,6 +234,27 @@ export async function POST(req: Request) {
     if (!isUuid(clienteId)) {
       console.error("[CRM registrar llamada] crm_clientes devolvió un ID no UUID", { cliente_id: clienteId });
       return clientIdentificationError();
+    }
+
+    if (clienteCompra) {
+      if (!isUuid(operationId)) {
+        return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
+      }
+      const operationReference = `registrar_llamada:${operationId}`;
+      const { data: existingPayment, error: existingPaymentError } = await admin
+        .from("crm_cliente_pagos")
+        .select("id, cliente_id, importe, estado, referencia_externa, source_rendimiento_id")
+        .eq("referencia_externa", operationReference)
+        .maybeSingle();
+      if (existingPaymentError) throw existingPaymentError;
+      if (existingPayment) {
+        return NextResponse.json({
+          ok: true,
+          duplicate_prevented: true,
+          payment: existingPayment,
+          message: "✅ La operación ya estaba registrada; no se creó un cobro duplicado",
+        });
+      }
     }
 
     let billingCollaboratorId: string | null = null;
@@ -369,6 +391,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "CALL_REGISTER_FAILED" }, { status: 500 });
     }
 
+    const rendimientoRow = Array.isArray(inserted) ? inserted[0] : inserted;
+    const rendimientoId = String(rendimientoRow?.id || "").trim();
+    let economicPayment: any = null;
+
+    // Una compra real registrada desde el asistente debe existir también en la
+    // fuente económica oficial. La referencia enlaza ambos registros y permite
+    // reintentar la petición sin crear un segundo cobro.
+    if (clienteCompra && importe > 0) {
+      if (!rendimientoId) {
+        return NextResponse.json({ ok: false, error: "RENDIMIENTO_ID_MISSING" }, { status: 500 });
+      }
+
+      const paymentReference = `registrar_llamada:${operationId}`;
+      const { data: payment, error: paymentError } = await admin
+        .from("crm_cliente_pagos")
+        .upsert({
+          cliente_id: clienteId,
+          importe,
+          moneda: "EUR",
+          metodo: formaPago || "otros",
+          estado: "completed",
+          notas: `Cobro generado desde Registrar llamada. ${resumenCodigo || ""}`.trim(),
+          referencia_externa: paymentReference,
+          source_rendimiento_id: rendimientoId,
+          created_by_user_id: me.id,
+          created_by_role: me.role,
+          created_at: rendimientoRow?.fecha_hora || new Date().toISOString(),
+        }, { onConflict: "referencia_externa" })
+        .select("*")
+        .single();
+
+      if (paymentError) {
+        // Compensación: no dejar Rendimiento guardado sin su operación económica.
+        await admin.from("rendimiento_llamadas").delete().eq("id", rendimientoId);
+        console.error("[CRM registrar llamada] fallo creando pago oficial", paymentError);
+        return NextResponse.json({ ok: false, error: "PAYMENT_REGISTER_FAILED" }, { status: 500 });
+      }
+      economicPayment = payment;
+    }
+
     const { error: updateError } = await admin
       .from("crm_clientes")
       .update({
@@ -377,9 +439,11 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", clienteId);
-    if (updateError) throw updateError;
-
-    await syncClienteMonthTag(admin, clienteId);
+    if (updateError) {
+      if (economicPayment?.id) await admin.from("crm_cliente_pagos").delete().eq("id", economicPayment.id);
+      if (rendimientoId) await admin.from("rendimiento_llamadas").delete().eq("id", rendimientoId);
+      throw updateError;
+    }
 
     const notaTexto = buildNota({
       clienteCompra,
@@ -402,7 +466,18 @@ export async function POST(req: Request) {
       author_email: me.email || null,
       is_pinned: false,
     });
-    if (noteError) throw noteError;
+    if (noteError) {
+      await admin.from("crm_clientes").update({
+        minutos_free_pendientes: currentFree,
+        minutos_normales_pendientes: currentNormales,
+        updated_at: new Date().toISOString(),
+      }).eq("id", clienteId);
+      if (economicPayment?.id) await admin.from("crm_cliente_pagos").delete().eq("id", economicPayment.id);
+      if (rendimientoId) await admin.from("rendimiento_llamadas").delete().eq("id", rendimientoId);
+      throw noteError;
+    }
+
+    await syncClienteMonthTag(admin, clienteId);
 
     if (clienteCompra && importe > 0) {
       const puntosGanados = pointsFromAmount(importe);
@@ -428,6 +503,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       data: inserted,
+      payment: economicPayment,
       message: collaboratorDisplayName
         ? "✅ Llamada registrada y vinculada a CALL MARIO"
         : "✅ Llamada registrada correctamente",

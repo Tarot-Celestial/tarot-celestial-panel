@@ -195,7 +195,7 @@ async function fetchDailySources(supabase: AdminClient, start: Date, end: Date) 
       .order("fecha_hora", { ascending: false }),
     supabase
       .from("crm_cliente_pagos")
-      .select("id, cliente_id, importe, moneda, metodo, estado, created_at, created_by_user_id, created_by_role, referencia_externa")
+      .select("id, cliente_id, importe, moneda, metodo, estado, created_at, created_by_user_id, created_by_role, referencia_externa, source_rendimiento_id")
       .gte("created_at", start.toISOString())
       .lt("created_at", end.toISOString())
       .order("created_at", { ascending: false }),
@@ -400,8 +400,20 @@ export async function GET(req: Request) {
       }),
     ].sort((a, b) => new Date(b.fecha_pago || 0).getTime() - new Date(a.fecha_pago || 0).getTime());
 
-    const currentDaily = buildDailyResult(hydrateDailyRows(currentRendimiento, currentPagos));
-    const previousDaily = buildDailyResult(hydrateDailyRows(previousRendimiento, previousPagos));
+    // Los cobros creados desde Registrar llamada tienen una fila operativa en
+    // rendimiento_llamadas y una fila económica oficial en crm_cliente_pagos.
+    // En Diario se conserva la fila operativa (incluye tarotista y telefonista)
+    // y se excluye únicamente su pago enlazado para no duplicar el importe.
+    const withoutLinkedCallPayments = (rows: any[]) => rows.filter((row: any) =>
+      !String(row?.source_rendimiento_id || "").trim()
+    );
+
+    const currentDaily = buildDailyResult(
+      hydrateDailyRows(currentRendimiento, withoutLinkedCallPayments(currentPagos))
+    );
+    const previousDaily = buildDailyResult(
+      hydrateDailyRows(previousRendimiento, withoutLinkedCallPayments(previousPagos))
+    );
     const currentMonthSummary = buildMonthlySummary(monthlyCurrent, selectedMonth);
     const previousMonthSummary = buildMonthlySummary(monthlyPrevious, comparisonMonth);
 
