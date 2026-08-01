@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
-import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
-import { loadEffectiveClientRank, normalizeClientRank, rankProgress, rankThresholds } from "@/lib/server/client-rank-effective";
+import { normalizeClientRank, rankProgress, rankThresholds } from "@/lib/server/client-rank-effective";
+import { loadEffectiveRanksBatch, loadRecentRankClients, loadRecentRankTotals } from "@/lib/server/client-rank-admin-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,20 +37,24 @@ export async function GET(req: Request) {
 
     const admin = adminClient();
     const now = new Date();
-    const since = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const { data: clients, error } = await admin.from("crm_clientes").select("*");
-    if (error) throw error;
-    const filteredClients = (clients || []).filter((client: any) => {
+    const activitySince = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    const rankSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    // The 60-day restriction is centralized in the data service. No historical client
+    // outside this window is loaded or traversed by this module.
+    const recentClients = await loadRecentRankClients(admin, activitySince.toISOString(), now.toISOString());
+    const filteredClients = recentClients.filter((client: any) => {
       if (business !== "all" && businessValue(client) !== business) return false;
       if (!q) return true;
       return [client.nombre, client.apellido, client.telefono, client.email].some((value) => String(value || "").toLowerCase().includes(q));
     });
 
-    const totals = await loadRolling30ClientTotals(admin, filteredClients, since.toISOString(), now.toISOString());
+    const totals = await loadRecentRankTotals(admin, filteredClients, rankSince.toISOString(), now.toISOString());
+    const effectiveRanks = await loadEffectiveRanksBatch(admin, filteredClients, totals);
     const rows = [] as any[];
     for (const client of filteredClients) {
       const info = totals.get(String(client.id)) || { total: 0, compras: 0 };
-      const rank = await loadEffectiveClientRank(admin, String(client.id), Number(info.total || 0));
+      const rank = effectiveRanks.get(String(client.id)) || { automatic: null, effective: null, override: null };
       if (rankFilter && rank.effective !== rankFilter) continue;
       if (assignment === "automatic" && rank.override) continue;
       if (assignment === "manual" && !rank.override) continue;
@@ -76,7 +80,7 @@ export async function GET(req: Request) {
     const total = rows.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const safePage = Math.min(page, totalPages);
-    return NextResponse.json({ ok: true, rows: rows.slice((safePage - 1) * pageSize, safePage * pageSize), pagination: { page: safePage, page_size: pageSize, total, total_pages: totalPages }, window: { from: since.toISOString(), to: now.toISOString() } }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, rows: rows.slice((safePage - 1) * pageSize, safePage * pageSize), pagination: { page: safePage, page_size: pageSize, total, total_pages: totalPages }, window: { from: activitySince.toISOString(), to: now.toISOString(), rank_from: rankSince.toISOString() } }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_RANKS" }, { status: 500 });
   }
