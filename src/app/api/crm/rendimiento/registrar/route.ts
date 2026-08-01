@@ -404,7 +404,7 @@ export async function POST(req: Request) {
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic",
+      "crm_register_call_atomic_v2",
       { p_payload: atomicPayload },
     );
 
@@ -423,6 +423,7 @@ export async function POST(req: Request) {
           ok: false,
           error: clienteCompra ? "PAYMENT_REGISTER_FAILED" : "CALL_REGISTER_FAILED",
           diagnostic_code: atomicError.code || null,
+          request_id: operationId || null,
         },
         { status: 500 },
       );
