@@ -530,6 +530,29 @@ export default function RegistrarLlamadaModal({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
+      if (clienteCompra === "si" && toNum(importe) > 0) {
+        const paymentEventDetail = {
+          operationId: String(j?.operation_id || operationIdRef.current || ""),
+          rendimientoId: String(j?.rendimiento_id || ""),
+          paymentId: String(j?.payment_id || ""),
+          clienteId,
+          business: String(j?.business || ""),
+          occurredAt: String(j?.created_at || new Date().toISOString()),
+        };
+
+        // Invalida de inmediato las vistas económicas abiertas en esta pestaña
+        // y en otras pestañas del mismo navegador. Los módulos vuelven a consultar
+        // la fuente real, por lo que este aviso nunca suma importes localmente.
+        window.dispatchEvent(new CustomEvent("tc-payment-recorded", { detail: paymentEventDetail }));
+        try {
+          const paymentChannel = new BroadcastChannel("tc-payments");
+          paymentChannel.postMessage({ type: "payment-recorded", ...paymentEventDetail });
+          paymentChannel.close();
+        } catch {
+          // BroadcastChannel es solo una optimización; Realtime sigue siendo la fuente principal.
+        }
+      }
+
       if (onSuccess) await onSuccess(j?.message || "✅ Llamada registrada correctamente");
       onClose();
     } catch (e: any) {

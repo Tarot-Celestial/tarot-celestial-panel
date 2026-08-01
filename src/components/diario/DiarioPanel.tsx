@@ -372,6 +372,7 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
   const pendingRefreshRef = useRef(false);
   const loadDiarioRef = useRef<(silent?: boolean, source?: LoadSource) => Promise<void>>();
   const requestSequenceRef = useRef(0);
+  const lastExternalRefreshRef = useRef(0);
 
   useEffect(() => {
     setActiveBrand(getActiveBrand());
@@ -511,6 +512,55 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
       void sb.removeChannel(channel);
     };
   }, [activeBrand, period.comparison_month, period.selected_date, period.selected_month]);
+
+  useEffect(() => {
+    let active = true;
+    let broadcast: BroadcastChannel | null = null;
+
+    const refreshFromExternalChange = () => {
+      if (!active) return;
+      const now = Date.now();
+      // Realtime, evento local y BroadcastChannel pueden anunciar la misma
+      // operación. Este pequeño límite evita consultas duplicadas sin perderla.
+      if (now - lastExternalRefreshRef.current < 500) return;
+      lastExternalRefreshRef.current = now;
+      void loadDiarioRef.current?.(true, "realtime");
+    };
+
+    const onPaymentRecorded = () => refreshFromExternalChange();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refreshFromExternalChange();
+    };
+    const onFocus = () => refreshFromExternalChange();
+
+    window.addEventListener("tc-payment-recorded", onPaymentRecorded);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    try {
+      broadcast = new BroadcastChannel("tc-payments");
+      broadcast.addEventListener("message", (event: MessageEvent) => {
+        if (event.data?.type === "payment-recorded") refreshFromExternalChange();
+      });
+    } catch {
+      broadcast = null;
+    }
+
+    // Respaldo de baja frecuencia por si Realtime queda temporalmente desconectado.
+    // Solo consulta mientras la pestaña está visible.
+    const fallbackTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") refreshFromExternalChange();
+    }, 30000);
+
+    return () => {
+      active = false;
+      window.removeEventListener("tc-payment-recorded", onPaymentRecorded);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(fallbackTimer);
+      broadcast?.close();
+    };
+  }, []);
 
   const filteredRows = useMemo(() => {
     const normalized = query.trim().toLowerCase();
