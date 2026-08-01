@@ -303,6 +303,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [statsRows, setStatsRows] = useState<any[]>([]);
   const [statsTotals, setStatsTotals] = useState<any>(null);
   const [previousStatsRows, setPreviousStatsRows] = useState<any[]>([]);
+  const [previousStatsTotals, setPreviousStatsTotals] = useState<any>(null);
   const [previousStatsLoaded, setPreviousStatsLoaded] = useState(false);
   const [reservas, setReservas] = useState<any[]>([]);
   const [diarioRows, setDiarioRows] = useState<any[]>([]);
@@ -398,6 +399,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       const previousStatsOk = Boolean(previousStatsJ?._ok && previousStatsJ?.ok);
       setPreviousStatsLoaded(previousStatsOk);
       setPreviousStatsRows(previousStatsOk && Array.isArray(previousStatsJ.rows) ? previousStatsJ.rows : []);
+      setPreviousStatsTotals(previousStatsOk ? (previousStatsJ.totals || null) : null);
 
       const yesterdayOk = Boolean(yesterdayJ?._ok && yesterdayJ?.ok);
       setYesterdayLoaded(yesterdayOk);
@@ -413,6 +415,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       setStatsRows([]);
       setStatsTotals(null);
       setPreviousStatsRows([]);
+      setPreviousStatsTotals(null);
       setPreviousStatsLoaded(false);
       setReservas([]);
       setDiarioRows([]);
@@ -430,9 +433,32 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
     return () => clearInterval(timer);
   }, [month, previousMonth, activeBrand]);
 
+  useEffect(() => {
+    let refreshTimer: number | null = null;
+    const scheduleRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void loadDashboard(true), 350);
+    };
+
+    const channel = sb
+      .channel(`admin-dashboard-payments-${month}-${activeBrand}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, scheduleRefresh)
+      .subscribe();
+
+    window.addEventListener("tc-payment-recorded", scheduleRefresh as EventListener);
+
+    return () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      window.removeEventListener("tc-payment-recorded", scheduleRefresh as EventListener);
+      void sb.removeChannel(channel);
+    };
+    // La consulta central se invalida una sola vez por lote de eventos.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, activeBrand]);
+
   const totalFacturacion = useMemo(
-    () => invoices.reduce((acc: number, row: any) => acc + (Number(row?.total) || 0), 0),
-    [invoices]
+    () => Number(statsTotals?.revenue_total || 0),
+    [statsTotals]
   );
 
   const previousInvoiceData = useMemo(() => {
@@ -471,8 +497,8 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   }, [reservas]);
 
   const facturacionComparison = useMemo(
-    () => buildComparison(totalFacturacion, previousInvoiceData.total, true),
-    [totalFacturacion, previousInvoiceData]
+    () => buildComparison(totalFacturacion, previousStatsLoaded ? Number(previousStatsTotals?.revenue_total || 0) : null, true),
+    [totalFacturacion, previousStatsLoaded, previousStatsTotals]
   );
   const clientsTodayComparison = useMemo(
     () => buildComparison(diarioRows.length, yesterdayLoaded ? yesterdayRows.length : null, true),
@@ -637,8 +663,8 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
           accent="gold"
           comparison={facturacionComparison}
           periodLabel="vs mes anterior"
-          previousDisplay={facturacionComparison.hasPrevious ? eur(previousInvoiceData.total || 0) : undefined}
-          meta={`${invoices.length} facturas`}
+          previousDisplay={facturacionComparison.hasPrevious ? eur(Number(previousStatsTotals?.revenue_total || 0)) : undefined}
+          meta="Cobros oficiales del mes"
         />
         <GameKpi
           label="Clientes hoy"

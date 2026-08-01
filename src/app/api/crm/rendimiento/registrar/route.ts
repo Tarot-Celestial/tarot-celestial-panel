@@ -405,7 +405,7 @@ export async function POST(req: Request) {
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v3",
+      "crm_register_call_atomic_v4",
       { p_payload: atomicPayload },
     );
 

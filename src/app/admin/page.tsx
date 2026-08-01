@@ -336,41 +336,16 @@ function AdminPage() {
 
   async function loadHeroMetricsDirect() {
     try {
-      const start = `${month}-01`;
-      const endDate = new Date(start);
-      endDate.setMonth(endDate.getMonth() + 1);
-      const end = endDate.toISOString().slice(0, 10);
-
-      const { count: leads } = await sb
-        .from("captacion_leads")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", start)
-        .lt("created_at", end);
-
-      const { count: captadas } = await sb
-  .from("captacion_leads")
-  .select("*", { count: "exact", head: true })
-  .eq("estado", "captado")
-  .gte("closed_at", start)
-  .lt("closed_at", end);
-
-      const { data: rend } = await sb
-        .from("rendimiento_llamadas")
-        .select("importe, created_at")
-        .gte("created_at", start)
-        .lt("created_at", end);
-
-      const facturacion = (rend || []).reduce(
-        (acc, r) => acc + Number(r.importe || 0),
-        0
-      );
-
-      setHeroMetrics({
-        leads_mes: leads || 0,
-        captadas_mes: captadas || 0,
-        facturacion_mes: facturacion || 0,
+      const response = await fetch(`/api/admin/dashboard?month=${encodeURIComponent(month)}&brand=${encodeURIComponent(activeBrand)}`, {
+        cache: "no-store",
       });
-
+      const json = await response.json();
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "ERR_ADMIN_DASHBOARD");
+      setHeroMetrics({
+        leads_mes: Number(json.leads_mes || 0),
+        captadas_mes: Number(json.captadas_mes || 0),
+        facturacion_mes: Number(json.facturacion_mes || 0),
+      });
     } catch (err) {
       console.error("Hero metrics error:", err);
     }

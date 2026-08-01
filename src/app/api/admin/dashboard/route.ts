@@ -3,6 +3,8 @@ export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { brandFromRequest } from "@/lib/server/brand-filter";
+import { loadOfficialPayments, totalOfficialRevenue } from "@/lib/server/economic-payments";
 
 export const runtime = "nodejs";
 
@@ -30,6 +32,7 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get("month"));
     const { startIso, endIso } = monthBounds(month);
+    const brand = brandFromRequest(req);
 
     const [
       leadsRes,
@@ -55,21 +58,13 @@ export async function GET(req: NextRequest) {
         .is("closed_at", null)
         .gte("updated_at", startIso)
         .lt("updated_at", endIso),
-      supabase
-        .from("rendimiento_llamadas")
-        .select("importe, fecha_hora")
-        .gte("fecha_hora", startIso)
-        .lt("fecha_hora", endIso),
+      loadOfficialPayments(supabase, startIso, endIso, brand),
     ]);
 
     if (leadsRes.error) throw leadsRes.error;
     if (captadasClosedRes.error) throw captadasClosedRes.error;
     if (captadasUpdatedRes.error) throw captadasUpdatedRes.error;
-    if (facturacionRes.error) throw facturacionRes.error;
-
-    const facturacionMes = (facturacionRes.data || []).reduce((acc: number, row: any) => {
-      return acc + (Number(row?.importe || 0) || 0);
-    }, 0);
+    const facturacionMes = totalOfficialRevenue(facturacionRes || []);
 
     return NextResponse.json({
       ok: true,

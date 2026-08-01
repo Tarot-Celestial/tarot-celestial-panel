@@ -9,6 +9,7 @@ import {
 import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 import { brandFromRequest, filterRowsByBrand } from '@/lib/server/brand-filter';
 import { getAdminClient } from '@/lib/server/auth-worker';
+import { loadOfficialPayments, totalOfficialRevenue } from '@/lib/server/economic-payments';
 
 export const runtime = 'nodejs';
 
@@ -96,11 +97,15 @@ export async function GET(req: Request) {
     const brand = brandFromRequest(req);
     const admin = getAdminClient();
 
-    const [workers, currentRowsRaw, previousRowsRaw] = await Promise.all([
+    const [workers, currentRowsRaw, previousRowsRaw, currentPayments, previousPayments] = await Promise.all([
       listTarotistaWorkers(),
       listRendimientoRows(currentRange.start, currentRange.endExclusive),
       includePrevious
         ? listRendimientoRows(previousRange.start, previousRange.endExclusive)
+        : Promise.resolve([]),
+      loadOfficialPayments(admin, `${currentRange.start}T00:00:00.000Z`, `${currentRange.endExclusive}T00:00:00.000Z`, brand),
+      includePrevious
+        ? loadOfficialPayments(admin, `${previousRange.start}T00:00:00.000Z`, `${previousRange.endExclusive}T00:00:00.000Z`, brand)
         : Promise.resolve([]),
     ]);
 
@@ -110,7 +115,9 @@ export async function GET(req: Request) {
     ]);
 
     const current = buildSnapshot(month, currentFilteredRows, workers);
+    current.totals.revenue_total = totalOfficialRevenue(currentPayments);
     const previous = includePrevious ? buildSnapshot(previousMonth, previousFilteredRows, workers) : null;
+    if (previous) previous.totals.revenue_total = totalOfficialRevenue(previousPayments);
     const rows = current.rows;
     const totals = current.totals;
 
