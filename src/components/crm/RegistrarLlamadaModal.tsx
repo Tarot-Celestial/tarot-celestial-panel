@@ -268,6 +268,9 @@ function friendlySubmitError(error: unknown) {
   if (message === "MARIO_COLLABORATOR_NOT_CONFIGURED" || message === "CALL_MARIO_TAG_NOT_CONFIGURED") {
     return "CALL MARIO no está configurado correctamente. Revisa la migración de Supabase antes de registrar la llamada.";
   }
+  if (message === "PAYMENT_REGISTER_FAILED") {
+    return "No se pudo registrar el pago. La llamada no se ha guardado. Revisa los datos e inténtalo de nuevo.";
+  }
   if (message === "CALL_REGISTER_FAILED") {
     return "No se pudo registrar la llamada. No se aplicaron cambios; inténtalo de nuevo.";
   }

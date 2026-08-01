@@ -339,112 +339,6 @@ export async function POST(req: Request) {
     const recuperado = clasificacion === "recuperado";
     const mismaCompra = Boolean(body?.misma_compra);
 
-    const { data: inserted, error: insertError } = await admin
-      .from("rendimiento_llamadas")
-      .insert([{
-        fecha: new Date().toISOString().slice(0, 10),
-        fecha_hora: new Date().toISOString(),
-        cliente_id: clienteId,
-        cliente_nombre: clienteNombre,
-        telefonista_worker_id: me.id,
-        telefonista_nombre: me.display_name || me.email || "Central",
-        tarotista_worker_id: tarotistaWorkerId,
-        tarotista_nombre: tarotistaNombre,
-        tarotista_manual_call: tarotistaManualCall,
-        llamada_call: esCall,
-        billing_collaborator_id: billingCollaboratorId,
-        source_tag_id: sourceTagId,
-        tipo_registro: clienteCompra ? "compra" : usoTipo,
-        cliente_compra_minutos: clienteCompra,
-        usa_7_free: !clienteCompra && usoTipo === "7free",
-        usa_minutos: !clienteCompra && usoTipo === "minutos",
-        misma_compra: mismaCompra,
-        guarda_minutos: Boolean(body?.guarda_minutos),
-        minutos_guardados_free: guardadosFree,
-        minutos_guardados_normales: guardadosNormales,
-        codigo_1: codigo1,
-        minutos_1: minutos1,
-        codigo_2: codigo2,
-        minutos_2: minutos2,
-        resumen_codigo: resumenCodigo,
-        tiempo,
-        forma_pago: formaPago,
-        importe,
-        promo,
-        captado,
-        recuperado,
-      }])
-      .select();
-    if (insertError) {
-      console.error("[CRM registrar llamada] fallo insertando rendimiento_llamadas", {
-        message: insertError.message,
-        code: insertError.code,
-        details: insertError.details,
-        hint: insertError.hint,
-        cliente_id: clienteId,
-        billing_collaborator_id: billingCollaboratorId,
-        source_tag_id: sourceTagId,
-      });
-      if (/cliente_id/i.test(String(insertError.message || "")) && /uuid/i.test(String(insertError.message || ""))) {
-        return clientIdentificationError();
-      }
-      return NextResponse.json({ ok: false, error: "CALL_REGISTER_FAILED" }, { status: 500 });
-    }
-
-    const rendimientoRow = Array.isArray(inserted) ? inserted[0] : inserted;
-    const rendimientoId = String(rendimientoRow?.id || "").trim();
-    let economicPayment: any = null;
-
-    // Una compra real registrada desde el asistente debe existir también en la
-    // fuente económica oficial. La referencia enlaza ambos registros y permite
-    // reintentar la petición sin crear un segundo cobro.
-    if (clienteCompra && importe > 0) {
-      if (!rendimientoId) {
-        return NextResponse.json({ ok: false, error: "RENDIMIENTO_ID_MISSING" }, { status: 500 });
-      }
-
-      const paymentReference = `registrar_llamada:${operationId}`;
-      const { data: payment, error: paymentError } = await admin
-        .from("crm_cliente_pagos")
-        .upsert({
-          cliente_id: clienteId,
-          importe,
-          moneda: "EUR",
-          metodo: formaPago || "otros",
-          estado: "completed",
-          notas: `Cobro generado desde Registrar llamada. ${resumenCodigo || ""}`.trim(),
-          referencia_externa: paymentReference,
-          source_rendimiento_id: rendimientoId,
-          created_by_user_id: me.id,
-          created_by_role: me.role,
-          created_at: rendimientoRow?.fecha_hora || new Date().toISOString(),
-        }, { onConflict: "referencia_externa" })
-        .select("*")
-        .single();
-
-      if (paymentError) {
-        // Compensación: no dejar Rendimiento guardado sin su operación económica.
-        await admin.from("rendimiento_llamadas").delete().eq("id", rendimientoId);
-        console.error("[CRM registrar llamada] fallo creando pago oficial", paymentError);
-        return NextResponse.json({ ok: false, error: "PAYMENT_REGISTER_FAILED" }, { status: 500 });
-      }
-      economicPayment = payment;
-    }
-
-    const { error: updateError } = await admin
-      .from("crm_clientes")
-      .update({
-        minutos_free_pendientes: nextFree,
-        minutos_normales_pendientes: nextNormales,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", clienteId);
-    if (updateError) {
-      if (economicPayment?.id) await admin.from("crm_cliente_pagos").delete().eq("id", economicPayment.id);
-      if (rendimientoId) await admin.from("rendimiento_llamadas").delete().eq("id", rendimientoId);
-      throw updateError;
-    }
-
     const notaTexto = buildNota({
       clienteCompra,
       usoTipo,
@@ -458,47 +352,88 @@ export async function POST(req: Request) {
       nextNormales,
       origenColaborador: collaboratorDisplayName ? "CALL MARIO" : null,
     });
-    const { error: noteError } = await admin.from("crm_client_notes").insert({
+
+    const normalizedPaymentMethod = (() => {
+      const method = String(formaPago || "").trim().toUpperCase();
+      if (method === "PAYPAL") return "paypal_manual";
+      if (method === "TPV") return "tpv";
+      if (method === "BIZUM") return "bizum";
+      return method ? method.toLowerCase() : "otros";
+    })();
+
+    const atomicPayload = {
+      operation_id: operationId || null,
       cliente_id: clienteId,
-      texto: notaTexto,
-      author_user_id: me.user_id || null,
-      author_name: me.display_name || me.email || "Central",
-      author_email: me.email || null,
-      is_pinned: false,
-    });
-    if (noteError) {
-      await admin.from("crm_clientes").update({
-        minutos_free_pendientes: currentFree,
-        minutos_normales_pendientes: currentNormales,
-        updated_at: new Date().toISOString(),
-      }).eq("id", clienteId);
-      if (economicPayment?.id) await admin.from("crm_cliente_pagos").delete().eq("id", economicPayment.id);
-      if (rendimientoId) await admin.from("rendimiento_llamadas").delete().eq("id", rendimientoId);
-      throw noteError;
+      cliente_nombre: clienteNombre,
+      telefonista_worker_id: me.id,
+      telefonista_nombre: me.display_name || me.email || "Central",
+      tarotista_worker_id: tarotistaWorkerId,
+      tarotista_nombre: tarotistaNombre,
+      tarotista_manual_call: tarotistaManualCall,
+      llamada_call: esCall,
+      billing_collaborator_id: billingCollaboratorId,
+      source_tag_id: sourceTagId,
+      tipo_registro: clienteCompra ? "compra" : usoTipo,
+      cliente_compra_minutos: clienteCompra,
+      usa_7_free: !clienteCompra && usoTipo === "7free",
+      usa_minutos: !clienteCompra && usoTipo === "minutos",
+      misma_compra: mismaCompra,
+      guarda_minutos: Boolean(body?.guarda_minutos),
+      minutos_guardados_free: guardadosFree,
+      minutos_guardados_normales: guardadosNormales,
+      codigo_1: codigo1,
+      minutos_1: minutos1,
+      codigo_2: codigo2,
+      minutos_2: minutos2,
+      resumen_codigo: resumenCodigo,
+      tiempo,
+      forma_pago: normalizedPaymentMethod,
+      importe,
+      promo,
+      captado,
+      recuperado,
+      next_free: nextFree,
+      next_normales: nextNormales,
+      note_text: notaTexto,
+      note_author_user_id: me.user_id || null,
+      note_author_name: me.display_name || me.email || "Central",
+      note_author_email: me.email || null,
+      created_by_user_id: me.id,
+      created_by_role: me.role,
+      points_to_add: clienteCompra && importe > 0 ? pointsFromAmount(importe) : 0,
+    };
+
+    const { data: atomicResult, error: atomicError } = await admin.rpc(
+      "crm_register_call_atomic",
+      { p_payload: atomicPayload },
+    );
+
+    if (atomicError) {
+      console.error("[CRM registrar llamada] fallo transaccional", {
+        code: atomicError.code,
+        message: atomicError.message,
+        details: atomicError.details,
+        hint: atomicError.hint,
+        cliente_id: clienteId,
+        operation_id: operationId || null,
+        metodo_normalizado: normalizedPaymentMethod,
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          error: clienteCompra ? "PAYMENT_REGISTER_FAILED" : "CALL_REGISTER_FAILED",
+          diagnostic_code: atomicError.code || null,
+        },
+        { status: 500 },
+      );
     }
+
+    const result = atomicResult && typeof atomicResult === "object" ? atomicResult as any : {};
+    const inserted = result?.rendimiento ? [result.rendimiento] : [];
+    const economicPayment = result?.payment || null;
 
     await syncClienteMonthTag(admin, clienteId);
 
-    if (clienteCompra && importe > 0) {
-      const puntosGanados = pointsFromAmount(importe);
-      if (puntosGanados > 0) {
-        const puntosActuales = Number((cliente as any)?.puntos || 0);
-        await admin
-          .from("crm_clientes")
-          .update({
-            puntos: puntosActuales + puntosGanados,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", clienteId);
-
-        await admin.from("cliente_puntos_historial").insert({
-          cliente_id: clienteId,
-          tipo: "ganado",
-          puntos: puntosGanados,
-          descripcion: `Compra registrada desde rendimiento por ${importe.toFixed(2)} € vía ${formaPago || "sin método"}.`,
-        });
-      }
-    }
 
     return NextResponse.json({
       ok: true,
