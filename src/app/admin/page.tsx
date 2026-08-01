@@ -20,7 +20,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy } from "lucide-react";
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -36,6 +36,7 @@ const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPan
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
+const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -47,6 +48,7 @@ const ADMIN_NAV = [
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo" },
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
+  { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
   { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago" },
   { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
@@ -139,6 +141,7 @@ type TabKey =
   | "asistencia"
   | "trabajadores"
   | "clientes"
+  | "rangos-clientes"
   | "crm"
   | "chat"
   | "captacion"
@@ -2844,6 +2847,8 @@ function AdminPage() {
           {tab === "clientes" && (
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
           )}
+
+          {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
 
           {tab === "crm" && (
             <CRMClientesPanel mode="admin" />

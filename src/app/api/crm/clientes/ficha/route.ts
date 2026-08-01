@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { loadEffectiveClientRank } from "@/lib/server/client-rank-effective";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
@@ -91,10 +92,15 @@ export async function GET(req: Request) {
     const totals30d = await loadRolling30ClientTotals(admin, [data], sinceIso, new Date().toISOString());
     const rankInfo = totals30d.get(String(data.id)) || { total: 0, compras: 0 };
 
+    const effectiveRank = await loadEffectiveClientRank(admin, id, rankInfo.total);
+
     const cliente = {
       ...data,
       etiquetas: mapEtiquetasFromRelations(data),
-      rango_actual: calcClientRank(rankInfo.total),
+      rango_automatico: effectiveRank.automatic,
+      rango_efectivo: effectiveRank.effective,
+      rango_intervencion: effectiveRank.override,
+      rango_actual: effectiveRank.effective,
       rango_gasto_mes_anterior: Number((rankInfo.total || 0).toFixed(2)),
       rango_compras_mes_anterior: Number(rankInfo.compras || 0),
       rango_actual_desde: sinceIso.slice(0, 10),

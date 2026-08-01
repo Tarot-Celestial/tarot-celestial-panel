@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { loadEffectiveClientRank } from "@/lib/server/client-rank-effective";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -326,7 +327,8 @@ export async function GET(req: Request) {
     const sinceIso = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const rankTotals = await loadRolling30ClientTotals(admin, [client], sinceIso, now.toISOString());
     const rankInfo = rankTotals.get(clientId) || { total: 0, compras: 0 };
-    const rank = calcClientRank(rankInfo.total);
+    const effectiveRank = await loadEffectiveClientRank(admin, clientId, rankInfo.total);
+    const rank = effectiveRank.effective;
 
     const total = allRows.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -359,6 +361,9 @@ export async function GET(req: Request) {
         },
         rank: {
           current: rank,
+          automatic: effectiveRank.automatic,
+          effective: effectiveRank.effective,
+          override: effectiveRank.override,
           spent_30d: Number(toNumber(rankInfo.total).toFixed(2)),
           purchases_30d: toNumber(rankInfo.compras),
           from: sinceIso.slice(0, 10),
