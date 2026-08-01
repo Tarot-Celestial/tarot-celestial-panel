@@ -106,6 +106,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>("resumen");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [realtimeVersion, setRealtimeVersion] = useState(0);
 
   const load = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
@@ -140,7 +141,10 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void load(false), 250);
+      timer = setTimeout(() => {
+        setRealtimeVersion((value) => value + 1);
+        void load(false);
+      }, 250);
     };
     const channel = supabase
       .channel(`my-client-summary-${clientId}`)
@@ -255,6 +259,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             client={client}
             tarotists={(summary.available_tarotists || []).map((item: any) => ({ id: item.id, display_name: item.name }))}
             onRefresh={() => load(false)}
+            refreshVersion={realtimeVersion}
           />
         </div>
       ) : activeTab === "notas" ? (

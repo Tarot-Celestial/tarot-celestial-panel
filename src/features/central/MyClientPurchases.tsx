@@ -6,7 +6,7 @@ import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./MyClientPurchases.module.css";
 
-type Props = { clientId: string; client: any; tarotists: any[]; onRefresh: () => void };
+type Props = { clientId: string; client: any; tarotists: any[]; onRefresh: () => void; refreshVersion?: number };
 
 type Payload = {
   rows: any[];
@@ -37,7 +37,7 @@ const rankInfo: Record<string, { label: string; next: number | null; perks: stri
   oro: { label: "Oro", next: null, perks: ["Máximo rango mensual actual"] },
 };
 
-export default function MyClientPurchases({ clientId, client, tarotists, onRefresh }: Props) {
+export default function MyClientPurchases({ clientId, client, tarotists, onRefresh, refreshVersion = 0 }: Props) {
   const [data, setData] = useState<Payload | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -65,18 +65,8 @@ export default function MyClientPurchases({ clientId, client, tarotists, onRefre
   useEffect(() => { void load(true); }, [load]);
 
   useEffect(() => {
-    const sb = supabaseBrowser();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void load(false); onRefresh(); }, 250);
-    };
-    const channel = sb.channel(`my-client-purchases-${clientId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos", filter: `cliente_id=eq.${clientId}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas", filter: `cliente_id=eq.${clientId}` }, refresh)
-      .subscribe();
-    return () => { if (timer) clearTimeout(timer); void sb.removeChannel(channel); };
-  }, [clientId, load, onRefresh]);
+    if (refreshVersion > 0) void load(false);
+  }, [refreshVersion, load]);
 
   const maxMonthly = useMemo(() => Math.max(1, ...(data?.stats?.monthly || []).map((item: any) => Number(item.amount) || 0)), [data]);
   const rank = String(data?.rank?.current || "").toLowerCase();
