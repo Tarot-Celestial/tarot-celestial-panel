@@ -232,6 +232,29 @@ async function fetchAllRendimiento(supabase: AdminClient, startIso: string, endI
   return allRows;
 }
 
+async function fetchAllPayments(supabase: AdminClient, startIso: string, endIso: string) {
+  const pageSize = 1000;
+  const maxRows = 50000;
+  const allRows: any[] = [];
+
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("crm_cliente_pagos")
+      .select("id, cliente_id, importe, moneda, metodo, estado, created_at, created_by_user_id, created_by_role, referencia_externa, source_rendimiento_id")
+      .gte("created_at", startIso)
+      .lt("created_at", endIso)
+      .order("created_at", { ascending: false })
+      .range(offset, Math.min(offset + pageSize - 1, maxRows - 1));
+
+    if (error) throw error;
+    const chunk = data || [];
+    allRows.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+
+  return allRows;
+}
+
 function addGenerated(map: Map<string, GeneratedRow>, rawName: unknown, amount: number, fallback: string) {
   const name = cleanName(rawName, fallback);
   const current = map.get(name) || { name, count: 0, importe: 0 };
@@ -240,16 +263,16 @@ function addGenerated(map: Map<string, GeneratedRow>, rawName: unknown, amount: 
   map.set(name, current);
 }
 
-function buildMonthlySummary(rows: any[], month: string) {
-  const paidRows = (rows || []).filter((row) => normalizePaidRow(row));
+function buildMonthlySummary(rows: DailyRow[], month: string) {
+  const paidRows = (rows || []).filter(normalizePaidRow);
   const byTelefonista = new Map<string, GeneratedRow>();
   const byTarotista = new Map<string, GeneratedRow>();
 
   for (const row of paidRows) {
     const amount = Number(row.importe || 0) || 0;
     if (amount <= 0) continue;
-    addGenerated(byTelefonista, row.telefonista_nombre, amount, "Telefonista sin asignar");
-    addGenerated(byTarotista, row.tarotista_nombre || row.tarotista_manual_call, amount, "Tarotista sin asignar");
+    addGenerated(byTelefonista, row.central, amount, row.source === "web" ? "Web automática" : "Telefonista sin asignar");
+    addGenerated(byTarotista, row.tarotista, amount, "Tarotista sin asignar");
   }
 
   const sortByAmount = (a: GeneratedRow, b: GeneratedRow) => b.importe - a.importe;
@@ -315,28 +338,59 @@ export async function GET(req: Request) {
     const supabase = adminClient();
     const brand = brandFromRequest(req);
 
-    const [currentSources, previousSources, monthlyCurrentRaw, monthlyPreviousRaw] = await Promise.all([
+    const [currentSources, previousSources, monthlyCurrentSources, monthlyPreviousSources] = await Promise.all([
       fetchDailySources(supabase, selectedDayRange.start, selectedDayRange.end),
       fetchDailySources(supabase, comparisonDayRange.start, comparisonDayRange.end),
-      fetchAllRendimiento(supabase, selectedMonthRange.start.toISOString(), selectedMonthRange.end.toISOString()),
-      fetchAllRendimiento(supabase, comparisonMonthRange.start.toISOString(), comparisonMonthRange.end.toISOString()),
+      Promise.all([
+        fetchAllRendimiento(supabase, selectedMonthRange.start.toISOString(), selectedMonthRange.end.toISOString()),
+        fetchAllPayments(supabase, selectedMonthRange.start.toISOString(), selectedMonthRange.end.toISOString()),
+      ]),
+      Promise.all([
+        fetchAllRendimiento(supabase, comparisonMonthRange.start.toISOString(), comparisonMonthRange.end.toISOString()),
+        fetchAllPayments(supabase, comparisonMonthRange.start.toISOString(), comparisonMonthRange.end.toISOString()),
+      ]),
     ]);
 
-    const [currentRendimiento, currentPagos, previousRendimiento, previousPagos, monthlyCurrent, monthlyPrevious] = await Promise.all([
+    const [
+      currentRendimiento,
+      currentPagos,
+      previousRendimiento,
+      previousPagos,
+      monthlyCurrentRendimiento,
+      monthlyCurrentPagos,
+      monthlyPreviousRendimiento,
+      monthlyPreviousPagos,
+    ] = await Promise.all([
       filterRowsByBrand(supabase, currentSources.rendimiento, brand),
       filterRowsByBrand(supabase, currentSources.pagos, brand),
       filterRowsByBrand(supabase, previousSources.rendimiento, brand),
       filterRowsByBrand(supabase, previousSources.pagos, brand),
-      filterRowsByBrand(supabase, monthlyCurrentRaw, brand),
-      filterRowsByBrand(supabase, monthlyPreviousRaw, brand),
+      filterRowsByBrand(supabase, monthlyCurrentSources[0], brand),
+      filterRowsByBrand(supabase, monthlyCurrentSources[1], brand),
+      filterRowsByBrand(supabase, monthlyPreviousSources[0], brand),
+      filterRowsByBrand(supabase, monthlyPreviousSources[1], brand),
     ]);
 
-    const allDailyRows = [...currentRendimiento, ...currentPagos, ...previousRendimiento, ...previousPagos];
+    const allDailyRows = [
+      ...currentRendimiento,
+      ...currentPagos,
+      ...previousRendimiento,
+      ...previousPagos,
+      ...monthlyCurrentRendimiento,
+      ...monthlyCurrentPagos,
+      ...monthlyPreviousRendimiento,
+      ...monthlyPreviousPagos,
+    ];
     const clientIds = Array.from(
       new Set(allDailyRows.map((row: any) => String(row?.cliente_id || "").trim()).filter(isUuid))
     );
     const workerIds = Array.from(
-      new Set([...currentPagos, ...previousPagos].map((row: any) => String(row?.created_by_user_id || "").trim()).filter(isUuid))
+      new Set([
+        ...currentPagos,
+        ...previousPagos,
+        ...monthlyCurrentPagos,
+        ...monthlyPreviousPagos,
+      ].map((row: any) => String(row?.created_by_user_id || "").trim()).filter(isUuid))
     );
 
     const [{ data: clients, error: clientsError }, { data: workers, error: workersError }] = await Promise.all([
@@ -364,7 +418,17 @@ export async function GET(req: Request) {
           .filter(Boolean)
       );
 
-      const officialPayments: DailyRow[] = (paymentRows || []).map((row: any) => {
+      const officialPayments: DailyRow[] = (paymentRows || [])
+        // Una referencia creada por Registrar llamada debe conservar siempre su
+        // relación con Rendimiento. Si la relación falta, es un pago huérfano
+        // histórico (normalmente porque se borró solo Rendimiento) y no debe
+        // reaparecer ni afectar a los totales hasta que sea revisado.
+        .filter((row: any) => {
+          const reference = String(row?.referencia_externa || "").trim().toLowerCase();
+          const linkedId = String(row?.source_rendimiento_id || "").trim();
+          return !(reference.startsWith("registrar_llamada:") && !linkedId);
+        })
+        .map((row: any) => {
         const clientId = String(row.cliente_id || "").trim();
         const client = clientMap.get(clientId);
         const worker = workerMap.get(String(row.created_by_user_id || ""));
@@ -432,8 +496,14 @@ export async function GET(req: Request) {
 
     const currentDaily = buildDailyResult(hydrateDailyRows(currentRendimiento, currentPagos));
     const previousDaily = buildDailyResult(hydrateDailyRows(previousRendimiento, previousPagos));
-    const currentMonthSummary = buildMonthlySummary(monthlyCurrent, selectedMonth);
-    const previousMonthSummary = buildMonthlySummary(monthlyPrevious, comparisonMonth);
+    const currentMonthSummary = buildMonthlySummary(
+      hydrateDailyRows(monthlyCurrentRendimiento, monthlyCurrentPagos),
+      selectedMonth,
+    );
+    const previousMonthSummary = buildMonthlySummary(
+      hydrateDailyRows(monthlyPreviousRendimiento, monthlyPreviousPagos),
+      comparisonMonth,
+    );
 
     const response = NextResponse.json({
       ok: true,

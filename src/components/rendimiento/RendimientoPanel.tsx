@@ -171,7 +171,21 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ id }),
     });
-    if (res.ok) setRows((prev) => prev.filter((r) => r.id !== id));
+    const json = await res.json().catch(() => null);
+    if (!res.ok || json?.ok === false) {
+      setMsg(`❌ ${json?.error || "No se pudo anular el registro"}`);
+      return;
+    }
+    setRows((prev) => prev.filter((r) => r.id !== id));
+    setMsg("✅ Registro anulado. El cobro vinculado ya no afecta al Diario ni a las estadísticas.");
+    window.dispatchEvent(new CustomEvent("tc-payment-recorded", { detail: { type: "payment-cancelled", rendimiento_id: id } }));
+    try {
+      const channel = new BroadcastChannel("tc-payments");
+      channel.postMessage({ type: "payment-recorded", action: "cancelled", rendimiento_id: id });
+      channel.close();
+    } catch {
+      // BroadcastChannel puede no estar disponible; Realtime seguirá actualizando el Diario.
+    }
   }
 
   const visibleRows = useMemo(() => {

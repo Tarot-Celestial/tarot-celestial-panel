@@ -16,16 +16,26 @@ export async function POST(req: Request) {
     if (!id) return NextResponse.json({ ok: false, error: 'ID_REQUIRED' }, { status: 400 });
 
     const admin = getAdminClient();
-    const { error } = await admin
-      .from('rendimiento_llamadas')
-      .delete()
-      .eq('id', id)
-      .select('id')
-      .single();
+    const { data, error } = await admin.rpc('crm_cancel_call_payment_atomic', {
+      p_rendimiento_id: id,
+      p_cancelled_by_user_id: me.user_id || me.resolved_uid || null,
+      p_reason: 'Anulado desde Rendimiento',
+    });
 
-    if (error) throw error;
-    return NextResponse.json({ ok: true });
+    if (error) {
+      console.error('[Rendimiento delete] fallo anulando operación vinculada', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        rendimiento_id: id,
+      });
+      return NextResponse.json({ ok: false, error: 'CANCEL_OPERATION_FAILED' }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, result: data || null });
   } catch (e: any) {
+    console.error('[Rendimiento delete] error general', e);
     return NextResponse.json({ ok: false, error: e?.message || 'ERR' }, { status: 500 });
   }
 }
