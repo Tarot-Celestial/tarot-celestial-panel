@@ -14,7 +14,6 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import MyClientSummary from "./MyClientSummary";
 import MyClientNotes from "./MyClientNotes";
 import MyClientPurchases from "./MyClientPurchases";
-import MyClientFollowUps from "./MyClientFollowUps";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientProfile.module.css";
 
@@ -107,7 +106,6 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>("resumen");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [realtimeVersion, setRealtimeVersion] = useState(0);
 
   const load = useCallback(async (showLoader = true) => {
     if (showLoader) setLoading(true);
@@ -142,10 +140,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const refresh = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        setRealtimeVersion((value) => value + 1);
-        void load(false);
-      }, 250);
+      timer = setTimeout(() => void load(false), 250);
     };
     const channel = supabase
       .channel(`my-client-summary-${clientId}`)
@@ -154,7 +149,6 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "client_favorite_tarotists", filter: `client_id=eq.${clientId}` }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups", filter: `client_id=eq.${clientId}` }, refresh)
       .subscribe();
 
     return () => {
@@ -254,16 +248,6 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             onRefresh={() => load(false)}
           />
         </div>
-      ) : activeTab === "seguimientos" ? (
-        <div className={styles.summaryPanel}>
-          <MyClientFollowUps
-            clientId={clientId}
-            client={client}
-            summary={summary}
-            lastPurchaseAt={purchase?.created_at}
-            onRefresh={() => load(false)}
-          />
-        </div>
       ) : activeTab === "compras" ? (
         <div className={styles.summaryPanel}>
           <MyClientPurchases
@@ -271,7 +255,6 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             client={client}
             tarotists={(summary.available_tarotists || []).map((item: any) => ({ id: item.id, display_name: item.name }))}
             onRefresh={() => load(false)}
-            refreshVersion={realtimeVersion}
           />
         </div>
       ) : activeTab === "notas" ? (
