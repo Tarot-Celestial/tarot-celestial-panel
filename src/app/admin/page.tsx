@@ -336,6 +336,7 @@ function AdminPage() {
 
   async function loadHeroMetricsDirect() {
     try {
+      const activeBrand = getActiveBrand();
       const response = await fetch(`/api/admin/dashboard?month=${encodeURIComponent(month)}&brand=${encodeURIComponent(activeBrand)}`, {
         cache: "no-store",
       });
