@@ -39,6 +39,7 @@ type SummaryData = {
   captured_at?: string | null;
   captured_by?: { id?: string | null; display_name?: string | null } | null;
   fidelity_index?: number | null;
+  fidelity?: { score: number; level: string; label: string; description: string; stars: number } | null;
   favorite_tarotists?: Array<{ id: string; tarotist_id: string; name: string; created_at?: string | null }>;
   available_tarotists?: Array<{ id: string; name: string }>;
   notes?: any[];
@@ -144,6 +145,9 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
     const channel = supabase
       .channel(`my-client-summary-${clientId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_notes", filter: `cliente_id=eq.${clientId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos", filter: `cliente_id=eq.${clientId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas", filter: `cliente_id=eq.${clientId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "client_favorite_tarotists", filter: `client_id=eq.${clientId}` }, refresh)
       .subscribe();
 

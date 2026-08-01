@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { calculateClientFidelity } from "@/lib/server/client-fidelity";
 
 export const runtime = "nodejs";
 
@@ -45,10 +46,10 @@ export async function GET(req: Request) {
     const admin = adminClient();
     const [clientResult, paymentsResult, notesResult, interactionsResult, callsResult] = await Promise.all([
       admin.from("crm_clientes").select("*").eq("id", id).maybeSingle(),
-      admin.from("crm_cliente_pagos").select("id, cliente_id, importe, moneda, metodo, estado, notas, referencia_externa, created_at").eq("cliente_id", id).order("created_at", { ascending: false }).limit(100),
+      admin.from("crm_cliente_pagos").select("id, cliente_id, importe, moneda, metodo, estado, notas, referencia_externa, created_at").eq("cliente_id", id).order("created_at", { ascending: false }),
       admin.from("crm_client_notes").select("*").eq("cliente_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
-      admin.from("crm_interacciones").select("id, estado, notas_central, origen, tarotista_worker_id, created_at, cerrado_at").eq("cliente_id", id).order("created_at", { ascending: false }).limit(30),
-      admin.from("rendimiento_llamadas").select("id, fecha_hora, fecha, importe, forma_pago, resumen_codigo, cliente_compra_minutos, telefonista_nombre, tarotista_nombre").eq("cliente_id", id).order("fecha_hora", { ascending: false }).limit(30),
+      admin.from("crm_interacciones").select("id, estado, notas_central, origen, tarotista_worker_id, created_at, cerrado_at").eq("cliente_id", id).order("created_at", { ascending: false }),
+      admin.from("rendimiento_llamadas").select("id, fecha_hora, fecha, importe, forma_pago, resumen_codigo, cliente_compra_minutos, telefonista_nombre, tarotista_nombre").eq("cliente_id", id).order("fecha_hora", { ascending: false }),
     ]);
 
     if (clientResult.error) throw clientResult.error;
@@ -60,6 +61,19 @@ export async function GET(req: Request) {
     const calls = callsResult.error ? [] : callsResult.data || [];
     const latestPurchase = payments[0] || null;
     const totalSpent = payments.reduce((sum: number, payment: any) => sum + (Number(payment.importe) || 0), 0);
+    const fidelityPurchases = [
+      ...payments,
+      ...calls
+        .filter((row: any) => Boolean(row.cliente_compra_minutos) && (Number(row.importe) || 0) > 0)
+        .map((row: any) => ({ created_at: row.fecha_hora || row.fecha || null, importe: row.importe })),
+    ];
+    const fidelity = calculateClientFidelity({
+      capturedAt: clientResult.data.created_at || null,
+      purchases: fidelityPurchases,
+      calls: calls.map((row: any) => ({ created_at: row.fecha_hora || row.fecha || null })),
+      interactions,
+      notes,
+    });
 
     const { data: availableTarotists, error: tarotistsError } = await admin
       .from("workers")
@@ -94,7 +108,8 @@ export async function GET(req: Request) {
       resumen: {
         captured_at: clientResult.data.created_at || null,
         captured_by: null,
-        fidelity_index: null,
+        fidelity_index: fidelity.score,
+        fidelity,
         favorite_tarotists: savedFavorites,
         available_tarotists: (availableTarotists || []).map((row: any) => ({ id: row.id, name: row.display_name || "Tarotista" })),
         notes,

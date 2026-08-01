@@ -18,7 +18,7 @@ import {
   Star,
   UserRound,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientSummary.module.css";
@@ -69,6 +69,13 @@ type SummaryData = {
   captured_at?: string | null;
   captured_by?: { id?: string | null; display_name?: string | null } | null;
   fidelity_index?: number | null;
+  fidelity?: {
+    score: number;
+    level: string;
+    label: string;
+    description: string;
+    stars: number;
+  } | null;
   favorite_tarotists?: Array<{ id: string; tarotist_id: string; name: string; created_at?: string | null }>;
   available_tarotists?: Array<{ id: string; name: string }>;
   notes?: NoteRow[];
@@ -134,6 +141,8 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
   const favorites = summary.favorite_tarotists || [];
   const availableTarotists = summary.available_tarotists || [];
   const totals = summary.totals || {};
+  const fidelity = summary.fidelity || null;
+  const fidelityScore = Math.max(0, Math.min(100, Math.round(fidelity?.score ?? summary.fidelity_index ?? 0)));
   const [favoritePickerOpen, setFavoritePickerOpen] = useState(false);
   const [favoriteBusy, setFavoriteBusy] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
@@ -193,14 +202,17 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
             <strong>{lifecycle.label}</strong>
             <small>{lifecycle.detail}</small>
           </article>
-          <article className={styles.fidelityCard}>
-            <div className={styles.fidelityRing}>
-              <span>{summary.fidelity_index == null ? "—" : `${Math.round(summary.fidelity_index)}%`}</span>
+          <article className={`${styles.fidelityCard} ${styles[`fidelity_${fidelity?.level || "very_low"}`] || ""}`}>
+            <div className={styles.fidelityRing} style={{ "--fidelity-progress": `${fidelityScore}%` } as CSSProperties}>
+              <span>{fidelityScore}%</span>
             </div>
             <div>
               <span>ÍNDICE DE FIDELIZACIÓN</span>
-              <strong>{summary.fidelity_index == null ? "Pendiente" : "Calculado"}</strong>
-              <small>Se conectará cuando exista una fórmula real.</small>
+              <strong>{fidelity?.label || "Muy baja"}</strong>
+              <small>{fidelity?.description || "Cliente crítica"}</small>
+              <div className={styles.fidelityStars} aria-label={`${fidelity?.stars || 0} de 5 estrellas`}>
+                {Array.from({ length: 5 }).map((_, index) => <Star key={index} size={12} fill={index < (fidelity?.stars || 0) ? "currentColor" : "none"} />)}
+              </div>
             </div>
           </article>
         </section>
