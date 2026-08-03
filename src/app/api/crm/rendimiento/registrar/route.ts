@@ -426,14 +426,14 @@ export async function POST(req: Request) {
       note_author_user_id: me.user_id || null,
       note_author_name: me.display_name || me.email || "Central",
       note_author_email: me.email || null,
-      created_by_user_id: me.id,
+      created_by_user_id: me.user_id || null,
       created_by_role: me.role,
       points_to_add: clienteCompra && importe > 0 ? pointsFromAmount(importe) : 0,
       business: String(cliente?.origen || "celestial"),
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v6",
+      "crm_register_call_atomic_v7",
       { p_payload: atomicPayload },
     );
 
@@ -443,7 +443,7 @@ export async function POST(req: Request) {
         message: atomicError.message,
         details: atomicError.details,
         hint: atomicError.hint,
-        function: "crm_register_call_atomic_v6",
+        function: "crm_register_call_atomic_v7",
         cliente_id: clienteId,
         operation_id: operationId || null,
         metodo_normalizado: normalizedPaymentMethod,
