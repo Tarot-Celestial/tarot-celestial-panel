@@ -569,7 +569,30 @@ export default function RegistrarLlamadaModal({
       });
 
       const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      if (!j?._ok || !j?.ok) {
+        console.error("[RegistrarLlamadaModal] fallo API registrar llamada", {
+          error: j?.error || null,
+          diagnostic_code: j?.diagnostic_code || null,
+          diagnostic_message: j?.diagnostic_message || null,
+          diagnostic_details: j?.diagnostic_details || null,
+          diagnostic_hint: j?.diagnostic_hint || null,
+          request_id: j?.request_id || operationIdRef.current || null,
+          payload_sanitizado: {
+            operation_id: operationIdRef.current || null,
+            cliente_id: clienteId,
+            cliente_compra_minutos: clienteCompra === "si",
+            uso_tipo: clienteCompra === "no" ? usoSinCompra : "compra",
+            tarotista_worker_id: actualTarotistaWorkerId,
+            forma_pago: clienteCompra === "si" ? formaPago || null : null,
+            importe: clienteCompra === "si" ? toNum(importe) : 0,
+            minutos_1: toNum(minutos1),
+            codigo_1: minutosConsumidos > 0 ? codigo1 : null,
+            minutos_2: toNum(minutos2),
+            codigo_2: codigo2 || null,
+          },
+        });
+        throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
+      }
 
       if (clienteCompra === "si" && toNum(importe) > 0) {
         const paymentEventDetail = {

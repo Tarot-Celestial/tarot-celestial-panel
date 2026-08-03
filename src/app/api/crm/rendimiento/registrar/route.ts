@@ -433,7 +433,7 @@ export async function POST(req: Request) {
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v5",
+      "crm_register_call_atomic_v6",
       { p_payload: atomicPayload },
     );
 
@@ -443,10 +443,27 @@ export async function POST(req: Request) {
         message: atomicError.message,
         details: atomicError.details,
         hint: atomicError.hint,
-        function: "crm_register_call_atomic_v5",
+        function: "crm_register_call_atomic_v6",
         cliente_id: clienteId,
         operation_id: operationId || null,
         metodo_normalizado: normalizedPaymentMethod,
+        payload_sanitizado: {
+          operation_id: operationId || null,
+          cliente_id: clienteId,
+          telefonista_worker_id: me.id,
+          tarotista_worker_id: tarotistaWorkerId,
+          cliente_compra_minutos: clienteCompra,
+          uso_tipo: usoTipo,
+          importe,
+          forma_pago: normalizedPaymentMethod,
+          minutos_1: minutos1,
+          codigo_1: codigo1,
+          minutos_2: minutos2,
+          codigo_2: codigo2,
+          next_free: nextFree,
+          next_normales: nextNormales,
+          business: String(cliente?.origen || "celestial"),
+        },
       });
 
       const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
