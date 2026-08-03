@@ -236,10 +236,11 @@ export async function POST(req: Request) {
       return clientIdentificationError();
     }
 
+    if (!isUuid(operationId)) {
+      return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
+    }
+
     if (clienteCompra) {
-      if (!isUuid(operationId)) {
-        return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
-      }
       const operationReference = `registrar_llamada:${operationId}`;
       const { data: existingPayment, error: existingPaymentError } = await admin
         .from("crm_cliente_pagos")
@@ -320,14 +321,41 @@ export async function POST(req: Request) {
     const usedFree = (codigo1 === "FREE" ? minutos1 : 0) + (codigo2 === "FREE" ? minutos2 : 0);
     const usedNormales = (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) + (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
 
+    if (!clienteCompra && usoTipo === "7free" && currentFree < 7) {
+      return NextResponse.json({
+        ok: false,
+        error: "INSUFFICIENT_FREE_MINUTES",
+        available_free: currentFree,
+        requested_free: 7,
+      }, { status: 409 });
+    }
+    if (!clienteCompra && usoTipo === "minutos" && usedFree > currentFree) {
+      return NextResponse.json({
+        ok: false,
+        error: "INSUFFICIENT_FREE_MINUTES",
+        available_free: currentFree,
+        requested_free: usedFree,
+      }, { status: 409 });
+    }
+    if (!clienteCompra && usoTipo === "minutos" && usedNormales > currentNormales) {
+      return NextResponse.json({
+        ok: false,
+        error: "INSUFFICIENT_NORMAL_MINUTES",
+        available_normal: currentNormales,
+        requested_normal: usedNormales,
+      }, { status: 409 });
+    }
+
     let nextFree = currentFree;
     let nextNormales = currentNormales;
     if (clienteCompra) {
       nextFree = Boolean(body?.guarda_minutos) ? guardadosFree : 0;
       nextNormales = Boolean(body?.guarda_minutos) ? guardadosNormales : 0;
+    } else if (usoTipo === "7free") {
+      nextFree = currentFree - 7;
     } else if (usoTipo === "minutos") {
-      nextFree = Math.max(0, currentFree - usedFree);
-      nextNormales = Math.max(0, currentNormales - usedNormales);
+      nextFree = currentFree - usedFree;
+      nextNormales = currentNormales - usedNormales;
     }
 
     const tiempo = !clienteCompra && usoTipo === "7free" ? 7 : minutos1 + minutos2;
@@ -405,7 +433,7 @@ export async function POST(req: Request) {
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v4",
+      "crm_register_call_atomic_v5",
       { p_payload: atomicPayload },
     );
 
@@ -415,18 +443,30 @@ export async function POST(req: Request) {
         message: atomicError.message,
         details: atomicError.details,
         hint: atomicError.hint,
+        function: "crm_register_call_atomic_v5",
         cliente_id: clienteId,
         operation_id: operationId || null,
         metodo_normalizado: normalizedPaymentMethod,
       });
+
+      const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
+      const knownBalanceError = [
+        "INSUFFICIENT_FREE_MINUTES",
+        "INSUFFICIENT_NORMAL_MINUTES",
+        "INSUFFICIENT_MINUTES",
+      ].find((code) => technicalMessage.includes(code));
+
       return NextResponse.json(
         {
           ok: false,
-          error: clienteCompra ? "PAYMENT_REGISTER_FAILED" : "CALL_REGISTER_FAILED",
+          error: knownBalanceError || (clienteCompra ? "PAYMENT_REGISTER_FAILED" : "CALL_REGISTER_FAILED"),
           diagnostic_code: atomicError.code || null,
+          diagnostic_message: process.env.NODE_ENV === "development" ? atomicError.message : null,
+          diagnostic_details: process.env.NODE_ENV === "development" ? atomicError.details : null,
+          diagnostic_hint: process.env.NODE_ENV === "development" ? atomicError.hint : null,
           request_id: operationId || null,
         },
-        { status: 500 },
+        { status: knownBalanceError ? 409 : 500 },
       );
     }
 

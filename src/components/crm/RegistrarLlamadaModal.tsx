@@ -274,6 +274,15 @@ function friendlySubmitError(error: unknown) {
   if (message === "CALL_REGISTER_FAILED") {
     return "No se pudo registrar la llamada. No se aplicaron cambios; inténtalo de nuevo.";
   }
+  if (message === "INSUFFICIENT_FREE_MINUTES") {
+    return "La clienta no dispone de minutos free suficientes para registrar esta llamada.";
+  }
+  if (message === "INSUFFICIENT_NORMAL_MINUTES") {
+    return "La clienta no dispone de minutos normales suficientes para registrar esta llamada.";
+  }
+  if (message === "INSUFFICIENT_MINUTES") {
+    return "La clienta no dispone de minutos free ni normales suficientes para registrar esta llamada.";
+  }
   return message || "Error registrando llamada";
 }
 
@@ -416,6 +425,30 @@ export default function RegistrarLlamadaModal({
 
   const isMarioCall = tarotistaId === CALL_MARIO_VALUE;
 
+  const balanceValidationError = useMemo(() => {
+    if (clienteCompra !== "no") return "";
+    const availableFree = toNum(cliente?.minutos_free_pendientes);
+    const availableNormal = toNum(cliente?.minutos_normales_pendientes);
+
+    if (usoSinCompra === "7free") {
+      return availableFree >= 7 ? "" : "La clienta no dispone de 7 minutos free suficientes para registrar esta consulta.";
+    }
+
+    if (usoSinCompra !== "minutos") return "";
+    const requestedFree = (codigo1 === "FREE" ? toNum(minutos1) : 0)
+      + (codigo2 === "FREE" ? toNum(minutos2) : 0);
+    const requestedNormal = (codigo1 !== "FREE" ? toNum(minutos1) : 0)
+      + (codigo2 && codigo2 !== "FREE" ? toNum(minutos2) : 0);
+
+    if (requestedFree > availableFree) {
+      return `Saldo free insuficiente: disponibles ${fmtMinutes(availableFree)}, solicitados ${fmtMinutes(requestedFree)}.`;
+    }
+    if (requestedNormal > availableNormal) {
+      return `Saldo normal insuficiente: disponibles ${fmtMinutes(availableNormal)}, solicitados ${fmtMinutes(requestedNormal)}.`;
+    }
+    return "";
+  }, [clienteCompra, usoSinCompra, cliente?.minutos_free_pendientes, cliente?.minutos_normales_pendientes, codigo1, codigo2, minutos1, minutos2]);
+
   const tarotistaSelectOptions = useMemo<GameSelectOption[]>(() => [
     { value: CALL_MARIO_VALUE, label: "✦ CALL MARIO · colaborador", special: "mario" },
     { value: CALL_MANUAL_VALUE, label: "CALL · tarotista manual", special: "manual" },
@@ -470,6 +503,10 @@ export default function RegistrarLlamadaModal({
       setMsg("⚠️ Completa esta pregunta antes de continuar.");
       return;
     }
+    if ((current?.key === "uso" || current?.key === "codigos") && balanceValidationError) {
+      setMsg(`⚠️ ${balanceValidationError}`);
+      return;
+    }
     setMsg("");
     setStep((s) => Math.min(s + 1, steps.length - 1));
   }
@@ -486,6 +523,10 @@ export default function RegistrarLlamadaModal({
     if (!isUuid(clienteId)) {
       console.error("[RegistrarLlamadaModal] cliente.id no es un UUID válido", { cliente_id: clienteId });
       setMsg("❌ No se pudo identificar correctamente al cliente. Recarga la ficha e inténtalo de nuevo.");
+      return;
+    }
+    if (balanceValidationError) {
+      setMsg(`⚠️ ${balanceValidationError}`);
       return;
     }
     try {
