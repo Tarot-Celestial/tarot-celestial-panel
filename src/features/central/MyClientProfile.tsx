@@ -14,6 +14,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import MyClientSummary from "./MyClientSummary";
 import MyClientNotes from "./MyClientNotes";
 import MyClientPurchases from "./MyClientPurchases";
+import MyClientFollowUps from "./MyClientFollowUps";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientProfile.module.css";
 
@@ -149,6 +150,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "client_favorite_tarotists", filter: `client_id=eq.${clientId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups", filter: `client_id=eq.${clientId}` }, refresh)
       .subscribe();
 
     return () => {
@@ -245,6 +247,16 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             clientId={clientId}
             lastPurchaseAt={purchase?.created_at}
             summary={summary}
+            onRefresh={() => load(false)}
+          />
+        </div>
+      ) : activeTab === "seguimientos" ? (
+        <div className={styles.summaryPanel}>
+          <MyClientFollowUps
+            clientId={clientId}
+            client={client}
+            summary={summary}
+            lastPurchaseAt={purchase?.created_at}
             onRefresh={() => load(false)}
           />
         </div>

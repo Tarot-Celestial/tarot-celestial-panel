@@ -19,7 +19,7 @@ type FollowUp = {
   workers?: { display_name?: string | null } | null;
 };
 
-type TimelineItem = { id: string; at: string; type: string; title: string; description: string; owner?: string; status?: string };
+type TimelineItem = { id: string; at: string; type: string; title: string; description: string; owner?: string; status?: string; priority?: string };
 
 const CONTACT_TYPES = ["Llamada", "WhatsApp", "Mensaje", "Consulta", "Seguimiento general", "Recordatorio", "Otro"];
 const RESULTS = ["Contactada", "Sin respuesta", "Interesada", "Volver a llamar", "Seguimiento completado", "Pendiente", "No interesada", "Otro"];
@@ -44,6 +44,8 @@ function iconFor(type: string) {
   if (type === "note") return <StickyNote size={18} />;
   if (type === "interaction") return <MessageCircle size={18} />;
   if (type === "followup-complete") return <CheckCircle2 size={18} />;
+  if (type === "followup-overdue") return <AlertTriangle size={18} />;
+  if (type === "free-consultation") return <Sparkles size={18} />;
   return <CalendarClock size={18} />;
 }
 
@@ -89,11 +91,41 @@ export default function MyClientFollowUps({ clientId, client, summary, lastPurch
     const rows: TimelineItem[] = [];
     const capturedAt = summary.captured_at || client.created_at;
     rows.push({ id: `capture-${clientId}`, at: capturedAt || new Date(0).toISOString(), type: "capture", title: "Clienta captada", description: `${summary.captured_by?.display_name || "Celestial"} registró el primer contacto disponible de la clienta.`, owner: summary.captured_by?.display_name || "Celestial", status: capturedAt ? "Registrada" : "Sin fecha" });
-    for (const f of items) rows.push({ id: `followup-${f.id}`, at: f.completed_at || f.scheduled_at || f.created_at || new Date(0).toISOString(), type: String(f.status).toLowerCase() === "completado" ? "followup-complete" : "followup", title: f.reason || "Seguimiento", description: [f.description, f.observations].filter(Boolean).join(" · ") || f.result || "Seguimiento registrado", owner: f.workers?.display_name || "Telefonista", status: f.status || "pendiente" });
-    for (const p of summary.payments || []) rows.push({ id: `payment-${p.id}`, at: p.created_at, type: "purchase", title: "Compra realizada", description: `${Number(p.importe || 0).toLocaleString("es-ES", { style: "currency", currency: p.moneda || "EUR" })} · ${p.metodo || "Método no indicado"}`, status: p.estado || "completed" });
-    for (const c of summary.calls || []) rows.push({ id: `call-${c.id}`, at: c.fecha_hora || c.fecha, type: "call", title: "Llamada registrada", description: c.resumen_codigo || c.tarotista_nombre || "Llamada registrada en CRM", owner: c.telefonista_nombre || undefined, status: "completada" });
+    for (const f of items) {
+      const completed = String(f.status).toLowerCase() === "completado";
+      const dueAt = f.reminder_at || f.scheduled_at;
+      const overdue = !completed && dueAt && new Date(dueAt).getTime() < Date.now();
+      rows.push({
+        id: `followup-${f.id}`,
+        at: f.completed_at || f.scheduled_at || f.created_at || new Date(0).toISOString(),
+        type: completed ? "followup-complete" : overdue ? "followup-overdue" : "followup",
+        title: f.reason || "Seguimiento",
+        description: [f.description, f.observations].filter(Boolean).join(" · ") || f.result || "Seguimiento registrado",
+        owner: f.workers?.display_name || "Telefonista",
+        status: completed ? "completado" : overdue ? "vencido" : f.status || "pendiente",
+        priority: f.priority || undefined,
+      });
+    }
+    const validPayments = [...(summary.payments || [])].sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    validPayments.forEach((p: any, index: number) => rows.push({
+      id: `payment-${p.id}`,
+      at: p.created_at,
+      type: "purchase",
+      title: index === 0 ? "Primera compra" : "Recompra",
+      description: `${Number(p.importe || 0).toLocaleString("es-ES", { style: "currency", currency: p.moneda || "EUR" })} · ${p.metodo || "Método no indicado"}`,
+      status: p.estado || "completed",
+    }));
+    for (const c of summary.calls || []) rows.push({
+      id: `call-${c.id}`,
+      at: c.fecha_hora || c.fecha,
+      type: c.usa_7_free ? "free-consultation" : "call",
+      title: c.usa_7_free ? "Primera consulta free" : "Llamada registrada",
+      description: c.resumen_codigo || c.tarotista_nombre || "Llamada registrada en CRM",
+      owner: c.telefonista_nombre || undefined,
+      status: "completada",
+    });
     for (const i of summary.interactions || []) rows.push({ id: `interaction-${i.id}`, at: i.cerrado_at || i.created_at, type: "interaction", title: i.estado === "cerrada" ? "Consulta completada" : "Interacción registrada", description: i.notas_central || i.origen || "Interacción del CRM", status: i.estado || "registrada" });
-    for (const n of (summary.notes || []).slice(0, 20)) rows.push({ id: `note-${n.id}`, at: n.created_at, type: "note", title: n.is_pinned ? "Nota importante" : "Nota registrada", description: n.texto || n.note_text || n.contenido || "Nota del CRM", owner: n.created_by_email || n.author_email || undefined, status: n.is_pinned ? "anclada" : "registrada" });
+    for (const n of (summary.notes || [])) rows.push({ id: `note-${n.id}`, at: n.created_at, type: "note", title: n.is_pinned ? "Nota importante" : "Nota registrada", description: n.texto || n.note_text || n.contenido || "Nota del CRM", owner: n.created_by_email || n.author_email || undefined, status: n.is_pinned ? "anclada" : "registrada" });
     return rows.filter((r) => r.at && new Date(r.at).getTime() > 0).sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   }, [client, clientId, items, summary]);
 
@@ -111,7 +143,7 @@ export default function MyClientFollowUps({ clientId, client, summary, lastPurch
         <header className={styles.header}><div><span className={styles.eyebrow}>RELACIÓN CON LA CLIENTA</span><h2>Cronología de seguimiento</h2></div><button type="button" onClick={() => setModalOpen(true)}><Plus size={17} /> Nuevo seguimiento</button></header>
         {error && <div className={styles.error}>{error}</div>}
         {loading ? <div className={styles.empty}>Cargando cronología…</div> : timeline.length === 0 ? <div className={styles.empty}>Todavía no hay actividad registrada.</div> : (
-          <div className={styles.timeline}>{timeline.map((event) => <article key={event.id} className={`${styles.event} ${styles[event.type] || ""}`}><time>{dateTime(event.at)}</time><span className={styles.icon}>{iconFor(event.type)}</span><div className={styles.eventCard}><div className={styles.eventTop}><strong>{event.title}</strong><span>{event.status}</span></div><p>{event.description}</p>{event.owner && <small>Responsable: {event.owner}</small>}</div></article>)}</div>
+          <div className={styles.timeline}>{timeline.map((event) => <article key={event.id} className={`${styles.event} ${styles[event.type] || ""}`}><time>{dateTime(event.at)}</time><span className={styles.icon}>{iconFor(event.type)}</span><div className={styles.eventCard}><div className={styles.eventTop}><strong>{event.title}</strong><span>{event.status}</span></div><p>{event.description}</p>{event.owner && <small>Responsable: {event.owner}</small>}{event.priority && <small>Prioridad: {event.priority}</small>}</div></article>)}</div>
         )}
       </div>
 

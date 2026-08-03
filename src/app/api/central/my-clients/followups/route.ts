@@ -20,7 +20,7 @@ async function currentWorker(req: Request) {
     .eq("user_id", data.user.id)
     .maybeSingle();
   if (workerError) throw workerError;
-  if (!worker || !["admin", "central"].includes(String(worker.role || ""))) return null;
+  if (!worker || !["admin", "ceo", "supervisor", "central"].includes(String(worker.role || ""))) return null;
   return worker;
 }
 
@@ -29,7 +29,7 @@ async function clientAccess(admin: ReturnType<typeof adminClient>, clientId: str
   if (error) throw error;
   if (!client) return { client: null, allowed: false };
   const ownerId = String(client.captured_by_worker_id || client.responsable_worker_id || client.assigned_worker_id || "");
-  const allowed = worker.role === "admin" || !ownerId || ownerId === String(worker.id);
+  const allowed = ["admin", "ceo", "supervisor"].includes(String(worker.role || "")) || !ownerId || ownerId === String(worker.id);
   return { client, allowed };
 }
 
