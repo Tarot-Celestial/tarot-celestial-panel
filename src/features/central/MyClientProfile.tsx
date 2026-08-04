@@ -15,6 +15,7 @@ import MyClientSummary from "./MyClientSummary";
 import MyClientNotes from "./MyClientNotes";
 import MyClientPurchases from "./MyClientPurchases";
 import MyClientFollowUps from "./MyClientFollowUps";
+import MyClientPreferences from "./MyClientPreferences";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientProfile.module.css";
 
@@ -276,6 +277,10 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
             notes={summary.notes || []}
             onRefresh={() => load(false)}
           />
+        </div>
+      ) : activeTab === "preferencias" ? (
+        <div className={styles.summaryPanel}>
+          <MyClientPreferences clientId={clientId} />
         </div>
       ) : (
         <div className={styles.tabPanel}>
