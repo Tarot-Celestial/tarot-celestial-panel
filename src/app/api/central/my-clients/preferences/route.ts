@@ -41,6 +41,9 @@ const CONTENT_TOPICS = new Set([
 ]);
 const READING_STYLES = new Set(["deep_detailed", "direct_concise", "intuitive_spiritual"]);
 const CONTENT_FORMATS = new Set(["text", "audio", "video", "call"]);
+const SERVICE_DETAIL_LEVELS = new Set([1, 2, 3, 4]);
+const SERVICE_LANGUAGES = new Set(["close_empathetic", "direct_clear", "spiritual_intuitive", "professional_formal", "motivating_positive"]);
+const RECOMMENDATION_OPENNESS = new Set(["always", "when_relevant", "ask_first", "no_recommendations"]);
 
 type NotificationKey = (typeof NOTIFICATION_KEYS)[number];
 
@@ -61,6 +64,7 @@ type PreferencesRequestBody = {
   notifications?: unknown;
   custom_schedules?: unknown;
   content_preferences?: unknown;
+  service_preferences?: unknown;
 };
 
 type RawContentPreferences = {
@@ -73,6 +77,21 @@ type ContentPreferences = {
   favorite_topics: string[];
   preferred_reading_style: string | null;
   preferred_format: string | null;
+  updated_at?: string | null;
+};
+
+type RawServicePreferences = {
+  detail_level?: unknown;
+  preferred_language?: unknown;
+  recommendation_openness?: unknown;
+  interested_in_training_events?: unknown;
+};
+
+type ServicePreferences = {
+  detail_level: number;
+  preferred_language: string;
+  recommendation_openness: string;
+  interested_in_training_events: boolean;
   updated_at?: string | null;
 };
 
@@ -130,6 +149,14 @@ const CONTENT_DEFAULTS: ContentPreferences = {
   favorite_topics: [],
   preferred_reading_style: null,
   preferred_format: null,
+  updated_at: null,
+};
+
+const SERVICE_DEFAULTS: ServicePreferences = {
+  detail_level: 2,
+  preferred_language: "close_empathetic",
+  recommendation_openness: "when_relevant",
+  interested_in_training_events: false,
   updated_at: null,
 };
 
@@ -234,6 +261,26 @@ function normalizeContentPreferences(body: PreferencesRequestBody): ContentPrefe
   };
 }
 
+function normalizeServicePreferences(body: PreferencesRequestBody): ServicePreferences {
+  const raw = body.service_preferences && typeof body.service_preferences === "object"
+    ? body.service_preferences as RawServicePreferences
+    : {};
+  const detailLevel = Number(raw.detail_level ?? SERVICE_DEFAULTS.detail_level);
+  const preferredLanguage = String(raw.preferred_language ?? SERVICE_DEFAULTS.preferred_language).trim().toLowerCase();
+  const recommendationOpenness = String(raw.recommendation_openness ?? SERVICE_DEFAULTS.recommendation_openness).trim().toLowerCase();
+
+  if (!SERVICE_DETAIL_LEVELS.has(detailLevel)) throw new Error("INVALID_SERVICE_DETAIL_LEVEL");
+  if (!SERVICE_LANGUAGES.has(preferredLanguage)) throw new Error("INVALID_SERVICE_LANGUAGE");
+  if (!RECOMMENDATION_OPENNESS.has(recommendationOpenness)) throw new Error("INVALID_RECOMMENDATION_OPENNESS");
+
+  return {
+    detail_level: detailLevel,
+    preferred_language: preferredLanguage,
+    recommendation_openness: recommendationOpenness,
+    interested_in_training_events: Boolean(raw.interested_in_training_events),
+  };
+}
+
 function normalizeSchedules(body: PreferencesRequestBody): NormalizedSchedule[] {
   const schedules: RawSchedule[] = Array.isArray(body.custom_schedules)
     ? body.custom_schedules.filter((item): item is RawSchedule => Boolean(item) && typeof item === "object")
@@ -275,7 +322,7 @@ async function clientBusiness(admin: ReturnType<typeof adminClient>, clientId: s
 }
 
 async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, business: string) {
-  const [communicationResult, notificationResult, schedulesResult, contentResult] = await Promise.all([
+  const [communicationResult, notificationResult, schedulesResult, contentResult, serviceResult] = await Promise.all([
     admin
       .from("crm_client_communication_preferences")
       .select("client_id, business, preferred_channel, likes_follow_up, follow_up_frequency, preferred_time_slot, preferred_days, weekly_summary, updated_at")
@@ -297,12 +344,18 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       .select("client_id, business, favorite_topics, preferred_reading_style, preferred_format, updated_at")
       .eq("client_id", clientId)
       .maybeSingle(),
+    admin
+      .from("crm_client_service_preferences")
+      .select("client_id, business, detail_level, preferred_language, recommendation_openness, interested_in_training_events, updated_at")
+      .eq("client_id", clientId)
+      .maybeSingle(),
   ]);
 
   if (communicationResult.error) throw communicationResult.error;
   if (notificationResult.error) throw notificationResult.error;
   if (schedulesResult.error) throw schedulesResult.error;
   if (contentResult.error) throw contentResult.error;
+  if (serviceResult.error) throw serviceResult.error;
 
   const settings = notificationResult.data?.settings && typeof notificationResult.data.settings === "object"
     ? notificationResult.data.settings as Partial<Record<NotificationKey, RawNotificationEntry>>
@@ -338,6 +391,11 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       client_id: clientId,
       business,
       ...CONTENT_DEFAULTS,
+    },
+    service_preferences: serviceResult.data || {
+      client_id: clientId,
+      business,
+      ...SERVICE_DEFAULTS,
     },
   };
 }
@@ -385,6 +443,7 @@ export async function PUT(req: Request) {
     const notifications = normalizeNotifications(body);
     const schedules = normalizeSchedules(body);
     const contentPreferences = normalizeContentPreferences(body);
+    const servicePreferences = normalizeServicePreferences(body);
     const admin = adminClient();
     const client = await clientBusiness(admin, clientId);
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
@@ -424,6 +483,20 @@ export async function PUT(req: Request) {
         updated_at: now,
       }, { onConflict: "client_id" });
     if (contentError) throw contentError;
+
+    const { error: serviceError } = await admin
+      .from("crm_client_service_preferences")
+      .upsert({
+        client_id: clientId,
+        business: client.business,
+        detail_level: servicePreferences.detail_level,
+        preferred_language: servicePreferences.preferred_language,
+        recommendation_openness: servicePreferences.recommendation_openness,
+        interested_in_training_events: servicePreferences.interested_in_training_events,
+        updated_by_user_id: worker.user_id,
+        updated_at: now,
+      }, { onConflict: "client_id" });
+    if (serviceError) throw serviceError;
 
     const incomingIds = schedules.map((schedule) => schedule.id).filter(Boolean) as string[];
     let deleteQuery = admin.from("crm_client_notification_schedules").delete().eq("client_id", clientId);

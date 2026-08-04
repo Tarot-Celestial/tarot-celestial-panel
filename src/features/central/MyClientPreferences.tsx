@@ -25,6 +25,8 @@ import {
   WandSparkles,
   Waves,
   Trash2,
+  SlidersHorizontal,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -83,6 +85,27 @@ type ContentPreferences = {
   updated_at?: string | null;
 };
 
+type ServiceDetailLevel = 1 | 2 | 3 | 4;
+type PreferredLanguage =
+  | "close_empathetic"
+  | "direct_clear"
+  | "spiritual_intuitive"
+  | "professional_formal"
+  | "motivating_positive";
+type RecommendationOpenness =
+  | "always"
+  | "when_relevant"
+  | "ask_first"
+  | "no_recommendations";
+
+type ServicePreferences = {
+  detail_level: ServiceDetailLevel;
+  preferred_language: PreferredLanguage;
+  recommendation_openness: RecommendationOpenness;
+  interested_in_training_events: boolean;
+  updated_at?: string | null;
+};
+
 type CustomSchedule = {
   id?: string | null;
   name: string;
@@ -109,6 +132,35 @@ const CONTENT_DEFAULTS: ContentPreferences = {
   preferred_reading_style: null,
   preferred_format: null,
 };
+
+const SERVICE_DEFAULTS: ServicePreferences = {
+  detail_level: 2,
+  preferred_language: "close_empathetic",
+  recommendation_openness: "when_relevant",
+  interested_in_training_events: false,
+};
+
+const DETAIL_LEVELS: Array<{ value: ServiceDetailLevel; label: string }> = [
+  { value: 1, label: "Bajo" },
+  { value: 2, label: "Medio" },
+  { value: 3, label: "Alto" },
+  { value: 4, label: "Muy alto" },
+];
+
+const LANGUAGE_OPTIONS: Array<{ value: PreferredLanguage; label: string }> = [
+  { value: "close_empathetic", label: "Cercano y empático" },
+  { value: "direct_clear", label: "Directo y claro" },
+  { value: "spiritual_intuitive", label: "Espiritual e intuitivo" },
+  { value: "professional_formal", label: "Profesional y formal" },
+  { value: "motivating_positive", label: "Motivador y positivo" },
+];
+
+const RECOMMENDATION_OPTIONS: Array<{ value: RecommendationOpenness; label: string }> = [
+  { value: "always", label: "Sí, siempre" },
+  { value: "when_relevant", label: "Solo si encajan con la consulta" },
+  { value: "ask_first", label: "Preguntar antes" },
+  { value: "no_recommendations", label: "Prefiere no recibir recomendaciones" },
+];
 
 const CONTENT_TOPICS: Array<{ value: ContentTopic; label: string; icon: typeof Heart }> = [
   { value: "love_relationships", label: "Amor y relaciones", icon: Heart },
@@ -201,6 +253,7 @@ export default function MyClientPreferences({ clientId }: Props) {
   const [notifications, setNotifications] = useState<NotificationSettings>(NOTIFICATION_DEFAULTS);
   const [customSchedules, setCustomSchedules] = useState<CustomSchedule[]>([]);
   const [contentPreferences, setContentPreferences] = useState<ContentPreferences>(CONTENT_DEFAULTS);
+  const [servicePreferences, setServicePreferences] = useState<ServicePreferences>(SERVICE_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -216,12 +269,12 @@ export default function MyClientPreferences({ clientId }: Props) {
     color: "#9b6cff",
   });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestState = useRef({ preferences, notifications, customSchedules, contentPreferences });
+  const latestState = useRef({ preferences, notifications, customSchedules, contentPreferences, servicePreferences });
   const mounted = useRef(true);
 
   useEffect(() => {
-    latestState.current = { preferences, notifications, customSchedules, contentPreferences };
-  }, [preferences, notifications, customSchedules, contentPreferences]);
+    latestState.current = { preferences, notifications, customSchedules, contentPreferences, servicePreferences };
+  }, [preferences, notifications, customSchedules, contentPreferences, servicePreferences]);
 
   const applyPayload = useCallback((payload: any) => {
     setPreferences({
@@ -237,6 +290,10 @@ export default function MyClientPreferences({ clientId }: Props) {
       favorite_topics: Array.isArray(payload?.content_preferences?.favorite_topics)
         ? payload.content_preferences.favorite_topics
         : [],
+    });
+    setServicePreferences({
+      ...SERVICE_DEFAULTS,
+      ...(payload?.service_preferences || {}),
     });
     setDirty(false);
   }, []);
@@ -282,6 +339,7 @@ export default function MyClientPreferences({ clientId }: Props) {
           notifications: current.notifications,
           custom_schedules: current.customSchedules,
           content_preferences: current.contentPreferences,
+          service_preferences: current.servicePreferences,
         }),
         cache: "no-store",
       });
@@ -357,6 +415,12 @@ export default function MyClientPreferences({ clientId }: Props) {
         event: "*",
         schema: "public",
         table: "crm_client_content_preferences",
+        filter: `client_id=eq.${clientId}`,
+      }, refresh)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "crm_client_service_preferences",
         filter: `client_id=eq.${clientId}`,
       }, refresh)
       .subscribe();
@@ -446,6 +510,11 @@ export default function MyClientPreferences({ clientId }: Props) {
 
   const updateContentPreference = <K extends keyof ContentPreferences>(key: K, value: ContentPreferences[K]) => {
     setContentPreferences((current) => ({ ...current, [key]: value }));
+    scheduleSave();
+  };
+
+  const updateServicePreference = <K extends keyof ServicePreferences>(key: K, value: ServicePreferences[K]) => {
+    setServicePreferences((current) => ({ ...current, [key]: value }));
     scheduleSave();
   };
 
@@ -702,6 +771,60 @@ export default function MyClientPreferences({ clientId }: Props) {
               })}
             </div>
           </section>
+        </div>
+      </article>
+
+
+      <article className={`${styles.card} ${styles.serviceCard}`}>
+        <header className={styles.header}>
+          <div>
+            <span className={styles.serviceIcon}><SlidersHorizontal size={18} /></span>
+            <h2>Preferencias de servicio</h2>
+            <p>Cómo podemos personalizar mejor la atención.</p>
+          </div>
+          <span className={styles.liveBadge}><ShieldCheck size={14} /> Sincronización activa</span>
+        </header>
+
+        <div className={styles.serviceGrid}>
+          <section className={styles.serviceField}>
+            <div className={styles.serviceFieldHeading}>
+              <div><strong>Nivel de detalle en las consultas</strong><small>Profundidad con la que prefiere recibir la información.</small></div>
+              <span className={styles.detailBadge}>{DETAIL_LEVELS.find((item) => item.value === servicePreferences.detail_level)?.label}</span>
+            </div>
+            <input
+              className={styles.detailRange}
+              type="range"
+              min="1"
+              max="4"
+              step="1"
+              value={servicePreferences.detail_level}
+              aria-label="Nivel de detalle en las consultas"
+              onChange={(event) => updateServicePreference("detail_level", Number(event.target.value) as ServiceDetailLevel)}
+            />
+            <div className={styles.rangeLabels}>{DETAIL_LEVELS.map((item) => <span key={item.value}>{item.label}</span>)}</div>
+          </section>
+
+          <label className={`${styles.field} ${styles.serviceField}`}>
+            <span>Lenguaje preferido</span>
+            <select value={servicePreferences.preferred_language} onChange={(event) => updateServicePreference("preferred_language", event.target.value as PreferredLanguage)}>
+              {LANGUAGE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+
+          <label className={`${styles.field} ${styles.serviceField}`}>
+            <span>Apertura a recomendaciones</span>
+            <select value={servicePreferences.recommendation_openness} onChange={(event) => updateServicePreference("recommendation_openness", event.target.value as RecommendationOpenness)}>
+              {RECOMMENDATION_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
+
+          <div className={`${styles.switchField} ${styles.serviceField}`}>
+            <div><strong>Interés en formaciones y eventos</strong><small>Talleres, sesiones especiales y actividades de Tarot Celestial.</small></div>
+            <label className={styles.switch}>
+              <input type="checkbox" checked={servicePreferences.interested_in_training_events} onChange={(event) => updateServicePreference("interested_in_training_events", event.target.checked)} />
+              <span aria-hidden="true" />
+            </label>
+          </div>
         </div>
       </article>
 
