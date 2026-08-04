@@ -32,6 +32,65 @@ const NOTIFICATION_KEYS = [
 
 type NotificationKey = (typeof NOTIFICATION_KEYS)[number];
 
+type NotificationTiming = {
+  enabled: boolean;
+  timing: string;
+};
+
+type NotificationSettings = Record<NotificationKey, NotificationTiming>;
+
+type PreferencesRequestBody = {
+  preferred_channel?: unknown;
+  likes_follow_up?: unknown;
+  follow_up_frequency?: unknown;
+  preferred_time_slot?: unknown;
+  preferred_days?: unknown;
+  weekly_summary?: unknown;
+  notifications?: unknown;
+  custom_schedules?: unknown;
+};
+
+type RawNotificationEntry = {
+  enabled?: unknown;
+  timing?: unknown;
+};
+
+type RawSchedule = {
+  id?: unknown;
+  name?: unknown;
+  time?: unknown;
+  color?: unknown;
+  days?: unknown;
+  enabled?: unknown;
+};
+
+type NormalizedSchedule = {
+  id: string | null;
+  name: string;
+  time: string;
+  days: string[];
+  enabled: boolean;
+  color: string;
+  sort_order: number;
+};
+
+type LoadedScheduleRow = {
+  id: unknown;
+  name: unknown;
+  schedule_time: unknown;
+  preferred_days: unknown;
+  enabled: unknown;
+  color: unknown;
+  updated_at: unknown;
+};
+
+type ErrorDetails = {
+  code?: unknown;
+  message?: unknown;
+  details?: unknown;
+  hint?: unknown;
+};
+
 const DEFAULTS = {
   preferred_channel: "whatsapp",
   likes_follow_up: true,
@@ -43,7 +102,7 @@ const DEFAULTS = {
 
 const NOTIFICATION_DEFAULTS = Object.fromEntries(
   NOTIFICATION_KEYS.map((key) => [key, { enabled: false, timing: "according_to_preferences" }]),
-) as Record<NotificationKey, { enabled: boolean; timing: string }>;
+) as NotificationSettings;
 
 function env(name: string) {
   const value = process.env[name];
@@ -78,7 +137,7 @@ function clientIdFrom(req: Request) {
   return String(new URL(req.url).searchParams.get("client_id") || "").trim();
 }
 
-function normalizeCommunicationPayload(body: any) {
+function normalizeCommunicationPayload(body: PreferencesRequestBody) {
   const preferredChannel = String(body?.preferred_channel || "").trim().toLowerCase();
   const frequency = String(body?.follow_up_frequency || "").trim().toLowerCase();
   const timeSlot = String(body?.preferred_time_slot || "").trim().toLowerCase();
@@ -101,19 +160,23 @@ function normalizeCommunicationPayload(body: any) {
   };
 }
 
-function normalizeNotifications(body: any) {
-  const incoming = body?.notifications && typeof body.notifications === "object" ? body.notifications : {};
+function normalizeNotifications(body: PreferencesRequestBody): NotificationSettings {
+  const incoming = body.notifications && typeof body.notifications === "object"
+    ? body.notifications as Partial<Record<NotificationKey, RawNotificationEntry>>
+    : {};
   return Object.fromEntries(NOTIFICATION_KEYS.map((key) => {
-    const entry = incoming[key] || {};
+    const entry: RawNotificationEntry = incoming[key] || {};
     const timing = String(entry.timing || "according_to_preferences").trim().toLowerCase();
     if (!NOTIFICATION_TIMINGS.has(timing)) throw new Error(`INVALID_NOTIFICATION_TIMING_${key.toUpperCase()}`);
     return [key, { enabled: Boolean(entry.enabled), timing }];
-  })) as Record<NotificationKey, { enabled: boolean; timing: string }>;
+  })) as NotificationSettings;
 }
 
-function normalizeSchedules(body: any) {
-  const schedules = Array.isArray(body?.custom_schedules) ? body.custom_schedules : [];
-  return schedules.map((raw: any, index: number) => {
+function normalizeSchedules(body: PreferencesRequestBody): NormalizedSchedule[] {
+  const schedules: RawSchedule[] = Array.isArray(body.custom_schedules)
+    ? body.custom_schedules.filter((item): item is RawSchedule => Boolean(item) && typeof item === "object")
+    : [];
+  return schedules.map((raw: RawSchedule, index: number): NormalizedSchedule => {
     const name = String(raw?.name || "").trim();
     const time = String(raw?.time || "").trim();
     const color = String(raw?.color || "#9b6cff").trim();
@@ -174,7 +237,7 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
   if (schedulesResult.error) throw schedulesResult.error;
 
   const settings = notificationResult.data?.settings && typeof notificationResult.data.settings === "object"
-    ? notificationResult.data.settings as Record<string, any>
+    ? notificationResult.data.settings as Partial<Record<NotificationKey, RawNotificationEntry>>
     : {};
 
   return {
@@ -188,7 +251,7 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
           : NOTIFICATION_DEFAULTS[key].timing,
       },
     ])),
-    custom_schedules: (schedulesResult.data || []).map((schedule) => ({
+    custom_schedules: ((schedulesResult.data || []) as LoadedScheduleRow[]).map((schedule: LoadedScheduleRow) => ({
       id: String(schedule.id),
       name: String(schedule.name || ""),
       time: String(schedule.schedule_time || "").slice(0, 5),
@@ -215,14 +278,16 @@ export async function GET(req: Request) {
 
     const data = await loadAll(admin, clientId, client.business);
     return NextResponse.json({ ok: true, ...data }, { headers: { "Cache-Control": "no-store, max-age=0" } });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const details = error as ErrorDetails;
     console.error("[client-preferences:get]", {
-      code: error?.code,
-      message: error?.message,
-      details: error?.details,
-      hint: error?.hint,
+      code: details.code,
+      message: details.message,
+      details: details.details,
+      hint: details.hint,
     });
-    return NextResponse.json({ ok: false, error: error?.message || "PREFERENCES_LOAD_FAILED" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "PREFERENCES_LOAD_FAILED";
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
   }
 }
 
@@ -234,7 +299,10 @@ export async function PUT(req: Request) {
     const clientId = clientIdFrom(req);
     if (!clientId) return NextResponse.json({ ok: false, error: "CLIENT_ID_REQUIRED" }, { status: 400 });
 
-    const body = await req.json().catch(() => null);
+    const parsedBody: unknown = await req.json().catch((): null => null);
+    const body: PreferencesRequestBody = parsedBody && typeof parsedBody === "object"
+      ? parsedBody as PreferencesRequestBody
+      : {};
     const communication = normalizeCommunicationPayload(body);
     const notifications = normalizeNotifications(body);
     const schedules = normalizeSchedules(body);
@@ -292,14 +360,16 @@ export async function PUT(req: Request) {
 
     const data = await loadAll(admin, clientId, client.business);
     return NextResponse.json({ ok: true, ...data }, { headers: { "Cache-Control": "no-store, max-age=0" } });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const details = error as ErrorDetails;
     console.error("[client-preferences:put]", {
-      code: error?.code,
-      message: error?.message,
-      details: error?.details,
-      hint: error?.hint,
+      code: details.code,
+      message: details.message,
+      details: details.details,
+      hint: details.hint,
     });
-    const status = String(error?.message || "").startsWith("INVALID_") ? 400 : 500;
-    return NextResponse.json({ ok: false, error: error?.message || "PREFERENCES_SAVE_FAILED" }, { status });
+    const message = error instanceof Error ? error.message : "PREFERENCES_SAVE_FAILED";
+    const status = message.startsWith("INVALID_") ? 400 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
