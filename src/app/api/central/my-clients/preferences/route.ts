@@ -9,6 +9,28 @@ const CHANNELS = new Set(["whatsapp", "phone", "email", "sms"]);
 const FREQUENCIES = new Set(["daily", "every_2_days", "weekly", "every_15_days", "monthly", "purchase_only"]);
 const TIME_SLOTS = new Set(["morning", "midday", "afternoon", "evening", "any"]);
 const DAYS = new Set(["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]);
+const NOTIFICATION_TIMINGS = new Set([
+  "immediate",
+  "30_minutes_before",
+  "1_hour_before",
+  "24_hours_before",
+  "same_day",
+  "day_before",
+  "according_to_preferences",
+  "morning_0900",
+  "afternoon_1700",
+  "custom",
+]);
+const NOTIFICATION_KEYS = [
+  "promotions",
+  "appointment_reminders",
+  "personalized_followups",
+  "new_content",
+  "birthday_offer",
+  "important_updates",
+] as const;
+
+type NotificationKey = (typeof NOTIFICATION_KEYS)[number];
 
 const DEFAULTS = {
   preferred_channel: "whatsapp",
@@ -18,6 +40,10 @@ const DEFAULTS = {
   preferred_days: [] as string[],
   weekly_summary: false,
 };
+
+const NOTIFICATION_DEFAULTS = Object.fromEntries(
+  NOTIFICATION_KEYS.map((key) => [key, { enabled: false, timing: "according_to_preferences" }]),
+) as Record<NotificationKey, { enabled: boolean; timing: string }>;
 
 function env(name: string) {
   const value = process.env[name];
@@ -52,7 +78,7 @@ function clientIdFrom(req: Request) {
   return String(new URL(req.url).searchParams.get("client_id") || "").trim();
 }
 
-function normalizePayload(body: any) {
+function normalizeCommunicationPayload(body: any) {
   const preferredChannel = String(body?.preferred_channel || "").trim().toLowerCase();
   const frequency = String(body?.follow_up_frequency || "").trim().toLowerCase();
   const timeSlot = String(body?.preferred_time_slot || "").trim().toLowerCase();
@@ -75,6 +101,43 @@ function normalizePayload(body: any) {
   };
 }
 
+function normalizeNotifications(body: any) {
+  const incoming = body?.notifications && typeof body.notifications === "object" ? body.notifications : {};
+  return Object.fromEntries(NOTIFICATION_KEYS.map((key) => {
+    const entry = incoming[key] || {};
+    const timing = String(entry.timing || "according_to_preferences").trim().toLowerCase();
+    if (!NOTIFICATION_TIMINGS.has(timing)) throw new Error(`INVALID_NOTIFICATION_TIMING_${key.toUpperCase()}`);
+    return [key, { enabled: Boolean(entry.enabled), timing }];
+  })) as Record<NotificationKey, { enabled: boolean; timing: string }>;
+}
+
+function normalizeSchedules(body: any) {
+  const schedules = Array.isArray(body?.custom_schedules) ? body.custom_schedules : [];
+  return schedules.map((raw: any, index: number) => {
+    const name = String(raw?.name || "").trim();
+    const time = String(raw?.time || "").trim();
+    const color = String(raw?.color || "#9b6cff").trim();
+    const days = Array.from(new Set<string>(Array.isArray(raw?.days)
+      ? raw.days.map((value: unknown) => String(value || "").trim().toLowerCase())
+      : [])).filter((day) => DAYS.has(day));
+
+    if (!name || name.length > 80) throw new Error(`INVALID_SCHEDULE_NAME_${index}`);
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error(`INVALID_SCHEDULE_TIME_${index}`);
+    if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error(`INVALID_SCHEDULE_COLOR_${index}`);
+    if (days.length === 0) throw new Error(`INVALID_SCHEDULE_DAYS_${index}`);
+
+    return {
+      id: raw?.id ? String(raw.id) : null,
+      name,
+      time,
+      days,
+      enabled: raw?.enabled !== false,
+      color: color.toLowerCase(),
+      sort_order: index,
+    };
+  });
+}
+
 async function clientBusiness(admin: ReturnType<typeof adminClient>, clientId: string) {
   const { data, error } = await admin
     .from("crm_clientes")
@@ -84,6 +147,58 @@ async function clientBusiness(admin: ReturnType<typeof adminClient>, clientId: s
   if (error) throw error;
   if (!data) return null;
   return { id: String(data.id), business: String(data.origen || "celestial").trim().toLowerCase() || "celestial" };
+}
+
+async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, business: string) {
+  const [communicationResult, notificationResult, schedulesResult] = await Promise.all([
+    admin
+      .from("crm_client_communication_preferences")
+      .select("client_id, business, preferred_channel, likes_follow_up, follow_up_frequency, preferred_time_slot, preferred_days, weekly_summary, updated_at")
+      .eq("client_id", clientId)
+      .maybeSingle(),
+    admin
+      .from("crm_client_notification_preferences")
+      .select("client_id, business, settings, updated_at")
+      .eq("client_id", clientId)
+      .maybeSingle(),
+    admin
+      .from("crm_client_notification_schedules")
+      .select("id, client_id, business, name, schedule_time, preferred_days, enabled, color, sort_order, updated_at")
+      .eq("client_id", clientId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (communicationResult.error) throw communicationResult.error;
+  if (notificationResult.error) throw notificationResult.error;
+  if (schedulesResult.error) throw schedulesResult.error;
+
+  const settings = notificationResult.data?.settings && typeof notificationResult.data.settings === "object"
+    ? notificationResult.data.settings as Record<string, any>
+    : {};
+
+  return {
+    preferences: communicationResult.data || { client_id: clientId, business, ...DEFAULTS, updated_at: null },
+    notifications: Object.fromEntries(NOTIFICATION_KEYS.map((key) => [
+      key,
+      {
+        enabled: Boolean(settings[key]?.enabled ?? NOTIFICATION_DEFAULTS[key].enabled),
+        timing: NOTIFICATION_TIMINGS.has(String(settings[key]?.timing || ""))
+          ? String(settings[key].timing)
+          : NOTIFICATION_DEFAULTS[key].timing,
+      },
+    ])),
+    custom_schedules: (schedulesResult.data || []).map((schedule) => ({
+      id: String(schedule.id),
+      name: String(schedule.name || ""),
+      time: String(schedule.schedule_time || "").slice(0, 5),
+      days: Array.isArray(schedule.preferred_days) ? schedule.preferred_days : [],
+      enabled: Boolean(schedule.enabled),
+      color: String(schedule.color || "#9b6cff"),
+      updated_at: schedule.updated_at,
+    })),
+    notifications_updated_at: notificationResult.data?.updated_at || null,
+  };
 }
 
 export async function GET(req: Request) {
@@ -98,18 +213,8 @@ export async function GET(req: Request) {
     const client = await clientBusiness(admin, clientId);
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
 
-    const { data, error } = await admin
-      .from("crm_client_communication_preferences")
-      .select("client_id, business, preferred_channel, likes_follow_up, follow_up_frequency, preferred_time_slot, preferred_days, weekly_summary, updated_at")
-      .eq("client_id", clientId)
-      .maybeSingle();
-
-    if (error) throw error;
-
-    return NextResponse.json({
-      ok: true,
-      preferences: data || { client_id: clientId, business: client.business, ...DEFAULTS, updated_at: null },
-    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const data = await loadAll(admin, clientId, client.business);
+    return NextResponse.json({ ok: true, ...data }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error: any) {
     console.error("[client-preferences:get]", {
       code: error?.code,
@@ -130,26 +235,63 @@ export async function PUT(req: Request) {
     if (!clientId) return NextResponse.json({ ok: false, error: "CLIENT_ID_REQUIRED" }, { status: 400 });
 
     const body = await req.json().catch(() => null);
-    const normalized = normalizePayload(body);
+    const communication = normalizeCommunicationPayload(body);
+    const notifications = normalizeNotifications(body);
+    const schedules = normalizeSchedules(body);
     const admin = adminClient();
     const client = await clientBusiness(admin, clientId);
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
 
-    const { data, error } = await admin
+    const now = new Date().toISOString();
+    const { error: communicationError } = await admin
       .from("crm_client_communication_preferences")
       .upsert({
         client_id: clientId,
         business: client.business,
-        ...normalized,
+        ...communication,
         updated_by_user_id: worker.user_id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "client_id" })
-      .select("client_id, business, preferred_channel, likes_follow_up, follow_up_frequency, preferred_time_slot, preferred_days, weekly_summary, updated_at")
-      .single();
+        updated_at: now,
+      }, { onConflict: "client_id" });
+    if (communicationError) throw communicationError;
 
-    if (error) throw error;
+    const { error: notificationError } = await admin
+      .from("crm_client_notification_preferences")
+      .upsert({
+        client_id: clientId,
+        business: client.business,
+        settings: notifications,
+        updated_by_user_id: worker.user_id,
+        updated_at: now,
+      }, { onConflict: "client_id" });
+    if (notificationError) throw notificationError;
 
-    return NextResponse.json({ ok: true, preferences: data }, { headers: { "Cache-Control": "no-store, max-age=0" } });
+    const incomingIds = schedules.map((schedule) => schedule.id).filter(Boolean) as string[];
+    let deleteQuery = admin.from("crm_client_notification_schedules").delete().eq("client_id", clientId);
+    if (incomingIds.length > 0) deleteQuery = deleteQuery.not("id", "in", `(${incomingIds.join(",")})`);
+    const { error: deleteError } = await deleteQuery;
+    if (deleteError) throw deleteError;
+
+    if (schedules.length > 0) {
+      const { error: schedulesError } = await admin
+        .from("crm_client_notification_schedules")
+        .upsert(schedules.map((schedule) => ({
+          ...(schedule.id ? { id: schedule.id } : {}),
+          client_id: clientId,
+          business: client.business,
+          name: schedule.name,
+          schedule_time: schedule.time,
+          preferred_days: schedule.days,
+          enabled: schedule.enabled,
+          color: schedule.color,
+          sort_order: schedule.sort_order,
+          updated_by_user_id: worker.user_id,
+          updated_at: now,
+        })), { onConflict: "id" });
+      if (schedulesError) throw schedulesError;
+    }
+
+    const data = await loadAll(admin, clientId, client.business);
+    return NextResponse.json({ ok: true, ...data }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error: any) {
     console.error("[client-preferences:put]", {
       code: error?.code,
