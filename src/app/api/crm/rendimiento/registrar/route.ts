@@ -433,7 +433,7 @@ export async function POST(req: Request) {
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v7",
+      "crm_register_call_atomic_v4",
       { p_payload: atomicPayload },
     );
 
@@ -443,7 +443,7 @@ export async function POST(req: Request) {
         message: atomicError.message,
         details: atomicError.details,
         hint: atomicError.hint,
-        function: "crm_register_call_atomic_v7",
+        function: "crm_register_call_atomic_v4",
         cliente_id: clienteId,
         operation_id: operationId || null,
         metodo_normalizado: normalizedPaymentMethod,

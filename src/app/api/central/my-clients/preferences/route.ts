@@ -242,15 +242,20 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
 
   return {
     preferences: communicationResult.data || { client_id: clientId, business, ...DEFAULTS, updated_at: null },
-    notifications: Object.fromEntries(NOTIFICATION_KEYS.map((key) => [
-      key,
-      {
-        enabled: Boolean(settings[key]?.enabled ?? NOTIFICATION_DEFAULTS[key].enabled),
-        timing: NOTIFICATION_TIMINGS.has(String(settings[key]?.timing || ""))
-          ? String(settings[key].timing)
-          : NOTIFICATION_DEFAULTS[key].timing,
-      },
-    ])),
+    notifications: Object.fromEntries(NOTIFICATION_KEYS.map((key) => {
+      const setting = settings[key];
+      const timing = String(setting?.timing ?? "").trim().toLowerCase();
+
+      return [
+        key,
+        {
+          enabled: Boolean(setting?.enabled ?? NOTIFICATION_DEFAULTS[key].enabled),
+          timing: NOTIFICATION_TIMINGS.has(timing)
+            ? timing
+            : NOTIFICATION_DEFAULTS[key].timing,
+        },
+      ];
+    })) as NotificationSettings,
     custom_schedules: ((schedulesResult.data || []) as LoadedScheduleRow[]).map((schedule: LoadedScheduleRow) => ({
       id: String(schedule.id),
       name: String(schedule.name || ""),
