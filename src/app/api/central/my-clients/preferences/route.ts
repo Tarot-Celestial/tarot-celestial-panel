@@ -29,6 +29,18 @@ const NOTIFICATION_KEYS = [
   "birthday_offer",
   "important_updates",
 ] as const;
+const CONTENT_TOPICS = new Set([
+  "love_relationships",
+  "work_money",
+  "personal_growth",
+  "spirituality",
+  "future_destiny",
+  "family",
+  "health_wellbeing",
+  "professional_development",
+]);
+const READING_STYLES = new Set(["deep_detailed", "direct_concise", "intuitive_spiritual"]);
+const CONTENT_FORMATS = new Set(["text", "audio", "video", "call"]);
 
 type NotificationKey = (typeof NOTIFICATION_KEYS)[number];
 
@@ -48,6 +60,20 @@ type PreferencesRequestBody = {
   weekly_summary?: unknown;
   notifications?: unknown;
   custom_schedules?: unknown;
+  content_preferences?: unknown;
+};
+
+type RawContentPreferences = {
+  favorite_topics?: unknown;
+  preferred_reading_style?: unknown;
+  preferred_format?: unknown;
+};
+
+type ContentPreferences = {
+  favorite_topics: string[];
+  preferred_reading_style: string | null;
+  preferred_format: string | null;
+  updated_at?: string | null;
 };
 
 type RawNotificationEntry = {
@@ -98,6 +124,13 @@ const DEFAULTS = {
   preferred_time_slot: "any",
   preferred_days: [] as string[],
   weekly_summary: false,
+};
+
+const CONTENT_DEFAULTS: ContentPreferences = {
+  favorite_topics: [],
+  preferred_reading_style: null,
+  preferred_format: null,
+  updated_at: null,
 };
 
 const NOTIFICATION_DEFAULTS = Object.fromEntries(
@@ -172,6 +205,35 @@ function normalizeNotifications(body: PreferencesRequestBody): NotificationSetti
   })) as NotificationSettings;
 }
 
+function normalizeContentPreferences(body: PreferencesRequestBody): ContentPreferences {
+  const raw = body.content_preferences && typeof body.content_preferences === "object"
+    ? body.content_preferences as RawContentPreferences
+    : {};
+  const topics = Array.isArray(raw.favorite_topics)
+    ? raw.favorite_topics.map((value: unknown) => String(value || "").trim().toLowerCase())
+    : [];
+  const favoriteTopics = Array.from(new Set(topics)).filter((topic) => CONTENT_TOPICS.has(topic));
+  if (favoriteTopics.length > 3) throw new Error("MAX_THREE_FAVORITE_TOPICS");
+
+  const readingStyleValue = String(raw.preferred_reading_style || "").trim().toLowerCase();
+  const formatValue = String(raw.preferred_format || "").trim().toLowerCase();
+  const preferredReadingStyle = readingStyleValue || null;
+  const preferredFormat = formatValue || null;
+
+  if (preferredReadingStyle && !READING_STYLES.has(preferredReadingStyle)) {
+    throw new Error("INVALID_PREFERRED_READING_STYLE");
+  }
+  if (preferredFormat && !CONTENT_FORMATS.has(preferredFormat)) {
+    throw new Error("INVALID_PREFERRED_CONTENT_FORMAT");
+  }
+
+  return {
+    favorite_topics: favoriteTopics,
+    preferred_reading_style: preferredReadingStyle,
+    preferred_format: preferredFormat,
+  };
+}
+
 function normalizeSchedules(body: PreferencesRequestBody): NormalizedSchedule[] {
   const schedules: RawSchedule[] = Array.isArray(body.custom_schedules)
     ? body.custom_schedules.filter((item): item is RawSchedule => Boolean(item) && typeof item === "object")
@@ -213,7 +275,7 @@ async function clientBusiness(admin: ReturnType<typeof adminClient>, clientId: s
 }
 
 async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, business: string) {
-  const [communicationResult, notificationResult, schedulesResult] = await Promise.all([
+  const [communicationResult, notificationResult, schedulesResult, contentResult] = await Promise.all([
     admin
       .from("crm_client_communication_preferences")
       .select("client_id, business, preferred_channel, likes_follow_up, follow_up_frequency, preferred_time_slot, preferred_days, weekly_summary, updated_at")
@@ -230,11 +292,17 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       .eq("client_id", clientId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true }),
+    admin
+      .from("crm_client_content_preferences")
+      .select("client_id, business, favorite_topics, preferred_reading_style, preferred_format, updated_at")
+      .eq("client_id", clientId)
+      .maybeSingle(),
   ]);
 
   if (communicationResult.error) throw communicationResult.error;
   if (notificationResult.error) throw notificationResult.error;
   if (schedulesResult.error) throw schedulesResult.error;
+  if (contentResult.error) throw contentResult.error;
 
   const settings = notificationResult.data?.settings && typeof notificationResult.data.settings === "object"
     ? notificationResult.data.settings as Partial<Record<NotificationKey, RawNotificationEntry>>
@@ -266,6 +334,11 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       updated_at: schedule.updated_at,
     })),
     notifications_updated_at: notificationResult.data?.updated_at || null,
+    content_preferences: contentResult.data || {
+      client_id: clientId,
+      business,
+      ...CONTENT_DEFAULTS,
+    },
   };
 }
 
@@ -311,6 +384,7 @@ export async function PUT(req: Request) {
     const communication = normalizeCommunicationPayload(body);
     const notifications = normalizeNotifications(body);
     const schedules = normalizeSchedules(body);
+    const contentPreferences = normalizeContentPreferences(body);
     const admin = adminClient();
     const client = await clientBusiness(admin, clientId);
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
@@ -337,6 +411,19 @@ export async function PUT(req: Request) {
         updated_at: now,
       }, { onConflict: "client_id" });
     if (notificationError) throw notificationError;
+
+    const { error: contentError } = await admin
+      .from("crm_client_content_preferences")
+      .upsert({
+        client_id: clientId,
+        business: client.business,
+        favorite_topics: contentPreferences.favorite_topics,
+        preferred_reading_style: contentPreferences.preferred_reading_style,
+        preferred_format: contentPreferences.preferred_format,
+        updated_by_user_id: worker.user_id,
+        updated_at: now,
+      }, { onConflict: "client_id" });
+    if (contentError) throw contentError;
 
     const incomingIds = schedules.map((schedule) => schedule.id).filter(Boolean) as string[];
     let deleteQuery = admin.from("crm_client_notification_schedules").delete().eq("client_id", clientId);

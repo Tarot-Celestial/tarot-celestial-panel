@@ -2,10 +2,15 @@
 
 import {
   Bell,
+  BookOpen,
+  BriefcaseBusiness,
   CalendarClock,
+  CircleDollarSign,
+  Compass,
   CheckCircle2,
   Clock3,
   Gift,
+  Heart,
   Mail,
   Megaphone,
   MessageCircle,
@@ -16,6 +21,9 @@ import {
   RefreshCw,
   Smartphone,
   Sparkles,
+  UsersRound,
+  WandSparkles,
+  Waves,
   Trash2,
   X,
 } from "lucide-react";
@@ -55,6 +63,26 @@ type NotificationKey =
 
 type NotificationSettings = Record<NotificationKey, { enabled: boolean; timing: NotificationTiming }>;
 
+type ContentTopic =
+  | "love_relationships"
+  | "work_money"
+  | "personal_growth"
+  | "spirituality"
+  | "future_destiny"
+  | "family"
+  | "health_wellbeing"
+  | "professional_development";
+
+type PreferredReadingStyle = "deep_detailed" | "direct_concise" | "intuitive_spiritual";
+type PreferredContentFormat = "text" | "audio" | "video" | "call";
+
+type ContentPreferences = {
+  favorite_topics: ContentTopic[];
+  preferred_reading_style: PreferredReadingStyle | null;
+  preferred_format: PreferredContentFormat | null;
+  updated_at?: string | null;
+};
+
 type CustomSchedule = {
   id?: string | null;
   name: string;
@@ -75,6 +103,36 @@ const COMMUNICATION_DEFAULTS: CommunicationPreferences = {
   preferred_days: [],
   weekly_summary: false,
 };
+
+const CONTENT_DEFAULTS: ContentPreferences = {
+  favorite_topics: [],
+  preferred_reading_style: null,
+  preferred_format: null,
+};
+
+const CONTENT_TOPICS: Array<{ value: ContentTopic; label: string; icon: typeof Heart }> = [
+  { value: "love_relationships", label: "Amor y relaciones", icon: Heart },
+  { value: "work_money", label: "Trabajo y dinero", icon: CircleDollarSign },
+  { value: "personal_growth", label: "Crecimiento personal", icon: Sparkles },
+  { value: "spirituality", label: "Espiritualidad", icon: WandSparkles },
+  { value: "future_destiny", label: "Futuro y destino", icon: Compass },
+  { value: "family", label: "Familia", icon: UsersRound },
+  { value: "health_wellbeing", label: "Salud y bienestar", icon: Waves },
+  { value: "professional_development", label: "Desarrollo profesional", icon: BriefcaseBusiness },
+];
+
+const READING_STYLES: Array<{ value: PreferredReadingStyle; label: string; description: string }> = [
+  { value: "deep_detailed", label: "Profunda y detallada", description: "Explora contexto, matices y evolución." },
+  { value: "direct_concise", label: "Directa y concisa", description: "Respuestas claras y centradas en lo esencial." },
+  { value: "intuitive_spiritual", label: "Intuitiva y espiritual", description: "Una lectura más energética y simbólica." },
+];
+
+const CONTENT_FORMATS: Array<{ value: PreferredContentFormat; label: string }> = [
+  { value: "text", label: "Texto" },
+  { value: "audio", label: "Audio" },
+  { value: "video", label: "Vídeo" },
+  { value: "call", label: "Llamada" },
+];
 
 const NOTIFICATION_DEFAULTS: NotificationSettings = {
   promotions: { enabled: false, timing: "according_to_preferences" },
@@ -142,6 +200,7 @@ export default function MyClientPreferences({ clientId }: Props) {
   const [preferences, setPreferences] = useState<CommunicationPreferences>(COMMUNICATION_DEFAULTS);
   const [notifications, setNotifications] = useState<NotificationSettings>(NOTIFICATION_DEFAULTS);
   const [customSchedules, setCustomSchedules] = useState<CustomSchedule[]>([]);
+  const [contentPreferences, setContentPreferences] = useState<ContentPreferences>(CONTENT_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -157,12 +216,12 @@ export default function MyClientPreferences({ clientId }: Props) {
     color: "#9b6cff",
   });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestState = useRef({ preferences, notifications, customSchedules });
+  const latestState = useRef({ preferences, notifications, customSchedules, contentPreferences });
   const mounted = useRef(true);
 
   useEffect(() => {
-    latestState.current = { preferences, notifications, customSchedules };
-  }, [preferences, notifications, customSchedules]);
+    latestState.current = { preferences, notifications, customSchedules, contentPreferences };
+  }, [preferences, notifications, customSchedules, contentPreferences]);
 
   const applyPayload = useCallback((payload: any) => {
     setPreferences({
@@ -172,6 +231,13 @@ export default function MyClientPreferences({ clientId }: Props) {
     });
     setNotifications(mergeNotifications(payload?.notifications));
     setCustomSchedules(Array.isArray(payload?.custom_schedules) ? payload.custom_schedules : []);
+    setContentPreferences({
+      ...CONTENT_DEFAULTS,
+      ...(payload?.content_preferences || {}),
+      favorite_topics: Array.isArray(payload?.content_preferences?.favorite_topics)
+        ? payload.content_preferences.favorite_topics
+        : [],
+    });
     setDirty(false);
   }, []);
 
@@ -215,6 +281,7 @@ export default function MyClientPreferences({ clientId }: Props) {
           ...current.preferences,
           notifications: current.notifications,
           custom_schedules: current.customSchedules,
+          content_preferences: current.contentPreferences,
         }),
         cache: "no-store",
       });
@@ -286,6 +353,12 @@ export default function MyClientPreferences({ clientId }: Props) {
         table: "crm_client_notification_schedules",
         filter: `client_id=eq.${clientId}`,
       }, refresh)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "crm_client_content_preferences",
+        filter: `client_id=eq.${clientId}`,
+      }, refresh)
       .subscribe();
 
     return () => {
@@ -352,6 +425,27 @@ export default function MyClientPreferences({ clientId }: Props) {
     setCustomSchedules((current) => current.map((schedule, currentIndex) => currentIndex === index
       ? { ...schedule, enabled: !schedule.enabled }
       : schedule));
+    scheduleSave();
+  };
+
+  const toggleContentTopic = (topic: ContentTopic) => {
+    const selected = contentPreferences.favorite_topics.includes(topic);
+    if (!selected && contentPreferences.favorite_topics.length >= 3) {
+      setError("Puedes seleccionar un máximo de 3 temas favoritos.");
+      return;
+    }
+    setError("");
+    setContentPreferences((current) => ({
+      ...current,
+      favorite_topics: selected
+        ? current.favorite_topics.filter((value) => value !== topic)
+        : [...current.favorite_topics, topic],
+    }));
+    scheduleSave();
+  };
+
+  const updateContentPreference = <K extends keyof ContentPreferences>(key: K, value: ContentPreferences[K]) => {
+    setContentPreferences((current) => ({ ...current, [key]: value }));
     scheduleSave();
   };
 
@@ -517,6 +611,98 @@ export default function MyClientPreferences({ clientId }: Props) {
             ))}
           </div>
         )}
+      </article>
+
+      <article className={`${styles.card} ${styles.contentCard}`}>
+        <header className={styles.header}>
+          <div>
+            <span className={styles.sectionIcon}><BookOpen size={18} /></span>
+            <h2>Preferencias de contenido</h2>
+            <p>Una ficha rápida para adaptar la consulta a los gustos de la clienta.</p>
+          </div>
+          <span className={styles.liveBadge}><Sparkles size={13} /> Tiempo real</span>
+        </header>
+
+        <section className={styles.contentSection}>
+          <div className={styles.contentSectionHeading}>
+            <div>
+              <h3>Temas favoritos <small>(máximo 3)</small></h3>
+              <p>Selecciona las áreas que más le interesan.</p>
+            </div>
+            <span className={styles.selectionCounter}>{contentPreferences.favorite_topics.length}/3</span>
+          </div>
+          <div className={styles.topicGrid}>
+            {CONTENT_TOPICS.map((topic) => {
+              const Icon = topic.icon;
+              const selected = contentPreferences.favorite_topics.includes(topic.value);
+              return (
+                <button
+                  key={topic.value}
+                  type="button"
+                  className={`${styles.preferenceChoice} ${selected ? styles.preferenceChoiceSelected : ""}`}
+                  aria-pressed={selected}
+                  onClick={() => toggleContentTopic(topic.value)}
+                >
+                  <Icon size={17} />
+                  <span>{topic.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <div className={styles.contentColumns}>
+          <section className={styles.contentSection}>
+            <div className={styles.contentSectionHeading}>
+              <div>
+                <h3>Tipo de tirada preferida</h3>
+                <p>Define el estilo principal de la consulta.</p>
+              </div>
+            </div>
+            <div className={styles.singleChoiceList}>
+              {READING_STYLES.map((option) => {
+                const selected = contentPreferences.preferred_reading_style === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`${styles.readingChoice} ${selected ? styles.preferenceChoiceSelected : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => updateContentPreference("preferred_reading_style", option.value)}
+                  >
+                    <span className={styles.choiceDot} />
+                    <span><strong>{option.label}</strong><small>{option.description}</small></span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className={styles.contentSection}>
+            <div className={styles.contentSectionHeading}>
+              <div>
+                <h3>Formato preferido</h3>
+                <p>Indica cómo prefiere recibir la consulta.</p>
+              </div>
+            </div>
+            <div className={styles.formatGrid}>
+              {CONTENT_FORMATS.map((option) => {
+                const selected = contentPreferences.preferred_format === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`${styles.preferenceChoice} ${styles.formatChoice} ${selected ? styles.preferenceChoiceSelected : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => updateContentPreference("preferred_format", option.value)}
+                  >
+                    <span>{option.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
       </article>
 
       <footer className={styles.footer}>
