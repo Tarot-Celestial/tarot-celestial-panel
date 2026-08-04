@@ -4,10 +4,13 @@ import {
   Bell,
   BookOpen,
   BriefcaseBusiness,
+  CakeSlice,
+  CalendarDays,
   CalendarClock,
   CircleDollarSign,
   Compass,
   CheckCircle2,
+  FileText,
   Clock3,
   Gift,
   Heart,
@@ -16,9 +19,11 @@ import {
   MessageCircle,
   Newspaper,
   Palette,
+  Pencil,
   Phone,
   Plus,
   RefreshCw,
+  Save,
   Smartphone,
   Sparkles,
   UsersRound,
@@ -27,6 +32,7 @@ import {
   Trash2,
   SlidersHorizontal,
   ShieldCheck,
+  Star,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -116,6 +122,24 @@ type CustomSchedule = {
   updated_at?: string | null;
 };
 
+
+
+type ImportantDate = {
+  id?: string | null;
+  name: string;
+  date: string;
+  description: string;
+  reminder_enabled: boolean;
+  icon_key: string;
+  updated_at?: string | null;
+};
+
+type PersonalNotes = {
+  notes: string;
+  updated_at: string | null;
+  updated_by_name: string | null;
+};
+
 type Props = { clientId: string };
 
 const COMMUNICATION_DEFAULTS: CommunicationPreferences = {
@@ -132,6 +156,8 @@ const CONTENT_DEFAULTS: ContentPreferences = {
   preferred_reading_style: null,
   preferred_format: null,
 };
+
+const PERSONAL_NOTES_DEFAULTS: PersonalNotes = { notes: "", updated_at: null, updated_by_name: null };
 
 const SERVICE_DEFAULTS: ServicePreferences = {
   detail_level: 2,
@@ -254,6 +280,19 @@ export default function MyClientPreferences({ clientId }: Props) {
   const [customSchedules, setCustomSchedules] = useState<CustomSchedule[]>([]);
   const [contentPreferences, setContentPreferences] = useState<ContentPreferences>(CONTENT_DEFAULTS);
   const [servicePreferences, setServicePreferences] = useState<ServicePreferences>(SERVICE_DEFAULTS);
+  const [importantDates, setImportantDates] = useState<ImportantDate[]>([]);
+  const [personalNotes, setPersonalNotes] = useState<PersonalNotes>(PERSONAL_NOTES_DEFAULTS);
+  const [notesEditing, setNotesEditing] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+  const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [editingDateIndex, setEditingDateIndex] = useState<number | null>(null);
+  const [dateDraft, setDateDraft] = useState<ImportantDate>({
+    name: "",
+    date: "",
+    description: "",
+    reminder_enabled: true,
+    icon_key: "calendar",
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -269,12 +308,12 @@ export default function MyClientPreferences({ clientId }: Props) {
     color: "#9b6cff",
   });
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestState = useRef({ preferences, notifications, customSchedules, contentPreferences, servicePreferences });
+  const latestState = useRef({ preferences, notifications, customSchedules, contentPreferences, servicePreferences, importantDates, personalNotes });
   const mounted = useRef(true);
 
   useEffect(() => {
-    latestState.current = { preferences, notifications, customSchedules, contentPreferences, servicePreferences };
-  }, [preferences, notifications, customSchedules, contentPreferences, servicePreferences]);
+    latestState.current = { preferences, notifications, customSchedules, contentPreferences, servicePreferences, importantDates, personalNotes };
+  }, [preferences, notifications, customSchedules, contentPreferences, servicePreferences, importantDates, personalNotes]);
 
   const applyPayload = useCallback((payload: any) => {
     setPreferences({
@@ -295,6 +334,13 @@ export default function MyClientPreferences({ clientId }: Props) {
       ...SERVICE_DEFAULTS,
       ...(payload?.service_preferences || {}),
     });
+    setImportantDates(Array.isArray(payload?.important_dates) ? payload.important_dates : []);
+    const loadedPersonalNotes = {
+      ...PERSONAL_NOTES_DEFAULTS,
+      ...(payload?.personal_notes || {}),
+    };
+    setPersonalNotes(loadedPersonalNotes);
+    setNotesDraft(loadedPersonalNotes.notes || "");
     setDirty(false);
   }, []);
 
@@ -340,6 +386,8 @@ export default function MyClientPreferences({ clientId }: Props) {
           custom_schedules: current.customSchedules,
           content_preferences: current.contentPreferences,
           service_preferences: current.servicePreferences,
+          important_dates: current.importantDates,
+          personal_notes: current.personalNotes,
         }),
         cache: "no-store",
       });
@@ -421,6 +469,18 @@ export default function MyClientPreferences({ clientId }: Props) {
         event: "*",
         schema: "public",
         table: "crm_client_service_preferences",
+        filter: `client_id=eq.${clientId}`,
+      }, refresh)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "crm_client_important_dates",
+        filter: `client_id=eq.${clientId}`,
+      }, refresh)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "crm_client_personal_notes",
         filter: `client_id=eq.${clientId}`,
       }, refresh)
       .subscribe();
@@ -516,6 +576,87 @@ export default function MyClientPreferences({ clientId }: Props) {
   const updateServicePreference = <K extends keyof ServicePreferences>(key: K, value: ServicePreferences[K]) => {
     setServicePreferences((current) => ({ ...current, [key]: value }));
     scheduleSave();
+  };
+
+  const dateIconKey = (name: string) => {
+    const normalized = name.trim().toLowerCase();
+    if (normalized.includes("cumple")) return "birthday";
+    if (normalized.includes("anivers")) return "anniversary";
+    if (normalized.includes("inicio")) return "start";
+    if (normalized.includes("fin")) return "finish";
+    if (normalized.includes("año") || normalized.includes("personal")) return "star";
+    return "calendar";
+  };
+
+  const openNewDate = () => {
+    setEditingDateIndex(null);
+    setDateDraft({ name: "", date: "", description: "", reminder_enabled: true, icon_key: "calendar" });
+    setDateModalOpen(true);
+  };
+
+  const openEditDate = (index: number) => {
+    setEditingDateIndex(index);
+    setDateDraft({ ...importantDates[index] });
+    setDateModalOpen(true);
+  };
+
+  const commitImportantDate = () => {
+    const name = dateDraft.name.trim();
+    if (!name || !dateDraft.date) {
+      setError("La fecha importante necesita nombre y fecha.");
+      return;
+    }
+    const normalized: ImportantDate = {
+      ...dateDraft,
+      name,
+      description: dateDraft.description.trim(),
+      icon_key: dateIconKey(name),
+    };
+    setImportantDates((current) => editingDateIndex === null
+      ? [...current, normalized]
+      : current.map((item, index) => index === editingDateIndex ? normalized : item));
+    setDateModalOpen(false);
+    scheduleSave();
+  };
+
+  const removeImportantDate = (index: number) => {
+    setImportantDates((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    scheduleSave();
+  };
+
+  const toggleImportantDateReminder = (index: number) => {
+    setImportantDates((current) => current.map((item, currentIndex) => currentIndex === index
+      ? { ...item, reminder_enabled: !item.reminder_enabled }
+      : item));
+    scheduleSave();
+  };
+
+  const beginNotesEdit = () => {
+    setNotesDraft(personalNotes.notes);
+    setNotesEditing(true);
+  };
+
+  const cancelNotesEdit = () => {
+    setNotesDraft(personalNotes.notes);
+    setNotesEditing(false);
+  };
+
+  const savePersonalNotes = async () => {
+    const next: PersonalNotes = { ...personalNotes, notes: notesDraft.trim() };
+    setPersonalNotes(next);
+    latestState.current = { ...latestState.current, personalNotes: next };
+    setNotesEditing(false);
+    setDirty(true);
+    await save({ sync: true });
+  };
+
+  const importantDateIcon = (iconKey: string) => {
+    if (iconKey === "birthday") return CakeSlice;
+    if (iconKey === "anniversary") return Heart;
+    if (iconKey === "start") return Sparkles;
+    if (iconKey === "finish") return CheckCircle2;
+    if (iconKey === "star") return Star;
+    return CalendarDays;
   };
 
   if (loading) return <section className={styles.stateCard}>Cargando preferencias…</section>;
@@ -828,10 +969,100 @@ export default function MyClientPreferences({ clientId }: Props) {
         </div>
       </article>
 
+      <article className={`${styles.card} ${styles.importantDatesCard}`}>
+        <header className={styles.header}>
+          <div>
+            <span className={styles.importantDatesIcon}><CalendarDays size={18} /></span>
+            <h2>Fechas importantes</h2>
+            <p>No olvides los momentos especiales.</p>
+          </div>
+          <button type="button" className={styles.addImportantDateButton} onClick={openNewDate}><Plus size={16} /> Añadir fecha importante</button>
+        </header>
+
+        {importantDates.length === 0 ? (
+          <div className={styles.emptyImportantDates}><CalendarDays size={24} /><span>No hay fechas importantes registradas.</span></div>
+        ) : (
+          <div className={styles.importantDatesGrid}>
+            {importantDates.map((item, index) => {
+              const Icon = importantDateIcon(item.icon_key);
+              return (
+                <article key={item.id || `${item.name}-${item.date}-${index}`} className={styles.importantDateItem}>
+                  <button type="button" className={styles.importantDateMain} onClick={() => openEditDate(index)}>
+                    <span className={styles.importantDateGlyph}><Icon size={19} /></span>
+                    <span>
+                      <strong>{item.name}</strong>
+                      <time dateTime={item.date}>{new Intl.DateTimeFormat("es-ES", { dateStyle: "long" }).format(new Date(`${item.date}T12:00:00`))}</time>
+                      {item.description && <small>{item.description}</small>}
+                    </span>
+                  </button>
+                  <div className={styles.importantDateActions}>
+                    <label className={styles.reminderToggle}>
+                      <span>Recordar</span>
+                      <span className={styles.switch}><input type="checkbox" checked={item.reminder_enabled} onChange={() => toggleImportantDateReminder(index)} /><span aria-hidden="true" /></span>
+                    </label>
+                    <button type="button" className={styles.deleteScheduleButton} aria-label={`Eliminar ${item.name}`} onClick={() => removeImportantDate(index)}><Trash2 size={15} /></button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </article>
+
+      <article className={`${styles.card} ${styles.personalNotesCard}`}>
+        <header className={styles.header}>
+          <div>
+            <span className={styles.personalNotesIcon}><FileText size={18} /></span>
+            <h2>Notas personales</h2>
+            <p>Información importante sobre la clienta.</p>
+          </div>
+          {!notesEditing && <button type="button" className={styles.editPersonalNotesButton} onClick={beginNotesEdit}><Pencil size={16} /> Editar notas</button>}
+        </header>
+
+        {notesEditing ? (
+          <div className={styles.personalNotesEditor}>
+            <textarea value={notesDraft} maxLength={5000} placeholder="Cómo le gusta que le hablen, temas delicados, objetivos personales, situación sentimental o laboral…" onChange={(event) => setNotesDraft(event.target.value)} />
+            <div className={styles.personalNotesEditorFooter}>
+              <span>{notesDraft.length}/5000</span>
+              <div>
+                <button type="button" className={styles.cancelButton} onClick={cancelNotesEdit}>Cancelar</button>
+                <button type="button" className={styles.savePersonalNotesButton} disabled={saving} onClick={() => void savePersonalNotes()}><Save size={16} /> Guardar notas</button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className={styles.personalNotesDossier}>
+            {personalNotes.notes ? <p>{personalNotes.notes}</p> : <div className={styles.emptyPersonalNotes}><FileText size={24} /><span>No hay notas personales registradas.</span></div>}
+            <footer>
+              <span>{personalNotes.updated_at ? `Última actualización: ${new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(new Date(personalNotes.updated_at))}` : "Sin actualizaciones"}</span>
+              {personalNotes.updated_by_name && <strong>Por {personalNotes.updated_by_name}</strong>}
+            </footer>
+          </div>
+        )}
+      </article>
+
       <footer className={styles.footer}>
         <span>{saving ? "Guardando cambios…" : dirty ? "Cambios pendientes de sincronización" : "Datos sincronizados con Supabase"}</span>
         {preferences.updated_at && <time dateTime={preferences.updated_at}>Última actualización: {new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(new Date(preferences.updated_at))}</time>}
       </footer>
+
+      {dateModalOpen && (
+        <div className={styles.modalBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDateModalOpen(false); }}>
+          <section className={styles.scheduleModal} role="dialog" aria-modal="true" aria-labelledby="important-date-modal-title">
+            <header>
+              <div><span className={styles.importantDatesIcon}><CalendarDays size={18} /></span><h2 id="important-date-modal-title">{editingDateIndex === null ? "Nueva fecha importante" : "Editar fecha importante"}</h2></div>
+              <button type="button" aria-label="Cerrar" onClick={() => setDateModalOpen(false)}><X size={19} /></button>
+            </header>
+            <div className={styles.modalGrid}>
+              <label className={`${styles.field} ${styles.fullWidth}`}><span>Nombre</span><input value={dateDraft.name} maxLength={100} placeholder="Cumpleaños" onChange={(event) => setDateDraft((current) => ({ ...current, name: event.target.value }))} /></label>
+              <label className={styles.field}><span>Fecha</span><div className={styles.nativeTimeWrap}><input type="date" value={dateDraft.date} onChange={(event) => setDateDraft((current) => ({ ...current, date: event.target.value }))} /></div></label>
+              <div className={styles.switchField}><div><strong>Activar recordatorio</strong><small>Quedará preparado para futuras notificaciones.</small></div><label className={styles.switch}><input type="checkbox" checked={dateDraft.reminder_enabled} onChange={(event) => setDateDraft((current) => ({ ...current, reminder_enabled: event.target.checked }))} /><span aria-hidden="true" /></label></div>
+              <label className={`${styles.field} ${styles.fullWidth}`}><span>Descripción opcional</span><textarea value={dateDraft.description} maxLength={500} placeholder="Información útil sobre esta fecha…" onChange={(event) => setDateDraft((current) => ({ ...current, description: event.target.value }))} /></label>
+            </div>
+            <footer><button type="button" className={styles.cancelButton} onClick={() => setDateModalOpen(false)}>Cancelar</button><button type="button" className={styles.saveScheduleButton} onClick={commitImportantDate}><CheckCircle2 size={16} /> Guardar fecha</button></footer>
+          </section>
+        </div>
+      )}
 
       {scheduleModalOpen && (
         <div className={styles.modalBackdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScheduleModalOpen(false); }}>

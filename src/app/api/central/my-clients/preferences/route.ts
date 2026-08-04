@@ -65,6 +65,8 @@ type PreferencesRequestBody = {
   custom_schedules?: unknown;
   content_preferences?: unknown;
   service_preferences?: unknown;
+  important_dates?: unknown;
+  personal_notes?: unknown;
 };
 
 type RawContentPreferences = {
@@ -93,6 +95,45 @@ type ServicePreferences = {
   recommendation_openness: string;
   interested_in_training_events: boolean;
   updated_at?: string | null;
+};
+
+type RawImportantDate = {
+  id?: unknown;
+  name?: unknown;
+  date?: unknown;
+  description?: unknown;
+  reminder_enabled?: unknown;
+  icon_key?: unknown;
+};
+
+type NormalizedImportantDate = {
+  id: string | null;
+  name: string;
+  important_date: string;
+  description: string | null;
+  reminder_enabled: boolean;
+  icon_key: string;
+  sort_order: number;
+};
+
+type LoadedImportantDateRow = {
+  id: unknown;
+  name: unknown;
+  important_date: unknown;
+  description: unknown;
+  reminder_enabled: unknown;
+  icon_key: unknown;
+  updated_at: unknown;
+};
+
+type RawPersonalNotes = {
+  notes?: unknown;
+};
+
+type LoadedPersonalNotesRow = {
+  notes: unknown;
+  updated_at: unknown;
+  updated_by_worker_id: unknown;
 };
 
 type RawNotificationEntry = {
@@ -281,6 +322,42 @@ function normalizeServicePreferences(body: PreferencesRequestBody): ServicePrefe
   };
 }
 
+function normalizeImportantDates(body: PreferencesRequestBody): NormalizedImportantDate[] {
+  const rows: RawImportantDate[] = Array.isArray(body.important_dates)
+    ? body.important_dates.filter((item): item is RawImportantDate => Boolean(item) && typeof item === "object")
+    : [];
+
+  return rows.map((raw, index) => {
+    const name = String(raw.name || "").trim();
+    const importantDate = String(raw.date || "").trim();
+    const description = String(raw.description || "").trim();
+    const iconKey = String(raw.icon_key || "calendar").trim().toLowerCase();
+
+    if (!name || name.length > 100) throw new Error(`INVALID_IMPORTANT_DATE_NAME_${index}`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(importantDate)) throw new Error(`INVALID_IMPORTANT_DATE_${index}`);
+    if (description.length > 500) throw new Error(`INVALID_IMPORTANT_DATE_DESCRIPTION_${index}`);
+
+    return {
+      id: raw.id ? String(raw.id) : null,
+      name,
+      important_date: importantDate,
+      description: description || null,
+      reminder_enabled: Boolean(raw.reminder_enabled),
+      icon_key: iconKey || "calendar",
+      sort_order: index,
+    };
+  });
+}
+
+function normalizePersonalNotes(body: PreferencesRequestBody) {
+  const raw = body.personal_notes && typeof body.personal_notes === "object"
+    ? body.personal_notes as RawPersonalNotes
+    : {};
+  const notes = String(raw.notes || "").trim();
+  if (notes.length > 5000) throw new Error("PERSONAL_NOTES_TOO_LONG");
+  return { notes };
+}
+
 function normalizeSchedules(body: PreferencesRequestBody): NormalizedSchedule[] {
   const schedules: RawSchedule[] = Array.isArray(body.custom_schedules)
     ? body.custom_schedules.filter((item): item is RawSchedule => Boolean(item) && typeof item === "object")
@@ -322,7 +399,7 @@ async function clientBusiness(admin: ReturnType<typeof adminClient>, clientId: s
 }
 
 async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, business: string) {
-  const [communicationResult, notificationResult, schedulesResult, contentResult, serviceResult] = await Promise.all([
+  const [communicationResult, notificationResult, schedulesResult, contentResult, serviceResult, importantDatesResult, personalNotesResult] = await Promise.all([
     admin
       .from("crm_client_communication_preferences")
       .select("client_id, business, preferred_channel, likes_follow_up, follow_up_frequency, preferred_time_slot, preferred_days, weekly_summary, updated_at")
@@ -349,6 +426,17 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       .select("client_id, business, detail_level, preferred_language, recommendation_openness, interested_in_training_events, updated_at")
       .eq("client_id", clientId)
       .maybeSingle(),
+    admin
+      .from("crm_client_important_dates")
+      .select("id, name, important_date, description, reminder_enabled, icon_key, updated_at")
+      .eq("client_id", clientId)
+      .order("important_date", { ascending: true })
+      .order("created_at", { ascending: true }),
+    admin
+      .from("crm_client_personal_notes")
+      .select("notes, updated_at, updated_by_worker_id")
+      .eq("client_id", clientId)
+      .maybeSingle(),
   ]);
 
   if (communicationResult.error) throw communicationResult.error;
@@ -356,6 +444,23 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
   if (schedulesResult.error) throw schedulesResult.error;
   if (contentResult.error) throw contentResult.error;
   if (serviceResult.error) throw serviceResult.error;
+  if (importantDatesResult.error) throw importantDatesResult.error;
+  if (personalNotesResult.error) throw personalNotesResult.error;
+
+  let personalNotesUpdatedByName: string | null = null;
+  const notesRow = personalNotesResult.data as LoadedPersonalNotesRow | null;
+  const updatedByWorkerId = notesRow?.updated_by_worker_id ? String(notesRow.updated_by_worker_id) : "";
+  if (updatedByWorkerId) {
+    const { data: notesWorker, error: notesWorkerError } = await admin
+      .from("workers")
+      .select("display_name, email")
+      .eq("id", updatedByWorkerId)
+      .maybeSingle();
+    if (notesWorkerError) throw notesWorkerError;
+    if (notesWorker) {
+      personalNotesUpdatedByName = String(notesWorker.display_name || notesWorker.email || "").trim() || null;
+    }
+  }
 
   const settings = notificationResult.data?.settings && typeof notificationResult.data.settings === "object"
     ? notificationResult.data.settings as Partial<Record<NotificationKey, RawNotificationEntry>>
@@ -396,6 +501,20 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       client_id: clientId,
       business,
       ...SERVICE_DEFAULTS,
+    },
+    important_dates: ((importantDatesResult.data || []) as LoadedImportantDateRow[]).map((item) => ({
+      id: String(item.id),
+      name: String(item.name || ""),
+      date: String(item.important_date || ""),
+      description: String(item.description || ""),
+      reminder_enabled: Boolean(item.reminder_enabled),
+      icon_key: String(item.icon_key || "calendar"),
+      updated_at: item.updated_at ? String(item.updated_at) : null,
+    })),
+    personal_notes: {
+      notes: String(notesRow?.notes || ""),
+      updated_at: notesRow?.updated_at ? String(notesRow.updated_at) : null,
+      updated_by_name: personalNotesUpdatedByName,
     },
   };
 }
@@ -444,6 +563,8 @@ export async function PUT(req: Request) {
     const schedules = normalizeSchedules(body);
     const contentPreferences = normalizeContentPreferences(body);
     const servicePreferences = normalizeServicePreferences(body);
+    const importantDates = normalizeImportantDates(body);
+    const personalNotes = normalizePersonalNotes(body);
     const admin = adminClient();
     const client = await clientBusiness(admin, clientId);
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
@@ -497,6 +618,44 @@ export async function PUT(req: Request) {
         updated_at: now,
       }, { onConflict: "client_id" });
     if (serviceError) throw serviceError;
+
+    const { error: personalNotesError } = await admin
+      .from("crm_client_personal_notes")
+      .upsert({
+        client_id: clientId,
+        business: client.business,
+        notes: personalNotes.notes,
+        updated_by_user_id: worker.user_id,
+        updated_by_worker_id: worker.id,
+        updated_at: now,
+      }, { onConflict: "client_id" });
+    if (personalNotesError) throw personalNotesError;
+
+    const incomingDateIds = importantDates.map((item) => item.id).filter((id): id is string => Boolean(id));
+    let deleteDatesQuery = admin.from("crm_client_important_dates").delete().eq("client_id", clientId);
+    if (incomingDateIds.length > 0) deleteDatesQuery = deleteDatesQuery.not("id", "in", `(${incomingDateIds.join(",")})`);
+    const { error: deleteDatesError } = await deleteDatesQuery;
+    if (deleteDatesError) throw deleteDatesError;
+
+    if (importantDates.length > 0) {
+      const { error: importantDatesError } = await admin
+        .from("crm_client_important_dates")
+        .upsert(importantDates.map((item) => ({
+          ...(item.id ? { id: item.id } : {}),
+          client_id: clientId,
+          business: client.business,
+          name: item.name,
+          important_date: item.important_date,
+          description: item.description,
+          reminder_enabled: item.reminder_enabled,
+          icon_key: item.icon_key,
+          sort_order: item.sort_order,
+          updated_by_user_id: worker.user_id,
+          updated_by_worker_id: worker.id,
+          updated_at: now,
+        })), { onConflict: "id" });
+      if (importantDatesError) throw importantDatesError;
+    }
 
     const incomingIds = schedules.map((schedule) => schedule.id).filter(Boolean) as string[];
     let deleteQuery = admin.from("crm_client_notification_schedules").delete().eq("client_id", clientId);
