@@ -268,9 +268,19 @@ export async function GET(req: Request) {
       .gte("issue_date", monthStart)
       .lt("issue_date", nextMonth)
       .order("issue_date", { ascending: false });
-    if (manualInvoicesError) throw manualInvoicesError;
 
-    const manualRows = (manualInvoices || []).map((invoice: any) => ({
+    // Las facturas manuales son complementarias. Un problema puntual en su tabla
+    // no puede vaciar ni impedir cargar las facturas automáticas ya existentes.
+    if (manualInvoicesError) {
+      console.error("[admin-invoices:list] manual invoices unavailable", {
+        code: manualInvoicesError.code,
+        message: manualInvoicesError.message,
+        details: manualInvoicesError.details,
+        hint: manualInvoicesError.hint,
+      });
+    }
+
+    const manualRows = (manualInvoicesError ? [] : manualInvoices || []).map((invoice: any) => ({
       invoice_id: `manual:${invoice.id}`,
       manual_id: String(invoice.id),
       is_manual: true,
@@ -308,13 +318,23 @@ export async function GET(req: Request) {
       pending: previousInvoices.filter((invoice) => !invoice.worker_ack || String(invoice.worker_ack) === "pending").length,
     };
 
-    return NextResponse.json({
-      ok: true,
-      month,
-      previous_month: previousMonth,
-      previous_summary: previousSummary,
-      invoices: allRows,
-    });
+    return NextResponse.json(
+      {
+        ok: true,
+        month,
+        previous_month: previousMonth,
+        previous_summary: previousSummary,
+        invoices: allRows,
+        manual_invoices_warning: manualInvoicesError?.message || null,
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

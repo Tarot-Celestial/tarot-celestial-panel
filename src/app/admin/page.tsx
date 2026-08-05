@@ -711,9 +711,13 @@ function AdminPage() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const r = await fetch(
+        `/api/admin/invoices/list?month=${encodeURIComponent(month)}&t=${Date.now()}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }
+      );
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
@@ -1487,10 +1491,9 @@ function AdminPage() {
       }, 700);
     };
 
-    const channel = sb
+    const automaticChannel = sb
       .channel(`admin-invoices-live-${month}-${collaboratorOpen ? "detail" : "list"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleInvoiceRefresh("invoices", payload))
-      .on("postgres_changes", { event: "*", schema: "public", table: "manual_invoices" }, (payload: any) => scheduleInvoiceRefresh("manual_invoices", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "invoice_lines" }, (payload: any) => scheduleInvoiceRefresh("invoice_lines", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleInvoiceRefresh("workers", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "billing_collaborators" }, (payload: any) => scheduleInvoiceRefresh("billing_collaborators", payload))
@@ -1500,13 +1503,21 @@ function AdminPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleInvoiceRefresh("rendimiento_llamadas", payload))
       .subscribe();
 
+    // La tabla manual usa un canal independiente: si su publicación Realtime no está
+    // disponible, nunca debe bloquear la sincronización de las facturas automáticas.
+    const manualChannel = sb
+      .channel(`admin-manual-invoices-live-${month}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "manual_invoices" }, (payload: any) => scheduleInvoiceRefresh("manual_invoices", payload))
+      .subscribe();
+
     return () => {
       active = false;
       if (invoiceRealtimeTimerRef.current !== null) {
         window.clearTimeout(invoiceRealtimeTimerRef.current);
         invoiceRealtimeTimerRef.current = null;
       }
-      void sb.removeChannel(channel);
+      void sb.removeChannel(automaticChannel);
+      void sb.removeChannel(manualChannel);
     };
     // Un único canal para la lista o el detalle de colaborador; se limpia al cambiar de vista o mes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
