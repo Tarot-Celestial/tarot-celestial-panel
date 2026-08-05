@@ -7,6 +7,7 @@ export type CentralNavItem<T extends string = string> = {
   label: string;
   icon: LucideIcon;
   kicker?: string;
+  badge?: number;
 };
 
 type CentralSidebarProps<T extends string = string> = {
@@ -40,7 +41,29 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                     <div className="tc-sidebtn-kicker">{item.kicker}</div>
                   </div>
                 </div>
-                <span className="tc-sidebtn-dot" />
+                {typeof item.badge === "number" && item.badge > 0 ? (
+                  <span
+                    aria-label={`${item.badge} notificaciones pendientes`}
+                    style={{
+                      minWidth: 24,
+                      height: 24,
+                      padding: "0 7px",
+                      borderRadius: 999,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "linear-gradient(135deg, #ff4f78, #9b5cff)",
+                      color: "white",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      boxShadow: "0 6px 16px rgba(177, 77, 255, .28)",
+                    }}
+                  >
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </span>
+                ) : (
+                  <span className="tc-sidebtn-dot" />
+                )}
               </button>
             );
           })}

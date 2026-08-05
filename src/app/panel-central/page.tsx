@@ -11,6 +11,7 @@ import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralS
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
+import CentralNotificationsCenter, { useCentralNotificationCount } from "@/features/central/CentralNotificationsCenter";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
@@ -28,13 +29,14 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
 const TABS = [
   "central",
   "mis-clientas",
+  "notificaciones",
   "panel",
   "equipo",
   "crm",
@@ -55,6 +57,7 @@ type TabKey = typeof TABS[number];
 const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "central", label: "Central", icon: LayoutDashboard },
   { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
+  { key: "notificaciones", label: "Notificaciones", icon: Bell },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -197,6 +200,7 @@ type ChatMessage = {
 };
 
 function CentralPage() {
+  const notificationCount = useCentralNotificationCount();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -1082,6 +1086,11 @@ function CentralPage() {
     }, 250);
   }
 
+  const centralNavItems = useMemo(
+    () => CENTRAL_NAV.map((item) => item.key === "notificaciones" ? { ...item, badge: notificationCount } : item),
+    [notificationCount]
+  );
+
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
@@ -1097,7 +1106,7 @@ function CentralPage() {
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="central" />
       <div className="tc-shell tc-shell-premium">
-        <CentralSidebar items={CENTRAL_NAV} activeTab={tab} onTabChange={handleSidebarTabChange} />
+        <CentralSidebar items={centralNavItems} activeTab={tab} onTabChange={handleSidebarTabChange} />
 
         <main className="tc-main">
           <CentralProgressHeader
@@ -1132,6 +1141,8 @@ function CentralPage() {
               )}
             </>
           )}
+
+          {tab === "notificaciones" && <CentralNotificationsCenter />}
 
           {tab === "central" && (
             <>
