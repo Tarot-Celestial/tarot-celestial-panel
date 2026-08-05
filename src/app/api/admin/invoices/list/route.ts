@@ -259,7 +259,38 @@ export async function GET(req: Request) {
       collaboratorRows.push(collaboratorReportToInvoiceRow(report));
     }
 
-    const allRows = [...enrichedInvoices, ...collaboratorRows];
+    const monthStart = `${month}-01`;
+    const [yearPart, monthPart] = month.split("-").map(Number);
+    const nextMonth = new Date(Date.UTC(yearPart, monthPart, 1)).toISOString().slice(0, 10);
+    const { data: manualInvoices, error: manualInvoicesError } = await admin
+      .from("manual_invoices")
+      .select("id, invoice_number, issue_date, status, total, recipient_name, created_at, updated_at")
+      .gte("issue_date", monthStart)
+      .lt("issue_date", nextMonth)
+      .order("issue_date", { ascending: false });
+    if (manualInvoicesError) throw manualInvoicesError;
+
+    const manualRows = (manualInvoices || []).map((invoice: any) => ({
+      invoice_id: `manual:${invoice.id}`,
+      manual_id: String(invoice.id),
+      is_manual: true,
+      worker_id: "",
+      display_name: invoice.recipient_name || "Factura manual",
+      role: "Factura manual",
+      month_key: month,
+      status: invoice.status,
+      total: safeNumber(invoice.total),
+      updated_at: invoice.updated_at,
+      created_at: invoice.created_at,
+      worker_ack: "not_applicable",
+      worker_ack_at: null,
+      worker_ack_note: null,
+      invoice_number: invoice.invoice_number,
+      issue_date: invoice.issue_date,
+      minutes_trend: "neutral",
+    }));
+
+    const allRows = [...enrichedInvoices, ...collaboratorRows, ...manualRows];
     allRows.sort((a, b) => {
       const roleCompare = String(a.role || "").localeCompare(String(b.role || ""), "es");
       if (roleCompare !== 0) return roleCompare;

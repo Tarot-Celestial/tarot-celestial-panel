@@ -37,6 +37,7 @@ const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/Rend
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
+const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -311,6 +312,8 @@ function AdminPage() {
   const [listLoading, setListLoading] = useState(false);
   const [listMsg, setListMsg] = useState<string>("");
   const [invoices, setInvoices] = useState<any[]>([]);
+  const [manualInvoiceOpen, setManualInvoiceOpen] = useState(false);
+  const [manualInvoiceId, setManualInvoiceId] = useState<string | null>(null);
 
   const [selId, setSelId] = useState<string>("");
   const [selLoading, setSelLoading] = useState(false);
@@ -929,7 +932,9 @@ function AdminPage() {
       if (!token) return;
 
       let endpoint = `/api/admin/invoices/pdf?invoice_id=${encodeURIComponent(invoiceId)}`;
-      if (String(invoiceId).startsWith("collaborator:")) {
+      if (String(invoiceId).startsWith("manual:")) {
+        endpoint = `/api/admin/invoices/manual/pdf?id=${encodeURIComponent(String(invoiceId).replace("manual:", ""))}`;
+      } else if (String(invoiceId).startsWith("collaborator:")) {
         const [, collaboratorId, reportMonth] = String(invoiceId).split(":");
         endpoint = `/api/admin/invoices/collaborator/pdf?collaborator_id=${encodeURIComponent(collaboratorId || "")}&month=${encodeURIComponent(reportMonth || month)}`;
       }
@@ -1459,7 +1464,7 @@ function AdminPage() {
       if (["workers", "billing_collaborators", "billing_collaborator_report_exclusions", "crm_cliente_etiquetas", "invoice_lines"].includes(table)) return true;
       const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old || {};
       if (table === "invoices") return selectedMonths.has(String(row?.month_key || ""));
-      const rawDate = String(row?.fecha_hora || row?.fecha || row?.created_at || row?.updated_at || "");
+      const rawDate = String(row?.issue_date || row?.fecha_hora || row?.fecha || row?.created_at || row?.updated_at || "");
       if (!rawDate) return true;
       return Array.from(selectedMonths).some((key) => rawDate.startsWith(key));
     };
@@ -1485,6 +1490,7 @@ function AdminPage() {
     const channel = sb
       .channel(`admin-invoices-live-${month}-${collaboratorOpen ? "detail" : "list"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleInvoiceRefresh("invoices", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "manual_invoices" }, (payload: any) => scheduleInvoiceRefresh("manual_invoices", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "invoice_lines" }, (payload: any) => scheduleInvoiceRefresh("invoice_lines", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleInvoiceRefresh("workers", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "billing_collaborators" }, (payload: any) => scheduleInvoiceRefresh("billing_collaborators", payload))
@@ -1783,6 +1789,9 @@ function AdminPage() {
                   </div>
 
                   <div className="tc-invoice-actions">
+                    <button className="tc-btn tc-invoice-btn-primary" onClick={() => { setManualInvoiceId(null); setManualInvoiceOpen(true); }}>
+                      <span>＋</span>Crear factura manual
+                    </button>
                     <button className="tc-btn tc-invoice-btn-primary" onClick={generateInvoices} disabled={genLoading}>
                       <span>⚡</span>{genLoading ? "Generando…" : "Generar facturas"}
                     </button>
@@ -1860,7 +1869,14 @@ function AdminPage() {
                         <tr
                           key={x.invoice_id}
                           className={`tc-click ${selId === x.invoice_id ? "tc-invoice-row-selected" : ""}`}
-                          onClick={() => loadInvoice(x.invoice_id)}
+                          onClick={() => {
+                            if (x.is_manual) {
+                              setManualInvoiceId(String(x.manual_id || String(x.invoice_id).replace("manual:", "")));
+                              setManualInvoiceOpen(true);
+                            } else {
+                              loadInvoice(x.invoice_id);
+                            }
+                          }}
                         >
                           <td>
                             <div className="tc-invoice-worker-cell">
@@ -1868,7 +1884,7 @@ function AdminPage() {
                               <span className="tc-invoice-avatar">{String(x.display_name || "?").trim().charAt(0).toUpperCase()}</span>
                               <div>
                                 <b>{x.display_name}</b>
-                                <small>{x.is_collaborator ? `${x.tag_name || "Etiqueta vinculada"} · En vivo` : `Factura ${x.month_key || month}`}</small>
+                                <small>{x.is_manual ? `${x.invoice_number || "Factura manual"} · Factura manual` : x.is_collaborator ? `${x.tag_name || "Etiqueta vinculada"} · En vivo` : `Factura ${x.month_key || month}`}</small>
                               </div>
                             </div>
                           </td>
@@ -2869,6 +2885,12 @@ function AdminPage() {
           {tab === "rendimiento" && <RendimientoPanel mode="admin" />}
           {tab === "reservas" && <ReservasPanel mode="admin" />}
           {tab === "diario" && <DiarioPanel />}
+          <ManualInvoiceModal
+            open={manualInvoiceOpen}
+            invoiceId={manualInvoiceId}
+            onClose={() => setManualInvoiceOpen(false)}
+            onSaved={() => { void listInvoices(true); }}
+          />
 
         </div>
       </main>
