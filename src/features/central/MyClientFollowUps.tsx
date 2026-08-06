@@ -76,7 +76,9 @@ export default function MyClientFollowUps({ clientId, client, summary, lastPurch
       const res = await fetch("/api/central/my-clients/followups", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...form, client_id: clientId, status: "pendiente", scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null, reminder_at: form.reminder_at ? new Date(form.reminder_at).toISOString() : null }) });
       const json = await res.json().catch(() => null); if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo guardar el seguimiento.");
       setModalOpen(false); setForm({ contact_type: "Seguimiento general", reason: "", description: "", observations: "", result: "Pendiente", priority: "media", scheduled_at: "", reminder_at: "" });
-      await load(); onRefresh();
+      await load();
+      window.dispatchEvent(new CustomEvent("tc-followup-changed", { detail: { clientId } }));
+      onRefresh();
     } catch (e: any) { setError(e?.message || "No se pudo guardar el seguimiento."); }
     finally { setSaving(false); }
   }
@@ -84,7 +86,11 @@ export default function MyClientFollowUps({ clientId, client, summary, lastPurch
   async function complete(id: string) {
     const token = await accessToken(); if (!token) return;
     const res = await fetch("/api/central/my-clients/followups", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ id, status: "completado", result: "Seguimiento completado" }) });
-    if (res.ok) { await load(); onRefresh(); }
+    if (res.ok) {
+      await load();
+      window.dispatchEvent(new CustomEvent("tc-followup-changed", { detail: { clientId } }));
+      onRefresh();
+    }
   }
 
   const timeline = useMemo<TimelineItem[]>(() => {

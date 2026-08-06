@@ -32,10 +32,10 @@ export type CentralNotification = {
   crm_clientes?: ClientRef | ClientRef[] | null;
 };
 
-type Summary = { urgent: number; risk: number; reminders: number; resolved: number; unread: number };
+type Summary = { urgent: number; risk: number; reminders: number; resolved: number; unread: number; active?: number; today_pending?: number };
 type FilterKey = "all" | "urgent" | "attention" | "reminders" | "resolved";
 
-const EMPTY_SUMMARY: Summary = { urgent: 0, risk: 0, reminders: 0, resolved: 0, unread: 0 };
+const EMPTY_SUMMARY: Summary = { urgent: 0, risk: 0, reminders: 0, resolved: 0, unread: 0, active: 0, today_pending: 0 };
 
 function clientOf(notification: CentralNotification): ClientRef | null {
   const value = notification.crm_clientes;
@@ -44,7 +44,26 @@ function clientOf(notification: CentralNotification): ClientRef | null {
 
 function formatDate(value?: string | null) {
   if (!value) return "Sin fecha";
-  return new Date(value).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+  return new Date(value).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Madrid" });
+}
+
+function relativeDue(value: string | null | undefined, now: number) {
+  if (!value) return "Sin fecha programada";
+  const due = new Date(value).getTime();
+  if (!Number.isFinite(due)) return "Fecha no disponible";
+  const diffMinutes = Math.round((due - now) / 60_000);
+  const absolute = Math.abs(diffMinutes);
+  if (diffMinutes === 0) return "Ahora";
+  if (diffMinutes > 0) {
+    if (absolute < 60) return `Faltan ${absolute} min`;
+    const hours = Math.floor(absolute / 60);
+    const minutes = absolute % 60;
+    return `Faltan ${hours} h${minutes ? ` ${minutes} min` : ""}`;
+  }
+  if (absolute < 60) return `Vencido hace ${absolute} min`;
+  const hours = Math.floor(absolute / 60);
+  const minutes = absolute % 60;
+  return `Vencido hace ${hours} h${minutes ? ` ${minutes} min` : ""}`;
 }
 
 function priorityIcon(priority: NotificationPriority) {
@@ -72,7 +91,7 @@ export function useCentralNotificationCount() {
       cache: "no-store",
     });
     const json = await response.json().catch(() => null);
-    if (json?.ok) setCount(Number(json.summary?.unread || 0));
+    if (json?.ok) setCount(Number(json.summary?.active ?? json.summary?.unread ?? 0));
   }, []);
 
   useEffect(() => {
@@ -82,10 +101,14 @@ export function useCentralNotificationCount() {
     const channel = sb
       .channel("central-notifications-menu-count")
       .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, load)
       .subscribe();
-    const timer = window.setInterval(() => void load(), 60_000);
+    const onFollowUp = () => void load();
+    window.addEventListener("tc-followup-changed", onFollowUp);
+    const timer = window.setInterval(() => void load(), 30_000);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
+      window.removeEventListener("tc-followup-changed", onFollowUp);
       window.clearInterval(timer);
       void sb.removeChannel(channel);
     };
@@ -101,6 +124,7 @@ export default function CentralNotificationsCenter() {
   const [filter, setFilter] = useState<FilterKey>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [now, setNow] = useState(() => Date.now());
 
   const load = useCallback(async () => {
     const token = await authToken();
@@ -136,10 +160,17 @@ export default function CentralNotificationsCenter() {
     const channel = sb
       .channel("central-notifications-center")
       .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, load)
       .subscribe();
-    const timer = window.setInterval(() => void load(), 60_000);
+    const onFollowUp = () => void load();
+    window.addEventListener("tc-followup-changed", onFollowUp);
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+      void load();
+    }, 30_000);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
+      window.removeEventListener("tc-followup-changed", onFollowUp);
       window.clearInterval(timer);
       void sb.removeChannel(channel);
     };
@@ -208,7 +239,7 @@ export default function CentralNotificationsCenter() {
             <span className={styles.urgentLabel}>URGENTE</span>
             <h2>{featured.title}</h2>
             <p>{featured.description || "Esta alerta requiere atención prioritaria."}</p>
-            <div className={styles.featuredMeta}>{formatDate(featured.scheduled_at || featured.created_at)}</div>
+            <div className={styles.featuredMeta}>{formatDate(featured.scheduled_at || featured.created_at)} · {relativeDue(featured.scheduled_at, now)}</div>
           </div>
           <div className={styles.featuredActions}>
             <button type="button" onClick={() => void openItem(featured)}>{featured.action_label || "Ver clienta"}<ChevronRight size={17} /></button>
@@ -220,7 +251,7 @@ export default function CentralNotificationsCenter() {
       <div className={styles.listHeader}>
         <div>
           <h2>Actividad pendiente</h2>
-          <p>{summary.unread} notificaciones pendientes o no leídas.</p>
+          <p>{summary.active ?? 0} activas ahora · {summary.today_pending ?? 0} pendientes de hoy o vencidas.</p>
         </div>
         {filter !== "all" ? <button type="button" onClick={() => setFilter("all")}>Limpiar filtro</button> : null}
       </div>
@@ -245,7 +276,7 @@ export default function CentralNotificationsCenter() {
                 </div>
                 {item.description ? <p>{item.description}</p> : null}
                 <div className={styles.meta}>
-                  <span>{formatDate(item.scheduled_at || item.created_at)}</span>
+                  <span>{formatDate(item.scheduled_at || item.created_at)} · {relativeDue(item.scheduled_at, now)}</span>
                   {client ? <span>{[client.nombre, client.apellido].filter(Boolean).join(" ") || "Clienta"}</span> : null}
                 </div>
               </div>
