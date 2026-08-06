@@ -83,8 +83,10 @@ export function useCentralNotificationCount() {
       .channel("central-notifications-menu-count")
       .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, load)
       .subscribe();
+    const timer = window.setInterval(() => void load(), 60_000);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
+      window.clearInterval(timer);
       void sb.removeChannel(channel);
     };
   }, [load]);
@@ -135,8 +137,10 @@ export default function CentralNotificationsCenter() {
       .channel("central-notifications-center")
       .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, load)
       .subscribe();
+    const timer = window.setInterval(() => void load(), 60_000);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
+      window.clearInterval(timer);
       void sb.removeChannel(channel);
     };
   }, [load]);
@@ -208,7 +212,7 @@ export default function CentralNotificationsCenter() {
           </div>
           <div className={styles.featuredActions}>
             <button type="button" onClick={() => void openItem(featured)}>{featured.action_label || "Ver clienta"}<ChevronRight size={17} /></button>
-            <button type="button" className={styles.resolveButton} onClick={() => void updateState(featured, "resolve")}>Marcar como resuelta</button>
+            <button type="button" className={styles.resolveButton} onClick={() => void updateState(featured, "resolve")}>Marcar seguimiento completado</button>
           </div>
         </article>
       ) : null}
