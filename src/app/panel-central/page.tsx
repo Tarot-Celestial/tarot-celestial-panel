@@ -29,7 +29,7 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, MessageSquare, Phone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -54,6 +54,8 @@ const TABS = [
 
 type TabKey = typeof TABS[number];
 
+const HIDDEN_TELEPHONIST_TABS = new Set<TabKey>(["chat", "diario", "llamadas"]);
+
 const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "central", label: "Central", icon: LayoutDashboard },
   { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
@@ -61,13 +63,10 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
-  { key: "chat", label: "Chat", icon: MessageSquare },
   { key: "reservas", label: "Reservas", icon: CalendarDays },
-  { key: "diario", label: "Diario", icon: BarChart3 },
   { key: "captacion", label: "Captación", icon: Megaphone },
   { key: "incidencias", label: "Incidencias", icon: ShieldCheck },
   { key: "checklist", label: "Checklist", icon: CheckSquare },
-  { key: "llamadas", label: "Llamadas", icon: Phone },
   { key: "rendimiento", label: "Rendimiento", icon: BarChart3 },
   { key: "habituales", label: "Habituales", icon: Star },
 ];
@@ -360,17 +359,38 @@ function CentralPage() {
 
     const allowedTabs = new Set<TabKey>(TABS);
     if (allowedTabs.has(requestedTab as TabKey)) {
-      setTab(requestedTab as TabKey);
+      const nextTab = requestedTab as TabKey;
+      if (HIDDEN_TELEPHONIST_TABS.has(nextTab)) {
+        setTab("central");
+        const params = new URLSearchParams(searchParams?.toString() || "");
+        params.set("tab", "central");
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+        return;
+      }
+      setTab(nextTab);
     }
-  }, [searchParams]);
+  }, [pathname, router, searchParams]);
 
   const handleSidebarTabChange = useCallback((nextTab: TabKey) => {
+    if (HIDDEN_TELEPHONIST_TABS.has(nextTab)) {
+      nextTab = "central";
+    }
+
     setTab(nextTab);
 
     const params = new URLSearchParams(searchParams?.toString() || "");
     params.set("tab", nextTab);
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   }, [pathname, router, searchParams]);
+
+  useEffect(() => {
+    if (!HIDDEN_TELEPHONIST_TABS.has(tab)) return;
+
+    setTab("central");
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.set("tab", "central");
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }, [pathname, router, searchParams, tab]);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
