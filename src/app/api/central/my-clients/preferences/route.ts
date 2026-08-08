@@ -177,6 +177,20 @@ type ErrorDetails = {
   hint?: unknown;
 };
 
+function databaseFailure(operation: string, error: ErrorDetails): never {
+  console.error("[client-preferences:database]", {
+    operation,
+    code: error.code,
+    message: error.message,
+    details: error.details,
+    hint: error.hint,
+  });
+
+  const failure = new Error(`DATABASE_OPERATION_FAILED:${operation}`);
+  Object.assign(failure, { databaseError: error });
+  throw failure;
+}
+
 const DEFAULTS = {
   preferred_channel: "whatsapp",
   likes_follow_up: true,
@@ -439,13 +453,13 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       .maybeSingle(),
   ]);
 
-  if (communicationResult.error) throw communicationResult.error;
-  if (notificationResult.error) throw notificationResult.error;
-  if (schedulesResult.error) throw schedulesResult.error;
-  if (contentResult.error) throw contentResult.error;
-  if (serviceResult.error) throw serviceResult.error;
-  if (importantDatesResult.error) throw importantDatesResult.error;
-  if (personalNotesResult.error) throw personalNotesResult.error;
+  if (communicationResult.error) databaseFailure("load communication preferences", communicationResult.error);
+  if (notificationResult.error) databaseFailure("load notification preferences", notificationResult.error);
+  if (schedulesResult.error) databaseFailure("load notification schedules", schedulesResult.error);
+  if (contentResult.error) databaseFailure("load content preferences", contentResult.error);
+  if (serviceResult.error) databaseFailure("load service preferences", serviceResult.error);
+  if (importantDatesResult.error) databaseFailure("load important dates", importantDatesResult.error);
+  if (personalNotesResult.error) databaseFailure("load personal notes", personalNotesResult.error);
 
   let personalNotesUpdatedByName: string | null = null;
   const notesRow = personalNotesResult.data as LoadedPersonalNotesRow | null;
@@ -456,7 +470,7 @@ async function loadAll(admin: ReturnType<typeof adminClient>, clientId: string, 
       .select("display_name, email")
       .eq("id", updatedByWorkerId)
       .maybeSingle();
-    if (notesWorkerError) throw notesWorkerError;
+    if (notesWorkerError) databaseFailure("load personal notes author", notesWorkerError);
     if (notesWorker) {
       personalNotesUpdatedByName = String(notesWorker.display_name || notesWorker.email || "").trim() || null;
     }
@@ -541,8 +555,12 @@ export async function GET(req: Request) {
       details: details.details,
       hint: details.hint,
     });
-    const message = error instanceof Error ? error.message : "PREFERENCES_LOAD_FAILED";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    const isValidation = error instanceof Error && (error.message.startsWith("INVALID_") || error.message.startsWith("MAX_") || error.message.endsWith("_TOO_LONG"));
+    return NextResponse.json({
+      ok: false,
+      error: isValidation ? error.message : "PREFERENCES_LOAD_FAILED",
+      message: isValidation ? error.message : "No se pudieron cargar las preferencias. Revisa la configuración e inténtalo de nuevo.",
+    }, { status: isValidation ? 400 : 500 });
   }
 }
 
@@ -579,7 +597,7 @@ export async function PUT(req: Request) {
         updated_by_user_id: worker.user_id,
         updated_at: now,
       }, { onConflict: "client_id" });
-    if (communicationError) throw communicationError;
+    if (communicationError) databaseFailure("save communication preferences", communicationError);
 
     const { error: notificationError } = await admin
       .from("crm_client_notification_preferences")
@@ -590,7 +608,7 @@ export async function PUT(req: Request) {
         updated_by_user_id: worker.user_id,
         updated_at: now,
       }, { onConflict: "client_id" });
-    if (notificationError) throw notificationError;
+    if (notificationError) databaseFailure("save notification preferences", notificationError);
 
     const { error: contentError } = await admin
       .from("crm_client_content_preferences")
@@ -603,7 +621,7 @@ export async function PUT(req: Request) {
         updated_by_user_id: worker.user_id,
         updated_at: now,
       }, { onConflict: "client_id" });
-    if (contentError) throw contentError;
+    if (contentError) databaseFailure("save content preferences", contentError);
 
     const { error: serviceError } = await admin
       .from("crm_client_service_preferences")
@@ -617,7 +635,7 @@ export async function PUT(req: Request) {
         updated_by_user_id: worker.user_id,
         updated_at: now,
       }, { onConflict: "client_id" });
-    if (serviceError) throw serviceError;
+    if (serviceError) databaseFailure("save service preferences", serviceError);
 
     const { error: personalNotesError } = await admin
       .from("crm_client_personal_notes")
@@ -629,13 +647,13 @@ export async function PUT(req: Request) {
         updated_by_worker_id: worker.id,
         updated_at: now,
       }, { onConflict: "client_id" });
-    if (personalNotesError) throw personalNotesError;
+    if (personalNotesError) databaseFailure("save personal notes", personalNotesError);
 
     const incomingDateIds = importantDates.map((item) => item.id).filter((id): id is string => Boolean(id));
     let deleteDatesQuery = admin.from("crm_client_important_dates").delete().eq("client_id", clientId);
     if (incomingDateIds.length > 0) deleteDatesQuery = deleteDatesQuery.not("id", "in", `(${incomingDateIds.join(",")})`);
     const { error: deleteDatesError } = await deleteDatesQuery;
-    if (deleteDatesError) throw deleteDatesError;
+    if (deleteDatesError) databaseFailure("delete removed important dates", deleteDatesError);
 
     if (importantDates.length > 0) {
       const { error: importantDatesError } = await admin
@@ -654,14 +672,14 @@ export async function PUT(req: Request) {
           updated_by_worker_id: worker.id,
           updated_at: now,
         })), { onConflict: "id" });
-      if (importantDatesError) throw importantDatesError;
+      if (importantDatesError) databaseFailure("save important dates", importantDatesError);
     }
 
     const incomingIds = schedules.map((schedule) => schedule.id).filter(Boolean) as string[];
     let deleteQuery = admin.from("crm_client_notification_schedules").delete().eq("client_id", clientId);
     if (incomingIds.length > 0) deleteQuery = deleteQuery.not("id", "in", `(${incomingIds.join(",")})`);
     const { error: deleteError } = await deleteQuery;
-    if (deleteError) throw deleteError;
+    if (deleteError) databaseFailure("delete removed notification schedules", deleteError);
 
     if (schedules.length > 0) {
       const { error: schedulesError } = await admin
@@ -679,7 +697,7 @@ export async function PUT(req: Request) {
           updated_by_user_id: worker.user_id,
           updated_at: now,
         })), { onConflict: "id" });
-      if (schedulesError) throw schedulesError;
+      if (schedulesError) databaseFailure("save notification schedules", schedulesError);
     }
 
     const data = await loadAll(admin, clientId, client.business);
@@ -693,7 +711,11 @@ export async function PUT(req: Request) {
       hint: details.hint,
     });
     const message = error instanceof Error ? error.message : "PREFERENCES_SAVE_FAILED";
-    const status = message.startsWith("INVALID_") ? 400 : 500;
-    return NextResponse.json({ ok: false, error: message }, { status });
+    const isValidation = message.startsWith("INVALID_") || message.startsWith("MAX_") || message.endsWith("_TOO_LONG");
+    return NextResponse.json({
+      ok: false,
+      error: isValidation ? message : "PREFERENCES_SAVE_FAILED",
+      message: isValidation ? message : "No se pudieron guardar las preferencias. Revisa los datos e inténtalo de nuevo.",
+    }, { status: isValidation ? 400 : 500 });
   }
 }

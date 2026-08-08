@@ -22,7 +22,6 @@ import {
   Pencil,
   Phone,
   Plus,
-  RefreshCw,
   Save,
   Smartphone,
   Sparkles,
@@ -307,7 +306,6 @@ export default function MyClientPreferences({ clientId }: Props) {
     enabled: true,
     color: "#9b6cff",
   });
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestState = useRef({ preferences, notifications, customSchedules, contentPreferences, servicePreferences, importantDates, personalNotes });
   const mounted = useRef(true);
 
@@ -354,29 +352,30 @@ export default function MyClientPreferences({ clientId }: Props) {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.ok) throw new Error(payload?.error || "No se pudieron cargar las preferencias.");
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok || !payload || typeof payload !== "object" || !("ok" in payload) || payload.ok !== true) {
+        const apiMessage = payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+          ? payload.message
+          : "No se pudieron cargar las preferencias.";
+        throw new Error(apiMessage);
+      }
       if (!mounted.current) return;
       applyPayload(payload);
-    } catch (loadError: any) {
-      if (mounted.current) setError(loadError?.message || "No se pudieron cargar las preferencias.");
+    } catch (loadError: unknown) {
+      if (mounted.current) setError(loadError instanceof Error ? loadError.message : "No se pudieron cargar las preferencias.");
     } finally {
       if (showLoader && mounted.current) setLoading(false);
     }
   }, [applyPayload, clientId]);
 
-  const save = useCallback(async (options?: { sync?: boolean; silent?: boolean }) => {
-    if (saveTimer.current) {
-      clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
+  const save = useCallback(async (stateOverride?: typeof latestState.current) => {
     setSaving(true);
     setError("");
-    if (!options?.silent) setMessage("");
+    setMessage("");
     try {
       const token = await accessToken();
       if (!token) throw new Error("No se pudo validar la sesión.");
-      const current = latestState.current;
+      const current = stateOverride ?? latestState.current;
       const response = await fetch(`/api/central/my-clients/preferences?client_id=${encodeURIComponent(clientId)}`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -391,105 +390,46 @@ export default function MyClientPreferences({ clientId }: Props) {
         }),
         cache: "no-store",
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok || !payload?.ok) throw new Error(payload?.error || "No se pudieron guardar las preferencias.");
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok || !payload || typeof payload !== "object" || !("ok" in payload) || payload.ok !== true) {
+        const apiMessage = payload && typeof payload === "object" && "message" in payload && typeof payload.message === "string"
+          ? payload.message
+          : "No se pudieron guardar las preferencias.";
+        throw new Error(apiMessage);
+      }
       if (!mounted.current) return;
       applyPayload(payload);
-      if (options?.sync) {
-        await load(false);
-        if (mounted.current) setMessage("Preferencias sincronizadas correctamente.");
-      }
-    } catch (saveError: any) {
-      if (mounted.current) setError(saveError?.message || "No se pudieron guardar las preferencias.");
+      setMessage("Preferencias guardadas correctamente");
+    } catch (saveError: unknown) {
+      if (mounted.current) setError(saveError instanceof Error ? saveError.message : "No se pudieron guardar las preferencias.");
     } finally {
       if (mounted.current) setSaving(false);
     }
-  }, [applyPayload, clientId, load]);
+  }, [applyPayload, clientId]);
 
-  const scheduleSave = useCallback(() => {
+  const markDirty = useCallback(() => {
     setDirty(true);
     setMessage("");
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => void save({ silent: true }), 650);
-  }, [save]);
+    setError("");
+  }, []);
 
   const updatePreference = useCallback(<K extends keyof CommunicationPreferences,>(key: K, value: CommunicationPreferences[K]) => {
     setPreferences((current) => ({ ...current, [key]: value }));
-    scheduleSave();
-  }, [scheduleSave]);
+    markDirty();
+  }, [markDirty]);
 
   const updateNotification = useCallback((key: NotificationKey, patch: Partial<NotificationSettings[NotificationKey]>) => {
     setNotifications((current) => ({ ...current, [key]: { ...current[key], ...patch } }));
-    scheduleSave();
-  }, [scheduleSave]);
+    markDirty();
+  }, [markDirty]);
 
   useEffect(() => {
     mounted.current = true;
     void load(true);
     return () => {
       mounted.current = false;
-      if (saveTimer.current) clearTimeout(saveTimer.current);
     };
   }, [load]);
-
-  useEffect(() => {
-    const supabase = supabaseBrowser();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void load(false), 180);
-    };
-    const channel = supabase
-      .channel(`client-all-preferences-${clientId}`)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_communication_preferences",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_notification_preferences",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_notification_schedules",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_content_preferences",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_service_preferences",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_important_dates",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "crm_client_personal_notes",
-        filter: `client_id=eq.${clientId}`,
-      }, refresh)
-      .subscribe();
-
-    return () => {
-      if (timer) clearTimeout(timer);
-      void supabase.removeChannel(channel);
-    };
-  }, [clientId, load]);
 
   const disabled = !preferences.likes_follow_up;
   const channelIcon = useMemo(() => ({
@@ -537,19 +477,19 @@ export default function MyClientPreferences({ clientId }: Props) {
         : schedule);
     });
     setScheduleModalOpen(false);
-    scheduleSave();
+    markDirty();
   };
 
   const removeSchedule = (index: number) => {
     setCustomSchedules((current) => current.filter((_, currentIndex) => currentIndex !== index));
-    scheduleSave();
+    markDirty();
   };
 
   const toggleSchedule = (index: number) => {
     setCustomSchedules((current) => current.map((schedule, currentIndex) => currentIndex === index
       ? { ...schedule, enabled: !schedule.enabled }
       : schedule));
-    scheduleSave();
+    markDirty();
   };
 
   const toggleContentTopic = (topic: ContentTopic) => {
@@ -565,17 +505,17 @@ export default function MyClientPreferences({ clientId }: Props) {
         ? current.favorite_topics.filter((value) => value !== topic)
         : [...current.favorite_topics, topic],
     }));
-    scheduleSave();
+    markDirty();
   };
 
   const updateContentPreference = <K extends keyof ContentPreferences>(key: K, value: ContentPreferences[K]) => {
     setContentPreferences((current) => ({ ...current, [key]: value }));
-    scheduleSave();
+    markDirty();
   };
 
   const updateServicePreference = <K extends keyof ServicePreferences>(key: K, value: ServicePreferences[K]) => {
     setServicePreferences((current) => ({ ...current, [key]: value }));
-    scheduleSave();
+    markDirty();
   };
 
   const dateIconKey = (name: string) => {
@@ -616,19 +556,19 @@ export default function MyClientPreferences({ clientId }: Props) {
       ? [...current, normalized]
       : current.map((item, index) => index === editingDateIndex ? normalized : item));
     setDateModalOpen(false);
-    scheduleSave();
+    markDirty();
   };
 
   const removeImportantDate = (index: number) => {
     setImportantDates((current) => current.filter((_, currentIndex) => currentIndex !== index));
-    scheduleSave();
+    markDirty();
   };
 
   const toggleImportantDateReminder = (index: number) => {
     setImportantDates((current) => current.map((item, currentIndex) => currentIndex === index
       ? { ...item, reminder_enabled: !item.reminder_enabled }
       : item));
-    scheduleSave();
+    markDirty();
   };
 
   const beginNotesEdit = () => {
@@ -643,11 +583,12 @@ export default function MyClientPreferences({ clientId }: Props) {
 
   const savePersonalNotes = async () => {
     const next: PersonalNotes = { ...personalNotes, notes: notesDraft.trim() };
+    const nextState = { ...latestState.current, personalNotes: next };
     setPersonalNotes(next);
-    latestState.current = { ...latestState.current, personalNotes: next };
+    latestState.current = nextState;
     setNotesEditing(false);
     setDirty(true);
-    await save({ sync: true });
+    await save(nextState);
   };
 
   const importantDateIcon = (iconKey: string) => {
@@ -666,11 +607,11 @@ export default function MyClientPreferences({ clientId }: Props) {
       <div className={styles.pageToolbar}>
         <div>
           <span className={styles.eyebrow}>PREFERENCIAS DEL CLIENTE</span>
-          <p>Configuración sincronizada para comunicación y notificaciones.</p>
+          <p>Información persistente de la clienta para comunicación, contenido y seguimiento.</p>
         </div>
-        <button type="button" className={styles.syncButton} disabled={saving} onClick={() => void save({ sync: true })}>
-          <RefreshCw size={17} className={saving ? styles.spinning : ""} />
-          {saving ? "Sincronizando…" : "Sincronizar"}
+        <button type="button" className={styles.syncButton} disabled={saving || !dirty} onClick={() => void save()}>
+          <Save size={17} />
+          {saving ? "Guardando…" : "Guardar cambios"}
         </button>
       </div>
 
@@ -760,7 +701,7 @@ export default function MyClientPreferences({ clientId }: Props) {
             <h2>Notificaciones</h2>
             <p>Define qué avisos puede recibir la clienta y cuándo deben programarse.</p>
           </div>
-          <span className={styles.liveBadge}><Sparkles size={13} /> Tiempo real</span>
+          <span className={styles.liveBadge}><Sparkles size={13} /> Guardado en ficha</span>
         </header>
 
         <div className={styles.notificationList}>
@@ -830,7 +771,7 @@ export default function MyClientPreferences({ clientId }: Props) {
             <h2>Preferencias de contenido</h2>
             <p>Una ficha rápida para adaptar la consulta a los gustos de la clienta.</p>
           </div>
-          <span className={styles.liveBadge}><Sparkles size={13} /> Tiempo real</span>
+          <span className={styles.liveBadge}><Sparkles size={13} /> Guardado en ficha</span>
         </header>
 
         <section className={styles.contentSection}>
@@ -923,7 +864,7 @@ export default function MyClientPreferences({ clientId }: Props) {
             <h2>Preferencias de servicio</h2>
             <p>Cómo podemos personalizar mejor la atención.</p>
           </div>
-          <span className={styles.liveBadge}><ShieldCheck size={14} /> Sincronización activa</span>
+          <span className={styles.liveBadge}><ShieldCheck size={14} /> Guardado en ficha</span>
         </header>
 
         <div className={styles.serviceGrid}>
@@ -1042,7 +983,7 @@ export default function MyClientPreferences({ clientId }: Props) {
       </article>
 
       <footer className={styles.footer}>
-        <span>{saving ? "Guardando cambios…" : dirty ? "Cambios pendientes de sincronización" : "Datos sincronizados con Supabase"}</span>
+        <span>{saving ? "Guardando cambios…" : dirty ? "Cambios pendientes de guardar" : "Preferencias guardadas en Supabase"}</span>
         {preferences.updated_at && <time dateTime={preferences.updated_at}>Última actualización: {new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(new Date(preferences.updated_at))}</time>}
       </footer>
 
