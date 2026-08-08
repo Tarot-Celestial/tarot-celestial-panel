@@ -6,12 +6,12 @@ export const dynamic = "force-dynamic";
 import AppHeader from "@/components/AppHeader";
 import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperatorProgress } from "@/features/central/CentralProgressHeader";
 import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
-import CentralDailyOverview, { type CentralDailyOverviewData } from "@/features/central/CentralDailyOverview";
+import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
-import CentralNotificationsCenter, { useCentralNotificationCount } from "@/features/central/CentralNotificationsCenter";
+import CentralNotificationsCenter, { useCentralNotificationsFeed, type CentralNotification } from "@/features/central/CentralNotificationsCenter";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
@@ -199,8 +199,47 @@ type ChatMessage = {
   created_at?: string | null;
 };
 
+function recentNotificationType(item: CentralNotification): RecentNotificationType {
+  const type = String(item.type || "").toLowerCase();
+  if (item.priority === "urgent") return "urgent";
+  if (item.priority === "attention") return "opportunity";
+  if (item.priority === "reward" || ["achievement", "logro", "xp", "mission", "reward"].includes(type)) return "achievement";
+  if (item.priority === "success" || ["sale", "purchase", "compra", "recompra"].includes(type)) return "sale";
+  return "information";
+}
+
+function relativeNotificationTime(value?: string | null) {
+  if (!value) return "Ahora";
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "Ahora";
+  const minutes = Math.max(0, Math.floor((Date.now() - time) / 60_000));
+  if (minutes < 1) return "Ahora";
+  if (minutes < 60) return `Hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `Hace ${days} d`;
+}
+
+function toRecentNotification(item: CentralNotification): RecentNotification {
+  const metadata = item.metadata || {};
+  const clientName = typeof metadata.client_name === "string" ? metadata.client_name.trim() : "";
+  const observations = typeof metadata.observations === "string" ? metadata.observations.trim() : "";
+  const description = String(item.description || (clientName ? `${clientName}: notificación pendiente` : "Notificación pendiente"));
+  return {
+    id: item.id,
+    type: recentNotificationType(item),
+    title: item.title,
+    description,
+    createdAtLabel: relativeNotificationTime(item.scheduled_at || item.created_at),
+    observation: observations || undefined,
+    actionLabel: item.action_label || undefined,
+  };
+}
+
 function CentralPage() {
-  const notificationCount = useCentralNotificationCount();
+  const notificationFeed = useCentralNotificationsFeed();
+  const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -226,10 +265,10 @@ function CentralPage() {
     nextLevelName: "Diamante",
     activeClients: 24,
     activeClientsThisWeek: 5,
-    notificationTotal: 8,
-    urgentNotifications: 3,
-    followUpNotifications: 4,
-    informationNotifications: 1,
+    notificationTotal: Number(notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0),
+    urgentNotifications: notificationFeed.summary.urgent,
+    followUpNotifications: notificationFeed.summary.reminders,
+    informationNotifications: Number(notificationFeed.summary.information ?? 0),
     earnedMoney: 1248,
     earnedMoneyThisWeek: 220,
   };
@@ -266,13 +305,12 @@ function CentralPage() {
       { id: "mission-connection", name: "Conexión especial", description: "Consigue 3 segundas consultas", progress: 2, target: 3, rewardXp: 200 },
       { id: "mission-productive", name: "Día productivo", description: "Realiza 5 acciones en un día", progress: 5, target: 5, rewardXp: 150, completed: true },
     ],
-    notifications: [
-      { id: "notification-urgent", type: "urgent", title: "Seguimiento urgente", description: "María C. lleva 5 días sin contacto.", createdAtLabel: "Hace 10 min", actionLabel: "REVISAR SEGUIMIENTO" },
-      { id: "notification-opportunity", type: "opportunity", title: "Segunda consulta pendiente", description: "Ana G. mostró interés en volver.", createdAtLabel: "Hace 45 min", observation: "Mostró interés y quiere volver mañana." },
-      { id: "notification-achievement", type: "achievement", title: "¡Logro desbloqueado!", description: "Experta en conexiones.", createdAtLabel: "Hace 2 h" },
-      { id: "notification-information", type: "information", title: "Nueva clienta registrada", description: "Lucía R. se registró.", createdAtLabel: "Hace 3 h" },
-      { id: "notification-sale", type: "sale", title: "Venta realizada", description: "Paquete de 60 minutos a Marta P.", createdAtLabel: "Hace 4 h" },
-    ],
+    notifications: notificationFeed.items
+      .filter((item) => item.state !== "resolved")
+      .slice()
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 5)
+      .map(toRecentNotification),
   };
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
@@ -1142,15 +1180,19 @@ function CentralPage() {
             </>
           )}
 
-          {tab === "notificaciones" && <CentralNotificationsCenter />}
+          {tab === "notificaciones" && <CentralNotificationsCenter feed={notificationFeed} />}
 
           {tab === "central" && (
             <>
               <CentralStatsCards
                 data={centralStats}
                 onViewClients={() => setTab("crm")}
+                onViewNotifications={() => handleSidebarTabChange("notificaciones")}
               />
-              <CentralDailyOverview data={centralDailyOverview} />
+              <CentralDailyOverview
+                data={centralDailyOverview}
+                onViewAllNotifications={() => handleSidebarTabChange("notificaciones")}
+              />
             </>
           )}
 {tab === "panel" && (

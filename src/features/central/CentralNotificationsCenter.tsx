@@ -32,10 +32,10 @@ export type CentralNotification = {
   crm_clientes?: ClientRef | ClientRef[] | null;
 };
 
-type Summary = { urgent: number; risk: number; reminders: number; resolved: number; unread: number; active?: number; today_pending?: number };
+export type CentralNotificationSummary = { urgent: number; risk: number; reminders: number; resolved: number; unread: number; pending?: number; information?: number; active?: number; today_pending?: number };
 type FilterKey = "all" | "urgent" | "attention" | "reminders" | "resolved";
 
-const EMPTY_SUMMARY: Summary = { urgent: 0, risk: 0, reminders: 0, resolved: 0, unread: 0, active: 0, today_pending: 0 };
+const EMPTY_SUMMARY: CentralNotificationSummary = { urgent: 0, risk: 0, reminders: 0, resolved: 0, unread: 0, pending: 0, information: 0, active: 0, today_pending: 0 };
 
 function clientOf(notification: CentralNotification): ClientRef | null {
   const value = notification.crm_clientes;
@@ -79,71 +79,38 @@ async function authToken() {
   return data.session?.access_token || "";
 }
 
-export function useCentralNotificationCount() {
-  const [count, setCount] = useState(0);
+export type CentralNotificationsFeed = {
+  items: CentralNotification[];
+  summary: CentralNotificationSummary;
+  loading: boolean;
+  error: string;
+  now: number;
+  reload: () => Promise<void>;
+};
 
-  const load = useCallback(async () => {
-    const token = await authToken();
-    if (!token) return;
-    const brand = getActiveBrand();
-    const response = await fetch(`/api/central/notifications?business=${brand}&page=1&page_size=10`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-    const json = await response.json().catch(() => null);
-    if (json?.ok) setCount(Number(json.summary?.active ?? json.summary?.unread ?? 0));
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const onBrand = () => void load();
-    window.addEventListener("tc-brand-changed", onBrand);
-    const channel = sb
-      .channel("central-notifications-menu-count")
-      .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, load)
-      .subscribe();
-    const onFollowUp = () => void load();
-    window.addEventListener("tc-followup-changed", onFollowUp);
-    const timer = window.setInterval(() => void load(), 30_000);
-    return () => {
-      window.removeEventListener("tc-brand-changed", onBrand);
-      window.removeEventListener("tc-followup-changed", onFollowUp);
-      window.clearInterval(timer);
-      void sb.removeChannel(channel);
-    };
-  }, [load]);
-
-  return count;
-}
-
-export default function CentralNotificationsCenter() {
-  const router = useRouter();
+export function useCentralNotificationsFeed(): CentralNotificationsFeed {
   const [items, setItems] = useState<CentralNotification[]>([]);
-  const [summary, setSummary] = useState<Summary>(EMPTY_SUMMARY);
-  const [filter, setFilter] = useState<FilterKey>("all");
+  const [summary, setSummary] = useState<CentralNotificationSummary>(EMPTY_SUMMARY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
 
-  const load = useCallback(async () => {
+  const reload = useCallback(async () => {
     const token = await authToken();
-    if (!token) return;
-    setLoading(true);
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     try {
       const brand = getActiveBrand();
       const params = new URLSearchParams({ business: brand, page: "1", page_size: "40" });
-      if (filter === "urgent" || filter === "attention") params.set("priority", filter);
-      if (filter === "resolved") params.set("state", "resolved");
       const response = await fetch(`/api/central/notifications?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudieron cargar las notificaciones");
-      let next = Array.isArray(json.data) ? (json.data as CentralNotification[]) : [];
-      if (filter === "reminders") next = next.filter((item) => ["followup", "reminder", "important_date"].includes(item.type));
-      setItems(next);
+      setItems(Array.isArray(json.data) ? (json.data as CentralNotification[]) : []);
       setSummary(json.summary || EMPTY_SUMMARY);
       setError("");
     } catch (err) {
@@ -151,22 +118,22 @@ export default function CentralNotificationsCenter() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, []);
 
   useEffect(() => {
-    void load();
-    const onBrand = () => void load();
+    void reload();
+    const onBrand = () => void reload();
+    const onFollowUp = () => void reload();
     window.addEventListener("tc-brand-changed", onBrand);
-    const channel = sb
-      .channel("central-notifications-center")
-      .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, load)
-      .subscribe();
-    const onFollowUp = () => void load();
     window.addEventListener("tc-followup-changed", onFollowUp);
+    const channel = sb
+      .channel("central-notifications-shared")
+      .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, reload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, reload)
+      .subscribe();
     const timer = window.setInterval(() => {
       setNow(Date.now());
-      void load();
+      void reload();
     }, 30_000);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
@@ -174,7 +141,35 @@ export default function CentralNotificationsCenter() {
       window.clearInterval(timer);
       void sb.removeChannel(channel);
     };
-  }, [load]);
+  }, [reload]);
+
+  return { items, summary, loading, error, now, reload };
+}
+
+export function useCentralNotificationCount() {
+  const feed = useCentralNotificationsFeed();
+  return Number(feed.summary.active ?? feed.summary.pending ?? feed.summary.unread ?? 0);
+}
+
+type CentralNotificationsCenterProps = {
+  feed: CentralNotificationsFeed;
+};
+
+export default function CentralNotificationsCenter({ feed }: CentralNotificationsCenterProps) {
+  const router = useRouter();
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const { items: allItems, summary, loading, error, now, reload: load } = feed;
+
+  const items = useMemo(() => {
+    if (filter === "urgent") return allItems.filter((item) => item.priority === "urgent" && item.state !== "resolved");
+    if (filter === "attention") return allItems.filter((item) => item.priority === "attention" && item.state !== "resolved");
+    if (filter === "reminders") return allItems.filter((item) => ["followup", "reminder", "important_date"].includes(item.type) && item.state !== "resolved");
+    if (filter === "resolved") return allItems.filter((item) => item.state === "resolved");
+    return allItems;
+  }, [allItems, filter]);
+
+  /* Data loading and Realtime are centralized in useCentralNotificationsFeed(). */
+  /* Keep the existing rendering and actions unchanged. */
 
   const featured = useMemo(
     () => items.find((item) => item.state !== "resolved" && item.priority === "urgent") || null,

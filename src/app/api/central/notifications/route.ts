@@ -311,6 +311,12 @@ export async function GET(req: Request) {
       urgent: allRows.filter((item) => item.state !== "resolved" && item.priority === "urgent").length,
       risk: allRows.filter((item) => item.state !== "resolved" && item.priority === "attention").length,
       reminders: allRows.filter((item) => item.state !== "resolved" && ["followup", "reminder", "important_date"].includes(item.type)).length,
+      information: allRows.filter((item) =>
+        item.state !== "resolved" &&
+        item.priority === "info" &&
+        !["followup", "reminder", "important_date"].includes(item.type)
+      ).length,
+      pending: unresolved.length,
       resolved: allRows.filter((item) => item.state === "resolved").length,
       unread: allRows.filter((item) => item.state === "pending").length,
       active: active.length,
