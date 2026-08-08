@@ -1,6 +1,8 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import type { LucideIcon } from "lucide-react";
+import styles from "./CentralSidebar.module.css";
 
 export type CentralNavItem<T extends string = string> = {
   key: T;
@@ -16,42 +18,61 @@ type CentralSidebarProps<T extends string = string> = {
   onTabChange: (tab: T) => void;
 };
 
+type NavTone = { rgb: string; className?: string };
+
+const NAV_TONES: Record<string, NavTone> = {
+  central: { rgb: "232, 199, 118" },
+  "mis-clientas": { rgb: "154, 124, 255" },
+  notificaciones: { rgb: "230, 92, 131" },
+  "mi-factura": { rgb: "62, 229, 139", className: "invoice" },
+  panel: { rgb: "102, 166, 255" },
+  equipo: { rgb: "129, 140, 248" },
+  crm: { rgb: "168, 85, 247" },
+  reservas: { rgb: "217, 185, 110" },
+  captacion: { rgb: "245, 158, 11" },
+  incidencias: { rgb: "239, 106, 106" },
+  checklist: { rgb: "93, 214, 167" },
+  rendimiento: { rgb: "110, 168, 255" },
+  habituales: { rgb: "192, 132, 252" },
+};
+
+function navTone(key: string, notificationAlert: boolean) {
+  if (notificationAlert) return { rgb: "255, 66, 91", className: "alert" };
+  return NAV_TONES[key] || { rgb: "215, 181, 109" };
+}
+
 export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange }: CentralSidebarProps<T>) {
   return (
-    <aside className="tc-sidebar">
-      <div className="tc-sidebar-card">
-        <div className="tc-sidebar-title">Navegación centrales</div>
+    <aside className={`tc-sidebar ${styles.sidebar}`}>
+      <div className={`tc-sidebar-card ${styles.sidebarCard}`}>
+        <div className={`tc-sidebar-title ${styles.sidebarTitle}`}>Navegación centrales</div>
         <div className="tc-sidebar-nav">
           {items.map((item) => {
             const Icon = item.icon;
+            const key = String(item.key);
             const active = activeTab === item.key;
-            const notificationAlert = item.key === "notificaciones" && typeof item.badge === "number" && item.badge > 0;
+            const notificationAlert = key === "notificaciones" && typeof item.badge === "number" && item.badge > 0;
+            const tone = navTone(key, notificationAlert);
+            const toneStyle = { "--nav-rgb": tone.rgb } as CSSProperties;
             return (
               <button
                 key={item.key}
-                className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
-                style={notificationAlert ? {
-                  borderColor: "rgba(255, 75, 95, .72)",
-                  background: "linear-gradient(135deg, rgba(130, 20, 42, .34), rgba(68, 20, 78, .24))",
-                  boxShadow: "0 0 0 1px rgba(255, 68, 92, .12), 0 10px 28px rgba(164, 21, 49, .22)",
-                } : undefined}
+                className={[
+                  "tc-sidebtn",
+                  styles.navButton,
+                  active ? `tc-sidebtn-active ${styles.navButtonActive}` : "",
+                  tone.className === "invoice" ? styles.invoiceButton : "",
+                  tone.className === "alert" ? styles.alertButton : "",
+                ].filter(Boolean).join(" ")}
+                style={toneStyle}
                 onClick={() => onTabChange(item.key)}
                 type="button"
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                  <div className="tc-chip" style={{
-                    width: 38,
-                    height: 38,
-                    display: "grid",
-                    placeItems: "center",
-                    padding: 0,
-                    color: notificationAlert ? "#ff657b" : undefined,
-                    borderColor: notificationAlert ? "rgba(255, 80, 104, .58)" : undefined,
-                    boxShadow: notificationAlert ? "0 0 18px rgba(255, 64, 96, .32)" : undefined,
-                  }}>
-                    <Icon size={16} />
+                <div className={styles.navContent}>
+                  <div className={`tc-chip ${styles.iconHud}`}>
+                    <Icon size={17} strokeWidth={2.1} />
                   </div>
-                  <div style={{ minWidth: 0 }}>
+                  <div className={styles.labelWrap}>
                     <div className="tc-sidebtn-main">{item.label}</div>
                     <div className="tc-sidebtn-kicker">{item.kicker}</div>
                   </div>
@@ -59,25 +80,12 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                 {typeof item.badge === "number" && item.badge > 0 ? (
                   <span
                     aria-label={`${item.badge} notificaciones pendientes`}
-                    style={{
-                      minWidth: 24,
-                      height: 24,
-                      padding: "0 7px",
-                      borderRadius: 999,
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: "linear-gradient(135deg, #ff294f, #c3123f)",
-                      color: "white",
-                      fontSize: 11,
-                      fontWeight: 900,
-                      boxShadow: "0 0 0 1px rgba(255,255,255,.16), 0 6px 18px rgba(255, 35, 75, .42)",
-                    }}
+                    className={styles.badge}
                   >
                     {item.badge > 99 ? "99+" : item.badge}
                   </span>
                 ) : (
-                  <span className="tc-sidebtn-dot" />
+                  <span className={`tc-sidebtn-dot ${styles.dot}`} />
                 )}
               </button>
             );

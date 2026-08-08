@@ -5,12 +5,31 @@ import { getBearerToken } from "@/lib/server/auth-fast";
 export const runtime = "nodejs";
 
 type InvoiceLine = { id: string; kind: string; label: string; amount: number; created_at?: string | null; meta?: unknown };
+type InvoiceRow = { id: string; worker_id: string; month_key: string; status: string; total: number; created_at?: string | null; updated_at?: string | null };
 
 function env(name: string) { const value = process.env[name]; if (!value) throw new Error(`Missing env var: ${name}`); return value; }
 function money(value: unknown) { const n = Number(value); return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0; }
 function monthKey(date = new Date()) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`; }
 function previousMonth(key: string) { const [y, m] = key.split("-").map(Number); const d = new Date(y, m - 2, 1); return monthKey(d); }
 function isReward(kind: string) { return kind !== "salary_base" && (kind.includes("bonus") || kind.includes("reward") || kind.includes("coin") || kind.includes("recomp")); }
+
+const MADRID_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" });
+
+function madridDateKey(value: string | Date) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return MADRID_DATE.format(date);
+}
+
+function currentMadridWeekStartKey(now = new Date()) {
+  const todayKey = madridDateKey(now);
+  const [year, month, day] = todayKey.split("-").map(Number);
+  const calendarDay = new Date(Date.UTC(year, month - 1, day));
+  const weekday = calendarDay.getUTCDay();
+  const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
+  calendarDay.setUTCDate(calendarDay.getUTCDate() + mondayOffset);
+  return calendarDay.toISOString().slice(0, 10);
+}
 
 export async function GET(req: Request) {
   try {
@@ -37,14 +56,15 @@ export async function GET(req: Request) {
       .eq("worker_id", worker.id).in("month_key", [month, previous]).order("created_at", { ascending: false });
     if (invoicesError) throw invoicesError;
 
-    const currentInvoice = (invoices || []).find((row) => row.month_key === month) || null;
-    const previousInvoice = (invoices || []).find((row) => row.month_key === previous) || null;
+    const invoiceRows = (invoices || []) as InvoiceRow[];
+    const currentInvoice = invoiceRows.find((row: InvoiceRow) => row.month_key === month) || null;
+    const previousInvoice = invoiceRows.find((row: InvoiceRow) => row.month_key === previous) || null;
     let lines: InvoiceLine[] = [];
     if (currentInvoice?.id) {
       const { data, error } = await admin.from("invoice_lines")
         .select("id,kind,label,amount,created_at,meta").eq("invoice_id", currentInvoice.id).order("created_at", { ascending: true });
       if (error) throw error;
-      lines = (data || []).map((line) => ({ ...line, amount: money(line.amount) }));
+      lines = ((data || []) as InvoiceLine[]).map((line: InvoiceLine) => ({ ...line, amount: money(line.amount) }));
     }
 
     const configuredSalary = money(worker.salary_base);
@@ -52,6 +72,15 @@ export async function GET(req: Request) {
     const fixedSalary = salaryLine ? money(salaryLine.amount) : configuredSalary;
     const rewards = money(lines.filter((line) => isReward(line.kind)).reduce((sum, line) => sum + money(line.amount), 0));
     const invoiceTotal = currentInvoice ? money(currentInvoice.total) : money(fixedSalary + rewards);
+    const todayMadrid = madridDateKey(new Date());
+    const weekStartMadrid = currentMadridWeekStartKey();
+    const weeklyEarnings = money(lines
+      .filter((line) => {
+        if (line.kind === "salary_base" || money(line.amount) <= 0 || !line.created_at) return false;
+        const lineDate = madridDateKey(line.created_at);
+        return Boolean(lineDate && lineDate >= weekStartMadrid && lineDate <= todayMadrid);
+      })
+      .reduce((sum, line) => sum + money(line.amount), 0));
     const previousTotal = previousInvoice ? money(previousInvoice.total) : 0;
     const difference = money(invoiceTotal - previousTotal);
     const variationPct = previousInvoice && previousTotal !== 0 ? Math.round((difference / Math.abs(previousTotal)) * 10000) / 100 : null;
@@ -74,6 +103,7 @@ export async function GET(req: Request) {
       fixed_salary: fixedSalary,
       rewards,
       total: invoiceTotal,
+      weekly_earnings: weeklyEarnings,
       previous: { month: previous, total: previousTotal, exists: Boolean(previousInvoice), difference, variation_pct: variationPct },
       lines,
       evolution,

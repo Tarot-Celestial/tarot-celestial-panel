@@ -35,6 +35,7 @@ export type CentralStatsData = {
   informationNotifications: number;
   earnedMoney: number;
   earnedMoneyThisWeek: number;
+  earnedMoneyEvolution?: number[];
 };
 
 type CentralStatsCardsProps = {
@@ -56,6 +57,21 @@ function formatMoney(value: number) {
     currency: "EUR",
     maximumFractionDigits: 0,
   }).format(Math.max(0, value));
+}
+
+
+function moneyChartPoints(values: number[]) {
+  const clean = values.map((value) => Number(value)).filter((value) => Number.isFinite(value));
+  if (!clean.length) return "0,21 130,21";
+  if (clean.length === 1) return "0,21 130,21";
+  const min = Math.min(...clean);
+  const max = Math.max(...clean);
+  const range = max - min;
+  return clean.map((value, index) => {
+    const x = (index / (clean.length - 1)) * 130;
+    const y = range === 0 ? 21 : 36 - ((value - min) / range) * 31;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(" ");
 }
 
 function MiniChart({ points }: { points: string }) {
@@ -89,6 +105,7 @@ export default function CentralStatsCards({
     Math.max(0, (data.currentLevelXp / Math.max(1, data.nextLevelXp)) * 100)
   );
   const levelClass = styles[`level${data.currentLevel}`] || styles.levelOro;
+  const earnedMoneyPoints = moneyChartPoints(data.earnedMoneyEvolution || []);
 
   return (
     <section className={styles.grid} aria-label="Estadísticas de Central">
@@ -177,7 +194,7 @@ export default function CentralStatsCards({
           </div>
         </div>
         <div className={styles.visualArea} aria-hidden="true">
-          <MiniChart points="0,36 17,34 35,27 52,29 70,17 88,20 108,10 130,3" />
+          <MiniChart points={earnedMoneyPoints} />
         </div>
         <CardButton label="VER DETALLE" onClick={onViewEarnings} />
       </article>

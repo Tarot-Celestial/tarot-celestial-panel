@@ -273,7 +273,8 @@ function CentralPage() {
     followUpNotifications: notificationFeed.summary.reminders,
     informationNotifications: Number(notificationFeed.summary.information ?? 0),
     earnedMoney: Number(myInvoiceFeed.data?.total || 0),
-    earnedMoneyThisWeek: 0,
+    earnedMoneyThisWeek: Number(myInvoiceFeed.data?.weekly_earnings || 0),
+    earnedMoneyEvolution: (myInvoiceFeed.data?.evolution || []).map((point: { total: number }) => Number(point.total) || 0),
   };
 
   // Datos visuales provisionales para la primera fila de la pestaña Mis clientas.
@@ -1214,6 +1215,7 @@ function CentralPage() {
                 data={centralStats}
                 onViewClients={() => setTab("crm")}
                 onViewNotifications={() => handleSidebarTabChange("notificaciones")}
+                onViewEarnings={() => handleSidebarTabChange("mi-factura")}
               />
               <CentralDailyOverview
                 data={centralDailyOverview}

@@ -12,6 +12,7 @@ export type MyInvoiceData = {
   fixed_salary: number;
   rewards: number;
   total: number;
+  weekly_earnings: number;
   previous: { month: string; total: number; exists: boolean; difference: number; variation_pct: number | null };
   lines: Array<{ id: string; kind: string; label: string; amount: number; created_at?: string | null }>;
   evolution: Array<{ at?: string | null; total: number; label: string }>;

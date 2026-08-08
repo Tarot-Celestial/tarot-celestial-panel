@@ -1,0 +1,202 @@
+.sidebarCard {
+  position: relative;
+  isolation: isolate;
+  border-color: rgba(233, 215, 176, 0.16) !important;
+  background:
+    radial-gradient(circle at 12% -2%, rgba(237, 202, 129, 0.13), transparent 29%),
+    radial-gradient(circle at 100% 28%, rgba(112, 73, 166, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(35, 31, 40, 0.965), rgba(20, 18, 29, 0.985)) !important;
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.025),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065) !important;
+}
+
+.sidebarCard::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  z-index: -1;
+  border: 1px solid rgba(255, 255, 255, 0.025);
+  border-radius: 23px;
+  pointer-events: none;
+}
+
+.sidebarTitle {
+  position: relative;
+  padding: 2px 4px 11px;
+  color: rgba(242, 215, 157, 0.82) !important;
+  text-shadow: 0 0 18px rgba(232, 199, 118, 0.16);
+}
+
+.sidebarTitle::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(232, 199, 118, 0.42), rgba(154, 124, 255, 0.12), transparent);
+}
+
+.navButton {
+  --nav-rgb: 215, 181, 109;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(var(--nav-rgb), 0.10) !important;
+  background:
+    linear-gradient(105deg, rgba(var(--nav-rgb), 0.018), rgba(255, 255, 255, 0.012)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease !important;
+}
+
+.navButton::after {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  border-radius: 99px;
+  background: rgb(var(--nav-rgb));
+  box-shadow: 0 0 14px rgba(var(--nav-rgb), 0.72);
+  opacity: 0;
+  transform: scaleY(0.45);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.navButton:hover {
+  transform: translateX(2px) !important;
+  border-color: rgba(var(--nav-rgb), 0.28) !important;
+  background:
+    radial-gradient(circle at 8% 50%, rgba(var(--nav-rgb), 0.12), transparent 36%),
+    linear-gradient(105deg, rgba(var(--nav-rgb), 0.07), rgba(255, 255, 255, 0.022)) !important;
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.24),
+    0 0 24px rgba(var(--nav-rgb), 0.055),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+.navButton:hover::after,
+.navButtonActive::after {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+.navButtonActive {
+  border-color: rgba(var(--nav-rgb), 0.38) !important;
+  background:
+    radial-gradient(circle at 5% 50%, rgba(var(--nav-rgb), 0.17), transparent 38%),
+    linear-gradient(110deg, rgba(var(--nav-rgb), 0.12), rgba(255, 255, 255, 0.035)) !important;
+  box-shadow:
+    0 16px 34px rgba(0, 0, 0, 0.30),
+    0 0 26px rgba(var(--nav-rgb), 0.085),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075) !important;
+}
+
+.navContent {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.iconHud {
+  width: 39px !important;
+  height: 39px !important;
+  display: grid !important;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 0 !important;
+  color: rgb(var(--nav-rgb)) !important;
+  border-color: rgba(var(--nav-rgb), 0.24) !important;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.09), transparent 30%),
+    linear-gradient(145deg, rgba(var(--nav-rgb), 0.13), rgba(var(--nav-rgb), 0.035)) !important;
+  box-shadow:
+    0 0 18px rgba(var(--nav-rgb), 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.navButton:hover .iconHud,
+.navButtonActive .iconHud {
+  transform: translateY(-1px) scale(1.025);
+  border-color: rgba(var(--nav-rgb), 0.48) !important;
+  box-shadow:
+    0 0 24px rgba(var(--nav-rgb), 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09) !important;
+}
+
+.labelWrap {
+  min-width: 0;
+}
+
+.dot {
+  background: rgba(var(--nav-rgb), 0.34) !important;
+  box-shadow: 0 0 10px rgba(var(--nav-rgb), 0.08);
+}
+
+.navButtonActive .dot {
+  background: rgb(var(--nav-rgb)) !important;
+  box-shadow: 0 0 16px rgba(var(--nav-rgb), 0.66) !important;
+}
+
+.invoiceButton {
+  border-color: rgba(62, 229, 139, 0.20) !important;
+}
+
+.invoiceButton .iconHud {
+  box-shadow:
+    0 0 22px rgba(62, 229, 139, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07) !important;
+}
+
+.invoiceButton.navButtonActive {
+  border-color: rgba(62, 229, 139, 0.52) !important;
+  background:
+    radial-gradient(circle at 7% 50%, rgba(62, 229, 139, 0.22), transparent 39%),
+    linear-gradient(110deg, rgba(23, 115, 75, 0.28), rgba(20, 31, 31, 0.58)) !important;
+  box-shadow:
+    0 17px 38px rgba(0, 0, 0, 0.31),
+    0 0 30px rgba(62, 229, 139, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.075) !important;
+}
+
+.alertButton {
+  animation: notificationPulse 2.4s ease-in-out infinite;
+}
+
+.badge {
+  min-width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 7px;
+  border: 1px solid rgba(var(--nav-rgb), 0.56);
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, rgba(var(--nav-rgb), 0.96), rgba(133, 21, 47, 0.96));
+  box-shadow: 0 0 18px rgba(var(--nav-rgb), 0.35);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+@keyframes notificationPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(var(--nav-rgb), 0); }
+  50% { box-shadow: 0 0 22px rgba(var(--nav-rgb), 0.12); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navButton,
+  .iconHud,
+  .alertButton {
+    animation: none;
+    transition: none !important;
+  }
+}
