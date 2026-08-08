@@ -60,7 +60,8 @@ async function currentWorker(req: Request): Promise<Worker | null> {
     .eq("user_id", data.user.id)
     .maybeSingle();
   if (workerError) throw workerError;
-  if (!worker || !["admin", "ceo", "supervisor", "central"].includes(String(worker.role || ""))) return null;
+  const role = String(worker?.role || "").trim().toLowerCase();
+  if (!worker || !["admin", "ceo", "supervisor", "central"].includes(role)) return null;
   return worker as Worker;
 }
 
@@ -72,7 +73,9 @@ async function clientAccess(admin: SupabaseClient, clientId: string, worker: Wor
   const ownerId = String(
     typedClient.captured_by_worker_id || typedClient.responsable_worker_id || typedClient.assigned_worker_id || ""
   );
-  const allowed = ["admin", "ceo", "supervisor"].includes(String(worker.role || "")) || !ownerId || ownerId === String(worker.id);
+  const role = String(worker.role || "").trim().toLowerCase();
+  const ownerMatchesWorker = ownerId === String(worker.id) || (!!worker.user_id && ownerId === String(worker.user_id));
+  const allowed = ["admin", "ceo", "supervisor"].includes(role) || !ownerId || ownerMatchesWorker;
   return { client: typedClient, allowed };
 }
 
@@ -111,6 +114,28 @@ function notificationState(followUp: FollowUpRow): NotificationState {
 
 function clientName(client: ClientRow) {
   return [client.nombre, client.apellido].filter(Boolean).join(" ").trim() || "Clienta";
+}
+
+type SupabaseLikeError = {
+  code?: string | null;
+  message?: string | null;
+  details?: string | null;
+  hint?: string | null;
+};
+
+function logTechnicalError(scope: string, error: unknown, context?: Record<string, unknown>) {
+  const candidate = (error && typeof error === "object" ? error : {}) as SupabaseLikeError;
+  console.error(`[followups:${scope}]`, {
+    code: candidate.code || null,
+    message: candidate.message || (error instanceof Error ? error.message : String(error)),
+    details: candidate.details || null,
+    hint: candidate.hint || null,
+    ...(context || {}),
+  });
+}
+
+function apiError(status: number, code: string, message: string) {
+  return NextResponse.json({ ok: false, error: message, code }, { status });
 }
 
 async function syncFollowUpNotification(
@@ -180,14 +205,14 @@ async function syncFollowUpNotification(
 export async function GET(req: Request) {
   try {
     const worker = await currentWorker(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!worker) return apiError(401, "NO_AUTH", "No se pudo validar la sesión.");
     const clientId = String(new URL(req.url).searchParams.get("client_id") || "").trim();
-    if (!clientId) return NextResponse.json({ ok: false, error: "CLIENT_ID_REQUIRED" }, { status: 400 });
+    if (!clientId) return apiError(400, "CLIENT_ID_REQUIRED", "Falta identificar la clienta.");
 
     const admin = adminClient();
     const access = await clientAccess(admin, clientId, worker);
-    if (!access.client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
-    if (!access.allowed) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!access.client) return apiError(404, "CLIENT_NOT_FOUND", "No se ha encontrado la clienta.");
+    if (!access.allowed) return apiError(403, "FORBIDDEN", "No tienes permiso para gestionar los seguimientos de esta clienta.");
 
     const { data, error } = await admin
       .from("crm_client_followups")
@@ -198,23 +223,23 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ ok: true, data: data || [] });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "ERR_FOLLOWUPS";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    logTechnicalError("load", error);
+    return apiError(500, "FOLLOWUPS_LOAD_FAILED", "No se pudieron cargar los seguimientos.");
   }
 }
 
 export async function POST(req: Request) {
   try {
     const worker = await currentWorker(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!worker) return apiError(401, "NO_AUTH", "No se pudo validar la sesión.");
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const clientId = String(body.client_id || "").trim();
-    if (!clientId) return NextResponse.json({ ok: false, error: "CLIENT_ID_REQUIRED" }, { status: 400 });
+    if (!clientId) return apiError(400, "CLIENT_ID_REQUIRED", "Falta identificar la clienta.");
 
     const admin = adminClient();
     const access = await clientAccess(admin, clientId, worker);
-    if (!access.client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
-    if (!access.allowed) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!access.client) return apiError(404, "CLIENT_NOT_FOUND", "No se ha encontrado la clienta.");
+    if (!access.allowed) return apiError(403, "FORBIDDEN", "No tienes permiso para gestionar los seguimientos de esta clienta.");
 
     const status = String(body.status || "pendiente").trim();
     const payload = {
@@ -233,7 +258,7 @@ export async function POST(req: Request) {
       reminder_at: body.reminder_at ? String(body.reminder_at) : null,
       completed_at: status.toLowerCase() === "completado" ? new Date().toISOString() : null,
     };
-    if (!payload.reason) return NextResponse.json({ ok: false, error: "REASON_REQUIRED" }, { status: 400 });
+    if (!payload.reason) return apiError(400, "REASON_REQUIRED", "El motivo del seguimiento es obligatorio.");
 
     const { data, error } = await admin
       .from("crm_client_followups")
@@ -242,29 +267,35 @@ export async function POST(req: Request) {
       .single();
     if (error) throw error;
 
-    await syncFollowUpNotification(admin, data as FollowUpRow, access.client, worker.user_id);
+    try {
+      await syncFollowUpNotification(admin, data as FollowUpRow, access.client, worker.user_id);
+    } catch (notificationError) {
+      // Notificaciones también consume crm_client_followups directamente. Un fallo en el
+      // historial auxiliar no debe convertir un seguimiento ya guardado en un falso error.
+      logTechnicalError("notification-sync-after-create", notificationError, { followup_id: data.id, client_id: clientId });
+    }
     return NextResponse.json({ ok: true, data });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "ERR_CREATE_FOLLOWUP";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    logTechnicalError("create", error);
+    return apiError(500, "FOLLOWUP_SAVE_FAILED", "No se pudo guardar el seguimiento. Revisa los datos e inténtalo de nuevo.");
   }
 }
 
 export async function PATCH(req: Request) {
   try {
     const worker = await currentWorker(req);
-    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!worker) return apiError(401, "NO_AUTH", "No se pudo validar la sesión.");
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const id = String(body.id || "").trim();
-    if (!id) return NextResponse.json({ ok: false, error: "ID_REQUIRED" }, { status: 400 });
+    if (!id) return apiError(400, "ID_REQUIRED", "Falta identificar el seguimiento.");
 
     const admin = adminClient();
     const { data: current, error: currentError } = await admin.from("crm_client_followups").select("*").eq("id", id).maybeSingle();
     if (currentError) throw currentError;
-    if (!current) return NextResponse.json({ ok: false, error: "FOLLOWUP_NOT_FOUND" }, { status: 404 });
+    if (!current) return apiError(404, "FOLLOWUP_NOT_FOUND", "No se ha encontrado el seguimiento.");
     const access = await clientAccess(admin, String(current.client_id), worker);
-    if (!access.client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
-    if (!access.allowed) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    if (!access.client) return apiError(404, "CLIENT_NOT_FOUND", "No se ha encontrado la clienta.");
+    if (!access.allowed) return apiError(403, "FORBIDDEN", "No tienes permiso para gestionar los seguimientos de esta clienta.");
 
     const updates: Record<string, string | null> = { updated_at: new Date().toISOString() };
     for (const key of ["contact_type", "reason", "description", "observations", "result", "status", "priority", "scheduled_at", "reminder_at"] as const) {
@@ -281,10 +312,14 @@ export async function PATCH(req: Request) {
       .single();
     if (error) throw error;
 
-    await syncFollowUpNotification(admin, data as FollowUpRow, access.client, worker.user_id);
+    try {
+      await syncFollowUpNotification(admin, data as FollowUpRow, access.client, worker.user_id);
+    } catch (notificationError) {
+      logTechnicalError("notification-sync-after-update", notificationError, { followup_id: data.id, client_id: data.client_id });
+    }
     return NextResponse.json({ ok: true, data });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "ERR_UPDATE_FOLLOWUP";
-    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+    logTechnicalError("update", error);
+    return apiError(500, "FOLLOWUP_UPDATE_FAILED", "No se pudo actualizar el seguimiento.");
   }
 }
