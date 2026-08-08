@@ -12,6 +12,7 @@ import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central
 import MyClientsList from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
 import CentralNotificationsCenter, { useCentralNotificationsFeed, type CentralNotification } from "@/features/central/CentralNotificationsCenter";
+import MyInvoicePanel, { useMyInvoice } from "@/features/central/MyInvoicePanel";
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
@@ -29,7 +30,7 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -37,6 +38,7 @@ const TABS = [
   "central",
   "mis-clientas",
   "notificaciones",
+  "mi-factura",
   "panel",
   "equipo",
   "crm",
@@ -60,6 +62,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "central", label: "Central", icon: LayoutDashboard },
   { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
   { key: "notificaciones", label: "Notificaciones", icon: Bell },
+  { key: "mi-factura", label: "Mi factura", icon: BadgeEuro },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -238,6 +241,7 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 
 function CentralPage() {
   const notificationFeed = useCentralNotificationsFeed();
+  const myInvoiceFeed = useMyInvoice();
   const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -268,8 +272,8 @@ function CentralPage() {
     urgentNotifications: notificationFeed.summary.urgent,
     followUpNotifications: notificationFeed.summary.reminders,
     informationNotifications: Number(notificationFeed.summary.information ?? 0),
-    earnedMoney: 1248,
-    earnedMoneyThisWeek: 220,
+    earnedMoney: Number(myInvoiceFeed.data?.total || 0),
+    earnedMoneyThisWeek: 0,
   };
 
   // Datos visuales provisionales para la primera fila de la pestaña Mis clientas.
@@ -1201,6 +1205,8 @@ function CentralPage() {
           )}
 
           {tab === "notificaciones" && <CentralNotificationsCenter feed={notificationFeed} />}
+
+          {tab === "mi-factura" && <MyInvoicePanel feed={myInvoiceFeed} />}
 
           {tab === "central" && (
             <>
