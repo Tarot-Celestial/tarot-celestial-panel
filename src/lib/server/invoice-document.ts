@@ -2,6 +2,7 @@ export type InvoiceParty = {
   name: string;
   company?: string | null;
   taxId?: string | null;
+  taxIdLabel?: string | null;
   address?: string | null;
   postalCode?: string | null;
   city?: string | null;
@@ -93,8 +94,8 @@ function partyLines(party: InvoiceParty) {
   const region = [party.province, party.country].filter(Boolean).join(" · ");
   const contact = [party.email, party.phone].filter(Boolean).join(" · ");
   return [
+    party.taxId ? `${party.taxIdLabel || "NIF/CIF"}: ${party.taxId}` : null,
     party.company && party.company !== party.name ? party.company : null,
-    party.taxId ? `NIF/CIF: ${party.taxId}` : null,
     party.address,
     locality || null,
     region || null,
@@ -106,8 +107,9 @@ export function invoiceIssuerFromEnvironment(): InvoiceParty {
   return {
     name: process.env.INVOICE_ISSUER_NAME || "Alex Rivera Saldaña",
     company: process.env.INVOICE_ISSUER_COMPANY || "Tarot Celestial",
-    taxId: process.env.INVOICE_ISSUER_TAX_ID || null,
-    address: process.env.INVOICE_ISSUER_ADDRESS || null,
+    taxId: process.env.INVOICE_ISSUER_TAX_ID || "Z3163579-A",
+    taxIdLabel: process.env.INVOICE_ISSUER_TAX_ID_LABEL || "NIE",
+    address: process.env.INVOICE_ISSUER_ADDRESS || "Calle Sant Pere 81 2C",
     postalCode: process.env.INVOICE_ISSUER_POSTAL_CODE || null,
     city: process.env.INVOICE_ISSUER_CITY || null,
     province: process.env.INVOICE_ISSUER_PROVINCE || null,
