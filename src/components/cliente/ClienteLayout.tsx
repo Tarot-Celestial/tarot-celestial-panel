@@ -3,9 +3,10 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronRight, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar } from "lucide-react";
+import { BellRing, ChevronRight, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useEffect } from "react";
+import styles from "./ClientePremium.module.css";
 
 const sb = supabaseBrowser();
 
@@ -66,7 +67,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   }
 
   return (
-    <div className="tc-wrap">
+    <div className={`tc-wrap ${styles.premiumShell}`}>
       <div className="tc-container tc-client-shell">
         <section className="tc-client-hero">
           <div className="tc-hero-top">
@@ -89,7 +90,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
 
             <div className="tc-nav">
               <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
-                Inicio
+                <Home size={16} /> Inicio
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
@@ -116,13 +117,26 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
 
           {summaryItems.length ? (
             <div className="tc-hero-summary">
-              {summaryItems.map((item) => (
-                <div key={item.label} className="tc-kpi">
+              {summaryItems.map((item) => {
+                const normalized = item.label.toLowerCase();
+                const tone = normalized.includes("rango")
+                  ? "rank"
+                  : normalized.includes("puntos")
+                  ? "points"
+                  : normalized.includes("minutos")
+                  ? "minutes"
+                  : normalized.includes("notificaciones")
+                  ? "alerts"
+                  : "default";
+                const hasAlert = tone === "alerts" && Number(item.value || 0) > 0;
+                return (
+                <div key={item.label} className="tc-kpi" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>
                   <div className="tc-kpi-label">{item.label}</div>
                   <div className="tc-kpi-value">{item.value}</div>
                   {item.meta ? <div className="tc-kpi-meta">{item.meta}</div> : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : null}
 

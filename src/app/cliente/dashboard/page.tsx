@@ -302,7 +302,11 @@ export default function ClienteDashboardPage() {
   const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
   const rankBadge = getRankBadge(rankInfo?.label || cliente?.rango_actual);
   const totalMinutes = Number(cliente?.minutos_totales || 0);
+  const freeMinutes = Number(cliente?.minutos_free_pendientes || 0);
+  const normalMinutes = Number(cliente?.minutos_normales_pendientes || 0);
   const totalPoints = Number(cliente?.puntos || 0);
+  const rankSpend30 = Number(cliente?.rango_gasto_mes_anterior || 0);
+  const rankPurchases30 = Number(cliente?.rango_compras_mes_anterior || 0);
   const unreadNotifs = notificaciones.filter((item) => !item.leida).length;
 
   const summaryItems = useMemo(
@@ -590,11 +594,18 @@ export default function ClienteDashboardPage() {
                   <div className="tc-kpi-label">Puntos acumulados</div>
                   <strong>{totalPoints}</strong>
                   <div className="tc-kpi-meta">Cada euro o dólar sumado te acerca a tus próximos canjes.</div>
+                  <div className="tc-client-resource-split">
+                    <span className="tc-client-resource-pill"><Sparkles size={12} /> Recurso de recompensa</span>
+                  </div>
                 </div>
                 <div className="tc-mini-stat">
                   <div className="tc-kpi-label">Minutos disponibles</div>
                   <strong>{totalMinutes}</strong>
                   <div className="tc-kpi-meta">Todo tu saldo disponible para consultar cuando quieras.</div>
+                  <div className="tc-client-resource-split">
+                    <span className="tc-client-resource-pill">Free: {freeMinutes}</span>
+                    <span className="tc-client-resource-pill">Normales: {normalMinutes}</span>
+                  </div>
                 </div>
               </div>
 
@@ -612,6 +623,20 @@ export default function ClienteDashboardPage() {
                 <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 12, gap: 10 }}>
                   <div className="tc-panel-sub">{rankProgress?.status_text || "Sigue comprando para desbloquear más ventajas."}</div>
                   {rankProgress?.next_target ? <div className="tc-panel-sub">Objetivo: {Number(rankProgress.next_target).toFixed(0)} USD</div> : null}
+                </div>
+                <div className="tc-client-rank-stats">
+                  <div className="tc-client-rank-stat">
+                    <span>Gasto últimos 30 días</span>
+                    <strong>{rankSpend30.toFixed(2)} USD</strong>
+                  </div>
+                  <div className="tc-client-rank-stat">
+                    <span>Compras últimos 30 días</span>
+                    <strong>{rankPurchases30}</strong>
+                  </div>
+                  <div className="tc-client-rank-stat">
+                    <span>Progreso</span>
+                    <strong>{progressPercent.toFixed(0)}%</strong>
+                  </div>
                 </div>
                 {rankProgress?.remaining_to_next ? (
                   <div style={{ marginTop: 8, fontWeight: 800 }}>
