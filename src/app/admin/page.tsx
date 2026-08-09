@@ -20,7 +20,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy } from "lucide-react";
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -37,6 +37,7 @@ const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/Rend
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
+const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 
 
@@ -143,6 +144,7 @@ type TabKey =
   | "trabajadores"
   | "clientes"
   | "rangos-clientes"
+  | "clientes-web"
   | "crm"
   | "chat"
   | "captacion"
@@ -268,6 +270,7 @@ function AdminPage() {
   const [ok, setOk] = useState(false);
   const [backgroundReady, setBackgroundReady] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
+  const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -295,9 +298,10 @@ function AdminPage() {
       return;
     }
 
-    const allowedTabs = new Set(ADMIN_NAV.map((item) => item.key));
+    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web"]);
     if (allowedTabs.has(requestedTab as any)) {
       setTab(requestedTab as TabKey);
+      if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web") setRanksMenuOpen(true);
     }
   }, [searchParams]);
 
@@ -1739,24 +1743,47 @@ function AdminPage() {
             <div className="tc-sidebar-nav">
               {ADMIN_NAV.map((item) => {
                 const Icon = item.icon;
-                const active = tab === item.key;
+                const rankGroup = item.key === "rangos-clientes";
+                const active = rankGroup ? (tab === "rangos-clientes" || tab === "clientes-web") : tab === item.key;
                 return (
-                  <button
-                    key={item.key}
-                    className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
-                    onClick={() => setTab(item.key as TabKey)}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                      <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
-                        <Icon size={16} />
+                  <div key={item.key} style={{ display: "grid", gap: 6 }}>
+                    <button
+                      className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
+                      onClick={() => {
+                        setTab(item.key as TabKey);
+                        if (rankGroup) setRanksMenuOpen(true);
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                        <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
+                          <Icon size={16} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div className="tc-sidebtn-main">{item.label}</div>
+                          <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                        </div>
                       </div>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="tc-sidebtn-main">{item.label}</div>
-                        <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                      {rankGroup ? (
+                        <span
+                          onClick={(event) => { event.stopPropagation(); setRanksMenuOpen((value) => !value); }}
+                          style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.035)", cursor: "pointer" }}
+                          aria-label="Desplegar Rangos de clientes"
+                        >
+                          <ChevronDown size={15} style={{ transform: ranksMenuOpen ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />
+                        </span>
+                      ) : <span className="tc-sidebtn-dot" />}
+                    </button>
+                    {rankGroup && ranksMenuOpen ? (
+                      <div style={{ display: "grid", gap: 5, marginLeft: 18, paddingLeft: 16, borderLeft: "1px solid rgba(205,171,255,.2)" }}>
+                        <button className={`tc-sidebtn ${tab === "rangos-clientes" ? "tc-sidebtn-active" : ""}`} style={{ minHeight: 48, padding: "8px 10px" }} onClick={() => setTab("rangos-clientes")}>
+                          <div style={{ minWidth: 0, textAlign: "left" }}><div className="tc-sidebtn-main" style={{ fontSize: 12 }}>Gestión de rangos</div><div className="tc-sidebtn-kicker">Automático y temporal</div></div><span className="tc-sidebtn-dot" />
+                        </button>
+                        <button className={`tc-sidebtn ${tab === "clientes-web" ? "tc-sidebtn-active" : ""}`} style={{ minHeight: 48, padding: "8px 10px" }} onClick={() => setTab("clientes-web")}>
+                          <div style={{ minWidth: 0, textAlign: "left" }}><div className="tc-sidebtn-main" style={{ fontSize: 12 }}>Clientes web</div><div className="tc-sidebtn-kicker">Accesos y cuentas</div></div><span className="tc-sidebtn-dot" />
+                        </button>
                       </div>
-                    </div>
-                    <span className="tc-sidebtn-dot" />
-                  </button>
+                    ) : null}
+                  </div>
                 );
               })}
             </div>
@@ -2876,6 +2903,16 @@ function AdminPage() {
           )}
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
+
+          {tab === "clientes-web" && (
+            <ClientWebAdminPanel
+              onOpenCrm={(clientId) => {
+                setTab("crm");
+                window.setTimeout(() => window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: clientId } })), 250);
+              }}
+              onManageRank={() => setTab("rangos-clientes")}
+            />
+          )}
 
           {tab === "crm" && (
             <CRMClientesPanel mode="admin" />
