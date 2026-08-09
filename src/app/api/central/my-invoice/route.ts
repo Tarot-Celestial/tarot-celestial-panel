@@ -92,7 +92,7 @@ export async function GET(req: Request) {
       evolution.push({ at: line.created_at || currentInvoice?.updated_at || `${month}-01T00:00:00`, total: running, label: line.label || line.kind });
     }
     if (currentInvoice && evolution[evolution.length - 1]?.total !== invoiceTotal) {
-      evolution.push({ at: currentInvoice.updated_at || currentInvoice.created_at, total: invoiceTotal, label: "Total actual" });
+      evolution.push({ at: currentInvoice.updated_at || currentInvoice.created_at || `${month}-01T00:00:00`, total: invoiceTotal, label: "Total actual" });
     }
 
     return NextResponse.json({
