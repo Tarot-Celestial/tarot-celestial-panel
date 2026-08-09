@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { loadEffectiveRanksBatch, loadRecentRankTotals, type RankAdminClient } from "@/lib/server/client-rank-admin-data";
 import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
+import { buildClienteAliasEmail, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const dynamic = "force-dynamic";
 type AuthSummary = {
   id: string;
   email: string | null;
+  phone: string | null;
   created_at: string | null;
   last_sign_in_at: string | null;
   banned_until: string | null;
@@ -37,11 +39,132 @@ function publicAuthUser(user: any): AuthSummary {
   return {
     id: String(user?.id || ""),
     email: user?.email || null,
+    phone: user?.phone || null,
     created_at: user?.created_at || null,
     last_sign_in_at: user?.last_sign_in_at || null,
     banned_until: user?.banned_until || null,
     user_metadata: user?.user_metadata || null,
   };
+}
+
+
+function normalizedEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function phoneKeys(value: unknown) {
+  const raw = normalizePhoneDigits(String(value || ""));
+  if (!raw) return [] as string[];
+
+  const keys = new Set<string>([raw, raw.replace(/^0+/, "")]);
+  if (raw.length > 9) keys.add(raw.slice(-9));
+  if (raw.length > 10) keys.add(raw.slice(-10));
+  if (raw.length > 11) keys.add(raw.slice(-11));
+
+  const knownPrefixes = ["34", "1", "52", "54", "56", "57", "58", "351", "44", "33", "39"];
+  for (const prefix of knownPrefixes) {
+    if (raw.startsWith(prefix) && raw.length > prefix.length + 6) keys.add(raw.slice(prefix.length));
+  }
+
+  return [...keys].filter(Boolean);
+}
+
+function buildUniqueLookup(users: AuthSummary[], keysForUser: (user: AuthSummary) => string[]) {
+  const lookup = new Map<string, AuthSummary | null>();
+  for (const user of users) {
+    for (const rawKey of keysForUser(user)) {
+      const key = String(rawKey || "").trim().toLowerCase();
+      if (!key) continue;
+      if (!lookup.has(key)) lookup.set(key, user);
+      else if (lookup.get(key)?.id !== user.id) lookup.set(key, null);
+    }
+  }
+  return lookup;
+}
+
+function authPhoneKeys(user: AuthSummary) {
+  const metadata = user.user_metadata || {};
+  return [
+    ...phoneKeys(user.phone),
+    ...phoneKeys((metadata as Record<string, unknown>).telefono_normalizado),
+    ...phoneKeys((metadata as Record<string, unknown>).telefono),
+    ...phoneKeys((metadata as Record<string, unknown>).phone),
+  ];
+}
+
+type AuthIndexes = {
+  byId: Map<string, AuthSummary>;
+  byClientId: Map<string, AuthSummary | null>;
+  byEmail: Map<string, AuthSummary | null>;
+  byPhone: Map<string, AuthSummary | null>;
+};
+
+function buildAuthIndexes(users: AuthSummary[]): AuthIndexes {
+  return {
+    byId: new Map(users.map((user) => [user.id, user])),
+    byClientId: buildUniqueLookup(users, (user) => {
+      const value = String((user.user_metadata as Record<string, unknown> | null)?.crm_cliente_id || "").trim();
+      return value ? [value] : [];
+    }),
+    byEmail: buildUniqueLookup(users, (user) => {
+      const email = normalizedEmail(user.email);
+      return email ? [email] : [];
+    }),
+    byPhone: buildUniqueLookup(users, authPhoneKeys),
+  };
+}
+
+function resolveAuthForClient(client: any, indexes: AuthIndexes) {
+  const explicitId = String(client?.auth_user_id || "").trim();
+  if (explicitId) {
+    const direct = indexes.byId.get(explicitId);
+    if (direct) return direct;
+  }
+
+  const clientId = String(client?.id || "").trim();
+  if (clientId) {
+    const byMetadata = indexes.byClientId.get(clientId);
+    if (byMetadata) return byMetadata;
+  }
+
+  const crmEmail = normalizedEmail(client?.email);
+  if (crmEmail) {
+    const byEmail = indexes.byEmail.get(crmEmail);
+    if (byEmail) return byEmail;
+  }
+
+  const clientPhones = [client?.telefono_normalizado, client?.telefono].flatMap(phoneKeys);
+  for (const phone of clientPhones) {
+    try {
+      const alias = normalizedEmail(buildClienteAliasEmail(phone));
+      const byAlias = indexes.byEmail.get(alias);
+      if (byAlias) return byAlias;
+    } catch {
+      // El teléfono no es utilizable como alias. Probamos las demás señales.
+    }
+  }
+
+  for (const phone of clientPhones) {
+    const byPhone = indexes.byPhone.get(phone);
+    if (byPhone) return byPhone;
+  }
+
+  return null;
+}
+
+async function healAuthLink(admin: any, client: any, auth: AuthSummary | null) {
+  if (!auth?.id || !client?.id || String(client.auth_user_id || "") === auth.id) return;
+  const { error } = await admin.from("crm_clientes").update({ auth_user_id: auth.id }).eq("id", client.id);
+  if (error) {
+    console.warn("[client-web:heal-auth-link]", {
+      client_id: client.id,
+      auth_user_id: auth.id,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+  }
 }
 
 async function listAllAuthUsers(admin: any) {
@@ -65,7 +188,7 @@ async function loadClients(admin: any) {
   for (let from = 0; from < 5000; from += chunk) {
     const { data, error } = await admin
       .from("crm_clientes")
-      .select("id,nombre,apellido,email,telefono,telefono_normalizado,origen,created_at,updated_at,auth_user_id,puntos,minutos_free_pendientes,minutos_normales_pendientes,ultimo_acceso_at,ultima_actividad_at,total_accesos")
+      .select("id,nombre,apellido,email,telefono,telefono_normalizado,origen,created_at,updated_at,auth_user_id,onboarding_completado,puntos,minutos_free_pendientes,minutos_normales_pendientes,ultimo_acceso_at,ultima_actividad_at,total_accesos")
       .order("created_at", { ascending: false })
       .range(from, from + chunk - 1);
     if (error) throw error;
@@ -101,18 +224,12 @@ export async function GET(req: Request) {
     const accessFilter = cleanSearch(url.searchParams.get("access") || "web");
 
     const [clients, authUsers] = await Promise.all([loadClients(gate.admin), listAllAuthUsers(gate.admin)]);
-    const authById = new Map(authUsers.map((user) => [user.id, user]));
-    const authByClientId = new Map<string, AuthSummary>();
-    for (const user of authUsers) {
-      const clientId = String((user.user_metadata as any)?.crm_cliente_id || "").trim();
-      if (clientId && !authByClientId.has(clientId)) authByClientId.set(clientId, user);
-    }
+    const authIndexes = buildAuthIndexes(authUsers);
 
-    const linked = clients.map((client: any) => {
-      const byId = client.auth_user_id ? authById.get(String(client.auth_user_id)) || null : null;
-      const auth = byId || authByClientId.get(String(client.id)) || null;
-      return { client, auth };
-    });
+    const linked = clients.map((client: any) => ({
+      client,
+      auth: resolveAuthForClient(client, authIndexes),
+    }));
 
     const filteredByIdentity = linked.filter(({ client, auth }) => {
       const hasWeb = Boolean(auth);
@@ -230,18 +347,18 @@ export async function POST(req: Request) {
 
     const { data: client, error: clientError } = await gate.admin
       .from("crm_clientes")
-      .select("id,nombre,apellido,email,telefono,auth_user_id")
+      .select("id,nombre,apellido,email,telefono,telefono_normalizado,auth_user_id,onboarding_completado")
       .eq("id", clientId)
       .maybeSingle();
     if (clientError) throw clientError;
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
 
-    let authUserId = String(client.auth_user_id || "").trim();
-    if (!authUserId) {
-      const users = await listAllAuthUsers(gate.admin);
-      authUserId = users.find((user) => String((user.user_metadata as any)?.crm_cliente_id || "") === clientId)?.id || "";
-    }
+    const users = await listAllAuthUsers(gate.admin);
+    const auth = resolveAuthForClient(client, buildAuthIndexes(users));
+    const authUserId = auth?.id || "";
     if (!authUserId) return NextResponse.json({ ok: false, error: "CLIENT_WITHOUT_WEB_ACCESS" }, { status: 400 });
+
+    await healAuthLink(gate.admin, client, auth);
 
     const { data: authData, error: authError } = await gate.admin.auth.admin.getUserById(authUserId);
     if (authError) throw authError;
