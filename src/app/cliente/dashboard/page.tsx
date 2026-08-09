@@ -16,6 +16,10 @@ import {
   ShoppingBag,
   ChevronRight,
   LockKeyhole,
+  Coins,
+  Medal,
+  CheckCircle2,
+  Clock3,
 } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
@@ -36,6 +40,10 @@ type Cliente = {
   rango_actual?: string | null;
   rango_gasto_mes_anterior?: number | null;
   rango_compras_mes_anterior?: number | null;
+  rango_automatico?: string | null;
+  rango_es_temporal?: boolean | null;
+  rango_override_tipo?: string | null;
+  rango_override_fin?: string | null;
   puntos?: number | null;
   minutos_free_pendientes?: number | null;
   minutos_normales_pendientes?: number | null;
@@ -64,8 +72,18 @@ type LastTarotista = {
 };
 
 type RankInfo = {
+  key?: string;
   label: string;
   benefits: string[];
+  nextRank?: string | null;
+  nextLabel?: string | null;
+  nextTarget?: number | null;
+  nextBenefits?: string[];
+  automatic_rank?: string | null;
+  effective_rank?: string | null;
+  has_override?: boolean;
+  override_type?: string | null;
+  override_ends_at?: string | null;
 };
 
 type RankProgress = {
@@ -113,9 +131,9 @@ function formatDate(value: string | null | undefined): string {
 
 function getRankBadge(rango: string | null | undefined) {
   const key = String(rango || "bronce").toLowerCase();
-  if (key === "oro") return { label: "Oro", emoji: "🥇" };
-  if (key === "plata") return { label: "Plata", emoji: "🥈" };
-  return { label: "Bronce", emoji: "🥉" };
+  if (key === "oro") return { label: "Oro", key: "gold" };
+  if (key === "plata") return { label: "Plata", key: "silver" };
+  return { label: "Bronce", key: "bronze" };
 }
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -272,6 +290,18 @@ export default function ClienteDashboardPage() {
             loadData();
           }
         )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "client_rank_overrides",
+            filter: `client_id=eq.${cliente.id}`,
+          },
+          () => {
+            loadData();
+          }
+        )
         .subscribe();
     }
 
@@ -313,13 +343,13 @@ export default function ClienteDashboardPage() {
     () => [
       {
         label: "Rango actual",
-        value: `${rankBadge.emoji} ${rankBadge.label}`,
+        value: rankBadge.label,
         meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes",
       },
       {
-        label: "Puntos disponibles",
+        label: "Coins disponibles",
         value: String(totalPoints),
-        meta: "Cada compra suma 10 puntos por cada euro o dólar",
+        meta: "Tu saldo real de recompensas",
       },
       {
         label: "Minutos disponibles",
@@ -332,7 +362,7 @@ export default function ClienteDashboardPage() {
         meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día",
       },
     ],
-    [rankBadge.emoji, rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs]
+    [rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs]
   );
 
   async function saveOnboarding(payload: {
@@ -441,11 +471,12 @@ export default function ClienteDashboardPage() {
         body: JSON.stringify({ recompensa_id: recompensaId }),
       });
       const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error || "No hemos podido canjear tus puntos");
-      setMsg("✅ Canje realizado. Tus minutos ya están actualizados.");
+      if (!json?.ok) throw new Error(json?.error || "No hemos podido canjear tus Coins");
+      setMsg("✨ Recompensa desbloqueada. Tus minutos ya están actualizados.");
       await loadData();
     } catch (e: any) {
-      setMsg(e?.message || "No hemos podido canjear tus puntos");
+      setMsg(e?.message || "No hemos podido canjear tus Coins");
+      throw e;
     } finally {
       setRedeeming(false);
     }
@@ -571,7 +602,7 @@ export default function ClienteDashboardPage() {
     <>
       <ClienteLayout
         title={`Hola ${nombre}`}
-        subtitle="Tu panel cliente reúne compra, minutos, llamadas, puntos, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
+        subtitle="Tu panel cliente reúne compra, minutos, llamadas, Coins, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
         summaryItems={summaryItems}
       >
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
@@ -585,17 +616,17 @@ export default function ClienteDashboardPage() {
                   <div className="tc-panel-sub">Tu actividad, tus minutos y tus ventajas, todo reunido aquí.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <Crown size={14} /> {rankBadge.emoji} Rango {rankBadge.label}
+                  <Crown size={14} /> Rango {rankBadge.label}
                 </div>
               </div>
 
               <div className="tc-status-grid">
                 <div className="tc-mini-stat">
-                  <div className="tc-kpi-label">Puntos acumulados</div>
+                  <div className="tc-kpi-label">Coins disponibles</div>
                   <strong>{totalPoints}</strong>
-                  <div className="tc-kpi-meta">Cada euro o dólar sumado te acerca a tus próximos canjes.</div>
+                  <div className="tc-kpi-meta">Tu saldo real de recompensas para desbloquear minutos.</div>
                   <div className="tc-client-resource-split">
-                    <span className="tc-client-resource-pill"><Sparkles size={12} /> Recurso de recompensa</span>
+                    <span className="tc-client-resource-pill"><Coins size={12} /> Moneda de recompensa</span>
                   </div>
                 </div>
                 <div className="tc-mini-stat">
@@ -609,48 +640,43 @@ export default function ClienteDashboardPage() {
                 </div>
               </div>
 
-              <div className="tc-rank-card">
-                <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <div style={{ display: "grid", gap: 5 }}>
-                    <div className="tc-panel-title" style={{ fontSize: 18 }}>Progreso de rango</div>
-                    <div className="tc-panel-sub">Tu rango se sincroniza automáticamente con tus compras confirmadas del mes.</div>
+              <div className={`tc-rank-card tc-rank-card-${rankBadge.key}`}>
+                <div className="tc-rank-hero">
+                  <div className={`tc-rank-emblem tc-rank-emblem-${rankBadge.key}`}><Medal size={30} /></div>
+                  <div className="tc-rank-identity">
+                    <span>RANGO ACTUAL</span>
+                    <strong>{rankBadge.label.toUpperCase()}</strong>
+                    {rankInfo?.has_override ? (
+                      <div className="tc-rank-override"><Clock3 size={13} /> {rankInfo.override_type === "permanent" ? "Asignación administrativa" : "Rango temporal"}{rankInfo.override_ends_at ? ` · hasta ${new Date(rankInfo.override_ends_at).toLocaleDateString("es-ES")}` : ""}</div>
+                    ) : null}
                   </div>
-                  {rankProgress?.next_label ? <div className="tc-chip">Siguiente: {rankProgress.next_label}</div> : null}
+                  <div className="tc-rank-live-stats">
+                    <div><span>Gasto · 30 días</span><strong>{rankSpend30.toFixed(2)} USD</strong></div>
+                    <div><span>Compras</span><strong>{rankPurchases30}</strong></div>
+                  </div>
                 </div>
-                <div style={{ marginTop: 14 }} className="tc-progress-track">
+
+                <div className="tc-rank-progress-head">
+                  <div>
+                    <span className="tc-rank-progress-label">{rankProgress?.next_label ? "PROGRESO DE RANGO" : "PROGRESIÓN COMPLETA"}</span>
+                    <div className="tc-rank-path"><strong>{rankBadge.label}</strong>{rankProgress?.next_label ? <><span>→</span><strong>{rankProgress.next_label}</strong></> : <span className="tc-rank-max"><Crown size={14} /> Rango máximo alcanzado</span>}</div>
+                  </div>
+                  <strong className="tc-rank-percent">{progressPercent.toFixed(0)}%</strong>
+                </div>
+                <div className="tc-progress-track tc-progress-track-large">
                   <div className="tc-progress-fill" style={{ width: `${progressPercent}%` }} />
                 </div>
-                <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 12, gap: 10 }}>
-                  <div className="tc-panel-sub">{rankProgress?.status_text || "Sigue comprando para desbloquear más ventajas."}</div>
-                  {rankProgress?.next_target ? <div className="tc-panel-sub">Objetivo: {Number(rankProgress.next_target).toFixed(0)} USD</div> : null}
+                <div className="tc-rank-progress-copy">
+                  <span>{rankProgress?.status_text || "Tu progreso se actualiza con tus compras confirmadas."}</span>
+                  {rankProgress?.next_target ? <strong>Meta: {Number(rankProgress.next_target).toFixed(0)} USD / 30 días</strong> : <strong>Todos los beneficios actuales desbloqueados</strong>}
                 </div>
-                <div className="tc-client-rank-stats">
-                  <div className="tc-client-rank-stat">
-                    <span>Gasto últimos 30 días</span>
-                    <strong>{rankSpend30.toFixed(2)} USD</strong>
-                  </div>
-                  <div className="tc-client-rank-stat">
-                    <span>Compras últimos 30 días</span>
-                    <strong>{rankPurchases30}</strong>
-                  </div>
-                  <div className="tc-client-rank-stat">
-                    <span>Progreso</span>
-                    <strong>{progressPercent.toFixed(0)}%</strong>
-                  </div>
-                </div>
-                {rankProgress?.remaining_to_next ? (
-                  <div style={{ marginTop: 8, fontWeight: 800 }}>
-                    Te faltan {Number(rankProgress.remaining_to_next || 0).toFixed(0)} USD para el siguiente rango.
-                  </div>
-                ) : null}
-              </div>
-            </section>
+              </div>            </section>
 
             <section className="tc-card tc-purchase-panel">
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">Pagas por Stripe y el sistema añade minutos, puntos, rango e historial automáticamente.</div>
+                  <div className="tc-panel-sub">Pagas por Stripe y el sistema añade minutos, Coins, rango e historial automáticamente.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <ShoppingBag size={14} /> Precio app
@@ -676,23 +702,55 @@ export default function ClienteDashboardPage() {
               </div>
             </section>
 
-            <section className="tc-card" style={{ display: "grid", gap: 14 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Ventajas de tu rango</div>
-                <div className="tc-panel-sub">Estos son los beneficios que ya tienes desbloqueados en tu cuenta.</div>
-              </div>
-              <div className="tc-benefits-grid">
-                {(rankInfo?.benefits || []).map((item) => (
-                  <div key={item} className="tc-benefit-item">
-                    <Star size={16} style={{ marginTop: 2, color: "var(--tc-gold-2)", flex: "0 0 auto" }} />
-                    <span>{item}</span>
+            <section className="tc-rank-perks-layout">
+              <div className={`tc-card tc-perks-card tc-perks-active tc-perks-${rankBadge.key}`}>
+                <div className="tc-perks-header">
+                  <div className={`tc-rank-emblem tc-rank-emblem-${rankBadge.key}`}><Medal size={23} /></div>
+                  <div>
+                    <span>TUS BENEFICIOS ACTUALES</span>
+                    <strong>{rankBadge.label.toUpperCase()}</strong>
                   </div>
-                ))}
-                <div className="tc-benefit-item">
-                  <Sparkles size={16} style={{ marginTop: 2, color: "var(--tc-gold-2)", flex: "0 0 auto" }} />
-                  <span>Mientras más avanzas, más beneficios desbloqueas.</span>
+                  {rankInfo?.has_override ? <span className="tc-perks-temp"><Clock3 size={12} /> {rankInfo.override_type === "permanent" ? "ADMIN" : "TEMPORAL"}</span> : null}
+                </div>
+                <div className="tc-perks-list">
+                  {(rankInfo?.benefits || []).map((item) => (
+                    <div key={item} className="tc-perk tc-perk-unlocked">
+                      <span className="tc-perk-icon"><CheckCircle2 size={16} /></span>
+                      <span>{item}</span>
+                      <small>DESBLOQUEADO</small>
+                    </div>
+                  ))}
                 </div>
               </div>
+
+              {rankInfo?.nextLabel ? (
+                <div className="tc-card tc-perks-card tc-perks-next">
+                  <div className="tc-perks-header">
+                    <div className={`tc-rank-emblem tc-rank-emblem-${String(rankInfo.nextRank || "plata") === "oro" ? "gold" : "silver"}`}><Medal size={23} /></div>
+                    <div>
+                      <span>PRÓXIMO RANGO</span>
+                      <strong>{rankInfo.nextLabel.toUpperCase()}</strong>
+                    </div>
+                    {rankInfo.nextTarget ? <span className="tc-perks-target">{Number(rankInfo.nextTarget).toFixed(0)} USD / 30 días</span> : null}
+                  </div>
+                  <div className="tc-perks-list">
+                    {(rankInfo?.nextBenefits || []).map((item) => (
+                      <div key={item} className="tc-perk tc-perk-locked">
+                        <span className="tc-perk-icon"><LockKeyhole size={16} /></span>
+                        <span>{item}</span>
+                        <small>BLOQUEADO</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="tc-card tc-perks-card tc-perks-max">
+                  <div className="tc-perks-max-crown"><Crown size={28} /></div>
+                  <span>RANGO MÁXIMO ALCANZADO</span>
+                  <strong>ORO</strong>
+                  <p>Has desbloqueado todos los beneficios actuales.</p>
+                </div>
+              )}
             </section>
 
             <CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} />
@@ -789,18 +847,18 @@ export default function ClienteDashboardPage() {
 
             <section className="tc-card" style={{ display: "grid", gap: 12 }}>
               <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Últimos movimientos de puntos</div>
+                <div className="tc-panel-title">Historial de Coins</div>
                 <div className="tc-panel-sub">Compras y canjes recientes de tu cuenta.</div>
               </div>
               {historial.length === 0 ? (
-                <div className="tc-empty-state">Todavía no tienes movimientos de puntos registrados.</div>
+                <div className="tc-empty-state">Todavía no tienes movimientos de Coins registrados.</div>
               ) : (
                 <div className="tc-list-card">
                   {historial.map((item) => (
                     <div key={item.id} className="tc-list-item">
                       <div className="tc-list-item-title">{item.descripcion || item.tipo || "Movimiento"}</div>
                       <div className="tc-list-item-sub">
-                        {item.tipo === "canjeado" ? "-" : "+"}{Number(item.puntos || 0)} puntos · {formatDate(item.created_at)}
+                        {item.tipo === "canjeado" ? "-" : "+"}{Number(item.puntos || 0)} Coins · {formatDate(item.created_at)}
                       </div>
                     </div>
                   ))}

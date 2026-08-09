@@ -84,7 +84,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               </div>
 
               <div className="tc-chip" style={{ width: "fit-content", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Sparkles size={14} /> Tu espacio privado para consultar puntos, minutos, compras y ventajas
+                <Sparkles size={14} /> Tu espacio privado para consultar Coins, minutos, compras y ventajas
               </div>
             </div>
 
@@ -121,7 +121,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
                 const normalized = item.label.toLowerCase();
                 const tone = normalized.includes("rango")
                   ? "rank"
-                  : normalized.includes("puntos")
+                  : normalized.includes("puntos") || normalized.includes("coins")
                   ? "points"
                   : normalized.includes("minutos")
                   ? "minutes"

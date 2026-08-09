@@ -3,10 +3,12 @@ import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
   CLIENTE_PACKS,
   computeCurrentRankFromSpend,
+  currentRankBenefits,
   getCallTarget,
   toNum,
   touchClientActivity,
 } from "@/lib/server/cliente-platform";
+import { loadEffectiveClientRank, normalizeClientRank } from "@/lib/server/client-rank-effective";
 
 export const runtime = "nodejs";
 
@@ -22,45 +24,21 @@ type ClienteRow = Record<string, any> & {
 };
 
 function rankMeta(rank: string | null | undefined) {
-  const key = String(rank || "").toLowerCase();
-
-  if (key === "oro") {
-    return {
-      label: "Oro",
-      min: 500,
-      nextRank: null,
-      nextTarget: null,
-      benefits: [
-        "12 minutos GRATIS cuando se incorpora una nueva tarotista",
-        "+12 minutos GRATIS permanentes en cada compra a precio regular",
-        "Participación automática en sorteos activos (1 número por sorteo)",
-        "3 pases GRATIS cada mes de 7 minutos",
-        "Seguimiento energético durante 1 mes post rituales",
-      ],
-    };
-  }
-
-  if (key === "plata") {
-    return {
-      label: "Plata",
-      min: 100,
-      nextRank: "oro",
-      nextTarget: 500,
-      benefits: [
-        "10 minutos GRATIS cuando se incorpora una nueva tarotista",
-        "+10 minutos GRATIS permanentes en cada compra a precio regular",
-        "3 pases GRATIS cada mes de 7 minutos",
-        "Seguimiento energético durante 1 mes post rituales",
-      ],
-    };
-  }
+  const key = normalizeClientRank(rank) || "bronce";
+  const label = key === "oro" ? "Oro" : key === "plata" ? "Plata" : "Bronce";
+  const min = key === "oro" ? 500 : key === "plata" ? 100 : 1;
+  const nextRank = key === "oro" ? null : key === "plata" ? "oro" : "plata";
+  const nextTarget = nextRank === "oro" ? 500 : nextRank === "plata" ? 100 : null;
 
   return {
-    label: "Bronce",
-    min: 1,
-    nextRank: "plata",
-    nextTarget: 100,
-    benefits: ["3 pases GRATIS cada mes de 7 minutos"],
+    key,
+    label,
+    min,
+    nextRank,
+    nextLabel: nextRank === "oro" ? "Oro" : nextRank === "plata" ? "Plata" : null,
+    nextTarget,
+    benefits: currentRankBenefits(key),
+    nextBenefits: nextRank ? currentRankBenefits(nextRank) : [],
   };
 }
 
@@ -307,19 +285,32 @@ const rolling30Spend = spendPagos + spendLlamadas;
   (pagos30Dias?.length || 0) + (llamadas30Dias?.length || 0);
 
     const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
+    const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
+    const effectiveRank = effectiveRankState.effective || normalizeClientRank(liveRank) || "bronce";
 
     const clienteConRank = {
       ...cliente,
-      rango_actual: liveRank,
+      rango_actual: effectiveRank,
+      rango_automatico: effectiveRankState.automatic || normalizeClientRank(liveRank),
+      rango_es_temporal: effectiveRankState.override?.intervention_type === "temporary" || effectiveRankState.override?.intervention_type === "penalty",
+      rango_override_tipo: effectiveRankState.override?.intervention_type || null,
+      rango_override_fin: effectiveRankState.override?.ends_at || null,
       rango_gasto_mes_anterior: Number(rolling30Spend.toFixed(2)),
       rango_compras_mes_anterior: rolling30Purchases,
     };
 
-    const rank = rankMeta(clienteConRank?.rango_actual);
+    const rank = {
+      ...rankMeta(effectiveRank),
+      automatic_rank: effectiveRankState.automatic || normalizeClientRank(liveRank),
+      effective_rank: effectiveRank,
+      has_override: Boolean(effectiveRankState.override),
+      override_type: effectiveRankState.override?.intervention_type || null,
+      override_ends_at: effectiveRankState.override?.ends_at || null,
+    };
     const rankProgress = buildRankProgress(
       rolling30Spend,
       rolling30Purchases,
-      clienteConRank?.rango_actual
+      effectiveRank
     );
 
     const callTarget = getCallTarget(cliente?.telefono_normalizado || cliente?.telefono);
