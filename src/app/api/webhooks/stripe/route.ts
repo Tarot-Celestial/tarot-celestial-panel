@@ -4,6 +4,7 @@ import Stripe from "stripe";
 import { adminClient } from "@/lib/server/auth-cliente";
 import { applyClientPurchase, getClientePack } from "@/lib/server/cliente-platform";
 import { addClientChatCredits, getChatPack } from "@/lib/server/chat-platform";
+import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 
 export const runtime = "nodejs";
 
@@ -103,6 +104,30 @@ export async function POST(req: Request) {
             },
           });
         }
+      }
+
+      // =========================
+      // 🔮 ORÁCULO PREMIUM
+      // =========================
+      else if (source === "cliente_oracle") {
+        const packId = String(session.metadata?.pack_id || "").trim();
+        const pack = getOraclePack(packId);
+        if (!clienteId || !pack) {
+          return NextResponse.json({ ok: false, error: "INVALID_STRIPE_ORACLE_METADATA" }, { status: 400 });
+        }
+
+        await grantOracleCredits(admin, {
+          clienteId,
+          credits: Number(session.metadata?.oracle_credits || pack.credits),
+          reference: `stripe:${session.id}`,
+          packId: pack.id,
+          notes: `Stripe checkout completado · ${pack.nombre}`,
+          meta: {
+            stripe_session_id: session.id,
+            payment_intent: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null,
+            amount_eur: amountTotal || pack.priceEur,
+          },
+        });
       }
 
       // =========================

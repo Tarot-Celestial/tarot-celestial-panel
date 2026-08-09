@@ -367,3 +367,46 @@ export function answerTarotFollowup(params: {
   const topicText = params.card.topics[params.topic] || params.card.topics.general;
   return `${params.card.name} mantiene como eje ${params.card.keyword.toLowerCase()}. ${topicText}\n\nSobre “${q}”: toma esta carta como una orientación para observar hechos, reciprocidad y señales concretas. ${params.card.advice}`;
 }
+
+export function resolveTarotSpreadCard(params: {
+  clientId: string;
+  shuffleId: string;
+  position: number;
+  pickIndex: number;
+  topic: OracleTopic;
+  secret: string;
+}): TarotCard {
+  const ordered = TAROT_CARDS.map((card) => ({
+    card,
+    key: createHash("sha256")
+      .update(`${params.secret}:${params.clientId}:${params.shuffleId}:${params.topic}:${card.id}`)
+      .digest("hex"),
+  })).sort((a, b) => a.key.localeCompare(b.key));
+  const visualPosition = Math.max(0, Math.floor(params.position));
+  const pickIndex = Math.max(0, Math.floor(params.pickIndex));
+  return ordered[(visualPosition + pickIndex * 7) % ordered.length].card;
+}
+
+export function buildPositionReading(params: {
+  card: TarotCard;
+  topic: OracleTopic;
+  position: string;
+  question?: string;
+  context?: string;
+}) {
+  const topicText = params.card.topics[params.topic] || params.card.topics.general;
+  const role: Record<string, string> = {
+    "Situación actual": "describe la energía que domina ahora mismo",
+    Fortaleza: "señala el recurso que juega a tu favor",
+    Obstáculo: "muestra aquello que puede frenar o confundir el avance",
+    Consejo: "indica la actitud más útil para avanzar",
+    Respuesta: "resume hacia dónde apunta la situación si mantienes el rumbo actual",
+    Pasado: "muestra la influencia que todavía pesa desde atrás",
+    Presente: "describe la energía que está activa ahora",
+    Futuro: "señala la tendencia que puede desarrollarse próximamente",
+  };
+  const positionText = role[params.position] || "aporta una pieza concreta a esta lectura";
+  const context = params.context ? ` En el contexto “${params.context}”,` : "";
+  const question = params.question ? ` respecto a “${params.question}”` : "";
+  return `${params.card.name} ${positionText}.${context} ${topicText}${question}. ${params.card.advice}`.replace(/\s+/g, " ").trim();
+}

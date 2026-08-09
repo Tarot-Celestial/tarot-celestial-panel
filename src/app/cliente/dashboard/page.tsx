@@ -115,6 +115,14 @@ type ClientePack = {
   highlight?: boolean;
 };
 
+type OraclePack = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  priceEur: number;
+  credits: number;
+};
+
 type CallTarget = {
   market: string;
   label: string;
@@ -152,6 +160,9 @@ export default function ClienteDashboardPage() {
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
   const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
   const [packs, setPacks] = useState<ClientePack[]>([]);
+  const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
+  const [oracleCredits, setOracleCredits] = useState(0);
+  const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
@@ -210,13 +221,27 @@ export default function ClienteDashboardPage() {
     setLoading(false);
   }, []);
 
+  const loadOracle = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const res = await fetch("/api/cliente/oraculo", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (json?.ok) {
+      setOracleCredits(Number(json.credits || 0));
+      setOraclePacks(Array.isArray(json.packs) ? json.packs : []);
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadOracle();
+  }, [loadData, loadOracle]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get("checkout");
+    const oracleCheckout = params.get("oracle_checkout");
     if (checkout === "ok") {
       setMsg("✅ Pago completado. En unos segundos verás tus minutos y puntos actualizados.");
       window.history.replaceState({}, "", "/cliente/dashboard");
@@ -226,7 +251,16 @@ export default function ClienteDashboardPage() {
       setMsg("Has cancelado el pago. Puedes volver a intentarlo cuando quieras.");
       window.history.replaceState({}, "", "/cliente/dashboard");
     }
-  }, [loadData]);
+    if (oracleCheckout === "ok") {
+      setMsg("🔮 Pago confirmado. Tus tiradas se actualizarán en unos segundos.");
+      window.history.replaceState({}, "", "/cliente/dashboard#comprar-tiradas");
+      window.setTimeout(() => loadOracle(), 1200);
+    }
+    if (oracleCheckout === "cancelled") {
+      setMsg("Has cancelado la compra de tiradas.");
+      window.history.replaceState({}, "", "/cliente/dashboard#comprar-tiradas");
+    }
+  }, [loadData, loadOracle]);
 
   useEffect(() => {
     if (cliente && !cliente.onboarding_completado) {
@@ -507,6 +541,28 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  async function buyOraclePack(packId: string) {
+    try {
+      setBuyingOraclePackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/oraculo/checkout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingOraclePackId("");
+    }
+  }
+
   async function trackCallAndOpen() {
     if (!callTarget) return;
     try {
@@ -696,6 +752,36 @@ export default function ClienteDashboardPage() {
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales disponibles para tu cuenta</div>
                     <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
                       {buyingPackId === pack.id ? "Conectando con Stripe..." : "Comprar ahora"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section id="comprar-tiradas" className="tc-card tc-purchase-panel" style={{ borderColor: "rgba(167, 111, 255, .22)" }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Comprar tiradas de cartas</div>
+                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. El saldo se añade únicamente cuando Stripe confirma el pago.</div>
+                </div>
+                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <WandSparkles size={14} /> Tiradas disponibles: {oracleCredits}
+                </div>
+              </div>
+              <div className="tc-pack-grid">
+                {oraclePacks.map((pack, index) => (
+                  <div key={pack.id} className={`tc-pack-card ${index === 1 ? "tc-pack-card-highlight" : ""}`}>
+                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div>
+                        <div className="tc-list-item-title">{index === 0 ? "🔮" : "✨"} {pack.nombre.toUpperCase()}</div>
+                        <div className="tc-list-item-sub">{pack.descripcion}</div>
+                      </div>
+                      <div className="tc-chip">{pack.credits} tiradas</div>
+                    </div>
+                    <div className="tc-pack-price">{pack.priceEur.toFixed(2).replace(".", ",")} €</div>
+                    <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
+                    <button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
+                      {buyingOraclePackId === pack.id ? "Conectando con Stripe..." : "COMPRAR"}
                     </button>
                   </div>
                 ))}

@@ -1,390 +1,67 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  CircleDollarSign,
-  Heart,
-  LockKeyhole,
-  MoonStar,
-  SendHorizontal,
-  Shuffle,
-  Sparkles,
-  Stars,
-  WandSparkles,
-} from "lucide-react";
+import { CalendarDays, CircleDollarSign, GitFork, Heart, HelpCircle, LockKeyhole, MoonStar, SendHorizontal, Shuffle, Sparkles, Stars, Users, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./Oracle.module.css";
 
 const sb = supabaseBrowser();
-
-const TOPICS = [
-  { id: "general", label: "General", icon: Stars },
-  { id: "amor", label: "Amor", icon: Heart },
-  { id: "dinero", label: "Dinero", icon: CircleDollarSign },
-  { id: "energia", label: "Energía", icon: MoonStar },
-] as const;
-
+const TOPICS = [{ id: "general", label: "General", icon: Stars }, { id: "amor", label: "Amor", icon: Heart }, { id: "dinero", label: "Dinero", icon: CircleDollarSign }, { id: "energia", label: "Energía", icon: MoonStar }] as const;
 type TopicId = (typeof TOPICS)[number]["id"];
 
-type Draw = {
-  id: string;
-  tema: TopicId;
-  fecha: string;
-  cardId: string;
-  cardName: string;
-  cardImage: string;
-  keyword: string;
-  advice: string;
-  message: string;
-  isFree: boolean;
-  revealedAt: string;
-  selectedPosition: number;
-};
+type CardResult = { position: string; cardId: string; cardName: string; cardImage: string; keyword: string; advice: string; interpretation: string; selectedPosition: number };
+type Draw = { id: string; tema: TopicId; fecha: string; cardId: string; cardName: string; cardImage: string; keyword: string; advice: string; message: string; isFree: boolean; revealedAt: string; selectedPosition: number; drawType?: string; question?: string; context?: string; cards?: CardResult[]; conclusion?: string; creditConsumed?: boolean };
+type Message = { id: string; role: "user" | "assistant"; contenido: string; created_at?: string };
+type ClientSummary = { nombre?: string | null; rango_actual?: string | null };
+type Stage = "intro" | "shuffling" | "select" | "revealed" | "catalog" | "setup" | "premium-shuffling" | "premium-select" | "premium-result";
 
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  contenido: string;
-  created_at?: string;
-};
-
-type ClientSummary = {
-  nombre?: string | null;
-  rango_actual?: string | null;
-};
-
-type Stage = "intro" | "shuffling" | "select" | "revealed";
+type Spread = { id: string; title: string; description: string; icon: any; positions: string[]; topic: TopicId; contexts?: string[]; questions: string[]; featured?: boolean };
+const SPREADS: Spread[] = [
+  { id: "daily", title: "Carta del día", description: "Un mensaje directo para tu energía de hoy.", icon: Sparkles, positions: ["Mensaje"], topic: "general", questions: ["¿Qué necesito saber hoy?", "¿Dónde debo poner mi atención?"] },
+  { id: "yes_no", title: "Tirada Sí o No", description: "Una pregunta concreta y una respuesta clara.", icon: HelpCircle, positions: ["Respuesta"], topic: "general", questions: ["Escribe una pregunta concreta que pueda orientarse como sí o no."] },
+  { id: "choice", title: "Tirada de Elección", description: "Compara dos caminos antes de decidir.", icon: GitFork, positions: ["Camino A", "Camino B", "Consejo"], topic: "general", questions: ["¿Qué camino me conviene más?", "¿Qué debo considerar antes de decidir?"] },
+  { id: "love", title: "Tirada del Amor", description: "Explora tu presente sentimental y su tendencia.", icon: Heart, positions: ["Situación actual", "Energía afectiva", "Consejo"], topic: "amor", questions: ["¿Qué me espera en el amor?", "¿Llegará una nueva persona?", "¿Qué siente por mí?", "¿Hay reconciliación?"] },
+  { id: "relationships", title: "Tirada de Relaciones", description: "Cinco cartas para comprender un vínculo en profundidad.", icon: Users, positions: ["Situación actual", "Fortaleza", "Obstáculo", "Consejo", "Respuesta"], topic: "amor", contexts: ["Soltero/a", "En pareja", "Casado/a", "Es complicado"], questions: ["¿Cómo evolucionará mi relación?", "¿Qué siente esta persona por mí?", "¿Debo seguir luchando por esta relación?", "¿Hay posibilidad de reconciliación?", "¿Qué bloquea nuestra relación?", "¿Cuál es el futuro entre nosotros?"] },
+  { id: "question", title: "Tirada de Pregunta", description: "Formula tu consulta y recibe una lectura enfocada.", icon: WandSparkles, positions: ["Situación actual", "Consejo", "Respuesta"], topic: "general", questions: ["Escribe tu propia pregunta"] },
+  { id: "monthly", title: "Tirada Mensual", description: "La energía de tus próximas semanas en amor, trabajo, dinero y bienestar.", icon: CalendarDays, positions: ["Amor", "Trabajo", "Dinero", "Bienestar"], topic: "general", questions: ["¿Qué energía marcará mi próximo mes?"], featured: true },
+];
 
 export default function ClienteOraculoPage() {
-  const [topic, setTopic] = useState<TopicId>("general");
-  const [stage, setStage] = useState<Stage>("intro");
-  const [draw, setDraw] = useState<Draw | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [question, setQuestion] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [revealing, setRevealing] = useState(false);
-  const [freeAvailable, setFreeAvailable] = useState(true);
-  const [creditsConfigured, setCreditsConfigured] = useState(false);
-  const [shuffleId, setShuffleId] = useState("");
-  const [canReveal, setCanReveal] = useState(true);
-  const [deckSize, setDeckSize] = useState(22);
-  const [message, setMessage] = useState("");
-  const [client, setClient] = useState<ClientSummary | null>(null);
+  const [topic, setTopic] = useState<TopicId>("general"); const [stage, setStage] = useState<Stage>("intro"); const [draw, setDraw] = useState<Draw | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]); const [question, setQuestion] = useState(""); const [loading, setLoading] = useState(true); const [sending, setSending] = useState(false);
+  const [revealing, setRevealing] = useState(false); const [freeAvailable, setFreeAvailable] = useState(true); const [credits, setCredits] = useState(0); const [shuffleId, setShuffleId] = useState("");
+  const [canReveal, setCanReveal] = useState(true); const [deckSize, setDeckSize] = useState(22); const [message, setMessage] = useState(""); const [client, setClient] = useState<ClientSummary | null>(null);
+  const [spread, setSpread] = useState<Spread | null>(null); const [context, setContext] = useState(""); const [customQuestion, setCustomQuestion] = useState(""); const [premiumCards, setPremiumCards] = useState<CardResult[]>([]); const [drawKey, setDrawKey] = useState("");
 
-  async function withToken<T>(fn: (token: string) => Promise<T>) {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) {
-      window.location.href = "/cliente/login";
-      throw new Error("NO_AUTH");
-    }
-    return fn(token);
-  }
+  async function withToken<T>(fn: (token: string) => Promise<T>) { const { data } = await sb.auth.getSession(); const token = data.session?.access_token; if (!token) { window.location.href = "/cliente/login"; throw new Error("NO_AUTH"); } return fn(token); }
+  async function load() { try { setLoading(true); await withToken(async token => { const [o,m] = await Promise.all([fetch("/api/cliente/oraculo",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"}),fetch("/api/cliente/me",{headers:{Authorization:`Bearer ${token}`},cache:"no-store"})]); const j=await o.json(); const mj=await m.json(); if(!j?.ok) throw new Error(j?.error||"No hemos podido abrir el oráculo"); if(mj?.ok)setClient(mj.cliente||null); setFreeAvailable(Boolean(j.freeAvailable)); setCredits(Number(j.credits||0)); setDeckSize(Math.max(1,Number(j.deckSize||22))); setMessages(Array.isArray(j.mensajes)?j.mensajes:[]); const latest=j.latestDraw as Draw|null; setDraw(latest?.cardId?latest:null); if(latest?.cardId){setTopic(latest.tema||"general"); if(!latest.isFree && Array.isArray(latest.cards) && latest.cards.length){const savedSpread=SPREADS.find(x=>x.id===latest.drawType)||null;setSpread(savedSpread);setPremiumCards(latest.cards);setStage("premium-result")}else setStage("revealed")}else setStage("intro"); }); } catch(e:any){if(e?.message!=="NO_AUTH")setMessage(e?.message||"No hemos podido abrir el oráculo.")} finally{setLoading(false)} }
+  useEffect(()=>{load()},[]);
 
-  async function load() {
-    try {
-      setLoading(true);
-      setMessage("");
-      await withToken(async (token) => {
-        const [oracleRes, meRes] = await Promise.all([
-          fetch("/api/cliente/oraculo", {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          }),
-          fetch("/api/cliente/me", {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          }),
-        ]);
+  async function shuffleCards(){try{setMessage("");setStage("shuffling");await withToken(async token=>{const r=await fetch("/api/cliente/oraculo",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"shuffle",tema:topic})});const j=await r.json();if(!j?.ok)throw new Error(j?.error||"No hemos podido barajar");setShuffleId(String(j.shuffleId||""));setCanReveal(Boolean(j.canReveal));setFreeAvailable(Boolean(j.freeAvailable));setCredits(Number(j.credits||0));});setTimeout(()=>setStage("select"),1450)}catch(e:any){setMessage(e?.message||"No hemos podido barajar");setStage(draw?"revealed":"intro")}}
+  async function revealCard(position:number){if(revealing)return;if(!canReveal){setMessage("No tienes tiradas disponibles.");return}try{setRevealing(true);await withToken(async token=>{const r=await fetch("/api/cliente/oraculo",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"reveal",tema:topic,position,shuffleId})});const j=await r.json();if(!j?.ok)throw new Error(j?.message||j?.error||"No hemos podido revelar tu carta");setDraw(j.draw);setFreeAvailable(false);setCredits(Number(j.credits||0));setMessages([]);setStage("revealed")})}catch(e:any){setMessage(e?.message||"No hemos podido revelar tu carta")}finally{setRevealing(false)}}
 
-        const oracleJson = await oracleRes.json().catch(() => null);
-        const meJson = await meRes.json().catch(() => null);
-        if (!oracleJson?.ok) throw new Error(oracleJson?.error || "No hemos podido abrir el oráculo");
+  function openCatalog(){setMessage("");setSpread(null);setPremiumCards([]);setStage("catalog")}
+  function chooseSpread(item:Spread){setSpread(item);setTopic(item.topic);setContext("");setQuestion(item.questions.length===1?item.questions[0]:"");setCustomQuestion("");setPremiumCards([]);setStage("setup")}
+  async function startPremium(){if(!spread)return;if(credits<1){setMessage("No tienes tiradas disponibles. Compra un pack para continuar.");return}const finalQuestion=(customQuestion||question).trim();if(!finalQuestion){setMessage("Elige o escribe una pregunta antes de continuar.");return}if(spread.contexts?.length&&!context){setMessage("Selecciona primero tu situación actual.");return}try{setMessage("");setStage("premium-shuffling");await withToken(async token=>{const r=await fetch("/api/cliente/oraculo",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"shuffle",tema:spread.topic})});const j=await r.json();if(!j?.ok)throw new Error(j?.error||"No hemos podido barajar");setShuffleId(String(j.shuffleId||""));setDrawKey(crypto.randomUUID());setCredits(Number(j.credits||credits));});setTimeout(()=>setStage("premium-select"),1450)}catch(e:any){setMessage(e?.message||"No hemos podido comenzar la tirada");setStage("setup")}}
+  async function pickPremium(position:number){if(!spread||revealing)return;try{setRevealing(true);setMessage("");const finalQuestion=(customQuestion||question).trim();await withToken(async token=>{const r=await fetch("/api/cliente/oraculo",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"premium_pick",drawType:spread.id,shuffleId,drawKey,position,pickIndex:premiumCards.length,question:finalQuestion,context,previousCards:premiumCards})});const j=await r.json();if(!j?.ok)throw new Error(j?.error==="NO_ORACLE_CREDITS"?"No tienes tiradas disponibles.":j?.error||"No hemos podido revelar esta carta");const next=[...premiumCards,j.card];setPremiumCards(next);setCredits(Number(j.credits||0));if(j.completed){setDraw(j.draw);setMessages([]);setStage("premium-result")} });}catch(e:any){setMessage(e?.message||"No hemos podido revelar esta carta")}finally{setRevealing(false)}}
+  async function sendQuestion(){const text=customQuestion.trim()||question.trim();if(!text||!draw||sending)return;try{setSending(true);await withToken(async token=>{const r=await fetch("/api/cliente/oraculo",{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({action:"question",pregunta:text})});const j=await r.json();if(!j?.ok)throw new Error(j?.error||"No hemos podido enviar tu pregunta");setMessages(Array.isArray(j.mensajes)?j.mensajes:[]);setCustomQuestion("")})}catch(e:any){setMessage(e?.message||"No hemos podido enviar tu pregunta")}finally{setSending(false)}}
 
-        if (meJson?.ok) setClient(meJson.cliente || null);
-        setFreeAvailable(Boolean(oracleJson.freeAvailable));
-        setCreditsConfigured(Boolean(oracleJson.creditsConfigured));
-        setDeckSize(Math.max(1, Number(oracleJson.deckSize || 22)));
-        setMessages(Array.isArray(oracleJson.mensajes) ? oracleJson.mensajes : []);
-
-        const latest = oracleJson.latestDraw as Draw | null;
-        if (latest?.cardId) {
-          setDraw(latest);
-          setTopic(latest.tema || "general");
-          setStage("revealed");
-        } else {
-          setDraw(null);
-          setStage("intro");
-        }
-      });
-    } catch (error: unknown) {
-      const text = error instanceof Error ? error.message : "No hemos podido abrir el oráculo.";
-      if (text !== "NO_AUTH") setMessage(text);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  async function shuffleCards() {
-    try {
-      setMessage("");
-      setStage("shuffling");
-      await withToken(async (token) => {
-        const res = await fetch("/api/cliente/oraculo", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "shuffle", tema: topic }),
-        });
-        const json = await res.json().catch(() => null);
-        if (!json?.ok) throw new Error(json?.error || "No hemos podido barajar las cartas.");
-        setShuffleId(String(json.shuffleId || ""));
-        setCanReveal(Boolean(json.canReveal));
-        setFreeAvailable(Boolean(json.freeAvailable));
-        setCreditsConfigured(Boolean(json.creditsConfigured));
-        setDeckSize(Math.max(1, Number(json.deckSize || 22)));
-      });
-      window.setTimeout(() => setStage("select"), 1450);
-    } catch (error: unknown) {
-      const text = error instanceof Error ? error.message : "No hemos podido barajar las cartas.";
-      setMessage(text);
-      setStage(draw ? "revealed" : "intro");
-    }
-  }
-
-  async function revealCard(position: number) {
-    if (revealing) return;
-    if (!canReveal) {
-      setMessage(
-        creditsConfigured
-          ? "Necesitas saldo disponible para realizar una nueva tirada."
-          : "Tu primera tirada gratuita ya fue utilizada. Las nuevas tiradas estarán disponibles cuando se active el sistema de créditos del Oráculo.",
-      );
-      return;
-    }
-
-    try {
-      setRevealing(true);
-      setMessage("");
-      await withToken(async (token) => {
-        const res = await fetch("/api/cliente/oraculo", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "reveal", tema: topic, position, shuffleId }),
-        });
-        const json = await res.json().catch(() => null);
-        if (!json?.ok) throw new Error(json?.message || json?.error || "No hemos podido revelar tu carta.");
-        setDraw(json.draw as Draw);
-        setFreeAvailable(Boolean(json.freeAvailable));
-        setMessages([]);
-        setStage("revealed");
-      });
-    } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "No hemos podido revelar tu carta.");
-    } finally {
-      setRevealing(false);
-    }
-  }
-
-  async function sendQuestion() {
-    const text = question.trim();
-    if (!text || !draw || sending) return;
-    try {
-      setSending(true);
-      setMessage("");
-      await withToken(async (token) => {
-        const res = await fetch("/api/cliente/oraculo", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "question", pregunta: text }),
-        });
-        const json = await res.json().catch(() => null);
-        if (!json?.ok) throw new Error(json?.error || "No hemos podido enviar tu pregunta.");
-        setMessages(Array.isArray(json.mensajes) ? json.mensajes : []);
-        setQuestion("");
-      });
-    } catch (error: unknown) {
-      setMessage(error instanceof Error ? error.message : "No hemos podido enviar tu pregunta.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  const topicLabel = useMemo(() => TOPICS.find((item) => item.id === topic)?.label || "General", [topic]);
-  const visibleCards = useMemo(() => Array.from({ length: Math.min(21, Math.max(12, deckSize)) }, (_, index) => index), [deckSize]);
-
-  return (
-    <ClienteLayout
-      title="Oráculo"
-      subtitle="Baraja, elige una carta y deja que el tarot te muestre un mensaje breve para hoy."
-      summaryItems={[
-        { label: "Tema activo", value: topicLabel, meta: draw ? `Carta: ${draw.cardName}` : "Elige tu enfoque antes de barajar" },
-        { label: "Tu rango", value: String(client?.rango_actual || "Bronce"), meta: "Tu rango no altera el resultado de la carta" },
-        { label: "Tirada", value: freeAvailable ? "GRATIS" : "Utilizada", meta: freeAvailable ? "Tu primera tirada corre por nuestra cuenta" : "Próximas tiradas: sistema de créditos pendiente" },
-      ]}
-    >
-      <div className={styles.oracleShell}>
-        {message ? <div className={styles.errorBox}>{message}</div> : null}
-
-        <section className={`tc-card ${styles.topicPanel}`} style={{ display: "grid", gap: 14 }}>
-          <div style={{ position: "relative", display: "grid", gap: 5 }}>
-            <div className="tc-panel-title">Elige el enfoque de tu tirada</div>
-            <div className="tc-panel-sub">La misma carta puede darte un matiz distinto según aquello que quieras observar hoy.</div>
-          </div>
-          <div className={styles.topicButtons}>
-            {TOPICS.map((item) => {
-              const Icon = item.icon;
-              const active = item.id === topic;
-              return (
-                <button
-                  key={item.id}
-                  className={`${styles.topicButton} ${active ? styles.topicActive : ""}`}
-                  onClick={() => setTopic(item.id)}
-                  disabled={stage !== "intro" || Boolean(draw)}
-                >
-                  <Icon size={18} />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className={styles.oracleStage}>
-          {loading ? <div className="tc-empty-state">Preparando el Oráculo…</div> : null}
-
-          {!loading && stage === "intro" ? (
-            <div className={styles.introContent}>
-              <div className={styles.oracleSigil}><WandSparkles size={37} /></div>
-              <div className={freeAvailable ? styles.freeBadge : styles.usedBadge}>
-                {freeAvailable ? <Sparkles size={14} /> : <LockKeyhole size={14} />}
-                {freeAvailable ? "Primera tirada GRATIS" : "Primera tirada ya utilizada"}
-              </div>
-              <h1 className={styles.heroTitle}>Tu tirada del día</h1>
-              <div className={styles.heroCopy}>Baraja las cartas y deja que el oráculo te muestre el mensaje de hoy. La carta se decide en el servidor cuando eliges una posición.</div>
-              <button className={styles.shuffleButton} onClick={shuffleCards}>
-                <Shuffle size={18} /> Barajar cartas
-              </button>
-            </div>
-          ) : null}
-
-          {!loading && stage === "shuffling" ? (
-            <div className={styles.introContent}>
-              <div className={`${styles.shuffleDeck} ${styles.shuffling}`} aria-label="Barajando cartas">
-                <div className={styles.shuffleCard} />
-                <div className={styles.shuffleCard} />
-                <div className={styles.shuffleCard} />
-              </div>
-              <div className={styles.selectionTitle}>Barajando tu energía…</div>
-              <div className={styles.selectionCopy}>Respira un momento y piensa en tu pregunta.</div>
-            </div>
-          ) : null}
-
-          {!loading && stage === "select" ? (
-            <div className={styles.selectionStage}>
-              <div className={styles.selectionHeader}>
-                <div className={styles.freeBadge}><Sparkles size={14} /> Elige una carta</div>
-                <div className={styles.selectionTitle}>¿Cuál te llama hoy?</div>
-                <div className={styles.selectionCopy}>No hay una carta preseleccionada: el backend resuelve el resultado cuando eliges una posición.</div>
-              </div>
-              <div className={styles.cardRail}>
-                {visibleCards.map((position) => (
-                  <button
-                    key={position}
-                    className={styles.cardButton}
-                    onClick={() => revealCard(position)}
-                    disabled={revealing}
-                    aria-label={`Elegir carta ${position + 1}`}
-                  >
-                    <span className={styles.cardBack} />
-                  </button>
-                ))}
-              </div>
-              {!canReveal ? (
-                <div className={styles.lockMessage}>
-                  <LockKeyhole size={14} style={{ verticalAlign: "middle", marginRight: 7 }} />
-                  Tu primera tirada gratuita ya fue utilizada. Puedes barajar y explorar la experiencia, pero una nueva revelación quedará disponible cuando se configure el sistema real de créditos del Oráculo.
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          {!loading && stage === "revealed" && draw ? (
-            <div className={styles.revealGrid}>
-              <div className={styles.revealedCardWrap}>
-                <div className={styles.revealedCardGlow} />
-                <div className={styles.revealedCard}>
-                  {/* Rider-Waite-Smith, imágenes públicas servidas por Wikimedia Commons */}
-                  <img src={draw.cardImage} alt={draw.cardName} loading="eager" referrerPolicy="no-referrer" />
-                </div>
-              </div>
-              <div className={styles.readingPanel}>
-                <div className={styles.readingEyebrow}><Sparkles size={13} /> Mensaje del día · {topicLabel}</div>
-                <h2 className={styles.cardName}>{draw.cardName}</h2>
-                <div className={styles.readingMessage}>{draw.message}</div>
-                <div className={styles.insightGrid}>
-                  <div className={styles.insightCard}>
-                    <div className={styles.insightLabel}>Palabra clave</div>
-                    <div className={styles.insightValue}>{draw.keyword}</div>
-                  </div>
-                  <div className={styles.insightCard}>
-                    <div className={styles.insightLabel}>Consejo</div>
-                    <div className={styles.insightValue}>{draw.advice}</div>
-                  </div>
-                </div>
-                {!freeAvailable ? (
-                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                    <div className={styles.usedBadge}><LockKeyhole size={13} /> Primera tirada gratuita consumida</div>
-                    <button className="tc-btn" onClick={shuffleCards}>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Shuffle size={15} /> Barajar otra vez</span>
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </section>
-
-        {draw ? (
-          <section className={`tc-card ${styles.chatPanel}`}>
-            <div style={{ display: "grid", gap: 5 }}>
-              <div className="tc-panel-title">Pregunta al Oráculo</div>
-              <div className="tc-panel-sub">Pregunta algo concreto. La respuesta utilizará tu carta y el tema de esta tirada como contexto.</div>
-            </div>
-            <div className={styles.chatContext}>
-              <WandSparkles size={15} /> Contexto activo: <strong>{draw.cardName}</strong> · {topicLabel}
-            </div>
-            <div className={styles.chatScroll}>
-              {messages.length === 0 ? <div className="tc-empty-state">Todavía no has hecho ninguna pregunta sobre esta carta.</div> : null}
-              {messages.map((item) => (
-                <div key={item.id} className={`${styles.bubble} ${item.role === "user" ? styles.bubbleUser : styles.bubbleOracle}`}>
-                  {item.role === "assistant" ? <WandSparkles size={15} /> : null}
-                  <div>{item.contenido}</div>
-                </div>
-              ))}
-            </div>
-            <div className={styles.compose}>
-              <textarea
-                className="tc-input tc-textarea"
-                placeholder={`Ejemplo: ¿Qué debería observar ahora en ${topicLabel.toLowerCase()}?`}
-                value={question}
-                onChange={(event) => setQuestion(event.target.value)}
-                maxLength={500}
-              />
-              <button className="tc-btn tc-btn-gold" disabled={sending || !question.trim()} onClick={sendQuestion}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <SendHorizontal size={16} /> {sending ? "Consultando…" : "Preguntar al Oráculo"}
-                </span>
-              </button>
-            </div>
-          </section>
-        ) : null}
-      </div>
-    </ClienteLayout>
-  );
+  const topicLabel=useMemo(()=>TOPICS.find(x=>x.id===topic)?.label||"General",[topic]); const visibleCards=useMemo(()=>Array.from({length:Math.min(21,Math.max(12,deckSize))},(_,i)=>i),[deckSize]);
+  const resultCards = stage==="premium-result" ? (draw?.cards||premiumCards) : premiumCards;
+  return <ClienteLayout title="Oráculo" subtitle="Elige tu tirada, baraja y deja que las cartas te guíen." summaryItems={[{label:"Primera tirada",value:freeAvailable?"GRATIS":"UTILIZADA",meta:freeAvailable?"Tu primera tirada corre por nuestra cuenta":"Beneficio inicial consumido"},{label:"Tiradas disponibles",value:String(credits),meta:"Saldo premium confirmado"},{label:"Tu rango",value:String(client?.rango_actual||"Bronce"),meta:"Tu rango no altera el resultado"}]}>
+    <div className={styles.oracleShell}>{message?<div className={styles.errorBox}>{message}</div>:null}
+      {freeAvailable && !["catalog","setup","premium-shuffling","premium-select","premium-result"].includes(stage)?<section className={`tc-card ${styles.topicPanel}`}><div className="tc-panel-title">Elige el enfoque de tu tirada gratuita</div><div className={styles.topicButtons}>{TOPICS.map(item=>{const I=item.icon;return <button key={item.id} className={`${styles.topicButton} ${item.id===topic?styles.topicActive:""}`} onClick={()=>setTopic(item.id)} disabled={stage!=="intro"}><I size={18}/>{item.label}</button>})}</div></section>:null}
+      <section className={styles.oracleStage}>{loading?<div className="tc-empty-state">Preparando el Oráculo…</div>:null}
+        {!loading&&stage==="intro"?<div className={styles.introContent}><div className={styles.oracleSigil}><WandSparkles size={37}/></div><div className={freeAvailable?styles.freeBadge:styles.usedBadge}>{freeAvailable?<><Sparkles size={14}/> Primera tirada GRATIS</>:<>Primera tirada utilizada</>}</div><h1 className={styles.heroTitle}>{freeAvailable?"Tu tirada del día":"Explora nuevas tiradas"}</h1><div className={styles.heroCopy}>{freeAvailable?"Baraja las cartas y deja que el oráculo te muestre el mensaje de hoy.":`Tienes ${credits} tiradas disponibles.`}</div>{freeAvailable?<button className={styles.shuffleButton} onClick={shuffleCards}><Shuffle size={18}/>Barajar cartas</button>:<button className={styles.shuffleButton} onClick={openCatalog}><Sparkles size={18}/>Explorar tiradas</button>}</div>:null}
+        {(stage==="shuffling"||stage==="premium-shuffling")?<div className={styles.introContent}><div className={`${styles.shuffleDeck} ${styles.shuffling}`}><div className={styles.shuffleCard}/><div className={styles.shuffleCard}/><div className={styles.shuffleCard}/></div><div className={styles.selectionTitle}>Barajando tu energía…</div></div>:null}
+        {stage==="select"?<div className={styles.selectionStage}><div className={styles.selectionHeader}><div className={styles.freeBadge}>Elige una carta</div><div className={styles.selectionTitle}>¿Cuál te llama hoy?</div></div><div className={styles.cardRail}>{visibleCards.map(p=><button key={p} className={styles.cardButton} onClick={()=>revealCard(p)} disabled={revealing}><span className={styles.cardBack}/></button>)}</div></div>:null}
+        {stage==="catalog"?<div className={styles.catalog}><div className={styles.selectionHeader}><div className={styles.usedBadge}>Primera tirada: UTILIZADA</div><div className={styles.selectionTitle}>Explora nuevas tiradas</div><div className={styles.selectionCopy}>Tiradas disponibles: <strong>{credits}</strong></div></div><div className={styles.spreadGrid}>{SPREADS.map(item=>{const I=item.icon;return <button key={item.id} className={`${styles.spreadCard} ${item.featured?styles.spreadFeatured:""}`} onClick={()=>chooseSpread(item)}><I size={24}/><strong>{item.title}</strong><span>{item.description}</span><small>{item.positions.length} carta{item.positions.length>1?"s":""}</small></button>})}</div>{credits<1?<a className={styles.buyLink} href="/cliente/dashboard#comprar-tiradas">No tienes tiradas disponibles · Comprar tiradas</a>:null}</div>:null}
+        {stage==="setup"&&spread?<div className={styles.setupPanel}><button className={styles.backButton} onClick={openCatalog}>← Explorar tiradas</button><div className={styles.oracleSigil}>{(() => { const Icon = spread.icon; return <Icon size={34}/>; })()}</div><h2 className={styles.heroTitle}>{spread.title}</h2><p className={styles.heroCopy}>{spread.description}</p>{spread.contexts?<><div className={styles.stepTitle}>¿Cuál es tu situación sentimental actual?</div><div className={styles.quickGrid}>{spread.contexts.map(x=><button key={x} className={`${styles.quickButton} ${context===x?styles.quickActive:""}`} onClick={()=>setContext(x)}>{x}</button>)}</div></>:null}<div className={styles.stepTitle}>Concéntrate en tu pregunta</div><div className={styles.quickGrid}>{spread.questions.map(q=><button key={q} className={`${styles.quickButton} ${question===q&&!customQuestion?styles.quickActive:""}`} onClick={()=>{setQuestion(q);setCustomQuestion("")}}>{q}</button>)}</div><textarea className="tc-input tc-textarea" value={customQuestion} maxLength={400} onChange={e=>setCustomQuestion(e.target.value)} placeholder="O escribe tu propia pregunta…"/><button className={styles.shuffleButton} onClick={startPremium} disabled={credits<1}><Shuffle size={18}/>COMENZAR TIRADA</button>{credits<1?<a className={styles.buyLink} href="/cliente/dashboard#comprar-tiradas">Comprar tiradas</a>:null}</div>:null}
+        {stage==="premium-select"&&spread?<div className={styles.selectionStage}><div className={styles.selectionHeader}><div className={styles.freeBadge}>Selecciona {spread.positions.length} carta{spread.positions.length>1?"s":""}</div><div className={styles.selectionTitle}>{spread.title}</div></div><div className={styles.positionProgress}>{spread.positions.map((p,i)=><div key={p} className={i<premiumCards.length?styles.positionDone:i===premiumCards.length?styles.positionCurrent:""}><span>{i<premiumCards.length?"✓":i+1}</span>{p}</div>)}</div><div className={styles.cardRail}>{visibleCards.map(p=><button key={p} className={styles.cardButton} onClick={()=>pickPremium(p)} disabled={revealing||premiumCards.some(c=>c.selectedPosition===p)}><span className={styles.cardBack}/></button>)}</div>{premiumCards.length?<div className={styles.miniReveals}>{premiumCards.map(c=><div key={c.position}><img src={c.cardImage} alt={c.cardName}/><strong>{c.position}</strong><span>{c.cardName}</span></div>)}</div>:null}</div>:null}
+        {(stage==="revealed"&&draw||stage==="premium-result"&&draw)?<div className={stage==="premium-result"?styles.resultPanel:styles.revealGrid}>{stage==="revealed"?<><div className={styles.revealedCardWrap}><div className={styles.revealedCard}><img src={draw!.cardImage} alt={draw!.cardName}/></div></div><div className={styles.readingPanel}><div className={styles.readingEyebrow}>Mensaje del día · {topicLabel}</div><h2 className={styles.cardName}>{draw!.cardName}</h2><div className={styles.readingMessage}>{draw!.message}</div><div className={styles.insightGrid}><div className={styles.insightCard}><div className={styles.insightLabel}>Palabra clave</div><div>{draw!.keyword}</div></div><div className={styles.insightCard}><div className={styles.insightLabel}>Consejo</div><div>{draw!.advice}</div></div></div><button className="tc-btn tc-btn-gold" onClick={openCatalog}>Explorar tiradas premium</button></div></>:<><div className={styles.selectionHeader}><div className={styles.freeBadge}>✨ Tirada completada</div><div className={styles.selectionTitle}>{spread?.title||"Tu tirada"}</div><div className={styles.selectionCopy}>Te quedan <strong>{credits}</strong> tiradas</div></div><div className={styles.resultCards}>{resultCards.map(c=><article key={c.position} className={styles.resultCard}><img src={c.cardImage} alt={c.cardName}/><div><small>{c.position}</small><h3>{c.cardName}</h3><p>{c.interpretation}</p></div></article>)}</div><div className={styles.finalMessage}><strong>Mensaje final</strong><p>{draw!.conclusion||draw!.message}</p></div><div className={styles.resultActions}><button className="tc-btn tc-btn-gold" onClick={openCatalog}>Explorar tiradas</button><a className="tc-btn" href="/cliente/dashboard">Volver al inicio</a>{credits<1?<a className="tc-btn" href="/cliente/dashboard#comprar-tiradas">Comprar más tiradas</a>:null}</div></>}</div>:null}
+      </section>
+      {draw&&(stage==="revealed"||stage==="premium-result")?<section className={`tc-card ${styles.chatPanel}`}><div className="tc-panel-title">Pregunta al Oráculo</div><div className={styles.chatContext}><WandSparkles size={15}/>Contexto activo: <strong>{draw.cardName}</strong></div><div className={styles.chatScroll}>{messages.map(x=><div key={x.id} className={`${styles.bubble} ${x.role==="user"?styles.bubbleUser:styles.bubbleOracle}`}>{x.contenido}</div>)}</div><div className={styles.compose}><textarea className="tc-input tc-textarea" placeholder="Haz una pregunta breve sobre tu tirada…" value={customQuestion} onChange={e=>setCustomQuestion(e.target.value)} maxLength={500}/><button className="tc-btn tc-btn-gold" disabled={sending||!customQuestion.trim()} onClick={sendQuestion}><SendHorizontal size={16}/>{sending?"Consultando…":"Preguntar"}</button></div></section>:null}
+    </div>
+  </ClienteLayout>;
 }
