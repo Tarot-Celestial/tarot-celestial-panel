@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronRight, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar } from "lucide-react";
+import { BellRing, ChevronRight, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useEffect } from "react";
 import styles from "./ClientePremium.module.css";
@@ -14,6 +14,8 @@ type SummaryItem = {
   label: string;
   value: string;
   meta?: string;
+  href?: string;
+  tone?: "rank" | "points" | "minutes" | "alerts" | "oracle" | "default";
 };
 
 type Props = {
@@ -92,9 +94,12 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
                 <Home size={16} /> Inicio
               </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
+              <Link className={`tc-nav-link ${pathname === "/cliente/precios-ofertas" ? "tc-nav-link-active" : ""}`} href="/cliente/precios-ofertas">
+                <Tags size={16} /> Precios y ofertas
+              </Link>
+              <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <WandSparkles size={16} /> Oráculo
+                  <WandSparkles size={16} /> Oráculo <span className="tc-nav-new-badge">NUEVO</span>
                 </span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/tarotistas" ? "tc-nav-link-active" : ""}`} href="/cliente/tarotistas">
@@ -119,7 +124,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
             <div className="tc-hero-summary">
               {summaryItems.map((item) => {
                 const normalized = item.label.toLowerCase();
-                const tone = normalized.includes("rango")
+                const tone = item.tone || (normalized.includes("rango")
                   ? "rank"
                   : normalized.includes("puntos") || normalized.includes("coins")
                   ? "points"
@@ -127,14 +132,19 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
                   ? "minutes"
                   : normalized.includes("notificaciones")
                   ? "alerts"
-                  : "default";
+                  : normalized.includes("tiradas")
+                  ? "oracle"
+                  : "default");
                 const hasAlert = tone === "alerts" && Number(item.value || 0) > 0;
-                return (
-                <div key={item.label} className="tc-kpi" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>
+                const content = <>
                   <div className="tc-kpi-label">{item.label}</div>
                   <div className="tc-kpi-value">{item.value}</div>
                   {item.meta ? <div className="tc-kpi-meta">{item.meta}</div> : null}
-                </div>
+                </>;
+                return item.href ? (
+                  <Link key={item.label} href={item.href} className="tc-kpi tc-kpi-link" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>{content}</Link>
+                ) : (
+                  <div key={item.label} className="tc-kpi" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>{content}</div>
                 );
               })}
             </div>

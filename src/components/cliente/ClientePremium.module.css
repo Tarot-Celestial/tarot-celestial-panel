@@ -678,3 +678,21 @@
   .premiumShell :global(.tc-perk) { grid-template-columns: auto minmax(0,1fr); }
   .premiumShell :global(.tc-perk small) { grid-column: 2; }
 }
+
+/* Oráculo: novedad y recurso mágico del Panel Cliente */
+.premiumShell :global(.tc-nav-oracle-new) {
+  border-color: rgba(250,204,21,.24);
+  background: radial-gradient(circle at 20% 0,rgba(250,204,21,.11),transparent 48%),rgba(255,255,255,.018);
+  box-shadow: 0 0 18px rgba(250,204,21,.06), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.premiumShell :global(.tc-nav-oracle-new:not(.tc-nav-link-active)) { animation: oracleNewGlow 3.4s ease-in-out infinite; }
+.premiumShell :global(.tc-nav-new-badge) { padding:3px 6px;border-radius:999px;background:linear-gradient(135deg,#f9df79,#b88113);color:#171005;font-size:8px;font-weight:950;letter-spacing:.08em;box-shadow:0 0 12px rgba(250,204,21,.16); }
+.premiumShell :global(.tc-kpi-link) { color:inherit;text-decoration:none;display:block; }
+.premiumShell :global(.tc-kpi[data-tone="oracle"]) { border-color:rgba(250,204,21,.24);background:radial-gradient(circle at 88% 12%,rgba(250,204,21,.13),transparent 34%),radial-gradient(circle at 15% 95%,rgba(139,92,246,.16),transparent 38%),linear-gradient(155deg,rgba(255,255,255,.065),rgba(255,255,255,.022));box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 14px 34px rgba(0,0,0,.2),0 0 24px rgba(139,92,246,.06); }
+.premiumShell :global(.tc-kpi[data-tone="oracle"])::before { background:linear-gradient(90deg,#f4d89f,#a78bfa,transparent);right:35%; }
+.premiumShell :global(.tc-kpi[data-tone="oracle"] .tc-kpi-value) { color:#fff1a8;text-shadow:0 0 18px rgba(250,204,21,.15); }
+@keyframes oracleNewGlow { 0%,100%{box-shadow:0 0 12px rgba(250,204,21,.04),inset 0 1px 0 rgba(255,255,255,.04)} 50%{box-shadow:0 0 24px rgba(250,204,21,.12),inset 0 1px 0 rgba(255,255,255,.06)} }
+@media (prefers-reduced-motion: reduce){.premiumShell :global(.tc-nav-oracle-new:not(.tc-nav-link-active)){animation:none}}
+@media (min-width:801px){.premiumShell :global(.tc-hero-summary){grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media (max-width:1100px) and (min-width:801px){.premiumShell :global(.tc-hero-summary){grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:800px){.premiumShell :global(.tc-nav){max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin}.premiumShell :global(.tc-nav-link){flex:0 0 auto}}

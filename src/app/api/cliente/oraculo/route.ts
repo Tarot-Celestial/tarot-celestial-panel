@@ -49,7 +49,8 @@ async function getLatestDraw(admin: any, clientId: string) {
 }
 
 async function hasUsedFreeDraw(admin: any, clientId: string) {
-  const { data, error } = await admin.from("cliente_oraculo_diario").select("id").eq("cliente_id", clientId).eq("is_free", true).limit(1);
+  const today = madridDateKey();
+  const { data, error } = await admin.from("cliente_oraculo_diario").select("id").eq("cliente_id", clientId).eq("is_free", true).eq("fecha", today).limit(1);
   if (error) throw error;
   return Array.isArray(data) && data.length > 0;
 }
@@ -70,7 +71,7 @@ export async function GET(req: Request) {
       getLatestDraw(gate.admin, gate.cliente.id), hasUsedFreeDraw(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id),
     ]);
     const messages = await loadMessages(gate.admin, gate.cliente.id, latestDraw);
-    return NextResponse.json({ ok: true, freeAvailable: !freeUsed, creditsConfigured: true, credits, packs: ORACLE_PACKS, latestDraw: serializeDraw(latestDraw), mensajes: messages, deckSize: TAROT_CARDS.length });
+    return NextResponse.json({ ok: true, freeAvailable: !freeUsed, freeDailyAvailable: !freeUsed, premiumCredits: credits, totalAvailable: credits + (!freeUsed ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, latestDraw: serializeDraw(latestDraw), mensajes: messages, deckSize: TAROT_CARDS.length });
   } catch (error: any) {
     console.error("[cliente/oraculo][GET]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENTE_ORACULO" }, { status: 500 });

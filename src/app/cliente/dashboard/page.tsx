@@ -162,6 +162,7 @@ export default function ClienteDashboardPage() {
   const [packs, setPacks] = useState<ClientePack[]>([]);
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
   const [oracleCredits, setOracleCredits] = useState(0);
+  const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
   const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
@@ -229,6 +230,7 @@ export default function ClienteDashboardPage() {
     const json = await res.json().catch(() => null);
     if (json?.ok) {
       setOracleCredits(Number(json.credits || 0));
+      setOracleFreeAvailable(Boolean(json.freeDailyAvailable ?? json.freeAvailable));
       setOraclePacks(Array.isArray(json.packs) ? json.packs : []);
     }
   }, []);
@@ -237,6 +239,15 @@ export default function ClienteDashboardPage() {
     loadData();
     loadOracle();
   }, [loadData, loadOracle]);
+
+  useEffect(() => {
+    const channel = typeof window !== "undefined" && "BroadcastChannel" in window ? new BroadcastChannel("tc-oracle-balance") : null;
+    const refresh = () => loadOracle();
+    channel?.addEventListener("message", refresh);
+    window.addEventListener("focus", refresh);
+    const timer = window.setInterval(refresh, 20000);
+    return () => { channel?.close(); window.removeEventListener("focus", refresh); window.clearInterval(timer); };
+  }, [loadOracle]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -395,8 +406,19 @@ export default function ClienteDashboardPage() {
         value: String(unreadNotifs),
         meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día",
       },
+      {
+        label: "Tiradas disponibles",
+        value: String(oracleCredits + (oracleFreeAvailable ? 1 : 0)),
+        meta: oracleFreeAvailable
+          ? `1 gratis hoy · ${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`
+          : oracleCredits > 0
+          ? `${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`
+          : "Consigue nuevas tiradas",
+        href: "/cliente/oraculo",
+        tone: "oracle" as const,
+      },
     ],
-    [rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs]
+    [rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable]
   );
 
   async function saveOnboarding(payload: {
