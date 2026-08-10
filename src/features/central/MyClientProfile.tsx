@@ -33,8 +33,14 @@ type ClientData = Record<string, any> & {
 type PurchaseData = {
   id: string;
   created_at?: string | null;
+  importe?: number | string | null;
+  moneda?: string | null;
+  metodo?: string | null;
   notas?: string | null;
   referencia_externa?: string | null;
+  minutes_free?: number | null;
+  minutes_normal?: number | null;
+  minutes_total?: number | null;
 } | null;
 
 type SummaryData = {
@@ -48,6 +54,11 @@ type SummaryData = {
   interactions?: any[];
   calls?: any[];
   payments?: any[];
+  current_balance?: {
+    free?: number;
+    normal?: number;
+    total?: number;
+  };
   totals?: {
     purchases?: number;
     spent?: number;
@@ -94,6 +105,11 @@ function formatDate(value?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+
+function money(value?: number | string | null, currency = "EUR") {
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(Number(value || 0));
 }
 
 async function token() {
@@ -146,6 +162,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
     };
     const channel = supabase
       .channel(`my-client-summary-${clientId}`)
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "crm_clientes", filter: `id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_notes", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas", filter: `cliente_id=eq.${clientId}` }, refresh)
@@ -164,6 +181,12 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
   const name = getName(client);
   const photo = getPhoto(client);
   const purchaseDate = formatDate(purchase?.created_at);
+  const freeMinutes = Math.max(0, Number(client?.minutos_free_pendientes || 0));
+  const normalMinutes = Math.max(0, Number(client?.minutos_normales_pendientes || 0));
+  const totalMinutes = freeMinutes + normalMinutes;
+  const purchaseFreeMinutes = Math.max(0, Number(purchase?.minutes_free || 0));
+  const purchaseNormalMinutes = Math.max(0, Number(purchase?.minutes_normal || 0));
+  const purchaseMinutesKnown = purchaseFreeMinutes > 0 || purchaseNormalMinutes > 0;
 
   if (loading) {
     return <section className={styles.stateCard}>Cargando ficha de la clienta…</section>;
@@ -214,17 +237,35 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
         </div>
 
         <article className={styles.purchaseCard}>
-          <div className={styles.purchaseIcon}><ShoppingBag size={22} aria-hidden="true" /></div>
-          <div>
-            <span className={styles.purchaseLabel}>ÚLTIMA COMPRA</span>
-            {purchase ? (
-              <>
-                <strong>Minutos no disponibles</strong>
-                <small><CalendarDays size={14} aria-hidden="true" /> {purchaseDate || "Fecha no disponible"}</small>
-              </>
-            ) : (
-              <strong>Sin compras</strong>
-            )}
+          <div className={styles.purchaseCardHeader}>
+            <div className={styles.purchaseIcon}><ShoppingBag size={22} aria-hidden="true" /></div>
+            <div className={styles.purchaseHeadline}>
+              <span className={styles.purchaseLabel}>ÚLTIMA COMPRA</span>
+              {purchase ? (
+                <>
+                  <strong>{money(purchase.importe, String(purchase.moneda || "EUR").toUpperCase())}</strong>
+                  <small><CalendarDays size={14} aria-hidden="true" /> {purchaseDate || "Fecha no disponible"}</small>
+                </>
+              ) : (
+                <strong>Sin compras</strong>
+              )}
+            </div>
+          </div>
+
+          {purchase && purchaseMinutesKnown && (
+            <div className={styles.purchaseOriginalMinutes}>
+              <span>MINUTOS ASOCIADOS A LA COMPRA</span>
+              <small>🎁 {purchaseFreeMinutes} free · ⏱ {purchaseNormalMinutes} normales</small>
+            </div>
+          )}
+
+          <div className={styles.currentMinutesBlock}>
+            <span className={styles.currentMinutesTitle}>MINUTOS ACTUALES</span>
+            <div className={styles.minutesSplit}>
+              <div className={styles.freeMinutes}><span>🎁 FREE</span><strong>{freeMinutes} min</strong></div>
+              <div className={styles.normalMinutes}><span>⏱ NORMALES</span><strong>{normalMinutes} min</strong></div>
+            </div>
+            <div className={styles.totalMinutes}><span>TOTAL DISPONIBLE</span><strong>{totalMinutes} min</strong></div>
           </div>
         </article>
       </div>

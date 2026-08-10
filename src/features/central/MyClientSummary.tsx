@@ -82,6 +82,11 @@ type SummaryData = {
   interactions?: InteractionRow[];
   calls?: CallRow[];
   payments?: PaymentRow[];
+  current_balance?: {
+    free?: number;
+    normal?: number;
+    total?: number;
+  };
   totals?: {
     purchases?: number;
     spent?: number;
@@ -141,6 +146,11 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
   const favorites = summary.favorite_tarotists || [];
   const availableTarotists = summary.available_tarotists || [];
   const totals = summary.totals || {};
+  const currentBalance = summary.current_balance || {};
+  const currentFree = Math.max(0, Number(currentBalance.free || 0));
+  const currentNormal = Math.max(0, Number(currentBalance.normal || 0));
+  const currentTotal = Math.max(0, Number(currentBalance.total ?? (currentFree + currentNormal)));
+  const latestPayment = payments[0] || null;
   const fidelity = summary.fidelity || null;
   const fidelityScore = Math.max(0, Math.min(100, Math.round(fidelity?.score ?? summary.fidelity_index ?? 0)));
   const [favoritePickerOpen, setFavoritePickerOpen] = useState(false);
@@ -330,11 +340,21 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
       </div>
 
       <aside className={styles.sideColumn}>
-        <article className={styles.sideCard}>
+        <article className={`${styles.sideCard} ${styles.balanceCard}`}>
           <div className={styles.sideIcon}><ShoppingBag size={21} /></div>
           <span>TOTAL COMPRADO</span>
-          <strong>{totals.minutes == null ? "Minutos no disponibles" : `${totals.minutes} min`}</strong>
+          <strong>{money(totals.spent || 0)}</strong>
           <small>{totals.purchases || 0} {(totals.purchases || 0) === 1 ? "compra" : "compras"}</small>
+          <div className={styles.balanceDivider} />
+          <span>SALDO ACTUAL</span>
+          <div className={styles.balanceRows}>
+            <div><span>🎁 FREE</span><strong>{currentFree} min</strong></div>
+            <div><span>⏱ NORMALES</span><strong>{currentNormal} min</strong></div>
+          </div>
+          <div className={styles.balanceTotal}><span>TOTAL DISPONIBLE</span><strong>{currentTotal} min</strong></div>
+          {latestPayment && (
+            <small className={styles.latestPurchaseLine}>Última compra: {money(Number(latestPayment.importe || 0), String(latestPayment.moneda || "EUR").toUpperCase())} · {formatDate(latestPayment.created_at)}</small>
+          )}
         </article>
         <article className={styles.sideCard}>
           <div className={styles.sideIcon}><Coins size={21} /></div>

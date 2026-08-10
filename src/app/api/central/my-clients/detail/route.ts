@@ -4,6 +4,7 @@ import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { calculateClientFidelity } from "@/lib/server/client-fidelity";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function env(name: string) {
   const value = process.env[name];
@@ -46,10 +47,10 @@ export async function GET(req: Request) {
     const admin = adminClient();
     const [clientResult, paymentsResult, notesResult, interactionsResult, callsResult, followUpsResult] = await Promise.all([
       admin.from("crm_clientes").select("*").eq("id", id).maybeSingle(),
-      admin.from("crm_cliente_pagos").select("id, cliente_id, importe, moneda, metodo, estado, notas, referencia_externa, created_at").eq("cliente_id", id).order("created_at", { ascending: false }),
+      admin.from("crm_cliente_pagos").select("*").eq("cliente_id", id).order("created_at", { ascending: false }),
       admin.from("crm_client_notes").select("*").eq("cliente_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
       admin.from("crm_interacciones").select("id, estado, notas_central, origen, tarotista_worker_id, created_at, cerrado_at").eq("cliente_id", id).order("created_at", { ascending: false }),
-      admin.from("rendimiento_llamadas").select("id, fecha_hora, fecha, importe, forma_pago, resumen_codigo, cliente_compra_minutos, usa_7_free, usa_minutos, tipo_registro, telefonista_worker_id, telefonista_nombre, tarotista_nombre").eq("cliente_id", id).order("fecha_hora", { ascending: false }),
+      admin.from("rendimiento_llamadas").select("id, fecha_hora, fecha, created_at, importe, forma_pago, resumen_codigo, cliente_compra_minutos, usa_7_free, usa_minutos, tipo_registro, guarda_minutos, minutos_guardados_free, minutos_guardados_normales, telefonista_worker_id, telefonista_nombre, tarotista_nombre").eq("cliente_id", id).order("fecha_hora", { ascending: false }),
       admin.from("crm_client_followups").select("id, status, created_at").eq("client_id", id),
     ]);
 
@@ -78,7 +79,32 @@ export async function GET(req: Request) {
     const interactions = interactionsResult.error ? [] : interactionsResult.data || [];
     const calls = callsResult.error ? [] : callsResult.data || [];
     const followUps = followUpsResult.error ? [] : followUpsResult.data || [];
-    const latestPurchase = payments[0] || null;
+    const rawLatestPurchase = payments[0] || null;
+    const linkedLatestCall = rawLatestPurchase?.source_rendimiento_id
+      ? calls.find((row: any) => String(row.id) === String(rawLatestPurchase.source_rendimiento_id)) || null
+      : null;
+    const readNumber = (row: any, keys: string[]) => {
+      for (const key of keys) {
+        const raw = row?.[key];
+        if (raw !== undefined && raw !== null && raw !== "") {
+          const value = Number(String(raw).replace(",", "."));
+          if (Number.isFinite(value)) return Math.max(0, value);
+        }
+      }
+      return 0;
+    };
+    const paymentFreeMinutes = rawLatestPurchase ? readNumber(rawLatestPurchase, ["minutos_free", "free_minutes", "minutos_gratis", "bonus_minutes", "minutos_guardados_free"]) : 0;
+    const paymentNormalMinutes = rawLatestPurchase ? readNumber(rawLatestPurchase, ["minutos_normales", "normal_minutes", "paid_minutes", "minutos_pagados", "minutos_guardados_normales"]) : 0;
+    const linkedFreeMinutes = linkedLatestCall ? readNumber(linkedLatestCall, ["minutos_guardados_free"]) : 0;
+    const linkedNormalMinutes = linkedLatestCall ? readNumber(linkedLatestCall, ["minutos_guardados_normales"]) : 0;
+    const latestPurchase = rawLatestPurchase ? {
+      ...rawLatestPurchase,
+      minutes_free: paymentFreeMinutes || linkedFreeMinutes,
+      minutes_normal: paymentNormalMinutes || linkedNormalMinutes,
+      minutes_total: (paymentFreeMinutes || linkedFreeMinutes) + (paymentNormalMinutes || linkedNormalMinutes),
+    } : null;
+    const currentFreeMinutes = Math.max(0, Number(clientResult.data.minutos_free_pendientes || 0));
+    const currentNormalMinutes = Math.max(0, Number(clientResult.data.minutos_normales_pendientes || 0));
     const totalSpent = payments.reduce((sum: number, payment: any) => sum + (Number(payment.importe) || 0), 0);
     const fidelityPurchases = [
       ...payments,
@@ -135,6 +161,11 @@ export async function GET(req: Request) {
         interactions,
         calls,
         payments,
+        current_balance: {
+          free: currentFreeMinutes,
+          normal: currentNormalMinutes,
+          total: currentFreeMinutes + currentNormalMinutes,
+        },
         totals: {
           purchases: payments.length,
           spent: Number(totalSpent.toFixed(2)),
@@ -142,10 +173,10 @@ export async function GET(req: Request) {
           consultations: interactions.length,
           followUps: followUps.length,
           messages: 0,
-          minutes: null,
+          minutes: currentFreeMinutes + currentNormalMinutes,
         },
       },
-    });
+    }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_DETAIL" }, { status: 500 });
   }
