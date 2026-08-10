@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
-  Coins,
   FileText,
   Heart,
   MessageCircle,
@@ -16,9 +15,10 @@ import {
   ShoppingBag,
   Sparkles,
   Star,
+  Trophy,
   UserRound,
 } from "lucide-react";
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getClientLifecycleStatus } from "./clientLifecycle";
 import styles from "./MyClientSummary.module.css";
@@ -132,6 +132,36 @@ function money(value?: number, currency = "EUR") {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(Number(value || 0));
 }
 
+
+const rankInfo: Record<string, { label: string; next: number | null; perks: string[] }> = {
+  bronce: {
+    label: "Bronce",
+    next: 100,
+    perks: ["3 pases GRATIS cada mes (7 minutos cada uno)"],
+  },
+  plata: {
+    label: "Plata",
+    next: 500,
+    perks: [
+      "10 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+10 minutos GRATIS permanentes en cada compra a precio regular",
+      "3 pases GRATIS cada mes (7 minutos cada uno)",
+      "Seguimiento energético durante 1 mes post rituales",
+    ],
+  },
+  oro: {
+    label: "Oro",
+    next: null,
+    perks: [
+      "12 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+12 minutos GRATIS permanentes en cada compra a precio regular",
+      "Participación automática en sorteos activos (1 número por sorteo)",
+      "3 pases GRATIS cada mes (7 minutos cada uno)",
+      "Seguimiento energético durante 1 mes post rituales",
+    ],
+  },
+};
+
 async function accessToken() {
   const { data } = await supabaseBrowser().auth.getSession();
   return data.session?.access_token || null;
@@ -157,7 +187,35 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
   const [favoriteBusy, setFavoriteBusy] = useState("");
   const [favoriteError, setFavoriteError] = useState("");
   const [showAllNotes, setShowAllNotes] = useState(false);
+  const [purchaseOverview, setPurchaseOverview] = useState<any>(null);
   const favoriteIds = useMemo(() => new Set(favorites.map((item) => String(item.tarotist_id))), [favorites]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPurchaseOverview() {
+      try {
+        const token = await accessToken();
+        if (!token) return;
+        const response = await fetch(`/api/central/my-clients/purchases?client_id=${encodeURIComponent(clientId)}&page=1&page_size=10`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null);
+        if (!cancelled && response.ok && payload?.ok) setPurchaseOverview(payload);
+      } catch {
+        // La ficha mantiene sus datos actuales si la vista de compras no está disponible.
+      }
+    }
+    void loadPurchaseOverview();
+    return () => { cancelled = true; };
+  }, [clientId, summary]);
+
+  const currentMonth = purchaseOverview?.stats?.current_month || null;
+  const rank = String(purchaseOverview?.rank?.effective || purchaseOverview?.rank?.current || "").toLowerCase();
+  const rankMeta = rankInfo[rank] || { label: "Sin rango", next: 100, perks: [] };
+  const rankSpent = Number(purchaseOverview?.rank?.spent_30d || 0);
+  const rankProgress = rankMeta.next ? Math.min(100, (rankSpent / rankMeta.next) * 100) : 100;
+  const rankOverride = purchaseOverview?.rank?.override || null;
 
   async function changeFavorite(tarotistId: string, method: "POST" | "DELETE") {
     setFavoriteBusy(tarotistId);
@@ -342,9 +400,9 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
       <aside className={styles.sideColumn}>
         <article className={`${styles.sideCard} ${styles.balanceCard}`}>
           <div className={styles.sideIcon}><ShoppingBag size={21} /></div>
-          <span>TOTAL COMPRADO</span>
-          <strong>{money(totals.spent || 0)}</strong>
-          <small>{totals.purchases || 0} {(totals.purchases || 0) === 1 ? "compra" : "compras"}</small>
+          <span>TOTAL COMPRADO · ESTE MES</span>
+          <strong>{money(currentMonth?.amount ?? 0)}</strong>
+          <small>{currentMonth?.purchases || 0} {(currentMonth?.purchases || 0) === 1 ? "compra" : "compras"} en el mes actual</small>
           <div className={styles.balanceDivider} />
           <span>SALDO ACTUAL</span>
           <div className={styles.balanceRows}>
@@ -356,11 +414,25 @@ export default function MyClientSummary({ clientId, lastPurchaseAt, summary, onR
             <small className={styles.latestPurchaseLine}>Última compra: {money(Number(latestPayment.importe || 0), String(latestPayment.moneda || "EUR").toUpperCase())} · {formatDate(latestPayment.created_at)}</small>
           )}
         </article>
-        <article className={styles.sideCard}>
-          <div className={styles.sideIcon}><Coins size={21} /></div>
-          <span>GASTO TOTAL</span>
-          <strong>{money(totals.spent || 0)}</strong>
-          <small>Relación desde {formatDate(summary.captured_at)}</small>
+        <article className={`${styles.sideCard} ${styles.rankCard} ${styles[`rank_${rank || "none"}`] || ""}`}>
+          <div className={styles.rankHeader}>
+            <div className={styles.sideIcon}><Trophy size={21} /></div>
+            <div>
+              <span>RANGO MENSUAL DE LA CLIENTA</span>
+              <strong>{rankMeta.label}</strong>
+              {rankOverride?.intervention_type === "temporary" && <small className={styles.temporaryRank}>⏳ RANGO TEMPORAL</small>}
+            </div>
+          </div>
+          <div className={styles.rankNumbers}>
+            <span><strong>{money(rankSpent)}</strong> en 30 días</span>
+            <span><strong>{purchaseOverview?.rank?.purchases_30d || 0}</strong> compras</span>
+          </div>
+          <div className={styles.rankProgress}><div style={{ width: `${rankProgress}%` }} /></div>
+          <small>{purchaseOverview?.rank?.from || "—"} → {purchaseOverview?.rank?.to || "—"}</small>
+          <div className={styles.rankBenefits}>
+            <span>BENEFICIOS ACTIVOS</span>
+            {rankMeta.perks.length ? rankMeta.perks.map((perk) => <div key={perk}>✨ {perk}</div>) : <div>Sin beneficios de rango activos.</div>}
+          </div>
         </article>
         <article className={styles.timelineCard}>
           <div className={styles.sectionHeader}><div><Clock3 size={19} /><h3>Actividad reciente</h3></div></div>
