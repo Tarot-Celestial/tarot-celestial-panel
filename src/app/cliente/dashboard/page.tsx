@@ -163,6 +163,8 @@ export default function ClienteDashboardPage() {
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
   const [oracleCredits, setOracleCredits] = useState(0);
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
+  const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
+  const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
   const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
@@ -231,6 +233,8 @@ export default function ClienteDashboardPage() {
     if (json?.ok) {
       setOracleCredits(Number(json.credits || 0));
       setOracleFreeAvailable(Boolean(json.freeDailyAvailable ?? json.freeAvailable));
+      setOracleNextFreeAt(json.freeState?.nextFreeAt || null);
+      setOracleFreeCountdown(Number(json.freeState?.remainingSeconds || 0));
       setOraclePacks(Array.isArray(json.packs) ? json.packs : []);
     }
   }, []);
@@ -239,6 +243,14 @@ export default function ClienteDashboardPage() {
     loadData();
     loadOracle();
   }, [loadData, loadOracle]);
+
+  useEffect(() => {
+    if (oracleFreeAvailable || !oracleNextFreeAt) { setOracleFreeCountdown(0); return; }
+    const tick = () => setOracleFreeCountdown(Math.max(0, Math.ceil((new Date(oracleNextFreeAt).getTime() - Date.now()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [oracleFreeAvailable, oracleNextFreeAt]);
 
   useEffect(() => {
     const channel = typeof window !== "undefined" && "BroadcastChannel" in window ? new BroadcastChannel("tc-oracle-balance") : null;
@@ -384,6 +396,12 @@ export default function ClienteDashboardPage() {
   const rankPurchases30 = Number(cliente?.rango_compras_mes_anterior || 0);
   const unreadNotifs = notificaciones.filter((item) => !item.leida).length;
 
+  const oracleRechargeLabel = useMemo(() => {
+    const total = Math.max(0, oracleFreeCountdown);
+    const h = Math.floor(total / 3600); const m = Math.floor((total % 3600) / 60);
+    return `${String(h).padStart(2, "0")} h ${String(m).padStart(2, "0")} min`;
+  }, [oracleFreeCountdown]);
+
   const summaryItems = useMemo(
     () => [
       {
@@ -410,15 +428,13 @@ export default function ClienteDashboardPage() {
         label: "Tiradas disponibles",
         value: String(oracleCredits + (oracleFreeAvailable ? 1 : 0)),
         meta: oracleFreeAvailable
-          ? `1 gratis hoy · ${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`
-          : oracleCredits > 0
-          ? `${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`
-          : "Consigue nuevas tiradas",
+          ? `1 gratis ahora · ${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`
+          : `Gratis en ${oracleRechargeLabel} · ${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`,
         href: "/cliente/oraculo",
         tone: "oracle" as const,
       },
     ],
-    [rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable]
+    [rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
   );
 
   async function saveOnboarding(payload: {

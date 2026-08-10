@@ -48,11 +48,25 @@ async function getLatestDraw(admin: any, clientId: string) {
   return data || null;
 }
 
-async function hasUsedFreeDraw(admin: any, clientId: string) {
-  const today = madridDateKey();
-  const { data, error } = await admin.from("cliente_oraculo_diario").select("id").eq("cliente_id", clientId).eq("is_free", true).eq("fecha", today).limit(1);
+async function getFreeDrawState(admin: any, clientId: string) {
+  const serverNow = new Date();
+  const { data, error } = await admin.from("cliente_oraculo_diario")
+    .select("id,revealed_at,created_at")
+    .eq("cliente_id", clientId).eq("is_free", true)
+    .order("created_at", { ascending: false }).limit(20);
   if (error) throw error;
-  return Array.isArray(data) && data.length > 0;
+  const rows = Array.isArray(data) ? data : [];
+  const lastMs = rows.reduce((max: number, row: any) => Math.max(max, new Date(row?.revealed_at || row?.created_at || 0).getTime() || 0), 0);
+  const lastIso = lastMs ? new Date(lastMs).toISOString() : null;
+  const nextMs = lastMs ? lastMs + 24 * 60 * 60 * 1000 : 0;
+  const available = !lastMs || serverNow.getTime() >= nextMs;
+  return {
+    available,
+    serverNow: serverNow.toISOString(),
+    lastFreeAt: lastIso ? new Date(lastIso).toISOString() : null,
+    nextFreeAt: available || !nextMs ? null : new Date(nextMs).toISOString(),
+    remainingSeconds: available || !nextMs ? 0 : Math.max(0, Math.ceil((nextMs - serverNow.getTime()) / 1000)),
+  };
 }
 
 async function loadMessages(admin: any, clientId: string, draw: Record<string, any> | null) {
@@ -67,14 +81,14 @@ export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    const [latestDraw, freeUsed, credits] = await Promise.all([
-      getLatestDraw(gate.admin, gate.cliente.id), hasUsedFreeDraw(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id),
+    const [latestDraw, freeState, credits] = await Promise.all([
+      getLatestDraw(gate.admin, gate.cliente.id), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id),
     ]);
     const messages = await loadMessages(gate.admin, gate.cliente.id, latestDraw);
-    return NextResponse.json({ ok: true, freeAvailable: !freeUsed, freeDailyAvailable: !freeUsed, premiumCredits: credits, totalAvailable: credits + (!freeUsed ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, latestDraw: serializeDraw(latestDraw), mensajes: messages, deckSize: TAROT_CARDS.length });
+    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, latestDraw: serializeDraw(latestDraw), mensajes: messages, deckSize: TAROT_CARDS.length });
   } catch (error: any) {
     console.error("[cliente/oraculo][GET]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENTE_ORACULO" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "No hemos podido cargar el Oráculo. Inténtalo de nuevo." }, { status: 500 });
   }
 }
 
@@ -86,8 +100,8 @@ export async function POST(req: Request) {
     const action = String(body.action || "question").trim().toLowerCase();
 
     if (action === "shuffle") {
-      const [freeUsed, credits] = await Promise.all([hasUsedFreeDraw(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id)]);
-      return NextResponse.json({ ok: true, shuffleId: randomUUID(), canReveal: !freeUsed || credits > 0, freeAvailable: !freeUsed, creditsConfigured: true, credits, deckSize: TAROT_CARDS.length });
+      const [freeState, credits] = await Promise.all([getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id)]);
+      return NextResponse.json({ ok: true, shuffleId: randomUUID(), canReveal: freeState.available || credits > 0, freeAvailable: freeState.available, freeState, creditsConfigured: true, credits, deckSize: TAROT_CARDS.length });
     }
 
     if (action === "reveal") {
@@ -95,8 +109,8 @@ export async function POST(req: Request) {
       const position = Number(body.position);
       const shuffleId = String(body.shuffleId || "").trim();
       if (!shuffleId || !Number.isInteger(position) || position < 0 || position > 20) return NextResponse.json({ ok: false, error: "INVALID_CARD_SELECTION" }, { status: 400 });
-      const freeUsed = await hasUsedFreeDraw(gate.admin, gate.cliente.id);
-      if (freeUsed) return NextResponse.json({ ok: false, error: "USE_PREMIUM_FLOW" }, { status: 409 });
+      const freeState = await getFreeDrawState(gate.admin, gate.cliente.id);
+      if (!freeState.available) return NextResponse.json({ ok: false, error: "FREE_DRAW_RECHARGING", message: "Tu tirada gratuita todavía se está recargando.", freeState }, { status: 409 });
 
       const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "oracle";
       const card = resolveTarotCard({ clientId: gate.cliente.id, shuffleId, position, topic: tema, secret });
@@ -104,11 +118,16 @@ export async function POST(req: Request) {
       const nowIso = new Date().toISOString();
       const fecha = madridDateKey();
       const payload = { cliente_id: gate.cliente.id, fecha, tema, titulo: card.name, prediccion: reading.message, energia: card.keyword, cierre: card.advice, created_at: nowIso, card_id: card.id, card_name: card.name, card_image: card.image, keyword: card.keyword, advice: card.advice, reading_short: reading.message, is_free: true, revealed_at: nowIso, selected_position: position, draw_type: "free_daily", cards_json: [{ position: "Mensaje", ...card, interpretation: reading.message }], conclusion: reading.message, credit_consumed: false };
-      const legacy = await gate.admin.from("cliente_oraculo_diario").select("id").eq("cliente_id", gate.cliente.id).eq("fecha", fecha).eq("tema", tema).is("card_id", null).limit(1).maybeSingle();
-      if (legacy.error) throw legacy.error;
-      const write = legacy.data?.id ? gate.admin.from("cliente_oraculo_diario").update(payload).eq("id", legacy.data.id) : gate.admin.from("cliente_oraculo_diario").insert(payload);
-      const inserted = await write.select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed").single();
-      if (inserted.error) throw inserted.error;
+      const inserted = await gate.admin.from("cliente_oraculo_diario").insert(payload).select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed").single();
+      if (inserted.error) {
+        // 23P01 = exclusion constraint: otra petición/pestaña ya consumió la gratuita dentro de las 24 h.
+        if (inserted.error.code === "23P01" || inserted.error.code === "23505" || (inserted.error.code === "P0001" && /FREE_DRAW_RECHARGING/i.test(inserted.error.message || ""))) {
+          const currentState = await getFreeDrawState(gate.admin, gate.cliente.id);
+          console.warn("[cliente/oraculo][FREE_DRAW_RACE]", { code: inserted.error.code, message: inserted.error.message, details: inserted.error.details, hint: inserted.error.hint, clientId: gate.cliente.id });
+          return NextResponse.json({ ok: false, error: "FREE_DRAW_RECHARGING", message: "Tu tirada gratuita ya fue utilizada y se está recargando.", freeState: currentState }, { status: 409 });
+        }
+        throw inserted.error;
+      }
       return NextResponse.json({ ok: true, draw: serializeDraw(inserted.data), freeAvailable: false, credits: await getOracleCreditBalance(gate.admin, gate.cliente.id) });
     }
 
@@ -124,8 +143,8 @@ export async function POST(req: Request) {
       if (!spread || !shuffleId || !drawKey || !Number.isInteger(position) || position < 0 || position > 20 || !Number.isInteger(pickIndex) || pickIndex < 0 || pickIndex >= spread.positions.length) {
         return NextResponse.json({ ok: false, error: "INVALID_PREMIUM_SELECTION" }, { status: 400 });
       }
-      const freeUsed = await hasUsedFreeDraw(gate.admin, gate.cliente.id);
-      if (!freeUsed) return NextResponse.json({ ok: false, error: "FREE_DRAW_AVAILABLE" }, { status: 409 });
+      const freeState = await getFreeDrawState(gate.admin, gate.cliente.id);
+      if (freeState.available) return NextResponse.json({ ok: false, error: "FREE_DRAW_AVAILABLE" }, { status: 409 });
 
       let credits = await getOracleCreditBalance(gate.admin, gate.cliente.id);
       if (pickIndex === 0) {
@@ -177,6 +196,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, respuesta, mensajes: await loadMessages(gate.admin, gate.cliente.id, latestDraw) });
   } catch (error: any) {
     console.error("[cliente/oraculo][POST]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENTE_ORACULO_SEND" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "No hemos podido completar la consulta. Inténtalo de nuevo." }, { status: 500 });
   }
 }
