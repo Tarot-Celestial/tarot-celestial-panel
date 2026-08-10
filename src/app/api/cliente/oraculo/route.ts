@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { getOracleCreditBalance, ORACLE_PACKS, consumeOracleCredit } from "@/lib/server/oracle-premium";
+import { getOracleCreditBalance, ORACLE_PACKS } from "@/lib/server/oracle-premium";
 import { consumeOracleQuestion, getOracleQuestionBalance, ORACLE_QUESTION_PACK } from "@/lib/server/oracle-questions";
 import {
   TAROT_CARDS,
@@ -81,6 +81,17 @@ async function loadMessages(admin: any, clientId: string, draw: Record<string, a
   return legacy.data || [];
 }
 
+async function getActivePremiumSession(admin: any, clientId: string) {
+  const { data, error } = await admin.from("cliente_oracle_draw_sessions").select("*").eq("cliente_id", clientId).in("status", ["created","started","in_progress","failed"]).order("updated_at", { ascending:false }).limit(1).maybeSingle();
+  if (error) { if (error.code === "42P01") return null; throw error; }
+  return data || null;
+}
+
+function serializeSession(row: any) {
+  if (!row?.id) return null;
+  return { id:String(row.id), drawKey:String(row.draw_key), drawType:String(row.draw_type), shuffleId:String(row.shuffle_id), question:String(row.question||""), context:String(row.context||""), cards:Array.isArray(row.cards_json)?row.cards_json:[], requiredCards:Number(row.required_cards||0), status:String(row.status||"in_progress") };
+}
+
 async function getQuestionState(admin: any, clientId: string, draw: Record<string, any> | null) {
   const extra = await getOracleQuestionBalance(admin, clientId);
   return { includedAvailable: Boolean(draw?.id && !draw?.included_question_used_at), includedUsed: Boolean(draw?.included_question_used_at), extra, total: extra + (draw?.id && !draw?.included_question_used_at ? 1 : 0) };
@@ -90,11 +101,11 @@ export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    const [latestDraw, freeState, credits] = await Promise.all([
-      getLatestDraw(gate.admin, gate.cliente.id), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id),
+    const [latestDraw, freeState, credits, activeSession] = await Promise.all([
+      getLatestDraw(gate.admin, gate.cliente.id), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id), getActivePremiumSession(gate.admin, gate.cliente.id),
     ]);
     const [messages, questionState] = await Promise.all([loadMessages(gate.admin, gate.cliente.id, latestDraw), getQuestionState(gate.admin, gate.cliente.id, latestDraw)]);
-    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), mensajes: messages, deckSize: TAROT_CARDS.length });
+    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), activeSession: serializeSession(activeSession), mensajes: messages, deckSize: TAROT_CARDS.length });
   } catch (error: any) {
     console.error("[cliente/oraculo][GET]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
     return NextResponse.json({ ok: false, error: "No hemos podido cargar el Oráculo. Inténtalo de nuevo." }, { status: 500 });
@@ -140,52 +151,55 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, draw: serializeDraw(inserted.data), freeAvailable: false, credits: await getOracleCreditBalance(gate.admin, gate.cliente.id) });
     }
 
+    if (action === "premium_start") {
+      const drawType=String(body.drawType||"").trim(); const spread=SPREADS[drawType];
+      const question=String(body.question||"").trim().slice(0,400); const context=String(body.context||"").trim().slice(0,160);
+      if(!spread||!question) return NextResponse.json({ok:false,error:"INVALID_PREMIUM_START"},{status:400});
+      const existing=await getActivePremiumSession(gate.admin,gate.cliente.id);
+      if(existing) return NextResponse.json({ok:true,resumed:true,session:serializeSession(existing),credits:await getOracleCreditBalance(gate.admin,gate.cliente.id)});
+      const creditsBefore=await getOracleCreditBalance(gate.admin,gate.cliente.id); if(creditsBefore<1)return NextResponse.json({ok:false,error:"NO_ORACLE_CREDITS"},{status:409});
+      const drawKey=randomUUID(), shuffleId=randomUUID();
+      const reserved=await gate.admin.rpc("reserve_cliente_oracle_draw",{p_cliente_id:gate.cliente.id,p_draw_key:drawKey,p_draw_type:drawType,p_shuffle_id:shuffleId,p_question:question,p_context:context,p_required_cards:spread.positions.length,p_notes:`Reserva tirada premium · ${spread.label}`});
+      if(reserved.error) throw reserved.error; const payload=reserved.data||{};
+      return NextResponse.json({ok:true,resumed:Boolean(payload.resumed),session:serializeSession(payload.session),credits:Number(payload.balance||0)});
+    }
+
+    if (action === "premium_retry") {
+      const drawKey=String(body.drawKey||"").trim();
+      const {data:session,error}=await gate.admin.from("cliente_oracle_draw_sessions").select("*").eq("cliente_id",gate.cliente.id).eq("draw_key",drawKey).maybeSingle();
+      if(error)throw error; if(!session)return NextResponse.json({ok:false,error:"DRAW_NOT_STARTED"},{status:409});
+      const spread=SPREADS[String(session.draw_type||"")]; const cards=Array.isArray(session.cards_json)?session.cards_json:[];
+      if(!spread||cards.length!==spread.positions.length)return NextResponse.json({ok:false,error:"DRAW_NOT_READY"},{status:409});
+      const existing=await gate.admin.from("cliente_oraculo_diario").select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed,included_question_used_at").eq("cliente_id",gate.cliente.id).eq("draw_key",drawKey).maybeSingle();
+      if(existing.error)throw existing.error; if(existing.data){await gate.admin.from("cliente_oracle_draw_sessions").update({status:"completed",completed_draw_id:existing.data.id,completed_at:new Date().toISOString()}).eq("id",session.id);return NextResponse.json({ok:true,completed:true,draw:serializeDraw(existing.data),credits:await getOracleCreditBalance(gate.admin,gate.cliente.id)});}
+      const last=cards[cards.length-1]; const conclusion=`La tirada ${spread.label} reúne una energía centrada en ${cards.map((x:any)=>x.keyword||x.cardName).slice(0,3).join(", ")}. ${last.advice||""}`; const nowIso=new Date().toISOString();
+      const row=await gate.admin.from("cliente_oraculo_diario").insert({cliente_id:gate.cliente.id,fecha:madridDateKey(),tema:spread.topic,titulo:spread.label,prediccion:conclusion,energia:last.keyword,cierre:last.advice,created_at:nowIso,card_id:last.cardId,card_name:last.cardName,card_image:last.cardImage,keyword:last.keyword,advice:last.advice,reading_short:conclusion,is_free:false,revealed_at:nowIso,selected_position:last.selectedPosition,draw_type:session.draw_type,question:session.question||null,context:session.context||null,cards_json:cards,conclusion,credit_consumed:true,draw_key:drawKey}).select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed,included_question_used_at").single();
+      if(row.error)throw row.error; await gate.admin.from("cliente_oracle_draw_sessions").update({status:"completed",completed_draw_id:row.data.id,completed_at:nowIso,updated_at:nowIso}).eq("id",session.id);
+      return NextResponse.json({ok:true,completed:true,draw:serializeDraw(row.data),credits:await getOracleCreditBalance(gate.admin,gate.cliente.id)});
+    }
+
     if (action === "premium_pick") {
-      const drawType = String(body.drawType || "").trim();
-      const spread = SPREADS[drawType];
-      const shuffleId = String(body.shuffleId || "").trim();
-      const drawKey = String(body.drawKey || "").trim();
-      const position = Number(body.position);
-      const pickIndex = Number(body.pickIndex);
-      const question = String(body.question || "").trim().slice(0, 400);
-      const context = String(body.context || "").trim().slice(0, 160);
-      if (!spread || !shuffleId || !drawKey || !Number.isInteger(position) || position < 0 || position > 20 || !Number.isInteger(pickIndex) || pickIndex < 0 || pickIndex >= spread.positions.length) {
-        return NextResponse.json({ ok: false, error: "INVALID_PREMIUM_SELECTION" }, { status: 400 });
-      }
-      const freeState = await getFreeDrawState(gate.admin, gate.cliente.id);
-      if (freeState.available) return NextResponse.json({ ok: false, error: "FREE_DRAW_AVAILABLE" }, { status: 409 });
-
-      let credits = await getOracleCreditBalance(gate.admin, gate.cliente.id);
-      if (pickIndex === 0) {
-        if (credits < 1) return NextResponse.json({ ok: false, error: "NO_ORACLE_CREDITS" }, { status: 409 });
-        credits = await consumeOracleCredit(gate.admin, { clienteId: gate.cliente.id, drawKey, drawType, notes: `Tirada premium · ${spread.label}` });
-      } else {
-        const { data: movement, error: movementError } = await gate.admin.from("cliente_oracle_credit_movements").select("id").eq("cliente_id", gate.cliente.id).eq("reference", `draw:${drawKey}`).maybeSingle();
-        if (movementError) throw movementError;
-        if (!movement?.id) return NextResponse.json({ ok: false, error: "DRAW_NOT_STARTED" }, { status: 409 });
-      }
-
-      const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "oracle";
-      const topic = spread.topic;
-      const card = resolveTarotSpreadCard({ clientId: gate.cliente.id, shuffleId, position, pickIndex, topic, secret });
-      const positionLabel = spread.positions[pickIndex];
-      const interpretation = buildPositionReading({ card, topic, position: positionLabel, question, context });
-      const cardResult = { position: positionLabel, cardId: card.id, cardName: card.name, cardImage: card.image, keyword: card.keyword, advice: card.advice, interpretation, selectedPosition: position };
-
-      if (pickIndex === spread.positions.length - 1) {
-        const cards = Array.isArray(body.previousCards) ? body.previousCards.slice(0, pickIndex) : [];
-        const allCards = [...cards, cardResult];
-        const conclusion = `La tirada ${spread.label} reúne una energía centrada en ${allCards.map((item: any) => item.keyword || item.cardName).slice(0, 3).join(", ")}. ${card.advice}`;
-        const nowIso = new Date().toISOString();
-        const row = await gate.admin.from("cliente_oraculo_diario").insert({
-          cliente_id: gate.cliente.id, fecha: madridDateKey(), tema: topic, titulo: spread.label, prediccion: conclusion, energia: card.keyword, cierre: card.advice, created_at: nowIso,
-          card_id: card.id, card_name: card.name, card_image: card.image, keyword: card.keyword, advice: card.advice, reading_short: conclusion, is_free: false, revealed_at: nowIso,
-          selected_position: position, draw_type: drawType, question: question || null, context: context || null, cards_json: allCards, conclusion, credit_consumed: true, draw_key: drawKey,
-        }).select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed,included_question_used_at").single();
-        if (row.error) throw row.error;
-        return NextResponse.json({ ok: true, card: cardResult, completed: true, draw: serializeDraw(row.data), credits });
-      }
-      return NextResponse.json({ ok: true, card: cardResult, completed: false, credits });
+      const drawKey=String(body.drawKey||"").trim(); const position=Number(body.position);
+      if(!drawKey||!Number.isInteger(position)||position<0||position>20)return NextResponse.json({ok:false,error:"INVALID_PREMIUM_SELECTION"},{status:400});
+      const {data:session,error:sessionError}=await gate.admin.from("cliente_oracle_draw_sessions").select("*").eq("cliente_id",gate.cliente.id).eq("draw_key",drawKey).maybeSingle();
+      if(sessionError)throw sessionError; if(!session)return NextResponse.json({ok:false,error:"DRAW_NOT_STARTED"},{status:409});
+      if(session.status==="completed") return NextResponse.json({ok:false,error:"DRAW_ALREADY_COMPLETED"},{status:409});
+      const spread=SPREADS[String(session.draw_type||"")]; if(!spread)return NextResponse.json({ok:false,error:"INVALID_DRAW_TYPE"},{status:400});
+      let cards=Array.isArray(session.cards_json)?session.cards_json:[]; const pickIndex=cards.length;
+      if(pickIndex>=spread.positions.length)return NextResponse.json({ok:false,error:"DRAW_READY_TO_COMPLETE"},{status:409});
+      if(cards.some((c:any)=>Number(c.selectedPosition)===position))return NextResponse.json({ok:false,error:"CARD_ALREADY_SELECTED"},{status:409});
+      const secret=process.env.SUPABASE_SERVICE_ROLE_KEY||process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||"oracle";
+      const card=resolveTarotSpreadCard({clientId:gate.cliente.id,shuffleId:String(session.shuffle_id),position,pickIndex,topic:spread.topic,secret});
+      const positionLabel=spread.positions[pickIndex]; const interpretation=buildPositionReading({card,topic:spread.topic,position:positionLabel,question:String(session.question||""),context:String(session.context||"")});
+      const cardResult={position:positionLabel,cardId:card.id,cardName:card.name,cardImage:card.image,keyword:card.keyword,advice:card.advice,interpretation,selectedPosition:position}; cards=[...cards,cardResult];
+      const saved=await gate.admin.from("cliente_oracle_draw_sessions").update({cards_json:cards,status:"in_progress",updated_at:new Date().toISOString()}).eq("id",session.id).eq("cliente_id",gate.cliente.id).select("id").single(); if(saved.error)throw saved.error;
+      const credits=await getOracleCreditBalance(gate.admin,gate.cliente.id);
+      if(cards.length<spread.positions.length)return NextResponse.json({ok:true,card:cardResult,completed:false,session:{...serializeSession(session),cards},credits});
+      const conclusion=`La tirada ${spread.label} reúne una energía centrada en ${cards.map((item:any)=>item.keyword||item.cardName).slice(0,3).join(", ")}. ${card.advice}`; const nowIso=new Date().toISOString();
+      const row=await gate.admin.from("cliente_oraculo_diario").insert({cliente_id:gate.cliente.id,fecha:madridDateKey(),tema:spread.topic,titulo:spread.label,prediccion:conclusion,energia:card.keyword,cierre:card.advice,created_at:nowIso,card_id:card.id,card_name:card.name,card_image:card.image,keyword:card.keyword,advice:card.advice,reading_short:conclusion,is_free:false,revealed_at:nowIso,selected_position:position,draw_type:session.draw_type,question:session.question||null,context:session.context||null,cards_json:cards,conclusion,credit_consumed:true,draw_key:drawKey}).select("id,fecha,tema,titulo,prediccion,energia,cierre,created_at,card_id,card_name,card_image,keyword,advice,reading_short,is_free,revealed_at,selected_position,draw_type,question,context,cards_json,conclusion,credit_consumed,included_question_used_at").single();
+      if(row.error){await gate.admin.from("cliente_oracle_draw_sessions").update({status:"failed",updated_at:new Date().toISOString()}).eq("id",session.id);throw row.error;}
+      const done=await gate.admin.from("cliente_oracle_draw_sessions").update({status:"completed",completed_draw_id:row.data.id,completed_at:nowIso,updated_at:nowIso}).eq("id",session.id); if(done.error)throw done.error;
+      return NextResponse.json({ok:true,card:cardResult,completed:true,draw:serializeDraw(row.data),credits});
     }
 
     const pregunta = String(body.pregunta || "").trim().slice(0, 500);
