@@ -5,6 +5,7 @@ import { adminClient } from "@/lib/server/auth-cliente";
 import { applyClientPurchase, getClientePack } from "@/lib/server/cliente-platform";
 import { addClientChatCredits, getChatPack } from "@/lib/server/chat-platform";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
+import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 
 export const runtime = "nodejs";
 
@@ -104,6 +105,20 @@ export async function POST(req: Request) {
             },
           });
         }
+      }
+
+      // =========================
+      // 🔮 ORÁCULO PREMIUM
+      // =========================
+      else if (source === "cliente_oracle_questions") {
+        const packId = String(session.metadata?.pack_id || "").trim();
+        const pack = getOracleQuestionPack(packId);
+        if (!clienteId || !pack) return NextResponse.json({ ok: false, error: "INVALID_STRIPE_ORACLE_QUESTION_METADATA" }, { status: 400 });
+        await grantOracleQuestions(admin, {
+          clienteId, questions: Number(session.metadata?.oracle_questions || pack.questions),
+          reference: `stripe:${session.id}`, notes: `Stripe checkout completado · ${pack.nombre}`,
+          meta: { stripe_session_id: session.id, payment_intent: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id || null, amount_eur: amountTotal || pack.priceEur },
+        });
       }
 
       // =========================

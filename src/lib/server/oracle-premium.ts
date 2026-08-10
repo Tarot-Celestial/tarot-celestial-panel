@@ -7,8 +7,8 @@ export type OraclePack = {
 };
 
 export const ORACLE_PACKS: OraclePack[] = [
-  { id: "oracle_2", nombre: "Pack Oráculo", descripcion: "Desbloquea 2 tiradas premium.", priceEur: 1, credits: 2 },
-  { id: "destino_3", nombre: "Pack Destino", descripcion: "Desbloquea 3 tiradas premium.", priceEur: 2, credits: 3 },
+  { id: "oracle_2", nombre: "Pack Oráculo", descripcion: "2 tiradas premium · 1 pregunta incluida por cada tirada.", priceEur: 1, credits: 2 },
+  { id: "destino_3", nombre: "Pack Destino", descripcion: "3 tiradas premium · 1 pregunta incluida por cada tirada.", priceEur: 2, credits: 3 },
 ];
 
 export function getOraclePack(value: unknown): OraclePack | null {

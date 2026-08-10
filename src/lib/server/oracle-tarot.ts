@@ -358,14 +358,29 @@ export function buildTarotReading(card: TarotCard, topic: OracleTopic) {
 }
 
 export function answerTarotFollowup(params: {
-  question: string;
-  topic: OracleTopic;
-  card: TarotCard;
-  reading: string;
+  question: string; topic: OracleTopic; card: TarotCard; reading: string;
+  cards?: Array<{ position?: string; cardName?: string; keyword?: string; interpretation?: string }>;
+  initialQuestion?: string; context?: string; history?: Array<{ role: string; contenido: string }>;
 }) {
   const q = params.question.trim();
-  const topicText = params.card.topics[params.topic] || params.card.topics.general;
-  return `${params.card.name} mantiene como eje ${params.card.keyword.toLowerCase()}. ${topicText}\n\nSobre “${q}”: toma esta carta como una orientación para observar hechos, reciprocidad y señales concretas. ${params.card.advice}`;
+  const lower = q.toLocaleLowerCase("es");
+  const cards = Array.isArray(params.cards) && params.cards.length ? params.cards : [{ position: "Mensaje", cardName: params.card.name, keyword: params.card.keyword, interpretation: params.reading }];
+  const named = cards.find(c => lower.includes(String(c.cardName || "").toLocaleLowerCase("es"))) || cards.find(c => lower.includes(String(c.position || "").toLocaleLowerCase("es"))) || cards[0];
+  const cardName = String(named?.cardName || params.card.name);
+  const position = String(named?.position || "Mensaje");
+  const interpretation = String(named?.interpretation || params.reading);
+  const keyword = String(named?.keyword || params.card.keyword).toLowerCase();
+  const previousUser = [...(params.history || [])].reverse().find(m => m.role === "user")?.contenido || "";
+  const continuity = previousUser ? `Teniendo en cuenta lo que acababas de preguntar sobre “${previousUser.slice(0,120)}”, ` : "";
+  const positionLead = position && position !== "Mensaje" ? `Al aparecer ${cardName} en la posición «${position}», ` : `${cardName} sugiere que `;
+  const direct = /por qu[eé]|porque/.test(lower)
+    ? `${continuity}${positionLead}la lectura pone el foco en ${keyword}, no como una sentencia literal, sino como una forma de entender el patrón que estás señalando.`
+    : /puede|podr[ií]a|es posible|significa/.test(lower)
+    ? `Sí, puede encajar con esa posibilidad. ${positionLead}lo importante es cómo se manifiesta ${keyword} en los hechos y en tus decisiones, más que tomar el símbolo de forma literal.`
+    : `${continuity}${positionLead}${interpretation.charAt(0).toLowerCase()}${interpretation.slice(1)}`;
+  const contextLine = params.initialQuestion ? `En relación con tu pregunta inicial —“${params.initialQuestion.slice(0,160)}”— conviene contrastarlo con lo que estás viviendo ahora y observar qué parte se repite de forma concreta.` : `Úsalo como una orientación para observar hechos, emociones y decisiones concretas, no como una certeza inevitable.`;
+  const suggestion = (params.history || []).length % 4 === 0 ? `\n\nSi quieres profundizar, puedes preguntarme cómo se manifiesta esta posición en una situación concreta.` : "";
+  return `${direct}\n\n${contextLine}${suggestion}`;
 }
 
 export function resolveTarotSpreadCard(params: {
