@@ -21,6 +21,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy } from "lucide-react";
+import adminStyles from "./AdminPremium.module.css";
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -42,21 +43,21 @@ const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualIn
 
 
 const ADMIN_NAV = [
-  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo" },
-  { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas" },
-  { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre" },
-  { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
-  { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
-  { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo" },
-  { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos" },
-  { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
-  { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría" },
-  { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
-  { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago" },
-  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
-  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
-  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
-  { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día" },
+  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
+  { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
+  { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
+  { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
+  { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
+  { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
+  { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
+  { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
+  { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
+  { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
+  { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago", tone: "indigo" },
+  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento", tone: "orange" },
+  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas", tone: "blue" },
+  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna", tone: "gold" },
+  { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día", tone: "cyan" },
 ] as const;
 
 function monthKeyNow() {
@@ -1736,10 +1737,11 @@ function AdminPage() {
       <ReservasGlobalWatcher enabled={ok} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="admin" />
 
-      <div className="tc-shell tc-shell-premium">
-        <aside className="tc-sidebar">
-          <div className="tc-sidebar-card">
-            <div className="tc-sidebar-title">Navegación admin</div>
+      <div className={`tc-shell tc-shell-premium ${adminStyles.adminShell}`}>
+        <aside className={`tc-sidebar ${adminStyles.sidebar}`}>
+          <div className={`tc-sidebar-card ${adminStyles.sidebarCard}`}>
+            <div className={adminStyles.sidebarHudLine} aria-hidden="true" />
+            <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
             <div className="tc-sidebar-nav">
               {ADMIN_NAV.map((item) => {
                 const Icon = item.icon;
@@ -1748,16 +1750,15 @@ function AdminPage() {
                 return (
                   <div key={item.key} style={{ display: "grid", gap: 6 }}>
                     <button
-                      className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
+                      className={`tc-sidebtn ${adminStyles.navItem} ${active ? `tc-sidebtn-active ${adminStyles.navItemActive}` : ""}`}
+                      data-tone={item.tone}
                       onClick={() => {
                         setTab(item.key as TabKey);
                         if (rankGroup) setRanksMenuOpen(true);
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                        <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
-                          <Icon size={16} />
-                        </div>
+                        <div className={`tc-chip ${adminStyles.navIcon}`}><Icon size={17} /></div>
                         <div style={{ minWidth: 0 }}>
                           <div className="tc-sidebtn-main">{item.label}</div>
                           <div className="tc-sidebtn-kicker">{item.kicker}</div>
@@ -1766,20 +1767,20 @@ function AdminPage() {
                       {rankGroup ? (
                         <span
                           onClick={(event) => { event.stopPropagation(); setRanksMenuOpen((value) => !value); }}
-                          style={{ width: 30, height: 30, borderRadius: 9, display: "grid", placeItems: "center", border: "1px solid rgba(255,255,255,.09)", background: "rgba(255,255,255,.035)", cursor: "pointer" }}
+                          className={`${adminStyles.navChevron} ${ranksMenuOpen ? adminStyles.navChevronOpen : ""}`}
                           aria-label="Desplegar Rangos de clientes"
                         >
-                          <ChevronDown size={15} style={{ transform: ranksMenuOpen ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />
+                          <ChevronDown size={15} />
                         </span>
-                      ) : <span className="tc-sidebtn-dot" />}
+                      ) : <span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />}
                     </button>
                     {rankGroup && ranksMenuOpen ? (
-                      <div style={{ display: "grid", gap: 5, marginLeft: 18, paddingLeft: 16, borderLeft: "1px solid rgba(205,171,255,.2)" }}>
-                        <button className={`tc-sidebtn ${tab === "rangos-clientes" ? "tc-sidebtn-active" : ""}`} style={{ minHeight: 48, padding: "8px 10px" }} onClick={() => setTab("rangos-clientes")}>
-                          <div style={{ minWidth: 0, textAlign: "left" }}><div className="tc-sidebtn-main" style={{ fontSize: 12 }}>Gestión de rangos</div><div className="tc-sidebtn-kicker">Automático y temporal</div></div><span className="tc-sidebtn-dot" />
+                      <div className={adminStyles.submenu}>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-clientes")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Gestión de rangos</div><div className="tc-sidebtn-kicker">Automático y temporal</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
                         </button>
-                        <button className={`tc-sidebtn ${tab === "clientes-web" ? "tc-sidebtn-active" : ""}`} style={{ minHeight: 48, padding: "8px 10px" }} onClick={() => setTab("clientes-web")}>
-                          <div style={{ minWidth: 0, textAlign: "left" }}><div className="tc-sidebtn-main" style={{ fontSize: 12 }}>Clientes web</div><div className="tc-sidebtn-kicker">Accesos y cuentas</div></div><span className="tc-sidebtn-dot" />
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "clientes-web" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("clientes-web")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Clientes web</div><div className="tc-sidebtn-kicker">Accesos y cuentas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
                         </button>
                       </div>
                     ) : null}
@@ -1790,14 +1791,15 @@ function AdminPage() {
           </div>
         </aside>
 
-        <main className="tc-main">
-          <section className="tc-admin-toolbar">
-            <div>
+        <main className={`tc-main ${adminStyles.main}`}>
+          <section className={`tc-admin-toolbar ${adminStyles.toolbar}`}>
+            <div className={adminStyles.toolbarCopy}>
+              <div className={adminStyles.toolbarEyebrow}><LayoutDashboard size={13} /> Centro de mando · Administración</div>
               <div className="tc-admin-toolbar-title">Panel admin</div>
               <div className="tc-sub">Control operativo, facturación y métricas en una vista limpia.</div>
             </div>
-            <div className="tc-row">
-              <span className="tc-chip">Mes</span>
+            <div className={`tc-row ${adminStyles.toolbarActions}`}>
+              <span className={`tc-chip ${adminStyles.monthBadge}`}>Mes</span>
               <input className="tc-input" value={month} onChange={(e) => setMonth(e.target.value)} placeholder="2026-02" style={{ width: 120 }} />
               <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
                 {listLoading ? "Cargando…" : "Refrescar"}
@@ -1805,7 +1807,7 @@ function AdminPage() {
             </div>
           </section>
 
-          <div className="tc-main-content">
+          <div className={`tc-main-content ${adminStyles.mainContent}`}>
 {tab === "dashboard" && <DashboardPanel month={month} />}
 
           {tab === "panel" && <OperatorPanel mode="admin" />}
