@@ -25,6 +25,7 @@ const NAV_TONES: Record<string, NavTone> = {
   "mis-clientas": { rgb: "154, 124, 255" },
   notificaciones: { rgb: "230, 92, 131" },
   "mi-factura": { rgb: "62, 229, 139", className: "invoice" },
+  "tu-sistema-xp": { rgb: "205, 157, 255" },
   panel: { rgb: "102, 166, 255" },
   equipo: { rgb: "129, 140, 248" },
   crm: { rgb: "168, 85, 247" },

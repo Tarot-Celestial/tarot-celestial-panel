@@ -8,6 +8,7 @@ import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperato
 import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
 import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
+import CentralXpPanel from "@/features/central/CentralXpPanel";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
@@ -30,7 +31,7 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, Sparkles, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -39,6 +40,7 @@ const TABS = [
   "mis-clientas",
   "notificaciones",
   "mi-factura",
+  "tu-sistema-xp",
   "panel",
   "equipo",
   "crm",
@@ -63,6 +65,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
   { key: "notificaciones", label: "Notificaciones", icon: Bell },
   { key: "mi-factura", label: "Mi factura", icon: BadgeEuro },
+  { key: "tu-sistema-xp", label: "Tu sistema XP", icon: Sparkles, kicker: "Nivel y progreso" },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -1208,6 +1211,8 @@ function CentralPage() {
           {tab === "notificaciones" && <CentralNotificationsCenter feed={notificationFeed} />}
 
           {tab === "mi-factura" && <MyInvoicePanel feed={myInvoiceFeed} />}
+
+          {tab === "tu-sistema-xp" && <CentralXpPanel />}
 
           {tab === "central" && (
             <>
