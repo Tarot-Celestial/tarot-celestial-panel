@@ -237,6 +237,22 @@ if (updErr || !updatedLead) {
     }
 
     const finalState = String(updatedLead?.estado || patch.estado || lead.estado || "nuevo");
+
+    if (action === "captado" && worker?.id) {
+      try {
+        await admin.rpc("award_worker_xp", {
+          p_worker_id: worker.id,
+          p_action_key: "client_capture",
+          p_reference_id: `captacion:${String(updatedLead.id)}`,
+          p_reference_label: clienteId ? `Cliente ${clienteId}` : `Lead ${String(updatedLead.id)}`,
+          p_origin: "captacion",
+          p_metadata: { lead_id: updatedLead.id, client_id: clienteId || null },
+        });
+      } catch (xpError) {
+        console.error("XP capture hook failed", xpError);
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       message,
