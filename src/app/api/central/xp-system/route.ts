@@ -28,7 +28,7 @@ export async function GET(req: Request) {
     const week = startOfWeek();
     const previousWeek = new Date(week); previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
     const [rulesR, ownR, workersR, rankingEventsR] = await Promise.all([
-      admin.from("worker_xp_rules").select("action_key,name,description,xp_reward,frequency,enabled,integration_status").order("created_at"),
+      admin.from("worker_xp_rules").select("id,action_key,name,description,xp_reward,frequency,enabled,integration_status,created_at,updated_at").order("created_at", { ascending: true }),
       admin.from("worker_xp_events").select("id,action_key,xp_amount,reference_label,origin,status,created_at").eq("worker_id", me.id).eq("status", "applied").order("created_at", { ascending: false }).limit(1000),
       admin.from("workers").select("id,display_name").eq("role", "central").or("is_active.is.null,is_active.eq.true"),
       admin.from("worker_xp_events").select("worker_id,xp_amount,status").eq("status", "applied"),
@@ -61,7 +61,18 @@ export async function GET(req: Request) {
       worker: { id: me.id, name: me.display_name },
       progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.level + 1, remaining_xp: Math.max(0, level.span - level.current), xp_today: sumSince(dayStart), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
       weekly,
-      rules: (rulesR.data || []).filter((r: any) => r.enabled),
+      rules: (rulesR.data || []).filter((r: any) => r.enabled === true).map((r: any) => ({
+        id: r.id,
+        action_key: String(r.action_key || ""),
+        name: String(r.name || r.action_key || "Acción XP"),
+        description: String(r.description || ""),
+        xp_reward: num(r.xp_reward),
+        frequency: String(r.frequency || ""),
+        enabled: true,
+        integration_status: r.integration_status === "connected" ? "connected" : "pending",
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+      })),
       recent: events.slice(0, 20),
       stats: { clients_captured: counts("client_capture"), repurchases: counts("repurchase"), followups: counts("followup"), consultations: counts("consultation"), positive_reviews: counts("positive_review"), missions: counts("daily_mission"), streak: null, coins: null, rewards_claimed: null, rewards_value: null },
       ranking,

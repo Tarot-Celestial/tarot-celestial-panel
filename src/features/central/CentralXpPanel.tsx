@@ -7,12 +7,20 @@ import styles from "./CentralXpPanel.module.css";
 const sb = supabaseBrowser();
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const fmt = (v: any) => new Intl.NumberFormat("es-ES").format(Number(v) || 0);
+type XpRule = { id?: string; action_key: string; name: string; description: string; xp_reward: number; frequency: string; enabled: boolean; integration_status: "connected" | "pending"; created_at?: string; updated_at?: string };
 
 export default function CentralXpPanel() {
   const [data, setData] = useState<any>(null); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
   const previousLevel = useRef<number | null>(null); const [levelUp, setLevelUp] = useState<number | null>(null);
   const load = useCallback(async (silent=false) => { if(!silent)setBusy(true); try { const {data:s}=await sb.auth.getSession(); const token=s.session?.access_token; if(!token) throw new Error("Sesión no disponible"); const r=await fetch(`/api/central/xp-system?t=${Date.now()}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||"No se pudo cargar XP"); setData((old:any)=>{ const oldLevel=old?.progress?.level ?? previousLevel.current; if(oldLevel && j.progress.level>oldLevel){setLevelUp(j.progress.level); window.setTimeout(()=>setLevelUp(null),3500);} previousLevel.current=j.progress.level; return j;}); setError(""); } catch(e:any){setError(e.message||"Error");} finally{if(!silent)setBusy(false);} },[]);
-  useEffect(()=>{load(); const id=window.setInterval(()=>load(true),30000); const vis=()=>{if(document.visibilityState==="visible")load(true)}; document.addEventListener("visibilitychange",vis); return()=>{clearInterval(id);document.removeEventListener("visibilitychange",vis)}} ,[load]);
+  useEffect(()=>{
+    load();
+    const id=window.setInterval(()=>load(true),30000);
+    const vis=()=>{if(document.visibilityState==="visible")load(true)};
+    document.addEventListener("visibilitychange",vis);
+    const channel=sb.channel("central-xp-rules-readonly").on("postgres_changes",{event:"*",schema:"public",table:"worker_xp_rules"},()=>load(true)).subscribe();
+    return()=>{clearInterval(id);document.removeEventListener("visibilitychange",vis);void sb.removeChannel(channel)}
+  },[load]);
   const maxDay=useMemo(()=>Math.max(1,...(data?.weekly||[]).map((d:any)=>Number(d.xp)||0)),[data]);
   if(!data&&!error) return <div className={styles.loading}>Cargando tu progreso XP…</div>;
   if(!data) return <div className={styles.error}>{error}<button onClick={()=>load()}>Reintentar</button></div>;
@@ -34,7 +42,7 @@ export default function CentralXpPanel() {
       <article className={styles.card}><div className={styles.cardTitle}><Trophy/><div><span>CLASIFICACIÓN</span><h2>Ranking</h2></div></div><div className={styles.ranking}>{data.ranking.map((r:any)=><div key={r.worker_id} className={r.is_me?styles.me:""}><b>#{r.position}</b><Medal size={18}/><span>{r.name}</span><small>Nivel {r.level}</small><strong>{fmt(r.xp)} XP</strong></div>)}</div></article>
     </div>
 
-    <article className={styles.card}><div className={styles.cardTitle}><Sparkles/><div><span>CONFIGURADO POR ADMINISTRACIÓN</span><h2>Acciones que dan experiencia</h2></div></div><div className={styles.rules}>{data.rules.map((r:any)=><div className={styles.rule} key={r.action_key}><div className={styles.ruleIcon}>{r.integration_status==="connected"?<Zap/>:<LockKeyhole/>}</div><div><h3>{r.name}</h3><p>{r.description||"Acción de experiencia"}</p><small>{r.frequency||"Frecuencia configurada"}</small></div><strong>+{fmt(r.xp_reward)} XP</strong><span className={styles.lock}><LockKeyhole size={13}/>{r.integration_status==="connected"?"Solo lectura":"Próximamente"}</span></div>)}</div></article>
+    <article className={styles.card}><div className={styles.cardTitle}><Sparkles/><div><span>CONFIGURADO POR ADMINISTRACIÓN</span><h2>Acciones que dan experiencia</h2></div></div><div className={styles.rules}>{data.rules.map((r:XpRule)=><div className={styles.rule} key={r.action_key}><div className={styles.ruleIcon}>{r.integration_status==="connected"?<Zap/>:<LockKeyhole/>}</div><div><h3>{r.name}</h3><p>{r.description||"Acción de experiencia"}</p><small>{r.frequency||"Frecuencia configurada"}</small></div><strong>+{fmt(r.xp_reward)} XP</strong><span className={styles.lock}><LockKeyhole size={13}/>{r.integration_status==="connected"?"Solo lectura":"Próximamente"}</span></div>)}</div></article>
 
     <div className={styles.how}><h2>¿Cómo funciona?</h2>{[["1","Gana XP","Realiza acciones importantes con tus clientas y gana experiencia."],["2","Sube de nivel","Acumula XP para subir de nivel y desbloquear nuevas ventajas."],["3","Consigue recompensas","Tu progreso podrá darte acceso a Coins, bonos, misiones y otros beneficios."]].map(x=><article key={x[0]}><b>{x[0]}</b><h3>{x[1]}</h3><p>{x[2]}</p><ChevronRight/></article>)}</div>
 
