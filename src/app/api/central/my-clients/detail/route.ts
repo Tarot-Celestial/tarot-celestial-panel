@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { calculateClientFidelity } from "@/lib/server/client-fidelity";
+import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { loadEffectiveClientRank } from "@/lib/server/client-rank-effective";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +58,21 @@ export async function GET(req: Request) {
 
     if (clientResult.error) throw clientResult.error;
     if (!clientResult.data) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
+
+    const rankNowIso = new Date().toISOString();
+    const rankSinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const rankTotals = await loadRolling30ClientTotals(admin, [clientResult.data], rankSinceIso, rankNowIso);
+    const rankWindow = rankTotals.get(String(clientResult.data.id)) || { total: 0, compras: 0 };
+    const effectiveRank = await loadEffectiveClientRank(admin, id, Number(rankWindow.total || 0));
+    const clientWithRank = {
+      ...clientResult.data,
+      rango_automatico: effectiveRank.automatic,
+      rango_efectivo: effectiveRank.effective,
+      rango_intervencion: effectiveRank.override,
+      rango_actual: effectiveRank.effective,
+      rango_gasto_30d: Number((rankWindow.total || 0).toFixed(2)),
+      rango_compras_30d: Number(rankWindow.compras || 0),
+    };
 
     const responsibleId = String(
       clientResult.data.captured_by_worker_id ||
@@ -147,7 +164,7 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      cliente: clientResult.data,
+      cliente: clientWithRank,
       responsable: responsible,
       ultima_compra: latestPurchase,
       resumen: {

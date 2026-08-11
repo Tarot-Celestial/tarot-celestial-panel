@@ -8,6 +8,7 @@ import {
   MoreHorizontal,
   Phone,
   ShoppingBag,
+  Award,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -28,6 +29,13 @@ type ClientData = Record<string, any> & {
   avatar_url?: string | null;
   photo_url?: string | null;
   foto_url?: string | null;
+  rango_actual?: string | null;
+  rango_efectivo?: string | null;
+  rango_automatico?: string | null;
+  rango_intervencion?: {
+    intervention_type?: string | null;
+    ends_at?: string | null;
+  } | null;
 };
 
 type PurchaseData = {
@@ -169,6 +177,7 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones", filter: `cliente_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "client_favorite_tarotists", filter: `client_id=eq.${clientId}` }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups", filter: `client_id=eq.${clientId}` }, refresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides", filter: `client_id=eq.${clientId}` }, refresh)
       .subscribe();
 
     return () => {
@@ -187,6 +196,17 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
   const purchaseFreeMinutes = Math.max(0, Number(purchase?.minutes_free || 0));
   const purchaseNormalMinutes = Math.max(0, Number(purchase?.minutes_normal || 0));
   const purchaseMinutesKnown = purchaseFreeMinutes > 0 || purchaseNormalMinutes > 0;
+  const currentRank = String(client?.rango_efectivo || client?.rango_actual || "").trim().toLowerCase();
+  const rankClass =
+    currentRank === "oro" ? styles.rankOro :
+    currentRank === "plata" ? styles.rankPlata :
+    currentRank === "bronce" ? styles.rankBronce :
+    styles.rankNeutral;
+  const rankLabel =
+    currentRank === "oro" ? "ORO" :
+    currentRank === "plata" ? "PLATA" :
+    currentRank === "bronce" ? "BRONCE" :
+    "SIN RANGO";
 
   if (loading) {
     return <section className={styles.stateCard}>Cargando ficha de la clienta…</section>;
@@ -210,13 +230,17 @@ export default function MyClientProfile({ clientId, onBack }: Props) {
       </button>
 
       <div className={styles.hero}>
-        <div className={styles.identity}>
+        <div className={`${styles.identity} ${rankClass}`}>
           <div className={styles.avatar}>
             {photo ? <img src={photo} alt="" /> : <span>{getInitials(client)}</span>}
           </div>
           <div className={styles.identityCopy}>
             <div className={styles.nameRow}>
               <h2 id="my-client-profile-title">{name}</h2>
+              <span className={styles.rankBadge} aria-label={`Rango actual ${rankLabel}`}>
+                <Award size={15} aria-hidden="true" />
+                {rankLabel}
+              </span>
               <span className={`${styles.status} ${styles[status.tone]}`}>{status.label}</span>
             </div>
             <div className={styles.contactLine}>
