@@ -9,6 +9,7 @@ import CentralStatsCards, { type CentralStatsData } from "@/features/central/Cen
 import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralXpPanel from "@/features/central/CentralXpPanel";
+import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
@@ -41,6 +42,7 @@ const TABS = [
   "notificaciones",
   "mi-factura",
   "tu-sistema-xp",
+  "tu-sistema-xp-niveles",
   "panel",
   "equipo",
   "crm",
@@ -65,7 +67,16 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
   { key: "notificaciones", label: "Notificaciones", icon: Bell },
   { key: "mi-factura", label: "Mi factura", icon: BadgeEuro },
-  { key: "tu-sistema-xp", label: "Tu sistema XP", icon: Sparkles, kicker: "Nivel y progreso" },
+  {
+    key: "tu-sistema-xp",
+    label: "Tu sistema XP",
+    icon: Sparkles,
+    kicker: "Nivel y progreso",
+    children: [
+      { key: "tu-sistema-xp", label: "Mi progreso", kicker: "XP, acciones y actividad" },
+      { key: "tu-sistema-xp-niveles", label: "Niveles", kicker: "Bronce → Leyenda" },
+    ],
+  },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -1213,6 +1224,7 @@ function CentralPage() {
           {tab === "mi-factura" && <MyInvoicePanel feed={myInvoiceFeed} />}
 
           {tab === "tu-sistema-xp" && <CentralXpPanel />}
+          {tab === "tu-sistema-xp-niveles" && <CentralXpLevelsPanel />}
 
           {tab === "central" && (
             <>

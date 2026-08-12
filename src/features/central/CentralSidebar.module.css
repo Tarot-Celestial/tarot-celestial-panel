@@ -200,3 +200,136 @@
     transition: none !important;
   }
 }
+
+
+.navGroup {
+  display: grid;
+  gap: 0;
+}
+
+.chevron {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  color: rgba(var(--nav-rgb), 0.8);
+  border: 1px solid rgba(var(--nav-rgb), 0.14);
+  background: rgba(var(--nav-rgb), 0.035);
+  transition: transform 180ms ease, color 180ms ease, border-color 180ms ease, background 180ms ease;
+}
+
+.chevron:hover {
+  color: rgb(var(--nav-rgb));
+  border-color: rgba(var(--nav-rgb), 0.34);
+  background: rgba(var(--nav-rgb), 0.09);
+}
+
+.chevron svg {
+  transition: transform 220ms ease;
+}
+
+.chevronOpen svg {
+  transform: rotate(180deg);
+}
+
+.subnav {
+  position: relative;
+  display: grid;
+  max-height: 0;
+  opacity: 0;
+  margin: 0 8px 0 25px;
+  overflow: hidden;
+  border-left: 1px solid rgba(var(--nav-rgb), 0.18);
+  transition: max-height 240ms ease, opacity 180ms ease, margin 220ms ease, padding 220ms ease;
+}
+
+.subnav::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(var(--nav-rgb), 0.58), transparent);
+  box-shadow: 0 0 12px rgba(var(--nav-rgb), 0.15);
+}
+
+.subnavOpen {
+  max-height: 150px;
+  opacity: 1;
+  margin-top: 7px;
+  margin-bottom: 8px;
+  padding: 4px 0 4px 12px;
+}
+
+.subButton {
+  min-height: 42px;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: rgba(235, 228, 245, 0.68);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: color 170ms ease, background 170ms ease, border-color 170ms ease, transform 170ms ease;
+}
+
+.subButton:hover {
+  color: #fff;
+  transform: translateX(2px);
+  background: rgba(var(--nav-rgb), 0.06);
+  border-color: rgba(var(--nav-rgb), 0.13);
+}
+
+.subButton > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.subButton b {
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.subButton small {
+  font-size: 9px;
+  color: rgba(196, 185, 208, 0.58);
+}
+
+.subDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: rgba(var(--nav-rgb), 0.23);
+  box-shadow: 0 0 8px rgba(var(--nav-rgb), 0.08);
+}
+
+.subButtonActive {
+  color: #fff;
+  border-color: rgba(var(--nav-rgb), 0.31);
+  background:
+    radial-gradient(circle at 3% 50%, rgba(var(--nav-rgb), 0.14), transparent 34%),
+    rgba(var(--nav-rgb), 0.075);
+  box-shadow: inset 2px 0 rgb(var(--nav-rgb)), 0 0 18px rgba(var(--nav-rgb), 0.055);
+}
+
+.subButtonActive .subDot {
+  background: rgb(var(--nav-rgb));
+  box-shadow: 0 0 12px rgba(var(--nav-rgb), 0.72);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .chevron svg,
+  .subnav,
+  .subButton {
+    transition: none !important;
+  }
+}

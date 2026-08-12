@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
+import { xpLevelProgress } from "@/lib/xp-levels";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const num = (v: unknown) => Number(v) || 0;
-function levelFor(xp: number) {
-  const level = Math.max(1, Math.floor(Math.sqrt(Math.max(0, xp) / 100)) + 1);
-  const floor = (level - 1) * (level - 1) * 100;
-  const next = level * level * 100;
-  return { level, floor, next, current: Math.max(0, xp - floor), span: next - floor };
-}
 function startOfUtcDay(offsetDays = 0) {
   const d = new Date();
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + offsetDays));
@@ -37,7 +32,7 @@ export async function GET(req: Request) {
 
     const events = ownR.data || [];
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
-    const level = levelFor(total);
+    const level = xpLevelProgress(total);
     const dayStart = startOfUtcDay().getTime();
     const monthStart = startOfUtcMonth().getTime();
     const weekStart = week.getTime();
@@ -53,13 +48,13 @@ export async function GET(req: Request) {
 
     const totals = new Map<string, number>();
     for (const e of rankingEventsR.data || []) totals.set(String((e as any).worker_id), (totals.get(String((e as any).worker_id)) || 0) + num((e as any).xp_amount));
-    const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: levelFor(xp).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
+    const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: xpLevelProgress(xp).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
 
     const counts = (key: string) => events.filter((e: any) => e.action_key === key).length;
     return NextResponse.json({
       ok: true,
       worker: { id: me.id, name: me.display_name },
-      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.level + 1, remaining_xp: Math.max(0, level.span - level.current), xp_today: sumSince(dayStart), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
+      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, xp_today: sumSince(dayStart), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
       weekly,
       rules: (rulesR.data || []).filter((r: any) => r.enabled === true).map((r: any) => ({
         id: r.id,

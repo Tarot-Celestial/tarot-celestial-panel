@@ -1,30 +1,34 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Award, BarChart3, ChevronRight, LockKeyhole, Medal, RefreshCw, Shield, Sparkles, Star, Trophy, Zap } from "lucide-react";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { useCentralXpData } from "./useCentralXpData";
 import styles from "./CentralXpPanel.module.css";
 
-const sb = supabaseBrowser();
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const fmt = (v: any) => new Intl.NumberFormat("es-ES").format(Number(v) || 0);
 type XpRule = { id?: string; action_key: string; name: string; description: string; xp_reward: number; frequency: string; enabled: boolean; integration_status: "connected" | "pending"; created_at?: string; updated_at?: string };
 
 export default function CentralXpPanel() {
-  const [data, setData] = useState<any>(null); const [error, setError] = useState(""); const [busy, setBusy] = useState(false);
-  const previousLevel = useRef<number | null>(null); const [levelUp, setLevelUp] = useState<number | null>(null);
-  const load = useCallback(async (silent=false) => { if(!silent)setBusy(true); try { const {data:s}=await sb.auth.getSession(); const token=s.session?.access_token; if(!token) throw new Error("Sesión no disponible"); const r=await fetch(`/api/central/xp-system?t=${Date.now()}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"}); const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.error||"No se pudo cargar XP"); setData((old:any)=>{ const oldLevel=old?.progress?.level ?? previousLevel.current; if(oldLevel && j.progress.level>oldLevel){setLevelUp(j.progress.level); window.setTimeout(()=>setLevelUp(null),3500);} previousLevel.current=j.progress.level; return j;}); setError(""); } catch(e:any){setError(e.message||"Error");} finally{if(!silent)setBusy(false);} },[]);
-  useEffect(()=>{
-    load();
-    const id=window.setInterval(()=>load(true),30000);
-    const vis=()=>{if(document.visibilityState==="visible")load(true)};
-    document.addEventListener("visibilitychange",vis);
-    const channel=sb.channel("central-xp-rules-readonly").on("postgres_changes",{event:"*",schema:"public",table:"worker_xp_rules"},()=>load(true)).subscribe();
-    return()=>{clearInterval(id);document.removeEventListener("visibilitychange",vis);void sb.removeChannel(channel)}
-  },[load]);
+  const { data, error, busy, load } = useCentralXpData();
+  const previousLevel = useRef<number | null>(null);
+  const [levelUp, setLevelUp] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    const oldLevel = previousLevel.current;
+    if (oldLevel && data.progress.level > oldLevel) {
+      setLevelUp(data.progress.level);
+      const timer = window.setTimeout(() => setLevelUp(null), 3500);
+      previousLevel.current = data.progress.level;
+      return () => window.clearTimeout(timer);
+    }
+    previousLevel.current = data.progress.level;
+  }, [data]);
+
   const maxDay=useMemo(()=>Math.max(1,...(data?.weekly||[]).map((d:any)=>Number(d.xp)||0)),[data]);
   if(!data&&!error) return <div className={styles.loading}>Cargando tu progreso XP…</div>;
   if(!data) return <div className={styles.error}>{error}<button onClick={()=>load()}>Reintentar</button></div>;
-  const p=data.progress; const percent=Math.min(100,Math.max(0,(p.level_xp/Math.max(1,p.level_span))*100));
+  const p=data.progress; const percent=p.next_level ? Math.min(100,Math.max(0,(p.level_xp/Math.max(1,p.level_span))*100)) : 100;
   const comparison=p.previous_week_xp>0?Math.round(((p.xp_week-p.previous_week_xp)/p.previous_week_xp)*100):null;
   return <section className={styles.page}>
     {levelUp&&<div className={styles.levelUp}><Sparkles/> ¡SUBISTE DE NIVEL! <strong>NIVEL {levelUp}</strong></div>}
@@ -32,7 +36,7 @@ export default function CentralXpPanel() {
       <div className={styles.medallion}><Shield/><span>{p.level}</span></div>
       <div className={styles.heroText}><span className={styles.eyebrow}>TU PROGRESIÓN PERSONAL</span><h1>Tu sistema XP</h1><p>Cada acción cuenta. Suma XP y sube de nivel.</p><div className={styles.levelLine}><b>Nivel {p.level}</b><span>Telefonista · {data.worker.name}</span></div></div>
       <button className={styles.refresh} onClick={()=>load()} disabled={busy}><RefreshCw size={16}/> {busy?"Actualizando…":"Actualizar"}</button>
-      <div className={styles.progressBox}><div><span>XP ACTUAL</span><strong>{fmt(p.total_xp)} XP</strong></div><div><span>PRÓXIMO NIVEL</span><strong>Nivel {p.next_level}</strong></div><div className={styles.track}><i style={{width:`${percent}%`}}/></div><small>{fmt(p.level_xp)} / {fmt(p.level_span)} XP · faltan {fmt(p.remaining_xp)} XP</small></div>
+      <div className={styles.progressBox}><div><span>XP ACTUAL</span><strong>{fmt(p.total_xp)} XP</strong></div><div><span>PRÓXIMO NIVEL</span><strong>{p.next_level ? `Nivel ${p.next_level}` : "Nivel máximo"}</strong></div><div className={styles.track}><i style={{width:`${percent}%`}}/></div><small>{p.next_level ? `${fmt(p.level_xp)} / ${fmt(p.level_span)} XP · faltan ${fmt(p.remaining_xp)} XP` : `Nivel 20 alcanzado · ${fmt(p.total_xp)} XP totales`}</small></div>
     </header>
 
     <div className={styles.metrics}>{[["XP hoy",p.xp_today,Zap],["XP esta semana",p.xp_week,BarChart3],["XP este mes",p.xp_month,Star],["XP total",p.total_xp,Trophy]].map(([l,v,I]:any)=><article key={l}><I/><span>{l}</span><strong>{fmt(v)} XP</strong></article>)}</div>
@@ -48,7 +52,7 @@ export default function CentralXpPanel() {
 
     <div className={styles.grid}>
       <article className={styles.card}><div className={styles.cardTitle}><Award/><div><span>HISTORIAL REAL</span><h2>Actividad reciente</h2></div></div><div className={styles.activity}>{data.recent.length?data.recent.map((e:any)=><div key={e.id}><span>{new Date(e.created_at).toLocaleString("es-ES",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span><b>{e.reference_label||e.action_key.replaceAll("_"," ")}</b><strong className={Number(e.xp_amount)>=0?styles.positive:styles.negative}>{Number(e.xp_amount)>=0?"+":""}{fmt(e.xp_amount)} XP</strong></div>):<p>Sin actividad XP todavía.</p>}</div></article>
-      <article className={`${styles.card} ${styles.next}`}><div className={styles.cardTitle}><LockKeyhole/><div><span>PRÓXIMO NIVEL</span><h2>Nivel {p.next_level}</h2></div></div><strong>Faltan {fmt(p.remaining_xp)} XP</strong><div className={styles.benefits}><LockKeyhole/><b>Beneficios del próximo nivel</b><span>Beneficios por definir · Próximamente</span></div></article>
+      <article className={`${styles.card} ${styles.next}`}><div className={styles.cardTitle}><LockKeyhole/><div><span>PRÓXIMO NIVEL</span><h2>{p.next_level ? `Nivel ${p.next_level}` : "Leyenda · Nivel 20"}</h2></div></div><strong>{p.next_level ? `Faltan ${fmt(p.remaining_xp)} XP` : "Nivel máximo alcanzado"}</strong><div className={styles.benefits}><LockKeyhole/><b>Beneficios del próximo nivel</b><span>Beneficios por definir · Próximamente</span></div></article>
     </div>
     {error&&<div className={styles.softError}>{error}</div>}
   </section>
