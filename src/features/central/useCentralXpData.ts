@@ -42,6 +42,35 @@ export type CentralXpData = {
     reward_label: string | null;
   }>;
   level_config_persisted?: boolean;
+  reward_system_available?: boolean;
+  reward_claims: Array<{
+    id: string;
+    reward_kind: "level" | "category";
+    reward_key: string;
+    level: number | null;
+    tier_key: string | null;
+    reward_type: string | null;
+    reward_amount: number | null;
+    reward_label: string | null;
+    source_event_id: string | null;
+    status: string;
+    seen_at: string | null;
+    created_at: string;
+  }>;
+  pending_reward: {
+    id: string;
+    reward_kind: "level" | "category";
+    reward_key: string;
+    level: number | null;
+    tier_key: string | null;
+    reward_type: string | null;
+    reward_amount: number | null;
+    reward_label: string | null;
+    source_event_id: string | null;
+    status: string;
+    seen_at: string | null;
+    created_at: string;
+  } | null;
   weekly: Array<{ date: string; xp: number }>;
   rules: Array<{
     id?: string;
@@ -115,6 +144,7 @@ export function useCentralXpData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims" }, () => void load(true))
       .subscribe();
 
     return () => {
@@ -124,5 +154,20 @@ export function useCentralXpData() {
     };
   }, [load]);
 
-  return { data, error, busy, load };
+  const acknowledgeReward = useCallback(async (claimId: string) => {
+    const { data: sessionData } = await sb.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error("Sesión no disponible");
+    const response = await fetch("/api/central/xp-system", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: "ack_reward_claim", claim_id: claimId }),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo confirmar la recompensa");
+    setData((current) => current ? { ...current, pending_reward: null } : current);
+    void load(true);
+  }, [load]);
+
+  return { data, error, busy, load, acknowledgeReward };
 }

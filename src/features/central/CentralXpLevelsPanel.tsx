@@ -11,10 +11,15 @@ import {
   Sparkles,
   Star,
   Trophy,
+  X,
+  Coins,
+  Gift,
 } from "lucide-react";
-import { buildConfiguredLevels } from "@/lib/xp-levels";
+import { useState } from "react";
+import { buildConfiguredLevels, type XpConfiguredLevel } from "@/lib/xp-levels";
 import { useCentralXpData } from "./useCentralXpData";
 import styles from "./CentralXpLevelsPanel.module.css";
+import CentralXpRewardCelebration from "./CentralXpRewardCelebration";
 
 const fmt = (value: number) => new Intl.NumberFormat("es-ES").format(Number(value) || 0);
 
@@ -27,16 +32,20 @@ const TIER_ICONS = {
   legend: Sparkles,
 } as const;
 
-function rewardText(rewardType: string | null, rewardAmount: number | null, rewardLabel: string | null) {
-  if (rewardLabel) return rewardLabel;
+function rewardValue(rewardType: string | null, rewardAmount: number | null) {
   if (rewardType === "coins" && rewardAmount != null) return `${fmt(rewardAmount)} Coins`;
   if (rewardType === "bonus" && rewardAmount != null) return `${fmt(rewardAmount)} € de bono`;
   if (rewardType && rewardAmount != null) return `${fmt(rewardAmount)} · ${rewardType}`;
-  return "Beneficios por definir · Próximamente";
+  return null;
+}
+
+function rewardSummary(rewardType: string | null, rewardAmount: number | null, rewardLabel: string | null) {
+  return rewardValue(rewardType, rewardAmount) || rewardLabel || "Beneficios por definir";
 }
 
 export default function CentralXpLevelsPanel() {
-  const { data, error, busy, load } = useCentralXpData();
+  const { data, error, busy, load, acknowledgeReward } = useCentralXpData();
+  const [selectedLevel, setSelectedLevel] = useState<XpConfiguredLevel | null>(null);
 
   if (!data && !error) return <div className={styles.loading}>Cargando niveles…</div>;
   if (!data) {
@@ -61,6 +70,7 @@ export default function CentralXpLevelsPanel() {
 
   return (
     <section className={styles.page}>
+      <CentralXpRewardCelebration data={data} onContinue={acknowledgeReward} />
       <header className={styles.hero}>
         <div className={`${styles.heroBadge} ${styles[`tone_${currentTier?.key || "bronze"}`] || ""}`}>
           <Shield />
@@ -195,14 +205,20 @@ export default function CentralXpLevelsPanel() {
                   const done = progress.level > level.level;
                   const active = progress.level === level.level;
                   return (
-                    <span key={level.level} className={done ? styles.levelDone : active ? styles.levelActive : ""}>
+                    <button
+                      type="button"
+                      key={level.level}
+                      className={`${styles.levelStep} ${done ? styles.levelDone : active ? styles.levelActive : styles.levelLocked}`}
+                      onClick={() => setSelectedLevel(level)}
+                      aria-label={`Consultar Nivel ${level.level}`}
+                    >
                       {done ? <CheckCircle2 size={13} /> : active ? <Star size={13} /> : <LockKeyhole size={12} />}
                       <span>
                         <b>Nivel {level.level}</b>
                         <small>{level.next_active_level ? `${fmt(level.xp_to_next || 0)} XP → Nivel ${level.next_active_level}` : "Nivel máximo"}</small>
-                        {level.reward_type || level.reward_label ? <em>{rewardText(level.reward_type, level.reward_amount, level.reward_label)}</em> : null}
+                        <em>{rewardSummary(level.reward_type, level.reward_amount, level.reward_label)}</em>
                       </span>
-                    </span>
+                    </button>
                   );
                 })}
               </div>
@@ -211,7 +227,8 @@ export default function CentralXpLevelsPanel() {
                 <LockKeyhole size={16} />
                 <div>
                   <b>Recompensa especial de categoría</b>
-                  <span>{rewardText(tier.reward_type, tier.reward_amount, tier.reward_label)}</span>
+                  <span>{rewardSummary(tier.reward_type, tier.reward_amount, tier.reward_label)}</span>
+                  {rewardValue(tier.reward_type, tier.reward_amount) && tier.reward_label ? <small>{tier.reward_label}</small> : null}
                 </div>
               </div>
             </article>
@@ -225,6 +242,40 @@ export default function CentralXpLevelsPanel() {
         <p>Actualmente se necesitan <strong>{fmt(totalGoal)} XP acumulados</strong> para alcanzar el último nivel activo.</p>
         <small>El XP histórico no cambia cuando Administración modifica los requisitos.</small>
       </article>
+
+      {selectedLevel ? (() => {
+        const tier = data.tier_config.find((item) => item.key === selectedLevel.tier_key);
+        const reached = progress.total_xp >= selectedLevel.cumulative_xp;
+        const reward = rewardValue(selectedLevel.reward_type, selectedLevel.reward_amount);
+        return (
+          <div className={styles.levelDetailBackdrop} role="dialog" aria-modal="true" aria-label={`Detalle Nivel ${selectedLevel.level}`} onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setSelectedLevel(null);
+          }}>
+            <article className={`${styles.levelDetail} ${styles[`tone_${selectedLevel.tier_key}`] || ""}`}>
+              <button type="button" className={styles.closeDetail} onClick={() => setSelectedLevel(null)} aria-label="Cerrar"><X size={18} /></button>
+              <div className={styles.detailBadge}><Star /><strong>{selectedLevel.level}</strong></div>
+              <span className={styles.detailEyebrow}>NIVEL {selectedLevel.level}</span>
+              <h2>{tier?.name || selectedLevel.tier_key}</h2>
+              <div className={reached ? styles.detailReached : styles.detailLocked}>
+                {reached ? <CheckCircle2 size={16} /> : <LockKeyhole size={16} />}
+                <span>{reached ? "Nivel alcanzado" : "Todavía no has alcanzado este nivel"}</span>
+              </div>
+              <div className={styles.detailStats}>
+                <div><span>REQUISITO</span><strong>{fmt(selectedLevel.cumulative_xp)} XP acumulados</strong></div>
+                <div><span>{selectedLevel.next_active_level ? `PARA ALCANZAR NIVEL ${selectedLevel.next_active_level}` : "NIVEL MÁXIMO"}</span><strong>{selectedLevel.next_active_level ? `${fmt(selectedLevel.xp_to_next || 0)} XP adicionales` : "Progresión completada"}</strong></div>
+              </div>
+              <div className={styles.detailReward}>
+                {selectedLevel.reward_type === "coins" ? <Coins /> : <Gift />}
+                <div>
+                  <span>RECOMPENSA DEL NIVEL</span>
+                  <strong>{reward || (selectedLevel.reward_label ? "Recompensa configurada" : "Beneficios por definir")}</strong>
+                  {selectedLevel.reward_label ? <p>“{selectedLevel.reward_label}”</p> : null}
+                </div>
+              </div>
+            </article>
+          </div>
+        );
+      })() : null}
 
       {!data.level_config_persisted ? (
         <div className={styles.softError}>La configuración persistente de niveles todavía no está instalada. Ejecuta el SQL de esta actualización.</div>

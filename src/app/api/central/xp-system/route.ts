@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
-import { configuredXpProgress } from "@/lib/xp-levels";
+import { buildConfiguredLevels, configuredXpProgress } from "@/lib/xp-levels";
 import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
 
 export const runtime = "nodejs";
@@ -13,6 +13,128 @@ function startOfUtcDay(offsetDays = 0) {
 }
 function startOfUtcMonth() { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); }
 function startOfWeek() { const d = startOfUtcDay(); const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() - day + 1); return d; }
+
+function rewardTablesMissing(error: { code?: string; message?: string } | null | undefined) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+  return code === "42P01" || code === "PGRST205" || message.includes("worker_xp_reward_claims") || message.includes("worker_xp_reward_processing");
+}
+
+async function processNewXpRewards(
+  admin: ReturnType<typeof getAdminClient>,
+  workerId: string,
+  events: any[],
+  levelConfig: Awaited<ReturnType<typeof loadXpLevelConfiguration>>,
+) {
+  const eventIds = events.map((event) => String(event.id)).filter(Boolean);
+  if (!eventIds.length) return { available: true };
+
+  const processedR = await admin
+    .from("worker_xp_reward_processing")
+    .select("event_id")
+    .eq("worker_id", workerId)
+    .in("event_id", eventIds);
+
+  if (processedR.error) {
+    if (rewardTablesMissing(processedR.error)) return { available: false };
+    throw processedR.error;
+  }
+
+  const processed = new Set((processedR.data || []).map((row: any) => String(row.event_id)));
+  const pending = events
+    .filter((event) => !processed.has(String(event.id)))
+    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() || String(a.id).localeCompare(String(b.id)));
+
+  if (!pending.length) return { available: true };
+
+  const pendingXp = pending.reduce((sum, event) => sum + num(event.xp_amount), 0);
+  let runningXp = Math.max(0, events.reduce((sum, event) => sum + num(event.xp_amount), 0) - pendingXp);
+  const configuredLevels = buildConfiguredLevels(levelConfig.levels);
+  const firstLevelByTier = new Map<string, number>();
+  for (const level of configuredLevels) {
+    if (!firstLevelByTier.has(level.tier_key)) firstLevelByTier.set(level.tier_key, level.level);
+  }
+
+  for (const event of pending) {
+    const amount = num(event.xp_amount);
+    const beforeXp = runningXp;
+    const afterXp = Math.max(0, runningXp + amount);
+    const before = configuredXpProgress(beforeXp, levelConfig.levels, levelConfig.tiers);
+    const after = configuredXpProgress(afterXp, levelConfig.levels, levelConfig.tiers);
+
+    if (amount > 0 && after.level > before.level) {
+      const crossed = configuredLevels.filter((level) => level.level > before.level && level.level <= after.level);
+      for (const level of crossed) {
+        if (level.reward_type || level.reward_label) {
+          const claim = await admin.from("worker_xp_reward_claims").upsert({
+            worker_id: workerId,
+            reward_kind: "level",
+            reward_key: `level:${level.level}`,
+            level: level.level,
+            tier_key: level.tier_key,
+            reward_type: level.reward_type,
+            reward_amount: level.reward_amount,
+            reward_label: level.reward_label,
+            source_event_id: String(event.id),
+            status: "granted",
+          }, { onConflict: "worker_id,reward_kind,reward_key", ignoreDuplicates: true });
+          if (claim.error) throw claim.error;
+        }
+
+        if (firstLevelByTier.get(level.tier_key) === level.level) {
+          const tier = levelConfig.tiers.find((item) => item.key === level.tier_key);
+          if (tier && (tier.reward_type || tier.reward_label)) {
+            const claim = await admin.from("worker_xp_reward_claims").upsert({
+              worker_id: workerId,
+              reward_kind: "category",
+              reward_key: `tier:${tier.key}`,
+              level: level.level,
+              tier_key: tier.key,
+              reward_type: tier.reward_type,
+              reward_amount: tier.reward_amount,
+              reward_label: tier.reward_label,
+              source_event_id: String(event.id),
+              status: "granted",
+            }, { onConflict: "worker_id,reward_kind,reward_key", ignoreDuplicates: true });
+            if (claim.error) throw claim.error;
+          }
+        }
+      }
+    }
+
+    const marker = await admin.from("worker_xp_reward_processing").upsert({
+      event_id: String(event.id),
+      worker_id: workerId,
+      processed_at: new Date().toISOString(),
+      outcome: amount > 0 && after.level > before.level ? `level:${before.level}->${after.level}` : "no_level_change",
+    }, { onConflict: "event_id", ignoreDuplicates: true });
+    if (marker.error) throw marker.error;
+    runningXp = afterXp;
+  }
+
+  return { available: true };
+}
+
+async function rewardSummary(admin: ReturnType<typeof getAdminClient>, workerId: string) {
+  const claimsR = await admin
+    .from("worker_xp_reward_claims")
+    .select("id,reward_kind,reward_key,level,tier_key,reward_type,reward_amount,reward_label,source_event_id,status,seen_at,created_at")
+    .eq("worker_id", workerId)
+    .eq("status", "granted")
+    .order("created_at", { ascending: false });
+
+  if (claimsR.error) {
+    if (rewardTablesMissing(claimsR.error)) return { available: false, claims: [], pending: null, coins: null, count: null };
+    throw claimsR.error;
+  }
+
+  const claims = claimsR.data || [];
+  const coins = claims
+    .filter((claim: any) => claim.reward_type === "coins")
+    .reduce((sum: number, claim: any) => sum + num(claim.reward_amount), 0);
+  const pending = claims.find((claim: any) => !claim.seen_at) || null;
+  return { available: true, claims, pending, coins, count: claims.length };
+}
 
 export async function GET(req: Request) {
   try {
@@ -35,6 +157,12 @@ export async function GET(req: Request) {
     const events = ownR.data || [];
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
     const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
+
+    const processing = await processNewXpRewards(admin, String(me.id), events, levelConfig);
+    const rewards = processing.available
+      ? await rewardSummary(admin, String(me.id))
+      : { available: false, claims: [], pending: null, coins: null, count: null };
+
     const dayStart = startOfUtcDay().getTime();
     const monthStart = startOfUtcMonth().getTime();
     const weekStart = week.getTime();
@@ -60,6 +188,9 @@ export async function GET(req: Request) {
       level_config: levelConfig.levels,
       tier_config: levelConfig.tiers,
       level_config_persisted: levelConfig.persisted,
+      reward_system_available: rewards.available,
+      reward_claims: rewards.claims,
+      pending_reward: rewards.pending,
       weekly,
       rules: (rulesR.data || []).filter((r: any) => r.enabled === true).map((r: any) => ({
         id: r.id,
@@ -74,9 +205,42 @@ export async function GET(req: Request) {
         updated_at: r.updated_at,
       })),
       recent: events.slice(0, 20),
-      stats: { clients_captured: counts("client_capture"), repurchases: counts("repurchase"), followups: counts("followup"), consultations: counts("consultation"), positive_reviews: counts("positive_review"), missions: counts("daily_mission"), streak: null, coins: null, rewards_claimed: null, rewards_value: null },
+      stats: { clients_captured: counts("client_capture"), repurchases: counts("repurchase"), followups: counts("followup"), consultations: counts("consultation"), positive_reviews: counts("positive_review"), missions: counts("daily_mission"), streak: null, coins: rewards.coins, rewards_claimed: rewards.count, rewards_value: rewards.coins },
       ranking,
     });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const me = await workerFromRequest(req);
+    if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (me.role !== "central" && me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+
+    const body = await req.json();
+    const op = String(body?.op || "");
+    if (op !== "ack_reward_claim") return NextResponse.json({ ok: false, error: "INVALID_OPERATION" }, { status: 400 });
+
+    const claimId = String(body?.claim_id || "");
+    if (!claimId) return NextResponse.json({ ok: false, error: "CLAIM_REQUIRED" }, { status: 400 });
+
+    const admin = getAdminClient();
+    const updated = await admin
+      .from("worker_xp_reward_claims")
+      .update({ seen_at: new Date().toISOString() })
+      .eq("id", claimId)
+      .eq("worker_id", String(me.id))
+      .is("seen_at", null)
+      .select("id")
+      .maybeSingle();
+
+    if (updated.error) {
+      if (rewardTablesMissing(updated.error)) return NextResponse.json({ ok: false, error: "REWARD_SYSTEM_NOT_INSTALLED" }, { status: 409 });
+      throw updated.error;
+    }
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

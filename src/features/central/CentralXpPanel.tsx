@@ -1,29 +1,16 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { Award, BarChart3, ChevronRight, LockKeyhole, Medal, RefreshCw, Shield, Sparkles, Star, Trophy, Zap } from "lucide-react";
 import { useCentralXpData } from "./useCentralXpData";
 import styles from "./CentralXpPanel.module.css";
+import CentralXpRewardCelebration from "./CentralXpRewardCelebration";
 
 const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const fmt = (v: any) => new Intl.NumberFormat("es-ES").format(Number(v) || 0);
 type XpRule = { id?: string; action_key: string; name: string; description: string; xp_reward: number; frequency: string; enabled: boolean; integration_status: "connected" | "pending"; created_at?: string; updated_at?: string };
 
 export default function CentralXpPanel() {
-  const { data, error, busy, load } = useCentralXpData();
-  const previousLevel = useRef<number | null>(null);
-  const [levelUp, setLevelUp] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!data) return;
-    const oldLevel = previousLevel.current;
-    if (oldLevel && data.progress.level > oldLevel) {
-      setLevelUp(data.progress.level);
-      const timer = window.setTimeout(() => setLevelUp(null), 3500);
-      previousLevel.current = data.progress.level;
-      return () => window.clearTimeout(timer);
-    }
-    previousLevel.current = data.progress.level;
-  }, [data]);
+  const { data, error, busy, load, acknowledgeReward } = useCentralXpData();
 
   const maxDay=useMemo(()=>Math.max(1,...(data?.weekly||[]).map((d:any)=>Number(d.xp)||0)),[data]);
   if(!data&&!error) return <div className={styles.loading}>Cargando tu progreso XP…</div>;
@@ -31,7 +18,7 @@ export default function CentralXpPanel() {
   const p=data.progress; const percent=p.next_level ? Math.min(100,Math.max(0,(p.level_xp/Math.max(1,p.level_span))*100)) : 100;
   const comparison=p.previous_week_xp>0?Math.round(((p.xp_week-p.previous_week_xp)/p.previous_week_xp)*100):null;
   return <section className={styles.page}>
-    {levelUp&&<div className={styles.levelUp}><Sparkles/> ¡SUBISTE DE NIVEL! <strong>NIVEL {levelUp}</strong></div>}
+    <CentralXpRewardCelebration data={data} onContinue={acknowledgeReward} />
     <header className={styles.hero}>
       <div className={styles.medallion}><Shield/><span>{p.level}</span></div>
       <div className={styles.heroText}><span className={styles.eyebrow}>TU PROGRESIÓN PERSONAL</span><h1>Tu sistema XP</h1><p>Cada acción cuenta. Suma XP y sube de nivel.</p><div className={styles.levelLine}><b>Nivel {p.level}</b><span>Telefonista · {data.worker.name}</span></div></div>
