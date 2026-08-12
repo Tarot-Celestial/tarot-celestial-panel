@@ -41,6 +41,7 @@ const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/Clien
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
+const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -149,6 +150,7 @@ type TabKey =
   | "rangos-clientes"
   | "clientes-web"
   | "sistema-xp"
+  | "sistema-xp-niveles"
   | "crm"
   | "chat"
   | "captacion"
@@ -275,6 +277,7 @@ function AdminPage() {
   const [backgroundReady, setBackgroundReady] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
+  const [xpMenuOpen, setXpMenuOpen] = useState(false);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -302,10 +305,11 @@ function AdminPage() {
       return;
     }
 
-    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web"]);
+    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "sistema-xp-niveles"]);
     if (allowedTabs.has(requestedTab as any)) {
       setTab(requestedTab as TabKey);
       if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web") setRanksMenuOpen(true);
+      if (requestedTab === "sistema-xp" || requestedTab === "sistema-xp-niveles") setXpMenuOpen(true);
     }
   }, [searchParams]);
 
@@ -1749,7 +1753,13 @@ function AdminPage() {
               {ADMIN_NAV.map((item) => {
                 const Icon = item.icon;
                 const rankGroup = item.key === "rangos-clientes";
-                const active = rankGroup ? (tab === "rangos-clientes" || tab === "clientes-web") : tab === item.key;
+                const xpGroup = item.key === "sistema-xp";
+                const active = rankGroup
+                  ? (tab === "rangos-clientes" || tab === "clientes-web")
+                  : xpGroup
+                    ? (tab === "sistema-xp" || tab === "sistema-xp-niveles")
+                    : tab === item.key;
+                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : false;
                 return (
                   <div key={item.key} style={{ display: "grid", gap: 6 }}>
                     <button
@@ -1758,6 +1768,7 @@ function AdminPage() {
                       onClick={() => {
                         setTab(item.key as TabKey);
                         if (rankGroup) setRanksMenuOpen(true);
+                        if (xpGroup) setXpMenuOpen(true);
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
@@ -1767,11 +1778,15 @@ function AdminPage() {
                           <div className="tc-sidebtn-kicker">{item.kicker}</div>
                         </div>
                       </div>
-                      {rankGroup ? (
+                      {rankGroup || xpGroup ? (
                         <span
-                          onClick={(event) => { event.stopPropagation(); setRanksMenuOpen((value) => !value); }}
-                          className={`${adminStyles.navChevron} ${ranksMenuOpen ? adminStyles.navChevronOpen : ""}`}
-                          aria-label="Desplegar Rangos de clientes"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (rankGroup) setRanksMenuOpen((value) => !value);
+                            if (xpGroup) setXpMenuOpen((value) => !value);
+                          }}
+                          className={`${adminStyles.navChevron} ${groupOpen ? adminStyles.navChevronOpen : ""}`}
+                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : "Desplegar Sistema de XP"}
                         >
                           <ChevronDown size={15} />
                         </span>
@@ -1784,6 +1799,16 @@ function AdminPage() {
                         </button>
                         <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "clientes-web" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("clientes-web")}>
                           <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Clientes web</div><div className="tc-sidebtn-kicker">Accesos y cuentas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                      </div>
+                    ) : null}
+                    {xpGroup && xpMenuOpen ? (
+                      <div className={adminStyles.submenu}>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Configuración XP</div><div className="tc-sidebtn-kicker">Acciones y experiencia</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp-niveles" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp-niveles")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Sistema de niveles telefonista</div><div className="tc-sidebtn-kicker">Niveles y recompensas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
                         </button>
                       </div>
                     ) : null}
@@ -2910,6 +2935,7 @@ function AdminPage() {
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
 
           {tab === "sistema-xp" && <XpSystemAdminPanel />}
+          {tab === "sistema-xp-niveles" && <XpLevelsAdminPanel />}
 
           {tab === "clientes-web" && (
             <ClientWebAdminPanel

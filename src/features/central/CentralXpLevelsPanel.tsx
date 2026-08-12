@@ -12,7 +12,7 @@ import {
   Star,
   Trophy,
 } from "lucide-react";
-import { XP_LEVEL_STEPS, XP_MAX_LEVEL, XP_TO_LEVEL_20, xpTierRanges } from "@/lib/xp-levels";
+import { buildConfiguredLevels } from "@/lib/xp-levels";
 import { useCentralXpData } from "./useCentralXpData";
 import styles from "./CentralXpLevelsPanel.module.css";
 
@@ -26,6 +26,14 @@ const TIER_ICONS = {
   master: Crown,
   legend: Sparkles,
 } as const;
+
+function rewardText(rewardType: string | null, rewardAmount: number | null, rewardLabel: string | null) {
+  if (rewardLabel) return rewardLabel;
+  if (rewardType === "coins" && rewardAmount != null) return `${fmt(rewardAmount)} Coins`;
+  if (rewardType === "bonus" && rewardAmount != null) return `${fmt(rewardAmount)} € de bono`;
+  if (rewardType && rewardAmount != null) return `${fmt(rewardAmount)} · ${rewardType}`;
+  return "Beneficios por definir · Próximamente";
+}
 
 export default function CentralXpLevelsPanel() {
   const { data, error, busy, load } = useCentralXpData();
@@ -41,25 +49,30 @@ export default function CentralXpLevelsPanel() {
   }
 
   const progress = data.progress;
+  const configuredLevels = buildConfiguredLevels(data.level_config);
+  const visibleTiers = [...data.tier_config]
+    .filter((tier) => tier.active && configuredLevels.some((level) => level.tier_key === tier.key))
+    .sort((a, b) => a.display_order - b.display_order);
   const currentTier = progress.tier;
   const progressPercent = progress.next_level
     ? Math.min(100, Math.max(0, (progress.level_xp / Math.max(1, progress.level_span)) * 100))
     : 100;
+  const totalGoal = progress.total_required_for_max ?? configuredLevels[configuredLevels.length - 1]?.cumulative_xp ?? 0;
 
   return (
     <section className={styles.page}>
       <header className={styles.hero}>
-        <div className={`${styles.heroBadge} ${styles[`tone_${currentTier?.key || "bronze"}`]}`}>
+        <div className={`${styles.heroBadge} ${styles[`tone_${currentTier?.key || "bronze"}`] || ""}`}>
           <Shield />
           <strong>{progress.level}</strong>
         </div>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>MAPA DE PROGRESIÓN</span>
           <h1>Niveles</h1>
-          <p>Descubre dónde estás ahora, qué rango viene después y cuánto XP necesitas para avanzar.</p>
+          <p>Tu progreso utiliza en tiempo real la configuración definida por Administración.</p>
           <div className={styles.currentLine}>
             <span>Rango actual</span>
-            <strong>{currentTier?.name || "Bronce"}</strong>
+            <strong>{currentTier?.name || "Sin categoría"}</strong>
             <i>·</i>
             <span>Nivel {progress.level}</span>
           </div>
@@ -77,7 +90,7 @@ export default function CentralXpLevelsPanel() {
             </div>
             <div>
               <span>{progress.next_level ? "SIGUIENTE NIVEL" : "NIVEL MÁXIMO"}</span>
-              <strong>{progress.next_level ? `Nivel ${progress.next_level}` : "Nivel 20 · Leyenda"}</strong>
+              <strong>{progress.next_level ? `Nivel ${progress.next_level}` : `Nivel ${progress.level}`}</strong>
             </div>
           </div>
           <div className={styles.track}>
@@ -92,7 +105,7 @@ export default function CentralXpLevelsPanel() {
             ) : (
               <>
                 <b>{fmt(progress.total_xp)} XP acumulados</b>
-                <span>Has alcanzado el nivel máximo actual. Tu XP total puede seguir creciendo.</span>
+                <span>Has alcanzado el nivel máximo configurado. Tu XP total puede seguir creciendo.</span>
               </>
             )}
           </div>
@@ -108,33 +121,38 @@ export default function CentralXpLevelsPanel() {
         <article>
           <Trophy />
           <span>Rango</span>
-          <strong>{currentTier?.name || "Bronce"}</strong>
+          <strong>{currentTier?.name || "—"}</strong>
         </article>
         <article>
           <Sparkles />
-          <span>Meta Leyenda</span>
-          <strong>{fmt(XP_TO_LEVEL_20)} XP</strong>
+          <span>Meta máxima actual</span>
+          <strong>{fmt(totalGoal)} XP</strong>
         </article>
       </div>
 
       <div className={styles.sectionHeading}>
-        <span>CAMINO HASTA LEYENDA</span>
+        <span>CONFIGURACIÓN DE ADMINISTRACIÓN</span>
         <h2>Rangos y niveles</h2>
-        <p>Los rangos completados quedan marcados, el actual se ilumina y los futuros permanecen bloqueados.</p>
+        <p>Los requisitos, categorías y recompensas mostrados aquí proceden del Sistema de XP Admin.</p>
       </div>
 
       <div className={styles.tierGrid}>
-        {xpTierRanges().map((tier) => {
-          const Icon = TIER_ICONS[tier.key];
-          const completed = progress.level > tier.maxLevel;
-          const current = progress.level >= tier.minLevel && progress.level <= tier.maxLevel;
-          const locked = progress.level < tier.minLevel;
-          const tierEnd = tier.endXp ?? XP_TO_LEVEL_20;
-          const tierSpan = Math.max(1, tierEnd - tier.startXp);
+        {visibleTiers.map((tier) => {
+          const Icon = TIER_ICONS[tier.key as keyof typeof TIER_ICONS] ?? Shield;
+          const tierLevels = configuredLevels.filter((level) => level.tier_key === tier.key);
+          if (!tierLevels.length) return null;
+          const first = tierLevels[0];
+          const last = tierLevels[tierLevels.length - 1];
+          const startXp = first.cumulative_xp;
+          const endXp = last.next_active_level ? last.cumulative_xp + Math.max(0, Number(last.xp_to_next) || 0) : totalGoal;
+          const tierSpan = Math.max(1, endXp - startXp);
+          const completed = progress.total_xp >= endXp && Boolean(last.next_active_level);
+          const current = currentTier?.key === tier.key;
+          const locked = !completed && !current && progress.total_xp < startXp;
           const tierProgress = completed
             ? 100
             : current
-              ? Math.min(100, Math.max(0, ((progress.total_xp - tier.startXp) / tierSpan) * 100))
+              ? Math.min(100, Math.max(0, ((progress.total_xp - startXp) / tierSpan) * 100))
               : 0;
 
           return (
@@ -142,7 +160,7 @@ export default function CentralXpLevelsPanel() {
               key={tier.key}
               className={[
                 styles.tierCard,
-                styles[`tone_${tier.key}`],
+                styles[`tone_${tier.key}`] || "",
                 completed ? styles.completed : "",
                 current ? styles.current : "",
                 locked ? styles.locked : "",
@@ -151,12 +169,12 @@ export default function CentralXpLevelsPanel() {
               <div className={styles.tierTop}>
                 <div className={styles.tierBadge}>
                   <Icon />
-                  <span>{tier.minLevel === tier.maxLevel ? tier.minLevel : `${tier.minLevel}-${tier.maxLevel}`}</span>
+                  <span>{tierLevels.length === 1 ? first.level : `${first.level}-${last.level}`}</span>
                 </div>
                 <div className={styles.tierIdentity}>
                   <small>{current ? "TU RANGO ACTUAL" : completed ? "RANGO COMPLETADO" : "RANGO BLOQUEADO"}</small>
                   <h3>{tier.name}</h3>
-                  <p>Niveles {tier.minLevel}{tier.minLevel !== tier.maxLevel ? `–${tier.maxLevel}` : ""}</p>
+                  <p>Niveles {tierLevels.map((level) => level.level).join(" · ")}</p>
                 </div>
                 <div className={styles.stateIcon}>
                   {completed ? <CheckCircle2 /> : current ? <Sparkles /> : <LockKeyhole />}
@@ -166,26 +184,23 @@ export default function CentralXpLevelsPanel() {
               <div className={styles.tierXp}>
                 <div>
                   <span>XP acumulado del tramo</span>
-                  <strong>
-                    {tier.endXp
-                      ? `${fmt(tier.startXp)} – ${fmt(tier.endXp)} XP`
-                      : `Desde ${fmt(tier.startXp)} XP`}
-                  </strong>
+                  <strong>{last.next_active_level ? `${fmt(startXp)} – ${fmt(endXp)} XP` : `Desde ${fmt(startXp)} XP`}</strong>
                 </div>
                 <div className={styles.miniTrack}><i style={{ width: `${tierProgress}%` }} /></div>
                 <small>{completed ? "100 % completado" : current ? `${Math.round(tierProgress)} % del rango` : "Completa los rangos anteriores para desbloquearlo"}</small>
               </div>
 
               <div className={styles.levelSteps}>
-                {Array.from({ length: tier.maxLevel - tier.minLevel + 1 }, (_, index) => tier.minLevel + index).map((level) => {
-                  const done = progress.level > level;
-                  const active = progress.level === level;
+                {tierLevels.map((level) => {
+                  const done = progress.level > level.level;
+                  const active = progress.level === level.level;
                   return (
-                    <span key={level} className={done ? styles.levelDone : active ? styles.levelActive : ""}>
+                    <span key={level.level} className={done ? styles.levelDone : active ? styles.levelActive : ""}>
                       {done ? <CheckCircle2 size={13} /> : active ? <Star size={13} /> : <LockKeyhole size={12} />}
                       <span>
-                        <b>Nivel {level}</b>
-                        <small>{level < XP_MAX_LEVEL ? `${fmt(XP_LEVEL_STEPS[level - 1] ?? 0)} XP → Nivel ${level + 1}` : "Nivel máximo"}</small>
+                        <b>Nivel {level.level}</b>
+                        <small>{level.next_active_level ? `${fmt(level.xp_to_next || 0)} XP → Nivel ${level.next_active_level}` : "Nivel máximo"}</small>
+                        {level.reward_type || level.reward_label ? <em>{rewardText(level.reward_type, level.reward_amount, level.reward_label)}</em> : null}
                       </span>
                     </span>
                   );
@@ -195,8 +210,8 @@ export default function CentralXpLevelsPanel() {
               <div className={styles.rewardSlot}>
                 <LockKeyhole size={16} />
                 <div>
-                  <b>Recompensas del rango</b>
-                  <span>Beneficios por definir · Próximamente</span>
+                  <b>Recompensa especial de categoría</b>
+                  <span>{rewardText(tier.reward_type, tier.reward_amount, tier.reward_label)}</span>
                 </div>
               </div>
             </article>
@@ -205,12 +220,15 @@ export default function CentralXpLevelsPanel() {
       </div>
 
       <article className={styles.legendGoal}>
-        <div><Sparkles /><span>OBJETIVO FINAL</span></div>
-        <h2>Nivel {XP_MAX_LEVEL} · Leyenda</h2>
-        <p>Se necesitan <strong>{fmt(XP_TO_LEVEL_20)} XP acumulados</strong> para alcanzar el nivel máximo actual.</p>
-        <small>Una vez alcanzado, puedes seguir acumulando XP total sin avanzar automáticamente a un Nivel 21.</small>
+        <div><Sparkles /><span>OBJETIVO FINAL CONFIGURADO</span></div>
+        <h2>Nivel máximo · {configuredLevels[configuredLevels.length - 1]?.level || 20}</h2>
+        <p>Actualmente se necesitan <strong>{fmt(totalGoal)} XP acumulados</strong> para alcanzar el último nivel activo.</p>
+        <small>El XP histórico no cambia cuando Administración modifica los requisitos.</small>
       </article>
 
+      {!data.level_config_persisted ? (
+        <div className={styles.softError}>La configuración persistente de niveles todavía no está instalada. Ejecuta el SQL de esta actualización.</div>
+      ) : null}
       {error ? <div className={styles.softError}>{error}</div> : null}
     </section>
   );

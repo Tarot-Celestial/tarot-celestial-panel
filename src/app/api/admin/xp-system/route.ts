@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
-import { xpLevelProgress } from "@/lib/xp-levels";
+import { configuredXpProgress } from "@/lib/xp-levels";
+import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,7 @@ export async function GET(req:Request){
  try{
   const gate=await requireAdmin(req); if(!gate.ok) return NextResponse.json({ok:false,error:gate.error},{status:403});
   const {admin}=gate;
+  const levelConfig = await loadXpLevelConfiguration(admin);
   const [rulesR,eventsR,workersR,auditR]=await Promise.all([
    admin.from("worker_xp_rules").select("*").order("created_at"),
    admin.from("worker_xp_events").select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,created_at").order("created_at",{ascending:false}).limit(250),
@@ -22,10 +24,10 @@ export async function GET(req:Request){
   ]);
   for(const r of [rulesR,eventsR,workersR,auditR]) if(r.error) throw r.error;
   const events=eventsR.data||[], workers=workersR.data||[];
-  const cards=workers.map((w:any)=>{ const own=events.filter((e:any)=>e.worker_id===w.id&&e.status==="applied"); const total=own.reduce((s:any,e:any)=>s+num(e.xp_amount),0); const month=own.filter((e:any)=>e.created_at>=monthStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const today=own.filter((e:any)=>e.created_at>=dayStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const lvl=xpLevelProgress(total); return {...w,total_xp:total,xp_month:month,xp_today:today,level:lvl.level,level_xp:lvl.current,next_level_xp:lvl.span,next_level_total:lvl.next,clients_captured:own.filter((e:any)=>e.action_key==="client_capture").length,repurchases:own.filter((e:any)=>e.action_key==="repurchase").length,followups:own.filter((e:any)=>e.action_key==="followup").length,consultations:own.filter((e:any)=>e.action_key==="consultation").length,positive_reviews:own.filter((e:any)=>e.action_key==="positive_review").length,missions:own.filter((e:any)=>e.action_key==="daily_mission").length,coins:null,coins_spent:null,rewards_claimed:null,rewards_value:null}; });
+  const cards=workers.map((w:any)=>{ const own=events.filter((e:any)=>e.worker_id===w.id&&e.status==="applied"); const total=own.reduce((s:any,e:any)=>s+num(e.xp_amount),0); const month=own.filter((e:any)=>e.created_at>=monthStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const today=own.filter((e:any)=>e.created_at>=dayStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const lvl=configuredXpProgress(total, levelConfig.levels, levelConfig.tiers); return {...w,total_xp:total,xp_month:month,xp_today:today,level:lvl.level,level_xp:lvl.current,next_level_xp:lvl.span,next_level_total:lvl.next,clients_captured:own.filter((e:any)=>e.action_key==="client_capture").length,repurchases:own.filter((e:any)=>e.action_key==="repurchase").length,followups:own.filter((e:any)=>e.action_key==="followup").length,consultations:own.filter((e:any)=>e.action_key==="consultation").length,positive_reviews:own.filter((e:any)=>e.action_key==="positive_review").length,missions:own.filter((e:any)=>e.action_key==="daily_mission").length,coins:null,coins_spent:null,rewards_claimed:null,rewards_value:null}; });
   const applied=events.filter((e:any)=>e.status==="applied"); const monthEvents=applied.filter((e:any)=>e.created_at>=monthStart()); const todayEvents=applied.filter((e:any)=>e.created_at>=dayStart());
   const top=[...cards].sort((a:any,b:any)=>b.xp_month-a.xp_month)[0]||null;
-  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],summary:{xp_month:monthEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),xp_today:todayEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
+  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,summary:{xp_month:monthEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),xp_today:todayEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
  }catch(e:any){ return NextResponse.json({ok:false,error:e?.message||"ERR"},{status:500}); }
 }
 
@@ -47,6 +49,45 @@ export async function POST(req:Request){
    const ins=await admin.from("worker_xp_events").insert({worker_id:workerId,action_key:"manual_adjustment",xp_amount:amount,reference_id:ref,reference_label:reason,origin:"admin",status:"applied",created_by_worker_id:me.id}).select("*").single(); if(ins.error) throw ins.error;
    await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"manual_adjustment",target_worker_id:workerId,target_key:"manual_adjustment",new_value:{amount,reason,event_id:ins.data.id}});
    return NextResponse.json({ok:true,event:ins.data});
+  }
+
+  if(op==="save_level_config"){
+   const level=Math.trunc(num(b.level)); if(level<1||level>20) throw new Error("LEVEL_OUT_OF_RANGE");
+   const tierKey=String(b.tier_key||"").trim(); if(!tierKey) throw new Error("TIER_REQUIRED");
+   const xpToNext=level===20?null:Math.max(1,Math.round(num(b.xp_to_next)));
+   const old=await admin.from("worker_xp_level_config").select("*").eq("level",level).maybeSingle(); if(old.error) throw old.error;
+   const payload={
+    level,
+    xp_to_next:xpToNext,
+    tier_key:tierKey,
+    reward_type:b.reward_type?String(b.reward_type):null,
+    reward_amount:b.reward_amount==null||String(b.reward_amount)===""?null:Number(b.reward_amount),
+    reward_label:b.reward_label?String(b.reward_label).trim():null,
+    active:b.active!==false,
+    display_order:Math.max(1,Math.round(num(b.display_order)||level)),
+    updated_at:new Date().toISOString(),
+   };
+   const saved=await admin.from("worker_xp_level_config").upsert(payload,{onConflict:"level"}).select("*").single(); if(saved.error) throw saved.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:`level_config:${level}`,old_value:old.data||null,new_value:saved.data});
+   return NextResponse.json({ok:true,level:saved.data});
+  }
+  if(op==="save_tier_config"){
+   const key=String(b.key||"").trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"_"); if(!key) throw new Error("TIER_KEY_REQUIRED");
+   const name=String(b.name||"").trim(); if(!name) throw new Error("TIER_NAME_REQUIRED");
+   const old=await admin.from("worker_xp_tier_config").select("*").eq("key",key).maybeSingle(); if(old.error) throw old.error;
+   const payload={
+    key,
+    name,
+    display_order:Math.max(1,Math.round(num(b.display_order)||1)),
+    active:b.active!==false,
+    reward_type:b.reward_type?String(b.reward_type):null,
+    reward_amount:b.reward_amount==null||String(b.reward_amount)===""?null:Number(b.reward_amount),
+    reward_label:b.reward_label?String(b.reward_label).trim():null,
+    updated_at:new Date().toISOString(),
+   };
+   const saved=await admin.from("worker_xp_tier_config").upsert(payload,{onConflict:"key"}).select("*").single(); if(saved.error) throw saved.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:`tier_config:${key}`,old_value:old.data||null,new_value:saved.data});
+   return NextResponse.json({ok:true,tier:saved.data});
   }
   throw new Error("INVALID_OPERATION");
  }catch(e:any){ return NextResponse.json({ok:false,error:e?.message||"ERR"},{status:400}); }

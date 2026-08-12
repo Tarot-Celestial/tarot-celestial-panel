@@ -15,12 +15,33 @@ export type CentralXpData = {
     next_level: number | null;
     remaining_xp: number;
     max_level?: boolean;
-    tier?: { key: string; name: string; minLevel: number; maxLevel: number };
+    tier?: { key: string; name: string; display_order: number; active: boolean; reward_type: string | null; reward_amount: number | null; reward_label: string | null } | null;
+    total_required_for_max?: number;
     xp_today: number;
     xp_week: number;
     xp_month: number;
     previous_week_xp: number;
   };
+  level_config: Array<{
+    level: number;
+    xp_to_next: number | null;
+    tier_key: string;
+    reward_type: string | null;
+    reward_amount: number | null;
+    reward_label: string | null;
+    active: boolean;
+    display_order: number;
+  }>;
+  tier_config: Array<{
+    key: string;
+    name: string;
+    display_order: number;
+    active: boolean;
+    reward_type: string | null;
+    reward_amount: number | null;
+    reward_label: string | null;
+  }>;
+  level_config_persisted?: boolean;
   weekly: Array<{ date: string; xp: number }>;
   rules: Array<{
     id?: string;
@@ -92,6 +113,8 @@ export function useCentralXpData() {
       .channel("central-xp-readonly")
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_rules" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
       .subscribe();
 
     return () => {

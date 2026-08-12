@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
-import { xpLevelProgress } from "@/lib/xp-levels";
+import { configuredXpProgress } from "@/lib/xp-levels";
+import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,6 +21,7 @@ export async function GET(req: Request) {
     if (me.role !== "central" && me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const admin = getAdminClient();
+    const levelConfig = await loadXpLevelConfiguration(admin);
     const week = startOfWeek();
     const previousWeek = new Date(week); previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
     const [rulesR, ownR, workersR, rankingEventsR] = await Promise.all([
@@ -32,7 +34,7 @@ export async function GET(req: Request) {
 
     const events = ownR.data || [];
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
-    const level = xpLevelProgress(total);
+    const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
     const dayStart = startOfUtcDay().getTime();
     const monthStart = startOfUtcMonth().getTime();
     const weekStart = week.getTime();
@@ -48,13 +50,16 @@ export async function GET(req: Request) {
 
     const totals = new Map<string, number>();
     for (const e of rankingEventsR.data || []) totals.set(String((e as any).worker_id), (totals.get(String((e as any).worker_id)) || 0) + num((e as any).xp_amount));
-    const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: xpLevelProgress(xp).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
+    const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: configuredXpProgress(xp, levelConfig.levels, levelConfig.tiers).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
 
     const counts = (key: string) => events.filter((e: any) => e.action_key === key).length;
     return NextResponse.json({
       ok: true,
       worker: { id: me.id, name: me.display_name },
-      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, xp_today: sumSince(dayStart), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
+      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, total_required_for_max: level.totalRequiredForMax, xp_today: sumSince(dayStart), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
+      level_config: levelConfig.levels,
+      tier_config: levelConfig.tiers,
+      level_config_persisted: levelConfig.persisted,
       weekly,
       rules: (rulesR.data || []).filter((r: any) => r.enabled === true).map((r: any) => ({
         id: r.id,
