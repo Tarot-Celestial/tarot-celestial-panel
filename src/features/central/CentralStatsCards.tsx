@@ -10,15 +10,7 @@ import {
 } from "lucide-react";
 import styles from "./CentralStatsCards.module.css";
 
-export type CentralLevel =
-  | "Bronce"
-  | "Plata"
-  | "Oro"
-  | "Platino"
-  | "Diamante"
-  | "Leyenda"
-  | "Legendario"
-  | "Celestial";
+export type CentralLevel = string;
 
 export type CentralStatsData = {
   totalXp: number;
@@ -27,6 +19,7 @@ export type CentralStatsData = {
   currentLevelXp: number;
   nextLevelXp: number;
   nextLevelName: string;
+  xpEvolution?: number[];
   activeClients: number;
   activeClientsThisWeek: number;
   notificationTotal: number;
@@ -106,6 +99,7 @@ export default function CentralStatsCards({
   );
   const levelClass = styles[`level${data.currentLevel}`] || styles.levelOro;
   const earnedMoneyPoints = moneyChartPoints(data.earnedMoneyEvolution || []);
+  const xpPoints = moneyChartPoints(data.xpEvolution || []);
 
   return (
     <section className={styles.grid} aria-label="Estadísticas de Central">
@@ -121,7 +115,7 @@ export default function CentralStatsCards({
           </div>
         </div>
         <div className={styles.visualArea} aria-hidden="true">
-          <MiniChart points="0,34 18,29 36,31 54,20 72,24 92,13 110,17 130,5" />
+          <MiniChart points={xpPoints} />
         </div>
         <CardButton label="VER PROGRESO" onClick={onViewProgress} />
       </article>

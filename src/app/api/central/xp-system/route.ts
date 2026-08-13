@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
-import { buildConfiguredLevels, configuredXpProgress } from "@/lib/xp-levels";
+import { configuredXpProgress } from "@/lib/xp-levels";
 import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
 
 export const runtime = "nodejs";
@@ -20,99 +20,29 @@ function rewardTablesMissing(error: { code?: string; message?: string } | null |
   return code === "42P01" || code === "PGRST205" || message.includes("worker_xp_reward_claims") || message.includes("worker_xp_reward_processing");
 }
 
-async function processNewXpRewards(
+async function loadAllAppliedXpEvents(
   admin: ReturnType<typeof getAdminClient>,
-  workerId: string,
-  events: any[],
-  levelConfig: Awaited<ReturnType<typeof loadXpLevelConfiguration>>,
+  workerId?: string,
 ) {
-  const eventIds = events.map((event) => String(event.id)).filter(Boolean);
-  if (!eventIds.length) return { available: true };
+  const pageSize = 1000;
+  const rows: any[] = [];
 
-  const processedR = await admin
-    .from("worker_xp_reward_processing")
-    .select("event_id")
-    .eq("worker_id", workerId)
-    .in("event_id", eventIds);
-
-  if (processedR.error) {
-    if (rewardTablesMissing(processedR.error)) return { available: false };
-    throw processedR.error;
+  for (let from = 0; ; from += pageSize) {
+    let query = admin
+      .from("worker_xp_events")
+      .select("id,worker_id,action_key,xp_amount,reference_label,origin,status,created_at")
+      .eq("status", "applied")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (workerId) query = query.eq("worker_id", workerId);
+    const result = await query;
+    if (result.error) throw result.error;
+    const page = result.data || [];
+    rows.push(...page);
+    if (page.length < pageSize) break;
   }
 
-  const processed = new Set((processedR.data || []).map((row: any) => String(row.event_id)));
-  const pending = events
-    .filter((event) => !processed.has(String(event.id)))
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime() || String(a.id).localeCompare(String(b.id)));
-
-  if (!pending.length) return { available: true };
-
-  const pendingXp = pending.reduce((sum, event) => sum + num(event.xp_amount), 0);
-  let runningXp = Math.max(0, events.reduce((sum, event) => sum + num(event.xp_amount), 0) - pendingXp);
-  const configuredLevels = buildConfiguredLevels(levelConfig.levels);
-  const firstLevelByTier = new Map<string, number>();
-  for (const level of configuredLevels) {
-    if (!firstLevelByTier.has(level.tier_key)) firstLevelByTier.set(level.tier_key, level.level);
-  }
-
-  for (const event of pending) {
-    const amount = num(event.xp_amount);
-    const beforeXp = runningXp;
-    const afterXp = Math.max(0, runningXp + amount);
-    const before = configuredXpProgress(beforeXp, levelConfig.levels, levelConfig.tiers);
-    const after = configuredXpProgress(afterXp, levelConfig.levels, levelConfig.tiers);
-
-    if (amount > 0 && after.level > before.level) {
-      const crossed = configuredLevels.filter((level) => level.level > before.level && level.level <= after.level);
-      for (const level of crossed) {
-        if (level.reward_type || level.reward_label) {
-          const claim = await admin.from("worker_xp_reward_claims").upsert({
-            worker_id: workerId,
-            reward_kind: "level",
-            reward_key: `level:${level.level}`,
-            level: level.level,
-            tier_key: level.tier_key,
-            reward_type: level.reward_type,
-            reward_amount: level.reward_amount,
-            reward_label: level.reward_label,
-            source_event_id: String(event.id),
-            status: "granted",
-          }, { onConflict: "worker_id,reward_kind,reward_key", ignoreDuplicates: true });
-          if (claim.error) throw claim.error;
-        }
-
-        if (firstLevelByTier.get(level.tier_key) === level.level) {
-          const tier = levelConfig.tiers.find((item) => item.key === level.tier_key);
-          if (tier && (tier.reward_type || tier.reward_label)) {
-            const claim = await admin.from("worker_xp_reward_claims").upsert({
-              worker_id: workerId,
-              reward_kind: "category",
-              reward_key: `tier:${tier.key}`,
-              level: level.level,
-              tier_key: tier.key,
-              reward_type: tier.reward_type,
-              reward_amount: tier.reward_amount,
-              reward_label: tier.reward_label,
-              source_event_id: String(event.id),
-              status: "granted",
-            }, { onConflict: "worker_id,reward_kind,reward_key", ignoreDuplicates: true });
-            if (claim.error) throw claim.error;
-          }
-        }
-      }
-    }
-
-    const marker = await admin.from("worker_xp_reward_processing").upsert({
-      event_id: String(event.id),
-      worker_id: workerId,
-      processed_at: new Date().toISOString(),
-      outcome: amount > 0 && after.level > before.level ? `level:${before.level}->${after.level}` : "no_level_change",
-    }, { onConflict: "event_id", ignoreDuplicates: true });
-    if (marker.error) throw marker.error;
-    runningXp = afterXp;
-  }
-
-  return { available: true };
+  return rows;
 }
 
 async function rewardSummary(admin: ReturnType<typeof getAdminClient>, workerId: string) {
@@ -146,22 +76,19 @@ export async function GET(req: Request) {
     const levelConfig = await loadXpLevelConfiguration(admin);
     const week = startOfWeek();
     const previousWeek = new Date(week); previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
-    const [rulesR, ownR, workersR, rankingEventsR] = await Promise.all([
+    const [rulesR, events, workersR, rankingEvents] = await Promise.all([
       admin.from("worker_xp_rules").select("id,action_key,name,description,xp_reward,frequency,enabled,integration_status,created_at,updated_at").order("created_at", { ascending: true }),
-      admin.from("worker_xp_events").select("id,action_key,xp_amount,reference_label,origin,status,created_at").eq("worker_id", me.id).eq("status", "applied").order("created_at", { ascending: false }).limit(1000),
+      loadAllAppliedXpEvents(admin, String(me.id)),
       admin.from("workers").select("id,display_name").eq("role", "central").or("is_active.is.null,is_active.eq.true"),
-      admin.from("worker_xp_events").select("worker_id,xp_amount,status").eq("status", "applied"),
+      loadAllAppliedXpEvents(admin),
     ]);
-    for (const r of [rulesR, ownR, workersR, rankingEventsR]) if (r.error) throw r.error;
+    for (const r of [rulesR, workersR]) if (r.error) throw r.error;
 
-    const events = ownR.data || [];
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
     const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
 
-    const processing = await processNewXpRewards(admin, String(me.id), events, levelConfig);
-    const rewards = processing.available
-      ? await rewardSummary(admin, String(me.id))
-      : { available: false, claims: [], pending: null, coins: null, count: null };
+    // Read-only: loading Central or recalculating a level must never grant rewards.
+    const rewards = await rewardSummary(admin, String(me.id));
 
     const dayStart = startOfUtcDay().getTime();
     const monthStart = startOfUtcMonth().getTime();
@@ -177,7 +104,7 @@ export async function GET(req: Request) {
     });
 
     const totals = new Map<string, number>();
-    for (const e of rankingEventsR.data || []) totals.set(String((e as any).worker_id), (totals.get(String((e as any).worker_id)) || 0) + num((e as any).xp_amount));
+    for (const e of rankingEvents) totals.set(String((e as any).worker_id), (totals.get(String((e as any).worker_id)) || 0) + num((e as any).xp_amount));
     const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: configuredXpProgress(xp, levelConfig.levels, levelConfig.tiers).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
 
     const counts = (key: string) => events.filter((e: any) => e.action_key === key).length;

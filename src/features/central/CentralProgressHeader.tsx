@@ -12,7 +12,7 @@ export type CentralOperatorProgress = {
 export type CentralOperatorProfile = {
   name: string;
   role: string;
-  level: "Bronce" | "Plata" | "Oro" | "Diamante" | "Leyenda";
+  level: string;
   photoUrl?: string | null;
 };
 

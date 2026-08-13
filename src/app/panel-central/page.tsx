@@ -10,6 +10,7 @@ import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotific
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralXpPanel from "@/features/central/CentralXpPanel";
 import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
+import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
@@ -256,6 +257,15 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 function CentralPage() {
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice();
+  const xpFeed = useCentralXpData();
+  const xpData = xpFeed.data;
+  const xpProgress = xpData?.progress;
+  const currentTierName = xpProgress?.tier?.name || "Sin categoría";
+  const nextLevelConfig = xpData?.level_config.find((level) => level.level === xpProgress?.next_level);
+  const nextTierName = xpData?.tier_config.find((tier) => tier.key === nextLevelConfig?.tier_key)?.name;
+  const nextLevelName = xpProgress?.next_level
+    ? `${xpProgress.next_level}${nextTierName ? ` · ${nextTierName}` : ""}`
+    : "máximo";
   const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -263,23 +273,20 @@ function CentralPage() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
 
-  // Datos de presentación de la nueva pantalla Central.
-  // Esta estructura queda preparada para sustituirse por datos reales de Supabase.
   const centralProgress: CentralOperatorProgress = {
-    totalXp: 5420,
-    activeStreakDays: 12,
+    totalXp: xpProgress?.total_xp || 0,
+    activeStreakDays: Number(xpData?.stats.streak) || 0,
     loyaltyIndex: 87,
   };
 
-  // Datos provisionales y tipados para la primera fase visual de Proyecto Leonaris.
-  // Se sustituirán por los motores reales de XP, clientes, notificaciones y facturación.
   const centralStats: CentralStatsData = {
-    totalXp: 5420,
-    xpToday: 320,
-    currentLevel: "Oro",
-    currentLevelXp: 870,
-    nextLevelXp: 1000,
-    nextLevelName: "Diamante",
+    totalXp: xpProgress?.total_xp || 0,
+    xpToday: xpProgress?.xp_today || 0,
+    currentLevel: xpProgress ? `Nivel ${xpProgress.level} · ${currentTierName}` : currentTierName,
+    currentLevelXp: xpProgress?.level_xp || 0,
+    nextLevelXp: xpProgress?.level_span || 0,
+    nextLevelName,
+    xpEvolution: (xpData?.weekly || []).map((point) => Number(point.xp) || 0),
     activeClients: 24,
     activeClientsThisWeek: 5,
     notificationTotal: Number(notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0),
@@ -353,10 +360,10 @@ function CentralPage() {
     return {
       name: displayName,
       role: String(worker?.job_title || worker?.category || "Telefonista Experta"),
-      level: (worker?.level || "Oro") as CentralOperatorProfile["level"],
+      level: currentTierName,
       photoUrl: photoUrl ? String(photoUrl) : null,
     };
-  }, [connectedOperator]);
+  }, [connectedOperator, currentTierName]);
 
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();
@@ -1223,13 +1230,15 @@ function CentralPage() {
 
           {tab === "mi-factura" && <MyInvoicePanel feed={myInvoiceFeed} />}
 
-          {tab === "tu-sistema-xp" && <CentralXpPanel />}
-          {tab === "tu-sistema-xp-niveles" && <CentralXpLevelsPanel />}
+          {tab === "tu-sistema-xp" && <CentralXpPanel {...xpFeed} />}
+          {tab === "tu-sistema-xp-niveles" && <CentralXpLevelsPanel {...xpFeed} />}
 
           {tab === "central" && (
             <>
               <CentralStatsCards
                 data={centralStats}
+                onViewProgress={() => handleSidebarTabChange("tu-sistema-xp")}
+                onViewLevels={() => handleSidebarTabChange("tu-sistema-xp-niveles")}
                 onViewClients={() => setTab("crm")}
                 onViewNotifications={() => handleSidebarTabChange("notificaciones")}
                 onViewEarnings={() => handleSidebarTabChange("mi-factura")}

@@ -9,8 +9,9 @@ const DAYS = ["L", "M", "X", "J", "V", "S", "D"];
 const fmt = (v: any) => new Intl.NumberFormat("es-ES").format(Number(v) || 0);
 type XpRule = { id?: string; action_key: string; name: string; description: string; xp_reward: number; frequency: string; enabled: boolean; integration_status: "connected" | "pending"; created_at?: string; updated_at?: string };
 
-export default function CentralXpPanel() {
-  const { data, error, busy, load, acknowledgeReward } = useCentralXpData();
+type Props = ReturnType<typeof useCentralXpData>;
+
+export default function CentralXpPanel({ data, error, busy, load, acknowledgeReward }: Props) {
 
   const maxDay=useMemo(()=>Math.max(1,...(data?.weekly||[]).map((d:any)=>Number(d.xp)||0)),[data]);
   if(!data&&!error) return <div className={styles.loading}>Cargando tu progreso XP…</div>;

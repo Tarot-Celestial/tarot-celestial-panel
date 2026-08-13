@@ -43,8 +43,9 @@ function rewardSummary(rewardType: string | null, rewardAmount: number | null, r
   return rewardValue(rewardType, rewardAmount) || rewardLabel || "Beneficios por definir";
 }
 
-export default function CentralXpLevelsPanel() {
-  const { data, error, busy, load, acknowledgeReward } = useCentralXpData();
+type Props = ReturnType<typeof useCentralXpData>;
+
+export default function CentralXpLevelsPanel({ data, error, busy, load, acknowledgeReward }: Props) {
   const [selectedLevel, setSelectedLevel] = useState<XpConfiguredLevel | null>(null);
 
   if (!data && !error) return <div className={styles.loading}>Cargando niveles…</div>;
