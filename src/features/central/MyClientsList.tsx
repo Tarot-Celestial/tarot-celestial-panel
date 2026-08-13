@@ -85,6 +85,11 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
   }, [requestRefresh]);
 
   useEffect(() => {
+    window.addEventListener("tc-my-clients-refresh", requestRefresh);
+    return () => window.removeEventListener("tc-my-clients-refresh", requestRefresh);
+  }, [requestRefresh]);
+
+  useEffect(() => {
     let cancelled = false;
     async function loadClients() {
       setLoading(true); setError("");

@@ -38,7 +38,7 @@ export default function MyClientsStatsCards({ data, loading, onLevel, onActive, 
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>NIVEL ACTUAL</div>
-            <div className={styles.value}>Nivel {formatNumber(data.currentLevel)}</div>
+            <div className={styles.value}>{loading ? "…" : `Nivel ${formatNumber(data.currentLevel)}`}</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">
             <Shield size={28} strokeWidth={1.9} />
@@ -46,8 +46,8 @@ export default function MyClientsStatsCards({ data, loading, onLevel, onActive, 
         </div>
 
         <div className={styles.progressMeta}>
-          <span>{formatNumber(data.currentLevelXp)} / {formatNumber(data.nextLevelXp)} XP</span>
-          <span>{Math.round(levelProgress)}%</span>
+          <span>{loading ? "Cargando progreso…" : `${formatNumber(data.currentLevelXp)} / ${formatNumber(data.nextLevelXp)} XP`}</span>
+          <span>{loading ? "" : `${Math.round(levelProgress)}%`}</span>
         </div>
         <div className={styles.progressTrack} aria-hidden="true">
           <span style={{ width: `${levelProgress}%` }} />
@@ -90,7 +90,7 @@ export default function MyClientsStatsCards({ data, loading, onLevel, onActive, 
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>COINS DISPONIBLES</div>
-            <div className={styles.value}>{formatNumber(data.availableCoins)} Coins</div>
+            <div className={styles.value}>{loading ? "…" : `${formatNumber(data.availableCoins)} Coins`}</div>
             <div className={styles.supporting}>Disponibles para reclamar</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">

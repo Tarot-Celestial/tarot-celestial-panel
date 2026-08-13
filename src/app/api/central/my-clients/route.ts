@@ -79,7 +79,10 @@ export async function GET(req: Request) {
 
     // This is the same real worker relation already used by the current UI to resolve "Telefonista responsable".
     const ownershipFilter = `captured_by_worker_id.eq.${worker.id}`;
-    const portfolioR = await admin.from("crm_clientes").select("*").or(ownershipFilter);
+    let portfolioQuery = admin.from("crm_clientes").select("*").or(ownershipFilter);
+    if (brand === "orion") portfolioQuery = portfolioQuery.ilike("origen", "%orion%");
+    else portfolioQuery = portfolioQuery.or("origen.is.null,origen.not.ilike.%orion%");
+    const portfolioR = await portfolioQuery;
     if (portfolioR.error) throw portfolioR.error;
     const portfolio = portfolioR.data || [];
     const portfolioIds = portfolio.map((client: any) => String(client.id)).filter(Boolean);
@@ -127,8 +130,12 @@ export async function GET(req: Request) {
     }
     if (view === "active") query = activeIds.size ? query.in("id", Array.from(activeIds)) : query.eq("id", "00000000-0000-0000-0000-000000000000");
     if (view === "followup") query = followupIds.size ? query.in("id", Array.from(followupIds)) : query.eq("id", "00000000-0000-0000-0000-000000000000");
-    if (status === "unclassified") query = query.is("estado_actual", null);
-    else if (status !== "all") query = query.eq("estado_actual", status);
+    if (status !== "all") {
+      const matchingStatusIds = portfolio
+        .filter((client: any) => status === "unclassified" ? !existingStatus(client) : existingStatus(client) === status)
+        .map((client: any) => String(client.id));
+      query = matchingStatusIds.length ? query.in("id", matchingStatusIds) : query.eq("id", "00000000-0000-0000-0000-000000000000");
+    }
 
     if (sort === "oldest") query = query.order("created_at", { ascending: true, nullsFirst: false });
     else if (sort === "name") query = query.order("nombre", { ascending: true, nullsFirst: false });
@@ -171,7 +178,7 @@ export async function GET(req: Request) {
     }
 
     const responsibleIds = Array.from(new Set((clients || []).map((client: any) =>
-      String(client.captured_by_worker_id || client.responsable_worker_id || client.assigned_worker_id || "")
+      String(client.captured_by_worker_id || "")
     ).filter(Boolean)));
     const workerNames = new Map<string, string>();
     if (responsibleIds.length) {
@@ -181,7 +188,7 @@ export async function GET(req: Request) {
     }
 
     const enriched = (clients || []).map((client: any) => {
-      const responsibleId = String(client.captured_by_worker_id || client.responsable_worker_id || client.assigned_worker_id || "");
+      const responsibleId = String(client.captured_by_worker_id || "");
       return {
         ...client,
         etiquetas: tagsByClient.get(String(client.id)) || [],

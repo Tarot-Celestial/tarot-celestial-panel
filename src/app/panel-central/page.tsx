@@ -1237,7 +1237,7 @@ function CentralPage() {
           <CentralProgressHeader
             progress={centralProgress}
             profile={centralProfile}
-            onSync={() => void xpFeed.load()}
+            onSync={() => { void xpFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
             syncStatus={xpFeed.syncStatus}
             lastSyncedAt={xpFeed.lastSyncedAt}
           />
