@@ -22,7 +22,8 @@ type ClientRow = {
 };
 
 type SortKey = "recent" | "oldest" | "name";
-type MyClientsListProps = { onOpenClient: (clientId: string) => void; onNewClient: () => void };
+export type MyClientsView = "all" | "active" | "followup";
+type MyClientsListProps = { onOpenClient: (clientId: string) => void; onNewClient: () => void; view: MyClientsView; onViewChange: (view: MyClientsView) => void; onStats: (stats: {active:number;followup:number}) => void };
 const PAGE_SIZE = 10;
 
 function fullName(client: ClientRow) {
@@ -40,10 +41,11 @@ function formatLastConversation(value?: string | null) {
   return new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
-export default function MyClientsList({ onOpenClient, onNewClient }: MyClientsListProps) {
+export default function MyClientsList({ onOpenClient, onNewClient, view, onViewChange, onStats }: MyClientsListProps) {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
+  const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -77,6 +79,7 @@ export default function MyClientsList({ onOpenClient, onNewClient }: MyClientsLi
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_clientes" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_etiquetas" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones" }, requestRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, requestRefresh)
       .subscribe();
     return () => { void client.removeChannel(channel); };
   }, [requestRefresh]);
@@ -89,20 +92,22 @@ export default function MyClientsList({ onOpenClient, onNewClient }: MyClientsLi
         const token = await getAccessToken();
         if (!token) throw new Error("No se pudo validar la sesión.");
         const params = new URLSearchParams({ marca: brand, page: String(page), page_size: String(PAGE_SIZE), sort });
+        params.set("view", view);
+        if (status !== "all") params.set("status", status);
         if (debouncedQuery) params.set("q", debouncedQuery);
         const response = await fetch(`/api/central/my-clients?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
         });
         const payload = await response.json().catch(() => null);
         if (!response.ok || !payload?.ok) throw new Error(payload?.error || "No se pudieron cargar las clientas.");
-        if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); }
+        if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); onStats({active:Number(payload.stats?.active||0),followup:Number(payload.stats?.followup||0)}); }
       } catch (loadError: any) {
         if (!cancelled) { setRows([]); setTotal(0); setError(loadError?.message || "No se pudieron cargar las clientas."); }
       } finally { if (!cancelled) setLoading(false); }
     }
     void loadClients();
     return () => { cancelled = true; };
-  }, [brand, debouncedQuery, page, sort, refreshKey]);
+  }, [brand, debouncedQuery, page, sort, status, refreshKey, view, onStats]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
@@ -113,9 +118,10 @@ export default function MyClientsList({ onOpenClient, onNewClient }: MyClientsLi
   return (
     <section className={styles.panel} aria-labelledby="my-clients-list-title">
       <div className={styles.headingRow}><div><div className={styles.kicker}>CARTERA {brand.toUpperCase()}</div><h2 id="my-clients-list-title" className={styles.title}>Mis clientas</h2></div><button type="button" className={styles.newButton} onClick={onNewClient}><UserPlus size={18} aria-hidden="true" />Nueva clienta</button></div>
+      <div className={styles.viewTabs} aria-label="Vista de clientas"><button className={view==="all"?styles.viewActive:""} onClick={()=>{onViewChange("all");setPage(1)}}>Todas</button><button className={view==="active"?styles.viewActive:""} onClick={()=>{onViewChange("active");setPage(1)}}>Activas</button><button className={view==="followup"?styles.viewActive:""} onClick={()=>{onViewChange("followup");setPage(1)}}>Sin seguimiento</button></div>
       <div className={styles.controls}>
         <label className={styles.searchBox}><Search size={18} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre o teléfono" aria-label="Buscar clientas" /></label>
-        <label className={styles.selectWrap}><SlidersHorizontal size={17} aria-hidden="true" /><select aria-label="Filtrar por estado" defaultValue="all"><option value="all">Todos los estados</option>{knownStatuses.map((status) => <option key={status} value={status}>{status}</option>)}<option value="unclassified">Sin clasificar</option></select></label>
+        <label className={styles.selectWrap}><SlidersHorizontal size={17} aria-hidden="true" /><select aria-label="Filtrar por estado" value={status} onChange={event=>{setStatus(event.target.value);setPage(1)}}><option value="all">Todos los estados</option>{knownStatuses.map((item) => <option key={item} value={item}>{item}</option>)}<option value="unclassified">Sin clasificar</option></select></label>
         <label className={styles.selectWrap}><select value={sort} onChange={(event) => { setSort(event.target.value as SortKey); setPage(1); }} aria-label="Ordenar clientas"><option value="recent">Más recientes</option><option value="oldest">Más antiguas</option><option value="name">Nombre</option></select></label>
       </div>
       <div className={styles.tableWrap}>

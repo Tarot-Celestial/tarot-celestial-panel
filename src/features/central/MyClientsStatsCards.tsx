@@ -15,13 +15,18 @@ export type MyClientsStatsData = {
 
 type MyClientsStatsCardsProps = {
   data: MyClientsStatsData;
+  loading?: boolean;
+  onLevel: () => void;
+  onActive: () => void;
+  onFollowUp: () => void;
+  onCoins: () => void;
 };
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("es-ES").format(Math.max(0, value));
 }
 
-export default function MyClientsStatsCards({ data }: MyClientsStatsCardsProps) {
+export default function MyClientsStatsCards({ data, loading, onLevel, onActive, onFollowUp, onCoins }: MyClientsStatsCardsProps) {
   const levelProgress = Math.min(
     100,
     Math.max(0, (data.currentLevelXp / Math.max(1, data.nextLevelXp)) * 100)
@@ -29,7 +34,7 @@ export default function MyClientsStatsCards({ data }: MyClientsStatsCardsProps) 
 
   return (
     <section className={styles.grid} aria-label="Resumen de Mis clientas">
-      <article className={`${styles.card} ${styles.levelCard}`}>
+      <button type="button" className={`${styles.card} ${styles.levelCard}`} onClick={onLevel}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>NIVEL ACTUAL</div>
@@ -47,14 +52,14 @@ export default function MyClientsStatsCards({ data }: MyClientsStatsCardsProps) 
         <div className={styles.progressTrack} aria-hidden="true">
           <span style={{ width: `${levelProgress}%` }} />
         </div>
-      </article>
+      </button>
 
-      <article className={`${styles.card} ${styles.activeCard}`}>
+      <button type="button" className={`${styles.card} ${styles.activeCard}`} onClick={onActive}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>CLIENTES ACTIVOS</div>
-            <div className={styles.value}>{formatNumber(data.activeClients)}</div>
-            <div className={styles.supporting}>+{formatNumber(data.activeClientsThisWeek)} esta semana</div>
+            <div className={styles.value}>{loading ? "…" : formatNumber(data.activeClients)}</div>
+            <div className={styles.supporting}>Cartera activa asignada</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">
             <UserRoundCheck size={28} strokeWidth={1.9} />
@@ -63,13 +68,13 @@ export default function MyClientsStatsCards({ data }: MyClientsStatsCardsProps) 
         <div className={styles.decorativeRing} aria-hidden="true">
           <span />
         </div>
-      </article>
+      </button>
 
-      <article className={`${styles.card} ${styles.followUpCard}`}>
+      <button type="button" className={`${styles.card} ${styles.followUpCard}`} onClick={onFollowUp}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>CLIENTES SIN SEGUIMIENTO</div>
-            <div className={styles.value}>{formatNumber(data.clientsWithoutFollowUp)}</div>
+            <div className={styles.value}>{loading ? "…" : formatNumber(data.clientsWithoutFollowUp)}</div>
             <div className={styles.supporting}>Requieren tu atención</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">
@@ -79,9 +84,9 @@ export default function MyClientsStatsCards({ data }: MyClientsStatsCardsProps) 
         <div className={styles.alertLine} aria-hidden="true">
           <span />
         </div>
-      </article>
+      </button>
 
-      <article className={`${styles.card} ${styles.coinsCard}`}>
+      <button type="button" className={`${styles.card} ${styles.coinsCard}`} onClick={onCoins}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>COINS DISPONIBLES</div>
@@ -97,7 +102,7 @@ export default function MyClientsStatsCards({ data }: MyClientsStatsCardsProps) 
           <span />
           <span />
         </div>
-      </article>
+      </button>
     </section>
   );
 }

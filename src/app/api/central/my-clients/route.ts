@@ -52,6 +52,12 @@ function existingStatus(client: Record<string, unknown>) {
   }
   return null;
 }
+function clientIsActive(client: Record<string, unknown>) {
+  if (typeof client.is_active === "boolean") return client.is_active;
+  if (typeof client.activo === "boolean") return client.activo;
+  const status = String(existingStatus(client) || "").toLowerCase();
+  return !["inactivo", "inactive", "archivado", "archived", "baja", "deleted", "eliminado"].includes(status);
+}
 
 export async function GET(req: Request) {
   try {
@@ -66,10 +72,25 @@ export async function GET(req: Request) {
     const pageSize = safeInt(url.searchParams.get("page_size"), 10, 1, 100);
     const q = String(url.searchParams.get("q") || "").trim();
     const sort = String(url.searchParams.get("sort") || "recent");
+    const view = ["active", "followup"].includes(String(url.searchParams.get("view") || "")) ? String(url.searchParams.get("view")) : "all";
+    const status = String(url.searchParams.get("status") || "all").trim();
     const brand = String(url.searchParams.get("marca") || "celestial").toLowerCase() === "orion" ? "orion" : "celestial";
     const admin = adminClient();
 
-    let query = admin.from("crm_clientes").select("*", { count: "exact" });
+    // This is the same real worker relation already used by the current UI to resolve "Telefonista responsable".
+    const ownershipFilter = `captured_by_worker_id.eq.${worker.id}`;
+    const portfolioR = await admin.from("crm_clientes").select("*").or(ownershipFilter);
+    if (portfolioR.error) throw portfolioR.error;
+    const portfolio = portfolioR.data || [];
+    const portfolioIds = portfolio.map((client: any) => String(client.id)).filter(Boolean);
+    const followupsR = portfolioIds.length
+      ? await admin.from("crm_client_followups").select("client_id").eq("worker_id", worker.id).is("completed_at", null).in("client_id", portfolioIds)
+      : { data: [], error: null };
+    if (followupsR.error) throw followupsR.error;
+    const followupIds = new Set((followupsR.data || []).map((row: any) => String(row.client_id)));
+    const activeIds = new Set(portfolio.filter((client: any) => clientIsActive(client)).map((client: any) => String(client.id)));
+
+    let query = admin.from("crm_clientes").select("*", { count: "exact" }).or(ownershipFilter);
 
     if (brand === "orion") {
       query = query.ilike("origen", "%orion%");
@@ -104,6 +125,10 @@ export async function GET(req: Request) {
         query = query.or(filters.join(","));
       }
     }
+    if (view === "active") query = activeIds.size ? query.in("id", Array.from(activeIds)) : query.eq("id", "00000000-0000-0000-0000-000000000000");
+    if (view === "followup") query = followupIds.size ? query.in("id", Array.from(followupIds)) : query.eq("id", "00000000-0000-0000-0000-000000000000");
+    if (status === "unclassified") query = query.is("estado_actual", null);
+    else if (status !== "all") query = query.eq("estado_actual", status);
 
     if (sort === "oldest") query = query.order("created_at", { ascending: true, nullsFirst: false });
     else if (sort === "name") query = query.order("nombre", { ascending: true, nullsFirst: false });
@@ -116,7 +141,7 @@ export async function GET(req: Request) {
 
     const ids = (clients || []).map((client: any) => String(client.id)).filter(Boolean);
     if (!ids.length) {
-      return NextResponse.json({ ok: true, clientes: [], total: count || 0, page, page_size: pageSize });
+      return NextResponse.json({ ok: true, clientes: [], total: count || 0, page, page_size: pageSize, stats: { active: activeIds.size, followup: followupIds.size } });
     }
 
     const [{ data: relations, error: relationsError }, { data: tags, error: tagsError }, { data: interactions, error: interactionsError }] = await Promise.all([
@@ -174,6 +199,7 @@ export async function GET(req: Request) {
       page_size: pageSize,
       total_pages: Math.max(1, Math.ceil((count || 0) / pageSize)),
       negocio: brand,
+      stats: { active: activeIds.size, followup: followupIds.size },
     });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "ERR_MY_CLIENTS" }, { status: 500 });

@@ -281,3 +281,4 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.viewTabs{display:flex;gap:7px;overflow:auto}.viewTabs button{border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.035);color:#a99fb5;padding:8px 13px;font-weight:800;cursor:pointer}.viewTabs .viewActive{color:#d5b4ff;border-color:rgba(157,103,255,.42);background:rgba(157,103,255,.14)}

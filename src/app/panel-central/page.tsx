@@ -15,7 +15,7 @@ import CentralStorePanel from "@/features/central/CentralStorePanel";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
-import MyClientsList from "@/features/central/MyClientsList";
+import MyClientsList, { type MyClientsView } from "@/features/central/MyClientsList";
 import MyClientProfile from "@/features/central/MyClientProfile";
 import CentralNotificationsCenter, { useCentralNotificationsFeed, type CentralNotification } from "@/features/central/CentralNotificationsCenter";
 import MyInvoicePanel, { useMyInvoice } from "@/features/central/MyInvoicePanel";
@@ -283,6 +283,9 @@ function CentralPage() {
   const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
+  const [myClientsView, setMyClientsView] = useState<MyClientsView>("all");
+  const [myClientsRealStats, setMyClientsRealStats] = useState<{active:number;followup:number}|null>(null);
+  const handleMyClientsStats = useCallback((stats:{active:number;followup:number}) => setMyClientsRealStats(stats), []);
 
   const centralProgress: CentralOperatorProgress = {
     totalXp: xpProgress?.total_xp || 0,
@@ -316,10 +319,10 @@ function CentralPage() {
     currentLevel: xpProgress?.level || 1,
     currentLevelXp: xpProgress?.level_xp || 0,
     nextLevelXp: xpProgress?.level_span || 0,
-    activeClients: 28,
-    activeClientsThisWeek: 4,
-    clientsWithoutFollowUp: 7,
-    availableCoins: 125,
+    activeClients: myClientsRealStats?.active || 0,
+    activeClientsThisWeek: 0,
+    clientsWithoutFollowUp: myClientsRealStats?.followup || 0,
+    availableCoins: xpData?.coin_exchange.coin_balance || 0,
   };
 
   const dailyActivity = xpData?.daily_activity;
@@ -1243,7 +1246,7 @@ function CentralPage() {
           <div className="tc-main-content">
           {tab === "mis-clientas" && (
             <>
-              <MyClientsStatsCards data={myClientsStats} />
+              <MyClientsStatsCards data={myClientsStats} loading={!myClientsRealStats || !xpData} onLevel={() => handleSidebarTabChange("tu-sistema-xp-niveles")} onActive={() => setMyClientsView("active")} onFollowUp={() => setMyClientsView("followup")} onCoins={() => handleSidebarTabChange("tu-sistema-xp-coins")} />
               {searchParams?.get("cliente") ? (
                 <MyClientProfile
                   clientId={String(searchParams.get("cliente"))}
@@ -1256,6 +1259,9 @@ function CentralPage() {
                 />
               ) : (
                 <MyClientsList
+                  view={myClientsView}
+                  onViewChange={setMyClientsView}
+                  onStats={handleMyClientsStats}
                   onNewClient={() => handleSidebarTabChange("crm")}
                   onOpenClient={(clientId) => {
                     const params = new URLSearchParams(searchParams?.toString() || "");
