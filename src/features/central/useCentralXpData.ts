@@ -33,6 +33,17 @@ export type CentralXpData = {
       xp: number;
       amount?: number | null;
     }>;
+    activities: Array<{
+      id: string;
+      kind: "payment" | "followup" | "capture";
+      source_id: string;
+      client_name: string;
+      amount?: number;
+      currency?: string;
+      detail?: string;
+      occurred_at: string;
+      xp: number;
+    }>;
   };
   level_config: Array<{
     level: number;

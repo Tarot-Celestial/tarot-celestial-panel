@@ -110,7 +110,19 @@
   display: grid;
   gap: 10px;
   margin-top: 22px;
+  max-height: 292px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 6px;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(var(--accent), 0.7) rgba(255, 255, 255, 0.045);
+  scrollbar-width: thin;
 }
+
+.dailyActions::-webkit-scrollbar { width: 7px; }
+.dailyActions::-webkit-scrollbar-track { border-radius: 999px; background: rgba(255, 255, 255, 0.045); }
+.dailyActions::-webkit-scrollbar-thumb { border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 999px; background: linear-gradient(180deg, rgba(var(--accent), 0.9), rgba(var(--accent), 0.48)); }
 
 .dailyAction {
   display: grid;

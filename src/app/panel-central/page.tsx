@@ -311,34 +311,32 @@ function CentralPage() {
   };
 
   const dailyActivity = xpData?.daily_activity;
-  const dailyItems = dailyActivity?.items || [];
-  const paymentActivity = dailyItems.find((item) => item.key === "payments");
-  const followupActivity = dailyItems.find((item) => item.key === "followups");
-  const captureActivity = dailyItems.find((item) => item.key === "captures");
-  const activityLabel = (count: number, singular: string, plural: string) => `${count} ${count === 1 ? singular : plural}`;
-  const paymentAmount = Number(paymentActivity?.amount || 0);
-  const realDailyActions = dailyActivity?.total_actions
-    ? [
-        {
-          id: "daily-payments",
-          label: activityLabel(paymentActivity?.count || 0, "cobro realizado", "cobros realizados"),
-          rewardXp: paymentActivity?.xp || 0,
-          completed: (paymentActivity?.count || 0) > 0,
-          detail: paymentAmount > 0 ? `${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(paymentAmount)} cobrados hoy` : undefined,
-        },
-        {
-          id: "daily-followups",
-          label: activityLabel(followupActivity?.count || 0, "seguimiento realizado", "seguimientos realizados"),
-          rewardXp: followupActivity?.xp || 0,
-          completed: (followupActivity?.count || 0) > 0,
-        },
-        {
-          id: "daily-captures",
-          label: activityLabel(captureActivity?.count || 0, "nueva clienta captada", "nuevas clientas captadas"),
-          rewardXp: captureActivity?.xp || 0,
-          completed: (captureActivity?.count || 0) > 0,
-        },
-      ]
+  const realDailyActions = dailyActivity?.activities.length
+    ? dailyActivity.activities.map((activity) => {
+        const time = new Intl.DateTimeFormat("es-ES", {
+          timeZone: dailyActivity.timezone,
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(activity.occurred_at));
+        const amount = activity.kind === "payment"
+          ? new Intl.NumberFormat("es-ES", {
+              style: "currency",
+              currency: activity.currency || "EUR",
+            }).format(Number(activity.amount) || 0)
+          : null;
+        const description = activity.kind === "payment"
+          ? `Cobro realizado · ${amount}`
+          : activity.kind === "followup"
+            ? activity.detail || "Seguimiento realizado"
+            : "Nueva clienta captada";
+        return {
+          id: activity.id,
+          label: activity.client_name,
+          rewardXp: activity.xp,
+          completed: true,
+          detail: `${time} · ${description}`,
+        };
+      })
     : [{ id: "daily-empty", label: "Todavía no hay actividad registrada hoy", rewardXp: 0 }];
 
   const centralDailyOverview: CentralDailyOverviewData = {

@@ -67,7 +67,7 @@ async function loadAllAppliedXpEvents(
   for (let from = 0; ; from += pageSize) {
     let query = admin
       .from("worker_xp_events")
-      .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,created_at")
+      .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
       .eq("status", "applied")
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -126,28 +126,76 @@ export async function GET(req: Request) {
     const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
 
     const [paymentsR, followupsR, capturesR] = await Promise.all([
-      admin.from("crm_cliente_pagos").select("id,importe,created_at").eq("created_by_user_id", me.id).eq("estado", "completed").gte("created_at", operationalDay.start).lt("created_at", operationalDay.end),
-      admin.from("crm_client_followups").select("id,completed_at").eq("worker_id", me.id).not("completed_at", "is", null).gte("completed_at", operationalDay.start).lt("completed_at", operationalDay.end),
-      admin.from("captacion_leads").select("id,closed_at").eq("assigned_worker_id", me.id).eq("estado", "captado").gte("closed_at", operationalDay.start).lt("closed_at", operationalDay.end),
+      admin.from("crm_cliente_pagos").select("id,cliente_id,importe,moneda,created_at").eq("created_by_user_id", me.id).eq("estado", "completed").gte("created_at", operationalDay.start).lt("created_at", operationalDay.end),
+      admin.from("crm_client_followups").select("id,client_id,reason,completed_at").eq("worker_id", me.id).not("completed_at", "is", null).gte("completed_at", operationalDay.start).lt("completed_at", operationalDay.end),
+      admin.from("captacion_leads").select("id,cliente_id,closed_at").eq("assigned_worker_id", me.id).eq("estado", "captado").gte("closed_at", operationalDay.start).lt("closed_at", operationalDay.end),
     ]);
     for (const result of [paymentsR, followupsR, capturesR]) if (result.error) throw result.error;
 
     const todayEvents = events.filter((event: any) => event.created_at >= operationalDay.start && event.created_at < operationalDay.end);
-    const ids = (rows: any[] | null) => new Set((rows || []).map((row: any) => String(row.id)));
-    const paymentIds = ids(paymentsR.data);
-    const followupIds = ids(followupsR.data);
-    const captureIds = ids(capturesR.data);
-    const eventMatches = (event: any, actionKeys: string[], sourceIds: Set<string>) => {
+    const clientIds = Array.from(new Set([
+      ...(paymentsR.data || []).map((row: any) => String(row.cliente_id || "")),
+      ...(followupsR.data || []).map((row: any) => String(row.client_id || "")),
+      ...(capturesR.data || []).map((row: any) => String(row.cliente_id || "")),
+    ].filter(Boolean)));
+    const clientsR = clientIds.length
+      ? await admin.from("crm_clientes").select("id,nombre,apellido").in("id", clientIds)
+      : { data: [], error: null };
+    if (clientsR.error) throw clientsR.error;
+    const clientNames = new Map((clientsR.data || []).map((client: any) => [
+      String(client.id),
+      [client.nombre, client.apellido].filter(Boolean).join(" ").trim() || "Clienta",
+    ]));
+
+    type ActivityKind = "payment" | "followup" | "capture";
+    const eventBelongsToActivity = (event: any, kind: ActivityKind, sourceId: string) => {
       const reference = String(event.reference_id || "");
-      return actionKeys.includes(String(event.action_key || "")) || Array.from(sourceIds).some((id) => reference.includes(id));
+      const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
+      if (reference === sourceId) return true;
+      if (kind === "capture" && reference === `captacion:${sourceId}`) return true;
+      if (kind === "payment" && String(metadata.payment_id || metadata.pago_id || "") === sourceId) return true;
+      if (kind === "followup" && String(metadata.followup_id || "") === sourceId) return true;
+      if (kind === "capture" && String(metadata.lead_id || "") === sourceId) return true;
+      return false;
     };
-    const xpFor = (actionKeys: string[], sourceIds: Set<string>) => todayEvents
-      .filter((event: any) => eventMatches(event, actionKeys, sourceIds))
+    const xpForActivity = (kind: ActivityKind, sourceId: string) => todayEvents
+      .filter((event: any) => eventBelongsToActivity(event, kind, sourceId))
       .reduce((sum: number, event: any) => sum + num(event.xp_amount), 0);
+
+    const activities = [
+      ...(paymentsR.data || []).map((row: any) => ({
+        id: `payment:${row.id}`,
+        kind: "payment" as const,
+        source_id: String(row.id),
+        client_name: clientNames.get(String(row.cliente_id)) || "Clienta",
+        amount: num(row.importe),
+        currency: String(row.moneda || "EUR"),
+        occurred_at: String(row.created_at),
+        xp: xpForActivity("payment", String(row.id)),
+      })),
+      ...(followupsR.data || []).map((row: any) => ({
+        id: `followup:${row.id}`,
+        kind: "followup" as const,
+        source_id: String(row.id),
+        client_name: clientNames.get(String(row.client_id)) || "Clienta",
+        detail: String(row.reason || "Seguimiento realizado"),
+        occurred_at: String(row.completed_at),
+        xp: xpForActivity("followup", String(row.id)),
+      })),
+      ...(capturesR.data || []).map((row: any) => ({
+        id: `capture:${row.id}`,
+        kind: "capture" as const,
+        source_id: String(row.id),
+        client_name: clientNames.get(String(row.cliente_id)) || "Clienta",
+        occurred_at: String(row.closed_at),
+        xp: xpForActivity("capture", String(row.id)),
+      })),
+    ].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+
     const dailyItems = [
-      { key: "payments" as const, count: paymentsR.data?.length || 0, xp: xpFor(["repurchase", "payment", "sale"], paymentIds), amount: (paymentsR.data || []).reduce((sum: number, row: any) => sum + num(row.importe), 0) },
-      { key: "followups" as const, count: followupsR.data?.length || 0, xp: xpFor(["followup"], followupIds) },
-      { key: "captures" as const, count: capturesR.data?.length || 0, xp: xpFor(["client_capture"], captureIds) },
+      { key: "payments" as const, count: paymentsR.data?.length || 0, xp: activities.filter((item) => item.kind === "payment").reduce((sum, item) => sum + item.xp, 0), amount: (paymentsR.data || []).reduce((sum: number, row: any) => sum + num(row.importe), 0) },
+      { key: "followups" as const, count: followupsR.data?.length || 0, xp: activities.filter((item) => item.kind === "followup").reduce((sum, item) => sum + item.xp, 0) },
+      { key: "captures" as const, count: capturesR.data?.length || 0, xp: activities.filter((item) => item.kind === "capture").reduce((sum, item) => sum + item.xp, 0) },
     ];
 
     // Read-only: loading Central or recalculating a level must never grant rewards.
@@ -180,6 +228,7 @@ export async function GET(req: Request) {
         total_actions: dailyItems.reduce((sum, item) => sum + item.count, 0),
         total_xp: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0),
         items: dailyItems,
+        activities,
       },
       level_config: levelConfig.levels,
       tier_config: levelConfig.tiers,
