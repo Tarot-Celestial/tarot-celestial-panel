@@ -28,6 +28,7 @@ export type DailySummaryData = {
   completed: number;
   target: number | null;
   dailyXp?: number;
+  dateLabel?: string;
 };
 
 export type MissionItem = {
@@ -129,7 +130,7 @@ export default function CentralDailyOverview({
 
         <div className={styles.summaryFooter}>
           <div className={styles.progressHeading}>
-            <span>Actividad de hoy</span>
+            <span>Actividad de {data.dailySummary.dateLabel || "hoy"}</span>
             <strong>
               {data.dailySummary.target
                 ? `${data.dailySummary.completed} / ${data.dailySummary.target} completado`
@@ -138,7 +139,7 @@ export default function CentralDailyOverview({
           </div>
           {data.dailySummary.target ? <div className={styles.progressTrack} aria-label={`${summaryProgress}% completado`}><span style={{ width: `${summaryProgress}%` }} /></div> : null}
           {typeof data.dailySummary.dailyXp === "number" && (
-            <div className={styles.xpEarned}>+{formatXp(data.dailySummary.dailyXp)} XP obtenidos hoy</div>
+            <div className={styles.xpEarned}>+{formatXp(data.dailySummary.dailyXp)} XP obtenidos {data.dailySummary.dateLabel || "hoy"}</div>
           )}
         </div>
       </article>

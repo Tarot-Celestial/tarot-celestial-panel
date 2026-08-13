@@ -40,15 +40,18 @@ function zonedMidnightUtc(year: number, month: number, day: number, timeZone = A
   return new Date(instant);
 }
 
-function currentOperationalDay() {
+function buildOperationalDay(requestedDate?: string | null) {
   const today = zonedParts(new Date());
-  const year = Number(today.year);
-  const month = Number(today.month);
-  const day = Number(today.day);
+  const todayKey = `${today.year}-${today.month}-${today.day}`;
+  const safeDate = /^\d{4}-\d{2}-\d{2}$/.test(String(requestedDate || "")) ? String(requestedDate) : todayKey;
+  if (safeDate > todayKey) throw new Error("FUTURE_DATE_NOT_ALLOWED");
+  const [year, month, day] = safeDate.split("-").map(Number);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) throw new Error("INVALID_DATE");
   const start = zonedMidnightUtc(year, month, day);
   const nextCalendarDay = new Date(Date.UTC(year, month - 1, day + 1));
   const end = zonedMidnightUtc(nextCalendarDay.getUTCFullYear(), nextCalendarDay.getUTCMonth() + 1, nextCalendarDay.getUTCDate());
-  return { date: `${today.year}-${today.month}-${today.day}`, start: start.toISOString(), end: end.toISOString() };
+  return { date: safeDate, start: start.toISOString(), end: end.toISOString(), is_today: safeDate === todayKey };
 }
 
 function rewardTablesMissing(error: { code?: string; message?: string } | null | undefined) {
@@ -142,7 +145,8 @@ export async function GET(req: Request) {
 
     const admin = getAdminClient();
     const levelConfig = await loadXpLevelConfiguration(admin);
-    const operationalDay = currentOperationalDay();
+    const requestedDate = new URL(req.url).searchParams.get("date");
+    const operationalDay = buildOperationalDay(requestedDate);
     const week = startOfWeek();
     const previousWeek = new Date(week); previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
     const [rulesR, events, workersR, rankingEvents] = await Promise.all([
@@ -259,6 +263,7 @@ export async function GET(req: Request) {
       daily_activity: {
         date: operationalDay.date,
         timezone: APP_TIMEZONE,
+        is_today: operationalDay.is_today,
         total_actions: dailyItems.reduce((sum, item) => sum + item.count, 0),
         total_xp: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0),
         items: dailyItems,

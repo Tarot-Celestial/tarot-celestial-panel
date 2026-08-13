@@ -12,6 +12,7 @@ import CentralXpPanel from "@/features/central/CentralXpPanel";
 import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
 import CentralXpCoinsPanel from "@/features/central/CentralXpCoinsPanel";
 import CentralStorePanel from "@/features/central/CentralStorePanel";
+import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
@@ -104,6 +105,7 @@ function dayKeyNow() {
   const d = new Date();
   return d.toISOString().slice(0, 10);
 }
+function madridTodayKey() { return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
 
 function eur(n: any) {
   const x = Number(n) || 0;
@@ -263,7 +265,13 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 function CentralPage() {
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice();
-  const xpFeed = useCentralXpData();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const todayKey = madridTodayKey();
+  const requestedDate = String(searchParams?.get("date") || "");
+  const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= todayKey ? requestedDate : todayKey;
+  const xpFeed = useCentralXpData(selectedDate);
   const xpData = xpFeed.data;
   const xpProgress = xpData?.progress;
   const currentTierName = xpProgress?.tier?.name || "Sin categoría";
@@ -273,9 +281,6 @@ function CentralPage() {
     ? `${xpProgress.next_level}${nextTierName ? ` · ${nextTierName}` : ""}`
     : "máximo";
   const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const pathname = usePathname();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
 
@@ -288,6 +293,7 @@ function CentralPage() {
   const centralStats: CentralStatsData = {
     totalXp: xpProgress?.total_xp || 0,
     xpToday: xpData?.daily_activity.total_xp || 0,
+    xpDateLabel: selectedDate === todayKey ? "hoy" : `el ${new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${selectedDate}T12:00:00Z`))}`,
     currentLevel: xpProgress ? `Nivel ${xpProgress.level} · ${currentTierName}` : currentTierName,
     currentLevelXp: xpProgress?.level_xp || 0,
     nextLevelXp: xpProgress?.level_span || 0,
@@ -317,7 +323,9 @@ function CentralPage() {
   };
 
   const dailyActivity = xpData?.daily_activity;
-  const realDailyActions = dailyActivity?.activities.length
+  const realDailyActions = xpFeed.busy
+    ? [{ id: "daily-loading", label: "Cargando resumen de la fecha seleccionada…", rewardXp: 0 }]
+    : dailyActivity?.activities.length
     ? dailyActivity.activities.map((activity) => {
         const time = new Intl.DateTimeFormat("es-ES", {
           timeZone: dailyActivity.timezone,
@@ -347,11 +355,12 @@ function CentralPage() {
 
   const centralDailyOverview: CentralDailyOverviewData = {
     dailySummary: {
-      title: "Tu resumen de hoy",
+      title: selectedDate === todayKey ? "Tu resumen de hoy" : `Resumen del ${new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${selectedDate}T12:00:00Z`))}`,
       subtitle: dailyActivity ? `Actividad real del ${new Date(`${dailyActivity.date}T12:00:00`).toLocaleDateString("es-ES")} · ${dailyActivity.timezone}` : "Cargando la actividad real de hoy…",
       completed: dailyActivity?.total_actions || 0,
       target: null,
       dailyXp: dailyActivity?.total_xp || 0,
+      dateLabel: selectedDate === todayKey ? "hoy" : "ese día",
       actions: realDailyActions,
     },
     missions: [
@@ -1229,6 +1238,7 @@ function CentralPage() {
             syncStatus={xpFeed.syncStatus}
             lastSyncedAt={xpFeed.lastSyncedAt}
           />
+          {tab === "central" && <CentralDateSelector value={selectedDate} today={todayKey} loading={xpFeed.busy} onChange={(date) => { const params=new URLSearchParams(searchParams?.toString()||""); params.set("tab","central"); params.set("date",date); router.push(`${pathname}?${params.toString()}`,{scroll:false}); }} />}
 
           <div className="tc-main-content">
           {tab === "mis-clientas" && (

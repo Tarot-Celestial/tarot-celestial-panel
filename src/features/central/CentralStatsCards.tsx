@@ -15,6 +15,7 @@ export type CentralLevel = string;
 export type CentralStatsData = {
   totalXp: number;
   xpToday: number;
+  xpDateLabel?: string;
   currentLevel: CentralLevel;
   currentLevelXp: number;
   nextLevelXp: number;
@@ -108,7 +109,7 @@ export default function CentralStatsCards({
           <div>
             <div className={styles.eyebrow}>XP TOTAL</div>
             <div className={styles.value}>{formatNumber(data.totalXp)} XP</div>
-            <div className={styles.positive}>+{formatNumber(data.xpToday)} XP hoy</div>
+            <div className={styles.positive}>+{formatNumber(data.xpToday)} XP {data.xpDateLabel || "hoy"}</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">
             <Sparkles size={27} />

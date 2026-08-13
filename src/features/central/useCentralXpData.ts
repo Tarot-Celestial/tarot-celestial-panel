@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
+const madridToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 export type CentralXpData = {
   worker: { id: string; name: string };
@@ -25,6 +26,7 @@ export type CentralXpData = {
   daily_activity: {
     date: string;
     timezone: string;
+    is_today: boolean;
     total_actions: number;
     total_xp: number;
     items: Array<{
@@ -136,13 +138,14 @@ export type CentralXpData = {
   }>;
 };
 
-export function useCentralXpData() {
+export function useCentralXpData(selectedDate?: string) {
   const [data, setData] = useState<CentralXpData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"syncing" | "synced" | "error">("syncing");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const viewingToday = !selectedDate || selectedDate === madridToday();
 
   const load = useCallback(async (silent = false) => {
     const requestId = ++requestRef.current;
@@ -152,7 +155,8 @@ export function useCentralXpData() {
       const { data: sessionData } = await sb.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error("Sesión no disponible");
-      const response = await fetch(`/api/central/xp-system?t=${Date.now()}`, {
+      const dateParam = selectedDate ? `&date=${encodeURIComponent(selectedDate)}` : "";
+      const response = await fetch(`/api/central/xp-system?t=${Date.now()}${dateParam}`, {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -174,7 +178,7 @@ export function useCentralXpData() {
     } finally {
       if (!silent) setBusy(false);
     }
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => {
     void load();
@@ -195,9 +199,9 @@ export function useCentralXpData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => { if (viewingToday) void load(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => { if (viewingToday) void load(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => { if (viewingToday) void load(true); })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") void load(true);
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setSyncStatus("error");
@@ -208,7 +212,7 @@ export function useCentralXpData() {
       document.removeEventListener("visibilitychange", onVisible);
       void sb.removeChannel(channel);
     };
-  }, [load]);
+  }, [load, viewingToday]);
 
   const acknowledgeReward = useCallback(async (claimId: string) => {
     const { data: sessionData } = await sb.auth.getSession();
