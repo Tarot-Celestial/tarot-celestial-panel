@@ -383,10 +383,10 @@ function CentralPage() {
     return {
       name: displayName,
       role: String(worker?.job_title || worker?.category || "Telefonista Experta"),
-      level: currentTierName,
+      level: xpProgress ? `${xpProgress.level} · ${currentTierName}` : currentTierName,
       photoUrl: photoUrl ? String(photoUrl) : null,
     };
-  }, [connectedOperator, currentTierName]);
+  }, [connectedOperator, currentTierName, xpProgress]);
 
   useEffect(() => {
     const requestedTab = String(searchParams?.get("tab") || "").trim().toLowerCase();

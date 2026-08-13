@@ -3,7 +3,7 @@
   top: 14px;
   z-index: 25;
   display: grid;
-  grid-template-columns: minmax(190px, 0.82fr) minmax(440px, 1.9fr) minmax(275px, 1fr);
+  grid-template-columns: minmax(175px, 0.72fr) minmax(430px, 1.72fr) minmax(390px, 1.35fr);
   align-items: center;
   gap: 18px;
   min-height: 104px;
@@ -126,13 +126,14 @@
 }
 
 .profileArea {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(205px, 1fr);
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
+.syncControls { display:flex;align-items:center;gap:7px;min-width:0 }
 .syncState { display:flex;align-items:center;gap:7px;white-space:nowrap;padding:8px 10px;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.035) }
 .syncState span { width:8px;height:8px;border-radius:999px;background:#ef4444;box-shadow:0 0 12px rgba(239,68,68,.7) }
 .syncState small { color:rgba(255,255,255,.7);font-size:9px;font-weight:850 }
@@ -144,8 +145,8 @@
   display: flex;
   align-items: center;
   gap: 11px;
-  min-width: 0;
-  padding: 9px 12px 9px 9px;
+  min-width: 205px;
+  padding: 9px 14px 9px 9px;
   border: 1px solid rgba(215, 181, 109, 0.18);
   border-radius: 17px;
   background: rgba(215, 181, 109, 0.055);
@@ -178,21 +179,19 @@
 }
 
 .profileName {
-  overflow: hidden;
   color: #ffffff;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .profileRole {
   margin-top: 2px;
-  overflow: hidden;
   color: rgba(255, 255, 255, 0.58);
   font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .profileLevel {
@@ -200,9 +199,11 @@
   color: #f1ce7a;
   font-size: 10px;
   font-weight: 850;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
-.settingsButton {
+.syncButton {
   width: 43px;
   height: 43px;
   display: grid;
@@ -216,7 +217,7 @@
   transition: color 180ms ease, transform 180ms ease, border-color 180ms ease, background 180ms ease;
 }
 
-.settingsButton:hover {
+.syncButton:hover {
   color: #f3d99b;
   transform: rotate(12deg) scale(1.04);
   border-color: rgba(215, 181, 109, 0.3);
@@ -231,32 +232,28 @@
 @keyframes syncSpin { to { transform:rotate(360deg) } }
 @keyframes syncPulse { 50% { opacity:.45;transform:scale(.82) } }
 
-@media (max-width: 1220px) {
+@media (max-width: 1380px) {
   .header {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(180px, 1fr) minmax(390px, auto);
   }
 
   .metrics {
+    grid-column: 1 / -1;
     order: 3;
   }
 
   .profileArea {
-    position: absolute;
-    top: 16px;
-    right: 18px;
+    grid-column: 2;
   }
 
-  .syncState small { display:none }
-
-  .brand {
-    padding-right: 290px;
-  }
+  .brand { grid-column: 1 }
 }
 
 @media (max-width: 760px) {
   .header {
     position: relative;
     top: 0;
+    grid-template-columns: minmax(0, 1fr);
     padding: 15px;
   }
 
@@ -266,14 +263,23 @@
 
   .profileArea {
     position: static;
-    justify-content: stretch;
+    grid-column: 1;
+    grid-template-columns: 1fr;
   }
 
   .profileCard {
-    flex: 1;
+    min-width: 0;
+    order: -1;
   }
+
+  .syncControls { justify-content:flex-end }
 
   .metrics {
     grid-template-columns: 1fr;
   }
+}
+
+@media (max-width: 480px) {
+  .syncControls { justify-content:stretch }
+  .syncState { flex:1 }
 }
