@@ -57,6 +57,37 @@ function rewardTablesMissing(error: { code?: string; message?: string } | null |
   return code === "42P01" || code === "PGRST205" || message.includes("worker_xp_reward_claims") || message.includes("worker_xp_reward_processing");
 }
 
+function coinTablesMissing(error: { code?: string; message?: string } | null | undefined) {
+  const value = `${error?.code || ""} ${error?.message || ""}`.toLowerCase();
+  return value.includes("42p01") || value.includes("pgrst205") || value.includes("worker_xp_coin_") || value.includes("worker_coin_");
+}
+
+async function coinExchangeSummary(admin: ReturnType<typeof getAdminClient>, workerId: string, historicalXp: number) {
+  const [configR, walletR, conversionsR] = await Promise.all([
+    admin.from("worker_xp_coin_config").select("xp_units,coin_units,min_xp,enabled,updated_at").eq("id", true).maybeSingle(),
+    admin.from("worker_coin_wallets").select("balance,updated_at").eq("worker_id", workerId).maybeSingle(),
+    admin.from("worker_xp_coin_conversions").select("id,xp_spent,coins_granted,ratio_xp,ratio_coins,status,created_at").eq("worker_id", workerId).eq("status", "completed").order("created_at", { ascending: false }),
+  ]);
+  const error = configR.error || walletR.error || conversionsR.error;
+  if (error) {
+    if (coinTablesMissing(error)) return { available: false, enabled: false, historical_xp: historicalXp, spent_xp: 0, available_xp: historicalXp, coin_balance: 0, ratio: null, history: [] };
+    throw error;
+  }
+  const history = conversionsR.data || [];
+  const spent = history.reduce((sum: number, row: any) => sum + num(row.xp_spent), 0);
+  const config = configR.data;
+  return {
+    available: true,
+    enabled: config?.enabled === true,
+    historical_xp: historicalXp,
+    spent_xp: spent,
+    available_xp: Math.max(0, historicalXp - spent),
+    coin_balance: num(walletR.data?.balance),
+    ratio: config ? { xp_units: num(config.xp_units), coin_units: num(config.coin_units), min_xp: num(config.min_xp), updated_at: config.updated_at } : null,
+    history: history.slice(0, 50),
+  };
+}
+
 async function loadAllAppliedXpEvents(
   admin: ReturnType<typeof getAdminClient>,
   workerId?: string,
@@ -199,7 +230,10 @@ export async function GET(req: Request) {
     ];
 
     // Read-only: loading Central or recalculating a level must never grant rewards.
-    const rewards = await rewardSummary(admin, String(me.id));
+    const [rewards, coinExchange] = await Promise.all([
+      rewardSummary(admin, String(me.id)),
+      coinExchangeSummary(admin, String(me.id), total),
+    ]);
 
     const monthStart = startOfUtcMonth().getTime();
     const weekStart = week.getTime();
@@ -236,6 +270,7 @@ export async function GET(req: Request) {
       reward_system_available: rewards.available,
       reward_claims: rewards.claims,
       pending_reward: rewards.pending,
+      coin_exchange: coinExchange,
       weekly,
       rules: (rulesR.data || []).filter((r: any) => r.enabled === true).map((r: any) => ({
         id: r.id,
@@ -266,6 +301,21 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const op = String(body?.op || "");
+    if (op === "exchange_xp") {
+      const xp = Number(body?.xp_amount);
+      const operationId = String(body?.operation_id || "");
+      if (!Number.isInteger(xp) || xp <= 0 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId)) {
+        return NextResponse.json({ ok: false, error: "INVALID_EXCHANGE" }, { status: 400 });
+      }
+      const admin = getAdminClient();
+      const result = await admin.rpc("exchange_worker_xp_for_coins", { p_worker_id: String(me.id), p_xp: xp, p_operation_id: operationId });
+      if (result.error) {
+        const message = String(result.error.message || "EXCHANGE_FAILED");
+        const known = ["INVALID_EXCHANGE_AMOUNT", "INSUFFICIENT_AVAILABLE_XP", "EXCHANGE_DISABLED", "OPERATION_ID_CONFLICT"].find((code) => message.includes(code));
+        return NextResponse.json({ ok: false, error: known || (coinTablesMissing(result.error) ? "COIN_EXCHANGE_NOT_INSTALLED" : "EXCHANGE_FAILED") }, { status: 409 });
+      }
+      return NextResponse.json({ ok: true, exchange: result.data });
+    }
     if (op !== "ack_reward_claim") return NextResponse.json({ ok: false, error: "INVALID_OPERATION" }, { status: 400 });
 
     const claimId = String(body?.claim_id || "");

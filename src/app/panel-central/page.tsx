@@ -10,6 +10,7 @@ import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotific
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralXpPanel from "@/features/central/CentralXpPanel";
 import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
+import CentralXpCoinsPanel from "@/features/central/CentralXpCoinsPanel";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
@@ -44,6 +45,7 @@ const TABS = [
   "mi-factura",
   "tu-sistema-xp",
   "tu-sistema-xp-niveles",
+  "tu-sistema-xp-coins",
   "panel",
   "equipo",
   "crm",
@@ -76,6 +78,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
     children: [
       { key: "tu-sistema-xp", label: "Mi progreso", kicker: "XP, acciones y actividad" },
       { key: "tu-sistema-xp-niveles", label: "Niveles", kicker: "Bronce → Leyenda" },
+      { key: "tu-sistema-xp-coins", label: "Canjear XP por Coins", kicker: "Saldo y conversiones" },
     ],
   },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
@@ -1258,6 +1261,7 @@ function CentralPage() {
 
           {tab === "tu-sistema-xp" && <CentralXpPanel {...xpFeed} />}
           {tab === "tu-sistema-xp-niveles" && <CentralXpLevelsPanel {...xpFeed} />}
+          {tab === "tu-sistema-xp-coins" && <CentralXpCoinsPanel {...xpFeed} />}
 
           {tab === "central" && (
             <>

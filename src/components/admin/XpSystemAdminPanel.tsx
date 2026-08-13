@@ -3,6 +3,7 @@ import { useCallback,useEffect,useMemo,useState } from "react";
 import { Award, Bolt, Coins, History, Medal, Plus, RefreshCw, Save, ShieldCheck, Sparkles, Star, Trophy, Users } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./XpSystemAdminPanel.module.css";
+import AdminXpCoinConfig from "./AdminXpCoinConfig";
 
 type Rule={action_key:string;name:string;description:string;xp_reward:number;frequency:string;enabled:boolean;integration_status:"connected"|"pending"};
 type Worker={id:string;display_name:string;total_xp:number;xp_month:number;xp_today:number;level:number;level_xp:number;next_level_xp:number;clients_captured:number;repurchases:number;followups:number;consultations:number;positive_reviews:number;missions:number;coins:number|null;coins_spent:number|null;rewards_claimed:number|null;rewards_value:number|null};
@@ -12,12 +13,14 @@ export default function XpSystemAdminPanel(){
  const authFetch=useCallback(async(url:string,init?:RequestInit)=>{const {data:s}=await supabaseBrowser().auth.getSession();return fetch(url,{...init,headers:{"Content-Type":"application/json",Authorization:`Bearer ${s.session?.access_token||""}`,...(init?.headers||{})},cache:"no-store"});},[]);
  const load=useCallback(async()=>{setBusy(true);setError("");try{const r=await authFetch(`/api/admin/xp-system?t=${Date.now()}`);const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error||"No se pudo cargar");setData(j);}catch(e:any){setError(e.message)}finally{setBusy(false)}},[authFetch]); useEffect(()=>{void load()},[load]);
  async function saveRule(rule:Rule){setBusy(true);try{const r=await authFetch("/api/admin/xp-system",{method:"POST",body:JSON.stringify({op:"save_rule",...rule})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error);await load();}catch(e:any){setError(e.message)}finally{setBusy(false)}}
+ async function saveExchange(config:any){setBusy(true);try{const r=await authFetch("/api/admin/xp-system",{method:"POST",body:JSON.stringify({op:"save_exchange_config",...config})});const j=await r.json();if(!r.ok||!j.ok)throw new Error(j.error);await load();}catch(e:any){setError(e.message)}finally{setBusy(false)}}
  async function adjust(w:Worker){const raw=prompt(`Ajustar XP de ${w.display_name}. Usa positivo o negativo:`);if(!raw)return;const amount=Number(raw);if(!Number.isFinite(amount)||!amount)return;const reason=prompt("Motivo obligatorio:")?.trim();if(!reason)return;const r=await authFetch("/api/admin/xp-system",{method:"POST",body:JSON.stringify({op:"adjust_xp",worker_id:w.id,amount,reason})});const j=await r.json();if(!r.ok||!j.ok){setError(j.error||"Error");return}await load();}
  const events=useMemo(()=> (data?.events||[]).filter((e:any)=>(!filterWorker||e.worker_id===filterWorker)&&(!filterAction||e.action_key===filterAction)),[data,filterWorker,filterAction]);
  if(!data&&!error)return <div className={styles.loading}>Cargando Sistema de XP…</div>;
  return <section className={styles.page}>
   <header className={styles.hero}><div><span><Sparkles size={14}/> PROGRESIÓN DE TELEFONISTAS</span><h1>Sistema de XP</h1><p>Centro administrativo de reglas, experiencia, niveles e historial real.</p></div><button onClick={()=>load()} disabled={busy}><RefreshCw size={16}/> Refrescar</button></header>
   {error?<div className={styles.error}>{error}</div>:null}
+  <AdminXpCoinConfig value={data.coin_exchange} busy={busy} save={saveExchange}/>
   <div className={styles.metrics}>{[[Bolt,"XP este mes",fmt(data.summary.xp_month)],[Star,"XP hoy",fmt(data.summary.xp_today)],[Trophy,"Nivel medio",Number(data.summary.average_level||0).toFixed(1)],[Award,"Líder del mes",data.summary.top_worker?.name||"Sin datos"],[Coins,"Coins generadas",data.summary.coins_generated??"Sin datos"],[Medal,"Bonos reclamados",data.summary.rewards_claimed??"Sin datos"],[ShieldCheck,"Acciones activas",fmt(data.summary.active_rules)]].map(([I,l,v]:any)=><article key={l}><I size={18}/><small>{l}</small><strong>{v}</strong></article>)}</div>
   <div className={styles.sectionHead}><div><span>CONFIGURACIÓN</span><h2>Acciones que dan experiencia</h2></div><button onClick={()=>setNewOpen(true)}><Plus size={16}/> Añadir acción XP</button></div>
   <div className={styles.rules}>{(data.rules||[]).map((r:Rule)=><RuleCard key={r.action_key} rule={r} save={saveRule} busy={busy}/>)}</div>

@@ -94,6 +94,16 @@ export type CentralXpData = {
     seen_at: string | null;
     created_at: string;
   } | null;
+  coin_exchange: {
+    available: boolean;
+    enabled: boolean;
+    historical_xp: number;
+    spent_xp: number;
+    available_xp: number;
+    coin_balance: number;
+    ratio: { xp_units: number; coin_units: number; min_xp: number; updated_at: string } | null;
+    history: Array<{ id: string; xp_spent: number; coins_granted: number; ratio_xp: number; ratio_coins: number; status: string; created_at: string }>;
+  };
   weekly: Array<{ date: string; xp: number }>;
   rules: Array<{
     id?: string;
@@ -182,6 +192,9 @@ export function useCentralXpData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => void load(true))
@@ -212,5 +225,20 @@ export function useCentralXpData() {
     void load(true);
   }, [load]);
 
-  return { data, error, busy, load, acknowledgeReward, syncStatus, lastSyncedAt };
+  const exchangeXp = useCallback(async (xpAmount: number, operationId: string) => {
+    const { data: sessionData } = await sb.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error("Sesión no disponible");
+    const response = await fetch("/api/central/xp-system", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: "exchange_xp", xp_amount: xpAmount, operation_id: operationId }),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo completar el canje");
+    await load(true);
+    return json.exchange;
+  }, [load]);
+
+  return { data, error, busy, load, acknowledgeReward, exchangeXp, syncStatus, lastSyncedAt };
 }
