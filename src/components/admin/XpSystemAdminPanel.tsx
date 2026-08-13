@@ -4,6 +4,7 @@ import { Award, Bolt, Coins, History, Medal, Plus, RefreshCw, Save, ShieldCheck,
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./XpSystemAdminPanel.module.css";
 import AdminXpCoinConfig from "./AdminXpCoinConfig";
+import AdminRewardStore from "./AdminRewardStore";
 
 type Rule={action_key:string;name:string;description:string;xp_reward:number;frequency:string;enabled:boolean;integration_status:"connected"|"pending"};
 type Worker={id:string;display_name:string;total_xp:number;xp_month:number;xp_today:number;level:number;level_xp:number;next_level_xp:number;clients_captured:number;repurchases:number;followups:number;consultations:number;positive_reviews:number;missions:number;coins:number|null;coins_spent:number|null;rewards_claimed:number|null;rewards_value:number|null};
@@ -21,6 +22,7 @@ export default function XpSystemAdminPanel(){
   <header className={styles.hero}><div><span><Sparkles size={14}/> PROGRESIÓN DE TELEFONISTAS</span><h1>Sistema de XP</h1><p>Centro administrativo de reglas, experiencia, niveles e historial real.</p></div><button onClick={()=>load()} disabled={busy}><RefreshCw size={16}/> Refrescar</button></header>
   {error?<div className={styles.error}>{error}</div>:null}
   <AdminXpCoinConfig value={data.coin_exchange} busy={busy} save={saveExchange}/>
+  <AdminRewardStore/>
   <div className={styles.metrics}>{[[Bolt,"XP este mes",fmt(data.summary.xp_month)],[Star,"XP hoy",fmt(data.summary.xp_today)],[Trophy,"Nivel medio",Number(data.summary.average_level||0).toFixed(1)],[Award,"Líder del mes",data.summary.top_worker?.name||"Sin datos"],[Coins,"Coins generadas",data.summary.coins_generated??"Sin datos"],[Medal,"Bonos reclamados",data.summary.rewards_claimed??"Sin datos"],[ShieldCheck,"Acciones activas",fmt(data.summary.active_rules)]].map(([I,l,v]:any)=><article key={l}><I size={18}/><small>{l}</small><strong>{v}</strong></article>)}</div>
   <div className={styles.sectionHead}><div><span>CONFIGURACIÓN</span><h2>Acciones que dan experiencia</h2></div><button onClick={()=>setNewOpen(true)}><Plus size={16}/> Añadir acción XP</button></div>
   <div className={styles.rules}>{(data.rules||[]).map((r:Rule)=><RuleCard key={r.action_key} rule={r} save={saveRule} busy={busy}/>)}</div>

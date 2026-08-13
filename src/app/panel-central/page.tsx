@@ -11,6 +11,7 @@ import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralS
 import CentralXpPanel from "@/features/central/CentralXpPanel";
 import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
 import CentralXpCoinsPanel from "@/features/central/CentralXpCoinsPanel";
+import CentralStorePanel from "@/features/central/CentralStorePanel";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList from "@/features/central/MyClientsList";
@@ -34,7 +35,7 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, Sparkles, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -46,6 +47,7 @@ const TABS = [
   "tu-sistema-xp",
   "tu-sistema-xp-niveles",
   "tu-sistema-xp-coins",
+  "tienda",
   "panel",
   "equipo",
   "crm",
@@ -81,6 +83,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
       { key: "tu-sistema-xp-coins", label: "Canjear XP por Coins", kicker: "Saldo y conversiones" },
     ],
   },
+  { key: "tienda", label: "Tienda", icon: ShoppingBag, kicker: "Bóveda de recompensas" },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
@@ -1262,6 +1265,7 @@ function CentralPage() {
           {tab === "tu-sistema-xp" && <CentralXpPanel {...xpFeed} />}
           {tab === "tu-sistema-xp-niveles" && <CentralXpLevelsPanel {...xpFeed} />}
           {tab === "tu-sistema-xp-coins" && <CentralXpCoinsPanel {...xpFeed} />}
+          {tab === "tienda" && <CentralStorePanel onEarnCoins={() => handleSidebarTabChange("tu-sistema-xp-coins")} />}
 
           {tab === "central" && (
             <>
