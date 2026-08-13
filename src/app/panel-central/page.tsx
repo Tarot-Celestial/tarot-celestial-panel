@@ -313,9 +313,9 @@ function CentralPage() {
   // Datos visuales provisionales para la primera fila de la pestaña Mis clientas.
   // Quedan tipados para conectarlos más adelante con XP, CRM y Coins reales.
   const myClientsStats: MyClientsStatsData = {
-    currentLevel: 1,
-    currentLevelXp: 0,
-    nextLevelXp: 100,
+    currentLevel: xpProgress?.level || 1,
+    currentLevelXp: xpProgress?.level_xp || 0,
+    nextLevelXp: xpProgress?.level_span || 0,
     activeClients: 28,
     activeClientsThisWeek: 4,
     clientsWithoutFollowUp: 7,
