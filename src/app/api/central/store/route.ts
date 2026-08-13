@@ -13,7 +13,7 @@ export async function GET(req:Request){
   const [walletR,rewardsR,claimsR,eventsR,levelConfig]=await Promise.all([
    admin.from("worker_coin_wallets").select("balance,updated_at").eq("worker_id",String(me.id)).maybeSingle(),
    admin.from("worker_store_rewards").select("id,name,description,category,coin_cost,icon_key,image_url,active,display_order,stock,required_level,updated_at").eq("active",true).order("display_order").order("created_at"),
-   admin.from("worker_store_claims").select("id,reward_id,reward_name,category,coin_cost,status,status_note,created_at,updated_at").eq("worker_id",String(me.id)).order("created_at",{ascending:false}).limit(50),
+   admin.from("worker_store_claims").select("id,reward_id,reward_name,category,coin_cost,status,status_note,created_at,updated_at").eq("worker_id",String(me.id)).order("created_at",{ascending:false}),
    admin.from("worker_xp_events").select("xp_amount").eq("worker_id",String(me.id)).eq("status","applied"),
    loadXpLevelConfiguration(admin),
   ]);
