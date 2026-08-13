@@ -133,6 +133,13 @@
   min-width: 0;
 }
 
+.syncState { display:flex;align-items:center;gap:7px;white-space:nowrap;padding:8px 10px;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.035) }
+.syncState span { width:8px;height:8px;border-radius:999px;background:#ef4444;box-shadow:0 0 12px rgba(239,68,68,.7) }
+.syncState small { color:rgba(255,255,255,.7);font-size:9px;font-weight:850 }
+.sync_synced span { background:#3ee48a;box-shadow:0 0 13px rgba(62,228,138,.8) }
+.sync_syncing span { background:#e9c96d;box-shadow:0 0 13px rgba(233,201,109,.75);animation:syncPulse 1s ease-in-out infinite }
+.syncingButton svg { animation:syncSpin .85s linear infinite }
+
 .profileCard {
   display: flex;
   align-items: center;
@@ -221,6 +228,9 @@
   82% { transform: translateX(100%); }
 }
 
+@keyframes syncSpin { to { transform:rotate(360deg) } }
+@keyframes syncPulse { 50% { opacity:.45;transform:scale(.82) } }
+
 @media (max-width: 1220px) {
   .header {
     grid-template-columns: 1fr;
@@ -235,6 +245,8 @@
     top: 16px;
     right: 18px;
   }
+
+  .syncState small { display:none }
 
   .brand {
     padding-right: 290px;

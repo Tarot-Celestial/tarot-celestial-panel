@@ -1219,6 +1219,9 @@ function CentralPage() {
           <CentralProgressHeader
             progress={centralProgress}
             profile={centralProfile}
+            onSync={() => void xpFeed.load()}
+            syncStatus={xpFeed.syncStatus}
+            lastSyncedAt={xpFeed.lastSyncedAt}
           />
 
           <div className="tc-main-content">

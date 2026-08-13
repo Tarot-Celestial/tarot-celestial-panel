@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseBrowser();
@@ -130,9 +130,14 @@ export function useCentralXpData() {
   const [data, setData] = useState<CentralXpData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"syncing" | "synced" | "error">("syncing");
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = ++requestRef.current;
     if (!silent) setBusy(true);
+    setSyncStatus("syncing");
     try {
       const { data: sessionData } = await sb.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -143,10 +148,19 @@ export function useCentralXpData() {
       });
       const json = await response.json();
       if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo cargar XP");
-      setData(json as CentralXpData);
-      setError("");
+      if (requestId === requestRef.current) {
+        setData(json as CentralXpData);
+        setError("");
+        setLastSyncedAt(new Date().toISOString());
+        setSyncStatus("synced");
+      }
+      return true;
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "No se pudo cargar XP");
+      if (requestId === requestRef.current) {
+        setError(loadError instanceof Error ? loadError.message : "No se pudo cargar XP");
+        setSyncStatus("error");
+      }
+      return false;
     } finally {
       if (!silent) setBusy(false);
     }
@@ -171,7 +185,10 @@ export function useCentralXpData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => void load(true))
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void load(true);
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setSyncStatus("error");
+      });
 
     return () => {
       window.clearInterval(refreshTimer);
@@ -195,5 +212,5 @@ export function useCentralXpData() {
     void load(true);
   }, [load]);
 
-  return { data, error, busy, load, acknowledgeReward };
+  return { data, error, busy, load, acknowledgeReward, syncStatus, lastSyncedAt };
 }

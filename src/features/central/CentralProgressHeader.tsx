@@ -1,6 +1,6 @@
 "use client";
 
-import { Flame, Settings, ShieldCheck, Sparkles } from "lucide-react";
+import { Flame, RefreshCw, Settings, ShieldCheck, Sparkles } from "lucide-react";
 import styles from "./CentralProgressHeader.module.css";
 
 export type CentralOperatorProgress = {
@@ -20,6 +20,9 @@ type CentralProgressHeaderProps = {
   progress: CentralOperatorProgress;
   profile: CentralOperatorProfile;
   onOpenSettings?: () => void;
+  onSync?: () => void;
+  syncStatus?: "syncing" | "synced" | "error";
+  lastSyncedAt?: string | null;
 };
 
 function formatXp(value: number) {
@@ -35,6 +38,9 @@ export default function CentralProgressHeader({
   progress,
   profile,
   onOpenSettings,
+  onSync,
+  syncStatus = "syncing",
+  lastSyncedAt,
 }: CentralProgressHeaderProps) {
   return (
     <section className={styles.header} aria-label="Resumen de progreso de la telefonista">
@@ -81,6 +87,13 @@ export default function CentralProgressHeader({
       </div>
 
       <div className={styles.profileArea}>
+        <div className={`${styles.syncState} ${styles[`sync_${syncStatus}`]}`} title={lastSyncedAt ? `Última actualización: ${new Date(lastSyncedAt).toLocaleTimeString("es-ES")}` : "Sincronizando datos"}>
+          <span aria-hidden="true" />
+          <small>{syncStatus === "error" ? "Error de sincronización" : syncStatus === "syncing" ? "Sincronizando…" : "Sincronizado"}</small>
+        </div>
+        <button className={`${styles.settingsButton} ${syncStatus === "syncing" ? styles.syncingButton : ""}`} type="button" onClick={onSync} aria-label="Sincronizar datos" title="Sincronizar datos">
+          <RefreshCw size={19} />
+        </button>
         <article className={styles.profileCard}>
           <div className={styles.avatar}>
             {profile.photoUrl ? (
