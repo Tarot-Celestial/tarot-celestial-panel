@@ -18,6 +18,7 @@ export type DailyAction = {
   label: string;
   rewardXp: number;
   completed?: boolean;
+  detail?: string;
 };
 
 export type DailySummaryData = {
@@ -25,7 +26,7 @@ export type DailySummaryData = {
   subtitle?: string;
   actions: DailyAction[];
   completed: number;
-  target: number;
+  target: number | null;
   dailyXp?: number;
 };
 
@@ -94,7 +95,7 @@ export default function CentralDailyOverview({
   onViewAllMissions,
   onViewAllNotifications,
 }: Props) {
-  const summaryProgress = percent(data.dailySummary.completed, data.dailySummary.target);
+  const summaryProgress = data.dailySummary.target ? percent(data.dailySummary.completed, data.dailySummary.target) : 0;
 
   return (
     <section className={styles.layout} aria-label="Actividad diaria de Central">
@@ -120,21 +121,22 @@ export default function CentralDailyOverview({
                 {action.completed ? <Check size={14} /> : <ChevronRight size={14} />}
               </span>
               <span className={styles.actionLabel}>{action.label}</span>
-              <strong>+{formatXp(action.rewardXp)} XP</strong>
+              <strong>{action.rewardXp > 0 ? `+${formatXp(action.rewardXp)} XP` : "Sin XP registrado"}</strong>
+              {action.detail ? <small className={styles.actionDetail}>{action.detail}</small> : null}
             </div>
           ))}
         </div>
 
         <div className={styles.summaryFooter}>
           <div className={styles.progressHeading}>
-            <span>Progreso de hoy</span>
+            <span>Actividad de hoy</span>
             <strong>
-              {data.dailySummary.completed} / {data.dailySummary.target} completado
+              {data.dailySummary.target
+                ? `${data.dailySummary.completed} / ${data.dailySummary.target} completado`
+                : `${data.dailySummary.completed} ${data.dailySummary.completed === 1 ? "acción registrada" : "acciones registradas"}`}
             </strong>
           </div>
-          <div className={styles.progressTrack} aria-label={`${summaryProgress}% completado`}>
-            <span style={{ width: `${summaryProgress}%` }} />
-          </div>
+          {data.dailySummary.target ? <div className={styles.progressTrack} aria-label={`${summaryProgress}% completado`}><span style={{ width: `${summaryProgress}%` }} /></div> : null}
           {typeof data.dailySummary.dailyXp === "number" && (
             <div className={styles.xpEarned}>+{formatXp(data.dailySummary.dailyXp)} XP obtenidos hoy</div>
           )}

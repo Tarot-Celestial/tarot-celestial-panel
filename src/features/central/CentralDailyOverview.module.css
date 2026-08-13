@@ -156,6 +156,13 @@
   font-weight: 950;
 }
 
+.actionDetail {
+  grid-column: 2 / -1;
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .summaryFooter {
   position: relative;
   z-index: 1;

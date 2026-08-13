@@ -22,6 +22,18 @@ export type CentralXpData = {
     xp_month: number;
     previous_week_xp: number;
   };
+  daily_activity: {
+    date: string;
+    timezone: string;
+    total_actions: number;
+    total_xp: number;
+    items: Array<{
+      key: "payments" | "followups" | "captures";
+      count: number;
+      xp: number;
+      amount?: number | null;
+    }>;
+  };
   level_config: Array<{
     level: number;
     xp_to_next: number | null;
@@ -145,6 +157,9 @@ export function useCentralXpData() {
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => void load(true))
       .subscribe();
 
     return () => {

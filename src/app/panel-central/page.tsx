@@ -281,7 +281,7 @@ function CentralPage() {
 
   const centralStats: CentralStatsData = {
     totalXp: xpProgress?.total_xp || 0,
-    xpToday: xpProgress?.xp_today || 0,
+    xpToday: xpData?.daily_activity.total_xp || 0,
     currentLevel: xpProgress ? `Nivel ${xpProgress.level} · ${currentTierName}` : currentTierName,
     currentLevelXp: xpProgress?.level_xp || 0,
     nextLevelXp: xpProgress?.level_span || 0,
@@ -310,20 +310,45 @@ function CentralPage() {
     availableCoins: 125,
   };
 
-  // Contenido visual provisional para la segunda fase de la pantalla Central.
-  // La estructura tipada permitirá conectarlo después con CRM, XP, misiones y eventos.
+  const dailyActivity = xpData?.daily_activity;
+  const dailyItems = dailyActivity?.items || [];
+  const paymentActivity = dailyItems.find((item) => item.key === "payments");
+  const followupActivity = dailyItems.find((item) => item.key === "followups");
+  const captureActivity = dailyItems.find((item) => item.key === "captures");
+  const activityLabel = (count: number, singular: string, plural: string) => `${count} ${count === 1 ? singular : plural}`;
+  const paymentAmount = Number(paymentActivity?.amount || 0);
+  const realDailyActions = dailyActivity?.total_actions
+    ? [
+        {
+          id: "daily-payments",
+          label: activityLabel(paymentActivity?.count || 0, "cobro realizado", "cobros realizados"),
+          rewardXp: paymentActivity?.xp || 0,
+          completed: (paymentActivity?.count || 0) > 0,
+          detail: paymentAmount > 0 ? `${new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(paymentAmount)} cobrados hoy` : undefined,
+        },
+        {
+          id: "daily-followups",
+          label: activityLabel(followupActivity?.count || 0, "seguimiento realizado", "seguimientos realizados"),
+          rewardXp: followupActivity?.xp || 0,
+          completed: (followupActivity?.count || 0) > 0,
+        },
+        {
+          id: "daily-captures",
+          label: activityLabel(captureActivity?.count || 0, "nueva clienta captada", "nuevas clientas captadas"),
+          rewardXp: captureActivity?.xp || 0,
+          completed: (captureActivity?.count || 0) > 0,
+        },
+      ]
+    : [{ id: "daily-empty", label: "Todavía no hay actividad registrada hoy", rewardXp: 0 }];
+
   const centralDailyOverview: CentralDailyOverviewData = {
     dailySummary: {
       title: "Tu resumen de hoy",
-      subtitle: "Sigue así, cada acción te acerca más a tus metas y recompensas.",
-      completed: 3,
-      target: 5,
-      dailyXp: 450,
-      actions: [
-        { id: "daily-followups", label: "3 seguimientos realizados", rewardXp: 150, completed: true },
-        { id: "daily-client", label: "1 nueva clienta captada", rewardXp: 200, completed: true },
-        { id: "daily-next", label: "Realiza 5 seguimientos más", rewardXp: 100 },
-      ],
+      subtitle: dailyActivity ? `Actividad real del ${new Date(`${dailyActivity.date}T12:00:00`).toLocaleDateString("es-ES")} · ${dailyActivity.timezone}` : "Cargando la actividad real de hoy…",
+      completed: dailyActivity?.total_actions || 0,
+      target: null,
+      dailyXp: dailyActivity?.total_xp || 0,
+      actions: realDailyActions,
     },
     missions: [
       { id: "mission-followup", name: "Reina del seguimiento", description: "Realiza 10 seguimientos", progress: 7, target: 10, rewardXp: 250 },

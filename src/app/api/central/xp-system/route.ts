@@ -14,6 +14,43 @@ function startOfUtcDay(offsetDays = 0) {
 function startOfUtcMonth() { const d = new Date(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)); }
 function startOfWeek() { const d = startOfUtcDay(); const day = d.getUTCDay() || 7; d.setUTCDate(d.getUTCDate() - day + 1); return d; }
 
+const APP_TIMEZONE = "Europe/Madrid";
+
+function zonedParts(date: Date, timeZone = APP_TIMEZONE) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+function zonedMidnightUtc(year: number, month: number, day: number, timeZone = APP_TIMEZONE) {
+  let instant = Date.UTC(year, month - 1, day);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const parts = zonedParts(new Date(instant), timeZone);
+    const represented = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second));
+    instant += Date.UTC(year, month - 1, day) - represented;
+  }
+  return new Date(instant);
+}
+
+function currentOperationalDay() {
+  const today = zonedParts(new Date());
+  const year = Number(today.year);
+  const month = Number(today.month);
+  const day = Number(today.day);
+  const start = zonedMidnightUtc(year, month, day);
+  const nextCalendarDay = new Date(Date.UTC(year, month - 1, day + 1));
+  const end = zonedMidnightUtc(nextCalendarDay.getUTCFullYear(), nextCalendarDay.getUTCMonth() + 1, nextCalendarDay.getUTCDate());
+  return { date: `${today.year}-${today.month}-${today.day}`, start: start.toISOString(), end: end.toISOString() };
+}
+
 function rewardTablesMissing(error: { code?: string; message?: string } | null | undefined) {
   const code = String(error?.code || "");
   const message = String(error?.message || "").toLowerCase();
@@ -30,7 +67,7 @@ async function loadAllAppliedXpEvents(
   for (let from = 0; ; from += pageSize) {
     let query = admin
       .from("worker_xp_events")
-      .select("id,worker_id,action_key,xp_amount,reference_label,origin,status,created_at")
+      .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,created_at")
       .eq("status", "applied")
       .order("created_at", { ascending: false })
       .range(from, from + pageSize - 1);
@@ -74,6 +111,7 @@ export async function GET(req: Request) {
 
     const admin = getAdminClient();
     const levelConfig = await loadXpLevelConfiguration(admin);
+    const operationalDay = currentOperationalDay();
     const week = startOfWeek();
     const previousWeek = new Date(week); previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
     const [rulesR, events, workersR, rankingEvents] = await Promise.all([
@@ -87,10 +125,34 @@ export async function GET(req: Request) {
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
     const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
 
+    const [paymentsR, followupsR, capturesR] = await Promise.all([
+      admin.from("crm_cliente_pagos").select("id,importe,created_at").eq("created_by_user_id", me.id).eq("estado", "completed").gte("created_at", operationalDay.start).lt("created_at", operationalDay.end),
+      admin.from("crm_client_followups").select("id,completed_at").eq("worker_id", me.id).not("completed_at", "is", null).gte("completed_at", operationalDay.start).lt("completed_at", operationalDay.end),
+      admin.from("captacion_leads").select("id,closed_at").eq("assigned_worker_id", me.id).eq("estado", "captado").gte("closed_at", operationalDay.start).lt("closed_at", operationalDay.end),
+    ]);
+    for (const result of [paymentsR, followupsR, capturesR]) if (result.error) throw result.error;
+
+    const todayEvents = events.filter((event: any) => event.created_at >= operationalDay.start && event.created_at < operationalDay.end);
+    const ids = (rows: any[] | null) => new Set((rows || []).map((row: any) => String(row.id)));
+    const paymentIds = ids(paymentsR.data);
+    const followupIds = ids(followupsR.data);
+    const captureIds = ids(capturesR.data);
+    const eventMatches = (event: any, actionKeys: string[], sourceIds: Set<string>) => {
+      const reference = String(event.reference_id || "");
+      return actionKeys.includes(String(event.action_key || "")) || Array.from(sourceIds).some((id) => reference.includes(id));
+    };
+    const xpFor = (actionKeys: string[], sourceIds: Set<string>) => todayEvents
+      .filter((event: any) => eventMatches(event, actionKeys, sourceIds))
+      .reduce((sum: number, event: any) => sum + num(event.xp_amount), 0);
+    const dailyItems = [
+      { key: "payments" as const, count: paymentsR.data?.length || 0, xp: xpFor(["repurchase", "payment", "sale"], paymentIds), amount: (paymentsR.data || []).reduce((sum: number, row: any) => sum + num(row.importe), 0) },
+      { key: "followups" as const, count: followupsR.data?.length || 0, xp: xpFor(["followup"], followupIds) },
+      { key: "captures" as const, count: capturesR.data?.length || 0, xp: xpFor(["client_capture"], captureIds) },
+    ];
+
     // Read-only: loading Central or recalculating a level must never grant rewards.
     const rewards = await rewardSummary(admin, String(me.id));
 
-    const dayStart = startOfUtcDay().getTime();
     const monthStart = startOfUtcMonth().getTime();
     const weekStart = week.getTime();
     const prevStart = previousWeek.getTime();
@@ -111,7 +173,14 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       worker: { id: me.id, name: me.display_name },
-      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, total_required_for_max: level.totalRequiredForMax, xp_today: sumSince(dayStart), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
+      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, total_required_for_max: level.totalRequiredForMax, xp_today: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
+      daily_activity: {
+        date: operationalDay.date,
+        timezone: APP_TIMEZONE,
+        total_actions: dailyItems.reduce((sum, item) => sum + item.count, 0),
+        total_xp: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0),
+        items: dailyItems,
+      },
       level_config: levelConfig.levels,
       tier_config: levelConfig.tiers,
       level_config_persisted: levelConfig.persisted,
