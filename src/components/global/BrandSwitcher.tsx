@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import styles from "./BrandSwitcher.module.css";
 
 type BrandKey = "celestial" | "orion";
 
@@ -34,6 +35,7 @@ export default function BrandSwitcher() {
     const active = brand === key;
     return (
       <button
+        className={`${styles.button} ${active ? styles.active : ""}`}
         type="button"
         onClick={() => changeBrand(key)}
         title={key === "orion" ? "Ver y crear clientes de Tarot Orion" : "Ver y crear clientes de Tarot Celestial"}
@@ -59,6 +61,7 @@ export default function BrandSwitcher() {
 
   return (
     <div
+      className={styles.switcher}
       style={{
         display: "flex",
         alignItems: "center",

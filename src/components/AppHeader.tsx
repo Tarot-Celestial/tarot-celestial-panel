@@ -7,6 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
+import styles from "./AppHeader.module.css";
 
 const sb = supabaseBrowser();
 
@@ -331,6 +332,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   return (
     <>
       <div
+        className={styles.shell}
         style={{
           position: "sticky",
           top: 0,
@@ -341,10 +343,11 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
           boxShadow: "0 16px 40px rgba(0,0,0,.22)",
         }}
       >
-        <div className="tc-container" style={{ padding: "14px 18px" }}>
-          <div className="tc-row" style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-            <div className="tc-row" style={{ gap: 14, alignItems: "center" }}>
+        <div className={`tc-container ${styles.inner}`} style={{ padding: "14px 18px" }}>
+          <div className={`tc-row ${styles.layout}`} style={{ justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+            <div className={`tc-row ${styles.identity}`} style={{ gap: 14, alignItems: "center" }}>
               <div
+                className={styles.logo}
                 style={{
                   width: 50,
                   height: 50,
@@ -360,28 +363,29 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                 <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={38} height={38} />
               </div>
 
-              <div style={{ lineHeight: 1.15 }}>
-                <div style={{ fontWeight: 900, fontSize: 17 }}>Tarot Celestial</div>
-                <div className="tc-sub" style={{ marginTop: 5 }}>
+              <div className={styles.identityText} style={{ lineHeight: 1.15 }}>
+                <div className={styles.productName} style={{ fontWeight: 900, fontSize: 17 }}>Tarot Celestial</div>
+                <div className={`${styles.operator} tc-sub`} style={{ marginTop: 5 }}>
                   <b>{name}</b> · {roleText}
                   {teamText ? ` · ${teamText}` : ""}
                 </div>
-                <div className="tc-sub" style={{ marginTop: 4, opacity: 0.72, fontSize: 12 }}>
+                <div className={`${styles.route} tc-sub`} style={{ marginTop: 4, opacity: 0.72, fontSize: 12 }}>
                   {pathLabel(pathname || "")}
                 </div>
               </div>
             </div>
 
-            <div className="tc-row" style={{ gap: 10, flexWrap: "wrap", position: "relative" }}>
+            <div className={`tc-row ${styles.controls}`} style={{ gap: 10, flexWrap: "wrap", position: "relative" }}>
               <BrandSwitcher />
-              <div style={{ position: "relative" }}>
-                <button className="tc-btn" onClick={() => setNotifOpen((v) => !v)}>
+              <div className={styles.notificationWrap} style={{ position: "relative" }}>
+                <button className={styles.holoButton} onClick={() => setNotifOpen((v) => !v)} aria-label="Abrir notificaciones" aria-expanded={notifOpen}>
                   🔔
                   {unreadCount > 0 ? <span style={{ marginLeft: 6 }}>({unreadCount})</span> : null}
                 </button>
 
                 {notifOpen ? (
                   <div
+                    className={styles.notificationPanel}
                     style={{
                       position: "absolute",
                       right: 0,
@@ -432,21 +436,21 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                 ) : null}
               </div>
 
-              <div className="tc-row" style={{ gap: 6 }}>
-                <button className={`tc-btn ${estado === "online" ? "tc-btn-ok" : ""}`} onClick={() => cambiarEstado("online")} disabled={estadoLoading}>
-                  🟢 Conectado
+              <div className={`tc-row ${styles.states}`} style={{ gap: 6 }} aria-label="Estado operativo">
+                <button className={`${styles.stateButton} ${styles.online} ${estado === "online" ? styles.activeOnline : ""}`} onClick={() => cambiarEstado("online")} disabled={estadoLoading} aria-pressed={estado === "online"}>
+                  <span className={styles.led} aria-hidden="true" /> Conectado
                 </button>
-                <button className={`tc-btn ${estado === "break" ? "tc-btn-gold" : ""}`} onClick={() => cambiarEstado("break")} disabled={estadoLoading}>
-                  ⏸️ Descanso
+                <button className={`${styles.stateButton} ${styles.break} ${estado === "break" ? styles.activeBreak : ""}`} onClick={() => cambiarEstado("break")} disabled={estadoLoading} aria-pressed={estado === "break"}>
+                  <span className={styles.led} aria-hidden="true" /> Descanso
                 </button>
-                <button className={`tc-btn ${estado === "offline" ? "tc-btn-danger" : ""}`} onClick={() => cambiarEstado("offline")} disabled={estadoLoading}>
-                  🔴 Desconectado
+                <button className={`${styles.stateButton} ${styles.offline} ${estado === "offline" ? styles.activeOffline : ""}`} onClick={() => cambiarEstado("offline")} disabled={estadoLoading} aria-pressed={estado === "offline"}>
+                  <span className={styles.led} aria-hidden="true" /> Desconectado
                 </button>
               </div>
 
-              {estado === "online" && startTime ? <div className="tc-chip">⏱ {formatTime(elapsed)}</div> : null}
+              {estado === "online" && startTime ? <div className={styles.timer} aria-label={`Tiempo conectado: ${formatTime(elapsed)}`}><span className={styles.timerDot} aria-hidden="true" />{formatTime(elapsed)}</div> : null}
 
-              <button className="tc-btn tc-btn-gold" onClick={logout}>Salir</button>
+              <button className={styles.logout} onClick={logout}>Salir</button>
             </div>
           </div>
         </div>

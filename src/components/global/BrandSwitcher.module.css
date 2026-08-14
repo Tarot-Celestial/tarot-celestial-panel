@@ -1,0 +1,26 @@
+.switcher {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 4px !important;
+  border: 1px solid rgba(231, 199, 133, .14) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(0,0,0,.14)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+}
+.button {
+  position: relative;
+  height: 32px !important;
+  padding: 0 13px !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  color: rgba(255,255,255,.62) !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-size: 11px;
+  letter-spacing: .04em !important;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.button:hover { color: #f4e4bd !important; border-color: rgba(221,184,105,.15) !important; background: rgba(255,255,255,.035) !important; }
+.active { color: #ffe9b5 !important; border-color: rgba(226,188,105,.34) !important; background: linear-gradient(145deg, rgba(215,169,74,.18), rgba(132,83,182,.08)) !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 18px rgba(207,157,57,.09) !important; }
+.button:focus-visible { outline: 2px solid rgba(237,202,126,.8); outline-offset: 2px; }

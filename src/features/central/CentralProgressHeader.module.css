@@ -5,17 +5,18 @@
   display: grid;
   grid-template-columns: minmax(175px, 0.72fr) minmax(430px, 1.72fr) minmax(390px, 1.35fr);
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   min-height: 104px;
   padding: 16px 18px;
   overflow: hidden;
-  border: 1px solid rgba(215, 181, 109, 0.24);
+  border: 1px solid rgba(220, 182, 100, 0.22);
   border-radius: 22px;
   background:
-    linear-gradient(115deg, rgba(18, 16, 31, 0.96), rgba(25, 21, 44, 0.93)),
-    radial-gradient(circle at 20% 0%, rgba(215, 181, 109, 0.16), transparent 45%);
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(18px);
+    radial-gradient(circle at 12% -60%, rgba(218, 170, 73, 0.2), transparent 40%),
+    radial-gradient(circle at 88% 160%, rgba(101, 59, 163, 0.2), transparent 46%),
+    linear-gradient(112deg, rgba(5, 5, 9, 0.97), rgba(15, 12, 20, 0.96) 52%, rgba(10, 7, 19, 0.97));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -1px 0 rgba(149, 101, 201, 0.06);
+  backdrop-filter: blur(15px) saturate(120%);
 }
 
 .header::before {
@@ -23,9 +24,21 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(100deg, transparent 10%, rgba(255, 255, 255, 0.035) 48%, transparent 80%);
-  transform: translateX(-100%);
-  animation: headerShine 8s ease-in-out infinite;
+  opacity: .7;
+  background:
+    linear-gradient(90deg, transparent, rgba(222, 184, 103, .1) 30%, transparent 30.2%, transparent 73%, rgba(142, 100, 214, .09) 73.2%, transparent),
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent 28%);
+}
+
+.header::after {
+  content: "";
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 0;
+  height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(245, 212, 138, .55), rgba(142, 100, 214, .22), transparent);
 }
 
 .brand,
@@ -53,14 +66,15 @@
   border-radius: 15px;
   color: #f3d99b;
   background: linear-gradient(145deg, rgba(215, 181, 109, 0.2), rgba(215, 181, 109, 0.04));
-  box-shadow: 0 10px 28px rgba(215, 181, 109, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 28px rgba(215, 181, 109, 0.09), 0 0 22px rgba(215,181,109,.06);
 }
 
 .brandTitle {
   color: #fff7df;
   font-size: 20px;
   font-weight: 950;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.19em;
+  text-shadow: 0 0 20px rgba(231,194,113,.12);
 }
 
 .brandSubtitle {
@@ -84,16 +98,18 @@
   min-width: 0;
   min-height: 66px;
   padding: 11px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.035);
-  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .metric:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px);
   border-color: rgba(215, 181, 109, 0.25);
-  background: rgba(215, 181, 109, 0.07);
+  background: linear-gradient(180deg, rgba(215,181,109,.075), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 8px 24px rgba(0,0,0,.12);
 }
 
 .metricIcon {
@@ -104,7 +120,9 @@
   place-items: center;
   border-radius: 11px;
   color: #f3d99b;
-  background: rgba(215, 181, 109, 0.1);
+  border: 1px solid rgba(215,181,109,.12);
+  background: linear-gradient(145deg, rgba(215, 181, 109, 0.13), rgba(120,75,177,.05));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }
 
 .metricLabel {
@@ -120,7 +138,7 @@
 .metricValue {
   margin-top: 5px;
   color: #ffffff;
-  font-size: 18px;
+  font-size: 19px;
   font-weight: 950;
   white-space: nowrap;
 }
@@ -134,7 +152,7 @@
 }
 
 .syncControls { display:flex;align-items:center;gap:7px;min-width:0 }
-.syncState { display:flex;align-items:center;gap:7px;white-space:nowrap;padding:8px 10px;border:1px solid rgba(255,255,255,.09);border-radius:13px;background:rgba(255,255,255,.035) }
+.syncState { display:flex;align-items:center;gap:7px;white-space:nowrap;padding:8px 10px;border:1px solid rgba(255,255,255,.08);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.018));box-shadow:inset 0 1px 0 rgba(255,255,255,.035) }
 .syncState span { width:8px;height:8px;border-radius:999px;background:#ef4444;box-shadow:0 0 12px rgba(239,68,68,.7) }
 .syncState small { color:rgba(255,255,255,.7);font-size:9px;font-weight:850 }
 .sync_synced span { background:#3ee48a;box-shadow:0 0 13px rgba(62,228,138,.8) }
@@ -149,7 +167,8 @@
   padding: 9px 14px 9px 9px;
   border: 1px solid rgba(215, 181, 109, 0.18);
   border-radius: 17px;
-  background: rgba(215, 181, 109, 0.055);
+  background: linear-gradient(120deg, rgba(215,181,109,.075), rgba(123,76,170,.045));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
 }
 
 .avatar {
@@ -224,11 +243,6 @@
   background: rgba(215, 181, 109, 0.09);
 }
 
-@keyframes headerShine {
-  0%, 70%, 100% { transform: translateX(-100%); }
-  82% { transform: translateX(100%); }
-}
-
 @keyframes syncSpin { to { transform:rotate(360deg) } }
 @keyframes syncPulse { 50% { opacity:.45;transform:scale(.82) } }
 
@@ -282,4 +296,9 @@
 @media (max-width: 480px) {
   .syncControls { justify-content:stretch }
   .syncState { flex:1 }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric, .syncButton { transition: none; }
+  .syncingButton svg, .sync_syncing span { animation: none; }
 }

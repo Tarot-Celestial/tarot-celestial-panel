@@ -1,0 +1,105 @@
+.shell {
+  position: sticky;
+  top: 0;
+  z-index: 80;
+  border-bottom: 1px solid rgba(221, 184, 105, 0.18) !important;
+  background:
+    radial-gradient(circle at 18% -110%, rgba(202, 155, 64, 0.2), transparent 48%),
+    radial-gradient(circle at 82% -150%, rgba(105, 66, 168, 0.22), transparent 44%),
+    linear-gradient(112deg, rgba(4, 4, 8, 0.97), rgba(15, 12, 16, 0.96) 52%, rgba(8, 6, 15, 0.97)) !important;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36), inset 0 -1px 0 rgba(255, 255, 255, 0.025) !important;
+  backdrop-filter: blur(16px) saturate(125%);
+}
+
+.shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.42;
+  background: linear-gradient(90deg, transparent, rgba(222, 184, 103, 0.12) 32%, transparent 32.15%, transparent 67%, rgba(142, 100, 214, 0.1) 67.15%, transparent);
+}
+
+.inner { padding: 11px 18px !important; }
+.layout { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.identity { display: flex; align-items: center; gap: 13px; min-width: 260px; }
+
+.logo {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(232, 197, 123, 0.31) !important;
+  border-radius: 15px !important;
+  background: linear-gradient(145deg, rgba(223, 182, 94, 0.13), rgba(95, 56, 137, 0.08)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 9px 28px rgba(0, 0, 0, 0.32), 0 0 20px rgba(205, 153, 64, 0.07) !important;
+}
+.logo::after { content: ""; position: absolute; inset: 3px; border: 1px solid rgba(255,255,255,.055); border-radius: 11px; pointer-events: none; }
+.identityText { min-width: 0; line-height: 1.12; }
+.productName { color: #fff9ec; font-size: 17px; font-weight: 900; letter-spacing: .01em; }
+.operator { margin-top: 5px; color: rgba(255,255,255,.72); font-size: 12px; white-space: nowrap; }
+.operator b { color: #f3e5c2; }
+.route { margin-top: 4px; color: rgba(220, 195, 239, .52); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+
+.controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; position: relative; }
+.notificationWrap { position: relative; }
+.holoButton, .stateButton, .logout, .timer {
+  min-height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 13px;
+  color: rgba(255,255,255,.82);
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 8px 22px rgba(0,0,0,.12);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+.holoButton { min-width: 43px; padding: 0 12px; cursor: pointer; }
+.holoButton:hover, .stateButton:hover, .logout:hover { transform: translateY(-1px); border-color: rgba(225,190,113,.32); background: linear-gradient(180deg, rgba(225,190,113,.09), rgba(255,255,255,.02)); }
+.holoButton:focus-visible, .stateButton:focus-visible, .logout:focus-visible { outline: 2px solid rgba(237,202,126,.8); outline-offset: 2px; }
+.count { margin-left: 5px; color: #f0cd78; font-size: 11px; font-weight: 900; }
+
+.states { display: flex; align-items: center; gap: 5px; padding: 4px; border: 1px solid rgba(255,255,255,.07); border-radius: 16px; background: rgba(0,0,0,.22); }
+.stateButton { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 11px; border-radius: 11px; font-size: 11px; font-weight: 850; cursor: pointer; }
+.stateButton:disabled { cursor: wait; opacity: .62; }
+.led { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 999px; background: #5d6270; box-shadow: inset 0 0 0 1px rgba(255,255,255,.16); }
+.online .led { background: #28de7b; box-shadow: 0 0 9px rgba(40,222,123,.65), inset 0 0 0 1px rgba(255,255,255,.3); }
+.break .led { background: #42b9f4; box-shadow: 0 0 9px rgba(66,185,244,.62), inset 0 0 0 1px rgba(255,255,255,.3); }
+.offline .led { background: #f04b62; box-shadow: 0 0 9px rgba(240,75,98,.6), inset 0 0 0 1px rgba(255,255,255,.3); }
+.activeOnline { border-color: rgba(40,222,123,.34); color: #c9fbe0; background: rgba(40,222,123,.09); }
+.activeBreak { border-color: rgba(66,185,244,.34); color: #d3f2ff; background: rgba(66,185,244,.09); }
+.activeOffline { border-color: rgba(240,75,98,.35); color: #ffd6dc; background: rgba(240,75,98,.09); }
+
+.timer { display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; color: #e7e1ee; font: 800 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .035em; }
+.timerDot { width: 6px; height: 6px; border-radius: 99px; background: #e7bc60; box-shadow: 0 0 8px rgba(231,188,96,.65); }
+.logout { min-height: 38px; padding: 0 15px; border-color: rgba(225,185,100,.3); color: #f6dfaa; font-size: 12px; font-weight: 900; cursor: pointer; background: linear-gradient(145deg, rgba(212,164,69,.14), rgba(212,164,69,.055)); }
+
+.notificationPanel { position: absolute !important; right: 0 !important; top: 48px !important; width: min(340px, calc(100vw - 32px)) !important; max-height: 420px !important; overflow-y: auto !important; padding: 10px !important; border: 1px solid rgba(223,190,119,.2) !important; border-radius: 17px !important; background: rgba(10,8,16,.98) !important; box-shadow: 0 26px 70px rgba(0,0,0,.52) !important; }
+
+@media (max-width: 1240px) {
+  .layout { align-items: flex-start; }
+  .controls { flex-wrap: wrap; }
+  .states { order: 3; margin-left: auto; }
+}
+@media (max-width: 860px) {
+  .inner { padding: 10px 14px !important; }
+  .layout { flex-direction: column; gap: 10px; }
+  .identity { min-width: 0; width: 100%; }
+  .controls { width: 100%; justify-content: flex-start; }
+  .states { order: initial; margin-left: 0; }
+}
+@media (max-width: 620px) {
+  .operator { white-space: normal; }
+  .states { width: 100%; order: 5; }
+  .stateButton { flex: 1; justify-content: center; padding-inline: 7px; }
+  .timer { margin-left: auto; }
+}
+@media (max-width: 430px) {
+  .productName { font-size: 15px; }
+  .stateButton { font-size: 10px; }
+  .logo { width: 44px; height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .holoButton, .stateButton, .logout { transition: none; }
+}
