@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./RegistrarLlamadaModal.module.css";
+import { tcToast } from "@/lib/tc-toast";
 
 type ClienteLite = {
   id: string;
@@ -599,6 +600,11 @@ export default function RegistrarLlamadaModal({
           operationId: String(j?.operation_id || operationIdRef.current || ""),
           rendimientoId: String(j?.rendimiento_id || ""),
           paymentId: String(j?.payment_id || ""),
+          clientName: String(j?.client_name || [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") || "Clienta"),
+          amount: Number(j?.amount ?? toNum(importe)),
+          currency: String(j?.currency || "EUR"),
+          countToday: Number(j?.payment_count_today || 0) || undefined,
+          xpEvent: j?.xp_event || null,
           clienteId,
           business: String(j?.business || ""),
           occurredAt: String(j?.created_at || new Date().toISOString()),
@@ -622,6 +628,7 @@ export default function RegistrarLlamadaModal({
     } catch (e: any) {
       console.error("[RegistrarLlamadaModal] error registrando llamada", e);
       setMsg(`❌ ${friendlySubmitError(e?.message)}`);
+      if (clienteCompra === "si") tcToast({ title: "Cobro no registrado", description: "No hemos podido completar la operación.", tone: "error", duration: 4200 });
     } finally {
       submitInFlightRef.current = false;
       setLoading(false);

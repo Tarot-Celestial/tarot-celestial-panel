@@ -1229,7 +1229,7 @@ function CentralPage() {
       </div>
       <AppHeader onIdentityLoaded={handleIdentityLoaded} />
       <ReservasGlobalWatcher enabled={true} onGoToReserva={openReservaFromPopup} />
-      <PaymentMotivationWatcher mode="central" />
+      <PaymentMotivationWatcher mode="central" xpData={xpData} onStateRefresh={xpFeed.load} />
       <div className="tc-shell tc-shell-premium">
         <CentralSidebar items={centralNavItems} activeTab={tab} onTabChange={handleSidebarTabChange} />
 

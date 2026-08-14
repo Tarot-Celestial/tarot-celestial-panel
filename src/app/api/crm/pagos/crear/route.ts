@@ -93,7 +93,7 @@ export async function POST(req: Request) {
 
     const { data: cliente, error: clienteError } = await admin
       .from("crm_clientes")
-      .select("id")
+      .select("id, nombre, apellido")
       .eq("id", cliente_id)
       .maybeSingle();
 
@@ -154,9 +154,29 @@ export async function POST(req: Request) {
       }
     }
 
+    let persistedXpEvent: any = null;
+    if (String(estado) === "completed") {
+      const { data: recentXpEvents } = await admin
+        .from("worker_xp_events")
+        .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
+        .eq("worker_id", worker.id)
+        .eq("status", "applied")
+        .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(10);
+      persistedXpEvent = (recentXpEvents || []).find((event: any) => {
+        const metadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+        return [event?.reference_id, metadata.payment_id, metadata.pago_id]
+          .map((value) => String(value || ""))
+          .includes(String(pago.id));
+      }) || null;
+    }
+
     return NextResponse.json({
       ok: true,
       pago,
+      client_name: [cliente.nombre, cliente.apellido].filter(Boolean).join(" ").trim() || "Clienta",
+      xp_event: persistedXpEvent,
       msg: "Pago creado correctamente",
     });
 

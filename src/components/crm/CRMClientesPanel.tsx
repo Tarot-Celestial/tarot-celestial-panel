@@ -10,6 +10,7 @@ import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { Clock3, ShieldCheck } from "lucide-react";
+import { tcToast } from "@/lib/tc-toast";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -1694,6 +1695,15 @@ export default function CRMClientesPanel({
         }
       } catch {}
 
+      window.dispatchEvent(new CustomEvent("tc-payment-recorded", { detail: {
+        paymentId: String(j?.pago?.id || ""),
+        clientName: String(j?.client_name || "Clienta"),
+        amount: Number(j?.pago?.importe || importe),
+        currency: String(j?.pago?.moneda || "EUR"),
+        occurredAt: String(j?.pago?.created_at || new Date().toISOString()),
+        xpEvent: j?.xp_event || null,
+      } }));
+
       setCrmPagoMsg("✅ Pago registrado correctamente");
       setCrmPagoPendienteConfirmacion(false);
       setCrmPagoImporte("");
@@ -1702,6 +1712,7 @@ export default function CRMClientesPanel({
       await loadPagosCliente(clienteId);
     } catch (e: any) {
       setCrmPagoMsg(`❌ ${e?.message || "Error confirmando pago"}`);
+      tcToast({ title: "Cobro no registrado", description: "No hemos podido completar la operación.", tone: "error", duration: 4200 });
     } finally {
       setCrmPagoLoading(false);
     }
@@ -2752,4 +2763,3 @@ export default function CRMClientesPanel({
     </div>
   );
 }
-

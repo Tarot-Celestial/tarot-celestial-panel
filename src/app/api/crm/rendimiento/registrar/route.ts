@@ -491,6 +491,40 @@ export async function POST(req: Request) {
     const inserted = result?.rendimiento ? [result.rendimiento] : [];
     const economicPayment = result?.payment || null;
 
+    // El HUD representa únicamente el evento XP que ya haya persistido la operación
+    // atómica. Nunca calcula XP desde la configuración ni concede experiencia aquí.
+    let persistedXpEvent: any = null;
+    let paymentCountToday: number | null = null;
+    if (clienteCompra && economicPayment?.id) {
+      const eventSince = new Date(Date.now() - 60_000).toISOString();
+      const { data: recentXpEvents } = await admin
+        .from("worker_xp_events")
+        .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
+        .eq("worker_id", me.id)
+        .eq("status", "applied")
+        .gte("created_at", eventSince)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      persistedXpEvent = (recentXpEvents || []).find((event: any) => {
+        const metadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+        const references = [event?.reference_id, metadata.payment_id, metadata.pago_id, metadata.rendimiento_id, metadata.operation_id]
+          .map((value) => String(value || ""));
+        return references.includes(String(economicPayment.id))
+          || references.includes(String(result?.rendimiento?.id || ""))
+          || references.includes(String(operationId || ""));
+      }) || null;
+
+      const paymentDay = String(result?.rendimiento?.fecha || "");
+      if (paymentDay) {
+        const countResult = await admin
+          .from("rendimiento_llamadas")
+          .select("id", { count: "exact", head: true })
+          .eq("fecha", paymentDay)
+          .gt("importe", 0);
+        if (!countResult.error) paymentCountToday = Number(countResult.count || 0);
+      }
+    }
+
     await syncClienteMonthTag(admin, clienteId);
 
 
@@ -501,6 +535,11 @@ export async function POST(req: Request) {
       operation_id: operationId || null,
       rendimiento_id: result?.rendimiento?.id || null,
       payment_id: result?.payment?.id || null,
+      client_name: joinClienteName(cliente),
+      amount: economicPayment ? Number(economicPayment.importe || importe || 0) : null,
+      currency: String(economicPayment?.moneda || "EUR"),
+      payment_count_today: paymentCountToday,
+      xp_event: persistedXpEvent,
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
       business: String(cliente?.origen || "celestial"),
       message: collaboratorDisplayName
@@ -516,4 +555,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "CALL_REGISTER_FAILED" }, { status: 500 });
   }
 }
-
