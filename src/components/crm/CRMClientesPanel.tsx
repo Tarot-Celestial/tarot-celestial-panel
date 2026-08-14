@@ -1035,35 +1035,14 @@ export default function CRMClientesPanel({
           deuda_pendiente: Number(String(crmNewDeuda).replace(",", ".")) || 0,
           minutos_free_pendientes: Number(String(crmNewMinFree).replace(",", ".")) || 0,
           minutos_normales_pendientes: Number(String(crmNewMinNormales).replace(",", ".")) || 0,
+          etiquetas: crmNewEtiquetasSel,
+          brand: getActiveBrand(),
         }),
       });
 
       const j = await safeJson(r);
 
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      const nuevoClienteId = String(
-        j?.cliente?.id ||
-        j?.cliente_id ||
-        j?.id ||
-        ""
-      ).trim();
-
-      if (nuevoClienteId && crmNewEtiquetasSel.length > 0) {
-        try {
-          await fetch("/api/crm/clientes/etiquetas/update", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              cliente_id: nuevoClienteId,
-              etiquetas: crmNewEtiquetasSel,
-            }),
-          });
-        } catch {}
-      }
 
       const cross = j?.cross_brand_warning;
       if (cross) {

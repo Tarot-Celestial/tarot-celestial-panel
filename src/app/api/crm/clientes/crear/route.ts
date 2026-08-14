@@ -75,7 +75,14 @@ export async function POST(req: Request) {
     const pais = String(body?.pais || "").trim();
     const email = String(body?.email || "").trim();
     const notas = String(body?.notas || "").trim();
-    const origen = String(body?.origen || "manual").trim();
+    const requestedBrand = String(body?.brand || "").trim().toLowerCase() === "orion" ? "orion" : "celestial";
+    const requestedOrigin = String(body?.origen || "manual").trim();
+    const origen = worker.role === "central"
+      ? (requestedBrand === "orion" ? "tarot_orion" : "tarot_celestial")
+      : requestedOrigin;
+    const etiquetaIds = Array.from(new Set(
+      (Array.isArray(body?.etiquetas) ? body.etiquetas : []).map((value: unknown) => String(value || "").trim()).filter(Boolean)
+    ));
 
     const deuda_pendiente = Number(body?.deuda_pendiente || 0) || 0;
     const minutos_free_pendientes = Number(body?.minutos_free_pendientes || 0) || 0;
@@ -94,7 +101,7 @@ export async function POST(req: Request) {
     const targetIsOrion = String(origen || "").toLowerCase().includes("orion");
     const { data: existingRows, error: existingError } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, origen")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, origen, captured_by_worker_id")
       .or(`telefono.eq.${telefono},telefono_normalizado.eq.${telefono_normalizado}`);
 
     if (existingError) throw existingError;
@@ -146,6 +153,7 @@ export async function POST(req: Request) {
     deuda_pendiente,
     minutos_free_pendientes,
     minutos_normales_pendientes,
+    ...(worker.role === "central" ? { captured_by_worker_id: worker.id } : {}),
   };
 
     const { data: cliente, error } = await admin
@@ -156,11 +164,57 @@ export async function POST(req: Request) {
 
     if (error) throw error;
 
+    let tagWarning: string | null = null;
+    if (etiquetaIds.length) {
+      const { data: validTags, error: validTagsError } = await admin
+        .from("crm_etiquetas")
+        .select("id")
+        .in("id", etiquetaIds);
+      if (validTagsError) {
+        tagWarning = "NO_SE_PUDIERON_VALIDAR_LAS_ETIQUETAS";
+      } else {
+        const validIds = (validTags || []).map((tag: any) => String(tag.id));
+        if (validIds.length) {
+          const { error: tagError } = await admin.from("crm_cliente_etiquetas").insert(
+            validIds.map((etiqueta_id) => ({ cliente_id: cliente.id, etiqueta_id }))
+          );
+          if (tagError) tagWarning = "CLIENTA_CREADA_SIN_ETIQUETAS";
+        }
+      }
+    }
+
+    let xpEvent: any = null;
+    if (worker.role === "central") {
+      const referenceId = `crm_client:${String(cliente.id)}`;
+      const { data: awardResult, error: awardError } = await admin.rpc("award_worker_xp", {
+        p_worker_id: worker.id,
+        p_action_key: "client_capture",
+        p_reference_id: referenceId,
+        p_reference_label: [nombre, apellido].filter(Boolean).join(" ").trim() || `Cliente ${cliente.id}`,
+        p_origin: "crm_manual",
+        p_metadata: { client_id: cliente.id, brand: requestedBrand, source: "mis_clientas" },
+      });
+      if (!awardError) {
+        const { data: persistedEvent } = await admin
+          .from("worker_xp_events")
+          .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
+          .eq("worker_id", worker.id)
+          .eq("reference_id", referenceId)
+          .eq("status", "applied")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        xpEvent = persistedEvent || awardResult || null;
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       cliente,
       msg: "Cliente creado correctamente",
       cross_brand_warning: crossBrandInfo,
+      tag_warning: tagWarning,
+      xp_event: xpEvent,
     });
   } catch (e: any) {
     return NextResponse.json(

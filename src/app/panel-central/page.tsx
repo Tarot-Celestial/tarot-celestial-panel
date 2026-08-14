@@ -16,6 +16,7 @@ import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList, { type MyClientsView } from "@/features/central/MyClientsList";
+import CentralNewClientModal from "@/features/central/CentralNewClientModal";
 import MyClientProfile from "@/features/central/MyClientProfile";
 import CentralNotificationsCenter, { useCentralNotificationsFeed, type CentralNotification } from "@/features/central/CentralNotificationsCenter";
 import MyInvoicePanel, { useMyInvoice } from "@/features/central/MyInvoicePanel";
@@ -284,6 +285,8 @@ function CentralPage() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
   const [myClientsView, setMyClientsView] = useState<MyClientsView>("all");
+  const [newClientOpen, setNewClientOpen] = useState(false);
+  const closeNewClient = useCallback(() => setNewClientOpen(false), []);
   const [myClientsRealStats, setMyClientsRealStats] = useState<{active:number;followup:number}|null>(null);
   const handleMyClientsStats = useCallback((stats:{active:number;followup:number}) => setMyClientsRealStats(stats), []);
 
@@ -1262,7 +1265,7 @@ function CentralPage() {
                   view={myClientsView}
                   onViewChange={setMyClientsView}
                   onStats={handleMyClientsStats}
-                  onNewClient={() => handleSidebarTabChange("crm")}
+                  onNewClient={() => setNewClientOpen(true)}
                   onOpenClient={(clientId) => {
                     const params = new URLSearchParams(searchParams?.toString() || "");
                     params.set("tab", "mis-clientas");
@@ -1275,6 +1278,8 @@ function CentralPage() {
           )}
 
           {tab === "notificaciones" && <CentralNotificationsCenter feed={notificationFeed} />}
+
+          <CentralNewClientModal open={newClientOpen} onClose={closeNewClient} onCreated={() => { void xpFeed.load(true); }} />
 
           {tab === "mi-factura" && <MyInvoicePanel feed={myInvoiceFeed} />}
 
