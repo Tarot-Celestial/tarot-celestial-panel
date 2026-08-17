@@ -43,12 +43,55 @@ async function workerFromReq(req: Request) {
 
   const { data, error } = await admin
     .from("workers")
-    .select("id, user_id, display_name, role, team, state")
+    .select("id, user_id, display_name, role, team, state, is_active")
     .eq("user_id", uid)
     .maybeSingle();
 
   if (error) throw error;
   return data || null;
+}
+
+function workerIsEnabled(worker: any) {
+  const state = String(worker?.state || "").trim().toLowerCase();
+  return worker?.is_active !== false && !["inactive", "inactivo", "disabled", "desactivado", "baja"].includes(state);
+}
+
+export async function GET(req: Request) {
+  try {
+    const worker = await workerFromReq(req);
+    if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!["admin", "central"].includes(String(worker.role || ""))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const admin = adminClient();
+    if (worker.role === "central") {
+      if (!workerIsEnabled(worker)) return NextResponse.json({ ok: false, error: "WORKER_INACTIVO" }, { status: 403 });
+      return NextResponse.json({
+        ok: true,
+        can_assign: false,
+        current_worker_id: worker.id,
+        workers: [{ id: worker.id, display_name: worker.display_name, team: worker.team, role: worker.role, is_active: true }],
+      });
+    }
+
+    const { data: workers, error } = await admin
+      .from("workers")
+      .select("id, display_name, team, role, state, is_active")
+      .eq("role", "central")
+      .or("is_active.is.null,is_active.eq.true")
+      .order("display_name", { ascending: true });
+    if (error) throw error;
+
+    return NextResponse.json({
+      ok: true,
+      can_assign: true,
+      current_worker_id: null,
+      workers: (workers || []).filter(workerIsEnabled),
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
 }
 
 function normalizePhone(v: any) {
@@ -77,6 +120,8 @@ export async function POST(req: Request) {
     const notas = String(body?.notas || "").trim();
     const requestedBrand = String(body?.brand || "").trim().toLowerCase() === "orion" ? "orion" : "celestial";
     const requestedOrigin = String(body?.origen || "manual").trim();
+    const source = String(body?.source || "").trim();
+    const requestedResponsibleId = String(body?.responsible_worker_id || "").trim();
     const origen = worker.role === "central"
       ? (requestedBrand === "orion" ? "tarot_orion" : "tarot_celestial")
       : requestedOrigin;
@@ -97,6 +142,28 @@ export async function POST(req: Request) {
     }
 
     const admin = adminClient();
+
+    let responsibleWorker: any = null;
+    if (worker.role === "central") {
+      if (requestedResponsibleId && requestedResponsibleId !== String(worker.id)) {
+        return NextResponse.json({ ok: false, error: "NO_PUEDE_ASIGNAR_OTRA_TELEFONISTA" }, { status: 403 });
+      }
+      if (!workerIsEnabled(worker)) return NextResponse.json({ ok: false, error: "WORKER_INACTIVO" }, { status: 403 });
+      responsibleWorker = worker;
+    } else if (requestedResponsibleId) {
+      const { data: candidate, error: candidateError } = await admin
+        .from("workers")
+        .select("id, display_name, team, role, state, is_active")
+        .eq("id", requestedResponsibleId)
+        .maybeSingle();
+      if (candidateError) throw candidateError;
+      if (!candidate || String(candidate.role || "") !== "central" || !workerIsEnabled(candidate)) {
+        return NextResponse.json({ ok: false, error: "RESPONSABLE_NO_VALIDO" }, { status: 400 });
+      }
+      responsibleWorker = candidate;
+    } else if (source === "mis_clientas") {
+      return NextResponse.json({ ok: false, error: "FALTA_RESPONSABLE" }, { status: 400 });
+    }
 
     const targetIsOrion = String(origen || "").toLowerCase().includes("orion");
     const { data: existingRows, error: existingError } = await admin
@@ -153,7 +220,7 @@ export async function POST(req: Request) {
     deuda_pendiente,
     minutos_free_pendientes,
     minutos_normales_pendientes,
-    ...(worker.role === "central" ? { captured_by_worker_id: worker.id } : {}),
+    ...(responsibleWorker ? { captured_by_worker_id: responsibleWorker.id } : {}),
   };
 
     const { data: cliente, error } = await admin
@@ -184,10 +251,10 @@ export async function POST(req: Request) {
     }
 
     let xpEvent: any = null;
-    if (worker.role === "central") {
+    if (responsibleWorker) {
       const referenceId = `crm_client:${String(cliente.id)}`;
       const { data: awardResult, error: awardError } = await admin.rpc("award_worker_xp", {
-        p_worker_id: worker.id,
+        p_worker_id: responsibleWorker.id,
         p_action_key: "client_capture",
         p_reference_id: referenceId,
         p_reference_label: [nombre, apellido].filter(Boolean).join(" ").trim() || `Cliente ${cliente.id}`,
@@ -198,7 +265,7 @@ export async function POST(req: Request) {
         const { data: persistedEvent } = await admin
           .from("worker_xp_events")
           .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
-          .eq("worker_id", worker.id)
+          .eq("worker_id", responsibleWorker.id)
           .eq("reference_id", referenceId)
           .eq("status", "applied")
           .order("created_at", { ascending: false })
@@ -215,6 +282,7 @@ export async function POST(req: Request) {
       cross_brand_warning: crossBrandInfo,
       tag_warning: tagWarning,
       xp_event: xpEvent,
+      responsable: responsibleWorker ? { id: responsibleWorker.id, display_name: responsibleWorker.display_name, team: responsibleWorker.team } : null,
     });
   } catch (e: any) {
     return NextResponse.json(
