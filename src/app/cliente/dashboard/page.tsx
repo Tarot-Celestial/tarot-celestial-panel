@@ -103,7 +103,10 @@ type ClienteNotif = {
   tipo?: string | null;
   leida?: boolean | null;
   created_at?: string | null;
+  meta?: { amount?: number; balance?: number; reason?: string } | null;
 };
+
+type CoinGiftNotice = { amount: number; balance: number; reason: string };
 
 type ClientePack = {
   id: string;
@@ -180,6 +183,7 @@ export default function ClienteDashboardPage() {
   );
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const [coinGiftNotice, setCoinGiftNotice] = useState<CoinGiftNotice | null>(null);
 
   const [checkingPasswordStatus, setCheckingPasswordStatus] = useState(false);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
@@ -359,6 +363,26 @@ export default function ClienteDashboardPage() {
             loadData();
           }
         )
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "cliente_notificaciones",
+            filter: `cliente_id=eq.${cliente.id}`,
+          },
+          (payload) => {
+            const notification = payload.new as ClienteNotif;
+            if (notification.tipo === "coin_gift") {
+              setCoinGiftNotice({
+                amount: Math.max(0, Number(notification.meta?.amount || 0)),
+                balance: Math.max(0, Number(notification.meta?.balance || 0)),
+                reason: String(notification.meta?.reason || "Has recibido un regalo de administración."),
+              });
+            }
+            loadData();
+          }
+        )
         .subscribe();
     }
 
@@ -366,6 +390,12 @@ export default function ClienteDashboardPage() {
       if (channel) sb.removeChannel(channel);
     };
   }, [cliente?.id, loadData]);
+
+  useEffect(() => {
+    if (!coinGiftNotice) return;
+    const timer = window.setTimeout(() => setCoinGiftNotice(null), 6500);
+    return () => window.clearTimeout(timer);
+  }, [coinGiftNotice]);
 
   useEffect(() => {
     async function checkPush() {
@@ -699,6 +729,7 @@ export default function ClienteDashboardPage() {
         subtitle="Tu panel cliente reúne compra, minutos, llamadas, Coins, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
         summaryItems={summaryItems}
       >
+        {coinGiftNotice ? <aside className="tc-coin-gift-toast" role="status" aria-live="polite"><button type="button" onClick={()=>setCoinGiftNotice(null)} aria-label="Cerrar notificación">×</button><div className="tc-coin-gift-icon"><Gift/></div><div><span>¡TIENES UN OBSEQUIO!</span><strong>+{coinGiftNotice.amount.toLocaleString("es-ES")} Coins</strong><p>{coinGiftNotice.reason}</p><small>Nuevo saldo: {coinGiftNotice.balance.toLocaleString("es-ES")} Coins</small></div></aside> : null}
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
 
         <div className="tc-dashboard-grid">

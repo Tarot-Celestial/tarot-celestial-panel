@@ -512,6 +512,38 @@
 .premiumShell :global(.tc-coins-store-foot) { color: rgba(255,255,255,.68); font-size: 13px; }
 .premiumShell :global(.tc-coins-store-foot svg) { color: #facc15; }
 
+.premiumShell :global(.tc-coin-gift-toast) {
+  position: fixed;
+  z-index: 2147483000;
+  top: 88px;
+  right: 20px;
+  width: min(390px, calc(100vw - 30px));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 13px;
+  padding: 17px 40px 17px 17px;
+  overflow: hidden;
+  border: 1px solid rgba(244, 198, 78, .42);
+  border-radius: 18px;
+  color: #fff;
+  background: radial-gradient(circle at 0 0, rgba(255, 203, 69, .18), transparent 35%), radial-gradient(circle at 100% 100%, rgba(133, 74, 224, .25), transparent 43%), linear-gradient(145deg, #191124, #090711);
+  box-shadow: 0 22px 65px rgba(0, 0, 0, .56), 0 0 30px rgba(225, 174, 50, .1), inset 0 1px rgba(255, 255, 255, .08);
+  animation: tcCoinGiftIn .32s cubic-bezier(.2, .8, .2, 1) both;
+}
+.premiumShell :global(.tc-coin-gift-toast):before { content: ""; position: absolute; inset: 0 22% auto; height: 1px; background: linear-gradient(90deg, transparent, #f6d16e, transparent); }
+.premiumShell :global(.tc-coin-gift-toast)>button { position: absolute; top: 8px; right: 9px; width: 27px; height: 27px; border: 1px solid rgba(255,255,255,.1); border-radius: 9px; color: rgba(255,255,255,.65); background: rgba(255,255,255,.035); cursor: pointer; }
+.premiumShell :global(.tc-coin-gift-icon) { width: 46px; height: 46px; display: grid; place-items: center; border: 1px solid rgba(244,198,78,.38); border-radius: 14px; color: #ffd96c; background: linear-gradient(145deg, rgba(237,181,42,.2), rgba(121,67,201,.13)); box-shadow: 0 0 22px rgba(237,181,42,.1), inset 0 1px rgba(255,255,255,.1); }
+.premiumShell :global(.tc-coin-gift-icon) svg { width: 22px; }
+.premiumShell :global(.tc-coin-gift-toast)>div:last-child { min-width: 0; display: grid; gap: 3px; }
+.premiumShell :global(.tc-coin-gift-toast) span { color: #dfbd5f; font-size: 9px; font-weight: 950; letter-spacing: .14em; }
+.premiumShell :global(.tc-coin-gift-toast) strong { color: #fff2b9; font-size: 22px; line-height: 1.1; text-shadow: 0 0 18px rgba(242,190,58,.18); }
+.premiumShell :global(.tc-coin-gift-toast) p { margin: 2px 0; color: rgba(255,255,255,.67); font-size: 11px; line-height: 1.4; }
+.premiumShell :global(.tc-coin-gift-toast) small { color: #78e3aa; font-size: 10px; font-weight: 850; }
+@keyframes tcCoinGiftIn { from { opacity: 0; transform: translate3d(18px,-7px,0) scale(.97); } to { opacity: 1; transform: none; } }
+@media (max-width: 600px) { .premiumShell :global(.tc-coin-gift-toast) { top: 72px; right: 15px; } }
+@media (prefers-reduced-motion: reduce) { .premiumShell :global(.tc-coin-gift-toast) { animation: none; } }
+
 .premiumShell :global(.tc-redeem-overlay) {
   position: fixed;
   inset: 0;

@@ -235,7 +235,7 @@ export async function GET(req: Request) {
 
   gate.admin
     .from("cliente_notificaciones")
-    .select("id, titulo, mensaje, tipo, leida, created_at")
+    .select("id, titulo, mensaje, tipo, leida, created_at, meta")
     .eq("cliente_id", cliente.id)
     .order("created_at", { ascending: false })
     .limit(8),

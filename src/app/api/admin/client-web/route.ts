@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/require-admin";
 import { loadEffectiveRanksBatch, loadRecentRankTotals, type RankAdminClient } from "@/lib/server/client-rank-admin-data";
 import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
 import { buildClienteAliasEmail, ensureClienteAuthUser, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
+import { getClientPushSubscriptions, sendPushToSubscriptions } from "@/lib/server/web-push";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -195,6 +196,23 @@ export async function GET(req: Request) {
       for (const row of freeRows || []) freeUsed.add(String(row.cliente_id || ""));
     }
 
+    const coinMovementsByClient = new Map<string, any[]>();
+    if (pageClientIds.length) {
+      const { data: movements, error: movementsError } = await gate.admin
+        .from("cliente_puntos_historial")
+        .select("id,cliente_id,tipo,puntos,descripcion,saldo_despues,created_at")
+        .in("cliente_id", pageClientIds)
+        .order("created_at", { ascending: false })
+        .limit(Math.max(40, pageClientIds.length * 5));
+      if (movementsError) throw movementsError;
+      for (const movement of movements || []) {
+        const key = String(movement.cliente_id || "");
+        const current = coinMovementsByClient.get(key) || [];
+        if (current.length < 5) current.push(movement);
+        coinMovementsByClient.set(key, current);
+      }
+    }
+
     const rows = await Promise.all(pageRows.map(async ({ client, auth }) => {
       const rankState = ranks.get(String(client.id));
       const creditBalance = auth ? await getOracleCreditBalance(gate.admin, String(client.id)).catch(() => 0) : 0;
@@ -221,6 +239,7 @@ export async function GET(req: Request) {
         effective_rank: rankState?.effective || null,
         rank_override: rankState?.override || null,
         coins: Math.max(0, Number(client.puntos || 0)),
+        coin_movements: coinMovementsByClient.get(String(client.id)) || [],
         minutes_free: freeMinutes,
         minutes_normal: normalMinutes,
         minutes_total: freeMinutes + normalMinutes,
@@ -259,11 +278,54 @@ export async function POST(req: Request) {
 
     const { data: client, error: clientError } = await gate.admin
       .from("crm_clientes")
-      .select("id,nombre,apellido,email,telefono,auth_user_id")
+      .select("id,nombre,apellido,email,telefono,auth_user_id,puntos,origen")
       .eq("id", clientId)
       .maybeSingle();
     if (clientError) throw clientError;
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
+
+    if (action === "gift_coins") {
+      const amount = Number(body.amount);
+      const reason = String(body.reason || "").trim();
+      const operationId = String(body.operation_id || "").trim();
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1_000_000) {
+        return NextResponse.json({ ok: false, error: "COIN_AMOUNT_INVALID" }, { status: 400 });
+      }
+      if (!reason || reason.length > 500) {
+        return NextResponse.json({ ok: false, error: "COIN_REASON_INVALID" }, { status: 400 });
+      }
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId)) {
+        return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
+      }
+
+      const { data: gift, error: giftError } = await gate.admin.rpc("admin_gift_client_coins", {
+        p_client_id: clientId,
+        p_admin_worker_id: gate.me.id,
+        p_amount: amount,
+        p_reason: reason,
+        p_operation_id: operationId,
+      });
+      if (giftError) throw giftError;
+
+      const result = gift && typeof gift === "object" ? gift as Record<string, unknown> : {};
+      const balance = Math.max(0, Number(result.balance || 0));
+      if (!result.duplicated) {
+        try {
+          const subscriptions = await getClientPushSubscriptions(clientId);
+          if (subscriptions.length) {
+            await sendPushToSubscriptions(subscriptions, {
+              title: "¡Tienes un obsequio!",
+              body: `Has recibido +${amount.toLocaleString("es-ES")} Coins. ${reason}`,
+              url: "/cliente/dashboard#notificaciones",
+              tag: `coin-gift-${operationId}`,
+            });
+          }
+        } catch (pushError) {
+          console.error("[client-web:coin-gift-push]", pushError);
+        }
+      }
+      return NextResponse.json({ ok: true, amount, balance, duplicated: Boolean(result.duplicated), movement_id: result.movement_id || null });
+    }
 
     if (action === "create_access") {
       const password = String(body.password || "");
