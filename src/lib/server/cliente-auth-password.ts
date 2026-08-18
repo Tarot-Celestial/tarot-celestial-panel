@@ -26,6 +26,7 @@ export function digitsOnly(value: string | null | undefined) {
 export function normalizePhoneDigits(value: string | null | undefined) {
   let digits = digitsOnly(value);
   if (digits.startsWith("00")) digits = digits.slice(2);
+  if (/^[6-9]\d{8}$/.test(digits)) digits = `34${digits}`;
   return digits;
 }
 
@@ -116,13 +117,16 @@ export async function findClienteByPhone(phone: string) {
 
   const exact = await sb
     .from("crm_clientes")
-    .select("id, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
+    .select("id, nombre, apellido, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
     .or(exactOr)
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
 
   if (exact.error) throw exact.error;
-  data = exact.data;
+  const exactRows = exact.data || [];
+  const linkedRows = exactRows.filter((row: any) => Boolean(row.auth_user_id));
+  if (linkedRows.length === 1) data = linkedRows[0];
+  else if (exactRows.length === 1) data = exactRows[0];
+  else if (exactRows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
 
   if (!data) {
     const longest = candidates.sort((a, b) => b.length - a.length)[0] || "";
@@ -131,13 +135,16 @@ export async function findClienteByPhone(phone: string) {
     if (tail) {
       const fuzzy = await sb
         .from("crm_clientes")
-        .select("id, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
+        .select("id, nombre, apellido, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
         .or(`telefono.ilike.%${tail}%,telefono_normalizado.ilike.%${tail}%`)
-        .limit(1)
-        .maybeSingle();
+        .limit(20);
 
       if (fuzzy.error) throw fuzzy.error;
-      data = fuzzy.data;
+      const fuzzyRows = fuzzy.data || [];
+      const linkedFuzzyRows = fuzzyRows.filter((row: any) => Boolean(row.auth_user_id));
+      if (linkedFuzzyRows.length === 1) data = linkedFuzzyRows[0];
+      else if (fuzzyRows.length === 1) data = fuzzyRows[0];
+      else if (fuzzyRows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
     }
   }
 

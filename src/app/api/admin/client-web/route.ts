@@ -121,6 +121,11 @@ export async function GET(req: Request) {
     const authByClientId = new Map<string, AuthSummary>();
     const authByEmail = new Map<string, AuthSummary>();
     const authByPhone = new Map<string, AuthSummary>();
+    const clientPhoneCounts = new Map<string, number>();
+    for (const client of clients) {
+      const key = authPhoneKey(client.telefono_normalizado || client.telefono);
+      if (key) clientPhoneCounts.set(key, (clientPhoneCounts.get(key) || 0) + 1);
+    }
     for (const user of authUsers) {
       const metadata = (user.user_metadata || {}) as Record<string, unknown>;
       const clientId = String(metadata.crm_cliente_id || "").trim();
@@ -140,7 +145,8 @@ export async function GET(req: Request) {
       try { aliasEmail = phone ? buildClienteAliasEmail(phone) : ""; } catch { aliasEmail = ""; }
       const byAlias = aliasEmail ? authByEmail.get(authEmailKey(aliasEmail)) || null : null;
       const byPhone = phone ? authByPhone.get(phone) || null : null;
-      const auth = byId || byClientId || realEmail || byAlias || byPhone || null;
+      const phoneIsUnique = Boolean(phone) && clientPhoneCounts.get(phone) === 1;
+      const auth = byId || byClientId || realEmail || (phoneIsUnique ? byAlias || byPhone : null) || null;
       return { client, auth };
     });
 
@@ -337,6 +343,58 @@ export async function POST(req: Request) {
       const linked = await ensureClienteAuthUser({ phone: String(client.telefono), password });
       await writeAudit(gate.admin, gate.me, clientId, linked.auth_user_id, "admin_cliente_web_crear_acceso", { created: linked.created });
       return NextResponse.json({ ok: true, auth_user_id: linked.auth_user_id, created: linked.created });
+    }
+
+    if (action === "delete_access") {
+      const users = await listAllAuthUsers(gate.admin);
+      const directId = String(client.auth_user_id || "").trim();
+      const normalizedPhone = authPhoneKey(client.telefono);
+      let aliasEmail = "";
+      try { aliasEmail = normalizedPhone ? buildClienteAliasEmail(normalizedPhone) : ""; } catch { aliasEmail = ""; }
+      const authUser = directId
+        ? users.find((user) => user.id === directId) || null
+        : users.find((user) => {
+            return (client.email && authEmailKey(user.email) === authEmailKey(client.email))
+              || (aliasEmail && authEmailKey(user.email) === authEmailKey(aliasEmail));
+          }) || null;
+
+      if (!authUser) return NextResponse.json({ ok: false, error: "Esta ficha no tiene un acceso web propio que se pueda eliminar." }, { status: 404 });
+
+      const { data: otherLinks, error: otherLinksError } = await gate.admin
+        .from("crm_clientes")
+        .select("id")
+        .eq("auth_user_id", authUser.id)
+        .neq("id", clientId)
+        .limit(1);
+      if (otherLinksError) throw otherLinksError;
+      if ((otherLinks || []).length) {
+        return NextResponse.json({ ok: false, error: "Esta cuenta Auth también está vinculada a otra ficha. Revisa la duplicidad antes de eliminarla." }, { status: 409 });
+      }
+
+      await writeAudit(gate.admin, gate.me, clientId, authUser.id, "admin_cliente_web_eliminar_acceso", {
+        preserved_crm_client: true,
+        phone: client.telefono || null,
+      });
+
+      const { error: banError } = await gate.admin.auth.admin.updateUserById(authUser.id, { ban_duration: "876000h" });
+      if (banError) throw banError;
+
+      const { error: unlinkError } = await gate.admin
+        .from("crm_clientes")
+        .update({ auth_user_id: null, updated_at: new Date().toISOString() })
+        .eq("id", clientId);
+      if (unlinkError) throw unlinkError;
+
+      // Desvincular primero protege la ficha CRM incluso si la FK histórica
+      // estuviera configurada con una acción destructiva al borrar auth.users.
+      const { error: deleteError } = await gate.admin.auth.admin.deleteUser(authUser.id);
+      if (deleteError) {
+        await gate.admin.from("crm_clientes").update({ auth_user_id: authUser.id }).eq("id", clientId);
+        await gate.admin.auth.admin.updateUserById(authUser.id, { ban_duration: "none" });
+        throw deleteError;
+      }
+
+      return NextResponse.json({ ok: true, preserved_crm_client: true });
     }
 
     let authUserId = String(client.auth_user_id || "").trim();

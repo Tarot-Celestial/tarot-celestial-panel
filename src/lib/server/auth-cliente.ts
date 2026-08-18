@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 
 export function getEnv(name: string): string {
   const value = process.env[name];
@@ -8,7 +9,7 @@ export function getEnv(name: string): string {
 }
 
 export function phoneDigits(phone: string | null | undefined): string {
-  return String(phone || "").replace(/\D/g, "");
+  return normalizePhoneDigits(phone);
 }
 
 export function normalizePhone(phone: string | null | undefined): string {
@@ -120,11 +121,15 @@ async function findClienteByPhone(admin: ReturnType<typeof adminClient>, phone: 
     .or(
       `telefono_normalizado.eq.${digits},telefono_normalizado.eq.${plus},telefono.eq.${digits},telefono.eq.${plus}`
     )
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
 
   if (error) throw error;
-  return data || null;
+  const rows = data || [];
+  const linkedRows = rows.filter((row: any) => Boolean(row.auth_user_id));
+  if (linkedRows.length === 1) return linkedRows[0];
+  if (rows.length === 1) return rows[0];
+  if (rows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
+  return null;
 }
 
 async function findClienteByEmail(admin: ReturnType<typeof adminClient>, email: string | null) {
@@ -164,8 +169,19 @@ export async function clientFromRequest(req: Request) {
 
   let cliente: any = null;
 
+  // El vínculo Auth explícito es la fuente de verdad y evita resolver otra
+  // ficha cuando existen teléfonos históricos duplicados.
+  const linkedResult = await admin
+    .from("crm_clientes")
+    .select("*")
+    .eq("auth_user_id", uid)
+    .limit(2);
+  if (linkedResult.error) throw linkedResult.error;
+  if ((linkedResult.data || []).length > 1) throw new Error("AUTH_VINCULADO_A_VARIAS_FICHAS");
+  cliente = linkedResult.data?.[0] || null;
+
   // 1) Buscar por teléfono
-  if (normalizedPhoneDigits) {
+  if (!cliente && normalizedPhoneDigits) {
     cliente = await findClienteByPhone(admin, normalizedPhoneDigits);
   }
 

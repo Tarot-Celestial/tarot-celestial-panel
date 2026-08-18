@@ -12,11 +12,18 @@ function cleanText(value: unknown): string | null {
   return text || null;
 }
 
-function cleanDate(value: unknown): string | null {
+function cleanDate(value: unknown): { value: string | null; error: string | null } {
   const text = String(value ?? "").trim();
-  if (!text) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
-  return text;
+  if (!text) return { value: null, error: null };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return { value: null, error: "La fecha introducida no es válida." };
+  const [year, month, day] = text.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  const realDate = parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+  if (!realDate) return { value: null, error: "La fecha introducida no es válida." };
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  if (parsed.getTime() > todayUtc) return { value: null, error: "La fecha de nacimiento no puede estar en el futuro." };
+  return { value: text, error: null };
 }
 
 export async function POST(req: Request) {
@@ -38,6 +45,11 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
+    const birthDate = cleanDate(body?.fecha_nacimiento);
+    if (birthDate.error) return NextResponse.json({ ok: false, error: birthDate.error }, { status: 400 });
+    if (body?.onboarding_completado && !birthDate.value) {
+      return NextResponse.json({ ok: false, error: "Selecciona una fecha de nacimiento válida." }, { status: 400 });
+    }
 
     const telefono =
       cleanText(body?.telefono) ||
@@ -76,7 +88,7 @@ export async function POST(req: Request) {
       telefono_normalizado: telefonoNormalizado || null,
       email: cleanText(body?.email),
       pais: cleanText(body?.pais),
-      fecha_nacimiento: cleanDate(body?.fecha_nacimiento),
+      fecha_nacimiento: birthDate.value,
       onboarding_completado: Boolean(body?.onboarding_completado),
       updated_at: new Date().toISOString(),
     };
@@ -132,8 +144,9 @@ export async function POST(req: Request) {
     });
 
   } catch (e: any) {
+    console.error("[cliente-perfil]", { code: e?.code, message: e?.message, details: e?.details });
     return NextResponse.json(
-      { ok: false, error: e?.message || "ERR_CLIENTE_PERFIL" },
+      { ok: false, error: "No se ha podido guardar el perfil. Inténtalo de nuevo." },
       { status: 500 }
     );
   }

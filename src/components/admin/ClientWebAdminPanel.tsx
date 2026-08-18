@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCircle2, Coins, ExternalLink, Eye, Gift, Globe2, History, KeyRound, LoaderCircle, LockKeyhole, Search, ShieldCheck, Sparkles, LockKeyholeOpen, UserRoundCheck, WandSparkles } from "lucide-react";
+import { Ban, CheckCircle2, Coins, ExternalLink, Eye, Gift, Globe2, History, KeyRound, LoaderCircle, LockKeyhole, Search, ShieldCheck, Sparkles, LockKeyholeOpen, Trash2, UserRoundCheck, WandSparkles } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./ClientWebAdminPanel.module.css";
 
@@ -70,6 +70,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
   const [pagination, setPagination] = useState({ page: 1, total: 0, total_pages: 1 });
   const [totals, setTotals] = useState({ web: 0, active: 0, blocked: 0, without_access: 0 });
   const [selected, setSelected] = useState<ClientWebRow | null>(null);
+  const [deleteCandidate, setDeleteCandidate] = useState<ClientWebRow | null>(null);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [blockOpen, setBlockOpen] = useState(false);
   const [password, setPassword] = useState("");
@@ -192,6 +193,29 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
     }
   };
 
+  const deleteWebAccess = async () => {
+    if (!deleteCandidate || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const t = await token();
+      const response = await fetch("/api/admin/client-web", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: deleteCandidate.id, action: "delete_access" }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo eliminar el acceso web.");
+      setSelected((current) => current?.id === deleteCandidate.id ? null : current);
+      setDeleteCandidate(null);
+      await load();
+    } catch (cause: any) {
+      setError(cause?.message || "No se pudo eliminar el acceso web.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return <section className={styles.root}>
     <div className={styles.hero}>
       <div className={styles.heroIcon}><Globe2 size={26}/></div>
@@ -221,7 +245,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
           <td><div className={`${styles.rank} ${styles[`rank_${row.effective_rank || "none"}`] || ""}`}>{rankLabel(row.effective_rank)}</div>{row.rank_override ? <small className={styles.override}>{row.rank_override.intervention_type === "permanent" ? "Administrativo" : "Temporal"}</small> : <small>Automático</small>}</td>
           <td><div className={styles.resources}><span><Coins size={14}/>{row.coins.toLocaleString("es-ES")} Coins</span><span><ShieldCheck size={14}/>{row.minutes_total} min</span><span><WandSparkles size={14}/>{row.oracle_credits} tiradas</span></div></td>
           <td><strong>{formatDate(row.last_sign_in_at)}</strong><small>{row.total_accesses} accesos registrados</small></td>
-          <td><button className={styles.detailButton} onClick={() => { setSelected(row); setMessage(""); setGiftAmount("100"); setGiftReason(""); setGiftOperationId(crypto.randomUUID()); }}><Eye size={15}/> Ver detalle</button></td>
+          <td><div className={styles.rowActions}><button type="button" className={styles.detailButton} onClick={() => { setSelected(row); setMessage(""); setGiftAmount("100"); setGiftReason(""); setGiftOperationId(crypto.randomUUID()); }}><Eye size={15}/> Ver detalle</button><button type="button" className={styles.deleteButton} aria-label={`Eliminar acceso web de ${row.name}`} title="Eliminar acceso web" onClick={() => { setDeleteCandidate(row); setError(""); }}><Trash2 size={16}/></button></div></td>
         </tr>)}</tbody></table></div>
         <div className={styles.footer}><span>{pagination.total} clientes · Página {pagination.page} de {pagination.total_pages}</span><div><button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Anterior</button><button disabled={page >= pagination.total_pages} onClick={() => setPage((p) => p + 1)}>Siguiente</button></div></div>
       </>}
@@ -256,5 +280,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
     {selected && passwordOpen ? <div className={styles.backdropTop}><div className={styles.smallModal}><div className={styles.modalHeader}><div><div className={styles.eyebrow}>ACCESO SEGURO</div><h2>{selected.web_access ? "Restablecer contraseña" : "Crear acceso web"}</h2></div><button className={styles.close} onClick={() => setPasswordOpen(false)}>×</button></div><p>{selected.web_access ? "La contraseña actual nunca se muestra ni se recupera. Solo se establecerá una nueva." : "Se creará o enlazará de forma segura la cuenta web de esta clienta sin duplicar su ficha CRM."}</p><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)}/></label><label>Confirmar contraseña<input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)}/></label>{message ? <div className={styles.message}>{message}</div> : null}<div className={styles.dialogActions}><button onClick={() => setPasswordOpen(false)}>Cancelar</button><button className={styles.primaryButton} disabled={busy || password.length < 8 || password !== confirm} onClick={() => void runAction({ action: selected.web_access ? "password" : "create_access", password, confirm })}>{busy ? (selected.web_access ? "Cambiando…" : "Creando…") : (selected.web_access ? "Cambiar contraseña" : "Crear acceso web")}</button></div></div></div> : null}
 
     {selected && blockOpen ? <div className={styles.backdropTop}><div className={styles.smallModal}><div className={styles.modalHeader}><div><div className={styles.eyebrow}>CONTROL DE ACCESO</div><h2>Bloquear cuenta</h2></div><button className={styles.close} onClick={() => setBlockOpen(false)}>×</button></div><p>El cliente no podrá iniciar sesión, pero conservará CRM, compras, Coins, minutos, tiradas y rango.</p><label>Tipo de bloqueo<select value={blockMode} onChange={(e) => setBlockMode(e.target.value as "temporary" | "indefinite")}><option value="temporary">Temporal</option><option value="indefinite">Indefinido</option></select></label>{blockMode === "temporary" ? <label>Bloqueado hasta<input type="datetime-local" value={blockUntil} onChange={(e) => setBlockUntil(e.target.value)}/></label> : null}<label>Motivo<textarea rows={3} value={blockReason} onChange={(e) => setBlockReason(e.target.value)} placeholder="Motivo administrativo (opcional)"/></label>{message ? <div className={styles.message}>{message}</div> : null}<div className={styles.dialogActions}><button onClick={() => setBlockOpen(false)}>Cancelar</button><button className={styles.dangerButton} disabled={busy || (blockMode === "temporary" && !blockUntil)} onClick={() => void runAction({ action: "block", mode: blockMode, until: blockMode === "temporary" ? new Date(blockUntil).toISOString() : null, reason: blockReason })}>{busy ? "Bloqueando…" : "Bloquear acceso"}</button></div></div></div> : null}
+
+    {deleteCandidate ? <div className={styles.backdropTop} role="dialog" aria-modal="true" aria-labelledby="delete-web-access-title"><div className={`${styles.smallModal} ${styles.deleteModal}`}><div className={styles.deleteIcon}><Trash2 size={22}/></div><div className={styles.eyebrow}>ACCIÓN DESTRUCTIVA</div><h2 id="delete-web-access-title">Eliminar cuenta web</h2><p>Estás a punto de eliminar el acceso web de:</p><div className={styles.deleteIdentity}><strong>{deleteCandidate.name}</strong><span>Teléfono: {deleteCandidate.phone || "Sin teléfono"}</span><span>{deleteCandidate.auth_email || deleteCandidate.email || "Sin email"}</span></div><div className={styles.preserveNotice}><ShieldCheck size={17}/><span>La ficha CRM, compras, Coins, minutos, tiradas, rango e historial se conservarán.</span></div>{error ? <div className={`${styles.message} ${styles.deleteError}`} role="alert">{error}</div> : null}<div className={styles.dialogActions}><button type="button" disabled={busy} onClick={() => setDeleteCandidate(null)}>Cancelar</button><button type="button" className={styles.confirmDeleteButton} disabled={busy} onClick={() => void deleteWebAccess()}>{busy ? <LoaderCircle className={styles.spin}/> : <Trash2 size={16}/>} {busy ? "Eliminando…" : "Eliminar cuenta"}</button></div></div></div> : null}
   </section>;
 }

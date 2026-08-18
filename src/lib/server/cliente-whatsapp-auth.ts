@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { findClienteByPhoneForAuth, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 
 type ClienteAuthChannel = "whatsapp" | "email";
 
@@ -10,7 +11,7 @@ export function getEnv(name: string): string {
 }
 
 export function normalizePhone(phone: string | null | undefined): string {
-  return String(phone || "").replace(/\D/g, "");
+  return normalizePhoneDigits(phone);
 }
 
 export function normalizeEmail(email: string | null | undefined): string {
@@ -188,19 +189,9 @@ export async function sendEmailVerification(email: string, code: string, nombre?
 }
 
 export async function findClienteByPhone(phoneDigits: string) {
-  const admin = adminClient();
   const digits = normalizePhone(phoneDigits);
   if (!digits) return null;
-
-  const { data, error } = await admin
-    .from("crm_clientes")
-    .select("id, nombre, apellido, telefono, telefono_normalizado, email")
-    .or(`telefono_normalizado.eq.${digits},telefono.eq.${digits}`)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data || null;
+  return findClienteByPhoneForAuth(digits);
 }
 
 function channelToLoginChannel(channel: ClienteAuthChannel): string {
