@@ -58,6 +58,14 @@ function breakdownHtml(values: Record<string, number>) {
   return entries.map(([currency, total]) => `${amount(total, currency)}`).join(" · ");
 }
 
+function signedNumber(value: number, suffix = "") {
+  return `${value > 0 ? "+" : ""}${number(value, 2)}${suffix}`;
+}
+
+function signedAmount(value: number, currency: string) {
+  return `${value > 0 ? "+" : ""}${amount(value, currency)}`;
+}
+
 export async function GET(req: Request) {
   try {
     const gate = await requireAdmin(req);
@@ -106,6 +114,37 @@ export async function GET(req: Request) {
     const remunerationHtml = report.remuneration.configured
       ? `<strong>${amount(report.remuneration.payable_total || 0, "EUR")}</strong><span>${esc(report.remuneration.note)}</span>`
       : `<strong>Sin calcular</strong><span>${esc(report.remuneration.note)} La facturación generada no equivale al importe a pagar.</span>`;
+    const generatedComparison = report.comparisons.generated;
+    const minutesComparison = report.comparisons.minutes;
+    const comparableRevenue = generatedComparison.has_previous && !generatedComparison.reason;
+    const revenueDifference = comparableRevenue
+      ? generatedComparison.current - Number(generatedComparison.previous || 0)
+      : null;
+    const comparisonCurrency = Array.from(new Set([
+      ...Object.keys(report.summary.totals_by_currency || {}),
+      ...Object.keys(report.previous_summary?.totals_by_currency || {}),
+    ].filter((currency) => Math.abs(Number(report.summary.totals_by_currency?.[currency] || report.previous_summary?.totals_by_currency?.[currency] || 0)) >= 0.005)))[0] || "EUR";
+    const progressPercent = !generatedComparison.has_previous
+      ? "Primer mes"
+      : generatedComparison.reason
+        ? generatedComparison.reason
+        : generatedComparison.change_pct === null
+          ? (generatedComparison.trend === "up" ? "Nuevo" : "No calculable")
+          : `${signedNumber(generatedComparison.change_pct, " %")}`;
+    const progressMessage = !generatedComparison.has_previous
+      ? "Este será tu primer punto de referencia para comparar tu progreso en los próximos meses."
+      : generatedComparison.reason
+        ? "La evolución porcentual no se muestra porque los periodos contienen monedas que no se pueden comparar entre sí."
+        : generatedComparison.trend === "up"
+          ? (Number(generatedComparison.change_pct || 0) >= 10
+            ? `Excelente evolución. Este mes has superado la facturación anterior en un ${number(Math.abs(Number(generatedComparison.change_pct || 0)), 2)} %.`
+            : "Buen progreso. Has aumentado la facturación respecto al mes anterior.")
+          : generatedComparison.trend === "down"
+            ? "Este mes estás por debajo del periodo anterior. Utiliza esta referencia para seguir tu evolución."
+            : "Te mantienes estable respecto al mes anterior.";
+    const progressMax = Math.max(generatedComparison.current, Number(generatedComparison.previous || 0), 1);
+    const previousWidth = generatedComparison.has_previous ? Math.max(2, (Number(generatedComparison.previous || 0) / progressMax) * 100) : 0;
+    const currentWidth = Math.max(2, (generatedComparison.current / progressMax) * 100);
 
     const html = `<!doctype html>
 <html lang="es">
@@ -140,6 +179,17 @@ export async function GET(req: Request) {
     .box h3 { margin:0 0 8px; font-size:13px; color:var(--gold); text-transform:uppercase; }
     .box strong { display:block; font-size:22px; }
     .box span { display:block; margin-top:5px; color:var(--muted); font-size:11px; line-height:1.5; }
+    .progress { margin-top:18px; padding:15px; border:1px solid #dfd0ae; border-radius:16px; background:linear-gradient(135deg,#fffdf8,var(--soft)); break-inside:avoid; page-break-inside:avoid; }
+    .progress-head { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .progress-head small { color:var(--gold); font-weight:800; letter-spacing:.12em; }
+    .progress-head h2 { margin:4px 0 0; font-size:19px; color:var(--ink); }
+    .progress-badge { border-radius:999px; padding:7px 10px; font-size:12px; font-weight:800; background:#eeeaf3; color:#665e70; }
+    .progress-up .progress-badge { background:#e7f6ee; color:var(--green); }.progress-down .progress-badge { background:#fbecef; color:var(--red); }
+    .progress-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:13px; }
+    .progress-stat { padding:10px; border:1px solid var(--line); border-radius:10px; background:rgba(255,255,255,.8); }
+    .progress-stat span { display:block; color:var(--muted); font-size:9px; text-transform:uppercase; }.progress-stat strong { display:block; margin-top:5px; font-size:14px; }
+    .progress-bars { display:grid; gap:6px; margin-top:12px; }.progress-bar { display:grid; grid-template-columns:105px 1fr; gap:8px; align-items:center; color:var(--muted); font-size:10px; }.track { height:7px; border-radius:99px; background:#e9e1ed; overflow:hidden; }.fill { height:100%; background:var(--gold); border-radius:inherit; }.fill.current { background:var(--purple); }
+    .progress-copy { margin:11px 0 0; color:#4a424f; font-size:11px; line-height:1.5; }.progress-minutes { margin-top:10px; padding-top:9px; border-top:1px solid var(--line); color:var(--muted); font-size:11px; }
     .foot { margin-top:18px; color:var(--muted); font-size:10px; line-height:1.5; }
     @media print { html,body{background:#fff}.page{margin:0;width:auto;min-height:auto;padding:9mm} }
   </style>
@@ -200,6 +250,22 @@ export async function GET(req: Request) {
         <h3>Importe correspondiente a Mario</h3>
         ${remunerationHtml}
       </div>
+    </section>
+
+    <section class="progress progress-${esc(generatedComparison.trend)}">
+      <div class="progress-head"><div><small>EVOLUCIÓN REAL</small><h2>Tu progreso este mes</h2></div><div class="progress-badge">${esc(progressPercent)}</div></div>
+      <div class="progress-grid">
+        <div class="progress-stat"><span>${esc(monthLabel(report.month))}</span><strong>${esc(breakdownHtml(report.summary.totals_by_currency))}</strong></div>
+        <div class="progress-stat"><span>${esc(monthLabel(report.previous_month))}</span><strong>${report.previous_summary ? esc(breakdownHtml(report.previous_summary.totals_by_currency)) : "Sin histórico"}</strong></div>
+        <div class="progress-stat"><span>Diferencia</span><strong>${revenueDifference === null ? "—" : esc(signedAmount(revenueDifference, comparisonCurrency))}</strong></div>
+        <div class="progress-stat"><span>Evolución</span><strong>${esc(progressPercent)}</strong></div>
+      </div>
+      <div class="progress-bars">
+        ${generatedComparison.has_previous ? `<div class="progress-bar"><span>Mes anterior</span><div class="track"><div class="fill" style="width:${previousWidth.toFixed(2)}%"></div></div></div>` : ""}
+        <div class="progress-bar"><span>Mes actual</span><div class="track"><div class="fill current" style="width:${currentWidth.toFixed(2)}%"></div></div></div>
+      </div>
+      <div class="progress-minutes"><strong>Minutos reales:</strong> ${number(minutesComparison.current)} este mes · ${minutesComparison.has_previous ? `${number(minutesComparison.previous)} el mes anterior · ${signedNumber(minutesComparison.current - Number(minutesComparison.previous || 0), " min")}` : "sin histórico anterior"}</div>
+      <p class="progress-copy">${esc(progressMessage)}</p>
     </section>
 
     <div class="foot">

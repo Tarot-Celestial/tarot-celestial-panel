@@ -6,6 +6,7 @@ import {
   type InvoiceDocumentLine,
   type InvoiceParty,
 } from "@/lib/server/invoice-document";
+import { compareInvoicePeriods, loadInvoiceMinuteTotals } from "@/lib/server/invoice-period-comparison";
 
 export const runtime = "nodejs";
 
@@ -78,13 +79,27 @@ export async function GET(req: Request) {
     if (linesError) throw linesError;
     if (!invoice) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
 
-    const [{ data: worker, error: workerError }, { data: monthInvoices, error: monthInvoicesError }] = await Promise.all([
+    const previousMonthDate = new Date(`${invoice.month_key}-01T00:00:00Z`);
+    previousMonthDate.setUTCMonth(previousMonthDate.getUTCMonth() - 1);
+    const previousMonthKey = previousMonthDate.toISOString().slice(0, 7);
+    const [{ data: worker, error: workerError }, { data: monthInvoices, error: monthInvoicesError }, { data: previousInvoice, error: previousInvoiceError }] = await Promise.all([
       admin.from("workers").select("*").eq("id", invoice.worker_id).maybeSingle(),
       admin.from("invoices").select("id, created_at").eq("month_key", invoice.month_key).order("created_at", { ascending: true }).order("id", { ascending: true }),
+      admin.from("invoices").select("id, total, created_at").eq("worker_id", invoice.worker_id).eq("month_key", previousMonthKey).order("created_at", { ascending: true }).limit(1).maybeSingle(),
     ]);
 
     if (workerError) throw workerError;
     if (monthInvoicesError) throw monthInvoicesError;
+    if (previousInvoiceError) throw previousInvoiceError;
+
+    const minuteTotals = await loadInvoiceMinuteTotals(admin, [String(invoice.id), String(previousInvoice?.id || "")]);
+    const totalComparison = compareInvoicePeriods(invoice.total, previousInvoice?.total, Boolean(previousInvoice));
+    const minutesComparison = compareInvoicePeriods(
+      minuteTotals.get(String(invoice.id)),
+      minuteTotals.get(String(previousInvoice?.id || "")),
+      Boolean(previousInvoice)
+    );
+    const isCentral = String(worker?.role || "").toLowerCase() === "central";
 
     let authUser: UnknownRecord | null = null;
     const workerRecord = (worker || null) as UnknownRecord | null;
@@ -133,6 +148,22 @@ export async function GET(req: Request) {
       total: Number(invoice.total || 0) || 0,
       notes: invoice.notes || null,
       logoUrl: `${origin}/Nuevo-logo-tarot.png`,
+      progress: {
+        currentLabel: monthLabel(String(invoice.month_key || "")),
+        previousLabel: monthLabel(previousMonthKey),
+        currentTotal: totalComparison.current,
+        previousTotal: totalComparison.previous,
+        difference: totalComparison.difference,
+        changePct: totalComparison.change_pct,
+        trend: totalComparison.trend,
+        hasPrevious: totalComparison.has_previous,
+        currentMinutes: minutesComparison.current,
+        previousMinutes: minutesComparison.previous,
+        minutesDifference: minutesComparison.difference,
+        minutesChangePct: minutesComparison.change_pct,
+        minutesTrend: minutesComparison.trend,
+        showMinutes: !isCentral,
+      },
     });
 
     return new NextResponse(html, {

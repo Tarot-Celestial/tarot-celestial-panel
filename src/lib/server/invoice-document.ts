@@ -32,6 +32,24 @@ export type InvoiceDocumentInput = {
   total: number;
   notes?: string | null;
   logoUrl: string;
+  progress?: InvoiceDocumentProgress | null;
+};
+
+export type InvoiceDocumentProgress = {
+  currentLabel: string;
+  previousLabel: string;
+  currentTotal: number;
+  previousTotal: number | null;
+  difference: number | null;
+  changePct: number | null;
+  trend: "up" | "down" | "neutral";
+  hasPrevious: boolean;
+  currentMinutes?: number | null;
+  previousMinutes?: number | null;
+  minutesDifference?: number | null;
+  minutesChangePct?: number | null;
+  minutesTrend?: "up" | "down" | "neutral";
+  showMinutes?: boolean;
 };
 
 const esc = (value: unknown) => String(value ?? "")
@@ -124,6 +142,29 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
   const recipientExtra = partyLines(input.recipient);
   const vatPercent = Number(input.vatPercent || 0) || 0;
   const vatTotal = Number(input.vatTotal || 0) || 0;
+  const progress = input.progress;
+
+  const signedMoney = (value: number | null) => value === null
+    ? "—"
+    : `${value > 0 ? "+" : ""}${formatMoney(value)}`;
+  const percent = (value: number | null) => value === null
+    ? "No calculable"
+    : `${value > 0 ? "+" : ""}${value.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+  const unsignedPercent = (value: number | null) => value === null
+    ? ""
+    : `${Math.abs(value).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %`;
+  const progressMessage = !progress?.hasPrevious
+    ? "Este será tu primer punto de referencia para comparar tu progreso en los próximos meses."
+    : progress.trend === "up"
+      ? (Number(progress.changePct || 0) >= 10
+        ? `Excelente evolución. Este mes has superado tu facturación anterior en un ${unsignedPercent(progress.changePct)}.`
+        : "Buen progreso. Has aumentado tu facturación respecto al mes anterior.")
+      : progress.trend === "down"
+        ? "Este mes estás por debajo del periodo anterior. Utiliza esta referencia para seguir tu evolución."
+        : "Te mantienes estable respecto al mes anterior.";
+  const chartMax = progress?.hasPrevious ? Math.max(progress.currentTotal, Number(progress.previousTotal || 0), 1) : Math.max(progress?.currentTotal || 0, 1);
+  const previousBar = progress?.hasPrevious ? Math.max(2, (Number(progress.previousTotal || 0) / chartMax) * 100) : 0;
+  const currentBar = Math.max(2, ((progress?.currentTotal || 0) / chartMax) * 100);
 
   const rows = input.lines.length
     ? input.lines.map((line) => `
@@ -152,9 +193,10 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     .period{margin:16px 0 0;font-size:12.5px;color:var(--muted)}
     table{width:100%;border-collapse:collapse;margin-top:22px;table-layout:fixed;page-break-inside:auto}thead{display:table-header-group}tr{page-break-inside:avoid;page-break-after:auto}th{background:#20182b;color:#fff;text-align:left;padding:10px;font-size:12px;text-transform:uppercase;letter-spacing:.05em}th:nth-child(1){width:31%}th:nth-child(2){width:49%}th:nth-child(3){width:20%;text-align:right}td{padding:10px;border-bottom:1px solid #e9e2d7;vertical-align:top;font-size:12.5px;line-height:1.45;overflow-wrap:anywhere}.amount{text-align:right;white-space:nowrap;font-weight:700}
     .totals{margin-left:auto;width:315px;max-width:100%;margin-top:22px;break-inside:avoid}.total-row{display:flex;justify-content:space-between;gap:16px;padding:7px 4px;font-size:13px}.grand{font-size:19px;font-weight:900;border-top:2px solid #c8a45d;padding-top:10px;margin-top:3px}.notes{margin-top:27px;padding:14px;border:1px solid var(--line);background:#fffdfa;break-inside:avoid}.notes b{font-size:12px;text-transform:uppercase;letter-spacing:.06em}.notes p{margin:7px 0 0;white-space:pre-wrap;line-height:1.5;font-size:12.5px}
+    .progress{margin-top:26px;padding:17px;border:1px solid #decfaa;border-radius:14px;background:linear-gradient(135deg,#fffdf8,#f7f1fc);break-inside:avoid;page-break-inside:avoid}.progress-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.progress-kicker{font-size:10px;letter-spacing:.14em;color:#9a7024;font-weight:900}.progress h3{margin:4px 0 0;font-size:19px}.progress-badge{padding:7px 10px;border-radius:999px;font-size:12px;font-weight:900;white-space:nowrap}.progress-up .progress-badge{background:#e8f6ef;color:#16734f}.progress-down .progress-badge{background:#fbecef;color:#a53444}.progress-neutral .progress-badge{background:#eeeaf3;color:#665e70}.progress-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}.progress-stat{padding:10px;background:rgba(255,255,255,.75);border:1px solid #ebe2d3;border-radius:9px}.progress-stat span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}.progress-stat strong{display:block;margin-top:5px;font-size:14px}.progress-chart{margin-top:13px}.progress-chart>b{display:block;margin-bottom:7px}.bars{display:grid;gap:6px}.bar-row{display:grid;grid-template-columns:105px 1fr;gap:7px;align-items:center;font-size:10px;color:var(--muted)}.bar-track{height:7px;border-radius:99px;background:#e9e1ed;overflow:hidden}.bar-fill{height:100%;border-radius:inherit;background:#b78a3b}.bar-fill.current{background:#7653ad}.progress-message{margin:13px 0 0;font-size:12px;line-height:1.45;color:#4a424f}.minutes-line{margin-top:11px;padding-top:10px;border-top:1px solid #e8decc;font-size:11.5px;color:#51495a}.minutes-line b{color:#2e2634}
     .foot{margin-top:24px;padding-top:10px;border-top:1px solid #eee7db;color:#8a828e;font-size:10.5px;text-align:center}
     @page{size:A4 portrait;margin:0}
-    @media print{html,body{background:#fff}.page{margin:0;width:210mm;min-height:297mm;padding:17mm}.no-print{display:none}}
+    @media print{html,body{background:#fff}.page{margin:0;width:210mm;min-height:auto;padding:15mm 17mm}.no-print{display:none}}
     @media(max-width:760px){.page{width:100%;min-height:0;padding:24px}.head{flex-direction:column}.invoice-meta{text-align:left;min-width:0}.parties{grid-template-columns:1fr}}
   </style>
 </head>
@@ -199,6 +241,21 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     </section>
 
     ${input.notes ? `<section class="notes"><b>Observaciones</b><p>${esc(input.notes)}</p></section>` : ""}
+    ${progress ? `<section class="progress progress-${progress.trend}">
+      <div class="progress-head"><div><span class="progress-kicker">EVOLUCIÓN REAL</span><h3>Tu progreso este mes</h3></div><div class="progress-badge">${esc(progress.hasPrevious ? percent(progress.changePct) : "Primer mes")}</div></div>
+      <div class="progress-grid">
+        <div class="progress-stat"><span>${esc(progress.currentLabel)}</span><strong>${formatMoney(progress.currentTotal)}</strong></div>
+        <div class="progress-stat"><span>${esc(progress.previousLabel)}</span><strong>${progress.hasPrevious ? formatMoney(progress.previousTotal) : "Sin histórico"}</strong></div>
+        <div class="progress-stat"><span>Diferencia</span><strong>${progress.hasPrevious ? signedMoney(progress.difference) : "—"}</strong></div>
+        <div class="progress-stat"><span>Evolución</span><strong>${progress.hasPrevious ? percent(progress.changePct) : "Sin histórico"}</strong></div>
+      </div>
+      <div class="progress-chart"><b>Comparativa</b><div class="bars">
+        ${progress.hasPrevious ? `<div class="bar-row"><span>${esc(progress.previousLabel)}</span><div class="bar-track"><div class="bar-fill" style="width:${previousBar.toFixed(2)}%"></div></div></div>` : ""}
+        <div class="bar-row"><span>${esc(progress.currentLabel)}</span><div class="bar-track"><div class="bar-fill current" style="width:${currentBar.toFixed(2)}%"></div></div></div>
+      </div></div>
+      ${progress.showMinutes ? `<div class="minutes-line"><b>Minutos reales:</b> ${(Number(progress.currentMinutes || 0)).toLocaleString("es-ES")} este mes · ${progress.hasPrevious ? `${(Number(progress.previousMinutes || 0)).toLocaleString("es-ES")} el mes anterior · ${Number(progress.minutesDifference || 0) > 0 ? "+" : ""}${(Number(progress.minutesDifference || 0)).toLocaleString("es-ES")} min (${percent(progress.minutesChangePct ?? null)})` : "sin histórico anterior"}</div>` : ""}
+      <p class="progress-message">${esc(progressMessage)}</p>
+    </section>` : ""}
     <footer class="foot">Documento generado desde el panel de facturación de Tarot Celestial.</footer>
   </main>
   <script>window.addEventListener('load',function(){setTimeout(function(){window.print()},250)});</script>

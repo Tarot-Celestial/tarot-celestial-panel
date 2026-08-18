@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { collaboratorReportToInvoiceRow, listActiveCollaborators, loadCollaboratorMonthlyReport } from "@/lib/server/collaborator-billing";
+import { compareInvoicePeriods, loadInvoiceMinuteTotals, safeInvoiceNumber } from "@/lib/server/invoice-period-comparison";
 
 export const runtime = "nodejs";
 
@@ -56,56 +57,7 @@ function previousMonthKey(monthKey: string) {
   return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-function safeNumber(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
-function percentageChange(current: number, previous: number, hasPrevious: boolean) {
-  if (!hasPrevious) return null;
-  if (previous === 0) return current === 0 ? 0 : null;
-  return Math.round((((current - previous) / Math.abs(previous)) * 100) * 100) / 100;
-}
-
-function directionFromValues(current: number, previous: number, hasPrevious: boolean) {
-  if (!hasPrevious || Math.abs(current - previous) < 0.005) return "neutral";
-  return current > previous ? "up" : "down";
-}
-
-function minutesFromMeta(meta: unknown) {
-  if (!meta) return 0;
-  if (typeof meta === "object") return safeNumber((meta as Record<string, unknown>).minutes);
-  if (typeof meta !== "string") return 0;
-  try {
-    const parsed = JSON.parse(meta);
-    return safeNumber(parsed?.minutes);
-  } catch {
-    return 0;
-  }
-}
-
-async function loadInvoiceMinutes(admin: any, invoiceIds: string[]) {
-  const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)));
-  const totals = new Map<string, number>();
-  if (!uniqueIds.length) return totals;
-
-  const { data, error } = await admin
-    .from("invoice_lines")
-    .select("invoice_id, kind, meta")
-    .in("invoice_id", uniqueIds);
-
-  if (error) throw error;
-
-  for (const line of data || []) {
-    const invoiceId = String(line?.invoice_id || "");
-    const kind = String(line?.kind || "");
-    if (!invoiceId || !kind.startsWith("minutes_")) continue;
-    const minutes = minutesFromMeta(line?.meta);
-    totals.set(invoiceId, (totals.get(invoiceId) || 0) + minutes);
-  }
-
-  return totals;
-}
+const safeNumber = safeInvoiceNumber;
 
 async function loadInvoicesWithoutView(admin: any, month: string, activeWorkerIds: Set<string>) {
   const { data: invoices, error: invoicesError } = await admin
@@ -220,7 +172,7 @@ export async function GET(req: Request) {
       });
     }
 
-    const minuteTotals = await loadInvoiceMinutes(admin, [
+    const minuteTotals = await loadInvoiceMinuteTotals(admin, [
       ...currentInvoices.map((invoice) => invoice.invoice_id),
       ...Array.from(previousByWorker.values()).map((invoice) => invoice.invoice_id),
     ]);
@@ -230,10 +182,8 @@ export async function GET(req: Request) {
       const currentMinutes = safeNumber(minuteTotals.get(invoice.invoice_id));
       const previousMinutes = previous ? safeNumber(minuteTotals.get(previous.invoice_id)) : 0;
       const isCentral = String(invoice.role || "").toLowerCase() === "central";
-      const totalChangePct = percentageChange(safeNumber(invoice.total), previous?.total || 0, Boolean(previous));
-      const minutesChangePct = isCentral
-        ? null
-        : percentageChange(currentMinutes, previousMinutes, Boolean(previous));
+      const totalComparison = compareInvoicePeriods(invoice.total, previous?.total, Boolean(previous));
+      const minutesComparison = compareInvoicePeriods(currentMinutes, previousMinutes, Boolean(previous));
 
       return {
         ...invoice,
@@ -241,12 +191,10 @@ export async function GET(req: Request) {
         previous_total: previous ? previous.total : null,
         current_minutes: currentMinutes,
         previous_minutes: previous ? previousMinutes : null,
-        total_change_pct: totalChangePct,
-        minutes_change_pct: minutesChangePct,
-        total_trend: directionFromValues(safeNumber(invoice.total), previous?.total || 0, Boolean(previous)),
-        minutes_trend: isCentral
-          ? "neutral"
-          : directionFromValues(currentMinutes, previousMinutes, Boolean(previous)),
+        total_change_pct: totalComparison.change_pct,
+        minutes_change_pct: isCentral ? null : minutesComparison.change_pct,
+        total_trend: totalComparison.trend,
+        minutes_trend: isCentral ? "neutral" : minutesComparison.trend,
         has_previous_invoice: Boolean(previous),
         trend_basis: isCentral ? "fixed_salary" : "minutes",
       };
