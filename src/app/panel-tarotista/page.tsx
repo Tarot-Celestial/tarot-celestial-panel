@@ -2128,6 +2128,9 @@ export default function Tarotista() {
                             const minutes = Number(meta.minutes || 0);
                             const rate = Number(meta.rate || 0);
                             const calc = minutes * rate;
+                            const bonusDetail = meta.bonus_mode === "units"
+                              ? `${Number(meta.quantity || 0)} × ${canSeeMoney ? eur(meta.unit_rate || 0) : "unidad"}`
+                              : String(meta.description || "");
 
                             return (
                               <tr key={l.id}>
@@ -2138,7 +2141,7 @@ export default function Tarotista() {
                                       {String(meta.code || "").toUpperCase()} · {minutes} min
 {canSeeMoney ? <> × {eur(rate)} = <b>{eur(calc)}</b></> : null}
                                     </div>
-                                  ) : null}
+                                  ) : bonusDetail ? <div className="tc-sub" style={{ marginTop: 6 }}>{bonusDetail}{meta.description && meta.bonus_mode === "units" ? ` · ${meta.description}` : ""}</div> : null}
                                 </td>
                                 <td style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{canSeeMoney ? eur(l.amount) : (hasBreakdown ? `${minutes} min` : "Oculto nivel 2")}</td>
                               </tr>

@@ -38,6 +38,7 @@ export async function GET(req: Request) {
       const safeLines = (lines || []).map((line: any) => {
         const meta = { ...(line.meta || {}) };
         delete meta.rate;
+        delete meta.unit_rate;
         return { ...line, amount: null, meta, money_hidden: true };
       });
       return NextResponse.json({ ok: true, invoice: safeInvoice, lines: safeLines, money_hidden: true });

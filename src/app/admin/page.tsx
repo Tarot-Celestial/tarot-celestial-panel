@@ -337,6 +337,10 @@ function AdminPage() {
   const [newLabel, setNewLabel] = useState("Ajuste");
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
+  const [newBonusMode, setNewBonusMode] = useState<"fixed" | "units">("fixed");
+  const [newBonusQuantity, setNewBonusQuantity] = useState("1");
+  const [newBonusRate, setNewBonusRate] = useState("0");
+  const [newDescription, setNewDescription] = useState("");
 
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsMsg, setStatsMsg] = useState("");
@@ -881,17 +885,29 @@ function AdminPage() {
     if (!selId) return;
     try {
       const amt = Number(String(newAmount).replace(",", "."));
+      const quantity = Number(String(newBonusQuantity).replace(",", "."));
+      const unitRate = Number(String(newBonusRate).replace(",", "."));
       await postEdit({
         action: "add_line",
         invoice_id: selId,
         kind: newKind,
         label: newLabel,
         amount: isFinite(amt) ? amt : 0,
-        meta: {},
+        meta: newKind === "bonus" ? {
+          bonus_mode: newBonusMode,
+          description: newDescription,
+          quantity: newBonusMode === "units" ? quantity : undefined,
+          unit_rate: newBonusMode === "units" ? unitRate : undefined,
+        } : { description: newDescription },
       });
       await loadInvoice(selId);
       await listInvoices(true);
       setSelMsg("✅ Línea añadida.");
+      setNewLabel(newKind === "bonus" ? "Nuevo bonus" : "Ajuste");
+      setNewAmount("0");
+      setNewBonusQuantity("1");
+      setNewBonusRate("0");
+      setNewDescription("");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -2027,120 +2043,20 @@ function AdminPage() {
                 onBack={() => setTab("facturas")}
               />
             ) : (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                <div>
-                  <div className="tc-title">✏️ Editor de factura</div>
-                  <div className="tc-sub">Líneas con desglose automático (minutos x tarifa)</div>
-                </div>
-
-                {selId && (
-                  <div className="tc-row">
-                    <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
-                    <button className="tc-btn tc-btn-gold" onClick={() => downloadInvoicePdf(selId)}>Descargar PDF</button>
-                    <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
-                    <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
-                  </div>
-                )}
-              </div>
-
-              {!selId ? (
-                <div className="tc-sub" style={{ marginTop: 10 }}>Selecciona una factura desde <b>Facturas</b>.</div>
-              ) : selLoading ? (
-                <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
-              ) : (
-                <>
-                  <div style={{ marginTop: 10 }} className="tc-sub">
-                    <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
-                    <br />
-                    Total: <b>{eur(selInvoice?.total || 0)}</b> · Estado: <b>{selInvoice?.status}</b>
-                    <br />
-                    Aceptación:{" "}
-                    <span className="tc-chip" style={{ ...ackStyle(selInvoice?.worker_ack), padding: "4px 10px" }}>
-                      {ackLabel(selInvoice?.worker_ack)}
-                    </span>
-                    {selInvoice?.worker_ack_note ? (
-                      <>
-                        {" "}· Nota: <b>{selInvoice.worker_ack_note}</b>
-                      </>
-                    ) : null}
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  {(selLines || []).some((line: any) => String(line?.kind || "") === "salary_base") && (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                        gap: 10,
-                        padding: 14,
-                        marginBottom: 12,
-                        borderRadius: 16,
-                        background: "linear-gradient(135deg, rgba(181,156,255,.14), rgba(255,215,130,.08))",
-                        border: "1px solid rgba(181,156,255,.28)",
-                      }}
-                    >
-                      <div>
-                        <div className="tc-sub">Sueldo fijo protegido</div>
-                        <div className="tc-title" style={{ marginTop: 4 }}>
-                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_base")?.amount || 0)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="tc-sub">Bonus opcional</div>
-                        <div className="tc-title" style={{ marginTop: 4 }}>
-                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_bonus")?.amount || 0)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="tc-sub">Total de la factura</div>
-                        <div className="tc-title" style={{ marginTop: 4 }}>
-                          {eur(selInvoice?.total || 0)}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {(selLines || []).map((l: any) => (
-                      <LineEditor
-                        key={l.id}
-                        line={l}
-                        onSave={(payload) => updateLine(l.id, payload)}
-                        onDelete={() => deleteLine(l.id)}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
-
-                  <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
-                    <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
-                      <option value="adjustment">adjustment</option>
-                      <option value="incident">incident</option>
-                      <option value="bonus_ranking">bonus_ranking</option>
-                      <option value="bonus_captadas">bonus_captadas</option>
-                      <option value="minutes_free">minutes_free</option>
-                      <option value="minutes_rueda">minutes_rueda</option>
-                      <option value="minutes_cliente">minutes_cliente</option>
-                      <option value="minutes_repite">minutes_repite</option>
-                      <option value="salary_base">salary_base</option>
-                      <option value="salary_bonus">salary_bonus</option>
-                    </select>
-
-                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
-                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 140 }} />
-
-                    <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
-                  </div>
-
-                  <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
-                </>
-              )}
-            </div>
+            <BillingEditor
+              invoiceId={selId} invoice={selInvoice} worker={selWorker} lines={selLines}
+              loading={selLoading} message={selMsg}
+              newKind={newKind} setNewKind={setNewKind}
+              newLabel={newLabel} setNewLabel={setNewLabel}
+              newAmount={newAmount} setNewAmount={setNewAmount}
+              bonusMode={newBonusMode} setBonusMode={setNewBonusMode}
+              bonusQuantity={newBonusQuantity} setBonusQuantity={setNewBonusQuantity}
+              bonusRate={newBonusRate} setBonusRate={setNewBonusRate}
+              description={newDescription} setDescription={setNewDescription}
+              onBack={() => setTab("facturas")} onReload={() => selId && loadInvoice(selId)}
+              onPdf={() => selId && downloadInvoicePdf(selId)} onStatus={setStatus}
+              onAdd={addLine} onSaveLine={updateLine} onDeleteLine={deleteLine}
+            />
             )
           )}
 
@@ -3137,12 +3053,104 @@ function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+function BillingEditor(props: any) {
+  const { invoiceId, invoice, worker, lines = [], loading, message } = props;
+  const status = String(invoice?.status || "draft");
+  const editable = ["draft", "pending", "review"].includes(status);
+  const minuteLines = lines.filter((line: any) => line?.meta?.minutes != null && line?.meta?.rate != null);
+  const bonuses = lines.filter((line: any) => String(line?.kind || "").includes("bonus") || String(line?.kind || "").includes("reward"));
+  const adjustments = lines.filter((line: any) => ["adjustment", "incident"].includes(String(line?.kind || "")));
+  const fixed = lines.find((line: any) => String(line?.kind || "") === "salary_base");
+  const minutes = minuteLines.reduce((sum: number, line: any) => sum + Number(line?.meta?.minutes || 0), 0);
+  const minutePay = minuteLines.reduce((sum: number, line: any) => sum + Number(line?.amount || 0), 0);
+  const bonusTotal = bonuses.reduce((sum: number, line: any) => sum + Number(line?.amount || 0), 0);
+  const adjustmentTotal = adjustments.reduce((sum: number, line: any) => sum + Number(line?.amount || 0), 0);
+  const unitPreview = roundMoney((Number(String(props.bonusQuantity).replace(",", ".")) || 0) * (Number(String(props.bonusRate).replace(",", ".")) || 0));
+
+  return <section className="tc-billing-editor">
+    <div className="tc-billing-aurora" aria-hidden="true" />
+    <header className="tc-billing-command">
+      <button className="tc-billing-back" onClick={props.onBack}>← Facturas</button>
+      <div className="tc-billing-title">
+        <span className="tc-billing-kicker">CENTRO FINANCIERO · TAROT CELESTIAL</span>
+        <h1><span>✦</span> Editor de factura</h1>
+        <p>Control económico de líneas reales, bonus y cierre mensual.</p>
+      </div>
+      {invoiceId && <div className="tc-billing-actions">
+        <button onClick={props.onReload}>↻ Sincronizar</button>
+        <button onClick={props.onPdf}>⇩ Vista PDF</button>
+        {editable ? <button className="tc-billing-final" onClick={() => props.onStatus("final")}>◆ Finalizar factura</button>
+          : <button onClick={() => props.onStatus("draft")}>Reabrir borrador</button>}
+      </div>}
+    </header>
+
+    {!invoiceId ? <div className="tc-billing-empty">Selecciona una factura para entrar en el centro financiero.</div>
+    : loading ? <div className="tc-billing-empty">Sincronizando datos reales…</div>
+    : <>
+      <div className="tc-billing-profile">
+        <div className="tc-billing-avatar">{String(worker?.display_name || "T").charAt(0).toUpperCase()}</div>
+        <div><small>PROFESIONAL</small><strong>{worker?.display_name || "Sin nombre"}</strong><span>{worker?.role || "—"} · periodo {invoice?.month_key || "—"}</span></div>
+        <div className={`tc-billing-status tc-billing-status-${status}`}><i />{status === "final" ? "Factura finalizada" : status === "paid" ? "Factura pagada" : "Edición activa"}</div>
+        <div className="tc-billing-ack"><small>CONFIRMACIÓN PROFESIONAL</small><span style={ackStyle(invoice?.worker_ack)}>{ackLabel(invoice?.worker_ack)}</span>{invoice?.worker_ack_note && <em>{invoice.worker_ack_note}</em>}</div>
+      </div>
+
+      <div className="tc-billing-kpis">
+        <article><span>◷</span><div><small>MINUTOS LIQUIDADOS</small><strong>{numES(minutes, 0)}</strong><em>{minuteLines.length} categorías</em></div></article>
+        <article><span>€</span><div><small>VALOR POR MINUTOS</small><strong>{eur(minutePay)}</strong><em>Cálculo automático</em></div></article>
+        <article><span>✦</span><div><small>BONUS Y RECOMPENSAS</small><strong>{eur(bonusTotal)}</strong><em>{bonuses.length} conceptos</em></div></article>
+        <article className="tc-billing-total"><span>◆</span><div><small>TOTAL REAL</small><strong>{eur(invoice?.total || 0)}</strong><em>Fuente: factura persistida</em></div></article>
+      </div>
+
+      {!editable && <div className="tc-billing-lock">🔒 La factura está cerrada. Sus líneas e históricos están protegidos. Reábrela como borrador si necesitas corregirla.</div>}
+
+      <div className="tc-billing-layout">
+        <main className="tc-billing-ledger">
+          <div className="tc-billing-section-head"><div><small>LIBRO DE MOVIMIENTOS</small><h2>Conceptos de factura</h2></div><span>{lines.length} líneas sincronizadas</span></div>
+          <div className="tc-billing-lines">
+            {lines.map((line: any, index: number) => <LineEditor key={line.id} line={line} index={index + 1} disabled={!editable} onSave={(payload) => props.onSaveLine(line.id, payload)} onDelete={() => props.onDeleteLine(line.id)} />)}
+            {!lines.length && <div className="tc-billing-empty">Todavía no hay conceptos en esta factura.</div>}
+          </div>
+        </main>
+
+        <aside className="tc-billing-side">
+          <div className="tc-billing-summary">
+            <small>RESUMEN DEL CIERRE</small><h3>Balance mensual</h3>
+            <div><span>Sueldo fijo</span><b>{eur(fixed?.amount || 0)}</b></div>
+            <div><span>Minutos</span><b>{eur(minutePay)}</b></div>
+            <div><span>Bonus</span><b>{eur(bonusTotal)}</b></div>
+            <div><span>Ajustes</span><b className={adjustmentTotal < 0 ? "is-negative" : ""}>{eur(adjustmentTotal)}</b></div>
+            <footer><span>TOTAL</span><strong>{eur(invoice?.total || 0)}</strong></footer>
+          </div>
+
+          <div className={`tc-billing-create ${!editable ? "is-disabled" : ""}`}>
+            <small>NUEVO MOVIMIENTO</small><h3>Añadir concepto</h3>
+            <label>Tipo<select value={props.newKind} onChange={(e) => props.setNewKind(e.target.value)} disabled={!editable}>
+              <option value="bonus">Bonus personalizado</option><option value="adjustment">Ajuste manual</option><option value="incident">Incidencia económica</option>
+            </select></label>
+            <label>Nombre<input value={props.newLabel} onChange={(e) => props.setNewLabel(e.target.value)} placeholder="Ej. Bonus calidad excepcional" disabled={!editable} /></label>
+            {props.newKind === "bonus" && <div className="tc-billing-toggle"><button className={props.bonusMode === "fixed" ? "active" : ""} onClick={() => props.setBonusMode("fixed")} disabled={!editable}>Importe fijo</button><button className={props.bonusMode === "units" ? "active" : ""} onClick={() => props.setBonusMode("units")} disabled={!editable}>Por unidades</button></div>}
+            {props.newKind === "bonus" && props.bonusMode === "units" ? <div className="tc-billing-fields"><label>Cantidad<input value={props.bonusQuantity} onChange={(e) => props.setBonusQuantity(e.target.value)} disabled={!editable} /></label><label>€/unidad<input value={props.bonusRate} onChange={(e) => props.setBonusRate(e.target.value)} disabled={!editable} /></label><output>{eur(unitPreview)}</output></div>
+              : <label>Importe €<input value={props.newAmount} onChange={(e) => props.setNewAmount(e.target.value)} disabled={!editable} /></label>}
+            <label>Descripción<textarea value={props.description} onChange={(e) => props.setDescription(e.target.value)} placeholder="Detalle visible en la factura y PDF" disabled={!editable} /></label>
+            <button className="tc-billing-add" onClick={props.onAdd} disabled={!editable || !String(props.newLabel).trim()}>＋ Añadir a la factura</button>
+          </div>
+        </aside>
+      </div>
+      <div className="tc-billing-message" aria-live="polite">{message || "● Sincronizado con la fuente real de facturación"}</div>
+    </>}
+  </section>;
+}
+
 function LineEditor({
   line,
+  index,
+  disabled,
   onSave,
   onDelete,
 }: {
   line: any;
+  index: number;
+  disabled?: boolean;
   onSave: (payload: { label: string; amount?: number; meta?: any }) => void;
   onDelete: () => void;
 }) {
@@ -3156,15 +3164,22 @@ function LineEditor({
     meta?.locked === true ||
     meta?.protected === true;
   const isSalaryBonus = String(line?.kind || "") === "salary_bonus";
+  const isCustomBonus = String(line?.kind || "") === "bonus";
 
   const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
   const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
+  const [description, setDescription] = useState(String(meta.description ?? ""));
+  const [quantity, setQuantity] = useState(String(meta.quantity ?? "1"));
+  const [unitRate, setUnitRate] = useState(String(meta.unit_rate ?? "0"));
 
   useEffect(() => {
     setLabel(String(line.label || ""));
     setAmount(String(line.amount ?? "0"));
     setMinutes(String(line?.meta?.minutes ?? ""));
     setRate(String(line?.meta?.rate ?? ""));
+    setDescription(String(line?.meta?.description ?? ""));
+    setQuantity(String(line?.meta?.quantity ?? "1"));
+    setUnitRate(String(line?.meta?.unit_rate ?? "0"));
   }, [line]);
 
   const parsedMinutes = Number(String(minutes).replace(",", "."));
@@ -3173,9 +3188,11 @@ function LineEditor({
 
   const displayAmount = hasBreakdown ? calcAmount : Number(String(amount).replace(",", ".")) || 0;
   const code = String(meta.code || "").toUpperCase();
+  const unitAmount = roundMoney((Number(String(quantity).replace(",", ".")) || 0) * (Number(String(unitRate).replace(",", ".")) || 0));
+  const changed = label !== String(line.label || "") || amount !== String(line.amount ?? "0") || minutes !== String(meta.minutes ?? "") || rate !== String(meta.rate ?? "") || description !== String(meta.description ?? "") || quantity !== String(meta.quantity ?? "1") || unitRate !== String(meta.unit_rate ?? "0");
 
   function saveLine() {
-    if (isProtectedSalary) return;
+    if (isProtectedSalary || disabled) return;
 
     if (hasBreakdown) {
       const nextMeta = {
@@ -3191,6 +3208,16 @@ function LineEditor({
       return;
     }
 
+    if (isCustomBonus) {
+      const nextMeta = { ...meta, description };
+      if (meta.bonus_mode === "units") {
+        nextMeta.quantity = Number(String(quantity).replace(",", ".")) || 0;
+        nextMeta.unit_rate = Number(String(unitRate).replace(",", ".")) || 0;
+      }
+      onSave({ label, amount: meta.bonus_mode === "units" ? unitAmount : Number(String(amount).replace(",", ".")) || 0, meta: nextMeta });
+      return;
+    }
+
     onSave({
       label,
       amount: Number(String(amount).replace(",", ".")) || 0,
@@ -3198,120 +3225,23 @@ function LineEditor({
     });
   }
 
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
-        <div style={{ minWidth: 220 }}>
-          <div style={{ fontWeight: 900 }}>{label}</div>
-          {hasBreakdown && (
-            <div className="tc-sub" style={{ marginTop: 6 }}>
-              {numES(isFinite(parsedRate) ? parsedRate : 0, 2)}€ x {numES(isFinite(parsedMinutes) ? parsedMinutes : 0, 0)} min = <b>{eur(calcAmount)}</b>
-              {code ? <> · Código <b>{code}</b></> : null}
-            </div>
-          )}
-        </div>
-
-        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(displayAmount)}</div>
-      </div>
-
-      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
-        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-          <input
-            className="tc-input"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            disabled={isProtectedSalary || isSalaryBonus}
-            style={{ width: "100%", opacity: isProtectedSalary ? 0.8 : 1 }}
-          />
-          {isProtectedSalary && (
-            <span className="tc-chip" style={{ padding: "5px 9px" }}>
-              🔒 Importe fijo protegido
-            </span>
-          )}
-          {isSalaryBonus && (
-            <span className="tc-chip" style={{ padding: "5px 9px" }}>
-              Bonus opcional · editable por factura
-            </span>
-          )}
-        </div>
-
-        {hasBreakdown ? (
-          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 160 }}>
-              <div className="tc-sub">Minutos</div>
-              <input
-                className="tc-input"
-                value={minutes}
-                onChange={(e) => setMinutes(e.target.value)}
-                style={{ width: 160, marginTop: 6 }}
-              />
-            </div>
-
-            <div style={{ minWidth: 160 }}>
-              <div className="tc-sub">Tarifa €/min</div>
-              <input
-                className="tc-input"
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                style={{ width: 160, marginTop: 6 }}
-              />
-            </div>
-
-            <div style={{ minWidth: 180 }}>
-              <div className="tc-sub">Importe recalculado</div>
-              <div className="tc-chip" style={{ marginTop: 6 }}>
-                <b>{eur(calcAmount)}</b>
-              </div>
-            </div>
-
-            <div className="tc-row" style={{ alignItems: "flex-end" }}>
-              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
-                Guardar
-              </button>
-              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-                Borrar
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
-            <div>
-              <div className="tc-sub">
-                {isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
-              </div>
-              <input
-                className="tc-input"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={isProtectedSalary}
-                style={{ width: 160, marginTop: 6, opacity: isProtectedSalary ? 0.75 : 1 }}
-              />
-            </div>
-
-            <div className="tc-row">
-              {!isProtectedSalary && (
-                <button className="tc-btn tc-btn-ok" onClick={saveLine}>
-                  Guardar
-                </button>
-              )}
-              {!isProtectedSalary && !isSalaryBonus && (
-                <button className="tc-btn tc-btn-danger" onClick={onDelete}>
-                  Borrar
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
+  const tone = isProtectedSalary ? "salary" : hasBreakdown ? "minutes" : isCustomBonus || isSalaryBonus ? "bonus" : Number(line.amount || 0) < 0 ? "negative" : "adjustment";
+  const shownAmount = isCustomBonus && meta.bonus_mode === "units" ? unitAmount : displayAmount;
+  return <article className={`tc-billing-line tc-billing-line-${tone} ${changed ? "is-dirty" : ""}`}>
+    <div className="tc-billing-line-index">{String(index).padStart(2, "0")}</div>
+    <div className="tc-billing-line-body">
+      <div className="tc-billing-line-top"><span>{isProtectedSalary ? "SUELDO PROTEGIDO" : hasBreakdown ? `MINUTOS ${code || "LIQUIDADOS"}` : isCustomBonus ? "BONUS PERSONALIZADO" : "MOVIMIENTO"}</span><strong>{eur(shownAmount)}</strong></div>
+      <input className="tc-billing-line-name" value={label} onChange={(e) => setLabel(e.target.value)} disabled={disabled || isProtectedSalary || isSalaryBonus} />
+      {hasBreakdown && <div className="tc-billing-line-fields"><label>Minutos<input value={minutes} onChange={(e) => setMinutes(e.target.value)} disabled={disabled} /></label><span>×</span><label>Tarifa €/min<input value={rate} onChange={(e) => setRate(e.target.value)} disabled={disabled} /></label><output>{eur(calcAmount)}</output></div>}
+      {!hasBreakdown && !isProtectedSalary && <div className="tc-billing-line-fields">
+        {isCustomBonus && meta.bonus_mode === "units" ? <><label>Unidades<input value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={disabled} /></label><span>×</span><label>€/unidad<input value={unitRate} onChange={(e) => setUnitRate(e.target.value)} disabled={disabled} /></label></> : <label>Importe €<input value={amount} onChange={(e) => setAmount(e.target.value)} disabled={disabled} /></label>}
+        {isCustomBonus && <label className="tc-billing-description">Descripción<input value={description} onChange={(e) => setDescription(e.target.value)} disabled={disabled} /></label>}
+      </div>}
     </div>
-  );
+    <div className="tc-billing-line-actions">
+      {isProtectedSalary ? <span>🔒</span> : <><button onClick={saveLine} disabled={disabled || !changed}>Guardar</button>{!isSalaryBonus && <button className="danger" onClick={onDelete} disabled={disabled}>Eliminar</button>}</>}
+    </div>
+  </article>;
 }
 
 function ScheduleRow({
@@ -3405,4 +3335,3 @@ export default function Page() {
     </Suspense>
   );
 }
-

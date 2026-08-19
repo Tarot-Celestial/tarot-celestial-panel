@@ -120,8 +120,13 @@ export async function GET(req: Request) {
       const minutes = Number(meta.minutes || 0) || 0;
       const rate = Number(meta.rate || 0) || 0;
       const hasBreakdown = minutes > 0 && rate > 0;
+      const hasUnitBonus = meta.bonus_mode === "units" && Number(meta.quantity || 0) > 0;
       const detail = hasBreakdown
         ? `${num(minutes, 0)} min × ${num(rate, 2)} €/min`
+        : hasUnitBonus
+          ? `${num(meta.quantity, 0)} × ${num(meta.unit_rate, 2)} €/unidad${meta.description ? ` · ${String(meta.description)}` : ""}`
+          : meta.description
+            ? String(meta.description)
         : String(line.kind || "") === "salary_base"
           ? `Periodo ${period}`
           : "—";

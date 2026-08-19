@@ -50,6 +50,52 @@ function roundMoney(n: any) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+const EDITABLE_STATUSES = new Set(["draft", "pending", "review"]);
+const ALLOWED_STATUSES = new Set(["draft", "pending", "review", "final", "paid"]);
+
+function cleanText(value: unknown, fallback = "") {
+  return String(value ?? fallback).trim().slice(0, 180);
+}
+
+async function getEditableInvoice(admin: any, invoiceId: string) {
+  const { data, error } = await admin.from("invoices").select("id,status").eq("id", invoiceId).maybeSingle();
+  if (error) throw error;
+  if (!data) return { ok: false as const, error: "INVOICE_NOT_FOUND", status: 404 };
+  if (!EDITABLE_STATUSES.has(String(data.status || "draft"))) {
+    return { ok: false as const, error: "La factura está cerrada. Vuelve a borrador para editar sus conceptos.", status: 409 };
+  }
+  return { ok: true as const };
+}
+
+function normalizeLineInput(body: any, currentMeta: any = {}) {
+  const kind = cleanText(body?.kind, "adjustment") || "adjustment";
+  const label = cleanText(body?.label);
+  const sourceMeta = body?.meta && typeof body.meta === "object" ? body.meta : currentMeta || {};
+  const meta = { ...sourceMeta };
+  let amount = roundMoney(body?.amount || 0);
+
+  if (kind === "bonus") {
+    if (!label) throw new Error("El bonus necesita un nombre.");
+    const mode = meta.bonus_mode === "units" ? "units" : "fixed";
+    meta.bonus_mode = mode;
+    meta.description = cleanText(meta.description, "").slice(0, 500);
+    if (mode === "units") {
+      const quantity = Number(meta.quantity);
+      const unitRate = Number(meta.unit_rate);
+      if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitRate) || unitRate < 0) {
+        throw new Error("Indica una cantidad mayor que cero y un importe por unidad válido.");
+      }
+      meta.quantity = quantity;
+      meta.unit_rate = roundMoney(unitRate);
+      amount = roundMoney(quantity * unitRate);
+    } else if (amount < 0) {
+      throw new Error("Un bonus fijo no puede tener un importe negativo.");
+    }
+  }
+
+  return { kind, label: label || "Ajuste", amount, meta };
+}
+
 // GET: devuelve factura + líneas para editar (admin)
 export async function GET(req: Request) {
   try {
@@ -115,10 +161,9 @@ export async function POST(req: Request) {
     }
 
     if (action === "add_line") {
-      const kind = String(body?.kind || "adjustment");
-      const label = String(body?.label || "Ajuste");
-      const amount = roundMoney(body?.amount || 0);
-      const meta = body?.meta ?? {};
+      const editable = await getEditableInvoice(admin, invoice_id);
+      if (!editable.ok) return NextResponse.json({ ok: false, error: editable.error }, { status: editable.status });
+      const { kind, label, amount, meta } = normalizeLineInput(body);
 
       const { error } = await admin.from("invoice_lines").insert({
         invoice_id,
@@ -144,8 +189,9 @@ export async function POST(req: Request) {
 
       const { data: currentLine, error: currentErr } = await admin
         .from("invoice_lines")
-        .select("id, kind, meta, amount")
+        .select("id, invoice_id, kind, meta, amount")
         .eq("id", line_id)
+        .eq("invoice_id", invoice_id)
         .maybeSingle();
 
       if (currentErr) throw currentErr;
@@ -165,10 +211,13 @@ export async function POST(req: Request) {
         );
       }
 
+      const editable = await getEditableInvoice(admin, invoice_id);
+      if (!editable.ok) return NextResponse.json({ ok: false, error: editable.error }, { status: editable.status });
+
       const patch: any = {};
 
-      if (body?.label !== undefined) patch.label = String(body.label);
-      if (body?.kind !== undefined) patch.kind = String(body.kind);
+      if (body?.label !== undefined) patch.label = cleanText(body.label);
+      if (body?.kind !== undefined) patch.kind = cleanText(body.kind);
 
       let nextMeta: any = currentLine.meta ?? {};
 
@@ -186,6 +235,12 @@ export async function POST(req: Request) {
 
       if (hasMinutesRate) {
         patch.amount = roundMoney(Number(nextMeta.minutes || 0) * Number(nextMeta.rate || 0));
+      } else if (String(body?.kind || currentLine.kind) === "bonus") {
+        const normalized = normalizeLineInput({ ...body, kind: "bonus", amount: body?.amount ?? currentLine.amount, meta: nextMeta }, nextMeta);
+        patch.label = normalized.label;
+        patch.kind = normalized.kind;
+        patch.amount = normalized.amount;
+        patch.meta = normalized.meta;
       } else if (body?.amount !== undefined) {
         patch.amount = roundMoney(body.amount);
       }
@@ -207,8 +262,9 @@ export async function POST(req: Request) {
 
       const { data: currentLine, error: currentErr } = await admin
         .from("invoice_lines")
-        .select("id, kind, meta")
+        .select("id, invoice_id, kind, meta")
         .eq("id", line_id)
+        .eq("invoice_id", invoice_id)
         .maybeSingle();
 
       if (currentErr) throw currentErr;
@@ -228,6 +284,9 @@ export async function POST(req: Request) {
         );
       }
 
+      const editable = await getEditableInvoice(admin, invoice_id);
+      if (!editable.ok) return NextResponse.json({ ok: false, error: editable.error }, { status: editable.status });
+
       const { error } = await admin.from("invoice_lines").delete().eq("id", line_id);
       if (error) throw error;
 
@@ -239,6 +298,9 @@ export async function POST(req: Request) {
 
     if (action === "set_status") {
       const status = String(body?.status || "draft");
+      if (!ALLOWED_STATUSES.has(status)) {
+        return NextResponse.json({ ok: false, error: "INVALID_STATUS" }, { status: 400 });
+      }
       const { error } = await admin.from("invoices").update({ status }).eq("id", invoice_id);
       if (error) throw error;
 

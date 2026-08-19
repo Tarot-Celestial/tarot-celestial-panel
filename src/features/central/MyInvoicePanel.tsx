@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BadgeEuro, CalendarDays, Coins, Crown, Sparkles, TrendingDown, TrendingUp, WalletCards } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./MyInvoicePanel.module.css";
+import lineStyles from "./MyInvoiceLines.module.css";
 
 export type MyInvoiceData = {
   worker: { id: string; display_name: string; team?: string | null };
@@ -14,7 +15,7 @@ export type MyInvoiceData = {
   total: number;
   weekly_earnings: number;
   previous: { month: string; total: number; exists: boolean; difference: number; variation_pct: number | null };
-  lines: Array<{ id: string; kind: string; label: string; amount: number; created_at?: string | null }>;
+  lines: Array<{ id: string; kind: string; label: string; amount: number; meta?: { bonus_mode?: string; quantity?: number; unit_rate?: number; description?: string }; created_at?: string | null }>;
   evolution: Array<{ at?: string | null; total: number; label: string }>;
   progress: { xp_month: number | null; total_xp: number | null; streak_days: number | null; loyalty_index: number | null; level: string | null; level_xp: number | null; next_level_xp: number | null; next_level_name: string | null };
   next_payment_at: string | null;
@@ -77,6 +78,9 @@ export default function MyInvoicePanel({ feed }: Props) {
         <article className={styles.chartCard}><div className={styles.sectionTitle}><div><Crown/><span>EVOLUCIÓN DE LA FACTURA</span></div><strong>{eur(data.total)}</strong></div>
           <div className={styles.chart}>{data.evolution.map((point, i) => <div key={`${point.label}-${i}`} className={styles.barWrap} title={`${point.label}: ${eur(point.total)}`}><div className={styles.bar} style={{ height: `${Math.max(8, (point.total / max) * 100)}%` }}/><span>{i + 1}</span></div>)}</div>
           <div className={styles.legend}>{data.evolution.length <= 1 ? "Sin movimientos adicionales este mes: la línea permanece estable en la nómina fija." : "La evolución aumenta únicamente con movimientos económicos reales de la factura."}</div>
+        </article>
+        <article className={styles.chartCard}><div className={styles.sectionTitle}><div><Coins/><span>CONCEPTOS REALES</span></div><strong>{data.lines.length}</strong></div>
+          <div className={lineStyles.invoiceLines}>{data.lines.map((line) => <div key={line.id}><span><b>{line.label}</b><small>{line.meta?.bonus_mode === "units" ? `${line.meta.quantity || 0} × ${eur(line.meta.unit_rate || 0)}${line.meta.description ? ` · ${line.meta.description}` : ""}` : line.meta?.description || line.kind}</small></span><strong>{eur(line.amount)}</strong></div>)}</div>
         </article>
       </div>
 
