@@ -41,6 +41,49 @@ function minutesFromMeta(meta: unknown) {
   }
 }
 
+function recordFromMeta(meta: unknown): Record<string, unknown> {
+  if (meta && typeof meta === "object") return meta as Record<string, unknown>;
+  if (typeof meta !== "string") return {};
+  try {
+    const parsed = JSON.parse(meta);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function invoiceMinuteCode(kind: unknown, meta: unknown) {
+  const lineKind = String(kind || "").trim().toLowerCase();
+  if (!lineKind.startsWith("minutes_")) return null;
+  const record = recordFromMeta(meta);
+  const structuredCode = String(record.code || "").trim().toLowerCase();
+  return (structuredCode || lineKind.slice("minutes_".length)).replace(/[\s-]+/g, "_") || null;
+}
+
+export async function loadInvoiceMinutesByCode(admin: any, invoiceIds: string[]) {
+  const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)));
+  const totals = new Map<string, Map<string, number>>();
+  if (!uniqueIds.length) return totals;
+
+  const { data, error } = await admin
+    .from("invoice_lines")
+    .select("invoice_id, kind, meta")
+    .in("invoice_id", uniqueIds);
+
+  if (error) throw error;
+
+  for (const line of data || []) {
+    const invoiceId = String(line?.invoice_id || "");
+    const code = invoiceMinuteCode(line?.kind, line?.meta);
+    if (!invoiceId || !code) continue;
+    const byCode = totals.get(invoiceId) || new Map<string, number>();
+    byCode.set(code, Math.round(((byCode.get(code) || 0) + minutesFromMeta(line?.meta)) * 100) / 100);
+    totals.set(invoiceId, byCode);
+  }
+
+  return totals;
+}
+
 export async function loadInvoiceMinuteTotals(admin: any, invoiceIds: string[]) {
   const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)));
   const totals = new Map<string, number>();

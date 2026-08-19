@@ -6,7 +6,7 @@ import {
   type InvoiceDocumentLine,
   type InvoiceParty,
 } from "@/lib/server/invoice-document";
-import { compareInvoicePeriods, loadInvoiceMinuteTotals } from "@/lib/server/invoice-period-comparison";
+import { compareInvoicePeriods, loadInvoiceMinutesByCode } from "@/lib/server/invoice-period-comparison";
 
 export const runtime = "nodejs";
 
@@ -93,13 +93,27 @@ export async function GET(req: Request) {
     if (monthInvoicesError) throw monthInvoicesError;
     if (previousInvoiceError) throw previousInvoiceError;
 
-    const minuteTotals = await loadInvoiceMinuteTotals(admin, [String(invoice.id), String(previousInvoice?.id || "")]);
+    const minutesByCode = await loadInvoiceMinutesByCode(admin, [String(invoice.id), String(previousInvoice?.id || "")]);
+    const currentCodes = minutesByCode.get(String(invoice.id)) || new Map<string, number>();
+    const previousCodes = minutesByCode.get(String(previousInvoice?.id || "")) || new Map<string, number>();
+    const currentMinuteTotal = Array.from(currentCodes.values()).reduce((sum, value) => sum + value, 0);
+    const previousMinuteTotal = Array.from(previousCodes.values()).reduce((sum, value) => sum + value, 0);
     const totalComparison = compareInvoicePeriods(invoice.total, previousInvoice?.total, Boolean(previousInvoice));
     const minutesComparison = compareInvoicePeriods(
-      minuteTotals.get(String(invoice.id)),
-      minuteTotals.get(String(previousInvoice?.id || "")),
+      currentMinuteTotal,
+      previousMinuteTotal,
       Boolean(previousInvoice)
     );
+    const priorityCodes = ["cliente", "repite", "rueda", "free", "call_center"];
+    const presentCodes = new Set([...currentCodes.keys(), ...previousCodes.keys()]);
+    const comparisonCodes = [
+      ...priorityCodes.filter((code) => code === "cliente" || code === "repite" || presentCodes.has(code)),
+      ...Array.from(presentCodes).filter((code) => !priorityCodes.includes(code)).sort(),
+    ];
+    const codeProgress = comparisonCodes.map((code) => ({
+      code,
+      ...compareInvoicePeriods(currentCodes.get(code), previousCodes.get(code), Boolean(previousInvoice)),
+    }));
     const isCentral = String(worker?.role || "").toLowerCase() === "central";
 
     let authUser: UnknownRecord | null = null;
@@ -170,6 +184,12 @@ export async function GET(req: Request) {
         minutesTrend: minutesComparison.trend,
         showMinutes: !isCentral,
       },
+      codeProgress: !isCentral ? {
+        currentLabel: monthLabel(String(invoice.month_key || "")),
+        previousLabel: monthLabel(previousMonthKey),
+        hasPrevious: Boolean(previousInvoice),
+        codes: codeProgress,
+      } : null,
     });
 
     return new NextResponse(html, {
