@@ -47,6 +47,7 @@ function workerRecipient(worker: UnknownRecord | null, authUser: UnknownRecord |
 
   return {
     name: workerName || metadataName || "Profesional colaborador/a",
+    role: firstText(worker, ["role"]),
     taxId: firstText(worker, ["tax_id", "nif", "nie", "cif", "document_number", "fiscal_id"]),
     address: firstText(worker, ["address", "direccion", "street_address", "fiscal_address"]),
     postalCode: firstText(worker, ["postal_code", "codigo_postal", "zip", "zip_code"]),

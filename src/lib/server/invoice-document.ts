@@ -1,5 +1,6 @@
 export type InvoiceParty = {
   name: string;
+  role?: string | null;
   company?: string | null;
   taxId?: string | null;
   address?: string | null;
@@ -111,12 +112,13 @@ function partyLines(party: InvoiceParty) {
   const region = [party.province, party.country].filter(Boolean).join(" · ");
   const contact = [party.email, party.phone].filter(Boolean).join(" · ");
   return [
-    party.company && party.company !== party.name ? party.company : null,
+    party.role ? `Rol: ${party.role}` : null,
+    party.company && party.company !== party.name ? `Empresa: ${party.company}` : null,
     party.taxId ? `NIF/CIF: ${party.taxId}` : null,
-    party.address,
-    locality || null,
-    region || null,
-    contact || null,
+    party.address ? `Dirección: ${party.address}` : null,
+    locality ? `Localidad: ${locality}` : null,
+    region ? `País / región: ${region}` : null,
+    contact ? `Contacto: ${contact}` : null,
   ].filter((item): item is string => Boolean(item && String(item).trim()));
 }
 
@@ -186,10 +188,10 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     *{box-sizing:border-box}
     html,body{margin:0;padding:0;background:#eee9e0;color:var(--ink);font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .page{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:17mm 17mm 18mm}
-    .head{display:flex;justify-content:space-between;gap:22px;align-items:flex-start;border-bottom:3px solid #c8a45d;padding-bottom:17px}
-    .brand{display:flex;gap:14px;align-items:center;min-width:0}.brand img{width:62px;height:62px;object-fit:contain;flex:none}.brand h1{margin:0;font-size:28px;line-height:1.05}.brand p{margin:5px 0 0;color:var(--muted);font-size:13px}
-    .invoice-meta{text-align:right;min-width:245px}.invoice-meta h2{margin:0 0 9px;color:#9a7024;font-size:22px;overflow-wrap:anywhere}.meta-line{font-size:13px;margin:4px 0}.status{display:inline-block;margin-top:6px;padding:5px 9px;border-radius:999px;background:#f0e8fb;color:#68459d;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
-    .parties{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}.party{padding:16px;background:var(--soft);border:1px solid var(--line);min-height:126px}.party h3{margin:0 0 10px;text-transform:uppercase;letter-spacing:.08em;font-size:11px;color:#8b672a}.party strong{display:block;font-size:15px;margin-bottom:5px}.party-line{font-size:12.5px;line-height:1.55;color:#3f3944;overflow-wrap:anywhere}
+    .head{display:flex;justify-content:space-between;gap:28px;align-items:stretch;border-bottom:2px solid #c8a45d;padding-bottom:18px;break-inside:avoid;page-break-inside:avoid}
+    .brand{display:flex;gap:16px;align-items:flex-start;min-width:0;padding:8px 0}.brand img{width:68px;height:68px;object-fit:contain;flex:none}.brand-copy{padding-top:4px}.brand h1{margin:0;font-size:31px;line-height:1;color:var(--ink)}.brand p{margin:7px 0 0;color:#9a7024;font-size:14px;font-weight:700;letter-spacing:.03em}
+    .invoice-meta{width:310px;max-width:48%;padding:15px 17px;border:1px solid #decfaa;border-radius:14px;background:linear-gradient(145deg,#fffdf8,#faf6ee);text-align:left;break-inside:avoid}.invoice-meta h2{margin:0 0 11px;color:#9a7024;font-size:21px;line-height:1.1;overflow-wrap:anywhere}.meta-grid{display:grid;grid-template-columns:76px 1fr;gap:5px 10px;align-items:start}.meta-label{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.04em}.meta-value{font-size:11.5px;font-weight:700;overflow-wrap:anywhere}.status{display:inline-block;padding:3px 7px;border-radius:999px;background:#f0e8fb;color:#68459d;font-weight:800;font-size:10px;letter-spacing:.05em}
+    .parties{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px;break-inside:avoid;page-break-inside:avoid}.party{padding:15px 16px;background:linear-gradient(145deg,#fffdf9,var(--soft));border:1px solid var(--line);border-radius:12px;min-height:132px}.party h3{margin:0 0 10px;text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:#8b672a}.party strong{display:block;font-size:16px;margin-bottom:7px}.party-line{font-size:11.5px;line-height:1.5;color:#3f3944;overflow-wrap:anywhere}.party-period{margin-top:6px;padding-top:6px;border-top:1px solid #eadfce;color:#6f6575;font-size:11.5px}
     .period{margin:16px 0 0;font-size:12.5px;color:var(--muted)}
     table{width:100%;border-collapse:collapse;margin-top:22px;table-layout:fixed;page-break-inside:auto}thead{display:table-header-group}tr{page-break-inside:avoid;page-break-after:auto}th{background:#20182b;color:#fff;text-align:left;padding:10px;font-size:12px;text-transform:uppercase;letter-spacing:.05em}th:nth-child(1){width:31%}th:nth-child(2){width:49%}th:nth-child(3){width:20%;text-align:right}td{padding:10px;border-bottom:1px solid #e9e2d7;vertical-align:top;font-size:12.5px;line-height:1.45;overflow-wrap:anywhere}.amount{text-align:right;white-space:nowrap;font-weight:700}
     .totals{margin-left:auto;width:315px;max-width:100%;margin-top:22px;break-inside:avoid}.total-row{display:flex;justify-content:space-between;gap:16px;padding:7px 4px;font-size:13px}.grand{font-size:19px;font-weight:900;border-top:2px solid #c8a45d;padding-top:10px;margin-top:3px}.notes{margin-top:27px;padding:14px;border:1px solid var(--line);background:#fffdfa;break-inside:avoid}.notes b{font-size:12px;text-transform:uppercase;letter-spacing:.06em}.notes p{margin:7px 0 0;white-space:pre-wrap;line-height:1.5;font-size:12.5px}
@@ -197,7 +199,7 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     .foot{margin-top:24px;padding-top:10px;border-top:1px solid #eee7db;color:#8a828e;font-size:10.5px;text-align:center}
     @page{size:A4 portrait;margin:0}
     @media print{html,body{background:#fff}.page{margin:0;width:210mm;min-height:auto;padding:15mm 17mm}.no-print{display:none}}
-    @media(max-width:760px){.page{width:100%;min-height:0;padding:24px}.head{flex-direction:column}.invoice-meta{text-align:left;min-width:0}.parties{grid-template-columns:1fr}}
+    @media(max-width:600px){.page{width:100%;min-height:0;padding:24px}.head{flex-direction:column}.invoice-meta{width:100%;max-width:none}.parties{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -205,14 +207,19 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     <header class="head">
       <div class="brand">
         <img src="${esc(input.logoUrl)}" alt="Tarot Celestial" />
-        <div><h1>${esc(input.issuer.company || input.issuer.name)}</h1><p>Factura</p></div>
+        <div class="brand-copy"><h1>Factura</h1><p>${esc(input.issuer.company || input.issuer.name)}</p></div>
       </div>
       <div class="invoice-meta">
         <h2>${esc(input.invoiceNumber)}</h2>
-        <div class="meta-line"><b>Emisión:</b> ${esc(issueDate)}</div>
-        ${dueDate ? `<div class="meta-line"><b>Vencimiento:</b> ${esc(dueDate)}</div>` : ""}
-        ${input.periodLabel ? `<div class="meta-line"><b>Periodo:</b> ${esc(input.periodLabel)}</div>` : ""}
-        <div class="status">${esc(formatInvoiceStatus(input.status))}</div>
+        <div class="meta-grid">
+          ${input.periodLabel ? `<span class="meta-label">Periodo</span><span class="meta-value">${esc(input.periodLabel)}</span>` : ""}
+          <span class="meta-label">Estado</span><span class="meta-value"><span class="status">${esc(input.status || "—")}</span></span>
+          ${input.issuer.country ? `<span class="meta-label">País</span><span class="meta-value">${esc(input.issuer.country)}</span>` : ""}
+          <span class="meta-label">Emisor</span><span class="meta-value">${esc(input.issuer.name)}</span>
+          ${input.issuer.company ? `<span class="meta-label">Empresa</span><span class="meta-value">${esc(input.issuer.company)}</span>` : ""}
+          <span class="meta-label">Emisión</span><span class="meta-value">${esc(issueDate)}</span>
+          ${dueDate ? `<span class="meta-label">Vencimiento</span><span class="meta-value">${esc(dueDate)}</span>` : ""}
+        </div>
       </div>
     </header>
 
@@ -226,6 +233,7 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
         <h3>Destinatario</h3>
         <strong>${esc(input.recipient.name || "—")}</strong>
         ${recipientExtra.map((line) => `<div class="party-line">${esc(line)}</div>`).join("")}
+        ${input.periodLabel ? `<div class="party-period">Periodo facturado: <b>${esc(input.periodLabel)}</b></div>` : ""}
       </div>
     </section>
 
