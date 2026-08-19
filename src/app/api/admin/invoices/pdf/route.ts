@@ -6,7 +6,7 @@ import {
   type InvoiceDocumentLine,
   type InvoiceParty,
 } from "@/lib/server/invoice-document";
-import { compareInvoicePeriods, loadInvoiceMinutesByCode } from "@/lib/server/invoice-period-comparison";
+import { compareInvoicePeriods, loadInvoiceAnalytics } from "@/lib/server/invoice-period-comparison";
 
 export const runtime = "nodejs";
 
@@ -93,7 +93,8 @@ export async function GET(req: Request) {
     if (monthInvoicesError) throw monthInvoicesError;
     if (previousInvoiceError) throw previousInvoiceError;
 
-    const minutesByCode = await loadInvoiceMinutesByCode(admin, [String(invoice.id), String(previousInvoice?.id || "")]);
+    const analytics = await loadInvoiceAnalytics(admin, [String(invoice.id), String(previousInvoice?.id || "")]);
+    const minutesByCode = analytics.minutesByCode;
     const currentCodes = minutesByCode.get(String(invoice.id)) || new Map<string, number>();
     const previousCodes = minutesByCode.get(String(previousInvoice?.id || "")) || new Map<string, number>();
     const currentMinuteTotal = Array.from(currentCodes.values()).reduce((sum, value) => sum + value, 0);
@@ -114,6 +115,11 @@ export async function GET(req: Request) {
       code,
       ...compareInvoicePeriods(currentCodes.get(code), previousCodes.get(code), Boolean(previousInvoice)),
     }));
+    const bonusComparison = compareInvoicePeriods(
+      analytics.bonusTotals.get(String(invoice.id)),
+      analytics.bonusTotals.get(String(previousInvoice?.id || "")),
+      Boolean(previousInvoice)
+    );
     const isCentral = String(worker?.role || "").toLowerCase() === "central";
 
     let authUser: UnknownRecord | null = null;
@@ -189,6 +195,7 @@ export async function GET(req: Request) {
         previousLabel: monthLabel(previousMonthKey),
         hasPrevious: Boolean(previousInvoice),
         codes: codeProgress,
+        bonus: bonusComparison,
       } : null,
     });
 

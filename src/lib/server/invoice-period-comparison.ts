@@ -84,6 +84,39 @@ export async function loadInvoiceMinutesByCode(admin: any, invoiceIds: string[])
   return totals;
 }
 
+export async function loadInvoiceAnalytics(admin: any, invoiceIds: string[]) {
+  const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)));
+  const minutesByCode = new Map<string, Map<string, number>>();
+  const bonusTotals = new Map<string, number>();
+  if (!uniqueIds.length) return { minutesByCode, bonusTotals };
+
+  const { data, error } = await admin
+    .from("invoice_lines")
+    .select("invoice_id, kind, amount, meta")
+    .in("invoice_id", uniqueIds);
+
+  if (error) throw error;
+
+  for (const line of data || []) {
+    const invoiceId = String(line?.invoice_id || "");
+    const kind = String(line?.kind || "").trim().toLowerCase();
+    if (!invoiceId) continue;
+
+    const code = invoiceMinuteCode(kind, line?.meta);
+    if (code) {
+      const byCode = minutesByCode.get(invoiceId) || new Map<string, number>();
+      byCode.set(code, Math.round(((byCode.get(code) || 0) + minutesFromMeta(line?.meta)) * 100) / 100);
+      minutesByCode.set(invoiceId, byCode);
+    }
+
+    if (kind.includes("bonus") || kind.includes("reward") || kind.includes("recompensa")) {
+      bonusTotals.set(invoiceId, Math.round(((bonusTotals.get(invoiceId) || 0) + safeInvoiceNumber(line?.amount)) * 100) / 100);
+    }
+  }
+
+  return { minutesByCode, bonusTotals };
+}
+
 export async function loadInvoiceMinuteTotals(admin: any, invoiceIds: string[]) {
   const uniqueIds = Array.from(new Set(invoiceIds.filter(Boolean)));
   const totals = new Map<string, number>();
