@@ -57,6 +57,13 @@ export default function CentralNewClientModal({ open, onClose, onCreated }: Prop
   useEffect(() => {
     if (!open) return;
     setBrand(getActiveBrand());
+    setForm(EMPTY_FORM);
+    setTags([]);
+    setSelectedTags([]);
+    setNewTag("");
+    setWorkers([]);
+    setResponsibleId("");
+    setCanAssign(false);
     setError("");
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     document.addEventListener("keydown", onKey);
@@ -75,7 +82,9 @@ export default function CentralNewClientModal({ open, onClose, onCreated }: Prop
         const available = Array.isArray(workersPayload.workers) ? workersPayload.workers : [];
         setWorkers(available);
         setCanAssign(Boolean(workersPayload.can_assign));
-        setResponsibleId(String(workersPayload.current_worker_id || available[0]?.id || ""));
+        // La telefonista autenticada queda preseleccionada cuando la asignación está
+        // protegida. Un administrador debe escoger expresamente a la responsable.
+        setResponsibleId(String(workersPayload.current_worker_id || ""));
       } catch (cause: any) {
         setError(friendlyError(String(cause?.message || "")));
       } finally { setLoadingTags(false); setLoadingWorkers(false); }
