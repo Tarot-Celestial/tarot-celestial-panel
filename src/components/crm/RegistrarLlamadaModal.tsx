@@ -239,6 +239,8 @@ type Props = {
   onSuccess?: (message?: string) => Promise<void> | void;
 };
 
+type CaptureXpPreview = { enabled: boolean; xp: number; eligible: boolean; already_awarded: boolean };
+
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -322,6 +324,8 @@ export default function RegistrarLlamadaModal({
   const [msg, setMsg] = useState("");
   const submitInFlightRef = useRef(false);
   const operationIdRef = useRef("");
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
   const [clienteCompra, setClienteCompra] = useState<"si" | "no" | "">("");
   const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "7free" | "">("");
@@ -340,6 +344,7 @@ export default function RegistrarLlamadaModal({
   const [formaPago, setFormaPago] = useState<(typeof PAGO_OPTIONS)[number] | "">("");
   const [importe, setImporte] = useState("");
   const [clasificacion, setClasificacion] = useState<(typeof CLASIF_OPTIONS)[number]["value"]>("nada");
+  const [captureXp, setCaptureXp] = useState<CaptureXpPreview | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -365,6 +370,20 @@ export default function RegistrarLlamadaModal({
     setFormaPago("");
     setImporte("");
     setClasificacion("nada");
+    setCaptureXp(null);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token || cancelled || !isUuid(cliente?.id)) return;
+        const response = await fetch(`/api/crm/rendimiento/registrar?cliente_id=${encodeURIComponent(String(cliente?.id))}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const json = await response.json();
+        if (!cancelled && response.ok && json.ok) setCaptureXp(json.capture_xp);
+      } catch {
+        // La previsualización es informativa; el servidor decide y persiste el premio real.
+      }
+    })();
+    return () => { cancelled = true; };
   }, [open, cliente?.id]);
 
   const steps = useMemo(() => {
@@ -623,6 +642,10 @@ export default function RegistrarLlamadaModal({
         }
       }
 
+      if (j?.xp_event) {
+        window.dispatchEvent(new CustomEvent("tc-xp-recorded", { detail: { event: j.xp_event, clienteId } }));
+      }
+
       if (onSuccess) await onSuccess(j?.message || "✅ Llamada registrada correctamente");
       onClose();
     } catch (e: any) {
@@ -802,9 +825,13 @@ export default function RegistrarLlamadaModal({
             )}
 
             {current?.key === "clasificacion" && (
-              <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+              <div className={styles.classificationGrid}>
                 {CLASIF_OPTIONS.map((opt) => (
-                  <button key={opt.value} type="button" className={`${styles.choiceButton} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)} style={{ padding: 16, border: clasificacion === opt.value ? "1px solid rgba(215,181,109,.55)" : undefined, background: clasificacion === opt.value ? "rgba(215,181,109,.14)" : undefined }}>{opt.label}</button>
+                  <button key={opt.value} type="button" className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
+                    <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : "•"}</span>
+                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `Puede otorgar +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Puede otorgar XP"}</small> : null}</span>
+                    {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
+                  </button>
                 ))}
               </div>
             )}
@@ -847,6 +874,16 @@ export default function RegistrarLlamadaModal({
                     Clasificación: {CLASIF_OPTIONS.find((x) => x.value === clasificacion)?.label || "Nada"}
                   </div>
                 </div>
+                {clasificacion === "captado" ? (
+                  <div className={`${styles.captureAchievement} ${captureXp?.already_awarded ? styles.captureAlreadyAwarded : ""}`}>
+                    <span className={styles.captureAchievementIcon} aria-hidden="true">★</span>
+                    <div>
+                      <small>LOGRO DE CAPTACIÓN</small>
+                      <strong>{captureXp?.eligible ? "Nueva clienta captada" : "Captación ya premiada"}</strong>
+                      <p>{captureXp?.eligible ? `+${captureXp.xp.toLocaleString("es-ES")} XP al registrar` : "La llamada se guardará, pero esta clienta no volverá a dar XP."}</p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
 

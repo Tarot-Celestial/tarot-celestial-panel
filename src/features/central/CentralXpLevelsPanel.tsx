@@ -45,8 +45,10 @@ function rewardSummary(rewardType: string | null, rewardAmount: number | null, r
 
 type Props = ReturnType<typeof useCentralXpData>;
 
-export default function CentralXpLevelsPanel({ data, error, busy, load, acknowledgeReward }: Props) {
+export default function CentralXpLevelsPanel({ data, error, busy, load, acknowledgeReward, claimLevelReward }: Props) {
   const [selectedLevel, setSelectedLevel] = useState<XpConfiguredLevel | null>(null);
+  const [claimingLevel, setClaimingLevel] = useState<number | null>(null);
+  const [claimMessage, setClaimMessage] = useState("");
 
   if (!data && !error) return <div className={styles.loading}>Cargando niveles…</div>;
   if (!data) {
@@ -68,6 +70,21 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
     ? Math.min(100, Math.max(0, (progress.level_xp / Math.max(1, progress.level_span)) * 100))
     : 100;
   const totalGoal = progress.total_required_for_max ?? configuredLevels[configuredLevels.length - 1]?.cumulative_xp ?? 0;
+  const claimForLevel = (level: number) => data.reward_claims.find((claim) => claim.reward_kind === "level" && (claim.level === level + 1 || claim.reward_key === `level:${level + 1}`));
+  const claimLevel = async (level: number) => {
+    if (claimingLevel != null) return;
+    setClaimingLevel(level);
+    setClaimMessage("");
+    try {
+      const operationId = crypto.randomUUID();
+      await claimLevelReward(level, operationId);
+      setClaimMessage("Recompensa entregada en tu cartera de Coins.");
+    } catch (claimError) {
+      setClaimMessage(claimError instanceof Error ? claimError.message : "No se pudo reclamar la recompensa");
+    } finally {
+      setClaimingLevel(null);
+    }
+  };
 
   return (
     <section className={styles.page}>
@@ -205,6 +222,7 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
                 {tierLevels.map((level) => {
                   const done = progress.level > level.level;
                   const active = progress.level === level.level;
+                  const claim = claimForLevel(level.level);
                   return (
                     <button
                       type="button"
@@ -218,6 +236,7 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
                         <b>Nivel {level.level}</b>
                         <small>{level.next_active_level ? `${fmt(level.xp_to_next || 0)} XP → Nivel ${level.next_active_level}` : "Nivel máximo"}</small>
                         <em>{rewardSummary(level.reward_type, level.reward_amount, level.reward_label)}</em>
+                        {done && level.reward_type === "coins" && Number(level.reward_amount) > 0 ? <em className={claim ? styles.rewardClaimed : styles.rewardPending}>{claim ? "Recompensa entregada" : "Pendiente de reclamar"}</em> : null}
                       </span>
                     </button>
                   );
@@ -248,6 +267,7 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
         const tier = data.tier_config.find((item) => item.key === selectedLevel.tier_key);
         const reached = progress.total_xp >= selectedLevel.cumulative_xp;
         const reward = rewardValue(selectedLevel.reward_type, selectedLevel.reward_amount);
+        const existingClaim = claimForLevel(selectedLevel.level);
         return (
           <div className={styles.levelDetailBackdrop} role="dialog" aria-modal="true" aria-label={`Detalle Nivel ${selectedLevel.level}`} onMouseDown={(event) => {
             if (event.currentTarget === event.target) setSelectedLevel(null);
@@ -273,6 +293,10 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
                   {selectedLevel.reward_label ? <p>“{selectedLevel.reward_label}”</p> : null}
                 </div>
               </div>
+              {reached && selectedLevel.reward_type === "coins" && Number(selectedLevel.reward_amount) > 0 ? (
+                existingClaim ? <div className={styles.claimedState}><CheckCircle2 size={16}/> Recompensa ya entregada</div> : <button className={styles.claimButton} type="button" disabled={claimingLevel != null} onClick={() => void claimLevel(selectedLevel.level)}>{claimingLevel === selectedLevel.level ? "ENTREGANDO…" : "RECLAMAR RECOMPENSA"}</button>
+              ) : null}
+              {claimMessage ? <div className={styles.claimMessage}>{claimMessage}</div> : null}
             </article>
           </div>
         );

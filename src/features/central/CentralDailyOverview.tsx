@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleAlert,
   CircleDollarSign,
+  Coins,
   Info,
   Sparkles,
   Target,
@@ -19,6 +20,8 @@ export type DailyAction = {
   rewardXp: number;
   completed?: boolean;
   detail?: string;
+  kind?: "payment" | "followup" | "capture" | "xp" | "level_reward";
+  rewardCoins?: number;
 };
 
 export type DailySummaryData = {
@@ -117,12 +120,12 @@ export default function CentralDailyOverview({
 
         <div className={styles.dailyActions}>
           {data.dailySummary.actions.map((action) => (
-            <div className={styles.dailyAction} key={action.id}>
+            <div className={`${styles.dailyAction} ${action.kind === "capture" ? styles.captureAction : ""} ${action.kind === "level_reward" ? styles.rewardAction : ""}`} key={action.id}>
               <span className={`${styles.actionState} ${action.completed ? styles.done : ""}`}>
-                {action.completed ? <Check size={14} /> : <ChevronRight size={14} />}
+                {action.kind === "level_reward" ? <Coins size={14} /> : action.completed ? <Check size={14} /> : <ChevronRight size={14} />}
               </span>
               <span className={styles.actionLabel}>{action.label}</span>
-              <strong>{action.rewardXp > 0 ? `+${formatXp(action.rewardXp)} XP` : "Sin XP registrado"}</strong>
+              <strong>{action.rewardCoins ? `+${formatXp(action.rewardCoins)} Coins` : action.rewardXp > 0 ? `+${formatXp(action.rewardXp)} XP` : "Sin XP registrado"}</strong>
               {action.detail ? <small className={styles.actionDetail}>{action.detail}</small> : null}
             </div>
           ))}

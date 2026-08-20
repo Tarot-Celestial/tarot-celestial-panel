@@ -136,6 +136,20 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
+.captureAction,
+.rewardAction {
+  border-color: rgba(239, 196, 83, .42);
+  background: radial-gradient(circle at 92% 0, rgba(245, 199, 72, .14), transparent 38%), linear-gradient(135deg, rgba(70, 47, 14, .34), rgba(28, 19, 44, .88));
+  box-shadow: inset 3px 0 rgba(238, 190, 65, .78), 0 0 24px rgba(225, 173, 43, .08);
+}
+.captureAction .actionState,
+.rewardAction .actionState { color: #ffe28a; border-color: rgba(244, 202, 88, .4); background: rgba(225, 170, 38, .13); }
+.captureAction strong,
+.rewardAction strong { color: #ffd86b; text-shadow: 0 0 16px rgba(237, 184, 48, .24); }
+.rewardAction { animation: rewardArrival .38s ease both; }
+@keyframes rewardArrival { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .rewardAction { animation: none; } }
+
 .actionState {
   width: 25px;
   height: 25px;

@@ -160,18 +160,26 @@ export async function GET(req: Request) {
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
     const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
 
-    const [paymentsR, followupsR, capturesR] = await Promise.all([
+    const [paymentsR, followupsR, capturesR, rewardClaimsR, rewardProcessingR] = await Promise.all([
       admin.from("crm_cliente_pagos").select("id,cliente_id,importe,moneda,created_at").eq("created_by_user_id", me.id).eq("estado", "completed").gte("created_at", operationalDay.start).lt("created_at", operationalDay.end),
       admin.from("crm_client_followups").select("id,client_id,reason,completed_at").eq("worker_id", me.id).not("completed_at", "is", null).gte("completed_at", operationalDay.start).lt("completed_at", operationalDay.end),
       admin.from("captacion_leads").select("id,cliente_id,closed_at").eq("assigned_worker_id", me.id).eq("estado", "captado").gte("closed_at", operationalDay.start).lt("closed_at", operationalDay.end),
+      admin.from("worker_xp_reward_claims").select("id,reward_kind,reward_key,level,reward_type,reward_amount,reward_label,status,created_at").eq("worker_id", me.id).eq("status", "granted"),
+      admin.from("worker_xp_reward_processing").select("claim_id,coins_granted,processed_at").eq("worker_id", me.id).gte("processed_at", operationalDay.start).lt("processed_at", operationalDay.end),
     ]);
     for (const result of [paymentsR, followupsR, capturesR]) if (result.error) throw result.error;
+    if (rewardClaimsR.error && !rewardTablesMissing(rewardClaimsR.error)) throw rewardClaimsR.error;
+    if (rewardProcessingR.error && !rewardTablesMissing(rewardProcessingR.error)) throw rewardProcessingR.error;
 
     const todayEvents = events.filter((event: any) => event.created_at >= operationalDay.start && event.created_at < operationalDay.end);
     const clientIds = Array.from(new Set([
       ...(paymentsR.data || []).map((row: any) => String(row.cliente_id || "")),
       ...(followupsR.data || []).map((row: any) => String(row.client_id || "")),
       ...(capturesR.data || []).map((row: any) => String(row.cliente_id || "")),
+      ...todayEvents.filter((event: any) => event.action_key === "client_capture").map((event: any) => {
+        const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
+        return String(metadata.client_id || metadata.cliente_id || event.reference_id || "").replace(/^cliente:/, "");
+      }),
     ].filter(Boolean)));
     const clientsR = clientIds.length
       ? await admin.from("crm_clientes").select("id,nombre,apellido").in("id", clientIds)
@@ -193,11 +201,20 @@ export async function GET(req: Request) {
       if (kind === "capture" && String(metadata.lead_id || "") === sourceId) return true;
       return false;
     };
+    const representedEventIds = new Set<string>();
     const xpForActivity = (kind: ActivityKind, sourceId: string) => todayEvents
       .filter((event: any) => eventBelongsToActivity(event, kind, sourceId))
-      .reduce((sum: number, event: any) => sum + num(event.xp_amount), 0);
+      .reduce((sum: number, event: any) => {
+        representedEventIds.add(String(event.id));
+        return sum + num(event.xp_amount);
+      }, 0);
 
-    const activities = [
+    const sourceClientId = (event: any) => {
+      const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
+      return String(metadata.client_id || metadata.cliente_id || event.reference_id || "").replace(/^cliente:/, "");
+    };
+
+    const baseActivities = [
       ...(paymentsR.data || []).map((row: any) => ({
         id: `payment:${row.id}`,
         kind: "payment" as const,
@@ -225,7 +242,43 @@ export async function GET(req: Request) {
         occurred_at: String(row.closed_at),
         xp: xpForActivity("capture", String(row.id)),
       })),
-    ].sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
+    ];
+
+    const eventActivities = todayEvents
+      .filter((event: any) => !representedEventIds.has(String(event.id)))
+      .map((event: any) => {
+        const clientId = sourceClientId(event);
+        return {
+          id: `xp:${event.id}`,
+          kind: event.action_key === "client_capture" ? "capture" as const : "xp" as const,
+          source_id: String(event.id),
+          client_name: clientNames.get(clientId) || String(event.reference_label || "Acción XP"),
+          detail: event.action_key === "client_capture" ? "Nueva clienta captada" : String(event.reference_label || event.action_key || "Acción XP"),
+          origin: String(event.origin || "Sistema XP"),
+          occurred_at: String(event.created_at),
+          xp: num(event.xp_amount),
+        };
+      });
+
+    const processedByClaim = new Map((rewardProcessingR.data || []).map((row: any) => [String(row.claim_id), row]));
+    const rewardActivities = (rewardClaimsR.data || [])
+      .filter((claim: any) => processedByClaim.has(String(claim.id)))
+      .map((claim: any) => {
+        const processing: any = processedByClaim.get(String(claim.id));
+        return {
+          id: `reward:${claim.id}`,
+          kind: "level_reward" as const,
+          source_id: String(claim.id),
+          client_name: claim.level ? `Nivel ${claim.level} desbloqueado` : "Recompensa desbloqueada",
+          detail: String(claim.reward_label || "Recompensa de nivel obtenida"),
+          occurred_at: String(processing?.processed_at || claim.created_at),
+          xp: 0,
+          coins: num(processing?.coins_granted || claim.reward_amount),
+        };
+      });
+
+    const activities = [...baseActivities, ...eventActivities, ...rewardActivities]
+      .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime());
 
     const dailyItems = [
       { key: "payments" as const, count: paymentsR.data?.length || 0, xp: activities.filter((item) => item.kind === "payment").reduce((sum, item) => sum + item.xp, 0), amount: (paymentsR.data || []).reduce((sum: number, row: any) => sum + num(row.importe), 0) },
@@ -264,7 +317,7 @@ export async function GET(req: Request) {
         date: operationalDay.date,
         timezone: APP_TIMEZONE,
         is_today: operationalDay.is_today,
-        total_actions: dailyItems.reduce((sum, item) => sum + item.count, 0),
+        total_actions: activities.length,
         total_xp: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0),
         items: dailyItems,
         activities,
@@ -320,6 +373,21 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: known || (coinTablesMissing(result.error) ? "COIN_EXCHANGE_NOT_INSTALLED" : "EXCHANGE_FAILED") }, { status: 409 });
       }
       return NextResponse.json({ ok: true, exchange: result.data });
+    }
+    if (op === "claim_level_reward") {
+      const level = Number(body?.level);
+      const operationId = String(body?.operation_id || "");
+      if (!Number.isInteger(level) || level < 1 || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(operationId)) {
+        return NextResponse.json({ ok: false, error: "INVALID_LEVEL_CLAIM" }, { status: 400 });
+      }
+      const admin = getAdminClient();
+      const result = await admin.rpc("claim_worker_xp_level_reward", { p_worker_id: String(me.id), p_level: level, p_operation_id: operationId });
+      if (result.error) {
+        const message = String(result.error.message || "LEVEL_CLAIM_FAILED");
+        const known = ["LEVEL_NOT_REACHED", "LEVEL_REWARD_NOT_CONFIGURED", "LEVEL_REWARD_ALREADY_PROCESSED"].find((code) => message.includes(code));
+        return NextResponse.json({ ok: false, error: known || (rewardTablesMissing(result.error) ? "REWARD_SYSTEM_NOT_INSTALLED" : "LEVEL_CLAIM_FAILED") }, { status: 409 });
+      }
+      return NextResponse.json({ ok: true, claim: result.data });
     }
     if (op !== "ack_reward_claim") return NextResponse.json({ ok: false, error: "INVALID_OPERATION" }, { status: 400 });
 

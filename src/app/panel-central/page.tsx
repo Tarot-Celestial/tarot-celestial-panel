@@ -348,13 +348,15 @@ function CentralPage() {
           ? `Cobro realizado · ${amount}`
           : activity.kind === "followup"
             ? activity.detail || "Seguimiento realizado"
-            : "Nueva clienta captada";
+            : activity.detail || (activity.kind === "capture" ? "Nueva clienta captada" : "Movimiento registrado");
         return {
           id: activity.id,
           label: activity.client_name,
           rewardXp: activity.xp,
+          rewardCoins: activity.coins,
+          kind: activity.kind,
           completed: true,
-          detail: `${time} · ${description}`,
+          detail: `${time} · ${description}${activity.origin ? ` · ${activity.origin}` : ""}`,
         };
       })
     : [{ id: "daily-empty", label: "Todavía no hay actividad registrada hoy", rewardXp: 0 }];

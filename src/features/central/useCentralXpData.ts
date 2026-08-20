@@ -37,7 +37,7 @@ export type CentralXpData = {
     }>;
     activities: Array<{
       id: string;
-      kind: "payment" | "followup" | "capture";
+      kind: "payment" | "followup" | "capture" | "xp" | "level_reward";
       source_id: string;
       client_name: string;
       amount?: number;
@@ -45,6 +45,8 @@ export type CentralXpData = {
       detail?: string;
       occurred_at: string;
       xp: number;
+      coins?: number;
+      origin?: string;
     }>;
   };
   level_config: Array<{
@@ -188,17 +190,20 @@ export function useCentralXpData(selectedDate?: string) {
       if (document.visibilityState === "visible") void load(true);
     };
     document.addEventListener("visibilitychange", onVisible);
+    const onLocalXp = () => void load(true);
+    window.addEventListener("tc-xp-recorded", onLocalXp);
 
     const channel = sb
       .channel("central-xp-readonly")
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_rules" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_processing", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => { if (viewingToday) void load(true); })
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => { if (viewingToday) void load(true); })
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => { if (viewingToday) void load(true); })
@@ -210,9 +215,25 @@ export function useCentralXpData(selectedDate?: string) {
     return () => {
       window.clearInterval(refreshTimer);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("tc-xp-recorded", onLocalXp);
       void sb.removeChannel(channel);
     };
-  }, [load, viewingToday]);
+  }, [data?.worker.id, load, viewingToday]);
+
+  const claimLevelReward = useCallback(async (level: number, operationId: string) => {
+    const { data: sessionData } = await sb.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) throw new Error("Sesión no disponible");
+    const response = await fetch("/api/central/xp-system", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ op: "claim_level_reward", level, operation_id: operationId }),
+    });
+    const json = await response.json();
+    if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo reclamar la recompensa");
+    await load(true);
+    return json.claim;
+  }, [load]);
 
   const acknowledgeReward = useCallback(async (claimId: string) => {
     const { data: sessionData } = await sb.auth.getSession();
@@ -244,5 +265,5 @@ export function useCentralXpData(selectedDate?: string) {
     return json.exchange;
   }, [load]);
 
-  return { data, error, busy, load, acknowledgeReward, exchangeXp, syncStatus, lastSyncedAt };
+  return { data, error, busy, load, acknowledgeReward, exchangeXp, claimLevelReward, syncStatus, lastSyncedAt };
 }

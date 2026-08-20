@@ -220,6 +220,27 @@
   box-shadow: 0 0 0 2px rgba(215,181,109,.08), 0 14px 32px rgba(0,0,0,.2), 0 0 26px rgba(215,181,109,.08);
 }
 
+.classificationGrid { display: grid; gap: 12px; margin-top: 18px; }
+.classificationGrid .choiceButton { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 11px; }
+.classificationGrid .choiceButton > span:nth-child(2) { display: grid; gap: 3px; }
+.classificationGrid .choiceButton b { font-size: 14px; }
+.classificationGrid .choiceButton small { color: rgba(255,255,255,.48); font-size: 10px; }
+.classificationGrid .choiceButton > strong { color: #f8d36e; font-size: 12px; white-space: nowrap; }
+.classificationIcon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.12); border-radius: 11px; background: rgba(255,255,255,.045); }
+.classification_promo { border-color: rgba(216,91,235,.24)!important; background: linear-gradient(135deg,rgba(172,51,200,.11),rgba(255,255,255,.025))!important; }
+.classification_recuperado { border-color: rgba(74,224,174,.24)!important; background: linear-gradient(135deg,rgba(32,174,135,.1),rgba(255,255,255,.025))!important; }
+.classification_captado { border-color: rgba(239,195,78,.44)!important; color: #fff1bc; background: radial-gradient(circle at 92% 0,rgba(246,199,71,.16),transparent 38%),linear-gradient(135deg,rgba(107,72,16,.34),rgba(33,22,43,.94))!important; box-shadow: inset 3px 0 rgba(238,189,60,.8),0 0 24px rgba(226,171,35,.1)!important; }
+.classification_captado.choiceSelected { border-color: rgba(255,220,119,.78)!important; box-shadow: inset 3px 0 #f5c750,0 0 0 2px rgba(239,190,59,.11),0 0 34px rgba(231,177,38,.2)!important; }
+.classification_captado .classificationIcon { color: #2b1904; border-color: rgba(255,235,166,.7); background: linear-gradient(145deg,#ffe79a,#c9922d); box-shadow: 0 0 18px rgba(235,184,52,.28); }
+
+.captureAchievement { display:flex;align-items:center;gap:13px;padding:15px;border:1px solid rgba(242,198,78,.45);border-radius:17px;background:radial-gradient(circle at 90% 0,rgba(245,199,67,.16),transparent 40%),linear-gradient(135deg,rgba(91,58,10,.34),rgba(38,22,50,.88));box-shadow:inset 3px 0 #eabb45,0 0 28px rgba(225,170,35,.1); }
+.captureAchievementIcon { width:42px;height:42px;display:grid;place-items:center;flex:0 0 auto;border-radius:14px;color:#291904;background:linear-gradient(145deg,#ffe99f,#bd8424);box-shadow:0 0 22px rgba(232,178,37,.25); }
+.captureAchievement div { display:grid;gap:3px; }
+.captureAchievement small { color:#dcb64d;font-size:9px;font-weight:950;letter-spacing:.15em; }
+.captureAchievement strong { color:#fff1ba;font-size:15px; }
+.captureAchievement p { margin:0;color:#f4cc63;font-size:12px;font-weight:900; }
+.captureAlreadyAwarded { filter:saturate(.45);opacity:.76; }
+
 .fieldGroup { position: relative; display: grid; gap: 12px; margin-top: 18px; }
 
 .gameInput {

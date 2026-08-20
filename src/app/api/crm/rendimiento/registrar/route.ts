@@ -168,6 +168,44 @@ function buildNota({
   return partes.join(" ").replace(/\s+/g, " ").trim();
 }
 
+export async function GET(req: Request) {
+  try {
+    const me = await workerFromReq(req);
+    if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!["admin", "central"].includes(String(me.role || ""))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const clienteId = String(new URL(req.url).searchParams.get("cliente_id") || "");
+    if (!isUuid(clienteId)) return clientIdentificationError();
+
+    const admin = adminClient();
+    const [clientResult, ruleResult, eventsResult] = await Promise.all([
+      admin.from("crm_clientes").select("id").eq("id", clienteId).maybeSingle(),
+      admin.from("worker_xp_rules").select("action_key,xp_reward,enabled,frequency").eq("action_key", "client_capture").maybeSingle(),
+      admin.from("worker_xp_events").select("id,reference_id,metadata,status").eq("worker_id", me.id).eq("action_key", "client_capture").eq("status", "applied"),
+    ]);
+    if (clientResult.error || !clientResult.data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+    if (ruleResult.error) throw ruleResult.error;
+    if (eventsResult.error) throw eventsResult.error;
+    const alreadyAwarded = (eventsResult.data || []).some((event: any) => {
+      const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
+      return [event.reference_id, metadata.client_id, metadata.cliente_id]
+        .map((value) => String(value || "").replace(/^cliente:/, ""))
+        .includes(clienteId);
+    });
+    return NextResponse.json({
+      ok: true,
+      capture_xp: {
+        enabled: ruleResult.data?.enabled === true,
+        xp: Number(ruleResult.data?.xp_reward) || 0,
+        frequency: String(ruleResult.data?.frequency || ""),
+        eligible: ruleResult.data?.enabled === true && !alreadyAwarded,
+        already_awarded: alreadyAwarded,
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const me = await workerFromReq(req);
@@ -495,7 +533,7 @@ export async function POST(req: Request) {
     // atómica. Nunca calcula XP desde la configuración ni concede experiencia aquí.
     let persistedXpEvent: any = null;
     let paymentCountToday: number | null = null;
-    if (clienteCompra && economicPayment?.id) {
+    if ((clienteCompra && economicPayment?.id) || captado) {
       const eventSince = new Date(Date.now() - 60_000).toISOString();
       const { data: recentXpEvents } = await admin
         .from("worker_xp_events")
@@ -509,7 +547,8 @@ export async function POST(req: Request) {
         const metadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
         const references = [event?.reference_id, metadata.payment_id, metadata.pago_id, metadata.rendimiento_id, metadata.operation_id]
           .map((value) => String(value || ""));
-        return references.includes(String(economicPayment.id))
+        return (economicPayment?.id && references.includes(String(economicPayment.id)))
+          || (event.action_key === "client_capture" && references.some((value) => value.replace(/^cliente:/, "") === clienteId))
           || references.includes(String(result?.rendimiento?.id || ""))
           || references.includes(String(operationId || ""));
       }) || null;
