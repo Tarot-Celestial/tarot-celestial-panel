@@ -13,6 +13,26 @@ import { loadOfficialPayments, totalOfficialRevenue } from '@/lib/server/economi
 
 export const runtime = 'nodejs';
 
+const MADRID_TIME_ZONE = 'Europe/Madrid';
+
+function madridDateParts(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: MADRID_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
+  return { year: Number(value('year')), month: Number(value('month')), day: Number(value('day')) };
+}
+
+function daysInMonth(monthKey: string) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function dateKey(monthKey: string, day: number) { return `${monthKey}-${String(day).padStart(2, '0')}`; }
+
+function nextDateKey(monthKey: string, day: number) {
+  const [year, month] = monthKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
+}
+
 function previousMonthKey(monthKey: string) {
   const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ''));
   if (!match) return normalizeMonthKey(null);
@@ -91,8 +111,15 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
     const previousMonth = previousMonthKey(month);
-    const currentRange = monthRange(month);
-    const previousRange = monthRange(previousMonth);
+    const fullCurrentRange = monthRange(month);
+    const fullPreviousRange = monthRange(previousMonth);
+    const today = madridDateParts();
+    const currentMadridMonth = `${today.year}-${String(today.month).padStart(2, '0')}`;
+    const usesMtdComparison = month === currentMadridMonth;
+    const currentReferenceDay = usesMtdComparison ? Math.min(today.day, daysInMonth(month)) : daysInMonth(month);
+    const previousReferenceDay = Math.min(currentReferenceDay, daysInMonth(previousMonth));
+    const currentRange = usesMtdComparison ? { start: fullCurrentRange.start, endExclusive: nextDateKey(month, currentReferenceDay) } : fullCurrentRange;
+    const previousRange = usesMtdComparison ? { start: fullPreviousRange.start, endExclusive: nextDateKey(previousMonth, previousReferenceDay) } : fullPreviousRange;
     const includePrevious = me.role === 'admin' || me.role === 'central';
     const brand = brandFromRequest(req);
     const admin = getAdminClient();
@@ -134,6 +161,14 @@ export async function GET(req: Request) {
         totals,
         rows,
         previous,
+        comparison_period: {
+          mode: usesMtdComparison ? 'mtd' : 'full_month',
+          time_zone: MADRID_TIME_ZONE,
+          current_start: currentRange.start,
+          current_end: dateKey(month, currentReferenceDay),
+          previous_start: previousRange.start,
+          previous_end: dateKey(previousMonth, previousReferenceDay),
+        },
       });
     }
 

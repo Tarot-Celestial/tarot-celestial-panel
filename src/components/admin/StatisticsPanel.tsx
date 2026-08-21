@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
@@ -15,6 +16,8 @@ import {
   PhoneCall,
   RefreshCw,
   Repeat2,
+  RotateCcw,
+  Settings,
   Sparkles,
   Target,
   TrendingDown,
@@ -23,6 +26,7 @@ import {
   UserCheck,
   Users,
   Waves,
+  X,
 } from "lucide-react";
 import styles from "./StatisticsPanel.module.css";
 
@@ -44,6 +48,8 @@ type StatisticsPanelProps = {
   teams: any;
   invoices: any[];
   previousInvoiceSummary: any;
+  comparisonPeriod: any;
+  brand: string;
   onRefresh: () => void;
 };
 
@@ -66,6 +72,19 @@ type MetricDefinition = {
   inverse?: boolean;
   detail: string;
 };
+
+const ALL_METRIC_KEYS = ["PLAYERS", "MIN", "CALLS", "CAP", "PAY", "BONUS", "TOTAL", "AVG", "MIN/P", "CALL/P", "CAP/P", "CAP100", "CLIENT", "REPEAT", "OK", "WAIT"] as const;
+
+function metricStorageKey(brand: string) {
+  return `tarot-celestial:admin-statistics:visible-cards:${brand === "orion" ? "orion" : "celestial"}:v1`;
+}
+
+function formatComparisonDate(value: unknown) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return "mes anterior";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return new Intl.DateTimeFormat("es-ES", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date).replace(/\./g, "");
+}
 
 function safeNumber(value: unknown) {
   const parsed = Number(value);
@@ -372,8 +391,43 @@ export default function StatisticsPanel({
   teams,
   invoices,
   previousInvoiceSummary,
+  comparisonPeriod,
+  brand,
   onRefresh,
 }: StatisticsPanelProps) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(() => new Set(ALL_METRIC_KEYS));
+  const settingsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(metricStorageKey(brand));
+      const parsed = saved ? JSON.parse(saved) : null;
+      const valid = Array.isArray(parsed) ? parsed.filter((key) => ALL_METRIC_KEYS.includes(key)) : ALL_METRIC_KEYS;
+      setVisibleKeys(new Set(valid));
+    } catch {
+      setVisibleKeys(new Set(ALL_METRIC_KEYS));
+    }
+  }, [brand]);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const closeOutside = (event: MouseEvent) => {
+      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSettingsOpen(false); };
+    document.addEventListener("mousedown", closeOutside);
+    document.addEventListener("keydown", closeEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOutside);
+      document.removeEventListener("keydown", closeEscape);
+    };
+  }, [settingsOpen]);
+
+  const persistVisibleKeys = (next: Set<string>) => {
+    setVisibleKeys(next);
+    try { window.localStorage.setItem(metricStorageKey(brand), JSON.stringify(Array.from(next))); } catch { /* Sigue operativo sin almacenamiento local. */ }
+  };
   const currentInvoices = invoiceSummary(invoices || []);
   const previousInvoices = previousInvoiceSummary || null;
   const currentRows = rows || [];
@@ -393,7 +447,9 @@ export default function StatisticsPanel({
   }));
 
   const previousMonth = String(previousTotals?.month || previousInvoiceSummary?.month || "");
-  const previousPeriodLabel = previousMonth ? monthLabel(previousMonth) : "mes anterior";
+  const previousPeriodLabel = comparisonPeriod?.previous_end
+    ? formatComparisonDate(comparisonPeriod.previous_end)
+    : previousMonth ? monthLabel(previousMonth) : "mes anterior";
   const currentInvoiceTotal = currentInvoices.invoice_total;
   const previousInvoiceTotal = previousInvoices ? safeNumber(previousInvoices.invoice_total) : null;
 
@@ -436,6 +492,7 @@ export default function StatisticsPanel({
     { key: "OK", label: "Facturas aceptadas", value: numES(currentInvoices.accepted, 0), current: currentInvoices.accepted, previous: previousInvoices ? safeNumber(previousInvoices.accepted) : null, icon: CheckCircle2, accent: "green", detail: `${currentInvoices.count} facturas generadas` },
     { key: "WAIT", label: "Facturas pendientes", value: numES(currentInvoices.pending, 0), current: currentInvoices.pending, previous: previousInvoices ? safeNumber(previousInvoices.pending) : null, icon: Activity, accent: "orange", inverse: true, detail: `${currentInvoices.review} en revisión · ${currentInvoices.rejected} rechazadas` },
   ];
+  const visibleMetrics = metrics.filter((metric) => visibleKeys.has(metric.key));
 
   const topMinutes = [...mergedRows].sort((a, b) => safeNumber(b?.minutes_total) - safeNumber(a?.minutes_total));
   const live = liveMeta(liveStatus);
@@ -483,10 +540,42 @@ export default function StatisticsPanel({
             <span className={styles.sectionKicker}>Panel de estadísticas</span>
             <h3>Resumen general</h3>
           </div>
-          <span className={styles.gameChip}><Sparkles size={13} /> Comparación automática</span>
+          <div className={styles.metricControls} ref={settingsRef}>
+            <span className={styles.gameChip}><Sparkles size={13} /> Comparación automática · vs. {previousPeriodLabel}</span>
+            <button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen((open) => !open)} aria-expanded={settingsOpen} aria-haspopup="dialog"><Settings size={15} /> Configurar</button>
+            {settingsOpen ? (
+              <div className={styles.settingsPanel} role="dialog" aria-label="Configurar tarjetas del resumen">
+                <div className={styles.settingsHeader}>
+                  <div><span>Personalización visual</span><strong>Tarjetas del resumen</strong></div>
+                  <button type="button" onClick={() => setSettingsOpen(false)} aria-label="Cerrar configuración"><X size={16} /></button>
+                </div>
+                <p>Elige qué indicadores quieres ver. Los datos y cálculos no se eliminan.</p>
+                <div className={styles.settingsList}>
+                  {metrics.map((metric) => {
+                    const Icon = metric.icon;
+                    const checked = visibleKeys.has(metric.key);
+                    return (
+                      <label key={metric.key} className={styles.settingRow}>
+                        <span className={`${styles.settingIcon} ${styles[`accent${capitalize(metric.accent)}`]}`}><Icon size={15} /></span>
+                        <span><strong>{metric.label}</strong><small>{metric.detail}</small></span>
+                        <input type="checkbox" checked={checked} onChange={() => {
+                          const next = new Set(visibleKeys);
+                          if (checked) next.delete(metric.key); else next.add(metric.key);
+                          persistVisibleKeys(next);
+                        }} />
+                        <i aria-hidden="true" />
+                      </label>
+                    );
+                  })}
+                </div>
+                <button type="button" className={styles.restoreButton} onClick={() => persistVisibleKeys(new Set(ALL_METRIC_KEYS))}><RotateCcw size={14} /> Restaurar valores predeterminados</button>
+              </div>
+            ) : null}
+          </div>
         </div>
         <div className={styles.metricGrid}>
-          {metrics.map((metric) => <MetricCard key={metric.key} metric={metric} previousMonth={previousPeriodLabel} />)}
+          {visibleMetrics.map((metric) => <MetricCard key={metric.key} metric={metric} previousMonth={previousPeriodLabel} />)}
+          {!visibleMetrics.length ? <div className={styles.metricsEmpty}>No hay tarjetas visibles. Usa <strong>Configurar</strong> para activarlas.</div> : null}
         </div>
       </section>
 

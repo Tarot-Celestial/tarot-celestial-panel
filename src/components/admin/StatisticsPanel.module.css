@@ -388,6 +388,30 @@
 .tableFootnote { position:relative; z-index:1; display:flex; gap:8px; align-items:flex-start; margin-top:12px; color:rgba(255,255,255,.43); font-size:10px; line-height:1.5; }
 .emptyState { padding:18px; color:rgba(255,255,255,.48); text-align:center; border:1px dashed rgba(255,255,255,.11); border-radius:14px; background:rgba(255,255,255,.02); }
 
+.metricControls { position:relative; z-index:4; display:flex; align-items:center; gap:9px; }
+.settingsButton,.restoreButton { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:38px; padding:0 13px; border:1px solid rgba(244,216,159,.34); border-radius:13px; color:#fff0c7; background:linear-gradient(135deg,rgba(215,181,109,.22),rgba(139,92,246,.16)); box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 10px 24px rgba(0,0,0,.2); cursor:pointer; font:inherit; font-size:10px; font-weight:900; letter-spacing:.05em; text-transform:uppercase; }
+.settingsButton:hover { transform:translateY(-1px); border-color:rgba(244,216,159,.58); }
+.settingsPanel { position:absolute; top:calc(100% + 10px); right:0; width:min(440px,calc(100vw - 40px)); max-height:min(640px,calc(100vh - 180px)); overflow:auto; padding:17px; border:1px solid rgba(244,216,159,.34); border-radius:21px; color:#fff; background:radial-gradient(circle at 100% 0,rgba(139,92,246,.25),transparent 35%),rgba(13,9,25,.98); box-shadow:0 30px 80px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.08); }
+.settingsHeader { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.settingsHeader span { display:block; color:#d6bb78; font-size:9px; font-weight:950; letter-spacing:.14em; text-transform:uppercase; }
+.settingsHeader strong { display:block; margin-top:3px; font-size:18px; }
+.settingsHeader button { display:grid; place-items:center; width:34px; height:34px; border:1px solid rgba(255,255,255,.12); border-radius:11px; color:#fff; background:rgba(255,255,255,.05); cursor:pointer; }
+.settingsPanel > p { margin:10px 0 14px; color:rgba(255,255,255,.58); font-size:11px; line-height:1.45; }
+.settingsList { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.settingRow { position:relative; display:grid; grid-template-columns:34px minmax(0,1fr) 36px; align-items:center; gap:9px; min-height:58px; padding:9px; border:1px solid rgba(255,255,255,.08); border-radius:14px; background:rgba(255,255,255,.035); cursor:pointer; }
+.settingRow:hover { border-color:rgba(181,156,255,.28); background:rgba(139,92,246,.08); }
+.settingIcon { --accent:#bda5ff; display:grid; place-items:center; width:34px; height:34px; border:1px solid color-mix(in srgb,var(--accent) 40%,transparent); border-radius:11px; color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,transparent); }
+.settingRow strong,.settingRow small { display:block; min-width:0; }
+.settingRow strong { font-size:11px; line-height:1.2; }
+.settingRow small { margin-top:3px; overflow:hidden; color:rgba(255,255,255,.43); font-size:8px; text-overflow:ellipsis; white-space:nowrap; }
+.settingRow input { position:absolute; opacity:0; pointer-events:none; }
+.settingRow i { position:relative; width:34px; height:20px; border-radius:999px; background:rgba(255,255,255,.12); box-shadow:inset 0 0 0 1px rgba(255,255,255,.08); transition:.2s ease; }
+.settingRow i::after { content:""; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:#817b91; transition:.2s ease; }
+.settingRow input:checked + i { background:linear-gradient(90deg,#8b5cf6,#d6b45f); box-shadow:0 0 16px rgba(181,156,255,.25); }
+.settingRow input:checked + i::after { left:17px; background:#fff8df; }
+.restoreButton { width:100%; margin-top:12px; }
+.metricsEmpty { grid-column:1/-1; padding:28px; border:1px dashed rgba(181,156,255,.3); border-radius:18px; color:rgba(255,255,255,.62); text-align:center; }
+
 @media (max-width: 1320px) {
   .metricGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .teamStats { grid-template-columns: repeat(2,minmax(0,1fr)); }
@@ -403,6 +427,8 @@
   .battleGrid { grid-template-columns:1fr; }
   .vsBadge { justify-self:center; }
   .syncSource { display:none; }
+  .metricControls { width:100%; flex-wrap:wrap; }
+  .settingsPanel { left:0; right:auto; }
 }
 
 @media (max-width: 680px) {
@@ -434,4 +460,6 @@
   .teamStats { grid-template-columns:1fr 1fr; }
   .sectionHeader .gameChip,
   .sectionHeadingInline .gameChip { width:100%; }
+  .metricControls .settingsButton { width:100%; }
+  .settingsList { grid-template-columns:1fr; }
 }

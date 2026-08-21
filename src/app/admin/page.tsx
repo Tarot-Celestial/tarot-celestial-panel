@@ -349,6 +349,7 @@ function AdminPage() {
   const [statsPreviousTotals, setStatsPreviousTotals] = useState<any>(null);
   const [statsPreviousRows, setStatsPreviousRows] = useState<any[]>([]);
   const [statsPreviousInvoiceSummary, setStatsPreviousInvoiceSummary] = useState<any>(null);
+  const [statsComparisonPeriod, setStatsComparisonPeriod] = useState<any>(null);
   const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
   const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
   const [statsLiveStatus, setStatsLiveStatus] = useState<"connecting" | "live" | "updating" | "reconnecting" | "offline">("connecting");
@@ -1051,6 +1052,7 @@ function AdminPage() {
       );
       setStatsPreviousRows(statsJ.previous?.rows || []);
       setStatsPreviousInvoiceSummary(invJ.previous_summary || null);
+      setStatsComparisonPeriod(statsJ.comparison_period || null);
       setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
       setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
       setInvoices(invJ.invoices || []);
@@ -2074,6 +2076,8 @@ function AdminPage() {
               teams={statsTeams}
               invoices={invoices}
               previousInvoiceSummary={statsPreviousInvoiceSummary}
+              comparisonPeriod={statsComparisonPeriod}
+              brand={getActiveBrand()}
               onRefresh={() => void loadAdminStats(false, "manual")}
             />
           )}
