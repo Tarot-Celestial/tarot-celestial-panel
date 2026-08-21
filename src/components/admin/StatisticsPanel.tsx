@@ -432,8 +432,9 @@ export default function StatisticsPanel({
   const previousInvoices = previousInvoiceSummary || null;
   const currentRows = rows || [];
   const previousRowsList = previousRows || [];
-  const workers = currentRows.length;
-  const previousWorkers = previousRowsList.length;
+  const hasProduction = (row: any) => safeNumber(row?.calls_total) > 0 || safeNumber(row?.minutes_total) > 0 || safeNumber(row?.captadas_total) > 0 || safeNumber(row?.revenue_total) > 0;
+  const workers = currentRows.filter(hasProduction).length;
+  const previousWorkers = previousRowsList.filter(hasProduction).length;
   const invoiceByWorker = new Map<string, any>();
   for (const invoice of invoices || []) invoiceByWorker.set(String(invoice?.worker_id || ""), invoice);
   const previousRowByWorker = new Map<string, any>();
@@ -450,11 +451,13 @@ export default function StatisticsPanel({
   const previousPeriodLabel = comparisonPeriod?.previous_end
     ? formatComparisonDate(comparisonPeriod.previous_end)
     : previousMonth ? monthLabel(previousMonth) : "mes anterior";
-  const currentInvoiceTotal = currentInvoices.invoice_total;
-  const previousInvoiceTotal = previousInvoices ? safeNumber(previousInvoices.invoice_total) : null;
+  const currentRevenueTotal = safeNumber(totals?.revenue_total);
+  const previousRevenueTotal = previousTotals ? safeNumber(previousTotals?.revenue_total) : null;
+  const currentPaymentCount = safeNumber(totals?.revenue_payment_count);
+  const previousPaymentCount = previousTotals ? safeNumber(previousTotals?.revenue_payment_count) : null;
 
   const currentComputed = {
-    factura_media: workers ? currentInvoiceTotal / workers : 0,
+    factura_media: currentPaymentCount ? currentRevenueTotal / currentPaymentCount : 0,
     minutes_per_worker: workers ? safeNumber(totals?.minutes_total) / workers : 0,
     calls_per_worker: workers ? safeNumber(totals?.calls_total) / workers : 0,
     captadas_per_worker: workers ? safeNumber(totals?.captadas_total) / workers : 0,
@@ -464,7 +467,7 @@ export default function StatisticsPanel({
   };
   const previousComputed = previousTotals
     ? {
-        factura_media: previousWorkers ? safeNumber(previousInvoiceTotal) / previousWorkers : 0,
+        factura_media: previousPaymentCount ? safeNumber(previousRevenueTotal) / previousPaymentCount : 0,
         minutes_per_worker: previousWorkers ? safeNumber(previousTotals?.minutes_total) / previousWorkers : 0,
         calls_per_worker: previousWorkers ? safeNumber(previousTotals?.calls_total) / previousWorkers : 0,
         captadas_per_worker: previousWorkers ? safeNumber(previousTotals?.captadas_total) / previousWorkers : 0,
@@ -481,8 +484,8 @@ export default function StatisticsPanel({
     { key: "CAP", label: "Captadas totales", value: numES(totals?.captadas_total || 0, 0), current: safeNumber(totals?.captadas_total), previous: previousTotals ? safeNumber(previousTotals?.captadas_total) : null, icon: Target, accent: "pink", detail: "Captaciones confirmadas" },
     { key: "PAY", label: "Pago por minutos", value: eur(totals?.pay_minutes || 0), current: safeNumber(totals?.pay_minutes), previous: previousTotals ? safeNumber(previousTotals?.pay_minutes) : null, icon: Coins, accent: "gold", detail: "Cálculo según tarifas actuales" },
     { key: "BONUS", label: "Bonus por captadas", value: eur(totals?.bonus_captadas || 0), current: safeNumber(totals?.bonus_captadas), previous: previousTotals ? safeNumber(previousTotals?.bonus_captadas) : null, icon: Sparkles, accent: "orange", detail: "Bonus real del periodo" },
-    { key: "TOTAL", label: "Facturación total", value: eur(currentInvoiceTotal), current: currentInvoiceTotal, previous: previousInvoiceTotal, icon: BadgeEuro, accent: "gold", detail: "Suma de facturas reales" },
-    { key: "AVG", label: "Factura media", value: eur(currentComputed.factura_media), current: currentComputed.factura_media, previous: previousComputed ? previousComputed.factura_media : null, icon: Gauge, accent: "purple", detail: "Promedio por tarotista" },
+    { key: "TOTAL", label: "Facturación generada", value: eur(currentRevenueTotal), current: currentRevenueTotal, previous: previousRevenueTotal, icon: BadgeEuro, accent: "gold", detail: `${numES(currentPaymentCount, 0)} cobros reales válidos` },
+    { key: "AVG", label: "Cobro medio", value: eur(currentComputed.factura_media), current: currentComputed.factura_media, previous: previousComputed ? previousComputed.factura_media : null, icon: Gauge, accent: "purple", detail: "Ingreso medio por cobro válido" },
     { key: "MIN/P", label: "Minutos por tarotista", value: numES(currentComputed.minutes_per_worker, 0), current: currentComputed.minutes_per_worker, previous: previousComputed ? previousComputed.minutes_per_worker : null, icon: Clock3, accent: "blue", detail: "Media de producción" },
     { key: "CALL/P", label: "Llamadas por tarotista", value: numES(currentComputed.calls_per_worker, 2), current: currentComputed.calls_per_worker, previous: previousComputed ? previousComputed.calls_per_worker : null, icon: PhoneCall, accent: "green", detail: "Media de llamadas" },
     { key: "CAP/P", label: "Captadas por tarotista", value: numES(currentComputed.captadas_per_worker, 2), current: currentComputed.captadas_per_worker, previous: previousComputed ? previousComputed.captadas_per_worker : null, icon: UserCheck, accent: "pink", detail: "Media de captación" },

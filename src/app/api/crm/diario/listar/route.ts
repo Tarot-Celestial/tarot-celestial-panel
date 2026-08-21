@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { brandFromRequest, filterRowsByBrand } from "@/lib/server/brand-filter";
 import { isValidEconomicPayment } from "@/lib/server/economic-payments";
+import { monthToDateComparison } from "@/lib/server/madrid-reporting-period";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -184,7 +185,13 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url); const mode = String(searchParams.get("mode") || "hoy");
     const selectedDay = selectedDateKey(mode, searchParams.get("date")); const comparisonDay = previousMonthEquivalentKey(selectedDay);
     const selectedMonth = selectedDay.slice(0, 7); const comparisonMonth = previousMonthKey(selectedMonth);
-    const ranges = { currentDay: dayRangeFromKey(selectedDay), previousDay: dayRangeFromKey(comparisonDay), currentMonth: monthRangeFromKey(selectedMonth), previousMonth: monthRangeFromKey(comparisonMonth) };
+    const mtd = monthToDateComparison(selectedDay);
+    const ranges = {
+      currentDay: dayRangeFromKey(selectedDay),
+      previousDay: dayRangeFromKey(comparisonDay),
+      currentMonth: { start: new Date(mtd.currentStartIso), end: new Date(mtd.currentEndExclusiveIso) },
+      previousMonth: { start: new Date(mtd.previousStartIso), end: new Date(mtd.previousEndExclusiveIso) },
+    };
     const supabase = adminClient(); const brand = brandFromRequest(req);
 
     const [currentDayRaw, previousDayRaw, currentMonthRaw, previousMonthRaw] = await Promise.all([
@@ -207,7 +214,7 @@ export async function GET(req: Request) {
       rows: currentDaily.rows.map(({ client_key: _key, ...row }) => row), totals: currentDaily.totals,
       byCentral: mergePrevious(currentDaily.byCentral, previousDaily.byCentral), dailyComparison: { date: comparisonDay, totals: previousDaily.totals },
       monthlySummary: { ...currentMonthly, previous_month: comparisonMonth, previous_total_importe_rendimiento: previousMonthly.total_importe_rendimiento, previous_total_registros_rendimiento: previousMonthly.total_registros_rendimiento, byTelefonista: mergePrevious(currentMonthly.byTelefonista, previousMonthly.byTelefonista), byTarotista: mergePrevious(currentMonthly.byTarotista, previousMonthly.byTarotista) },
-      period: { mode, selected_date: selectedDay, comparison_date: comparisonDay, selected_month: selectedMonth, comparison_month: comparisonMonth, time_zone: MADRID_TIME_ZONE }, brand,
+      period: { mode, selected_date: selectedDay, comparison_date: comparisonDay, selected_month: selectedMonth, comparison_month: comparisonMonth, current_month_start: mtd.currentStartKey, current_month_end: mtd.currentEndKey, comparison_month_start: mtd.previousStartKey, comparison_month_end: mtd.previousEndKey, time_zone: MADRID_TIME_ZONE }, brand,
     });
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate"); return response;
   } catch (error: any) {

@@ -1605,6 +1605,7 @@ function AdminPage() {
     const channel = sb
       .channel(`admin-statistics-${month}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleRefresh("rendimiento_llamadas", payload))
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, (payload: any) => scheduleRefresh("crm_cliente_pagos", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleRefresh("invoices", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleRefresh("workers", payload))
       .subscribe((status: any) => {

@@ -749,14 +749,14 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
         </div>
         <div className={styles.monthlyComparisons}>
           <div className={styles.monthlyComparisonBox}>
-            <span>Importe vs. {monthLabel(monthlySummary.previous_month)}</span>
+            <span>Importe vs. {dateLabel(period.comparison_date)}</span>
             <TrendBadge comparison={monthlyAmountComparison} />
-            <small>Anterior: {eur(monthlySummary.previous_total_importe_rendimiento)}</small>
+            <small>Anterior MTD (1–{period.comparison_date.slice(-2)}): {eur(monthlySummary.previous_total_importe_rendimiento)}</small>
           </div>
           <div className={styles.monthlyComparisonBox}>
             <span>Registros con importe</span>
             <TrendBadge comparison={monthlyCountComparison} />
-            <small>Anterior: {number(monthlySummary.previous_total_registros_rendimiento)}</small>
+            <small>Anterior MTD (1–{period.comparison_date.slice(-2)}): {number(monthlySummary.previous_total_registros_rendimiento)}</small>
           </div>
           <div className={styles.companyBadge}><Zap size={15} /> Dinero generado para la empresa, no factura a pagar</div>
         </div>
@@ -765,14 +765,14 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
       <section className={styles.rankingsGrid}>
         <RankingList
           title="Generado por telefonista"
-          subtitle={`Clasificación de ${monthLabel(monthlySummary.month)} frente a ${monthLabel(monthlySummary.previous_month)}`}
+          subtitle={`MTD 1–${period.selected_date.slice(-2)} frente a 1–${period.comparison_date.slice(-2)} del mes anterior`}
           rows={monthlySummary.byTelefonista}
           emptyText="No hay importes de rendimiento para telefonistas en este mes."
           icon={Headphones}
         />
         <RankingList
           title="Generado por tarotista"
-          subtitle={`Producción real de ${monthLabel(monthlySummary.month)} frente al mes anterior`}
+          subtitle={`Producción real MTD hasta ${dateLabel(period.selected_date)} frente a ${dateLabel(period.comparison_date)}`}
           rows={monthlySummary.byTarotista}
           emptyText="No hay importes de rendimiento para tarotistas en este mes."
           icon={Crown}

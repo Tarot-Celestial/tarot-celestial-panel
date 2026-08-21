@@ -175,9 +175,11 @@ export async function listTarotistaWorkers() {
 }
 
 export async function listRendimientoRows(start: string, endExclusive: string) {
+  return listRendimientoRowsByIso(`${start}T00:00:00.000Z`, `${endExclusive}T00:00:00.000Z`);
+}
+
+export async function listRendimientoRowsByIso(startIso: string, endIso: string) {
   const admin = getAdminClient();
-  const startIso = `${start}T00:00:00.000Z`;
-  const endIso = `${endExclusive}T00:00:00.000Z`;
   const pageSize = 1000;
   const allRows: RendimientoRow[] = [];
 

@@ -1,37 +1,19 @@
 import { NextResponse } from 'next/server';
 import {
   captadasTier,
-  monthRange,
   normalizeMonthKey,
   roundMoney,
   workerFromRequest,
 } from '@/lib/server/auth-worker';
-import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { aggregateRendimientoByTarotista, listRendimientoRowsByIso, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 import { brandFromRequest, filterRowsByBrand } from '@/lib/server/brand-filter';
 import { getAdminClient } from '@/lib/server/auth-worker';
 import { loadOfficialPayments, totalOfficialRevenue } from '@/lib/server/economic-payments';
+import { fullMonthComparison, madridTodayKey, monthToDateComparison } from '@/lib/server/madrid-reporting-period';
 
 export const runtime = 'nodejs';
-
-const MADRID_TIME_ZONE = 'Europe/Madrid';
-
-function madridDateParts(now = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: MADRID_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
-  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
-  return { year: Number(value('year')), month: Number(value('month')), day: Number(value('day')) };
-}
-
-function daysInMonth(monthKey: string) {
-  const [year, month] = monthKey.split('-').map(Number);
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-function dateKey(monthKey: string, day: number) { return `${monthKey}-${String(day).padStart(2, '0')}`; }
-
-function nextDateKey(monthKey: string, day: number) {
-  const [year, month] = monthKey.split('-').map(Number);
-  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
-}
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 function previousMonthKey(monthKey: string) {
   const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ''));
@@ -93,12 +75,13 @@ function buildSnapshot(month: string, rendimientoRows: any[], workers: any[]) {
       acc.revenue_total = roundMoney(acc.revenue_total + Number(row.revenue_total || 0));
       return acc;
     },
-    { minutes_total: 0, calls_total: 0, captadas_total: 0, pay_minutes: 0, bonus_captadas: 0, revenue_total: 0 }
+    { minutes_total: 0, calls_total: 0, captadas_total: 0, pay_minutes: 0, bonus_captadas: 0, revenue_total: 0, revenue_payment_count: 0 }
   );
 
-  const count = rows.length || 1;
-  totals.avg_pct_cliente = roundMoney(rows.reduce((a, r) => a + Number(r.pct_cliente || 0), 0) / count);
-  totals.avg_pct_repite = roundMoney(rows.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / count);
+  const rowsWithProduction = rows.filter((row) => Number(row.calls_total || 0) > 0 || Number(row.minutes_total || 0) > 0 || Number(row.captadas_total || 0) > 0 || Number(row.revenue_total || 0) > 0);
+  const count = rowsWithProduction.length || 1;
+  totals.avg_pct_cliente = roundMoney(rowsWithProduction.reduce((a, r) => a + Number(r.pct_cliente || 0), 0) / count);
+  totals.avg_pct_repite = roundMoney(rowsWithProduction.reduce((a, r) => a + Number(r.pct_repite || 0), 0) / count);
 
   return { month, totals, rows };
 }
@@ -111,28 +94,22 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
     const previousMonth = previousMonthKey(month);
-    const fullCurrentRange = monthRange(month);
-    const fullPreviousRange = monthRange(previousMonth);
-    const today = madridDateParts();
-    const currentMadridMonth = `${today.year}-${String(today.month).padStart(2, '0')}`;
-    const usesMtdComparison = month === currentMadridMonth;
-    const currentReferenceDay = usesMtdComparison ? Math.min(today.day, daysInMonth(month)) : daysInMonth(month);
-    const previousReferenceDay = Math.min(currentReferenceDay, daysInMonth(previousMonth));
-    const currentRange = usesMtdComparison ? { start: fullCurrentRange.start, endExclusive: nextDateKey(month, currentReferenceDay) } : fullCurrentRange;
-    const previousRange = usesMtdComparison ? { start: fullPreviousRange.start, endExclusive: nextDateKey(previousMonth, previousReferenceDay) } : fullPreviousRange;
+    const todayKey = madridTodayKey();
+    const usesMtdComparison = month === todayKey.slice(0, 7);
+    const period = usesMtdComparison ? monthToDateComparison(todayKey) : fullMonthComparison(month);
     const includePrevious = me.role === 'admin' || me.role === 'central';
     const brand = brandFromRequest(req);
     const admin = getAdminClient();
 
     const [workers, currentRowsRaw, previousRowsRaw, currentPayments, previousPayments] = await Promise.all([
       listTarotistaWorkers(),
-      listRendimientoRows(currentRange.start, currentRange.endExclusive),
+      listRendimientoRowsByIso(period.currentStartIso, period.currentEndExclusiveIso),
       includePrevious
-        ? listRendimientoRows(previousRange.start, previousRange.endExclusive)
+        ? listRendimientoRowsByIso(period.previousStartIso, period.previousEndExclusiveIso)
         : Promise.resolve([]),
-      loadOfficialPayments(admin, `${currentRange.start}T00:00:00.000Z`, `${currentRange.endExclusive}T00:00:00.000Z`, brand),
+      loadOfficialPayments(admin, period.currentStartIso, period.currentEndExclusiveIso, brand),
       includePrevious
-        ? loadOfficialPayments(admin, `${previousRange.start}T00:00:00.000Z`, `${previousRange.endExclusive}T00:00:00.000Z`, brand)
+        ? loadOfficialPayments(admin, period.previousStartIso, period.previousEndExclusiveIso, brand)
         : Promise.resolve([]),
     ]);
 
@@ -143,8 +120,12 @@ export async function GET(req: Request) {
 
     const current = buildSnapshot(month, currentFilteredRows, workers);
     current.totals.revenue_total = totalOfficialRevenue(currentPayments);
+    current.totals.revenue_payment_count = currentPayments.length;
     const previous = includePrevious ? buildSnapshot(previousMonth, previousFilteredRows, workers) : null;
-    if (previous) previous.totals.revenue_total = totalOfficialRevenue(previousPayments);
+    if (previous) {
+      previous.totals.revenue_total = totalOfficialRevenue(previousPayments);
+      previous.totals.revenue_payment_count = previousPayments.length;
+    }
     const rows = current.rows;
     const totals = current.totals;
 
@@ -163,13 +144,13 @@ export async function GET(req: Request) {
         previous,
         comparison_period: {
           mode: usesMtdComparison ? 'mtd' : 'full_month',
-          time_zone: MADRID_TIME_ZONE,
-          current_start: currentRange.start,
-          current_end: dateKey(month, currentReferenceDay),
-          previous_start: previousRange.start,
-          previous_end: dateKey(previousMonth, previousReferenceDay),
+          time_zone: period.timeZone,
+          current_start: period.currentStartKey,
+          current_end: period.currentEndKey,
+          previous_start: period.previousStartKey,
+          previous_end: period.previousEndKey,
         },
-      });
+      }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } });
     }
 
     const bonusForPos = (pos: number) => (pos === 1 ? 6 : pos === 2 ? 4 : pos === 3 ? 2 : 0);
