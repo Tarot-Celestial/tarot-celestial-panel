@@ -1,11 +1,11 @@
 .sidebarCard {
   position: relative;
   isolation: isolate;
-  border-color: rgba(233, 215, 176, 0.16) !important;
+  border-color: var(--ct-border, rgba(233, 215, 176, 0.16)) !important;
   background:
     radial-gradient(circle at 12% -2%, rgba(237, 202, 129, 0.13), transparent 29%),
     radial-gradient(circle at 100% 28%, rgba(112, 73, 166, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(35, 31, 40, 0.965), rgba(20, 18, 29, 0.985)) !important;
+    linear-gradient(180deg, color-mix(in srgb, var(--ct-sidebar, #231f28) 97%, transparent), color-mix(in srgb, var(--ct-sidebar, #14121d) 99%, black 7%)) !important;
   box-shadow:
     0 28px 72px rgba(0, 0, 0, 0.42),
     0 0 0 1px rgba(255, 255, 255, 0.025),
@@ -25,7 +25,7 @@
 .sidebarTitle {
   position: relative;
   padding: 2px 4px 11px;
-  color: rgba(242, 215, 157, 0.82) !important;
+  color: var(--ct-accent, rgba(242, 215, 157, 0.82)) !important;
   text-shadow: 0 0 18px rgba(232, 199, 118, 0.16);
 }
 
@@ -40,7 +40,7 @@
 }
 
 .navButton {
-  --nav-rgb: 215, 181, 109;
+  --nav-rgb: var(--ct-primary-rgb, 215, 181, 109);
   position: relative;
   isolation: isolate;
   overflow: hidden;

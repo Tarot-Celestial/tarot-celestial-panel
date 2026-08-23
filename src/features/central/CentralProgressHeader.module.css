@@ -9,12 +9,12 @@
   min-height: 104px;
   padding: 16px 18px;
   overflow: hidden;
-  border: 1px solid rgba(220, 182, 100, 0.22);
+  border: 1px solid var(--ct-border, rgba(220, 182, 100, 0.22));
   border-radius: 22px;
   background:
     radial-gradient(circle at 12% -60%, rgba(218, 170, 73, 0.2), transparent 40%),
     radial-gradient(circle at 88% 160%, rgba(101, 59, 163, 0.2), transparent 46%),
-    linear-gradient(112deg, rgba(5, 5, 9, 0.97), rgba(15, 12, 20, 0.96) 52%, rgba(10, 7, 19, 0.97));
+    linear-gradient(112deg, color-mix(in srgb, var(--ct-surface, #050509) 97%, transparent), color-mix(in srgb, var(--ct-surface2, #0f0c14) 96%, transparent));
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.055), inset 0 -1px 0 rgba(149, 101, 201, 0.06);
   backdrop-filter: blur(15px) saturate(120%);
 }
@@ -70,7 +70,7 @@
 }
 
 .brandTitle {
-  color: #fff7df;
+  color: var(--ct-text, #fff7df);
   font-size: 20px;
   font-weight: 950;
   letter-spacing: 0.19em;
@@ -79,7 +79,7 @@
 
 .brandSubtitle {
   margin-top: 4px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--ct-muted, rgba(255, 255, 255, 0.55));
   font-size: 12px;
   white-space: nowrap;
 }
@@ -98,9 +98,9 @@
   min-width: 0;
   min-height: 66px;
   padding: 11px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--ct-border, rgba(255, 255, 255, 0.07));
   border-radius: 14px;
-  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.018));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ct-surface2) 88%, white 4%), color-mix(in srgb, var(--ct-surface) 94%, transparent));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.035);
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
@@ -127,7 +127,7 @@
 
 .metricLabel {
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ct-muted, rgba(255, 255, 255, 0.5));
   font-size: 9px;
   font-weight: 850;
   letter-spacing: 0.09em;
@@ -137,7 +137,7 @@
 
 .metricValue {
   margin-top: 5px;
-  color: #ffffff;
+  color: var(--ct-text, #ffffff);
   font-size: 19px;
   font-weight: 950;
   white-space: nowrap;
@@ -145,7 +145,7 @@
 
 .profileArea {
   display: grid;
-  grid-template-columns: auto minmax(205px, 1fr);
+  grid-template-columns: auto minmax(205px, 1fr) auto;
   align-items: center;
   gap: 12px;
   min-width: 0;
@@ -165,9 +165,9 @@
   gap: 11px;
   min-width: 205px;
   padding: 9px 14px 9px 9px;
-  border: 1px solid rgba(215, 181, 109, 0.18);
+  border: 1px solid var(--ct-border, rgba(215, 181, 109, 0.18));
   border-radius: 17px;
-  background: linear-gradient(120deg, rgba(215,181,109,.075), rgba(123,76,170,.045));
+  background: linear-gradient(120deg, rgba(var(--ct-secondary-rgb,215,181,109),.075), rgba(var(--ct-primary-rgb,123,76,170),.06));
   box-shadow: inset 0 1px 0 rgba(255,255,255,.045);
 }
 
@@ -198,7 +198,7 @@
 }
 
 .profileName {
-  color: #ffffff;
+  color: var(--ct-text, #ffffff);
   font-size: 14px;
   font-weight: 900;
   line-height: 1.15;
@@ -207,7 +207,7 @@
 
 .profileRole {
   margin-top: 2px;
-  color: rgba(255, 255, 255, 0.58);
+  color: var(--ct-muted, rgba(255, 255, 255, 0.58));
   font-size: 10px;
   line-height: 1.3;
   overflow-wrap: anywhere;

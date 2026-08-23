@@ -1,6 +1,8 @@
 "use client";
 
 import { Flame, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import type { CentralThemeId } from "./CentralTheme";
+import CentralThemeCustomizer from "./CentralThemeCustomizer";
 import styles from "./CentralProgressHeader.module.css";
 
 export type CentralOperatorProgress = {
@@ -22,6 +24,9 @@ type CentralProgressHeaderProps = {
   onSync?: () => void;
   syncStatus?: "syncing" | "synced" | "error";
   lastSyncedAt?: string | null;
+  theme: CentralThemeId;
+  onThemeChange: (theme: CentralThemeId) => void;
+  onThemeReset: () => void;
 };
 
 function formatXp(value: number) {
@@ -39,6 +44,9 @@ export default function CentralProgressHeader({
   onSync,
   syncStatus = "syncing",
   lastSyncedAt,
+  theme,
+  onThemeChange,
+  onThemeReset,
 }: CentralProgressHeaderProps) {
   return (
     <section className={styles.header} aria-label="Resumen de progreso de la telefonista">
@@ -110,6 +118,7 @@ export default function CentralProgressHeader({
             <div className={styles.profileLevel}>Nivel {profile.level}</div>
           </div>
         </article>
+        <CentralThemeCustomizer value={theme} onChange={onThemeChange} onReset={onThemeReset} />
       </div>
     </section>
   );
