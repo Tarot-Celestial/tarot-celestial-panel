@@ -52,6 +52,13 @@ export async function POST(req:Request){
    await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:key,old_value:old.data||null,new_value:saved.data});
    return NextResponse.json({ok:true,rule:saved.data});
   }
+  if(op==="delete_rule"){
+   const key=String(b.action_key||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_"); if(!key) throw new Error("ACTION_KEY_REQUIRED");
+   const old=await admin.from("worker_xp_rules").select("*").eq("action_key",key).maybeSingle(); if(old.error) throw old.error; if(!old.data) return NextResponse.json({ok:false,error:"RULE_NOT_FOUND"},{status:404});
+   const removed=await admin.from("worker_xp_rules").delete().eq("action_key",key).select("action_key").maybeSingle(); if(removed.error) throw removed.error;
+   const audit=await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_delete",target_key:key,old_value:old.data,new_value:null});
+   return NextResponse.json({ok:true,action_key:key,historical_events_preserved:true,audit_recorded:!audit.error});
+  }
   if(op==="adjust_xp"){
    const workerId=String(b.worker_id||""); const amount=Math.round(num(b.amount)); const reason=String(b.reason||"").trim(); if(!workerId||!amount||!reason) throw new Error("WORKER_AMOUNT_REASON_REQUIRED");
    const ref=`manual:${me.id}:${Date.now()}:${crypto.randomUUID()}`;
