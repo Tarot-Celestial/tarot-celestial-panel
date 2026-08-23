@@ -34,6 +34,12 @@ export async function POST(req: Request) {
     }
 
     const admin = getAdminClient();
+    let ownership = admin.from('rendimiento_llamadas').select('id').eq('id', id);
+    if (String(me.role) === 'central') ownership = ownership.eq('telefonista_worker_id', String(me.id));
+    const owned = await ownership.maybeSingle();
+    if (owned.error) throw owned.error;
+    if (!owned.data) return NextResponse.json({ ok: false, error: 'FORBIDDEN_RECORD' }, { status: 403 });
+
     const { error } = await admin
       .from('rendimiento_llamadas')
       .update(updates)

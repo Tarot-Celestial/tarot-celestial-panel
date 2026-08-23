@@ -1,299 +1,158 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Activity, Banknote, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Filter, MoreHorizontal, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Target, Users, XCircle } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
+import styles from "./RendimientoPanel.module.css";
 
 const sb = supabaseBrowser();
-
 type Props = { mode?: "admin" | "central" };
+type Row = { id?: string; fecha_hora?: string | null; fecha?: string | null; cliente_nombre?: string | null; telefonista_nombre?: string | null; tarotista_nombre?: string | null; tarotista_manual_call?: string | null; llamada_call?: boolean | null; tiempo?: number | null; resumen_codigo?: string | null; codigo_1?: string | null; codigo_2?: string | null; forma_pago?: string | null; importe?: number | null; promo?: boolean | null; captado?: boolean | null };
+type Filters = { tarotista: string; telefonista: string; codigo: string; cliente: string; metodo: string; from: string; to: string; captado: string; promo: string; call: string; importe: string };
+const EMPTY_FILTERS: Filters = { tarotista: "", telefonista: "", codigo: "", cliente: "", metodo: "", from: "", to: "", captado: "", promo: "", call: "", importe: "all" };
 
-type Row = {
-  id?: string;
-  fecha_hora?: string | null;
-  fecha?: string | null;
-  cliente_nombre?: string | null;
-  telefonista_nombre?: string | null;
-  tarotista_nombre?: string | null;
-  tarotista_manual_call?: string | null;
-  llamada_call?: boolean | null;
-  tiempo?: number | null;
-  resumen_codigo?: string | null;
-  forma_pago?: string | null;
-  importe?: number | null;
-  promo?: boolean | null;
-  captado?: boolean | null;
-};
-
-function fmt(v: any) {
-  if (!v) return "—";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return String(v);
-  return d.toLocaleString("es-ES");
-}
-
-function eur(v: any) {
-  const n = Number(v) || 0;
-  return n.toLocaleString("es-ES", { style: "currency", currency: "EUR" });
-}
-
-function yesNo(v: any) {
-  return v ? "Sí" : "No";
-}
-
-function dedupeRows(data: Row[]) {
-  const map = new Map<string, Row>();
-  for (const row of data || []) {
-    const key = String(
-      row.id ||
-        [row.fecha_hora || row.fecha || "", row.cliente_nombre || "", row.telefonista_nombre || "", row.tarotista_nombre || row.tarotista_manual_call || "", row.tiempo || 0, row.resumen_codigo || "", row.importe || 0].join("|")
-    );
-    map.set(key, row);
-  }
-  return Array.from(map.values());
-}
-
-function inputStyle() {
-  return {
-    width: "100%",
-    minWidth: 96,
-    padding: "8px 10px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,.14)",
-    background: "rgba(255,255,255,.05)",
-    color: "white",
-    outline: "none",
-  } as const;
-}
+function fmt(value: unknown) { const date = new Date(String(value || "")); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("es-ES"); }
+function eur(value: unknown) { return (Number(value) || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR" }); }
+function number(value: unknown, digits = 0) { return (Number(value) || 0).toLocaleString("es-ES", { maximumFractionDigits: digits }); }
+function codeLabel(row: Row) { return row.resumen_codigo || [row.codigo_1, row.codigo_2].filter(Boolean).join(" · ") || "Sin código"; }
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
-  const [hydrated, setHydrated] = useState(false);
+  const isAdmin = mode === "admin";
   const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [rows, setRows] = useState<Row[]>([]);
+  const [totals, setTotals] = useState<any>({ records: 0, minutes: 0, amount: 0, captured: 0 });
+  const [methods, setMethods] = useState<Array<{ value: string; label: string }>>([]);
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
+  const [advanced, setAdvanced] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [totalRows, setTotalRows] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [liveState, setLiveState] = useState<"connecting" | "synced" | "updating" | "error">("connecting");
+  const [message, setMessage] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [msg, setMsg] = useState("");
+  const refreshTimer = useRef<number | null>(null);
+  const requestId = useRef(0);
 
-  const [fTarotista, setFTarotista] = useState("");
-  const [fTelefonista, setFTelefonista] = useState("");
-  const [fCodigo, setFCodigo] = useState("");
-  const [fFrom, setFFrom] = useState("");
-  const [fTo, setFTo] = useState("");
-
-  async function getToken() {
-    const { data } = await sb.auth.getSession();
-    return data.session?.access_token || "";
-  }
+  async function getToken() { const { data } = await sb.auth.getSession(); return data.session?.access_token || ""; }
+  const load = useCallback(async (silent = false) => {
+    const currentRequest = ++requestId.current;
+    if (!silent) setLoading(true);
+    setLiveState(silent ? "updating" : "connecting");
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Sesión no disponible");
+      const params = new URLSearchParams({ mode, brand: activeBrand, page: String(page), page_size: "50" });
+      Object.entries(applied).forEach(([key, value]) => { if (value && value !== "all") params.set(key, value); });
+      const response = await fetch(`/api/crm/rendimiento/listar?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar Rendimiento");
+      if (currentRequest !== requestId.current) return;
+      setRows(json.data || []); setTotals(json.totals || {}); setMethods(json.payment_methods || []);
+      setPages(Number(json.pagination?.pages || 1)); setTotalRows(Number(json.pagination?.total || 0));
+      setLiveState("synced"); setMessage("");
+    } catch (error: any) {
+      if (currentRequest !== requestId.current) return;
+      setLiveState("error"); setMessage(error?.message || "No se pudo actualizar Rendimiento");
+    } finally { if (currentRequest === requestId.current) setLoading(false); }
+  }, [activeBrand, applied, mode, page]);
 
   useEffect(() => {
     setActiveBrand(getActiveBrand());
-    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    const onBrand = (event: any) => { setActiveBrand(String(event?.detail?.brand) === "orion" ? "orion" : "celestial"); setPage(1); };
     window.addEventListener("tc-brand-changed", onBrand as EventListener);
     return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
   }, []);
-
-  async function fetchData() {
-    const token = await getToken();
-    if (!token) return;
-    setLoading(true);
-    setMsg("");
-    try {
-      const params = new URLSearchParams({ mode, limit: "50000" });
-      if (fFrom) params.set("from", fFrom);
-      if (fTo) params.set("to", fTo);
-      if (fTarotista.trim()) params.set("tarotista", fTarotista.trim());
-      if (fTelefonista.trim()) params.set("telefonista", fTelefonista.trim());
-      if (fCodigo.trim()) params.set("codigo", fCodigo.trim());
-      params.set("brand", activeBrand);
-
-      const res = await fetch(`/api/crm/rendimiento/listar?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-      const json = await res.json();
-      if (!res.ok || json?.ok === false) throw new Error(json?.error || "No se pudo cargar rendimiento");
-      setRows(dedupeRows(json.data || []));
-      const loaded = Number(json.loaded || json.data?.length || 0);
-      const returned = Number(json.returned || json.data?.length || 0);
-      setMsg(`✅ ${returned} registros mostrados (${loaded} revisados).`);
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error"}`);
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    setHydrated(true);
-  }, []);
-
+    const timer = window.setTimeout(() => {
+      setPage(1);
+      setApplied((current) => current.cliente === filters.cliente ? current : { ...current, cliente: filters.cliente });
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [filters.cliente]);
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, activeBrand]);
+    const channel = sb.channel(`rendimiento-control-${mode}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, () => {
+        setLiveState("updating");
+        if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
+        refreshTimer.current = window.setTimeout(() => void load(true), 650);
+      }).subscribe((status) => { if (status === "SUBSCRIBED") setLiveState("synced"); if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setLiveState("error"); });
+    return () => { if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current); void sb.removeChannel(channel); };
+  }, [load, mode]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    const id = window.setTimeout(() => fetchData(), 450);
-    return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fFrom, fTo, fTarotista, fTelefonista, fCodigo]);
-
-  function updateField(id: string, field: keyof Row, value: any) {
-    setRows((prev) => prev.map((r) => (String(r.id) === String(id) ? { ...r, [field]: value } : r)));
-  }
-
-  async function saveRow(id?: string) {
-    if (!id) return;
-    const row = rows.find((r) => String(r.id) === String(id));
-    if (!row) return;
-    const token = await getToken();
-    setSavingId(id);
+  function applyFilters() { setPage(1); setApplied({ ...filters }); }
+  function clearFilters() { setFilters(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
+  function updateField(id: string, field: keyof Row, value: unknown) { setRows((current) => current.map((row) => String(row.id) === id ? { ...row, [field]: value } : row)); }
+  async function saveRow(id: string) {
+    const row = rows.find((item) => String(item.id) === id); if (!row) return;
+    const token = await getToken(); setSavingId(id);
     try {
-      const res = await fetch("/api/crm/rendimiento/update", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ id, updates: row }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || json?.ok === false) throw new Error(json?.error || "No se pudo guardar");
-      setMsg("✅ Registro guardado.");
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error guardando"}`);
-    } finally {
-      setSavingId(null);
-    }
+      const response = await fetch("/api/crm/rendimiento/update", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ id, updates: row }) });
+      const json = await response.json().catch(() => null); if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo guardar");
+      setEditingId(null); await load(true);
+    } catch (error: any) { setMessage(error?.message || "No se pudo guardar"); await load(true); } finally { setSavingId(null); }
   }
-
-  async function deleteRow(id?: string) {
-    if (!id || !confirm("¿Borrar este registro de rendimiento?")) return;
-    const token = await getToken();
-    const res = await fetch("/api/crm/rendimiento/delete", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    const json = await res.json().catch(() => null);
-    if (!res.ok || json?.ok === false) {
-      setMsg(`❌ ${json?.error || "No se pudo anular el registro"}`);
-      return;
-    }
-    setRows((prev) => prev.filter((r) => r.id !== id));
-    setMsg("✅ Registro anulado. El cobro vinculado ya no afecta al Diario ni a las estadísticas.");
-    window.dispatchEvent(new CustomEvent("tc-payment-recorded", { detail: { type: "payment-cancelled", rendimiento_id: id } }));
+  async function deleteRow(id: string) {
+    if (!window.confirm("¿Anular este registro y su operación vinculada? Esta acción requiere confirmación.")) return;
+    const token = await getToken(); setSavingId(id);
     try {
-      const channel = new BroadcastChannel("tc-payments");
-      channel.postMessage({ type: "payment-recorded", action: "cancelled", rendimiento_id: id });
-      channel.close();
-    } catch {
-      // BroadcastChannel puede no estar disponible; Realtime seguirá actualizando el Diario.
-    }
+      const response = await fetch("/api/crm/rendimiento/delete", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      const json = await response.json().catch(() => null); if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo anular");
+      await load(true);
+    } catch (error: any) { setMessage(error?.message || "No se pudo anular"); } finally { setSavingId(null); }
   }
 
-  const visibleRows = useMemo(() => {
-    return rows.filter((r) => {
-      const date = r.fecha_hora || r.fecha ? new Date(r.fecha_hora || r.fecha || "") : null;
-      const tarotista = String(r.tarotista_nombre || r.tarotista_manual_call || "").toLowerCase();
-      return (
-        (!fTarotista || tarotista.includes(fTarotista.toLowerCase())) &&
-        (!fTelefonista || String(r.telefonista_nombre || "").toLowerCase().includes(fTelefonista.toLowerCase())) &&
-        (!fCodigo || String(r.resumen_codigo || "").toLowerCase().includes(fCodigo.toLowerCase())) &&
-        (!fFrom || (date && date >= new Date(fFrom))) &&
-        (!fTo || (date && date <= new Date(`${fTo}T23:59:59`)))
-      );
-    });
-  }, [rows, fTarotista, fTelefonista, fCodigo, fFrom, fTo]);
-
-  const totals = useMemo(() => ({
-    llamadas: visibleRows.length,
-    importe: visibleRows.reduce((acc, r) => acc + Number(r.importe || 0), 0),
-    captadas: visibleRows.filter((r) => !!r.captado).length,
-    tiempo: visibleRows.reduce((acc, r) => acc + Number(r.tiempo || 0), 0),
-  }), [visibleRows]);
-
-  if (loading) return <div className="tc-card">Cargando rendimiento...</div>;
-
+  const selectedMethod = methods.find((method) => method.value === applied.metodo)?.label;
+  const LiveIcon = liveState === "error" ? XCircle : liveState === "synced" ? CheckCircle2 : RefreshCw;
   return (
-    <div className="tc-card">
-      <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div>
-          <div className="tc-title">📊 Rendimiento</div>
-          <div className="tc-sub" style={{ marginTop: 6 }}>Tabla completa de llamadas y cobros registrados.</div>
+    <section className={styles.controlCenter}>
+      <header className={styles.hero}>
+        <div><span className={styles.kicker}><Activity size={13} /> Centro de control de producción</span><h2>Rendimiento</h2><p>{isAdmin ? "Visión operativa y económica con datos reales." : "Tu actividad, captaciones y registros operativos."}</p></div>
+        <div className={styles.heroActions}><span className={`${styles.live} ${styles[liveState]}`}><LiveIcon size={14} className={liveState === "updating" || liveState === "connecting" ? styles.spin : ""} /> {liveState === "synced" ? "Sincronizado" : liveState === "error" ? "Error de sincronización" : "Actualizando"}</span><button type="button" className={styles.refresh} onClick={() => void load()} disabled={loading}><RefreshCw size={15} className={loading ? styles.spin : ""} /> Actualizar</button></div>
+      </header>
+
+      {message ? <div className={styles.errorBanner}><span>{message}</span><button onClick={() => void load()}>Reintentar</button></div> : null}
+      <div className={`${styles.kpis} ${!isAdmin ? styles.centralKpis : ""}`}>
+        <article><Users /><span>Registros</span><strong>{number(totals.records)}</strong><small>Resultados del filtro</small></article>
+        {isAdmin ? <article><Clock3 /><span>Tiempo total</span><strong>{number(totals.minutes, 2)} min</strong><small>Producción filtrada</small></article> : null}
+        {isAdmin ? <article className={selectedMethod ? styles.contextKpi : ""}><CircleDollarSign /><span>{selectedMethod ? `Ingresos ${selectedMethod}` : "Importe total"}</span><strong>{eur(totals.amount)}</strong><small>{selectedMethod ? `${number(totals.records)} operaciones filtradas` : "Importe real registrado"}</small></article> : null}
+        <article><Target /><span>Captados</span><strong>{number(totals.captured)}</strong><small>Captaciones reales filtradas</small></article>
+      </div>
+
+      <section className={styles.filters}>
+        <div className={styles.filterTop}><div><Filter size={17} /><strong>Filtros profesionales</strong><span>{totalRows.toLocaleString("es-ES")} resultados</span></div><div><button type="button" onClick={() => setAdvanced((value) => !value)}>{advanced ? "Menos filtros" : "Más filtros"}</button><button type="button" onClick={clearFilters}><RotateCcw size={14} /> Limpiar</button><button type="button" className={styles.apply} onClick={applyFilters}><Search size={14} /> Aplicar</button></div></div>
+        <div className={styles.filterGrid}>
+          <label><span>Cliente</span><input value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} placeholder="Buscar cliente" /></label>
+          <label><span>Tarotista</span><input value={filters.tarotista} onChange={(e) => setFilters({ ...filters, tarotista: e.target.value })} placeholder="Nombre" /></label>
+          {isAdmin ? <label><span>Telefonista</span><input value={filters.telefonista} onChange={(e) => setFilters({ ...filters, telefonista: e.target.value })} placeholder="Nombre" /></label> : null}
+          <label><span>Método de pago</span><select value={filters.metodo} onChange={(e) => setFilters({ ...filters, metodo: e.target.value })}><option value="">Todos los métodos</option>{methods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}</select></label>
+          <label><span>Desde</span><input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
+          <label><span>Hasta</span><input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
         </div>
-        <button className="tc-btn tc-btn-gold" onClick={fetchData}>Actualizar</button>
-      </div>
+        {advanced ? <div className={styles.advancedGrid}>
+          <label><span>Código</span><input value={filters.codigo} onChange={(e) => setFilters({ ...filters, codigo: e.target.value })} placeholder="Free, rueda, cliente..." /></label>
+          <label><span>Captado</span><select value={filters.captado} onChange={(e) => setFilters({ ...filters, captado: e.target.value })}><option value="">Todos</option><option value="true">Sí</option><option value="false">No</option></select></label>
+          <label><span>Promo</span><select value={filters.promo} onChange={(e) => setFilters({ ...filters, promo: e.target.value })}><option value="">Todos</option><option value="true">Sí</option><option value="false">No</option></select></label>
+          <label><span>Llamada CALL</span><select value={filters.call} onChange={(e) => setFilters({ ...filters, call: e.target.value })}><option value="">Todas</option><option value="true">Sí</option><option value="false">No</option></select></label>
+          <label><span>Importe</span><select value={filters.importe} onChange={(e) => setFilters({ ...filters, importe: e.target.value })}><option value="all">Todos</option><option value="positive">Con importe</option><option value="zero">Sin importe</option></select></label>
+        </div> : null}
+      </section>
 
-      <div className="tc-sub" style={{ marginTop: 10 }}>{msg || " "}</div>
-
-      <div className="tc-grid-4" style={{ marginTop: 12 }}>
-        <div className="tc-card"><div className="tc-sub">Registros</div><div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>{totals.llamadas}</div></div>
-        <div className="tc-card"><div className="tc-sub">Tiempo total</div><div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>{totals.tiempo}</div></div>
-        <div className="tc-card"><div className="tc-sub">Importe</div><div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>{eur(totals.importe)}</div></div>
-        <div className="tc-card"><div className="tc-sub">Captado</div><div style={{ fontSize: 24, fontWeight: 900, marginTop: 8 }}>{totals.captadas}</div></div>
-      </div>
-
-      <div className="tc-hr" />
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <input className="tc-input" style={{ width: 180 }} placeholder="Tarotista" value={fTarotista} onChange={(e) => setFTarotista(e.target.value)} />
-        <input className="tc-input" style={{ width: 180 }} placeholder="Telefonista" value={fTelefonista} onChange={(e) => setFTelefonista(e.target.value)} />
-        <input className="tc-input" style={{ width: 150 }} placeholder="Código" value={fCodigo} onChange={(e) => setFCodigo(e.target.value)} />
-        <input className="tc-input" style={{ width: 160 }} type="date" value={fFrom} onChange={(e) => setFFrom(e.target.value)} />
-        <input className="tc-input" style={{ width: 160 }} type="date" value={fTo} onChange={(e) => setFTo(e.target.value)} />
-        <button className="tc-btn tc-btn-gold" onClick={fetchData}>Aplicar filtros</button>
-        <button
-          className="tc-btn"
-          onClick={() => {
-            setFTarotista("");
-            setFTelefonista("");
-            setFCodigo("");
-            setFFrom("");
-            setFTo("");
-          }}
-        >
-          Limpiar
-        </button>
-      </div>
-
-      <div style={{ overflowX: "auto" }}>
-        <table className="tc-table">
-          <thead>
-            <tr>
-              <th>FECHA</th>
-              <th>TELEFONISTA</th>
-              <th>CLIENTES</th>
-              <th>TAROTISTA</th>
-              <th>TIEMPO</th>
-              <th>LLAMADA CALL</th>
-              <th>CODIGO</th>
-              <th>IMPORTE</th>
-              <th>PROMO</th>
-              <th>CAPTADO</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map((row) => (
-              <tr key={row.id || `${row.fecha_hora}-${row.cliente_nombre}`}>
-                <td>{fmt(row.fecha_hora || row.fecha)}</td>
-                <td>{row.telefonista_nombre || "—"}</td>
-                <td>
-                  <input style={inputStyle()} value={row.cliente_nombre || ""} onChange={(e) => updateField(row.id!, "cliente_nombre", e.target.value)} onBlur={() => saveRow(row.id)} />
-                </td>
-                <td>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</td>
-                <td><input style={{ ...inputStyle(), minWidth: 76 }} type="number" value={row.tiempo || 0} onChange={(e) => updateField(row.id!, "tiempo", Number(e.target.value))} onBlur={() => saveRow(row.id)} /></td>
-                <td>{yesNo(row.llamada_call)}</td>
-                <td><input style={{ ...inputStyle(), minWidth: 92 }} value={row.resumen_codigo || ""} onChange={(e) => updateField(row.id!, "resumen_codigo", e.target.value)} onBlur={() => saveRow(row.id)} /></td>
-                <td><input style={{ ...inputStyle(), minWidth: 92 }} type="number" value={row.importe ?? ""} onChange={(e) => updateField(row.id!, "importe", Number(e.target.value))} onBlur={() => saveRow(row.id)} /></td>
-                <td>{yesNo(row.promo)}</td>
-                <td>{yesNo(row.captado)}</td>
-                <td>
-                  <button className="tc-btn tc-btn-danger" onClick={() => deleteRow(row.id)} disabled={savingId === row.id}>{savingId === row.id ? "..." : "Borrar"}</button>
-                </td>
-              </tr>
-            ))}
-            {visibleRows.length === 0 && <tr><td colSpan={11} className="tc-muted">No hay registros con estos filtros.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <section className={styles.tableCard}>
+        <div className={styles.tableHeading}><div><Sparkles size={17} /><strong>Actividad registrada</strong><span>Página {page} de {pages}</span></div><span><ShieldCheck size={14} /> {isAdmin ? "Ámbito administrativo" : "Solo tu ámbito autorizado"}</span></div>
+        <div className={styles.tableScroll}>
+          <table><thead><tr><th>Fecha</th><th>Telefonista</th><th>Cliente</th><th>Tarotista</th><th>Tiempo</th><th>CALL</th><th>Código</th><th>Método</th><th>Importe</th><th>Promo</th><th>Captado</th><th aria-label="Acciones" /></tr></thead>
+          <tbody>{loading ? Array.from({ length: 7 }).map((_, index) => <tr key={index} className={styles.skeleton}><td colSpan={12}><span /></td></tr>) : rows.map((row) => {
+            const id = String(row.id || ""); const editing = editingId === id;
+            return <tr key={id || `${row.fecha_hora}-${row.cliente_nombre}`}><td>{fmt(row.fecha_hora || row.fecha)}</td><td>{row.telefonista_nombre || "—"}</td><td>{editing ? <input value={row.cliente_nombre || ""} onChange={(e) => updateField(id, "cliente_nombre", e.target.value)} /> : <strong>{row.cliente_nombre || "—"}</strong>}</td><td>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</td><td className={styles.numeric}>{editing ? <input type="number" value={row.tiempo || 0} onChange={(e) => updateField(id, "tiempo", Number(e.target.value))} /> : `${number(row.tiempo, 2)} min`}</td><td><span className={`${styles.badge} ${row.llamada_call ? styles.call : styles.muted}`}>{row.llamada_call ? "CALL" : "No"}</span></td><td>{editing ? <input value={row.resumen_codigo || ""} onChange={(e) => updateField(id, "resumen_codigo", e.target.value)} /> : <span className={`${styles.badge} ${styles.code}`}>{codeLabel(row)}</span>}</td><td><span className={`${styles.badge} ${styles.payment}`}><Banknote size={12} /> {row.forma_pago || "—"}</span></td><td className={styles.numeric}>{editing ? <input type="number" value={row.importe ?? ""} onChange={(e) => updateField(id, "importe", Number(e.target.value))} /> : eur(row.importe)}</td><td><span className={`${styles.badge} ${row.promo ? styles.promo : styles.muted}`}>{row.promo ? "Promo" : "No"}</span></td><td><span className={`${styles.badge} ${row.captado ? styles.captured : styles.muted}`}>{row.captado ? "Captado" : "No"}</span></td><td>{editing ? <div className={styles.rowActions}><button onClick={() => void saveRow(id)} disabled={savingId === id}>Guardar</button><button onClick={() => { setEditingId(null); void load(true); }}>Cancelar</button></div> : <details className={styles.menu}><summary aria-label="Acciones del registro"><MoreHorizontal size={17} /></summary><div><button onClick={() => setEditingId(id)}>Editar</button><button className={styles.danger} onClick={() => void deleteRow(id)}>Eliminar</button></div></details>}</td></tr>;
+          })}{!loading && !rows.length ? <tr><td colSpan={12}><div className={styles.empty}><Filter size={26} /><strong>No hay registros para estos filtros.</strong><span>Prueba a ampliar el periodo o limpiar algún filtro.</span></div></td></tr> : null}</tbody></table>
+        </div>
+        <footer className={styles.pagination}><span>Mostrando {rows.length} de {totalRows.toLocaleString("es-ES")}</span><div><button disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={15} /> Anterior</button><button disabled={page >= pages || loading} onClick={() => setPage((value) => Math.min(pages, value + 1))}>Siguiente <ChevronRight size={15} /></button></div></footer>
+      </section>
+    </section>
   );
 }
