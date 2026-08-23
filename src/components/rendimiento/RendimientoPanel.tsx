@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Banknote, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Filter, MoreHorizontal, RefreshCw, RotateCcw, Search, ShieldCheck, Sparkles, Target, Users, XCircle } from "lucide-react";
+import { Activity, Banknote, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, CreditCard, Filter, Landmark, MoreHorizontal, RefreshCw, RotateCcw, ScanLine, Search, ShieldCheck, Sparkles, Target, Users, WalletCards, XCircle, type LucideIcon } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./RendimientoPanel.module.css";
+import rowStyles from "./RendimientoRows.module.css";
 
 const sb = supabaseBrowser();
 type Props = { mode?: "admin" | "central" };
@@ -16,6 +17,25 @@ function fmt(value: unknown) { const date = new Date(String(value || "")); retur
 function eur(value: unknown) { return (Number(value) || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR" }); }
 function number(value: unknown, digits = 0) { return (Number(value) || 0).toLocaleString("es-ES", { maximumFractionDigits: digits }); }
 function codeLabel(row: Row) { return row.resumen_codigo || [row.codigo_1, row.codigo_2].filter(Boolean).join(" · ") || "Sin código"; }
+
+type PaymentTone = "bizum" | "paypal" | "square" | "stripe" | "neutral" | "none";
+type PaymentVisual = { tone: PaymentTone; label: string; Icon: LucideIcon; paid: boolean };
+
+function normalizePayment(value: unknown) {
+  return String(value || "").trim().toLocaleLowerCase("es-ES").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function paymentVisual(value: unknown, amount: unknown): PaymentVisual {
+  const method = normalizePayment(value);
+  const paid = Number(amount) > 0 && Boolean(method);
+  if (!method) return { tone: "none", label: "—", Icon: Banknote, paid: false };
+  if (method.includes("bizum")) return { tone: paid ? "bizum" : "none", label: "Bizum", Icon: Landmark, paid };
+  if (method.includes("paypal")) return { tone: paid ? "paypal" : "none", label: "PayPal", Icon: WalletCards, paid };
+  if (method.includes("square")) return { tone: paid ? "square" : "none", label: "Square", Icon: ScanLine, paid };
+  if (method.includes("stripe")) return { tone: paid ? "stripe" : "none", label: "Stripe", Icon: CreditCard, paid };
+  const label = method === "tpv" ? "TPV" : method === "efectivo" ? "Efectivo" : method.includes("transfer") ? "Transferencia" : method === "otros" ? "Otros" : String(value || "Otro método").trim();
+  return { tone: paid ? "neutral" : "none", label, Icon: Banknote, paid };
+}
 
 export default function RendimientoPanel({ mode = "admin" }: Props) {
   const isAdmin = mode === "admin";
@@ -35,7 +55,10 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const refreshTimer = useRef<number | null>(null);
+  const newRowTimer = useRef<number | null>(null);
+  const pendingNewRowId = useRef<string | null>(null);
   const requestId = useRef(0);
+  const [newRowId, setNewRowId] = useState<string | null>(null);
 
   async function getToken() { const { data } = await sb.auth.getSession(); return data.session?.access_token || ""; }
   const load = useCallback(async (silent = false) => {
@@ -51,7 +74,15 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar Rendimiento");
       if (currentRequest !== requestId.current) return;
-      setRows(json.data || []); setTotals(json.totals || {}); setMethods(json.payment_methods || []);
+      const nextRows: Row[] = json.data || [];
+      setRows(nextRows); setTotals(json.totals || {}); setMethods(json.payment_methods || []);
+      const insertedId = pendingNewRowId.current;
+      if (insertedId && nextRows.some((row) => String(row.id || "") === insertedId)) {
+        pendingNewRowId.current = null;
+        setNewRowId(insertedId);
+        if (newRowTimer.current !== null) window.clearTimeout(newRowTimer.current);
+        newRowTimer.current = window.setTimeout(() => setNewRowId(null), 800);
+      }
       setPages(Number(json.pagination?.pages || 1)); setTotalRows(Number(json.pagination?.total || 0));
       setLiveState("synced"); setMessage("");
     } catch (error: any) {
@@ -76,12 +107,13 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   }, [filters.cliente]);
   useEffect(() => {
     const channel = sb.channel(`rendimiento-control-${mode}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload) => {
+        if (payload.eventType === "INSERT") pendingNewRowId.current = String((payload.new as { id?: unknown })?.id || "") || null;
         setLiveState("updating");
         if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
         refreshTimer.current = window.setTimeout(() => void load(true), 650);
       }).subscribe((status) => { if (status === "SUBSCRIBED") setLiveState("synced"); if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setLiveState("error"); });
-    return () => { if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current); void sb.removeChannel(channel); };
+    return () => { if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current); if (newRowTimer.current !== null) window.clearTimeout(newRowTimer.current); void sb.removeChannel(channel); };
   }, [load, mode]);
 
   function applyFilters() { setPage(1); setApplied({ ...filters }); }
@@ -148,7 +180,9 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
           <table><thead><tr><th>Fecha</th><th>Telefonista</th><th>Cliente</th><th>Tarotista</th><th>Tiempo</th><th>CALL</th><th>Código</th><th>Método</th><th>Importe</th><th>Promo</th><th>Captado</th><th aria-label="Acciones" /></tr></thead>
           <tbody>{loading ? Array.from({ length: 7 }).map((_, index) => <tr key={index} className={styles.skeleton}><td colSpan={12}><span /></td></tr>) : rows.map((row) => {
             const id = String(row.id || ""); const editing = editingId === id;
-            return <tr key={id || `${row.fecha_hora}-${row.cliente_nombre}`}><td>{fmt(row.fecha_hora || row.fecha)}</td><td>{row.telefonista_nombre || "—"}</td><td>{editing ? <input value={row.cliente_nombre || ""} onChange={(e) => updateField(id, "cliente_nombre", e.target.value)} /> : <strong>{row.cliente_nombre || "—"}</strong>}</td><td>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</td><td className={styles.numeric}>{editing ? <input type="number" value={row.tiempo || 0} onChange={(e) => updateField(id, "tiempo", Number(e.target.value))} /> : `${number(row.tiempo, 2)} min`}</td><td><span className={`${styles.badge} ${row.llamada_call ? styles.call : styles.muted}`}>{row.llamada_call ? "CALL" : "No"}</span></td><td>{editing ? <input value={row.resumen_codigo || ""} onChange={(e) => updateField(id, "resumen_codigo", e.target.value)} /> : <span className={`${styles.badge} ${styles.code}`}>{codeLabel(row)}</span>}</td><td><span className={`${styles.badge} ${styles.payment}`}><Banknote size={12} /> {row.forma_pago || "—"}</span></td><td className={styles.numeric}>{editing ? <input type="number" value={row.importe ?? ""} onChange={(e) => updateField(id, "importe", Number(e.target.value))} /> : eur(row.importe)}</td><td><span className={`${styles.badge} ${row.promo ? styles.promo : styles.muted}`}>{row.promo ? "Promo" : "No"}</span></td><td><span className={`${styles.badge} ${row.captado ? styles.captured : styles.muted}`}>{row.captado ? "Captado" : "No"}</span></td><td>{editing ? <div className={styles.rowActions}><button onClick={() => void saveRow(id)} disabled={savingId === id}>Guardar</button><button onClick={() => { setEditingId(null); void load(true); }}>Cancelar</button></div> : <details className={styles.menu}><summary aria-label="Acciones del registro"><MoreHorizontal size={17} /></summary><div><button onClick={() => setEditingId(id)}>Editar</button><button className={styles.danger} onClick={() => void deleteRow(id)}>Eliminar</button></div></details>}</td></tr>;
+            const payment = paymentVisual(row.forma_pago, row.importe); const PaymentIcon = payment.Icon;
+            const rowClass = [rowStyles.row, payment.paid ? rowStyles[payment.tone] : "", row.captado ? rowStyles.isCaptured : "", editing ? rowStyles.isEditing : "", newRowId === id ? rowStyles.isNew : ""].filter(Boolean).join(" ");
+            return <tr key={id || `${row.fecha_hora}-${row.cliente_nombre}`} className={rowClass} data-payment={payment.tone}><td>{fmt(row.fecha_hora || row.fecha)}</td><td>{row.telefonista_nombre || "—"}</td><td>{editing ? <input value={row.cliente_nombre || ""} onChange={(e) => updateField(id, "cliente_nombre", e.target.value)} /> : <strong>{row.cliente_nombre || "—"}</strong>}</td><td>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</td><td className={styles.numeric}>{editing ? <input type="number" value={row.tiempo || 0} onChange={(e) => updateField(id, "tiempo", Number(e.target.value))} /> : `${number(row.tiempo, 2)} min`}</td><td><span className={`${styles.badge} ${row.llamada_call ? styles.call : styles.muted}`}>{row.llamada_call ? "CALL" : "No"}</span></td><td>{editing ? <input value={row.resumen_codigo || ""} onChange={(e) => updateField(id, "resumen_codigo", e.target.value)} /> : <span className={`${styles.badge} ${styles.code}`}>{codeLabel(row)}</span>}</td><td><span className={`${styles.badge} ${styles.payment} ${payment.paid ? `${rowStyles.paymentBadge} ${rowStyles[payment.tone]}` : ""}`}><PaymentIcon size={12} aria-hidden="true" /> {payment.label}</span></td><td className={`${styles.numeric} ${payment.paid ? rowStyles.paidAmount : ""}`}>{editing ? <input type="number" value={row.importe ?? ""} onChange={(e) => updateField(id, "importe", Number(e.target.value))} /> : eur(row.importe)}</td><td><span className={`${styles.badge} ${row.promo ? styles.promo : styles.muted}`}>{row.promo ? "Promo" : "No"}</span></td><td><span className={`${styles.badge} ${row.captado ? styles.captured : styles.muted} ${row.captado ? rowStyles.capturedBadge : ""}`}>{row.captado ? <><Check size={12} aria-hidden="true" /> Captado</> : "No"}</span></td><td>{editing ? <div className={styles.rowActions}><button onClick={() => void saveRow(id)} disabled={savingId === id}>Guardar</button><button onClick={() => { setEditingId(null); void load(true); }}>Cancelar</button></div> : <details className={styles.menu}><summary aria-label="Acciones del registro"><MoreHorizontal size={17} /></summary><div><button onClick={() => setEditingId(id)}>Editar</button><button className={styles.danger} onClick={() => void deleteRow(id)}>Eliminar</button></div></details>}</td></tr>;
           })}{!loading && !rows.length ? <tr><td colSpan={12}><div className={styles.empty}><Filter size={26} /><strong>No hay registros para estos filtros.</strong><span>Prueba a ampliar el periodo o limpiar algún filtro.</span></div></td></tr> : null}</tbody></table>
         </div>
         <footer className={styles.pagination}><span>Mostrando {rows.length} de {totalRows.toLocaleString("es-ES")}</span><div><button disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={15} /> Anterior</button><button disabled={page >= pages || loading} onClick={() => setPage((value) => Math.min(pages, value + 1))}>Siguiente <ChevronRight size={15} /></button></div></footer>
