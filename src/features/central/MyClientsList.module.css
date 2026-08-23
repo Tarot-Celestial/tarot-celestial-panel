@@ -183,6 +183,7 @@
 
 .clientCopy strong { color: #fff; font-size: 14px; font-weight: 850; }
 .clientCopy small { color: rgba(255, 255, 255, 0.52); font-size: 12px; font-weight: 650; }
+.clientCopy .captureOwner { color:#e7c77c;font-size:10px;font-weight:800;line-height:1.35;white-space:normal; }
 
 .ownerBadge,
 .statusBadge {

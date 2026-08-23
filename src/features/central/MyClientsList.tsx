@@ -18,6 +18,8 @@ type ClientRow = {
   etiquetas?: ClientTag[];
   estado_actual?: string | null;
   telefonista_responsable?: string | null;
+  captada_por?: string | null;
+  capture_status?: string | null;
   ultima_conversacion?: { created_at?: string | null; cerrado_at?: string | null; origen?: string | null } | null;
 };
 
@@ -80,6 +82,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_etiquetas" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, requestRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_capture_assignments" }, requestRefresh)
       .subscribe();
     return () => { void client.removeChannel(channel); };
   }, [requestRefresh]);
@@ -137,7 +140,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
           {!loading && !error && rows.length === 0 && <div className={styles.emptyState}><UsersRound size={28} aria-hidden="true" />No se encontraron clientas.</div>}
           {!loading && !error && rows.map((client) => (
             <button type="button" className={styles.clientRow} key={client.id} onClick={() => onOpenClient(client.id)} aria-label={`Abrir ficha de ${fullName(client)}`}>
-              <span className={styles.clientCell}><span className={styles.avatar} aria-hidden="true">{initialFor(client)}</span><span className={styles.clientCopy}><strong>{fullName(client)}</strong><small>{client.telefono || "Sin teléfono"}</small>{Boolean(client.etiquetas?.length) && <span className={styles.tags}>{client.etiquetas!.slice(0, 3).map((tag) => <span key={tag.id} className={styles.tag}>{tag.nombre}</span>)}{client.etiquetas!.length > 3 && <span className={styles.tag}>+{client.etiquetas!.length - 3}</span>}</span>}</span></span>
+              <span className={styles.clientCell}><span className={styles.avatar} aria-hidden="true">{initialFor(client)}</span><span className={styles.clientCopy}><strong>{fullName(client)}</strong><small>{client.telefono || "Sin teléfono"}</small><span className={styles.captureOwner}>{client.captada_por ? (client.captada_por === client.telefonista_responsable ? `Captada y gestionada por: ${client.captada_por}` : `Captada por: ${client.captada_por} · Responsable: ${client.telefonista_responsable || "Pendiente"}`) : `Captación pendiente · Responsable: ${client.telefonista_responsable || "Pendiente"}`}</span>{Boolean(client.etiquetas?.length) && <span className={styles.tags}>{client.etiquetas!.slice(0, 3).map((tag) => <span key={tag.id} className={styles.tag}>{tag.nombre}</span>)}{client.etiquetas!.length > 3 && <span className={styles.tag}>+{client.etiquetas!.length - 3}</span>}</span>}</span></span>
               <span className={styles.ownerBadge}>{client.telefonista_responsable || "Celestial"}</span>
               <span className={styles.neutralText}>{formatLastConversation(client.ultima_conversacion?.created_at || client.ultima_conversacion?.cerrado_at)}</span>
               <span className={styles.statusBadge}>{client.estado_actual || "Sin clasificar"}</span>

@@ -20,7 +20,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy, Sparkles } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, UserCheck, Users, Trophy, Sparkles } from "lucide-react";
 import adminStyles from "./AdminPremium.module.css";
 
 const sb = supabaseBrowser();
@@ -42,6 +42,7 @@ const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientW
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
+const ClientCapturesAdminPanel = nextDynamic(() => import("@/components/admin/ClientCapturesAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -53,6 +54,7 @@ const ADMIN_NAV = [
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
+  { key: "clientas-captadas", icon: UserCheck, label: "Clientas captadas", kicker: "Atribución y responsables", tone: "goldPurple" },
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
@@ -147,6 +149,7 @@ type TabKey =
   | "asistencia"
   | "trabajadores"
   | "clientes"
+  | "clientas-captadas"
   | "rangos-clientes"
   | "clientes-web"
   | "sistema-xp"
@@ -2852,6 +2855,8 @@ function AdminPage() {
           {tab === "clientes" && (
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
           )}
+
+          {tab === "clientas-captadas" && <ClientCapturesAdminPanel />}
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
 

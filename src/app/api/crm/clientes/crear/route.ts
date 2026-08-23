@@ -220,7 +220,6 @@ export async function POST(req: Request) {
     deuda_pendiente,
     minutos_free_pendientes,
     minutos_normales_pendientes,
-    ...(responsibleWorker ? { captured_by_worker_id: responsibleWorker.id } : {}),
   };
 
     const { data: cliente, error } = await admin
@@ -250,29 +249,15 @@ export async function POST(req: Request) {
       }
     }
 
-    let xpEvent: any = null;
     if (responsibleWorker) {
-      const referenceId = `crm_client:${String(cliente.id)}`;
-      const { data: awardResult, error: awardError } = await admin.rpc("award_worker_xp", {
-        p_worker_id: responsibleWorker.id,
-        p_action_key: "client_capture",
-        p_reference_id: referenceId,
-        p_reference_label: [nombre, apellido].filter(Boolean).join(" ").trim() || `Cliente ${cliente.id}`,
-        p_origin: "crm_manual",
-        p_metadata: { client_id: cliente.id, brand: requestedBrand, source: "mis_clientas" },
+      const { error: assignmentError } = await admin.from("crm_client_capture_assignments").insert({
+        client_id: cliente.id,
+        business: requestedBrand,
+        created_by_worker_id: responsibleWorker.id,
+        responsible_worker_id: responsibleWorker.id,
+        status: "pending",
       });
-      if (!awardError) {
-        const { data: persistedEvent } = await admin
-          .from("worker_xp_events")
-          .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
-          .eq("worker_id", responsibleWorker.id)
-          .eq("reference_id", referenceId)
-          .eq("status", "applied")
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        xpEvent = persistedEvent || awardResult || null;
-      }
+      if (assignmentError) throw assignmentError;
     }
 
     return NextResponse.json({
@@ -281,7 +266,8 @@ export async function POST(req: Request) {
       msg: "Cliente creado correctamente",
       cross_brand_warning: crossBrandInfo,
       tag_warning: tagWarning,
-      xp_event: xpEvent,
+      xp_event: null,
+      capture_status: responsibleWorker ? "pending_first_valid_contact" : "pending_review",
       responsable: responsibleWorker ? { id: responsibleWorker.id, display_name: responsibleWorker.display_name, team: responsibleWorker.team } : null,
     });
   } catch (e: any) {

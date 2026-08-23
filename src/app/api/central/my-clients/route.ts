@@ -77,9 +77,13 @@ export async function GET(req: Request) {
     const brand = String(url.searchParams.get("marca") || "celestial").toLowerCase() === "orion" ? "orion" : "celestial";
     const admin = adminClient();
 
-    // This is the same real worker relation already used by the current UI to resolve "Telefonista responsable".
-    const ownershipFilter = `captured_by_worker_id.eq.${worker.id}`;
-    let portfolioQuery = admin.from("crm_clientes").select("*").or(ownershipFilter);
+    const { data: ownedAssignments, error: assignmentError } = await admin
+      .from("crm_client_capture_assignments")
+      .select("client_id")
+      .eq("responsible_worker_id", worker.id);
+    if (assignmentError) throw assignmentError;
+    const ownedClientIds = (ownedAssignments || []).map((row: any) => String(row.client_id)).filter(Boolean);
+    let portfolioQuery = admin.from("crm_clientes").select("*").in("id", ownedClientIds.length ? ownedClientIds : ["00000000-0000-0000-0000-000000000000"]);
     if (brand === "orion") portfolioQuery = portfolioQuery.ilike("origen", "%orion%");
     else portfolioQuery = portfolioQuery.or("origen.is.null,origen.not.ilike.%orion%");
     const portfolioR = await portfolioQuery;
@@ -93,7 +97,7 @@ export async function GET(req: Request) {
     const followupIds = new Set((followupsR.data || []).map((row: any) => String(row.client_id)));
     const activeIds = new Set(portfolio.filter((client: any) => clientIsActive(client)).map((client: any) => String(client.id)));
 
-    let query = admin.from("crm_clientes").select("*", { count: "exact" }).or(ownershipFilter);
+    let query = admin.from("crm_clientes").select("*", { count: "exact" }).in("id", ownedClientIds.length ? ownedClientIds : ["00000000-0000-0000-0000-000000000000"]);
 
     if (brand === "orion") {
       query = query.ilike("origen", "%orion%");
@@ -151,14 +155,16 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, clientes: [], total: count || 0, page, page_size: pageSize, stats: { active: activeIds.size, followup: followupIds.size } });
     }
 
-    const [{ data: relations, error: relationsError }, { data: tags, error: tagsError }, { data: interactions, error: interactionsError }] = await Promise.all([
+    const [{ data: relations, error: relationsError }, { data: tags, error: tagsError }, { data: interactions, error: interactionsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
       admin.from("crm_cliente_etiquetas").select("cliente_id, etiqueta_id").in("cliente_id", ids),
       admin.from("crm_etiquetas").select("id, nombre, color"),
       admin.from("crm_interacciones").select("cliente_id, created_at, cerrado_at, origen, estado").in("cliente_id", ids).order("created_at", { ascending: false }),
+      admin.from("crm_client_capture_assignments").select("client_id,status,captured_by_worker_id,responsible_worker_id,captured_at,first_contact_at").in("client_id", ids),
     ]);
     if (relationsError) throw relationsError;
     if (tagsError) throw tagsError;
     if (interactionsError) throw interactionsError;
+    if (assignmentsError) throw assignmentsError;
 
     const tagById = new Map((tags || []).map((tag: any) => [String(tag.id), { id: String(tag.id), nombre: tag.nombre, color: tag.color || null }]));
     const tagsByClient = new Map<string, Array<{ id: string; nombre: string; color: string | null }>>();
@@ -177,9 +183,8 @@ export async function GET(req: Request) {
       if (clientId && !lastInteractionByClient.has(clientId)) lastInteractionByClient.set(clientId, interaction);
     }
 
-    const responsibleIds = Array.from(new Set((clients || []).map((client: any) =>
-      String(client.captured_by_worker_id || "")
-    ).filter(Boolean)));
+    const assignmentByClient = new Map((assignments || []).map((row: any) => [String(row.client_id), row]));
+    const responsibleIds = Array.from(new Set((assignments || []).flatMap((row: any) => [row.responsible_worker_id,row.captured_by_worker_id]).filter(Boolean).map(String)));
     const workerNames = new Map<string, string>();
     if (responsibleIds.length) {
       const { data: workers, error: workersError } = await admin.from("workers").select("id, display_name").in("id", responsibleIds);
@@ -188,12 +193,17 @@ export async function GET(req: Request) {
     }
 
     const enriched = (clients || []).map((client: any) => {
-      const responsibleId = String(client.captured_by_worker_id || "");
+      const assignment: any = assignmentByClient.get(String(client.id)) || null;
+      const responsibleId = String(assignment?.responsible_worker_id || "");
+      const capturedId = String(assignment?.captured_by_worker_id || "");
       return {
         ...client,
         etiquetas: tagsByClient.get(String(client.id)) || [],
         estado_actual: existingStatus(client),
-        telefonista_responsable: workerNames.get(responsibleId) || "Celestial",
+        telefonista_responsable: workerNames.get(responsibleId) || "Pendiente",
+        captada_por: workerNames.get(capturedId) || null,
+        capture_status: assignment?.status || "pending",
+        captured_at: assignment?.captured_at || null,
         ultima_conversacion: lastInteractionByClient.get(String(client.id)) || null,
       };
     });

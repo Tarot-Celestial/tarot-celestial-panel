@@ -177,14 +177,16 @@ export async function GET(req: Request) {
     if (!isUuid(clienteId)) return clientIdentificationError();
 
     const admin = adminClient();
-    const [clientResult, ruleResult, eventsResult] = await Promise.all([
+    const [clientResult, ruleResult, eventsResult, assignmentResult] = await Promise.all([
       admin.from("crm_clientes").select("id").eq("id", clienteId).maybeSingle(),
       admin.from("worker_xp_rules").select("action_key,xp_reward,enabled,frequency").eq("action_key", "client_capture").maybeSingle(),
       admin.from("worker_xp_events").select("id,reference_id,metadata,status").eq("worker_id", me.id).eq("action_key", "client_capture").eq("status", "applied"),
+      admin.from("crm_client_capture_assignments").select("candidate_worker_id,captured_by_worker_id,status").eq("client_id", clienteId).maybeSingle(),
     ]);
     if (clientResult.error || !clientResult.data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     if (ruleResult.error) throw ruleResult.error;
     if (eventsResult.error) throw eventsResult.error;
+    if (assignmentResult.error) throw assignmentResult.error;
     const alreadyAwarded = (eventsResult.data || []).some((event: any) => {
       const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
       return [event.reference_id, metadata.client_id, metadata.cliente_id]
@@ -197,8 +199,13 @@ export async function GET(req: Request) {
         enabled: ruleResult.data?.enabled === true,
         xp: Number(ruleResult.data?.xp_reward) || 0,
         frequency: String(ruleResult.data?.frequency || ""),
-        eligible: ruleResult.data?.enabled === true && !alreadyAwarded,
+        eligible: ruleResult.data?.enabled === true
+          && !alreadyAwarded
+          && assignmentResult.data?.status !== "confirmed"
+          && String(assignmentResult.data?.candidate_worker_id || "") === String(me.id),
         already_awarded: alreadyAwarded,
+        candidate_is_current_worker: String(assignmentResult.data?.candidate_worker_id || "") === String(me.id),
+        status: assignmentResult.data?.status || "pending",
       },
     });
   } catch (e: any) {
@@ -456,7 +463,9 @@ export async function POST(req: Request) {
       forma_pago: normalizedPaymentMethod,
       importe,
       promo,
-      captado,
+      // La atribución se decide después mediante register_client_capture_contact.
+      // Evita que la función histórica conceda XP solo por marcar la opción visual.
+      captado: false,
       recuperado,
       next_free: nextFree,
       next_normales: nextNormales,
@@ -528,6 +537,25 @@ export async function POST(req: Request) {
     const result = atomicResult && typeof atomicResult === "object" ? atomicResult as any : {};
     const inserted = result?.rendimiento ? [result.rendimiento] : [];
     const economicPayment = result?.payment || null;
+    let captureAssignment: any = null;
+    const registeredCallId = String(result?.rendimiento?.id || "");
+    if (registeredCallId && (usoTipo === "7free" || captado)) {
+      const { data: captureResult, error: captureError } = await admin.rpc("register_client_capture_contact", {
+        p_client_id: clienteId,
+        p_worker_id: me.id,
+        p_call_id: registeredCallId,
+        p_used_initial_free: !clienteCompra && usoTipo === "7free",
+        p_classification: clasificacion,
+        p_business: String(cliente?.origen || "celestial"),
+      });
+      if (captureError) throw captureError;
+      captureAssignment = captureResult;
+      if (captado) {
+        const { error: classificationError } = await admin.from("rendimiento_llamadas").update({ captado: true }).eq("id", registeredCallId);
+        if (classificationError) throw classificationError;
+        if (result?.rendimiento) result.rendimiento.captado = true;
+      }
+    }
 
     // El HUD representa únicamente el evento XP que ya haya persistido la operación
     // atómica. Nunca calcula XP desde la configuración ni concede experiencia aquí.
@@ -579,6 +607,7 @@ export async function POST(req: Request) {
       currency: String(economicPayment?.moneda || "EUR"),
       payment_count_today: paymentCountToday,
       xp_event: persistedXpEvent,
+      capture_assignment: captureAssignment,
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
       business: String(cliente?.origen || "celestial"),
       message: collaboratorDisplayName
