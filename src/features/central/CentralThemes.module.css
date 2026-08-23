@@ -23,4 +23,26 @@
 .themeRoot :global(.tc-main input),.themeRoot :global(.tc-main select),.themeRoot :global(.tc-main textarea) { color:var(--ct-text);border-color:var(--ct-border);background:var(--ct-input) }
 .themeRoot[data-central-light="true"] :global(.tc-main-content) { color-scheme:light }.themeRoot[data-central-light="true"] :global(.tc-main-content table),.themeRoot[data-central-light="true"] :global(.tc-main-content th),.themeRoot[data-central-light="true"] :global(.tc-main-content td) { color:var(--ct-text);border-color:var(--ct-border) }
 .themeRoot[data-central-light="true"] :global(.tc-main-content section),.themeRoot[data-central-light="true"] :global(.tc-main-content article) { border-color:var(--ct-border) !important;box-shadow:0 16px 44px rgba(47,38,62,.08) }
+.themeRoot {
+  font-size:16px;
+  --tc-panel:var(--ct-user-surface,var(--ct-surface));
+}
+.themeRoot :global(.tc-shell-premium),.themeRoot :global(.tc-main-content) { font-size:var(--ct-font-base,16px); }
+.themeRoot :global(.tc-main-content) :is(p,li,td,label,input,select,textarea,button) { font-size:calc(var(--ct-font-base,16px) * .78); }
+.themeRoot :global(.tc-main-content) h1 { color:var(--ct-heading)!important;font-size:calc(var(--ct-font-base,16px) * 1.75); }
+.themeRoot :global(.tc-main-content) h2 { color:var(--ct-heading)!important;font-size:calc(var(--ct-font-base,16px) * 1.5); }
+.themeRoot :global(.tc-main-content) h3 { color:var(--ct-heading)!important;font-size:calc(var(--ct-font-base,16px) * 1.25); }
+.themeRoot :global(.tc-main-content) h4 { color:var(--ct-heading)!important;font-size:calc(var(--ct-font-base,16px) * 1.05); }
+.themeRoot :global(.tc-main-content) :is(.tc-card,.tc-kpi-panel,.tc-mini-stat,.tc-list-item,.tc-pack-card,section,article),
+.themeRoot :global(.tc-sidebar-card),
+.themeRoot :global(.tc-main-content) :is(table,form,[role="dialog"]) {
+  border-color:var(--ct-glass-border,var(--ct-border))!important;
+  background-color:var(--ct-user-surface,var(--ct-surface))!important;
+  box-shadow:0 calc(10px + 18px * var(--ct-shadow-strength,.55)) calc(26px + 34px * var(--ct-shadow-strength,.55)) rgba(0,0,0,calc(.08 + .28 * var(--ct-shadow-strength,.55))),inset 0 1px 0 rgba(255,255,255,.055);
+  backdrop-filter:blur(var(--ct-surface-blur,8px)) saturate(125%);
+}
+.themeRoot :global(.tc-main-content) :is(p,small,.tc-sub,.tc-muted) { color:var(--ct-muted)!important; }
+.themeRoot :global(.tc-main-content) :is(td,label,input,select,textarea,button),.themeRoot :global(.tc-sidebar-card) { color:var(--ct-text); }
+.themeRoot :global(.tc-main-content) :is(input,select,textarea) { background:color-mix(in srgb,var(--ct-user-surface-solid,var(--ct-input)) 88%,transparent)!important; }
+.themeRoot[data-glass="off"] :global(.tc-main-content),.themeRoot[data-glass="off"] :global(.tc-sidebar-card) { backdrop-filter:none; }
 @media (prefers-reduced-motion:reduce) { .themeRoot { transition:none } }

@@ -13,8 +13,7 @@ import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
 import CentralXpCoinsPanel from "@/features/central/CentralXpCoinsPanel";
 import CentralStorePanel from "@/features/central/CentralStorePanel";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
-import { useCentralTheme } from "@/features/central/CentralTheme";
-import themeStyles from "@/features/central/CentralThemes.module.css";
+import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList, { type MyClientsView } from "@/features/central/MyClientsList";
@@ -388,7 +387,6 @@ function CentralPage() {
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
   const themeWorkerId = String(connectedOperator?.worker?.id || connectedOperator?.id || connectedOperator?.user?.id || "");
-  const centralTheme = useCentralTheme(themeWorkerId);
 
   const handleIdentityLoaded = useCallback((identity: any) => {
     setConnectedOperator(identity || null);
@@ -1228,7 +1226,7 @@ function CentralPage() {
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
-    <div className={themeStyles.themeRoot} data-central-theme={centralTheme.theme} data-central-light={centralTheme.isLight ? "true" : "false"}>
+    <CentralThemeProvider workerId={themeWorkerId}>
       <div className="tc-premium-bg" aria-hidden="true">
         <div className="tc-premium-orb tc-premium-orb-one" />
         <div className="tc-premium-orb tc-premium-orb-two" />
@@ -1249,9 +1247,6 @@ function CentralPage() {
             onSync={() => { void xpFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
             syncStatus={xpFeed.syncStatus}
             lastSyncedAt={xpFeed.lastSyncedAt}
-            theme={centralTheme.theme}
-            onThemeChange={centralTheme.setTheme}
-            onThemeReset={centralTheme.resetTheme}
           />
           {tab === "central" && <CentralDateSelector value={selectedDate} today={todayKey} loading={xpFeed.busy} onChange={(date) => { const params=new URLSearchParams(searchParams?.toString()||""); params.set("tab","central"); params.set("date",date); router.push(`${pathname}?${params.toString()}`,{scroll:false}); }} />}
 
@@ -2134,7 +2129,7 @@ function CentralPage() {
         </div>
       )}
 
-    </div>
+    </CentralThemeProvider>
   );
 }
 
