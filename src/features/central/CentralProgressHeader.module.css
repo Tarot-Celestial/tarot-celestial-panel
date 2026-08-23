@@ -8,7 +8,7 @@
   gap: 14px;
   min-height: 104px;
   padding: 16px 18px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid var(--ct-border, rgba(220, 182, 100, 0.22));
   border-radius: 22px;
   background:
