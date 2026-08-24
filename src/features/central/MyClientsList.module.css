@@ -224,6 +224,32 @@
   font-weight: 750;
 }
 
+.errorState {
+  min-height: 155px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 13px;
+}
+
+.retryButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 39px;
+  padding: 0 14px;
+  border: 1px solid rgba(157, 103, 255, 0.35);
+  border-radius: 11px;
+  color: #dccbff;
+  background: rgba(157, 103, 255, 0.1);
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
 .pagination {
   justify-content: space-between;
   gap: 16px;

@@ -1253,7 +1253,7 @@ function CentralPage() {
           <div className="tc-main-content">
           {tab === "mis-clientas" && (
             <>
-              <MyClientsStatsCards data={myClientsStats} loading={!myClientsRealStats || !xpData} onLevel={() => handleSidebarTabChange("tu-sistema-xp-niveles")} onActive={() => setMyClientsView("active")} onFollowUp={() => setMyClientsView("followup")} onCoins={() => handleSidebarTabChange("tu-sistema-xp-coins")} />
+              <MyClientsStatsCards data={myClientsStats} clientsLoading={!myClientsRealStats} xpLoading={!xpData} onLevel={() => handleSidebarTabChange("tu-sistema-xp-niveles")} onActive={() => setMyClientsView("active")} onFollowUp={() => setMyClientsView("followup")} onCoins={() => handleSidebarTabChange("tu-sistema-xp-coins")} />
               {searchParams?.get("cliente") ? (
                 <MyClientProfile
                   clientId={String(searchParams.get("cliente"))}

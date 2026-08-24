@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Search, SlidersHorizontal, UserPlus, UsersRound } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCw, Search, SlidersHorizontal, UserPlus, UsersRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
@@ -84,7 +84,8 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_capture_assignments" }, requestRefresh)
       .subscribe();
-    return () => { void client.removeChannel(channel); };
+    const fallback = window.setInterval(requestRefresh, 15000);
+    return () => { window.clearInterval(fallback); void client.removeChannel(channel); };
   }, [requestRefresh]);
 
   useEffect(() => {
@@ -107,10 +108,13 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
         });
         const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.ok) throw new Error(payload?.error || "No se pudieron cargar las clientas.");
+        if (!response.ok || !payload?.ok) {
+          console.error("[Mis clientas] Error de cartera", { status: response.status, code: payload?.code, detail: payload?.error });
+          throw new Error("No se pudieron cargar tus clientas.");
+        }
         if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); onStats({active:Number(payload.stats?.active||0),followup:Number(payload.stats?.followup||0)}); }
       } catch (loadError: any) {
-        if (!cancelled) { setRows([]); setTotal(0); setError(loadError?.message || "No se pudieron cargar las clientas."); }
+        if (!cancelled) { setRows([]); setTotal(0); setError("No se pudieron cargar tus clientas."); }
       } finally { if (!cancelled) setLoading(false); }
     }
     void loadClients();
@@ -136,8 +140,8 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
         <div className={styles.tableHeader} role="row"><span>CLIENTA</span><span>TELEFONISTA RESPONSABLE</span><span>ÚLTIMA CONVERSACIÓN</span><span>ESTADO</span><span aria-hidden="true" /></div>
         <div className={styles.tableBody}>
           {loading && <div className={styles.emptyState}>Cargando clientas…</div>}
-          {!loading && error && <div className={styles.emptyState}>{error}</div>}
-          {!loading && !error && rows.length === 0 && <div className={styles.emptyState}><UsersRound size={28} aria-hidden="true" />No se encontraron clientas.</div>}
+          {!loading && error && <div className={styles.errorState}><strong>{error}</strong><button type="button" className={styles.retryButton} onClick={requestRefresh}><RotateCw size={16} />Reintentar</button></div>}
+          {!loading && !error && rows.length === 0 && <div className={styles.emptyState}><UsersRound size={28} aria-hidden="true" />{debouncedQuery ? "No se encontraron clientas para esta búsqueda." : "Todavía no tienes clientas asignadas."}</div>}
           {!loading && !error && rows.map((client) => (
             <button type="button" className={styles.clientRow} key={client.id} onClick={() => onOpenClient(client.id)} aria-label={`Abrir ficha de ${fullName(client)}`}>
               <span className={styles.clientCell}><span className={styles.avatar} aria-hidden="true">{initialFor(client)}</span><span className={styles.clientCopy}><strong>{fullName(client)}</strong><small>{client.telefono || "Sin teléfono"}</small><span className={styles.captureOwner}>{client.captada_por ? (client.captada_por === client.telefonista_responsable ? `Captada y gestionada por: ${client.captada_por}` : `Captada por: ${client.captada_por} · Responsable: ${client.telefonista_responsable || "Pendiente"}`) : `Captación pendiente · Responsable: ${client.telefonista_responsable || "Pendiente"}`}</span>{Boolean(client.etiquetas?.length) && <span className={styles.tags}>{client.etiquetas!.slice(0, 3).map((tag) => <span key={tag.id} className={styles.tag}>{tag.nombre}</span>)}{client.etiquetas!.length > 3 && <span className={styles.tag}>+{client.etiquetas!.length - 3}</span>}</span>}</span></span>
