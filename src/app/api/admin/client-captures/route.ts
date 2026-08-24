@@ -7,6 +7,12 @@ const env=(name:string)=>{const value=process.env[name];if(!value)throw new Erro
 const adminClient=()=>createClient(env("NEXT_PUBLIC_SUPABASE_URL"),env("SUPABASE_SERVICE_ROLE_KEY"),{auth:{persistSession:false}});
 async function requireAdmin(req:Request){const {data,error}=getAuthUserFromRequest(req);if(error||!data.user?.id)return null;const db=adminClient();const {data:worker,error:workerError}=await db.from("workers").select("id,role").eq("user_id",data.user.id).maybeSingle();if(workerError)throw workerError;return worker?.role==="admin"?worker:null}
 
+async function selectInChunks(db:ReturnType<typeof adminClient>,table:string,columns:string,column:string,ids:any[]){
+ const unique=Array.from(new Set(ids.map(String).filter(Boolean)));const rows:any[]=[];
+ for(let index=0;index<unique.length;index+=100){const {data,error}=await db.from(table).select(columns).in(column,unique.slice(index,index+100));if(error)throw error;rows.push(...(data||[]));}
+ return rows;
+}
+
 export async function GET(req:Request){
  try{
   if(!await requireAdmin(req))return NextResponse.json({ok:false,error:"FORBIDDEN"},{status:403});
@@ -18,11 +24,10 @@ export async function GET(req:Request){
   ]);
   if(aError)throw aError;if(wError)throw wError;if(hError)throw hError;
   const clientIds=(assignments||[]).map((x:any)=>x.client_id);const eventIds=(assignments||[]).map((x:any)=>x.xp_event_id).filter(Boolean);
-  const [{data:clients,error:cError},{data:events,error:eError}]=await Promise.all([
-   clientIds.length?db.from("crm_clientes").select("id,nombre,apellido,telefono,origen").in("id",clientIds):Promise.resolve({data:[],error:null}),
-   eventIds.length?db.from("worker_xp_events").select("id,xp_amount,status,created_at").in("id",eventIds):Promise.resolve({data:[],error:null}),
+  const [clients,events]=await Promise.all([
+   selectInChunks(db,"crm_clientes","id,nombre,apellido,telefono,origen","id",clientIds),
+   selectInChunks(db,"worker_xp_events","id,xp_amount,status,created_at","id",eventIds),
   ]);
-  if(cError)throw cError;if(eError)throw eError;
   const clientMap=new Map((clients||[]).map((x:any)=>[String(x.id),x]));const workerMap=new Map((workers||[]).map((x:any)=>[String(x.id),x]));const eventMap=new Map((events||[]).map((x:any)=>[String(x.id),x]));
   const activeWorkers=(workers||[]).filter((x:any)=>x.is_active!==false&&!['inactive','inactivo','disabled','desactivado','baja'].includes(String(x.state||'').toLowerCase()));
   return NextResponse.json({ok:true,corporate_owner:{id:null,display_name:"Celestial",team:"Cartera general",role:"corporate"},workers:activeWorkers,items:(assignments||[]).map((x:any)=>({...x,client:clientMap.get(String(x.client_id))||null,captured_by:workerMap.get(String(x.captured_by_worker_id))||null,responsible:x.responsible_worker_id?workerMap.get(String(x.responsible_worker_id))||null:{id:null,display_name:"Celestial",team:"Cartera general",role:"corporate"},xp_event:eventMap.get(String(x.xp_event_id))||null,audit:(audit||[]).filter((h:any)=>String(h.client_id)===String(x.client_id)).slice(0,20).map((h:any)=>({...h,previous_name:h.previous_responsible_worker_id?workerMap.get(String(h.previous_responsible_worker_id))?.display_name||"Histórico":"Celestial",new_name:h.new_responsible_worker_id?workerMap.get(String(h.new_responsible_worker_id))?.display_name||"Histórico":"Celestial",actor_name:h.actor_worker_id?workerMap.get(String(h.actor_worker_id))?.display_name||"Admin":"Sistema"}))}))});
