@@ -13,9 +13,11 @@ async function authenticatedWorker(req: Request) {
   const { data, error } = getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const admin = adminClient();
-  const result = await admin.from("workers").select("id,role").eq("user_id", data.user.id).maybeSingle();
+  const result = await admin.from("workers").select("id,role,is_active").eq("user_id", data.user.id);
   if (result.error) throw result.error;
-  return result.data;
+  const identities = (result.data || []).filter((row: any) => row?.is_active !== false);
+  const worker = identities.find((row: any) => String(row?.role || "") === "central") || identities[0] || null;
+  return worker ? { ...worker, identityIds: identities.map((row: any) => String(row.id)).filter(Boolean) } : null;
 }
 
 function safeInt(value: string | null, fallback: number, min: number, max: number) {
@@ -38,8 +40,11 @@ function clientIsActive(client: Record<string, unknown>) {
   if (typeof client.activo === "boolean") return client.activo;
   return !["inactivo", "inactive", "archivado", "archived", "baja", "deleted", "eliminado"].includes(String(existingStatus(client) || "").toLowerCase());
 }
-function belongsToBrand(client: Record<string, unknown>, brand: "celestial" | "orion") {
-  const isOrion = String(client.origen || "").toLowerCase().includes("orion");
+function belongsToBrand(client: Record<string, unknown>, assignment: Record<string, unknown> | undefined, brand: "celestial" | "orion") {
+  // La asignación es la fuente de verdad de la cartera. `origen` queda como
+  // compatibilidad para registros históricos que todavía no tengan business.
+  const source = String(assignment?.business || client.origen || "celestial").toLowerCase();
+  const isOrion = source.includes("orion");
   return brand === "orion" ? isOrion : !isOrion;
 }
 
@@ -51,12 +56,14 @@ async function selectInChunks(admin: ReturnType<typeof adminClient>, table: stri
   }
   return rows;
 }
-async function loadOwnedAssignments(admin: ReturnType<typeof adminClient>, workerId: string) {
+async function loadOwnedAssignments(admin: ReturnType<typeof adminClient>, workerIds: string[]) {
   const rows: any[] = [];
+  const identities = Array.from(new Set(workerIds.filter(Boolean)));
+  if (!identities.length) return rows;
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin.from("crm_client_capture_assignments")
-      .select("client_id,status,captured_by_worker_id,responsible_worker_id,captured_at,first_contact_at,updated_at")
-      .eq("responsible_worker_id", workerId).order("updated_at", { ascending: false, nullsFirst: false }).range(from, from + 999);
+      .select("client_id,status,business,captured_by_worker_id,responsible_worker_id,captured_at,first_contact_at,updated_at")
+      .in("responsible_worker_id", identities).order("updated_at", { ascending: false, nullsFirst: false }).range(from, from + 999);
     if (error) throw error; rows.push(...(data || [])); if ((data || []).length < 1000) break;
   }
   return rows;
@@ -79,16 +86,18 @@ export async function GET(req: Request) {
     const admin = adminClient();
 
     // La cartera se decide exclusivamente por el ID del responsable actual.
-    const assignments = await loadOwnedAssignments(admin, String(worker.id));
+    const identityIds = Array.from(new Set([String(worker.id), ...((worker.identityIds || []) as string[])].filter(Boolean)));
+    const assignments = await loadOwnedAssignments(admin, identityIds);
     const assignmentByClient = new Map(assignments.map((row: any) => [String(row.client_id), row]));
     const ownedIds = Array.from(assignmentByClient.keys());
     if (!ownedIds.length) return NextResponse.json({ ok: true, clientes: [], total: 0, page: 1, page_size: pageSize, total_pages: 1, negocio: brand, stats: { active: 0, followup: 0 } });
 
     const clients = await selectInChunks(admin, "crm_clientes", "*", "id", ownedIds);
-    const portfolio = clients.filter((client: any) => belongsToBrand(client, brand));
+    const portfolio = clients.filter((client: any) => belongsToBrand(client, assignmentByClient.get(String(client.id)), brand));
     const portfolioIds = portfolio.map((client: any) => String(client.id)).filter(Boolean);
     const followups = await selectInChunks(admin, "crm_client_followups", "client_id,worker_id,completed_at", "client_id", portfolioIds);
-    const followupIds = new Set(followups.filter((row: any) => String(row.worker_id) === String(worker.id) && !row.completed_at).map((row: any) => String(row.client_id)));
+    const identitySet = new Set(identityIds);
+    const followupIds = new Set(followups.filter((row: any) => identitySet.has(String(row.worker_id)) && !row.completed_at).map((row: any) => String(row.client_id)));
     const activeIds = new Set(portfolio.filter((client: any) => clientIsActive(client)).map((client: any) => String(client.id)));
 
     const normalizedQuery = searchableText(queryText.replace(/[%(),]/g, " ").trim());
@@ -133,7 +142,8 @@ export async function GET(req: Request) {
     });
 
     const capturedIds = assignments.map((row: any) => String(row.captured_by_worker_id || "")).filter(Boolean);
-    const workerRows = await selectInChunks(admin, "workers", "id,display_name", "id", [String(worker.id), ...capturedIds]);
+    const responsibleIds = assignments.map((row: any) => String(row.responsible_worker_id || "")).filter(Boolean);
+    const workerRows = await selectInChunks(admin, "workers", "id,display_name", "id", [...identityIds, ...responsibleIds, ...capturedIds]);
     const workerNames = new Map(workerRows.map((row: any) => [String(row.id), String(row.display_name || "").trim()]));
     const enriched = pagedClients.map((client: any) => {
       const assignment: any = assignmentByClient.get(String(client.id));
