@@ -143,7 +143,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   return (
     <section className={styles.controlCenter}>
       <header className={styles.hero}>
-        <div><span className={styles.kicker}><Activity size={13} /> Centro de control de producción</span><h2>Rendimiento</h2><p>{isAdmin ? "Visión operativa y económica con datos reales." : "Tu actividad, captaciones y registros operativos."}</p></div>
+        <div><span className={styles.kicker}><Activity size={13} /> Centro de control de producción</span><h2>Rendimiento</h2><p>{isAdmin ? "Visión operativa y económica con datos reales." : "Actividad global de todas las centrales, sincronizada en tiempo real."}</p></div>
         <div className={styles.heroActions}><span className={`${styles.live} ${styles[liveState]}`}><LiveIcon size={14} className={liveState === "updating" || liveState === "connecting" ? styles.spin : ""} /> {liveState === "synced" ? "Sincronizado" : liveState === "error" ? "Error de sincronización" : "Actualizando"}</span><button type="button" className={styles.refresh} onClick={() => void load()} disabled={loading}><RefreshCw size={15} className={loading ? styles.spin : ""} /> Actualizar</button></div>
       </header>
 
@@ -160,7 +160,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
         <div className={styles.filterGrid}>
           <label><span>Cliente</span><input value={filters.cliente} onChange={(e) => setFilters({ ...filters, cliente: e.target.value })} placeholder="Buscar cliente" /></label>
           <label><span>Tarotista</span><input value={filters.tarotista} onChange={(e) => setFilters({ ...filters, tarotista: e.target.value })} placeholder="Nombre" /></label>
-          {isAdmin ? <label><span>Telefonista</span><input value={filters.telefonista} onChange={(e) => setFilters({ ...filters, telefonista: e.target.value })} placeholder="Nombre" /></label> : null}
+          <label><span>Telefonista</span><input value={filters.telefonista} onChange={(e) => setFilters({ ...filters, telefonista: e.target.value })} placeholder="María, Yami, Michael..." /></label>
           <label><span>Método de pago</span><select value={filters.metodo} onChange={(e) => setFilters({ ...filters, metodo: e.target.value })}><option value="">Todos los métodos</option>{methods.map((method) => <option key={method.value} value={method.value}>{method.label}</option>)}</select></label>
           <label><span>Desde</span><input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></label>
           <label><span>Hasta</span><input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></label>
@@ -175,7 +175,7 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       </section>
 
       <section className={styles.tableCard}>
-        <div className={styles.tableHeading}><div><Sparkles size={17} /><strong>Actividad registrada</strong><span>Página {page} de {pages}</span></div><span><ShieldCheck size={14} /> {isAdmin ? "Ámbito administrativo" : "Solo tu ámbito autorizado"}</span></div>
+        <div className={styles.tableHeading}><div><Sparkles size={17} /><strong>Actividad registrada</strong><span>Página {page} de {pages}</span></div><span><ShieldCheck size={14} /> {isAdmin ? "Ámbito administrativo" : "Registro global de centrales"}</span></div>
         <div className={styles.tableScroll}>
           <table><thead><tr><th>Fecha</th><th>Telefonista</th><th>Cliente</th><th>Tarotista</th><th>Tiempo</th><th>CALL</th><th>Código</th><th>Método</th><th>Importe</th><th>Promo</th><th>Captado</th><th aria-label="Acciones" /></tr></thead>
           <tbody>{loading ? Array.from({ length: 7 }).map((_, index) => <tr key={index} className={styles.skeleton}><td colSpan={12}><span /></td></tr>) : rows.map((row) => {

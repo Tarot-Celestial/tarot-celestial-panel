@@ -41,15 +41,10 @@ export async function GET(req: Request) {
 
     for (let offset = 0; offset < 50000; offset += 1000) {
       let query = admin.from("rendimiento_llamadas").select(SELECT_FIELDS).order("fecha_hora", { ascending: false });
-      if (role === "central") {
-        const workerId = String(me.id || "");
-        const workerName = safeLike(String(me.display_name || ""));
-        query = workerName ? query.or(`telefonista_worker_id.eq.${workerId},and(telefonista_worker_id.is.null,telefonista_nombre.ilike.%${workerName}%)`) : query.eq("telefonista_worker_id", workerId);
-      }
       if (from) query = query.gte("fecha_hora", `${from}T00:00:00.000Z`);
       if (to) query = query.lt("fecha_hora", `${addDays(to, 1)}T00:00:00.000Z`);
       if (tarotista) query = query.or(`tarotista_nombre.ilike.%${tarotista}%,tarotista_manual_call.ilike.%${tarotista}%`);
-      if (telefonista && role === "admin") query = query.ilike("telefonista_nombre", `%${telefonista}%`);
+      if (telefonista) query = query.ilike("telefonista_nombre", `%${telefonista}%`);
       if (cliente) query = query.ilike("cliente_nombre", `%${cliente}%`);
       if (captado !== null) query = query.eq("captado", captado);
       if (promo !== null) query = query.eq("promo", promo);
@@ -80,7 +75,7 @@ export async function GET(req: Request) {
       totals: role === "admin" ? totals : { records: totals.records, captured: totals.captured },
       payment_methods: methodOptions,
       pagination: { page, page_size: pageSize, total: filtered.length, pages: Math.max(1, Math.ceil(filtered.length / pageSize)) },
-      brand, viewer: { role, worker_id: me.id || null, mode: role === "central" ? "central" : "admin" },
+      brand, viewer: { role, worker_id: me.id || null, mode: role === "central" ? "central" : "admin", read_scope: "all_centrals" },
     });
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     return response;
