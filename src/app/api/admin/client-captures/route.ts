@@ -19,19 +19,19 @@ export async function GET(req:Request){
   const db=adminClient();
   const [{data:assignments,error:aError},{data:workers,error:wError},{data:audit,error:hError}]=await Promise.all([
    db.from("crm_client_capture_assignments").select("*").order("updated_at",{ascending:false}).limit(2000),
-   db.from("workers").select("id,display_name,team,role,state,is_active").eq("role","central").order("display_name"),
+   db.from("workers").select("id,display_name,team,role,is_active").eq("role","central").order("display_name"),
    db.from("crm_client_capture_audit").select("*").order("created_at",{ascending:false}).limit(2000),
   ]);
-  if(aError)throw aError;if(wError)throw wError;if(hError)throw hError;
+  if(aError)throw new Error(`ASSIGNMENTS: ${aError.message}`);if(wError)throw new Error(`WORKERS: ${wError.message}`);if(hError)throw new Error(`AUDIT: ${hError.message}`);
   const clientIds=(assignments||[]).map((x:any)=>x.client_id);const eventIds=(assignments||[]).map((x:any)=>x.xp_event_id).filter(Boolean);
   const [clients,events]=await Promise.all([
    selectInChunks(db,"crm_clientes","id,nombre,apellido,telefono,origen","id",clientIds),
    selectInChunks(db,"worker_xp_events","id,xp_amount,status,created_at","id",eventIds),
   ]);
   const clientMap=new Map((clients||[]).map((x:any)=>[String(x.id),x]));const workerMap=new Map((workers||[]).map((x:any)=>[String(x.id),x]));const eventMap=new Map((events||[]).map((x:any)=>[String(x.id),x]));
-  const activeWorkers=(workers||[]).filter((x:any)=>x.is_active!==false&&!['inactive','inactivo','disabled','desactivado','baja'].includes(String(x.state||'').toLowerCase()));
+  const activeWorkers=(workers||[]).filter((x:any)=>x.is_active!==false);
   return NextResponse.json({ok:true,corporate_owner:{id:null,display_name:"Celestial",team:"Cartera general",role:"corporate"},workers:activeWorkers,items:(assignments||[]).map((x:any)=>({...x,client:clientMap.get(String(x.client_id))||null,captured_by:workerMap.get(String(x.captured_by_worker_id))||null,responsible:x.responsible_worker_id?workerMap.get(String(x.responsible_worker_id))||null:{id:null,display_name:"Celestial",team:"Cartera general",role:"corporate"},xp_event:eventMap.get(String(x.xp_event_id))||null,audit:(audit||[]).filter((h:any)=>String(h.client_id)===String(x.client_id)).slice(0,20).map((h:any)=>({...h,previous_name:h.previous_responsible_worker_id?workerMap.get(String(h.previous_responsible_worker_id))?.display_name||"Histórico":"Celestial",new_name:h.new_responsible_worker_id?workerMap.get(String(h.new_responsible_worker_id))?.display_name||"Histórico":"Celestial",actor_name:h.actor_worker_id?workerMap.get(String(h.actor_worker_id))?.display_name||"Admin":"Sistema"}))}))});
- }catch(error:any){return NextResponse.json({ok:false,error:error?.message||"ERR_CLIENT_CAPTURES"},{status:500})}
+ }catch(error:any){return NextResponse.json({ok:false,error:error?.message||"ERR_CLIENT_CAPTURES",code:error?.code||null,details:error?.details||null},{status:500})}
 }
 
 export async function POST(req:Request){
