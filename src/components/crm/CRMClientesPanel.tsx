@@ -9,8 +9,9 @@ import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
-import { Clock3, ShieldCheck } from "lucide-react";
+import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 import { tcToast } from "@/lib/tc-toast";
+import reservationStyles from "./CRMReservation.module.css";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -2292,20 +2293,16 @@ export default function CRMClientesPanel({
                 ) : null}
               </div>
 
-              <div id="crm-reserva-card" className="tc-card" style={{ marginTop: 14, borderRadius: 18, padding: 16, background: "rgba(255,255,255,.03)" }}>
-                <div className="tc-title" style={{ fontSize: 16 }}>📅 Reservar tarotista</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Crea una reserva para esta clienta y aparecerá automáticamente en la pestaña Reservas.
-                </div>
+              <div id="crm-reserva-card" className={reservationStyles.missionCard}>
+                <div className={reservationStyles.cardHead}><span className={reservationStyles.icon}><CalendarClock /></span><div><span className={reservationStyles.eyebrow}><Sparkles /> MISIÓN PROGRAMADA</span><div className={reservationStyles.title}>Reservar tarotista</div><div className={reservationStyles.subtitle}>Programa la conexión y el sistema avisará en pantalla cuando llegue el momento.</div></div><span className={reservationStyles.live}><i /> EN VIVO</span></div>
 
-                <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                  <div>
-                    <div className="tc-sub">Tarotista</div>
+                <div className={reservationStyles.grid}>
+                  <label className={reservationStyles.field}>
+                    <span>Tarotista asignada</span>
                     <select
-                      className="tc-input"
+                      className={reservationStyles.control}
                       value={crmReservaTarotistaId}
                       onChange={(e) => setCrmReservaTarotistaId(e.target.value)}
-                      style={{ width: "100%", marginTop: 6, colorScheme: "dark" }}
                     >
                       <option value="">
                         {crmTarotistasLoading ? "Cargando tarotistas..." : "Selecciona tarotista"}
@@ -2317,66 +2314,61 @@ export default function CRMClientesPanel({
                         </option>
                       ))}
                     </select>
-                  </div>
+                  </label>
 
-                  <div>
-                    <div className="tc-sub">O nombre manual</div>
+                  <label className={reservationStyles.field}>
+                    <span>Nombre manual</span>
                     <input
-                      className="tc-input"
+                      className={reservationStyles.control}
                       value={crmReservaTarotistaManual}
                       onChange={(e) => setCrmReservaTarotistaManual(e.target.value)}
                       placeholder="Escribe el nombre si no está en la lista"
-                      style={{ width: "100%", marginTop: 6 }}
                     />
-                  </div>
+                  </label>
                 </div>
 
-                <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                  <div>
-                    <div className="tc-sub">Fecha y hora</div>
+                <div className={reservationStyles.grid}>
+                  <label className={reservationStyles.field}>
+                    <span>Fecha y hora</span>
                     <input
-                      className="tc-input"
+                      className={reservationStyles.control}
                       type="datetime-local"
                       value={crmReservaFecha}
                       onChange={(e) => setCrmReservaFecha(e.target.value)}
-                      style={{ width: "100%", marginTop: 6 }}
                     />
-                  </div>
+                  </label>
 
-                  <div>
-                    <div className="tc-sub">Nota</div>
+                  <label className={reservationStyles.field}>
+                    <span>Nota operativa</span>
                     <input
-                      className="tc-input"
+                      className={reservationStyles.control}
                       value={crmReservaNota}
                       onChange={(e) => setCrmReservaNota(e.target.value)}
                       placeholder="Observación opcional"
-                      style={{ width: "100%", marginTop: 6 }}
                     />
-                  </div>
+                  </label>
                 </div>
 
-                <label className="tc-row" style={{ marginTop: 12, alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <label className={reservationStyles.alertToggle}>
                   <input
                     type="checkbox"
                     checked={crmReservaAvisarCuandoLibre}
                     onChange={(e) => setCrmReservaAvisarCuandoLibre(e.target.checked)}
                   />
-                  <span className="tc-sub">
-                    Tarotista en llamada: avisar automáticamente cuando termine y quede libre
-                  </span>
+                  <BellRing /><span><b>Aviso inteligente</b>Tarotista en llamada: notificar cuando termine y quede libre.</span>
                 </label>
 
-                <div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12 }}>
+                <div className={reservationStyles.actions}>
                   <button
-                    className="tc-btn tc-btn-gold"
+                    className={reservationStyles.createButton}
                     onClick={crearReservaCRM}
                     disabled={crmReservaLoading || !crmClienteSelId}
                   >
-                    {crmReservaLoading ? "Creando..." : "Crear reserva"}
+                    <CalendarClock />{crmReservaLoading ? "Sincronizando..." : "Crear reserva"}
                   </button>
                 </div>
 
-                <div className="tc-sub" style={{ marginTop: 10 }}>
+                <div className={reservationStyles.feedback}>
                   {crmReservaMsg || " "}
                 </div>
               </div>

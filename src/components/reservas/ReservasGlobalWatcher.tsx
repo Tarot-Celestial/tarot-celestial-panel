@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { BellRing, CalendarClock, CheckCircle2, ChevronRight, Radio, X } from "lucide-react";
+import styles from "./ReservasGlobalWatcher.module.css";
 
 const sb = supabaseBrowser();
 
@@ -87,16 +89,15 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
   if (!enabled || !popupReserva) return null;
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 10000, padding: 16 }}>
-      <div className="tc-card" style={{ width: "100%", maxWidth: 520, borderRadius: 24, boxShadow: "0 30px 90px rgba(0,0,0,0.48)", background: "radial-gradient(circle at top right, rgba(215,181,109,.16), transparent 26%), radial-gradient(circle at top left, rgba(181,156,255,.12), transparent 24%), linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04))" }}>
-        <div className="tc-title">{popupReserva?.__popup_kind === "tarotista_idle" ? "✅ Reserva pendiente: tarotista libre" : "⏰ Reserva ahora"}</div>
-        <div className="tc-sub" style={{ marginTop: 10 }}><b>{popupReserva?.cliente_nombre || "Cliente"}</b> {popupReserva?.__popup_kind === "tarotista_idle" ? "estaba esperando a una tarotista en llamada. La tarotista ya ha terminado y está libre." : "ya tiene su reserva programada."}</div>
-        <div className="tc-sub" style={{ marginTop: 6 }}>Hora: <b>{parseReservaDate(popupReserva?.fecha_reserva)?.toLocaleString("es-ES") || "—"}</b></div>
-        {(popupReserva?.tarotista_display_name || popupReserva?.tarotista_nombre || popupReserva?.tarotista_nombre_manual) ? <div className="tc-sub" style={{ marginTop: 6 }}>Tarotista: <b>{popupReserva?.tarotista_display_name || popupReserva?.tarotista_nombre || popupReserva?.tarotista_nombre_manual}</b></div> : null}
-        <div className="tc-row" style={{ marginTop: 18, justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-          <button className="tc-btn" onClick={() => setPopupReserva(null)}>Cerrar</button>
-          <button className="tc-btn tc-btn-ok" onClick={() => { const current = popupReserva; setPopupReserva(null); onGoToReserva?.(current); }}>Ir a la reserva</button>
-        </div>
+    <div className={styles.overlay} role="dialog" aria-modal="true" aria-label="Aviso de reserva">
+      <div className={styles.alertCard}>
+        <button className={styles.closeIcon} onClick={() => setPopupReserva(null)} aria-label="Cerrar aviso"><X /></button>
+        <div className={styles.signal}><span><Radio /></span><b>ALERTA DE RESERVA</b><i>AHORA</i></div>
+        <div className={styles.heroIcon}>{popupReserva?.__popup_kind === "tarotista_idle" ? <CheckCircle2 /> : <BellRing />}</div>
+        <h2>{popupReserva?.__popup_kind === "tarotista_idle" ? "Tarotista disponible" : "Es hora de la reserva"}</h2>
+        <p><strong>{popupReserva?.cliente_nombre || "Cliente"}</strong> {popupReserva?.__popup_kind === "tarotista_idle" ? "estaba esperando. La tarotista ha terminado y ya está libre." : "tiene una conexión programada en este momento."}</p>
+        <div className={styles.missionData}><div><CalendarClock/><span>Hora programada<b>{parseReservaDate(popupReserva?.fecha_reserva)?.toLocaleString("es-ES") || "—"}</b></span></div>{(popupReserva?.tarotista_display_name || popupReserva?.tarotista_nombre || popupReserva?.tarotista_nombre_manual) ? <div><Radio/><span>Tarotista<b>{popupReserva?.tarotista_display_name || popupReserva?.tarotista_nombre || popupReserva?.tarotista_nombre_manual}</b></span></div> : null}</div>
+        <div className={styles.actions}><button className={styles.secondary} onClick={() => setPopupReserva(null)}>Recordar después</button><button className={styles.primary} onClick={() => { const current = popupReserva; setPopupReserva(null); onGoToReserva?.(current); }}>Abrir reserva <ChevronRight /></button></div>
       </div>
     </div>
   );
