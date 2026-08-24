@@ -77,13 +77,9 @@ export async function GET(req: Request) {
     const brand = String(url.searchParams.get("marca") || "celestial").toLowerCase() === "orion" ? "orion" : "celestial";
     const admin = adminClient();
 
-    const { data: ownedAssignments, error: assignmentError } = await admin
-      .from("crm_client_capture_assignments")
-      .select("client_id")
-      .eq("responsible_worker_id", worker.id);
-    if (assignmentError) throw assignmentError;
-    const ownedClientIds = (ownedAssignments || []).map((row: any) => String(row.client_id)).filter(Boolean);
-    let portfolioQuery = admin.from("crm_clientes").select("*").in("id", ownedClientIds.length ? ownedClientIds : ["00000000-0000-0000-0000-000000000000"]);
+    // Mis clientas comparte la misma cartera real que el CRM. La asignación no
+    // limita la visibilidad: únicamente informa quién es la responsable actual.
+    let portfolioQuery = admin.from("crm_clientes").select("*");
     if (brand === "orion") portfolioQuery = portfolioQuery.ilike("origen", "%orion%");
     else portfolioQuery = portfolioQuery.or("origen.is.null,origen.not.ilike.%orion%");
     const portfolioR = await portfolioQuery;
@@ -97,7 +93,7 @@ export async function GET(req: Request) {
     const followupIds = new Set((followupsR.data || []).map((row: any) => String(row.client_id)));
     const activeIds = new Set(portfolio.filter((client: any) => clientIsActive(client)).map((client: any) => String(client.id)));
 
-    let query = admin.from("crm_clientes").select("*", { count: "exact" }).in("id", ownedClientIds.length ? ownedClientIds : ["00000000-0000-0000-0000-000000000000"]);
+    let query = admin.from("crm_clientes").select("*", { count: "exact" });
 
     if (brand === "orion") {
       query = query.ilike("origen", "%orion%");
@@ -200,7 +196,7 @@ export async function GET(req: Request) {
         ...client,
         etiquetas: tagsByClient.get(String(client.id)) || [],
         estado_actual: existingStatus(client),
-        telefonista_responsable: workerNames.get(responsibleId) || "Pendiente",
+        telefonista_responsable: workerNames.get(responsibleId) || "Celestial",
         captada_por: workerNames.get(capturedId) || null,
         capture_status: assignment?.status || "pending",
         captured_at: assignment?.captured_at || null,
