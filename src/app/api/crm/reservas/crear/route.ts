@@ -130,7 +130,9 @@ export async function POST(req: Request) {
       tarotista_nombre,
       tarotista_nombre_manual,
       fecha_reserva: new Date(fecha_reserva).toISOString(),
-      estado: notify_when_tarotista_idle ? "esperando_tarotista" : "pendiente",
+      // El aviso inteligente se controla con `notify_when_tarotista_idle`.
+      // `esperando_tarotista` no forma parte del CHECK histórico de `reservas.estado`.
+      estado: "pendiente",
       notify_when_tarotista_idle,
       ready_notified_at: null,
       nota,
