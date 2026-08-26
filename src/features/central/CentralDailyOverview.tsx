@@ -19,8 +19,6 @@ export type DailyAction = {
   label: string;
   rewardXp: number;
   completed?: boolean;
-  claimed?: boolean;
-  periodKey?: string;
   detail?: string;
   kind?: "payment" | "followup" | "capture" | "xp" | "level_reward";
   rewardCoins?: number;
@@ -44,6 +42,8 @@ export type MissionItem = {
   target: number;
   rewardXp: number;
   completed?: boolean;
+  claimed?: boolean;
+  periodKey?: string;
 };
 
 export type RecentNotificationType =
