@@ -87,12 +87,12 @@ export function normalizeXpTiers(rows?: readonly Partial<XpTierConfig>[] | null)
 
 export function normalizeXpLevels(rows?: readonly Partial<XpLevelConfig>[] | null): XpLevelConfig[] {
   const source = rows?.length ? rows : DEFAULT_XP_LEVELS;
-  const normalized = source
+  return source
     .map((row, index) => {
-      const level = Math.max(1, Math.min(XP_MAX_LEVEL, Math.trunc(Number(row.level ?? index + 1) || index + 1)));
+      const level = Math.max(1, Math.trunc(Number(row.level ?? index + 1) || index + 1));
       return {
         level,
-        xp_to_next: level >= XP_MAX_LEVEL || row.xp_to_next == null ? null : Math.max(0, Math.trunc(Number(row.xp_to_next) || 0)),
+        xp_to_next: row.xp_to_next == null ? null : Math.max(0, Math.trunc(Number(row.xp_to_next) || 0)),
         tier_key: String(row.tier_key || defaultTierForLevel(level)),
         reward_type: row.reward_type ? String(row.reward_type) : null,
         reward_amount: row.reward_amount == null ? null : Number(row.reward_amount),
@@ -102,9 +102,6 @@ export function normalizeXpLevels(rows?: readonly Partial<XpLevelConfig>[] | nul
       };
     })
     .sort((a, b) => a.display_order - b.display_order || a.level - b.level);
-
-  const byLevel = new Map(normalized.map((row) => [row.level, row]));
-  return Array.from({ length: XP_MAX_LEVEL }, (_, index) => byLevel.get(index + 1) ?? DEFAULT_XP_LEVELS[index]);
 }
 
 export function buildConfiguredLevels(rows?: readonly Partial<XpLevelConfig>[] | null): XpConfiguredLevel[] {

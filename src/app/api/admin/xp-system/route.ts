@@ -81,9 +81,9 @@ export async function POST(req:Request){
   }
 
   if(op==="save_level_config"){
-   const level=Math.trunc(num(b.level)); if(level<1||level>20) throw new Error("LEVEL_OUT_OF_RANGE");
+   const level=Math.trunc(num(b.level)); if(level<1||level>999) throw new Error("LEVEL_OUT_OF_RANGE");
    const tierKey=String(b.tier_key||"").trim(); if(!tierKey) throw new Error("TIER_REQUIRED");
-   const xpToNext=level===20?null:Math.max(1,Math.round(num(b.xp_to_next)));
+   const xpToNext=b.xp_to_next==null||String(b.xp_to_next)===""?null:Math.max(1,Math.round(num(b.xp_to_next)));
    const old=await admin.from("worker_xp_level_config").select("*").eq("level",level).maybeSingle(); if(old.error) throw old.error;
    const payload={
     level,
