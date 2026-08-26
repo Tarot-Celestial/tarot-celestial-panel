@@ -144,6 +144,7 @@ export default function XpLevelsAdminPanel() {
   const visibleMissions=(data?.missions?.catalog||[]).filter(mission=>`${mission.name} ${mission.description} ${mission.mission_key}`.toLowerCase().includes(missionSearch.trim().toLowerCase()));
 
   if (!data && !error) return <div className={styles.loading}>Cargando Sistema de niveles telefonista…</div>;
+  if (!data) return <div className={styles.loading}>{error || "No se pudo cargar la configuración de niveles."}</div>;
 
   return (
     <section className={styles.page}>
