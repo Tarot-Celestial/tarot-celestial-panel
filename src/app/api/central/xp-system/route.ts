@@ -309,6 +309,18 @@ export async function GET(req: Request) {
     const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: configuredXpProgress(xp, levelConfig.levels, levelConfig.tiers).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
 
     const counts = (key: string) => events.filter((e: any) => e.action_key === key).length;
+    const [missionsR,levelMissionR,tierMissionR,missionClaimsR]=await Promise.all([
+      admin.from("worker_xp_missions").select("id,mission_key,name,description,source_action_key,target_count,xp_reward,period,active,display_order").eq("active",true).order("display_order"),
+      admin.from("worker_xp_level_missions").select("level,mission_id,availability,display_order,active").eq("active",true),
+      admin.from("worker_xp_tier_missions").select("tier_key,mission_id,availability,display_order,active").eq("active",true),
+      admin.from("worker_xp_mission_claims").select("id,mission_id,period_key,xp_event_id,claimed_at").eq("worker_id",me.id),
+    ]);
+    const missionSystemAvailable=![missionsR,levelMissionR,tierMissionR,missionClaimsR].some((r:any)=>r.error);
+    const currentTierOrder=Number(level.tier?.display_order)||0;
+    const unlockedIds=new Set<string>();
+    if(missionSystemAvailable){for(const link of levelMissionR.data||[])if(Number(link.level)<=level.level)unlockedIds.add(String(link.mission_id));for(const link of tierMissionR.data||[]){const tier=levelConfig.tiers.find(t=>t.key===link.tier_key);if(tier&&tier.display_order<=currentTierOrder)unlockedIds.add(String(link.mission_id));}}
+    const periodInfo=(period:string)=>{const now=new Date();if(period==="daily")return{key:operationalDay.date,start:operationalDay.start};if(period==="weekly")return{key:week.toISOString().slice(0,10),start:week.toISOString()};if(period==="monthly")return{key:now.toISOString().slice(0,7),start:new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)).toISOString()};return{key:"lifetime",start:"1970-01-01T00:00:00.000Z"};};
+    const activeMissions=missionSystemAvailable?(missionsR.data||[]).filter((m:any)=>unlockedIds.has(String(m.id))).map((m:any)=>{const p=periodInfo(String(m.period));const progress=events.filter((e:any)=>e.action_key===m.source_action_key&&e.created_at>=p.start).length;const claim=(missionClaimsR.data||[]).find((c:any)=>String(c.mission_id)===String(m.id)&&c.period_key===p.key);return{...m,progress:Math.min(progress,num(m.target_count)),completed:progress>=num(m.target_count),claimed:Boolean(claim),period_key:p.key};}):[];
     return NextResponse.json({
       ok: true,
       worker: { id: me.id, name: me.display_name },
@@ -324,6 +336,7 @@ export async function GET(req: Request) {
       },
       level_config: levelConfig.levels,
       tier_config: levelConfig.tiers,
+      missions: { available: missionSystemAvailable, active: activeMissions, catalog: missionSystemAvailable?missionsR.data||[]:[], level_links: missionSystemAvailable?levelMissionR.data||[]:[], tier_links: missionSystemAvailable?tierMissionR.data||[]:[] },
       level_config_persisted: levelConfig.persisted,
       reward_system_available: rewards.available,
       reward_claims: rewards.claims,
@@ -359,6 +372,18 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const op = String(body?.op || "");
+    if(op==="claim_mission"){
+      const missionId=String(body.mission_id||""); const periodKey=String(body.period_key||""); if(!missionId||!periodKey)return NextResponse.json({ok:false,error:"MISSION_REQUIRED"},{status:400});
+      const admin=getAdminClient(); const config=await loadXpLevelConfiguration(admin); const xpR=await admin.from("worker_xp_events").select("id,action_key,xp_amount,created_at").eq("worker_id",me.id).eq("status","applied"); if(xpR.error)throw xpR.error;
+      const total=(xpR.data||[]).reduce((s:number,e:any)=>s+num(e.xp_amount),0); const progress=configuredXpProgress(total,config.levels,config.tiers);
+      const missionR=await admin.from("worker_xp_missions").select("*").eq("id",missionId).eq("active",true).single(); if(missionR.error)throw missionR.error; const mission:any=missionR.data;
+      const [levelLinks,tierLinks]=await Promise.all([admin.from("worker_xp_level_missions").select("level").eq("mission_id",missionId).eq("active",true),admin.from("worker_xp_tier_missions").select("tier_key").eq("mission_id",missionId).eq("active",true)]);
+      const unlocked=(levelLinks.data||[]).some((x:any)=>num(x.level)<=progress.level)||(tierLinks.data||[]).some((x:any)=>{const tier=config.tiers.find(t=>t.key===x.tier_key);return tier&&tier.display_order<=num(progress.tier?.display_order)}); if(!unlocked)return NextResponse.json({ok:false,error:"MISSION_LOCKED"},{status:409});
+      const start=mission.period==="daily"?new Date(`${periodKey}T00:00:00.000Z`).toISOString():mission.period==="weekly"?new Date(`${periodKey}T00:00:00.000Z`).toISOString():mission.period==="monthly"?new Date(`${periodKey}-01T00:00:00.000Z`).toISOString():"1970-01-01T00:00:00.000Z";
+      const count=(xpR.data||[]).filter((e:any)=>e.action_key===mission.source_action_key&&e.created_at>=start).length; if(count<num(mission.target_count))return NextResponse.json({ok:false,error:"MISSION_NOT_COMPLETED"},{status:409});
+      const claim=await admin.rpc("claim_worker_xp_mission",{p_worker_id:me.id,p_mission_id:missionId,p_period_key:periodKey}); if(claim.error)return NextResponse.json({ok:false,error:String(claim.error.message).includes("MISSION_ALREADY_CLAIMED")?"MISSION_ALREADY_CLAIMED":"MISSION_CLAIM_FAILED"},{status:409});
+      return NextResponse.json({ok:true,claim:claim.data});
+    }
     if (op === "exchange_xp") {
       const xp = Number(body?.xp_amount);
       const operationId = String(body?.operation_id || "");

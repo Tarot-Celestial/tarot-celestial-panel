@@ -19,6 +19,8 @@ export type DailyAction = {
   label: string;
   rewardXp: number;
   completed?: boolean;
+  claimed?: boolean;
+  periodKey?: string;
   detail?: string;
   kind?: "payment" | "followup" | "capture" | "xp" | "level_reward";
   rewardCoins?: number;
@@ -71,6 +73,7 @@ type Props = {
   data: CentralDailyOverviewData;
   onViewAllMissions?: () => void;
   onViewAllNotifications?: () => void;
+  onClaimMission?: (missionId:string,periodKey:string)=>Promise<unknown>;
 };
 
 function percent(value: number, target: number) {
@@ -98,6 +101,7 @@ export default function CentralDailyOverview({
   data,
   onViewAllMissions,
   onViewAllNotifications,
+  onClaimMission,
 }: Props) {
   const summaryProgress = data.dailySummary.target ? percent(data.dailySummary.completed, data.dailySummary.target) : 0;
 
@@ -187,6 +191,7 @@ export default function CentralDailyOverview({
                 <div className={styles.missionTrack} aria-label={`${missionPercent}% completado`}>
                   <span style={{ width: `${missionPercent}%` }} />
                 </div>
+                {complete?<button className={styles.claimMission} type="button" disabled={mission.claimed} onClick={()=>{if(!mission.claimed&&mission.periodKey)void onClaimMission?.(mission.id,mission.periodKey)}}>{mission.claimed?"RECOMPENSA RECLAMADA":"RECLAMAR MISIÓN"}</button>:null}
               </div>
             );
           })}

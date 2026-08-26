@@ -372,11 +372,7 @@ function CentralPage() {
       dateLabel: selectedDate === todayKey ? "hoy" : "ese día",
       actions: realDailyActions,
     },
-    missions: [
-      { id: "mission-followup", name: "Reina del seguimiento", description: "Realiza 10 seguimientos", progress: 7, target: 10, rewardXp: 250 },
-      { id: "mission-connection", name: "Conexión especial", description: "Consigue 3 segundas consultas", progress: 2, target: 3, rewardXp: 200 },
-      { id: "mission-productive", name: "Día productivo", description: "Realiza 5 acciones en un día", progress: 5, target: 5, rewardXp: 150, completed: true },
-    ],
+    missions: (xpData?.missions?.active||[]).map(mission=>({id:mission.id,name:mission.name,description:mission.description,progress:mission.progress,target:mission.target_count,rewardXp:mission.xp_reward,completed:mission.completed,claimed:mission.claimed,periodKey:mission.period_key})),
     notifications: notificationFeed.items
       .filter((item) => item.state !== "resolved")
       .slice()
@@ -1304,6 +1300,8 @@ function CentralPage() {
               />
               <CentralDailyOverview
                 data={centralDailyOverview}
+                onViewAllMissions={() => handleSidebarTabChange("tu-sistema-xp-niveles")}
+                onClaimMission={xpFeed.claimMission}
                 onViewAllNotifications={() => handleSidebarTabChange("notificaciones")}
               />
             </>

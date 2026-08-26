@@ -69,6 +69,7 @@ export type CentralXpData = {
     reward_label: string | null;
   }>;
   level_config_persisted?: boolean;
+  missions:{available:boolean;active:Array<{id:string;mission_key:string;name:string;description:string;source_action_key:string;target_count:number;xp_reward:number;period:string;progress:number;completed:boolean;claimed:boolean;period_key:string}>;catalog:Array<any>;level_links:Array<{level:number;mission_id:string}>;tier_links:Array<{tier_key:string;mission_id:string}>};
   reward_system_available?: boolean;
   reward_claims: Array<{
     id: string;
@@ -199,6 +200,10 @@ export function useCentralXpData(selectedDate?: string) {
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_missions" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_missions" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_missions" }, () => void load(true))
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_mission_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_processing", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
       .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, () => void load(true))
@@ -265,5 +270,7 @@ export function useCentralXpData(selectedDate?: string) {
     return json.exchange;
   }, [load]);
 
-  return { data, error, busy, load, acknowledgeReward, exchangeXp, claimLevelReward, syncStatus, lastSyncedAt };
+  const claimMission=useCallback(async(missionId:string,periodKey:string)=>{const {data:sessionData}=await sb.auth.getSession();const token=sessionData.session?.access_token;if(!token)throw new Error("Sesión no disponible");const response=await fetch("/api/central/xp-system",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op:"claim_mission",mission_id:missionId,period_key:periodKey})});const json=await response.json();if(!response.ok||!json.ok)throw new Error(json.error||"No se pudo reclamar la misión");await load(true);return json.claim;},[load]);
+
+  return { data, error, busy, load, acknowledgeReward, exchangeXp, claimLevelReward, claimMission, syncStatus, lastSyncedAt };
 }

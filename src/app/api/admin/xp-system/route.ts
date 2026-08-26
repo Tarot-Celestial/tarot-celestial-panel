@@ -16,13 +16,17 @@ export async function GET(req:Request){
   const gate=await requireAdmin(req); if(!gate.ok) return NextResponse.json({ok:false,error:gate.error},{status:403});
   const {admin}=gate;
   const levelConfig = await loadXpLevelConfiguration(admin);
-  const [rulesR,eventsR,workersR,auditR]=await Promise.all([
+  const [rulesR,eventsR,workersR,auditR,missionsR,levelMissionsR,tierMissionsR]=await Promise.all([
    admin.from("worker_xp_rules").select("*").order("created_at"),
    admin.from("worker_xp_events").select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,created_at").order("created_at",{ascending:false}).limit(250),
    admin.from("workers").select("id,display_name,email,role,team,is_active").eq("role","central").order("display_name"),
    admin.from("worker_xp_audit").select("*").order("created_at",{ascending:false}).limit(100),
+   admin.from("worker_xp_missions").select("*").order("display_order"),
+   admin.from("worker_xp_level_missions").select("level,mission_id,availability,display_order,active"),
+   admin.from("worker_xp_tier_missions").select("tier_key,mission_id,availability,display_order,active"),
   ]);
   for(const r of [rulesR,eventsR,workersR,auditR]) if(r.error) throw r.error;
+  const missionInstalled=!missionsR.error&&!levelMissionsR.error&&!tierMissionsR.error;
   const [coinConfigR,walletsR,conversionsR]=await Promise.all([
    admin.from("worker_xp_coin_config").select("xp_units,coin_units,min_xp,enabled,updated_at").eq("id",true).maybeSingle(),
    admin.from("worker_coin_wallets").select("worker_id,balance"),
@@ -36,7 +40,7 @@ export async function GET(req:Request){
   const cards=workers.map((w:any)=>{ const own=events.filter((e:any)=>e.worker_id===w.id&&e.status==="applied"); const total=own.reduce((s:any,e:any)=>s+num(e.xp_amount),0); const month=own.filter((e:any)=>e.created_at>=monthStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const today=own.filter((e:any)=>e.created_at>=dayStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const lvl=configuredXpProgress(total, levelConfig.levels, levelConfig.tiers); const conversion=conversionsByWorker.get(String(w.id)); return {...w,total_xp:total,xp_month:month,xp_today:today,level:lvl.level,level_xp:lvl.current,next_level_xp:lvl.span,next_level_total:lvl.next,clients_captured:own.filter((e:any)=>e.action_key==="client_capture").length,repurchases:own.filter((e:any)=>e.action_key==="repurchase").length,followups:own.filter((e:any)=>e.action_key==="followup").length,consultations:own.filter((e:any)=>e.action_key==="consultation").length,positive_reviews:own.filter((e:any)=>e.action_key==="positive_review").length,missions:own.filter((e:any)=>e.action_key==="daily_mission").length,coins:coinInstalled?(walletByWorker.get(String(w.id))||0):null,coins_spent:coinInstalled?(conversion?.spent||0):null,rewards_claimed:null,rewards_value:null}; });
   const applied=events.filter((e:any)=>e.status==="applied"); const monthEvents=applied.filter((e:any)=>e.created_at>=monthStart()); const todayEvents=applied.filter((e:any)=>e.created_at>=dayStart());
   const top=[...cards].sort((a:any,b:any)=>b.xp_month-a.xp_month)[0]||null;
-  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,coin_exchange:{installed:coinInstalled,config:coinConfigR.data||null},summary:{xp_month:monthEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),xp_today:todayEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:coinInstalled?(conversionsR.data||[]).filter((r:any)=>r.status==="completed").reduce((s:number,r:any)=>s+num(r.coins_granted),0):null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
+  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,missions:{installed:missionInstalled,catalog:missionInstalled?missionsR.data||[]:[],levels:missionInstalled?levelMissionsR.data||[]:[],tiers:missionInstalled?tierMissionsR.data||[]:[]},coin_exchange:{installed:coinInstalled,config:coinConfigR.data||null},summary:{xp_month:monthEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),xp_today:todayEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:coinInstalled?(conversionsR.data||[]).filter((r:any)=>r.status==="completed").reduce((s:number,r:any)=>s+num(r.coins_granted),0):null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
  }catch(e:any){ return NextResponse.json({ok:false,error:e?.message||"ERR"},{status:500}); }
 }
 
@@ -113,6 +117,26 @@ export async function POST(req:Request){
    const saved=await admin.from("worker_xp_tier_config").upsert(payload,{onConflict:"key"}).select("*").single(); if(saved.error) throw saved.error;
    await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:`tier_config:${key}`,old_value:old.data||null,new_value:saved.data});
    return NextResponse.json({ok:true,tier:saved.data});
+  }
+  if(op==="save_mission"){
+   const id=b.id?String(b.id):undefined; const key=String(b.mission_key||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_");
+   const payload={...(id?{id}:{}),mission_key:key,name:String(b.name||"").trim(),description:String(b.description||"").trim(),source_action_key:String(b.source_action_key||"").trim(),target_count:Math.max(1,Math.round(num(b.target_count))),xp_reward:Math.max(0,Math.round(num(b.xp_reward))),period:["daily","weekly","monthly","lifetime"].includes(String(b.period))?String(b.period):"lifetime",active:b.active!==false,display_order:Math.max(1,Math.round(num(b.display_order)||1)),updated_at:new Date().toISOString()};
+   if(!payload.mission_key||!payload.name||!payload.source_action_key) throw new Error("MISSION_FIELDS_REQUIRED");
+   const saved=await admin.from("worker_xp_missions").upsert(payload,{onConflict:"mission_key"}).select("*").single(); if(saved.error) throw saved.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:`mission:${key}`,new_value:saved.data});
+   return NextResponse.json({ok:true,mission:saved.data});
+  }
+  if(op==="delete_mission"){
+   const id=String(b.id||""); if(!id) throw new Error("MISSION_REQUIRED");
+   const removed=await admin.from("worker_xp_missions").delete().eq("id",id).select("id").single(); if(removed.error) throw removed.error;
+   return NextResponse.json({ok:true});
+  }
+  if(op==="set_mission_links"){
+   const scope=String(b.scope||""); const missionId=String(b.mission_id||""); const keys=Array.isArray(b.keys)?b.keys:[]; if(!missionId||!["level","tier"].includes(scope)) throw new Error("INVALID_MISSION_LINK");
+   const table=scope==="level"?"worker_xp_level_missions":"worker_xp_tier_missions"; const column=scope==="level"?"level":"tier_key";
+   const cleared=await admin.from(table).delete().eq("mission_id",missionId); if(cleared.error) throw cleared.error;
+   if(keys.length){const rows=keys.map((key:any,index:number)=>({[column]:scope==="level"?Math.trunc(num(key)):String(key),mission_id:missionId,availability:"permanent",display_order:index+1,active:true})); const inserted=await admin.from(table).insert(rows); if(inserted.error) throw inserted.error;}
+   return NextResponse.json({ok:true});
   }
   throw new Error("INVALID_OPERATION");
  }catch(e:any){ return NextResponse.json({ok:false,error:e?.message||"ERR"},{status:400}); }

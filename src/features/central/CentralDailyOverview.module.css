@@ -526,3 +526,4 @@
     transform: none;
   }
 }
+.claimMission{width:100%;margin-top:10px;padding:9px;border:1px solid rgba(235,193,89,.45);border-radius:10px;color:#ffe49a;background:linear-gradient(90deg,rgba(130,77,16,.35),rgba(117,69,179,.28));font-size:10px;font-weight:900;letter-spacing:.06em}.claimMission:disabled{opacity:.55;cursor:default}

@@ -14,6 +14,7 @@ import {
   X,
   Coins,
   Gift,
+  Target,
 } from "lucide-react";
 import { useState } from "react";
 import { buildConfiguredLevels, type XpConfiguredLevel } from "@/lib/xp-levels";
@@ -236,6 +237,7 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
                         <b>Nivel {level.level}</b>
                         <small>{level.next_active_level ? `${fmt(level.xp_to_next || 0)} XP → Nivel ${level.next_active_level}` : "Nivel máximo"}</small>
                         <em>{rewardSummary(level.reward_type, level.reward_amount, level.reward_label)}</em>
+                        <em>{data.missions?.level_links?.filter(link=>link.level===level.level).length||0} misiones</em>
                         {done && level.reward_type === "coins" && Number(level.reward_amount) > 0 ? <em className={claim ? styles.rewardClaimed : styles.rewardPending}>{claim ? "Recompensa entregada" : "Pendiente de reclamar"}</em> : null}
                       </span>
                     </button>
@@ -293,6 +295,7 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
                   {selectedLevel.reward_label ? <p>“{selectedLevel.reward_label}”</p> : null}
                 </div>
               </div>
+              <div className={styles.detailMissions}><span>MISIONES DESBLOQUEADAS</span>{(data.missions?.level_links||[]).filter(link=>link.level===selectedLevel.level).map(link=>data.missions.catalog.find(m=>m.id===link.mission_id)).filter(Boolean).map((mission:any)=><div key={mission.id}><Target size={15}/><p><strong>{mission.name}</strong><small>{mission.description} · +{mission.xp_reward} XP</small></p></div>)}{!(data.missions?.level_links||[]).some(link=>link.level===selectedLevel.level)?<small>Este nivel no tiene misiones configuradas.</small>:null}</div>
               {reached && selectedLevel.reward_type === "coins" && Number(selectedLevel.reward_amount) > 0 ? (
                 existingClaim ? <div className={styles.claimedState}><CheckCircle2 size={16}/> Recompensa ya entregada</div> : <button className={styles.claimButton} type="button" disabled={claimingLevel != null} onClick={() => void claimLevel(selectedLevel.level)}>{claimingLevel === selectedLevel.level ? "ENTREGANDO…" : "RECLAMAR RECOMPENSA"}</button>
               ) : null}
