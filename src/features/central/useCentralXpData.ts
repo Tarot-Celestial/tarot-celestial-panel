@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
 const madridToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -69,7 +70,7 @@ export type CentralXpData = {
     reward_label: string | null;
   }>;
   level_config_persisted?: boolean;
-  missions:{available:boolean;active:Array<{id:string;mission_key:string;name:string;description:string;source_action_key:string;target_count:number;xp_reward:number;period:string;progress:number;completed:boolean;claimed:boolean;period_key:string}>;catalog:Array<any>;level_links:Array<{level:number;mission_id:string}>;tier_links:Array<{tier_key:string;mission_id:string}>};
+  missions:{available:boolean;active:Array<{id:string;mission_key:string;name:string;description:string;source_action_key:string;target_count:number;xp_reward:number;period:string;max_claims:number|null;unique_clients:boolean;delivery_mode:"manual"|"automatic";unit_label:string|null;progress:number;completed:boolean;claimed:boolean;claim_count:number;period_key:string}>;catalog:Array<any>;level_links:Array<{level:number;mission_id:string}>;tier_links:Array<{tier_key:string;mission_id:string}>};
   reward_system_available?: boolean;
   reward_claims: Array<{
     id: string;
@@ -148,6 +149,7 @@ export function useCentralXpData(selectedDate?: string) {
   const [syncStatus, setSyncStatus] = useState<"syncing" | "synced" | "error">("syncing");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const completedMissionRef = useRef<Set<string> | null>(null);
   const viewingToday = !selectedDate || selectedDate === madridToday();
 
   const load = useCallback(async (silent = false) => {
@@ -166,7 +168,14 @@ export function useCentralXpData(selectedDate?: string) {
       const json = await response.json();
       if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo cargar XP");
       if (requestId === requestRef.current) {
-        setData(json as CentralXpData);
+        const typed = json as CentralXpData;
+        const completedNow = new Set((typed.missions?.active || []).filter(mission => mission.completed && !mission.claimed).map(mission => `${mission.id}:${mission.period_key}:${mission.claim_count}`));
+        if (completedMissionRef.current) {
+          const newlyCompleted = (typed.missions?.active || []).find(mission => mission.completed && !mission.claimed && !completedMissionRef.current?.has(`${mission.id}:${mission.period_key}:${mission.claim_count}`));
+          if (newlyCompleted) tcToast({ title: "🏆 MISIÓN COMPLETADA", description: `${newlyCompleted.name} · +${newlyCompleted.xp_reward} XP disponibles`, tone: "success", duration: 8000 });
+        }
+        completedMissionRef.current = completedNow;
+        setData(typed);
         setError("");
         setLastSyncedAt(new Date().toISOString());
         setSyncStatus("synced");

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Crown, LockKeyhole, Plus, RefreshCw, Save, Search, Shield, Sparkles, Star, Target, Trophy, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { buildConfiguredLevels, type XpLevelConfig, type XpTierConfig } from "@/lib/xp-levels";
+import XpMissionBuilder, { type XpMission as Mission } from "./XpMissionBuilder";
 import styles from "./XpLevelsAdminPanel.module.css";
 
 type AdminXpResponse = {
@@ -14,7 +15,6 @@ type AdminXpResponse = {
   missions: { installed: boolean; catalog: Mission[]; levels: MissionLink[]; tiers: TierMissionLink[] };
   rules: Array<{action_key:string;name:string}>;
 };
-type Mission={id:string;mission_key:string;name:string;description:string;source_action_key:string;target_count:number;xp_reward:number;period:"daily"|"weekly"|"monthly"|"lifetime";active:boolean;display_order:number};
 type MissionLink={level:number;mission_id:string};
 type TierMissionLink={tier_key:string;mission_id:string};
 const linkedLevelsFor=(level:number,links?:MissionLink[])=>(links||[]).filter(link=>link.level===level);
@@ -37,7 +37,6 @@ export default function XpLevelsAdminPanel() {
   const [busyKey, setBusyKey] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [missionDraft,setMissionDraft]=useState<Omit<Mission,"id">>({mission_key:"",name:"",description:"",source_action_key:"",target_count:1,xp_reward:0,period:"lifetime",active:true,display_order:1});
   const [editingLevel,setEditingLevel]=useState<number|null>(null);
   const [missionSearch,setMissionSearch]=useState("");
 
@@ -135,7 +134,7 @@ export default function XpLevelsAdminPanel() {
     setTiers((current) => current.map((tier) => tier.key === key ? { ...tier, ...patch } : tier));
   }
 
-  async function missionOp(body:Record<string,unknown>){setBusyKey("mission");setError("");try{const response=await authFetch("/api/admin/xp-system",{method:"POST",body:JSON.stringify(body)});const json=await response.json();if(!response.ok||!json.ok)throw new Error(json.error||"No se pudo guardar la misión");await load();setMessage("Catálogo de misiones actualizado en tiempo real.");}catch(e){setError(e instanceof Error?e.message:"No se pudo guardar la misión");}finally{setBusyKey("");}}
+  async function missionOp(body:Record<string,unknown>){setBusyKey("mission");setError("");try{const response=await authFetch("/api/admin/xp-system",{method:"POST",body:JSON.stringify(body)});const json=await response.json();if(!response.ok||!json.ok)throw new Error(json.error||"No se pudo guardar la misión");await load();setMessage("Catálogo de misiones actualizado en tiempo real.");return json;}catch(e){setError(e instanceof Error?e.message:"No se pudo guardar la misión");throw e;}finally{setBusyKey("");}}
   const linkedLevels=(id:string)=>new Set((data?.missions?.levels||[]).filter(x=>x.mission_id===id).map(x=>x.level));
   const linkedTiers=(id:string)=>new Set((data?.missions?.tiers||[]).filter(x=>x.mission_id===id).map(x=>x.tier_key));
   async function toggleLevelMission(missionId:string,levelNumber:number){const keys=[...linkedLevels(missionId)];const next=keys.includes(levelNumber)?keys.filter(x=>x!==levelNumber):[...keys,levelNumber];await missionOp({op:"set_mission_links",scope:"level",mission_id:missionId,keys:next});}
@@ -326,24 +325,7 @@ export default function XpLevelsAdminPanel() {
 
       <div className={styles.sectionHead}><div><span>CATÁLOGO ÚNICO</span><h2>Misiones por nivel y categoría</h2><p>Desbloquear una misión no entrega XP. El XP se concede una sola vez cuando la telefonista cumple y reclama el objetivo.</p></div></div>
       {!data?.missions?.installed?<div className={styles.installWarning}><LockKeyhole/><div><strong>Falta instalar el sistema de misiones</strong><span>Ejecuta SQL_NECESARIO.sql en Supabase.</span></div></div>:
-      <div className={styles.missionManager}>
-        <article className={styles.missionEditor} id="mission-catalog-editor">
-          <input placeholder="Clave única" value={missionDraft.mission_key} onChange={e=>setMissionDraft(v=>({...v,mission_key:e.target.value}))}/>
-          <input placeholder="Nombre de la misión" value={missionDraft.name} onChange={e=>setMissionDraft(v=>({...v,name:e.target.value}))}/>
-          <input placeholder="Descripción" value={missionDraft.description} onChange={e=>setMissionDraft(v=>({...v,description:e.target.value}))}/>
-          <select value={missionDraft.source_action_key} onChange={e=>setMissionDraft(v=>({...v,source_action_key:e.target.value}))}><option value="">Acción XP que mide…</option>{data.rules?.map(r=><option key={r.action_key} value={r.action_key}>{r.name} · {r.action_key}</option>)}</select>
-          <input type="number" min="1" value={missionDraft.target_count} onChange={e=>setMissionDraft(v=>({...v,target_count:Number(e.target.value)}))}/>
-          <input type="number" min="0" value={missionDraft.xp_reward} onChange={e=>setMissionDraft(v=>({...v,xp_reward:Number(e.target.value)}))}/>
-          <select value={missionDraft.period} onChange={e=>setMissionDraft(v=>({...v,period:e.target.value as Mission["period"]}))}><option value="lifetime">Permanente</option><option value="daily">Diaria</option><option value="weekly">Semanal</option><option value="monthly">Mensual</option></select>
-          <button type="button" disabled={Boolean(busyKey)} onClick={()=>void missionOp({op:"save_mission",...missionDraft})}><Sparkles size={14}/> Crear misión</button>
-        </article>
-        {(data.missions.catalog||[]).map(mission=><article className={styles.missionCard} key={mission.id}>
-          <div><small>{mission.mission_key} · {mission.period}</small><h3>{mission.name}</h3><p>{mission.description}</p><strong>{mission.target_count} acciones · +{mission.xp_reward} XP</strong></div>
-          <label>Niveles<select multiple value={[...linkedLevels(mission.id)].map(String)} onChange={e=>void missionOp({op:"set_mission_links",scope:"level",mission_id:mission.id,keys:Array.from(e.currentTarget.selectedOptions).map(o=>Number(o.value))})}>{levels.map(l=><option key={l.level} value={l.level}>Nivel {l.level}</option>)}</select></label>
-          <label>Categorías<select multiple value={[...linkedTiers(mission.id)]} onChange={e=>void missionOp({op:"set_mission_links",scope:"tier",mission_id:mission.id,keys:Array.from(e.currentTarget.selectedOptions).map(o=>o.value)})}>{tiers.map(t=><option key={t.key} value={t.key}>{t.name}</option>)}</select></label>
-          <button type="button" onClick={()=>void missionOp({op:"delete_mission",id:mission.id})}>Eliminar</button>
-        </article>)}
-      </div>}
+      <XpMissionBuilder missions={data.missions.catalog||[]} rules={data.rules||[]} levels={levels} tiers={tiers} levelLinks={data.missions.levels||[]} tierLinks={data.missions.tiers||[]} busy={Boolean(busyKey)} operate={missionOp}/>} 
 
       <div className={styles.infoBox}>
         <Sparkles />

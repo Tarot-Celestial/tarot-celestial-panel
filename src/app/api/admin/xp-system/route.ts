@@ -119,17 +119,30 @@ export async function POST(req:Request){
    return NextResponse.json({ok:true,tier:saved.data});
   }
   if(op==="save_mission"){
-   const id=b.id?String(b.id):undefined; const key=String(b.mission_key||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_");
-   const payload={...(id?{id}:{}),mission_key:key,name:String(b.name||"").trim(),description:String(b.description||"").trim(),source_action_key:String(b.source_action_key||"").trim(),target_count:Math.max(1,Math.round(num(b.target_count))),xp_reward:Math.max(0,Math.round(num(b.xp_reward))),period:["daily","weekly","monthly","lifetime"].includes(String(b.period))?String(b.period):"lifetime",active:b.active!==false,display_order:Math.max(1,Math.round(num(b.display_order)||1)),updated_at:new Date().toISOString()};
+   const id=b.id?String(b.id):undefined; const key=String(b.mission_key||b.name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+   const actionKey=String(b.source_action_key||"").trim();
+   const rule=await admin.from("worker_xp_rules").select("action_key").eq("action_key",actionKey).eq("enabled",true).maybeSingle(); if(rule.error)throw rule.error; if(!rule.data)throw new Error("MISSION_ACTION_NOT_AVAILABLE");
+   const old=id?await admin.from("worker_xp_missions").select("*").eq("id",id).maybeSingle():{data:null,error:null}; if(old.error)throw old.error;
+   const periods=["daily","weekly","monthly","lifetime","per_client","once"];
+   const payload={...(id?{id}:{}),mission_key:key,name:String(b.name||"").trim(),description:String(b.description||"").trim(),source_action_key:actionKey,target_count:Math.max(1,Math.round(num(b.target_count))),xp_reward:Math.max(0,Math.round(num(b.xp_reward))),period:periods.includes(String(b.period))?String(b.period):"lifetime",max_claims:b.max_claims==null?null:Math.max(1,Math.round(num(b.max_claims))),unique_clients:!!b.unique_clients,delivery_mode:String(b.delivery_mode)==="automatic"?"automatic":"manual",unit_label:String(b.unit_label||"").trim()||null,active:b.active!==false,archived_at:null,display_order:Math.max(1,Math.round(num(b.display_order)||1)),updated_at:new Date().toISOString()};
    if(!payload.mission_key||!payload.name||!payload.source_action_key) throw new Error("MISSION_FIELDS_REQUIRED");
    const saved=await admin.from("worker_xp_missions").upsert(payload,{onConflict:"mission_key"}).select("*").single(); if(saved.error) throw saved.error;
-   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:`mission:${key}`,new_value:saved.data});
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:id?"mission_update":"mission_create",target_key:`mission:${key}`,old_value:old.data||null,new_value:saved.data});
    return NextResponse.json({ok:true,mission:saved.data});
   }
-  if(op==="delete_mission"){
+  if(op==="archive_mission"){
    const id=String(b.id||""); if(!id) throw new Error("MISSION_REQUIRED");
-   const removed=await admin.from("worker_xp_missions").delete().eq("id",id).select("id").single(); if(removed.error) throw removed.error;
-   return NextResponse.json({ok:true});
+   const old=await admin.from("worker_xp_missions").select("*").eq("id",id).single(); if(old.error)throw old.error;
+   const archived=await admin.from("worker_xp_missions").update({active:false,archived_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq("id",id).select("*").single(); if(archived.error)throw archived.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"mission_archive",target_key:`mission:${old.data.mission_key}`,old_value:old.data,new_value:archived.data});
+   return NextResponse.json({ok:true,mission:archived.data,historical_claims_preserved:true});
+  }
+  if(op==="toggle_mission"){
+   const id=String(b.id||""); if(!id)throw new Error("MISSION_REQUIRED");
+   const old=await admin.from("worker_xp_missions").select("*").eq("id",id).single(); if(old.error)throw old.error;
+   const saved=await admin.from("worker_xp_missions").update({active:!!b.active,updated_at:new Date().toISOString()}).eq("id",id).select("*").single(); if(saved.error)throw saved.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"mission_status",target_key:`mission:${old.data.mission_key}`,old_value:old.data,new_value:saved.data});
+   return NextResponse.json({ok:true,mission:saved.data});
   }
   if(op==="set_mission_links"){
    const scope=String(b.scope||""); const missionId=String(b.mission_id||""); const keys=Array.isArray(b.keys)?b.keys:[]; if(!missionId||!["level","tier"].includes(scope)) throw new Error("INVALID_MISSION_LINK");
