@@ -80,6 +80,7 @@ export default function LoginPage() {
       if (message === "NO_WORKER") setErr("No se encontró tu usuario en trabajadores.");
       else if (message === "WORKER_DISABLED") setErr("Este usuario está dado de baja y no puede acceder al panel.");
       else if (message === "INVALID_CREDENTIALS") setErr("El email o la contraseña no son correctos.");
+      else if (message === "SUPABASE_TIMEOUT") setErr("La base de datos de Tarot Celestial no está respondiendo. El problema está en Supabase, no en tu contraseña.");
       else if (message === "AUTH_SERVICE_UNAVAILABLE") setErr("El servicio de acceso no está disponible. Inténtalo de nuevo en unos segundos.");
       else if (/NetworkError|Failed to fetch|fetch resource/i.test(message)) {
         setErr("No se pudo conectar con el servidor del panel. Recarga la página e inténtalo de nuevo.");

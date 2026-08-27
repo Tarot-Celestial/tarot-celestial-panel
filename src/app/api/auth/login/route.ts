@@ -3,6 +3,31 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 15;
+
+const SUPABASE_REQUEST_TIMEOUT_MS = 6000;
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), SUPABASE_REQUEST_TIMEOUT_MS);
+  const upstreamSignal = init?.signal;
+  const abortFromUpstream = () => controller.abort();
+  upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      const timeoutError = new Error("Supabase request timed out");
+      timeoutError.name = "SupabaseTimeoutError";
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+  }
+}
 
 function env(name: string): string {
   const value = process.env[name];
@@ -18,6 +43,15 @@ function json(body: Record<string, unknown>, status = 200) {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  const requestId = request.headers.get("x-vercel-id");
+  console.log(JSON.stringify({
+    level: "info",
+    message: "login_started",
+    route: "/api/auth/login",
+    requestId,
+  }));
+
   try {
     const body = await request.json().catch(() => null) as {
       email?: unknown;
@@ -29,6 +63,7 @@ export async function POST(request: Request) {
 
     const url = env("NEXT_PUBLIC_SUPABASE_URL");
     const authClient = createClient(url, env("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
+      global: { fetch: fetchWithTimeout },
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -36,11 +71,19 @@ export async function POST(request: Request) {
       },
     });
     const { data, error } = await authClient.auth.signInWithPassword({ email, password });
-    if (error || !data.user || !data.session) {
+    if (error) {
+      const authMessage = String(error.message || "");
+      if (error.status === 0 || /fetch|network|timeout|abort|connection/i.test(authMessage)) {
+        throw error;
+      }
+      return json({ ok: false, error: "INVALID_CREDENTIALS" }, 401);
+    }
+    if (!data.user || !data.session) {
       return json({ ok: false, error: "INVALID_CREDENTIALS" }, 401);
     }
 
     const admin = createClient(url, env("SUPABASE_SERVICE_ROLE_KEY"), {
+      global: { fetch: fetchWithTimeout },
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data: worker, error: workerError } = await admin
@@ -57,11 +100,32 @@ export async function POST(request: Request) {
       return json({ ok: false, error: "INVALID_ROLE" }, 403);
     }
 
+    console.log(JSON.stringify({
+      level: "info",
+      message: "login_completed",
+      route: "/api/auth/login",
+      requestId,
+      durationMs: Date.now() - startedAt,
+    }));
     return json({ ok: true, role, session: data.session });
   } catch (error) {
-    console.error("[api/auth/login] authentication failed", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return json({ ok: false, error: "AUTH_SERVICE_UNAVAILABLE" }, 503);
+    const message = error instanceof Error ? error.message : String(error);
+    const timedOut = error instanceof Error && (
+      error.name === "AbortError" ||
+      error.name === "SupabaseTimeoutError" ||
+      /fetch|network|timeout|abort|connection/i.test(error.message)
+    );
+    console.error(JSON.stringify({
+      level: "error",
+      message: timedOut ? "supabase_timeout" : "login_failed",
+      route: "/api/auth/login",
+      requestId,
+      error: message,
+      durationMs: Date.now() - startedAt,
+    }));
+    return json({
+      ok: false,
+      error: timedOut ? "SUPABASE_TIMEOUT" : "AUTH_SERVICE_UNAVAILABLE",
+    }, 503);
   }
 }
