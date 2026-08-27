@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 
 
@@ -490,6 +491,7 @@ function AdminPage() {
   }, [tab]);
 
   useEffect(() => {
+  let active = true;
   (async () => {
     try {
       const cachedRole = sessionStorage.getItem("tc_admin_role");
@@ -500,42 +502,25 @@ function AdminPage() {
         return;
       }
 
-      const { data } = await sb.auth.getSession();
-      const user = data.session?.user;
-
-      if (!user) {
-        window.location.href = "/login";
-        return;
-      }
-
-      const { data: worker, error } = await sb
-        .from("workers")
-        .select("role")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error || !worker) {
-        console.error("❌ No se encontró worker:", error);
-        window.location.href = "/login";
-        return;
-      }
-
-      const role = worker.role?.toLowerCase();
+      const identity = await loadPanelIdentity(sb);
+      if (!active) return;
+      const role = String(identity.role || "").toLowerCase();
 
       sessionStorage.setItem("tc_admin_role", role || "");
       sessionStorage.setItem("tc_admin_role_ts", String(Date.now()));
 
       if (role !== "admin") {
-        window.location.href =
-          role === "central" ? "/panel-central" : "/panel-tarotista";
+        window.location.replace(panelPathForRole(role));
         return;
       }
 
       setOk(true);
     } catch (e) {
       console.error("admin auth error", e);
+      if (active) redirectToLogin(e instanceof Error ? e.message : "session");
     }
   })();
+  return () => { active = false; };
 }, []);
 
   useEffect(() => {

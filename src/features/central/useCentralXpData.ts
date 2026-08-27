@@ -142,7 +142,7 @@ export type CentralXpData = {
   }>;
 };
 
-export function useCentralXpData(selectedDate?: string) {
+export function useCentralXpData(selectedDate?: string, enabled = true) {
   const [data, setData] = useState<CentralXpData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -153,6 +153,7 @@ export function useCentralXpData(selectedDate?: string) {
   const viewingToday = !selectedDate || selectedDate === madridToday();
 
   const load = useCallback(async (silent = false) => {
+    if (!enabled) return false;
     const requestId = ++requestRef.current;
     if (!silent) setBusy(true);
     setSyncStatus("syncing");
@@ -190,9 +191,10 @@ export function useCentralXpData(selectedDate?: string) {
     } finally {
       if (!silent) setBusy(false);
     }
-  }, [selectedDate]);
+  }, [enabled, selectedDate]);
 
   useEffect(() => {
+    if (!enabled) return;
     void load();
 
     const refreshTimer = window.setInterval(() => void load(true), 30000);
@@ -232,7 +234,7 @@ export function useCentralXpData(selectedDate?: string) {
       window.removeEventListener("tc-xp-recorded", onLocalXp);
       void sb.removeChannel(channel);
     };
-  }, [data?.worker.id, load, viewingToday]);
+  }, [data?.worker.id, enabled, load, viewingToday]);
 
   const claimLevelReward = useCallback(async (level: number, operationId: string) => {
     const { data: sessionData } = await sb.auth.getSession();

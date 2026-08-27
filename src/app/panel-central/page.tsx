@@ -26,6 +26,7 @@ import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import { useAttendance } from "@/hooks/useAttendance";
 import { useOps } from "@/hooks/useOps";
@@ -265,6 +266,7 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 }
 
 function CentralPage() {
+  const [ok, setOk] = useState(false);
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice();
   const searchParams = useSearchParams();
@@ -273,7 +275,7 @@ function CentralPage() {
   const todayKey = madridTodayKey();
   const requestedDate = String(searchParams?.get("date") || "");
   const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= todayKey ? requestedDate : todayKey;
-  const xpFeed = useCentralXpData(selectedDate);
+  const xpFeed = useCentralXpData(selectedDate, ok);
   const xpData = xpFeed.data;
   const xpProgress = xpData?.progress;
   const currentTierName = xpProgress?.tier?.name || "Sin categoría";
@@ -283,7 +285,6 @@ function CentralPage() {
     ? `${xpProgress.next_level}${nextTierName ? ` · ${nextTierName}` : ""}`
     : "máximo";
   const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
-  const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
   const [myClientsView, setMyClientsView] = useState<MyClientsView>("all");
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -565,21 +566,22 @@ function CentralPage() {
   }, [tab]);
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return (window.location.href = "/login");
-
-      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-      if (!me?.ok) return (window.location.href = "/login");
-
-      if (me.role !== "central") {
-        window.location.href = me.role === "admin" ? "/admin" : "/panel-tarotista";
-        return;
+      try {
+        const me = await loadPanelIdentity(sb);
+        if (!active) return;
+        if (String(me.role).toLowerCase() !== "central") {
+          window.location.replace(panelPathForRole(me.role));
+          return;
+        }
+        setOk(true);
+      } catch (error) {
+        if (!active) return;
+        redirectToLogin(error instanceof Error ? error.message : "session");
       }
-
-      setOk(true);
     })();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {

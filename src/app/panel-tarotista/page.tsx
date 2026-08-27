@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AppHeader from "@/components/AppHeader";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 
 const sb = supabaseBrowser();
 
@@ -311,22 +312,23 @@ export default function Tarotista() {
   }, []);
 
   useEffect(() => {
+    let active = true;
     (async () => {
-      const token = await getTokenWithRetry(350, 3);
-      if (!token) return (window.location.href = "/login");
-
-      const me = await fetch("/api/me", { headers: { Authorization: `Bearer ${token}` } }).then((r) => r.json());
-      if (!me?.ok) return (window.location.href = "/login");
-
-      if (me.role !== "tarotista") {
-        window.location.href = me.role === "admin" ? "/admin" : "/panel-central";
-        return;
+      try {
+        const me = await loadPanelIdentity(sb);
+        if (!active) return;
+        if (String(me.role).toLowerCase() !== "tarotista") {
+          window.location.replace(panelPathForRole(me.role));
+          return;
+        }
+        setMonth(getMonthFromUrl());
+        setOk(true);
+      } catch (error) {
+        if (!active) return;
+        redirectToLogin(error instanceof Error ? error.message : "session");
       }
-
-      const m = getMonthFromUrl();
-      setMonth(m);
-      setOk(true);
     })();
+    return () => { active = false; };
   }, []);
 
   async function loadAttendanceMe(silent = false) {
