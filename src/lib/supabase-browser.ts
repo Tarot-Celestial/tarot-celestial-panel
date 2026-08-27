@@ -8,6 +8,15 @@ declare global {
 
 let client: SupabaseClient | null = null;
 
+export function supabaseBrowserStorageKey(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_URL");
+
+  const projectRef = new URL(url).hostname.split(".")[0];
+  if (!projectRef) throw new Error("Invalid env NEXT_PUBLIC_SUPABASE_URL");
+  return `sb-${projectRef}-auth-token`;
+}
+
 export function supabaseBrowser(): SupabaseClient {
   if (client) return client;
   if (globalThis.__tcSupabaseBrowserClient) {
@@ -23,6 +32,7 @@ export function supabaseBrowser(): SupabaseClient {
 
   client = createClient(url, anon, {
     auth: {
+      storageKey: supabaseBrowserStorageKey(),
       // ✅ Mantén refresh y persistencia
       persistSession: true,
       autoRefreshToken: true,

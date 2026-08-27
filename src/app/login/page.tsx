@@ -2,10 +2,8 @@
 
 import Image from "next/image";
 import { FormEvent, useMemo, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabase-browser";
-import { loadPanelIdentityFromToken, panelPathForRole } from "@/lib/panel-access";
-
-const sb = supabaseBrowser();
+import { supabaseBrowserStorageKey } from "@/lib/supabase-browser";
+import { panelPathForRole } from "@/lib/panel-access";
 
 function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -43,21 +41,36 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      // 🔐 LOGIN SUPABASE
-      const { data, error } = await withTimeout(
-        sb.auth.signInWithPassword({ email: email.trim(), password }),
+      // La autenticación viaja por el mismo dominio del panel. Esto evita que
+      // bloqueadores, DNS o CORS del navegador corten la llamada directa a Auth.
+      const response = await withTimeout(
+        fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ email: email.trim(), password }),
+        }),
         15000
       );
 
-      if (error) throw error;
+      const result = await response.json().catch(() => null) as {
+        ok?: boolean;
+        error?: string;
+        role?: string;
+        session?: Record<string, unknown>;
+      } | null;
+      if (!response.ok || !result?.ok || !result.session) {
+        throw new Error(String(result?.error || "No se pudo validar el acceso"));
+      }
 
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Supabase no devolvió una sesión válida");
+      // Supabase lee esta sesión al cargar el panel de destino. La clave es la
+      // misma que usa el cliente oficial con persistSession.
+      window.localStorage.setItem(
+        supabaseBrowserStorageKey(),
+        JSON.stringify(result.session)
+      );
 
-      // El rol se resuelve en servidor con service role; el navegador no consulta
-      // directamente workers y por tanto no depende de sus políticas RLS.
-      const identity = await loadPanelIdentityFromToken(token);
-      const role = String(identity.role || "").toLowerCase();
+      const role = String(result.role || "").toLowerCase();
       if (!(["admin", "central", "tarotista"] as string[]).includes(role)) {
         throw new Error("Tu usuario no tiene un rol de panel válido");
       }
@@ -66,6 +79,11 @@ export default function LoginPage() {
       const message = String(e?.message || "Error de login");
       if (message === "NO_WORKER") setErr("No se encontró tu usuario en trabajadores.");
       else if (message === "WORKER_DISABLED") setErr("Este usuario está dado de baja y no puede acceder al panel.");
+      else if (message === "INVALID_CREDENTIALS") setErr("El email o la contraseña no son correctos.");
+      else if (message === "AUTH_SERVICE_UNAVAILABLE") setErr("El servicio de acceso no está disponible. Inténtalo de nuevo en unos segundos.");
+      else if (/NetworkError|Failed to fetch|fetch resource/i.test(message)) {
+        setErr("No se pudo conectar con el servidor del panel. Recarga la página e inténtalo de nuevo.");
+      }
       else setErr(message);
     } finally {
       setLoading(false);
