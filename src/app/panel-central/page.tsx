@@ -15,6 +15,7 @@ import CentralStorePanel from "@/features/central/CentralStorePanel";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
+import { useCentralFidelityData } from "@/features/central/useCentralFidelityData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import MyClientsList, { type MyClientsView } from "@/features/central/MyClientsList";
 import CentralNewClientModal from "@/features/central/CentralNewClientModal";
@@ -276,6 +277,7 @@ function CentralPage() {
   const requestedDate = String(searchParams?.get("date") || "");
   const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= todayKey ? requestedDate : todayKey;
   const xpFeed = useCentralXpData(selectedDate, ok);
+  const fidelityFeed = useCentralFidelityData(ok);
   const xpData = xpFeed.data;
   const xpProgress = xpData?.progress;
   const currentTierName = xpProgress?.tier?.name || "Sin categoría";
@@ -295,7 +297,8 @@ function CentralPage() {
   const centralProgress: CentralOperatorProgress = {
     totalXp: xpProgress?.total_xp || 0,
     activeStreakDays: Number(xpData?.stats.streak) || 0,
-    loyaltyIndex: 87,
+    loyaltyIndex: fidelityFeed.average,
+    loyaltyClientCount: fidelityFeed.clientCount,
   };
 
   const centralStats: CentralStatsData = {
@@ -1242,9 +1245,9 @@ function CentralPage() {
           <CentralProgressHeader
             progress={centralProgress}
             profile={centralProfile}
-            onSync={() => { void xpFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
-            syncStatus={xpFeed.syncStatus}
-            lastSyncedAt={xpFeed.lastSyncedAt}
+            onSync={() => { void xpFeed.load(); void fidelityFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
+            syncStatus={xpFeed.syncStatus === "error" || fidelityFeed.syncStatus === "error" ? "error" : xpFeed.syncStatus === "syncing" || fidelityFeed.syncStatus === "syncing" ? "syncing" : "synced"}
+            lastSyncedAt={fidelityFeed.lastSyncedAt || xpFeed.lastSyncedAt}
           />
           {tab === "central" && <CentralDateSelector value={selectedDate} today={todayKey} loading={xpFeed.busy} onChange={(date) => { const params=new URLSearchParams(searchParams?.toString()||""); params.set("tab","central"); params.set("date",date); router.push(`${pathname}?${params.toString()}`,{scroll:false}); }} />}
 

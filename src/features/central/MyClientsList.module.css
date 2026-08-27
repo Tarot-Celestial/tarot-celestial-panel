@@ -309,3 +309,4 @@
   white-space: nowrap;
 }
 .viewTabs{display:flex;gap:7px;overflow:auto}.viewTabs button{border:1px solid rgba(255,255,255,.1);border-radius:999px;background:rgba(255,255,255,.035);color:#a99fb5;padding:8px 13px;font-weight:800;cursor:pointer}.viewTabs .viewActive{color:#d5b4ff;border-color:rgba(157,103,255,.42);background:rgba(157,103,255,.14)}
+.fidelityBadge{width:fit-content;max-width:100%;padding:4px 7px;border:1px solid var(--fidelity-tone);border-radius:999px;color:var(--fidelity-tone)!important;background:color-mix(in srgb,var(--fidelity-tone) 9%,transparent);font-size:9px!important;font-weight:850;line-height:1.2;white-space:normal}.fidelity_very_low{--fidelity-tone:#df7a83}.fidelity_low{--fidelity-tone:#e5a06d}.fidelity_medium{--fidelity-tone:#dbc16e}.fidelity_high{--fidelity-tone:#6bcf9b}.fidelity_very_high{--fidelity-tone:#59d8c7}

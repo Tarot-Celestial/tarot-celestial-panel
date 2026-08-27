@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { loadClientFidelityBatch } from "@/lib/server/client-fidelity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -124,10 +125,12 @@ export async function GET(req: Request) {
 
     const total = filtered.length; const totalPages = Math.max(1, Math.ceil(total / pageSize)); const page = Math.min(requestedPage, totalPages);
     const pagedClients = filtered.slice((page - 1) * pageSize, page * pageSize); const pageIds = pagedClients.map((client: any) => String(client.id));
-    const [relations, tags, interactions] = await Promise.all([
+    const capturedAtByClient = new Map(pageIds.map((clientId) => [clientId, (assignmentByClient.get(clientId) as any)?.captured_at || null]));
+    const [relations, tags, interactions, fidelityByClient] = await Promise.all([
       selectInChunks(admin, "crm_cliente_etiquetas", "cliente_id,etiqueta_id", "cliente_id", pageIds),
       pageIds.length ? admin.from("crm_etiquetas").select("id,nombre,color").then(({ data, error }) => { if (error) throw error; return data || []; }) : Promise.resolve([]),
       selectInChunks(admin, "crm_interacciones", "cliente_id,created_at,cerrado_at,origen,estado", "cliente_id", pageIds),
+      loadClientFidelityBatch(admin, pagedClients, { capturedAtByClient }),
     ]);
 
     const tagById = new Map((tags || []).map((tag: any) => [String(tag.id), { id: String(tag.id), nombre: tag.nombre, color: tag.color || null }]));
@@ -147,7 +150,7 @@ export async function GET(req: Request) {
     const workerNames = new Map(workerRows.map((row: any) => [String(row.id), String(row.display_name || "").trim()]));
     const enriched = pagedClients.map((client: any) => {
       const assignment: any = assignmentByClient.get(String(client.id));
-      return { ...client, etiquetas: tagsByClient.get(String(client.id)) || [], estado_actual: existingStatus(client), telefonista_responsable: workerNames.get(String(assignment?.responsible_worker_id || "")) || "Responsable", captada_por: workerNames.get(String(assignment?.captured_by_worker_id || "")) || null, capture_status: assignment?.status || "pending", captured_at: assignment?.captured_at || null, assigned_at: assignment?.updated_at || null, ultima_conversacion: lastInteractionByClient.get(String(client.id)) || null };
+      return { ...client, etiquetas: tagsByClient.get(String(client.id)) || [], estado_actual: existingStatus(client), telefonista_responsable: workerNames.get(String(assignment?.responsible_worker_id || "")) || "Responsable", captada_por: workerNames.get(String(assignment?.captured_by_worker_id || "")) || null, capture_status: assignment?.status || "pending", captured_at: assignment?.captured_at || null, assigned_at: assignment?.updated_at || null, ultima_conversacion: lastInteractionByClient.get(String(client.id)) || null, fidelity: fidelityByClient.get(String(client.id)) || null };
     });
 
     return NextResponse.json({ ok: true, clientes: enriched, total, page, page_size: pageSize, total_pages: totalPages, negocio: brand, stats: { active: activeIds.size, followup: followupIds.size } });

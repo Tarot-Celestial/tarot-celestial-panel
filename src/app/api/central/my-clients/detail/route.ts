@@ -24,14 +24,15 @@ async function authenticatedWorker(req: Request) {
   const { data, error } = getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const admin = adminClient();
-  const { data: worker, error: workerError } = await admin
+  const { data: workers, error: workerError } = await admin
     .from("workers")
-    .select("id, role, display_name, user_id")
-    .eq("user_id", data.user.id)
-    .maybeSingle();
+    .select("id, role, display_name, user_id, is_active")
+    .eq("user_id", data.user.id);
   if (workerError) throw workerError;
+  const identities = (workers || []).filter((row: any) => row.is_active !== false);
+  const worker = identities.find((row: any) => row.role === "central") || identities.find((row: any) => row.role === "admin") || null;
   if (!worker || !["admin", "central"].includes(String(worker.role || ""))) return null;
-  return worker;
+  return { ...worker, identityIds: identities.map((row: any) => String(row.id)).filter(Boolean) };
 }
 
 function completedPayment(row: any) {
@@ -47,17 +48,22 @@ export async function GET(req: Request) {
     if (!id) return NextResponse.json({ ok: false, error: "ID_REQUIRED" }, { status: 400 });
 
     const admin = adminClient();
-    const [clientResult, paymentsResult, notesResult, interactionsResult, callsResult, followUpsResult] = await Promise.all([
+    const [clientResult, assignmentResult, paymentsResult, notesResult, interactionsResult, callsResult, followUpsResult] = await Promise.all([
       admin.from("crm_clientes").select("*").eq("id", id).maybeSingle(),
+      admin.from("crm_client_capture_assignments").select("client_id,business,captured_by_worker_id,responsible_worker_id,captured_at,status").eq("client_id", id).maybeSingle(),
       admin.from("crm_cliente_pagos").select("*").eq("cliente_id", id).order("created_at", { ascending: false }),
       admin.from("crm_client_notes").select("*").eq("cliente_id", id).order("is_pinned", { ascending: false }).order("created_at", { ascending: false }),
       admin.from("crm_interacciones").select("id, estado, notas_central, origen, tarotista_worker_id, created_at, cerrado_at").eq("cliente_id", id).order("created_at", { ascending: false }),
       admin.from("rendimiento_llamadas").select("id, fecha_hora, fecha, created_at, importe, forma_pago, resumen_codigo, cliente_compra_minutos, usa_7_free, usa_minutos, tipo_registro, guarda_minutos, minutos_guardados_free, minutos_guardados_normales, telefonista_worker_id, telefonista_nombre, tarotista_nombre").eq("cliente_id", id).order("fecha_hora", { ascending: false }),
-      admin.from("crm_client_followups").select("id, status, created_at").eq("client_id", id),
+      admin.from("crm_client_followups").select("id, status, result, completed_at, created_at").eq("client_id", id),
     ]);
 
     if (clientResult.error) throw clientResult.error;
+    if (assignmentResult.error) throw assignmentResult.error;
     if (!clientResult.data) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
+    if (worker.role === "central" && !new Set((worker.identityIds || []).map(String)).has(String(assignmentResult.data?.responsible_worker_id || ""))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
 
     const rankNowIso = new Date().toISOString();
     const rankSinceIso = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -74,21 +80,17 @@ export async function GET(req: Request) {
       rango_compras_30d: Number(rankWindow.compras || 0),
     };
 
-    const responsibleId = String(
-      clientResult.data.captured_by_worker_id ||
-      clientResult.data.responsable_worker_id ||
-      clientResult.data.assigned_worker_id ||
-      ""
-    ).trim();
+    const responsibleId = String(assignmentResult.data?.responsible_worker_id || "").trim();
+    const capturedById = String(assignmentResult.data?.captured_by_worker_id || clientResult.data.captured_by_worker_id || "").trim();
     let responsible: { id: string; display_name: string | null } | null = null;
-    if (responsibleId) {
-      const { data: responsibleWorker, error: responsibleError } = await admin
-        .from("workers")
-        .select("id, display_name")
-        .eq("id", responsibleId)
-        .maybeSingle();
-      if (responsibleError) throw responsibleError;
-      if (responsibleWorker) responsible = responsibleWorker;
+    let capturedBy: { id: string; display_name: string | null } | null = null;
+    const identityIds = Array.from(new Set([responsibleId, capturedById].filter(Boolean)));
+    if (identityIds.length) {
+      const { data: identityWorkers, error: identityError } = await admin.from("workers").select("id,display_name").in("id", identityIds);
+      if (identityError) throw identityError;
+      const identityMap = new Map((identityWorkers || []).map((row: any) => [String(row.id), row]));
+      responsible = responsibleId ? identityMap.get(responsibleId) || null : null;
+      capturedBy = capturedById ? identityMap.get(capturedById) || null : null;
     }
 
     const payments = (paymentsResult.data || []).filter(completedPayment);
@@ -123,18 +125,20 @@ export async function GET(req: Request) {
     const currentFreeMinutes = Math.max(0, Number(clientResult.data.minutos_free_pendientes || 0));
     const currentNormalMinutes = Math.max(0, Number(clientResult.data.minutos_normales_pendientes || 0));
     const totalSpent = payments.reduce((sum: number, payment: any) => sum + (Number(payment.importe) || 0), 0);
+    const linkedCallIds = new Set(payments.map((payment: any) => String(payment.source_rendimiento_id || "")).filter(Boolean));
     const fidelityPurchases = [
       ...payments,
       ...calls
-        .filter((row: any) => Boolean(row.cliente_compra_minutos) && (Number(row.importe) || 0) > 0)
+        .filter((row: any) => Boolean(row.cliente_compra_minutos) && (Number(row.importe) || 0) > 0 && !linkedCallIds.has(String(row.id)))
         .map((row: any) => ({ created_at: row.fecha_hora || row.fecha || null, importe: row.importe })),
     ];
     const fidelity = calculateClientFidelity({
-      capturedAt: clientResult.data.created_at || null,
+      capturedAt: assignmentResult.data?.captured_at || clientResult.data.captured_at || clientResult.data.created_at || null,
       purchases: fidelityPurchases,
       calls: calls.map((row: any) => ({ created_at: row.fecha_hora || row.fecha || null })),
-      interactions,
-      notes,
+      interactions: interactions.map((row: any) => ({ created_at: row.created_at || null, closed_at: row.cerrado_at || null, estado: row.estado || null })),
+      followUps: followUps.map((row: any) => ({ created_at: row.created_at || null, completed_at: row.completed_at || null, estado: row.status || null, result: row.result || null })),
+      rank: effectiveRank.effective,
     });
 
     const { data: availableTarotists, error: tarotistsError } = await admin
@@ -168,8 +172,8 @@ export async function GET(req: Request) {
       responsable: responsible,
       ultima_compra: latestPurchase,
       resumen: {
-        captured_at: clientResult.data.captured_at || clientResult.data.created_at || null,
-        captured_by: responsible,
+        captured_at: assignmentResult.data?.captured_at || clientResult.data.captured_at || clientResult.data.created_at || null,
+        captured_by: capturedBy,
         fidelity_index: fidelity.score,
         fidelity,
         favorite_tarotists: savedFavorites,

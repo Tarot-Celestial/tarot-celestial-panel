@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, RotateCw, Search, SlidersHorizontal, UserPlu
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
+import type { ClientFidelityResult } from "@/lib/server/client-fidelity";
 import styles from "./MyClientsList.module.css";
 
 type ClientTag = { id: string; nombre: string; color?: string | null };
@@ -21,6 +22,7 @@ type ClientRow = {
   captada_por?: string | null;
   capture_status?: string | null;
   ultima_conversacion?: { created_at?: string | null; cerrado_at?: string | null; origen?: string | null } | null;
+  fidelity?: ClientFidelityResult | null;
 };
 
 type SortKey = "recent" | "oldest" | "name";
@@ -83,6 +85,9 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_interacciones" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_capture_assignments" }, requestRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, requestRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, requestRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides" }, requestRefresh)
       .subscribe();
     const fallback = window.setInterval(requestRefresh, 15000);
     return () => { window.clearInterval(fallback); void client.removeChannel(channel); };
@@ -144,7 +149,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
           {!loading && !error && rows.length === 0 && <div className={styles.emptyState}><UsersRound size={28} aria-hidden="true" />{debouncedQuery ? "No se encontraron clientas para esta búsqueda." : "Todavía no tienes clientas asignadas."}</div>}
           {!loading && !error && rows.map((client) => (
             <button type="button" className={styles.clientRow} key={client.id} onClick={() => onOpenClient(client.id)} aria-label={`Abrir ficha de ${fullName(client)}`}>
-              <span className={styles.clientCell}><span className={styles.avatar} aria-hidden="true">{initialFor(client)}</span><span className={styles.clientCopy}><strong>{fullName(client)}</strong><small>{client.telefono || "Sin teléfono"}</small><span className={styles.captureOwner}>{client.captada_por ? (client.captada_por === client.telefonista_responsable ? `Captada y gestionada por: ${client.captada_por}` : `Captada por: ${client.captada_por} · Responsable: ${client.telefonista_responsable || "Pendiente"}`) : `Captación pendiente · Responsable: ${client.telefonista_responsable || "Pendiente"}`}</span>{Boolean(client.etiquetas?.length) && <span className={styles.tags}>{client.etiquetas!.slice(0, 3).map((tag) => <span key={tag.id} className={styles.tag}>{tag.nombre}</span>)}{client.etiquetas!.length > 3 && <span className={styles.tag}>+{client.etiquetas!.length - 3}</span>}</span>}</span></span>
+              <span className={styles.clientCell}><span className={styles.avatar} aria-hidden="true">{initialFor(client)}</span><span className={styles.clientCopy}><strong>{fullName(client)}</strong><small>{client.telefono || "Sin teléfono"}</small><span className={styles.captureOwner}>{client.captada_por ? (client.captada_por === client.telefonista_responsable ? `Captada y gestionada por: ${client.captada_por}` : `Captada por: ${client.captada_por} · Responsable: ${client.telefonista_responsable || "Pendiente"}`) : `Captación pendiente · Responsable: ${client.telefonista_responsable || "Pendiente"}`}</span>{client.fidelity && <span className={`${styles.fidelityBadge} ${styles[`fidelity_${client.fidelity.level}`]}`} title={client.fidelity.description}>{client.fidelity.maturity === "insufficient" ? "Datos insuficientes" : `${client.fidelity.score}% · ${client.fidelity.label}`}{client.fidelity.needsAttention ? " · Necesita atención" : ""}</span>}{Boolean(client.etiquetas?.length) && <span className={styles.tags}>{client.etiquetas!.slice(0, 3).map((tag) => <span key={tag.id} className={styles.tag}>{tag.nombre}</span>)}{client.etiquetas!.length > 3 && <span className={styles.tag}>+{client.etiquetas!.length - 3}</span>}</span>}</span></span>
               <span className={styles.ownerBadge}>{client.telefonista_responsable || "Celestial"}</span>
               <span className={styles.neutralText}>{formatLastConversation(client.ultima_conversacion?.created_at || client.ultima_conversacion?.cerrado_at)}</span>
               <span className={styles.statusBadge}>{client.estado_actual || "Sin clasificar"}</span>

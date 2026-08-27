@@ -7,7 +7,8 @@ import styles from "./CentralProgressHeader.module.css";
 export type CentralOperatorProgress = {
   totalXp: number;
   activeStreakDays: number;
-  loyaltyIndex: number;
+  loyaltyIndex: number | null;
+  loyaltyClientCount: number;
 };
 
 export type CentralOperatorProfile = {
@@ -74,13 +75,13 @@ export default function CentralProgressHeader({
           </div>
         </article>
 
-        <article className={styles.metric}>
+        <article className={styles.metric} title={progress.loyaltyClientCount ? `Promedio real de ${progress.loyaltyClientCount} clientas asignadas` : "La cartera actual todavía no tiene clientas asignadas"}>
           <div className={styles.metricIcon} aria-hidden="true">
             <ShieldCheck size={18} />
           </div>
           <div>
             <div className={styles.metricLabel}>ÍNDICE DE FIDELIZACIÓN</div>
-            <div className={styles.metricValue}>{progress.loyaltyIndex} %</div>
+            <div className={styles.metricValue}>{progress.loyaltyIndex == null ? "Sin datos" : `${progress.loyaltyIndex} %`}</div>
           </div>
         </article>
       </div>
