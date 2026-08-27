@@ -56,9 +56,12 @@ export async function GET(req: Request) {
     const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
     const admin = createClient(url, service, { auth: { persistSession: false } });
 
-    const worker = await getWorkerByUserIdCached(admin, uid, "id, display_name, role, team, email, user_id");
+    const worker = await getWorkerByUserIdCached(admin, uid, "id, display_name, role, team, email, user_id, is_active");
     if (!worker?.id) {
       return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
+    }
+    if (worker.is_active === false) {
+      return NextResponse.json({ ok: false, error: "WORKER_DISABLED" }, { status: 403 });
     }
 
     return NextResponse.json({

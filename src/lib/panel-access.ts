@@ -33,6 +33,10 @@ export async function loadPanelIdentity(client: SupabaseClient): Promise<PanelId
   const token = sessionResult.data.session?.access_token;
   if (!token) throw new Error("NO_AUTH");
 
+  return loadPanelIdentityFromToken(token);
+}
+
+export async function loadPanelIdentityFromToken(token: string): Promise<PanelIdentity> {
   const controller = new AbortController();
   const abortTimer = window.setTimeout(() => controller.abort(), 10000);
   try {
@@ -42,7 +46,9 @@ export async function loadPanelIdentity(client: SupabaseClient): Promise<PanelId
       signal: controller.signal,
     });
     const identity = (await response.json().catch(() => null)) as PanelIdentity | null;
-    if (!response.ok || !identity?.ok) throw new Error("INVALID_SESSION");
+    if (!response.ok || !identity?.ok) {
+      throw new Error(String(identity?.error || "INVALID_SESSION"));
+    }
     return identity;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {

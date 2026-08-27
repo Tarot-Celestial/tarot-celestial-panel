@@ -2,12 +2,23 @@
 
 import Image from "next/image";
 import { FormEvent, useMemo, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseBrowser } from "@/lib/supabase-browser";
+import { loadPanelIdentityFromToken, panelPathForRole } from "@/lib/panel-access";
 
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+const sb = supabaseBrowser();
+
+function withTimeout<T>(operation: PromiseLike<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(
+      () => reject(new Error("El acceso está tardando demasiado. Comprueba tu conexión y vuelve a intentarlo.")),
+      timeoutMs
+    );
+    Promise.resolve(operation).then(
+      (value) => { window.clearTimeout(timer); resolve(value); },
+      (error) => { window.clearTimeout(timer); reject(error); }
+    );
+  });
+}
 
 const TRUST_POINTS = [
   "Panel interno seguro",
@@ -33,55 +44,29 @@ export default function LoginPage() {
 
     try {
       // 🔐 LOGIN SUPABASE
-      const { data, error } = await sb.auth.signInWithPassword({
-        email: email.trim(),
-        password,
-      });
+      const { data, error } = await withTimeout(
+        sb.auth.signInWithPassword({ email: email.trim(), password }),
+        15000
+      );
 
       if (error) throw error;
 
-      const user = data.user;
-      if (!user) throw new Error("No user");
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Supabase no devolvió una sesión válida");
 
-      // 🔍 BUSCAR WORKER
-      const { data: worker, error: workerError } = await sb
-        .from("workers")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      console.log("USER ID:", user.id);
-      console.log("ROLE REAL:", worker?.role);
-      console.log("WORKER ERROR:", workerError);
-
-      if (!worker) {
-        setErr("No se encontró tu usuario en workers");
-        setLoading(false);
-        return;
+      // El rol se resuelve en servidor con service role; el navegador no consulta
+      // directamente workers y por tanto no depende de sus políticas RLS.
+      const identity = await loadPanelIdentityFromToken(token);
+      const role = String(identity.role || "").toLowerCase();
+      if (!(["admin", "central", "tarotista"] as string[]).includes(role)) {
+        throw new Error("Tu usuario no tiene un rol de panel válido");
       }
-
-      if (worker?.is_active === false) {
-        await sb.auth.signOut();
-        setErr("Este usuario está dado de baja y no puede acceder al panel.");
-        setLoading(false);
-        return;
-      }
-
-      // 🔥 NORMALIZAR ROLE
-      const role = worker?.role?.toLowerCase();
-
-      // 🚀 REDIRECCIÓN
-      if (role === "admin") {
-        window.location.href = "/admin";
-      } else if (role === "central") {
-        window.location.href = "/panel-central";
-      } else if (role === "tarotista") {
-        window.location.href = "/panel-tarotista";
-      } else {
-        alert("ROL DESCONOCIDO: " + role);
-      }
+      window.location.replace(panelPathForRole(role));
     } catch (e: any) {
-      setErr(e?.message || "Error de login");
+      const message = String(e?.message || "Error de login");
+      if (message === "NO_WORKER") setErr("No se encontró tu usuario en trabajadores.");
+      else if (message === "WORKER_DISABLED") setErr("Este usuario está dado de baja y no puede acceder al panel.");
+      else setErr(message);
     } finally {
       setLoading(false);
     }
