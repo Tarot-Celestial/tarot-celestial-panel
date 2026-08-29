@@ -244,9 +244,18 @@ export default function DockChatWidget({ open, onClose, onUnreadChange }: Props)
   }
 
   useEffect(() => {
-    void loadThreads(true);
-    const interval = window.setInterval(() => void loadThreads(true), 9000);
-    return () => window.clearInterval(interval);
+    const refresh = () => {
+      if (document.visibilityState === "visible") void loadThreads(true);
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [loadThreads]);
 
   useEffect(() => {

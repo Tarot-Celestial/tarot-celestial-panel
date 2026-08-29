@@ -178,9 +178,19 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
 
   useEffect(() => {
     if (!notifUserId) return;
-    loadNotifications();
-    const i = setInterval(loadNotifications, 30000);
-    return () => clearInterval(i);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void loadNotifications();
+    };
+    refreshVisible();
+    // Las inserciones ya llegan por Realtime; el sondeo queda como respaldo.
+    const i = window.setInterval(refreshVisible, 120000);
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(i);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [notifUserId, role]);
 
   useEffect(() => {

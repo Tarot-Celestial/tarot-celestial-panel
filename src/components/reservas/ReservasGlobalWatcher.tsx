@@ -36,6 +36,7 @@ function isClosedEstado(v: any) {
 export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }: { enabled?: boolean; onGoToReserva?: (reserva: any) => void; }) {
   const [popupReserva, setPopupReserva] = useState<any | null>(null);
   const avisadasRef = useRef<string[]>([]);
+  const tickInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -47,6 +48,8 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
     }
 
     async function tick() {
+      if (document.visibilityState === "hidden" || tickInFlightRef.current) return;
+      tickInFlightRef.current = true;
       try {
         if (popupReserva) return;
         const token = await getTokenOrLogin();
@@ -78,12 +81,28 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
             break;
           }
         }
-      } catch {}
+      } catch {
+        // El siguiente ciclo vuelve a intentarlo sin solapar peticiones.
+      } finally {
+        tickInFlightRef.current = false;
+      }
     }
 
-    tick();
-    const interval = window.setInterval(tick, 5000);
-    return () => { cancelled = true; window.clearInterval(interval); };
+    void tick();
+    // Realtime cubre los cambios normales; este sondeo es solo una red de
+    // seguridad. Antes hacía hasta 24 peticiones/minuto por cada panel abierto.
+    const interval = window.setInterval(() => void tick(), 30000);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [enabled, popupReserva]);
 
   if (!enabled || !popupReserva) return null;

@@ -50,7 +50,7 @@ export default function LoginPage() {
           cache: "no-store",
           body: JSON.stringify({ email: email.trim(), password }),
         }),
-        15000
+        30000
       );
 
       const result = await response.json().catch(() => null) as {

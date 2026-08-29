@@ -3,9 +3,12 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 15;
+export const maxDuration = 30;
 
-const SUPABASE_REQUEST_TIMEOUT_MS = 6000;
+// Auth puede tardar varios segundos durante una recuperación de PostgreSQL.
+// Se mantiene un límite para no dejar la función colgada, pero 6 s provocaba
+// falsos negativos incluso en peticiones que Supabase terminaba resolviendo.
+const SUPABASE_REQUEST_TIMEOUT_MS = 12000;
 
 async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit) {
   const controller = new AbortController();
@@ -73,7 +76,12 @@ export async function POST(request: Request) {
     const { data, error } = await authClient.auth.signInWithPassword({ email, password });
     if (error) {
       const authMessage = String(error.message || "");
-      if (error.status === 0 || /fetch|network|timeout|abort|connection/i.test(authMessage)) {
+      const authStatus = Number(error.status || 0);
+      if (
+        authStatus === 0 ||
+        authStatus >= 500 ||
+        /fetch|network|timeout|abort|connection|context canceled|deadline exceeded|starting up|shutting down/i.test(authMessage)
+      ) {
         throw error;
       }
       return json({ ok: false, error: "INVALID_CREDENTIALS" }, 401);

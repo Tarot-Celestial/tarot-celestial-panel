@@ -428,9 +428,18 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   }
 
   useEffect(() => {
-    loadDashboard(false);
-    const timer = setInterval(() => loadDashboard(true), 20000);
-    return () => clearInterval(timer);
+    void loadDashboard(false);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void loadDashboard(true);
+    };
+    // Cada actualización dispara siete endpoints. Realtime sigue refrescando
+    // los pagos; este intervalo queda como respaldo y no trabaja en pestañas ocultas.
+    const timer = window.setInterval(refreshVisible, 60000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [month, previousMonth, activeBrand]);
 
   useEffect(() => {
