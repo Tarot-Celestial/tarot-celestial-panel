@@ -13,6 +13,10 @@ function normalizeTeam(value: unknown) {
   return team;
 }
 
+function normalizeTarotistaLevel(value: unknown) {
+  return Number(value || 1) === 2 ? 2 : 1;
+}
+
 function getEnv(name: string) {
   const v = process.env[name];
   if (!v) throw new Error(`Missing env var: ${name}`);
@@ -79,7 +83,7 @@ export async function POST(req: Request) {
       const role = String(body?.role || "tarotista").trim();
       const team = normalizeTeam(body?.team);
       const email = String(body?.email || "").trim() || null;
-      const tarotista_level = Number(body?.tarotista_level || 1);
+      const tarotista_level = normalizeTarotistaLevel(body?.tarotista_level);
 
       if (!display_name) {
         return NextResponse.json({ ok: false, error: "DISPLAY_NAME_REQUIRED" }, { status: 400 });
@@ -96,7 +100,9 @@ export async function POST(req: Request) {
           role,
           team,
           email,
-          tarotista_level: role === "tarotista" ? (tarotista_level === 2 ? 2 : 1) : null,
+          // La columna es NOT NULL en producción. Para admin/central se conserva
+          // el valor técnico 1, aunque el nivel solo tenga significado para tarotistas.
+          tarotista_level: role === "tarotista" ? tarotista_level : 1,
           is_active: true,
         })
         .select("*")
@@ -131,10 +137,12 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: false, error: "INVALID_ROLE" }, { status: 400 });
         }
         patch.role = role;
-        patch.tarotista_level = role === "tarotista" ? (Number(body?.tarotista_level || 1) === 2 ? 2 : 1) : null;
+        // Nunca enviar null: workers.tarotista_level es NOT NULL.
+        patch.tarotista_level = role === "tarotista"
+          ? normalizeTarotistaLevel(body?.tarotista_level)
+          : 1;
       } else if (body?.tarotista_level !== undefined) {
-        const nextLevel = Number(body.tarotista_level || 1);
-        patch.tarotista_level = nextLevel === 2 ? 2 : 1;
+        patch.tarotista_level = normalizeTarotistaLevel(body.tarotista_level);
       }
 
       if (body?.team !== undefined) patch.team = normalizeTeam(body.team);
