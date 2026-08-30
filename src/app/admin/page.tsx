@@ -23,6 +23,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, UserCheck, Users, Trophy, Sparkles } from "lucide-react";
 import adminStyles from "./AdminPremium.module.css";
+import workersStyles from "./WorkersPanel.module.css";
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -432,6 +433,11 @@ function AdminPage() {
   const [staffWorkers, setStaffWorkers] = useState<any[]>([]);
   const [staffSchedules, setStaffSchedules] = useState<any[]>([]);
   const [staffQ, setStaffQ] = useState("");
+  const [staffRoleFilter, setStaffRoleFilter] = useState("all");
+  const [staffTeamFilter, setStaffTeamFilter] = useState("all");
+  const [staffStatusFilter, setStaffStatusFilter] = useState("all");
+  const [staffLiveStatus, setStaffLiveStatus] = useState<"connecting" | "live" | "fallback">("connecting");
+  const staffRealtimeTimerRef = useRef<number | null>(null);
 
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerRole, setNewWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
@@ -1302,6 +1308,12 @@ function AdminPage() {
   }
 
   async function toggleWorker(worker: any, enable: boolean) {
+    if (!enable) {
+      const confirmed = window.confirm(
+        `¿Dar de baja a ${worker?.display_name || "este trabajador"}?\n\nEsta persona dejará de aparecer en paneles operativos. Su histórico no se eliminará.`
+      );
+      if (!confirmed) return;
+    }
     try {
       setStaffMsg("");
       const token = await getTokenOrLogin();
@@ -1560,6 +1572,50 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
+  useEffect(() => {
+    if (!ok || tab !== "trabajadores") return;
+    let active = true;
+    setStaffLiveStatus("connecting");
+
+    const scheduleRefresh = () => {
+      if (staffRealtimeTimerRef.current !== null) window.clearTimeout(staffRealtimeTimerRef.current);
+      staffRealtimeTimerRef.current = window.setTimeout(() => {
+        staffRealtimeTimerRef.current = null;
+        if (active && document.visibilityState === "visible") void loadStaff(true);
+      }, 650);
+    };
+
+    const channel = sb
+      .channel("admin-workers-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_state" }, scheduleRefresh)
+      .subscribe((status: any) => {
+        if (!active) return;
+        if (status === "SUBSCRIBED") setStaffLiveStatus("live");
+        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setStaffLiveStatus("fallback");
+      });
+
+    const fallback = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadStaff(true);
+    }, 60_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void loadStaff(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      active = false;
+      if (staffRealtimeTimerRef.current !== null) {
+        window.clearTimeout(staffRealtimeTimerRef.current);
+        staffRealtimeTimerRef.current = null;
+      }
+      window.clearInterval(fallback);
+      document.removeEventListener("visibilitychange", onVisible);
+      void sb.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ok, tab]);
+
 
   useEffect(() => {
     if (!ok || tab !== "estadisticas") return;
@@ -1700,22 +1756,27 @@ function AdminPage() {
       .slice(0, 5);
   }, [statsMergedRows]);
 
-  const activeWorkers = useMemo(() => {
-    return (staffWorkers || []).filter((w: any) => w?.is_active !== false);
-  }, [staffWorkers]);
-
   const filteredWorkers = useMemo(() => {
     const q = staffQ.trim().toLowerCase();
-    const base = activeWorkers || [];
-    if (!q) return base;
-    return base.filter((w: any) => {
+    return (staffWorkers || []).filter((w: any) => {
       const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
-      return text.includes(q);
+      const team = String(w.team || "").trim().toLowerCase();
+      const roleMatches = staffRoleFilter === "all" || String(w.role || "") === staffRoleFilter;
+      const teamMatches = staffTeamFilter === "all" || (staffTeamFilter === "none" ? !team : team === staffTeamFilter);
+      const statusMatches = staffStatusFilter === "all" || (staffStatusFilter === "active" ? w.is_active !== false : w.is_active === false);
+      return (!q || text.includes(q)) && roleMatches && teamMatches && statusMatches;
     });
-  }, [activeWorkers, staffQ]);
+  }, [staffWorkers, staffQ, staffRoleFilter, staffTeamFilter, staffStatusFilter]);
+
+  const staffSummary = useMemo(() => ({
+    total: (staffWorkers || []).length,
+    active: (staffWorkers || []).filter((worker: any) => worker.is_active !== false).length,
+    connected: (staffWorkers || []).filter((worker: any) => worker.is_active !== false && worker.presence_status === "connected").length,
+    down: (staffWorkers || []).filter((worker: any) => worker.is_active === false).length,
+  }), [staffWorkers]);
 
   const staffOperationalWorkers = useMemo(() => {
-    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
+    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin" && w.is_active !== false);
   }, [filteredWorkers]);
 
   const schedulesByWorker = useMemo(() => {
@@ -2073,76 +2134,111 @@ function AdminPage() {
 
 
           {tab === "trabajadores" && (
-            <div style={{ display: "grid", gap: 16 }}>
-              <div className="tc-card">
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title">👥 Trabajadores</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Gestiona roles, nivel de tarotista, estado y contraseñas. {staffMsg ? "· " + staffMsg : ""}
-                    </div>
-                  </div>
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadStaff(false)} disabled={staffLoading}>
-                    {staffLoading ? "Cargando…" : "Recargar"}
+            <section className={workersStyles.panel}>
+              <header className={workersStyles.hero}>
+                <div>
+                  <div className={workersStyles.eyebrow}>Centro de plantilla</div>
+                  <h2>Trabajadores</h2>
+                  <p>Fuente única de personas, roles, equipos, accesos y estado operativo.</p>
+                </div>
+                <div className={workersStyles.heroActions}>
+                  <span className={`${workersStyles.live} ${staffLiveStatus === "live" ? "" : workersStyles.liveFallback}`}>
+                    <i /> {staffLiveStatus === "live" ? "En vivo" : staffLiveStatus === "connecting" ? "Conectando" : "Respaldo activo"}
+                  </span>
+                  <button className={workersStyles.buttonGold} onClick={() => void loadStaff(false)} disabled={staffLoading}>
+                    {staffLoading ? "Cargando…" : "↻ Recargar"}
                   </button>
                 </div>
-                <div className="tc-hr" />
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <input className="tc-input" value={staffQ} onChange={(e) => setStaffQ(e.target.value)} placeholder="Buscar por nombre, rol, equipo o email…" style={{ width: 340, maxWidth: "100%" }} />
-                  <div className="tc-sub">Total: <b>{filteredWorkers.length}</b></div>
-                </div>
-                <div className="tc-hr" />
-                <div style={{ overflowX: "auto" }}>
-                  <table className="tc-table">
-                    <thead><tr><th>Nombre</th><th>Rol</th><th>Nivel tarotista</th><th>Equipo</th><th>Email</th><th>Estado</th><th>Acciones</th></tr></thead>
+              </header>
+
+              {staffMsg ? <div className={workersStyles.message}>{staffMsg}</div> : null}
+
+              <div className={workersStyles.summary}>
+                <article><strong>{staffSummary.total}</strong><span>Total registrados</span></article>
+                <article><strong>{staffSummary.active}</strong><span>Activos</span></article>
+                <article><strong>{staffSummary.connected}</strong><span>Conectados ahora</span></article>
+                <article><strong>{staffSummary.down}</strong><span>Dados de baja</span></article>
+              </div>
+
+              <div className={workersStyles.filters}>
+                <input value={staffQ} onChange={(event) => setStaffQ(event.target.value)} placeholder="Buscar nombre, email, rol o equipo" aria-label="Buscar trabajadores" />
+                <select value={staffRoleFilter} onChange={(event) => setStaffRoleFilter(event.target.value)} aria-label="Filtrar por rol">
+                  <option value="all">Todos los roles</option><option value="admin">Admin</option><option value="central">Central</option><option value="tarotista">Tarotista</option>
+                </select>
+                <select value={staffTeamFilter} onChange={(event) => setStaffTeamFilter(event.target.value)} aria-label="Filtrar por equipo">
+                  <option value="all">Todos los equipos</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option><option value="none">Sin equipo</option>
+                </select>
+                <select value={staffStatusFilter} onChange={(event) => setStaffStatusFilter(event.target.value)} aria-label="Filtrar por estado">
+                  <option value="all">Todos los estados</option><option value="active">Activo</option><option value="down">Baja</option>
+                </select>
+              </div>
+
+              <div className={workersStyles.tableCard}>
+                <div className={workersStyles.tableScroll}>
+                  <table className={workersStyles.table}>
+                    <thead><tr><th>Persona</th><th>Rol / nivel</th><th>Equipo</th><th>Estado</th><th>Presencia</th><th>Acciones</th></tr></thead>
                     <tbody>
-                      {(filteredWorkers || []).map((w: any) => (
-                        <tr key={w.id}>
-                          <td><b>{w.display_name || "—"}</b></td>
-                          <td>{w.role || "—"}</td>
-                          <td>{String(w.role || "") === "tarotista" ? <span className="tc-chip">Nivel {Number(w.tarotista_level || 1) === 2 ? "2 · sin euros" : "1 · completo"}</span> : <span className="tc-muted">—</span>}</td>
-                          <td>{w.team || "—"}</td>
-                          <td>{w.email || "—"}</td>
-                          <td><span className="tc-chip">{w.is_active ? "Activo" : "Inactivo"}</span></td>
-                          <td><div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                            <button className="tc-btn" onClick={() => startEditWorker(w)}>Editar</button>
-                            <button className="tc-btn tc-btn-gold" onClick={() => setPasswordWorkerId(String(w.id || ""))}>Contraseña</button>
-                            <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>Dar de baja</button>
-                          </div></td>
-                        </tr>
-                      ))}
-                      {(!filteredWorkers || filteredWorkers.length === 0) && <tr><td colSpan={7} className="tc-muted">No hay trabajadores.</td></tr>}
+                      {(filteredWorkers || []).map((worker: any) => {
+                        const team = String(worker.team || "").toLowerCase();
+                        const presence = String(worker.presence_status || "disconnected");
+                        const teamClass = team === "fuego" ? workersStyles.teamFuego : team === "agua" ? workersStyles.teamAgua : team === "tierra" ? workersStyles.teamTierra : "";
+                        const presenceClass = presence === "connected" ? workersStyles.presenceConnected : presence === "break" || presence === "bathroom" ? workersStyles.presenceBreak : workersStyles.presenceDisconnected;
+                        return (
+                          <tr key={worker.id}>
+                            <td><div className={workersStyles.identity}><div className={workersStyles.avatar}>{String(worker.display_name || "T").charAt(0).toUpperCase()}</div><div><strong>{worker.display_name || "—"}</strong><small>{worker.email || "Sin email"} · {worker.auth_linked ? "Auth vinculado" : "Sin usuario Auth"}</small></div></div></td>
+                            <td><span className={workersStyles.role}>{worker.role || "—"}{worker.role === "tarotista" ? ` · Nv. ${Number(worker.tarotista_level || 1)}` : ""}</span></td>
+                            <td><span className={`${workersStyles.team} ${teamClass}`}>{team === "fuego" ? "🔥 Fuego" : team === "agua" ? "💧 Agua" : team === "tierra" ? "🌍 Tierra" : "Sin equipo"}</span></td>
+                            <td><span className={`${workersStyles.status} ${worker.is_active !== false ? workersStyles.statusActive : workersStyles.statusDown}`}>{worker.is_active !== false ? "Activo" : "Baja"}</span></td>
+                            <td><span className={`${workersStyles.presence} ${presenceClass}`}><i />{presence === "connected" ? "Conectado" : presence === "bathroom" ? "Baño" : presence === "break" ? "Descanso" : "Desconectado"}</span></td>
+                            <td><div className={workersStyles.actions}>
+                              <button className={workersStyles.button} onClick={() => startEditWorker(worker)}>Editar</button>
+                              <button className={workersStyles.buttonGold} onClick={() => setPasswordWorkerId(String(worker.id || ""))}>Contraseña</button>
+                              {worker.is_active !== false ? <button className={workersStyles.buttonDanger} onClick={() => void toggleWorker(worker, false)}>Dar de baja</button> : <button className={workersStyles.button} onClick={() => void toggleWorker(worker, true)}>Reactivar</button>}
+                            </div></td>
+                          </tr>
+                        );
+                      })}
+                      {filteredWorkers.length === 0 ? <tr><td colSpan={6} className={workersStyles.empty}>{staffLoading ? "Cargando trabajadores…" : staffMsg.startsWith("❌") ? "No se pudo cargar la plantilla. Pulsa Recargar para volver a intentarlo." : "No hay trabajadores para estos filtros."}</td></tr> : null}
                     </tbody>
                   </table>
                 </div>
               </div>
-              <div className="tc-grid-2">
-                <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>➕ Crear trabajador</div><div className="tc-hr" />
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <input className="tc-input" value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="Nombre" />
-                    <select className="tc-select" value={newWorkerRole} onChange={(e) => setNewWorkerRole(e.target.value as any)}><option value="tarotista">tarotista</option><option value="central">central</option><option value="admin">admin</option></select>
-                    {newWorkerRole === "tarotista" && <select className="tc-select" value={newWorkerLevel} onChange={(e) => setNewWorkerLevel(Number(e.target.value) === 2 ? 2 : 1)}><option value={1}>Nivel 1 · ve ganancias y euros</option><option value={2}>Nivel 2 · solo minutos y rankings</option></select>}
-                    <input className="tc-input" value={newWorkerTeam} onChange={(e) => setNewWorkerTeam(e.target.value)} placeholder="Equipo" />
-                    <input className="tc-input" value={newWorkerEmail} onChange={(e) => setNewWorkerEmail(e.target.value)} placeholder="Email" />
-                    <button className="tc-btn tc-btn-ok" onClick={createWorker}>Crear trabajador</button>
-                  </div></div>
-                <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>🔐 Cambiar contraseña</div><div className="tc-hr" />
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <select className="tc-select" value={passwordWorkerId} onChange={(e) => setPasswordWorkerId(e.target.value)}><option value="">Selecciona trabajador</option>{(filteredWorkers || []).map((w: any) => <option key={w.id} value={w.id}>{w.display_name || w.email || w.id}</option>)}</select>
-                    <input className="tc-input" type="password" value={passwordValue} onChange={(e) => setPasswordValue(e.target.value)} placeholder="Nueva contraseña · mínimo 6 caracteres" />
-                    <button className="tc-btn tc-btn-gold" onClick={changeWorkerPassword}>Actualizar contraseña</button>
-                    <div className="tc-sub">Necesita que el trabajador tenga <b>user_id</b> asociado en Supabase Auth.</div>
-                  </div></div>
+
+              <div className={workersStyles.forms}>
+                <div className={workersStyles.formCard}>
+                  <h3>➕ Crear trabajador</h3><p>La ficha no crea automáticamente un usuario de Supabase Auth.</p>
+                  <div className={workersStyles.formGrid}>
+                    <input value={newWorkerName} onChange={(event) => setNewWorkerName(event.target.value)} placeholder="Nombre" />
+                    <select value={newWorkerRole} onChange={(event) => setNewWorkerRole(event.target.value as any)}><option value="tarotista">Tarotista</option><option value="central">Central</option><option value="admin">Admin</option></select>
+                    {newWorkerRole === "tarotista" ? <select value={newWorkerLevel} onChange={(event) => setNewWorkerLevel(Number(event.target.value) === 2 ? 2 : 1)}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select> : <div />}
+                    <select value={newWorkerTeam} onChange={(event) => setNewWorkerTeam(event.target.value)}><option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option></select>
+                    <input className={workersStyles.wide} value={newWorkerEmail} onChange={(event) => setNewWorkerEmail(event.target.value)} placeholder="Email (opcional)" />
+                  </div>
+                  <div className={workersStyles.formActions}><button className={workersStyles.buttonGold} onClick={() => void createWorker()}>Crear trabajador</button></div>
+                </div>
+
+                <div className={workersStyles.formCard}>
+                  <h3>🔐 Cambiar contraseña</h3><p>Disponible únicamente cuando la ficha tiene un usuario Auth vinculado.</p>
+                  <div className={workersStyles.formGrid}>
+                    <select className={workersStyles.wide} value={passwordWorkerId} onChange={(event) => setPasswordWorkerId(event.target.value)}><option value="">Selecciona trabajador</option>{(staffWorkers || []).map((worker: any) => <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>)}</select>
+                    <input className={workersStyles.wide} type="password" value={passwordValue} onChange={(event) => setPasswordValue(event.target.value)} placeholder="Nueva contraseña · mínimo 6 caracteres" />
+                  </div>
+                  <div className={workersStyles.formActions}><button className={workersStyles.buttonGold} onClick={() => void changeWorkerPassword()}>Actualizar contraseña</button></div>
+                </div>
               </div>
-              {editingWorkerId ? <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>✏️ Editar trabajador</div><div className="tc-hr" />
-                <div className="tc-grid-4">
-                  <input className="tc-input" value={editingWorkerName} onChange={(e) => setEditingWorkerName(e.target.value)} placeholder="Nombre" />
-                  <select className="tc-select" value={editingWorkerRole} onChange={(e) => setEditingWorkerRole(e.target.value as any)}><option value="tarotista">tarotista</option><option value="central">central</option><option value="admin">admin</option></select>
-                  <select className="tc-select" value={editingWorkerLevel} onChange={(e) => setEditingWorkerLevel(Number(e.target.value) === 2 ? 2 : 1)} disabled={editingWorkerRole !== "tarotista"}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select>
-                  <input className="tc-input" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} placeholder="Equipo" />
-                  <input className="tc-input" value={editingWorkerEmail} onChange={(e) => setEditingWorkerEmail(e.target.value)} placeholder="Email" />
-                </div><div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}><button className="tc-btn" onClick={cancelEditWorker}>Cancelar</button><button className="tc-btn tc-btn-ok" onClick={updateWorker}>Guardar cambios</button></div></div> : null}
-            </div>
+
+              {editingWorkerId ? <div className={workersStyles.formCard}>
+                <h3>✏️ Editar trabajador</h3><p>Los cambios de equipo se sincronizan con el HUD sin reescribir llamadas históricas.</p>
+                <div className={workersStyles.formGrid}>
+                  <input value={editingWorkerName} onChange={(event) => setEditingWorkerName(event.target.value)} placeholder="Nombre" />
+                  <select value={editingWorkerRole} onChange={(event) => setEditingWorkerRole(event.target.value as any)}><option value="tarotista">Tarotista</option><option value="central">Central</option><option value="admin">Admin</option></select>
+                  <select value={editingWorkerLevel} onChange={(event) => setEditingWorkerLevel(Number(event.target.value) === 2 ? 2 : 1)} disabled={editingWorkerRole !== "tarotista"}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select>
+                  <select value={editingWorkerTeam} onChange={(event) => setEditingWorkerTeam(event.target.value)}><option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option></select>
+                  <input className={workersStyles.wide} value={editingWorkerEmail} onChange={(event) => setEditingWorkerEmail(event.target.value)} placeholder="Email" />
+                </div>
+                <div className={workersStyles.formActions}><button className={workersStyles.button} onClick={cancelEditWorker}>Cancelar</button><button className={workersStyles.buttonGold} onClick={() => void updateWorker()}>Guardar cambios</button></div>
+              </div> : null}
+            </section>
           )}
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
@@ -2427,12 +2523,9 @@ function AdminPage() {
                         </div>
                         <div>
                           <div className="tc-sub">Equipo</div>
-                          <input
-                            className="tc-input"
-                            value={editingWorkerTeam}
-                            onChange={(e) => setEditingWorkerTeam(e.target.value)}
-                            style={{ width: "100%", marginTop: 6 }}
-                          />
+                          <select className="tc-select" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} style={{ width: "100%", marginTop: 6 }}>
+                            <option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option>
+                          </select>
                         </div>
                         <div>
                           <div className="tc-sub">Email</div>
@@ -2482,12 +2575,9 @@ function AdminPage() {
                         <option value="central">central</option>
                         <option value="admin">admin</option>
                       </select>
-                      <input
-                        className="tc-input"
-                        value={newWorkerTeam}
-                        onChange={(e) => setNewWorkerTeam(e.target.value)}
-                        placeholder="Equipo (opcional)"
-                      />
+                      <select className="tc-select" value={newWorkerTeam} onChange={(e) => setNewWorkerTeam(e.target.value)}>
+                        <option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option>
+                      </select>
                       <input
                         className="tc-input"
                         value={newWorkerEmail}

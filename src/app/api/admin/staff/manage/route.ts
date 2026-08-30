@@ -4,6 +4,14 @@ import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { clearWorkerCache } from "@/lib/server/worker-cache";
 
 export const runtime = "nodejs";
+const VALID_TEAMS = new Set(["fuego", "agua", "tierra"]);
+
+function normalizeTeam(value: unknown) {
+  const team = String(value || "").trim().toLowerCase();
+  if (!team) return null;
+  if (!VALID_TEAMS.has(team)) throw new Error("INVALID_TEAM");
+  return team;
+}
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -69,7 +77,7 @@ export async function POST(req: Request) {
     if (action === "create_worker") {
       const display_name = String(body?.display_name || "").trim();
       const role = String(body?.role || "tarotista").trim();
-      const team = String(body?.team || "").trim() || null;
+      const team = normalizeTeam(body?.team);
       const email = String(body?.email || "").trim() || null;
       const tarotista_level = Number(body?.tarotista_level || 1);
 
@@ -95,6 +103,8 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (error) throw error;
+
+      clearWorkerCache();
 
       return NextResponse.json({ ok: true, worker: data });
     }
@@ -127,7 +137,7 @@ export async function POST(req: Request) {
         patch.tarotista_level = nextLevel === 2 ? 2 : 1;
       }
 
-      if (body?.team !== undefined) patch.team = String(body.team || "").trim() || null;
+      if (body?.team !== undefined) patch.team = normalizeTeam(body.team);
       if (body?.email !== undefined) patch.email = String(body.email || "").trim() || null;
       if (body?.is_active !== undefined) patch.is_active = !!body.is_active;
 
@@ -139,6 +149,8 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (error) throw error;
+
+      clearWorkerCache();
 
       return NextResponse.json({ ok: true, worker: data });
     }
@@ -221,9 +233,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
   } catch (e: any) {
+    const message = e?.message || "ERR";
     return NextResponse.json(
-      { ok: false, error: e?.message || "ERR" },
-      { status: 500 }
+      { ok: false, error: message },
+      { status: message === "INVALID_TEAM" ? 400 : 500 }
     );
   }
 }

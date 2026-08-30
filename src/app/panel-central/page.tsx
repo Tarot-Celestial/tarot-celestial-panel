@@ -30,7 +30,6 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 import { useAttendance } from "@/hooks/useAttendance";
-import { useOps } from "@/hooks/useOps";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
@@ -40,6 +39,7 @@ import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
+import CentralTeamLivePanel from "@/features/central/CentralTeamLivePanel";
 import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -133,28 +133,6 @@ async function safeJson(res: Response) {
   }
 }
 
-// Attendance UI helpers
-function attLabel(online: boolean, status: string) {
-  if (!online) return "⚪ Offline";
-  if (status === "break") return "🟡 Descanso";
-  if (status === "bathroom") return "🟣 Baño";
-  return "🟢 Online";
-}
-function attStyle(online: boolean, status: string) {
-  if (!online) return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
-  if (status === "break") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
-  if (status === "bathroom") return { background: "rgba(181,156,255,0.10)", border: "1px solid rgba(181,156,255,0.25)" };
-  return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
-}
-
-function secondsAgo(ts: string | null) {
-  if (!ts) return null;
-  const t = new Date(ts).getTime();
-  if (!Number.isFinite(t)) return null;
-  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
-  return s;
-}
-
 function statusLabel(s: string) {
   switch (s) {
     case "pending":
@@ -186,27 +164,6 @@ const OUTBOUND_ACTIONS: { key: string; label: string }[] = [
   { key: "wrong_number", label: "❌ Número mal" },
   { key: "done", label: "✅ Done" },
 ];
-
-type PresenceRow = {
-  worker_id: string;
-  display_name: string;
-  team_key: string | null;
-  online: boolean;
-  status: string;
-  last_event_at: string | null;
-  last_seen_seconds: number | null;
-};
-
-type ExpectedRow = {
-  worker_id: string;
-  display_name: string;
-  start_time?: string | null;
-  end_time?: string | null;
-  timezone?: string | null;
-  schedule_id?: string | null;
-  online?: boolean;
-  status?: string | null;
-};
 
 // --- CHAT TYPES (flexibles para tu backend) ---
 type ChatThread = {
@@ -501,22 +458,9 @@ function CentralPage() {
   const [attLoading, setAttLoading] = useState(false);
   const [attMsg, setAttMsg] = useState("");
   const attendance = useAttendance();
-  const ops = useOps();
   const attOnline = attendance.online;
   const attStatus = attendance.status;
   const attBeatRef = useRef<any>(null);
-
-  // ✅ presencias tarotistas (migrado a OpsProvider)
-  const presLoading = ops.presences.loading;
-  const presMsg = ops.presences.error ? `❌ ${ops.presences.error}` : "";
-  const presences = ops.presences.rows as PresenceRow[];
-  const [presQ, setPresQ] = useState("");
-
-  // ✅ deberían estar conectadas (migrado a OpsProvider)
-  const expLoading = ops.expected.loading;
-  const expMsg = ops.expected.error ? `❌ ${ops.expected.error}` : "";
-  const expected = ops.expected.rows as ExpectedRow[];
-  const [expQ, setExpQ] = useState("");
 
   // ✅ outbound calls (central)
   const [obDate, setObDate] = useState(dayKeyNow());
@@ -854,16 +798,6 @@ function CentralPage() {
     }
   }
 
-  async function loadPresences(silent = false) {
-    ops.refreshPresences();
-  }
-
-
-  async function loadExpected(silent = false) {
-    ops.refreshExpected();
-  }
-
-
   async function loadOutboundPending(silent = false) {
     if (obLoading && !silent) return;
     if (!silent) {
@@ -1097,11 +1031,6 @@ function CentralPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, batchIdsKey]);
 
-  const team = rank?.teams || {};
-  const fuego = team?.fuego || {};
-  const agua = team?.agua || {};
-  const winner = team?.winner || "—";
-
   const topCaptadas = rank?.top?.captadas || [];
   const topCliente = rank?.top?.cliente || [];
   const topRepite = rank?.top?.repite || [];
@@ -1129,26 +1058,6 @@ function CentralPage() {
     const notStarted = rows.filter((r) => r.status === "not_started").length;
     return { total, completed, inProg, notStarted };
   }, [clRows]);
-
-  const presencesFiltered = useMemo(() => {
-    const qq = presQ.trim().toLowerCase();
-    let rows = presences || [];
-    rows = rows.filter((r) => !!r.online);
-    if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-    return rows.slice().sort((a, b) => {
-      const as = a.last_seen_seconds ?? 999999;
-      const bs = b.last_seen_seconds ?? 999999;
-      if (as !== bs) return as - bs;
-      return String(a.display_name).localeCompare(String(b.display_name));
-    });
-  }, [presences, presQ]);
-
-  const expectedFiltered = useMemo(() => {
-    const qq = expQ.trim().toLowerCase();
-    let rows = expected || [];
-    if (qq) rows = rows.filter((r) => String(r.display_name || "").toLowerCase().includes(qq));
-    return rows.slice().sort((a, b) => String(a.display_name).localeCompare(String(b.display_name)));
-  }, [expected, expQ]);
 
   const threadsFiltered = useMemo(() => {
     const qq = threadQ.trim().toLowerCase();
@@ -1674,197 +1583,7 @@ function CentralPage() {
             </div>
           )}
 
-          {/* ✅ PRESENCIAS */}
-          {tab === "equipo" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">🟢 Presencias Tarotistas</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Solo se muestran conectadas / descanso / baño · Auto-refresh cada 20s
-                    {presMsg ? ` · ${presMsg}` : ""}
-                  </div>
-                </div>
-
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    className="tc-input"
-                    value={presQ}
-                    onChange={(e) => setPresQ(e.target.value)}
-                    placeholder="Buscar tarotista…"
-                    style={{ width: 240, maxWidth: "100%" }}
-                  />
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadPresences(false)} disabled={presLoading}>
-                    {presLoading ? "Cargando…" : "Actualizar presencias"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(presencesFiltered || []).map((r) => (
-                  <div
-                    key={r.worker_id}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(255,255,255,0.03)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ minWidth: 240 }}>
-                      <div style={{ fontWeight: 900 }}>
-                        {r.display_name}{" "}
-                        {r.team_key ? <span className="tc-chip" style={{ marginLeft: 8 }}>{r.team_key}</span> : null}
-                      </div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Última señal:{" "}
-                        <b>
-                          {r.last_seen_seconds == null
-                            ? "—"
-                            : r.last_seen_seconds < 60
-                            ? `hace ${r.last_seen_seconds}s`
-                            : `hace ${Math.round(r.last_seen_seconds / 60)}m`}
-                        </b>
-                      </div>
-                    </div>
-
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                      <span
-                        className="tc-chip"
-                        style={{
-                          ...attStyle(r.online, r.status),
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          fontSize: 12,
-                        }}
-                        title={r.status}
-                      >
-                        {attLabel(r.online, r.status)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-
-                {(!presencesFiltered || presencesFiltered.length === 0) && <div className="tc-sub">No hay tarotistas conectadas ahora mismo.</div>}
-              </div>
-            </div>
-          )}
-
-          {/* ✅ DEBERÍAN */}
-          {tab === "equipo" && (
-            <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title">⏰ Deberían estar conectadas ahora</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Según horarios activos (incluye turnos nocturnos)
-                    {expMsg ? ` · ${expMsg}` : ""}
-                  </div>
-                </div>
-
-                <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    className="tc-input"
-                    value={expQ}
-                    onChange={(e) => setExpQ(e.target.value)}
-                    placeholder="Buscar…"
-                    style={{ width: 240, maxWidth: "100%" }}
-                  />
-                  <button className="tc-btn tc-btn-gold" onClick={() => loadExpected(false)} disabled={expLoading}>
-                    {expLoading ? "Cargando…" : "Actualizar"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="tc-hr" />
-
-              <div style={{ display: "grid", gap: 10 }}>
-                {(expectedFiltered || []).map((r) => (
-                  <div
-                    key={`${r.worker_id}-${r.schedule_id || "x"}`}
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(255,255,255,0.03)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ minWidth: 240 }}>
-                      <div style={{ fontWeight: 900 }}>{r.display_name}</div>
-                      <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Turno: <b>{r.start_time || "—"}</b> → <b>{r.end_time || "—"}</b>
-                      </div>
-                    </div>
-
-                    {typeof r.online === "boolean" ? (
-                      <span
-                        className="tc-chip"
-                        style={{
-                          ...attStyle(!!r.online, String(r.status || (r.online ? "working" : "offline"))),
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          fontSize: 12,
-                        }}
-                      >
-                        {attLabel(!!r.online, String(r.status || (r.online ? "working" : "offline")))}
-                      </span>
-                    ) : (
-                      <span className="tc-chip">En turno</span>
-                    )}
-                  </div>
-                ))}
-
-                {(!expectedFiltered || expectedFiltered.length === 0) && <div className="tc-sub">No hay nadie en turno ahora mismo.</div>}
-              </div>
-            </div>
-          )}
-
-          {/* Competición */}
-          {tab === "equipo" && (
-            <div className="tc-card">
-              <div className="tc-title">🔥💧 Competición por equipos</div>
-              <div className="tc-sub" style={{ marginTop: 6 }}>
-                Ganador: <b>{winner}</b> · Bono central ganadora: <b>{eur(40)}</b>
-                {rankMsg ? ` · ${rankMsg}` : ""}
-              </div>
-
-              <div className="tc-hr" />
-
-              <div className="tc-grid-2">
-                <TeamBar
-                  title="🔥 Fuego (Yami)"
-                  score={Number(fuego?.score || 0)}
-                  pct={Math.round((Number(fuego?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
-                  aCliente={pctAny(fuego?.avg_cliente ?? 0)}
-                  aRepite={pctAny(fuego?.avg_repite ?? 0)}
-                  isWinner={winner === "fuego"}
-                />
-                <TeamBar
-                  title="💧 Agua (Maria)"
-                  score={Number(agua?.score || 0)}
-                  pct={Math.round((Number(agua?.score || 0) / Math.max(Number(fuego?.score || 0), Number(agua?.score || 0), 1)) * 100)}
-                  aCliente={pctAny(agua?.avg_cliente ?? 0)}
-                  aRepite={pctAny(agua?.avg_repite ?? 0)}
-                  isWinner={winner === "agua"}
-                />
-              </div>
-
-              <div className="tc-hr" />
-              <div className="tc-sub">Siguiente: “Mejoras de equipo” automático (consejos según %cliente y %repite).</div>
-            </div>
-          )}
+          {tab === "equipo" && <CentralTeamLivePanel month={month} />}
 
           {/* Checklist */}
           {tab === "checklist" && (
@@ -2133,49 +1852,6 @@ function CentralPage() {
       )}
 
     </CentralThemeProvider>
-  );
-}
-
-function TeamBar({
-  title,
-  score,
-  pct,
-  aCliente,
-  aRepite,
-  isWinner,
-}: {
-  title: string;
-  score: number;
-  pct: number;
-  aCliente: number;
-  aRepite: number;
-  isWinner: boolean;
-}) {
-  return (
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-        <div className="tc-title" style={{ fontSize: 14 }}>
-          {title} {isWinner ? "👑" : ""}
-        </div>
-        <div style={{ fontWeight: 900 }}>{Number(score || 0).toFixed(2)}</div>
-      </div>
-
-      <div style={{ marginTop: 10, height: 12, borderRadius: 999, background: "rgba(255,255,255,0.10)", overflow: "hidden" }}>
-        <div
-          style={{
-            width: `${pct}%`,
-            height: "100%",
-            background: isWinner
-              ? "linear-gradient(90deg, rgba(120,255,190,0.85), rgba(215,181,109,0.95))"
-              : "linear-gradient(90deg, rgba(181,156,255,0.85), rgba(215,181,109,0.65))",
-          }}
-        />
-      </div>
-
-      <div className="tc-sub" style={{ marginTop: 10 }}>
-        Media %Cliente: <b>{Number(aCliente || 0).toFixed(2)}%</b> · Media %Repite: <b>{Number(aRepite || 0).toFixed(2)}%</b>
-      </div>
-    </div>
   );
 }
 

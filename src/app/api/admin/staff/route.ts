@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
+const LIVE_WINDOW_MS = 3 * 60 * 1000;
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -61,7 +62,6 @@ export async function GET(req: Request) {
     const { data: workers, error: workersErr } = await admin
       .from("workers")
       .select("id, user_id, display_name, role, team, email, is_active, tarotista_level, created_at")
-      .or("is_active.is.null,is_active.eq.true")
       .order("display_name", { ascending: true });
 
     if (workersErr) throw workersErr;
@@ -69,25 +69,61 @@ export async function GET(req: Request) {
     const workerIds = Array.from(new Set((workers || []).map((w: any) => w.id))).filter(Boolean);
 
     let schedules: any[] = [];
+    let attendanceStates: any[] = [];
     if (workerIds.length > 0) {
-      const { data: sch, error: schErr } = await admin
-        .from("shift_schedules")
-        .select("id, worker_id, day_of_week, start_time, end_time, timezone, active, created_at")
-        .in("worker_id", workerIds)
-        .order("day_of_week", { ascending: true })
-        .order("start_time", { ascending: true });
+      const [scheduleResult, attendanceResult] = await Promise.all([
+        admin
+          .from("shift_schedules")
+          .select("id, worker_id, day_of_week, start_time, end_time, timezone, active, created_at")
+          .in("worker_id", workerIds)
+          .order("day_of_week", { ascending: true })
+          .order("start_time", { ascending: true }),
+        admin
+          .from("attendance_state")
+          .select("worker_id, is_online, status, last_event_at, updated_at")
+          .in("worker_id", workerIds),
+      ]);
 
-      if (schErr) throw schErr;
+      if (scheduleResult.error) throw scheduleResult.error;
+      if (attendanceResult.error) throw attendanceResult.error;
 
-      schedules = (sch || []).map((s: any) => ({
+      schedules = (scheduleResult.data || []).map((s: any) => ({
         ...s,
         is_active: !!s.active, // compat con tu frontend actual
       }));
+      attendanceStates = attendanceResult.data || [];
     }
+
+    const attendanceByWorker = new Map(attendanceStates.map((state: any) => [String(state.worker_id), state]));
+    const workersWithStatus = (workers || []).map((worker: any) => {
+      const state: any = attendanceByWorker.get(String(worker.id));
+      const signalAt = state?.last_event_at || state?.updated_at || null;
+      const timestamp = new Date(String(signalAt || "")).getTime();
+      const recent = Number.isFinite(timestamp) && Date.now() - timestamp <= LIVE_WINDOW_MS;
+      const isActive = worker.is_active !== false;
+      const isOnline = isActive && state?.is_online === true && recent;
+      const rawStatus = String(state?.status || "offline").toLowerCase();
+      const presenceStatus = !isOnline
+        ? "disconnected"
+        : rawStatus === "bathroom"
+          ? "bathroom"
+          : ["break", "pause"].includes(rawStatus)
+            ? "break"
+            : "connected";
+
+      return {
+        ...worker,
+        is_active: isActive,
+        auth_linked: Boolean(worker.user_id),
+        presence_status: presenceStatus,
+        presence_source_status: rawStatus,
+        presence_updated_at: signalAt,
+      };
+    });
 
     return NextResponse.json({
       ok: true,
-      workers: workers || [],
+      workers: workersWithStatus,
       schedules,
     });
   } catch (e: any) {
