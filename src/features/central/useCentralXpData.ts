@@ -149,47 +149,60 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
   const [syncStatus, setSyncStatus] = useState<"syncing" | "synced" | "error">("syncing");
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const inFlightRef = useRef<Promise<boolean> | null>(null);
+  const refreshDebounceRef = useRef<number | null>(null);
   const completedMissionRef = useRef<Set<string> | null>(null);
   const viewingToday = !selectedDate || selectedDate === madridToday();
 
   const load = useCallback(async (silent = false) => {
     if (!enabled) return false;
-    const requestId = ++requestRef.current;
-    if (!silent) setBusy(true);
-    setSyncStatus("syncing");
-    try {
-      const { data: sessionData } = await sb.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error("Sesión no disponible");
-      const dateParam = selectedDate ? `&date=${encodeURIComponent(selectedDate)}` : "";
-      const response = await fetch(`/api/central/xp-system?t=${Date.now()}${dateParam}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const json = await response.json();
-      if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo cargar XP");
-      if (requestId === requestRef.current) {
-        const typed = json as CentralXpData;
-        const completedNow = new Set((typed.missions?.active || []).filter(mission => mission.completed && !mission.claimed).map(mission => `${mission.id}:${mission.period_key}:${mission.claim_count}`));
-        if (completedMissionRef.current) {
-          const newlyCompleted = (typed.missions?.active || []).find(mission => mission.completed && !mission.claimed && !completedMissionRef.current?.has(`${mission.id}:${mission.period_key}:${mission.claim_count}`));
-          if (newlyCompleted) tcToast({ title: "🏆 MISIÓN COMPLETADA", description: `${newlyCompleted.name} · +${newlyCompleted.xp_reward} XP disponibles`, tone: "success", duration: 8000 });
+    if (inFlightRef.current) return inFlightRef.current;
+
+    const task = (async () => {
+      const requestId = ++requestRef.current;
+      if (!silent) setBusy(true);
+      setSyncStatus("syncing");
+      try {
+        const { data: sessionData } = await sb.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error("Sesión no disponible");
+        const dateParam = selectedDate ? `&date=${encodeURIComponent(selectedDate)}` : "";
+        const response = await fetch(`/api/central/xp-system?t=${Date.now()}${dateParam}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const json = await response.json();
+        if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo cargar XP");
+        if (requestId === requestRef.current) {
+          const typed = json as CentralXpData;
+          const completedNow = new Set((typed.missions?.active || []).filter(mission => mission.completed && !mission.claimed).map(mission => `${mission.id}:${mission.period_key}:${mission.claim_count}`));
+          if (completedMissionRef.current) {
+            const newlyCompleted = (typed.missions?.active || []).find(mission => mission.completed && !mission.claimed && !completedMissionRef.current?.has(`${mission.id}:${mission.period_key}:${mission.claim_count}`));
+            if (newlyCompleted) tcToast({ title: "🏆 MISIÓN COMPLETADA", description: `${newlyCompleted.name} · +${newlyCompleted.xp_reward} XP disponibles`, tone: "success", duration: 8000 });
+          }
+          completedMissionRef.current = completedNow;
+          setData(typed);
+          setError("");
+          setLastSyncedAt(new Date().toISOString());
+          setSyncStatus("synced");
         }
-        completedMissionRef.current = completedNow;
-        setData(typed);
-        setError("");
-        setLastSyncedAt(new Date().toISOString());
-        setSyncStatus("synced");
+        return true;
+      } catch (loadError) {
+        if (requestId === requestRef.current) {
+          setError(loadError instanceof Error ? loadError.message : "No se pudo cargar XP");
+          setSyncStatus("error");
+        }
+        return false;
+      } finally {
+        if (!silent) setBusy(false);
       }
-      return true;
-    } catch (loadError) {
-      if (requestId === requestRef.current) {
-        setError(loadError instanceof Error ? loadError.message : "No se pudo cargar XP");
-        setSyncStatus("error");
-      }
-      return false;
+    })();
+
+    inFlightRef.current = task;
+    try {
+      return await task;
     } finally {
-      if (!silent) setBusy(false);
+      if (inFlightRef.current === task) inFlightRef.current = null;
     }
   }, [enabled, selectedDate]);
 
@@ -197,39 +210,52 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
     if (!enabled) return;
     void load();
 
-    const refreshTimer = window.setInterval(() => void load(true), 30000);
+    const refreshSoon = () => {
+      if (document.visibilityState !== "visible") return;
+      if (refreshDebounceRef.current != null) window.clearTimeout(refreshDebounceRef.current);
+      refreshDebounceRef.current = window.setTimeout(() => {
+        refreshDebounceRef.current = null;
+        void load(true);
+      }, 1000);
+    };
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(true);
+    }, 120000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void load(true);
     };
     document.addEventListener("visibilitychange", onVisible);
-    const onLocalXp = () => void load(true);
+    const onLocalXp = refreshSoon;
     window.addEventListener("tc-xp-recorded", onLocalXp);
 
     const channel = sb
       .channel("central-xp-readonly")
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_rules" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_missions" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_missions" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_missions" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_mission_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_processing", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, () => void load(true))
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => { if (viewingToday) void load(true); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => { if (viewingToday) void load(true); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => { if (viewingToday) void load(true); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_rules" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_missions" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_missions" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_missions" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_mission_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_processing", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => { if (viewingToday) refreshSoon(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => { if (viewingToday) refreshSoon(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => { if (viewingToday) refreshSoon(); })
       .subscribe((status) => {
-        if (status === "SUBSCRIBED") void load(true);
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setSyncStatus("error");
       });
 
     return () => {
       window.clearInterval(refreshTimer);
+      if (refreshDebounceRef.current != null) {
+        window.clearTimeout(refreshDebounceRef.current);
+        refreshDebounceRef.current = null;
+      }
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("tc-xp-recorded", onLocalXp);
       void sb.removeChannel(channel);

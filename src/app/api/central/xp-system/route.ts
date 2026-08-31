@@ -57,7 +57,7 @@ function buildOperationalDay(requestedDate?: string | null) {
 function rewardTablesMissing(error: { code?: string; message?: string } | null | undefined) {
   const code = String(error?.code || "");
   const message = String(error?.message || "").toLowerCase();
-  return code === "42P01" || code === "PGRST205" || message.includes("worker_xp_reward_claims") || message.includes("worker_xp_reward_processing");
+  return code === "42P01" || code === "42703" || code === "PGRST205" || message.includes("worker_xp_reward_claims") || message.includes("worker_xp_reward_processing");
 }
 
 function coinTablesMissing(error: { code?: string; message?: string } | null | undefined) {
@@ -409,7 +409,7 @@ export async function POST(req: Request) {
       const result = await admin.rpc("claim_worker_xp_level_reward", { p_worker_id: String(me.id), p_level: level, p_operation_id: operationId });
       if (result.error) {
         const message = String(result.error.message || "LEVEL_CLAIM_FAILED");
-        const known = ["LEVEL_NOT_REACHED", "LEVEL_REWARD_NOT_CONFIGURED", "LEVEL_REWARD_ALREADY_PROCESSED"].find((code) => message.includes(code));
+        const known = ["LEVEL_NOT_REACHED", "LEVEL_REWARD_NOT_CONFIGURED", "LEVEL_REWARD_ALREADY_PROCESSED", "OPERATION_ID_CONFLICT", "LEVEL_REWARD_PROCESSING_CONFLICT"].find((code) => message.includes(code));
         return NextResponse.json({ ok: false, error: known || (rewardTablesMissing(result.error) ? "REWARD_SYSTEM_NOT_INSTALLED" : "LEVEL_CLAIM_FAILED") }, { status: 409 });
       }
       return NextResponse.json({ ok: true, claim: result.data });
