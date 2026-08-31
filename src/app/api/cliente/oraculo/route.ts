@@ -14,6 +14,7 @@ import {
 } from "@/lib/server/oracle-tarot";
 
 export const runtime = "nodejs";
+const SECRET_PRIZE_CAMPAIGN = "secreto_celestial_2026_08_31";
 
 const SPREADS: Record<string, { label: string; topic: "general" | "amor" | "dinero" | "energia"; positions: string[] }> = {
   daily: { label: "Carta del día", topic: "general", positions: ["Mensaje"] },
@@ -97,15 +98,39 @@ async function getQuestionState(admin: any, clientId: string, draw: Record<strin
   return { includedAvailable: Boolean(draw?.id && !draw?.included_question_used_at), includedUsed: Boolean(draw?.included_question_used_at), extra, total: extra + (draw?.id && !draw?.included_question_used_at ? 1 : 0) };
 }
 
+async function getSecretPrizeState(admin: any, clientId: string) {
+  const { data, error } = await admin
+    .from("cliente_secret_prize_claims")
+    .select("cliente_id,claimed_at")
+    .eq("campaign_key", SECRET_PRIZE_CAMPAIGN)
+    .maybeSingle();
+
+  if (error) {
+    if (error.code === "42P01" || error.code === "PGRST205") {
+      return { visible: false, available: false, wonByMe: false, configured: false };
+    }
+    throw error;
+  }
+
+  const winnerClientId = data?.cliente_id ? String(data.cliente_id) : null;
+  const wonByMe = winnerClientId === String(clientId);
+  return {
+    visible: !winnerClientId || wonByMe,
+    available: !winnerClientId,
+    wonByMe,
+    configured: true,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    const [latestDraw, freeState, credits, activeSession] = await Promise.all([
-      getLatestDraw(gate.admin, gate.cliente.id), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id), getActivePremiumSession(gate.admin, gate.cliente.id),
+    const [latestDraw, freeState, credits, activeSession, secretPrize] = await Promise.all([
+      getLatestDraw(gate.admin, gate.cliente.id), getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id), getActivePremiumSession(gate.admin, gate.cliente.id), getSecretPrizeState(gate.admin, gate.cliente.id),
     ]);
     const [messages, questionState] = await Promise.all([loadMessages(gate.admin, gate.cliente.id, latestDraw), getQuestionState(gate.admin, gate.cliente.id, latestDraw)]);
-    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), activeSession: serializeSession(activeSession), mensajes: messages, deckSize: TAROT_CARDS.length });
+    return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), activeSession: serializeSession(activeSession), mensajes: messages, deckSize: TAROT_CARDS.length, secretPrize });
   } catch (error: any) {
     console.error("[cliente/oraculo][GET]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
     return NextResponse.json({ ok: false, error: "No hemos podido cargar el Oráculo. Inténtalo de nuevo." }, { status: 500 });
@@ -118,6 +143,41 @@ export async function POST(req: Request) {
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     const body = (await req.json().catch(() => ({}))) as Record<string, any>;
     const action = String(body.action || "question").trim().toLowerCase();
+
+    if (action === "claim_secret_prize") {
+      const current = await getSecretPrizeState(gate.admin, gate.cliente.id);
+      if (!current.configured) {
+        return NextResponse.json({ ok: false, error: "SECRET_PRIZE_NOT_CONFIGURED", message: "El Secreto Celestial todavía no está disponible." }, { status: 409 });
+      }
+      if (current.wonByMe) {
+        return NextResponse.json({ ok: true, won: true, wonByMe: true, alreadyClaimed: true });
+      }
+      if (!current.available) {
+        return NextResponse.json({ ok: true, won: false, wonByMe: false, alreadyClaimed: true });
+      }
+
+      const claimedAt = new Date().toISOString();
+      const inserted = await gate.admin
+        .from("cliente_secret_prize_claims")
+        .insert({
+          campaign_key: SECRET_PRIZE_CAMPAIGN,
+          cliente_id: String(gate.cliente.id),
+          auth_user_id: String(gate.uid),
+          claimed_at: claimedAt,
+        })
+        .select("campaign_key,cliente_id,claimed_at")
+        .single();
+
+      if (inserted.error) {
+        if (inserted.error.code === "23505") {
+          const afterRace = await getSecretPrizeState(gate.admin, gate.cliente.id);
+          return NextResponse.json({ ok: true, won: afterRace.wonByMe, wonByMe: afterRace.wonByMe, alreadyClaimed: true });
+        }
+        throw inserted.error;
+      }
+
+      return NextResponse.json({ ok: true, won: true, wonByMe: true, alreadyClaimed: false, claimedAt: inserted.data?.claimed_at || claimedAt });
+    }
 
     if (action === "shuffle") {
       const [freeState, credits] = await Promise.all([getFreeDrawState(gate.admin, gate.cliente.id), getOracleCreditBalance(gate.admin, gate.cliente.id)]);

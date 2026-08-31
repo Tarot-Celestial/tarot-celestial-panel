@@ -552,3 +552,267 @@
 .resumeNotice{margin:0 auto 18px;max-width:780px;padding:16px 18px;border-radius:18px;border:1px solid rgba(195,146,255,.34);background:linear-gradient(135deg,rgba(105,49,163,.18),rgba(20,13,34,.92));box-shadow:0 0 30px rgba(135,76,210,.12);display:grid;gap:5px}.resumeNotice strong{color:#ead7ff;letter-spacing:.08em}.resumeNotice span{font-weight:800}.resumeNotice small{color:rgba(255,255,255,.62)}
 
 @media (max-width:520px){.startRow{width:100%;display:grid;grid-template-columns:1fr}.startRow .shuffleButton{width:100%}.availableCredits{width:100%}}
+
+
+/* Secreto Celestial: llave oculta y premio único */
+.secretStartRow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+}
+
+.secretKeyButton {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(244, 216, 159, .32);
+  border-radius: 12px;
+  color: #f5d77f;
+  background:
+    radial-gradient(circle at 35% 25%, rgba(255, 232, 154, .16), transparent 45%),
+    linear-gradient(145deg, rgba(88, 56, 28, .66), rgba(31, 19, 42, .88));
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, .26),
+    0 0 13px rgba(236, 192, 77, .10),
+    inset 0 1px 0 rgba(255, 255, 255, .08);
+  cursor: pointer;
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, color .18s ease;
+}
+
+.secretKeyButton::after {
+  content: "✦";
+  position: absolute;
+  right: -5px;
+  top: -7px;
+  color: #fff0b3;
+  font-size: 10px;
+  opacity: 0;
+  transform: scale(.55) rotate(-18deg);
+  text-shadow: 0 0 10px rgba(255, 225, 132, .85);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
+}
+
+.secretKeyButton:hover:not(:disabled) {
+  transform: translateY(-2px) rotate(-4deg);
+  color: #ffe69a;
+  border-color: rgba(255, 222, 124, .55);
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, .32),
+    0 0 20px rgba(236, 192, 77, .18),
+    inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+
+.secretKeyButton:hover:not(:disabled)::after {
+  opacity: 1;
+  transform: scale(1) rotate(10deg);
+  animation: secretKeyTwinkle .8s ease-in-out infinite alternate;
+}
+
+.secretKeyButton:disabled {
+  cursor: wait;
+  opacity: .58;
+}
+
+.secretKeyWinner {
+  border-color: rgba(255, 221, 121, .55);
+  box-shadow: 0 0 22px rgba(236, 192, 77, .16);
+}
+
+@keyframes secretKeyTwinkle {
+  from { filter: brightness(.85); transform: scale(.85) rotate(0deg); }
+  to { filter: brightness(1.35); transform: scale(1.15) rotate(18deg); }
+}
+
+.secretPrizeBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  overflow-y: auto;
+  background: rgba(4, 3, 9, .82);
+  backdrop-filter: blur(10px);
+  animation: secretPrizeFade .22s ease both;
+}
+
+.secretPrizeModal {
+  position: relative;
+  width: min(620px, 100%);
+  max-height: calc(100vh - 44px);
+  overflow-y: auto;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  padding: 30px;
+  border: 1px solid rgba(241, 203, 93, .38);
+  border-radius: 28px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(173, 105, 248, .22), transparent 34%),
+    radial-gradient(circle at 50% 78%, rgba(239, 196, 75, .10), transparent 36%),
+    linear-gradient(155deg, #1b102a, #090711 76%);
+  box-shadow:
+    0 38px 110px rgba(0, 0, 0, .66),
+    0 0 48px rgba(161, 95, 232, .15),
+    inset 0 1px 0 rgba(255, 255, 255, .06);
+  animation: secretPrizeRise .3s cubic-bezier(.2, .9, .3, 1.08) both;
+}
+
+.secretPrizeClose {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 12px;
+  color: rgba(255,255,255,.70);
+  background: rgba(255,255,255,.035);
+  cursor: pointer;
+}
+
+.secretPrizeEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #f0cd70;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.secretPrizeModal h2 {
+  margin: 0;
+  font-size: clamp(27px, 4vw, 39px);
+  line-height: 1.05;
+  letter-spacing: -.035em;
+  color: #fff;
+  text-shadow: 0 0 26px rgba(176, 111, 248, .24);
+}
+
+.secretPrizeWinnerCopy {
+  max-width: 500px;
+  margin: 0;
+  color: rgba(255,255,255,.70);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.secretPrizeImage {
+  width: min(390px, 100%);
+  overflow: hidden;
+  margin-top: 3px;
+  border: 1px solid rgba(243, 207, 102, .28);
+  border-radius: 20px;
+  background: #0d0913;
+  box-shadow: 0 18px 48px rgba(0,0,0,.40), 0 0 28px rgba(231, 188, 70, .08);
+}
+
+.secretPrizeImage img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.secretPrizeReward {
+  width: 100%;
+  padding: 16px 18px;
+  border: 1px solid rgba(240, 200, 86, .24);
+  border-radius: 17px;
+  background: linear-gradient(135deg, rgba(231, 187, 67, .075), rgba(141, 80, 220, .075));
+}
+
+.secretPrizeReward strong {
+  display: block;
+  color: #f2d177;
+  font-size: 15px;
+  letter-spacing: .08em;
+}
+
+.secretPrizeReward p {
+  margin: 7px 0 0;
+  color: rgba(255,255,255,.78);
+  line-height: 1.6;
+  font-size: 13px;
+}
+
+.secretPrizeClaim {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 11px;
+  align-items: start;
+  padding: 14px 16px;
+  border: 1px solid rgba(97, 221, 155, .22);
+  border-radius: 16px;
+  text-align: left;
+  background: rgba(54, 184, 116, .065);
+}
+
+.secretPrizeClaim > span {
+  font-size: 23px;
+}
+
+.secretPrizeClaim strong {
+  color: #91efbb;
+  font-size: 12px;
+  letter-spacing: .03em;
+}
+
+.secretPrizeClaim p {
+  margin: 4px 0 0;
+  color: rgba(255,255,255,.68);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@keyframes secretPrizeFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes secretPrizeRise {
+  from { opacity: 0; transform: translateY(14px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (max-width: 560px) {
+  .secretStartRow {
+    gap: 7px;
+  }
+
+  .secretKeyButton {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .secretPrizeBackdrop {
+    padding: 12px;
+  }
+
+  .secretPrizeModal {
+    max-height: calc(100vh - 24px);
+    padding: 26px 17px 20px;
+    border-radius: 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .secretPrizeBackdrop,
+  .secretPrizeModal,
+  .secretKeyButton::after {
+    animation: none !important;
+  }
+}
