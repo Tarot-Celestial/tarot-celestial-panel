@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCircle2, Coins, ExternalLink, Eye, Gift, Globe2, History, KeyRound, LoaderCircle, LockKeyhole, Search, ShieldCheck, Sparkles, LockKeyholeOpen, Trash2, UserRoundCheck, WandSparkles } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Ban, CheckCircle2, Coins, ExternalLink, Eye, Gift, Globe2, History, KeyRound, LoaderCircle, LockKeyhole, Search, ShieldCheck, Sparkles, LockKeyholeOpen, RefreshCw, Trash2, UserRoundCheck, WandSparkles } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./ClientWebAdminPanel.module.css";
 
@@ -62,6 +62,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
   const [rows, setRows] = useState<ClientWebRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [rank, setRank] = useState("all");
   const [account, setAccount] = useState("all");
@@ -84,16 +85,20 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
   const [giftReason, setGiftReason] = useState("");
   const [giftBusy, setGiftBusy] = useState(false);
   const [giftOperationId, setGiftOperationId] = useState(() => crypto.randomUUID());
+  const loadRequestRef = useRef<AbortController | null>(null);
 
   const token = useCallback(async () => (await sb.auth.getSession()).data.session?.access_token || "", []);
 
   const load = useCallback(async () => {
+    loadRequestRef.current?.abort();
+    const controller = new AbortController();
+    loadRequestRef.current = controller;
     setLoading(true);
     setError("");
     try {
       const t = await token();
       const params = new URLSearchParams({ page: String(page), page_size: "20", q, rank, account, access });
-      const response = await fetch(`/api/admin/client-web?${params}`, { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" });
+      const response = await fetch(`/api/admin/client-web?${params}`, { headers: { Authorization: `Bearer ${t}` }, cache: "no-store", signal: controller.signal });
       const json = await response.json();
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudieron cargar los clientes web.");
       setRows(Array.isArray(json.rows) ? json.rows : []);
@@ -101,32 +106,26 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
       setTotals(json.totals || { web: 0, active: 0, blocked: 0, without_access: 0 });
       setSelected((current) => current ? (json.rows || []).find((row: ClientWebRow) => row.id === current.id) || current : null);
     } catch (e: any) {
+      if (e?.name === "AbortError") return;
       setError(e?.message || "No se pudieron cargar los clientes web.");
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === controller) {
+        loadRequestRef.current = null;
+        setLoading(false);
+      }
     }
   }, [access, account, page, q, rank, token]);
 
-  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    const interval = window.setInterval(() => void load(), 60000);
-    return () => window.clearInterval(interval);
-  }, [load]);
+    const timer = window.setTimeout(() => {
+      setPage(1);
+      setQ(searchInput.trim());
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
-  useEffect(() => {
-    let timer: number | undefined;
-    const refresh = () => {
-      if (timer) window.clearTimeout(timer);
-      timer = window.setTimeout(() => void load(), 350);
-    };
-    const channel = sb.channel("admin-client-web-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_clientes" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_oracle_credit_movements" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_oraculo_diario" }, refresh)
-      .subscribe();
-    return () => { if (timer) window.clearTimeout(timer); void sb.removeChannel(channel); };
-  }, [load]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => () => loadRequestRef.current?.abort(), []);
 
   const runAction = async (body: Record<string, unknown>) => {
     if (!selected) return;
@@ -220,7 +219,9 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
     <div className={styles.hero}>
       <div className={styles.heroIcon}><Globe2 size={26}/></div>
       <div><div className={styles.eyebrow}>CUENTAS DEL PANEL CLIENTE</div><h1>Clientes web</h1><p>Administra accesos web sin duplicar las fichas del CRM ni sus recursos.</p></div>
-      <div className={styles.liveBadge}><Sparkles size={14}/> Datos reales</div>
+      <button type="button" className={styles.liveBadge} onClick={() => void load()} disabled={loading}>
+        <RefreshCw size={14} className={loading ? styles.spin : undefined}/> {loading ? "Actualizando…" : "Actualizar"}
+      </button>
     </div>
 
     <div className={styles.metrics}>
@@ -231,7 +232,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
     </div>
 
     <div className={styles.toolbar}>
-      <label className={styles.search}><Search size={16}/><input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Buscar nombre, email o teléfono"/></label>
+      <label className={styles.search}><Search size={16}/><input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} placeholder="Buscar nombre, email o teléfono"/></label>
       <select value={rank} onChange={(e) => { setPage(1); setRank(e.target.value); }}><option value="all">Todos los rangos</option><option value="bronce">Bronce</option><option value="plata">Plata</option><option value="oro">Oro</option></select>
       <select value={account} onChange={(e) => { setPage(1); setAccount(e.target.value); }}><option value="all">Cualquier estado</option><option value="active">Cuenta activa</option><option value="blocked">Cuenta bloqueada</option></select>
       <select value={access} onChange={(e) => { setPage(1); setAccess(e.target.value); }}><option value="web">Con acceso web</option><option value="without">Sin acceso web</option><option value="all">Todos los clientes</option></select>

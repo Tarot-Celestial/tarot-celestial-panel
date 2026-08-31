@@ -180,6 +180,27 @@ export async function clientFromRequest(req: Request) {
   if ((linkedResult.data || []).length > 1) throw new Error("AUTH_VINCULADO_A_VARIAS_FICHAS");
   cliente = linkedResult.data?.[0] || null;
 
+  // Una identidad interna puede compartir email o teléfono con una ficha CRM.
+  // Si no existe un vínculo explícito, nunca debe heredar acceso al panel de
+  // clientes por una coincidencia indirecta.
+  if (!cliente) {
+    const { data: workerIdentity, error: workerIdentityError } = await admin
+      .from("workers")
+      .select("id")
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (workerIdentityError) throw workerIdentityError;
+    if (workerIdentity) {
+      return {
+        uid,
+        phone: normalizedPhonePlus || null,
+        email: normalizedEmail || rawEmail || null,
+        cliente: null as any,
+        admin,
+      };
+    }
+  }
+
   // 1) Buscar por teléfono
   if (!cliente && normalizedPhoneDigits) {
     cliente = await findClienteByPhone(admin, normalizedPhoneDigits);

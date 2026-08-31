@@ -17,6 +17,11 @@ type AuthSummary = {
   user_metadata?: Record<string, unknown> | null;
 };
 
+const CLIENT_SELECT = "id,nombre,apellido,email,telefono,telefono_normalizado,origen,created_at,updated_at,auth_user_id,puntos,minutos_free_pendientes,minutos_normales_pendientes,ultimo_acceso_at,ultima_actividad_at,total_accesos";
+const AUTH_CACHE_TTL_MS = 30_000;
+let authUsersCache: { expiresAt: number; users: AuthSummary[] } | null = null;
+let authUsersRequest: Promise<AuthSummary[]> | null = null;
+
 function cleanSearch(value: string) {
   return value.trim().toLowerCase();
 }
@@ -46,19 +51,35 @@ function publicAuthUser(user: any): AuthSummary {
   };
 }
 
-async function listAllAuthUsers(admin: any) {
-  const users: AuthSummary[] = [];
-  let page = 1;
-  const perPage = 200;
-  while (page <= 50) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-    const batch = (data?.users || []).map(publicAuthUser);
-    users.push(...batch);
-    if (batch.length < perPage) break;
-    page += 1;
+async function listAllAuthUsers(admin: any, fresh = false) {
+  if (!fresh && authUsersCache && authUsersCache.expiresAt > Date.now()) return authUsersCache.users;
+  if (!fresh && authUsersRequest) return authUsersRequest;
+
+  authUsersRequest = (async () => {
+    const users: AuthSummary[] = [];
+    let page = 1;
+    const perPage = 200;
+    while (page <= 50) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+      if (error) throw error;
+      const batch = (data?.users || []).map(publicAuthUser);
+      users.push(...batch);
+      if (batch.length < perPage) break;
+      page += 1;
+    }
+    authUsersCache = { expiresAt: Date.now() + AUTH_CACHE_TTL_MS, users };
+    return users;
+  })();
+
+  try {
+    return await authUsersRequest;
+  } finally {
+    authUsersRequest = null;
   }
-  return users;
+}
+
+function invalidateAuthUsersCache() {
+  authUsersCache = null;
 }
 
 async function loadClients(admin: any) {
@@ -71,7 +92,7 @@ async function loadClients(admin: any) {
   while (true) {
     const { data, error } = await admin
       .from("crm_clientes")
-      .select("id,nombre,apellido,email,telefono,telefono_normalizado,origen,created_at,updated_at,auth_user_id,puntos,minutos_free_pendientes,minutos_normales_pendientes,ultimo_acceso_at,ultima_actividad_at,total_accesos")
+      .select(CLIENT_SELECT)
       .order("created_at", { ascending: false })
       .range(from, from + chunk - 1);
     if (error) throw error;
@@ -83,6 +104,49 @@ async function loadClients(admin: any) {
   return rows;
 }
 
+async function loadWorkerAuthUserIds(admin: any) {
+  const { data, error } = await admin.from("workers").select("user_id").not("user_id", "is", null);
+  if (error) throw error;
+  return new Set<string>((data || []).map((row: any) => String(row.user_id || "")).filter(Boolean));
+}
+
+async function loadWebClients(admin: any, authUsers: AuthSummary[], workerAuthUserIds: Set<string>) {
+  const authIds = authUsers.map((user) => user.id).filter(Boolean);
+  if (!authIds.length) return [];
+
+  // Las coincidencias indirectas solo son válidas para cuentas de clientes.
+  // Una cuenta de trabajador puede compartir email con una ficha CRM, pero no
+  // debe convertirse automáticamente en acceso al panel de clientes.
+  const clientAuthUsers = authUsers.filter((user) => !workerAuthUserIds.has(user.id));
+  const metadataClientIds = clientAuthUsers
+    .map((user) => String((user.user_metadata || {}).crm_cliente_id || "").trim())
+    .filter(Boolean);
+  const emails = clientAuthUsers.map((user) => authEmailKey(user.email)).filter(Boolean);
+  const phones = Array.from(new Set(clientAuthUsers.flatMap((user) => {
+    const metadata = (user.user_metadata || {}) as Record<string, unknown>;
+    const digits = authPhoneKey(metadata.telefono_normalizado || metadata.telefono || metadata.phone);
+    return digits ? [digits, `+${digits}`] : [];
+  })));
+
+  const queries: PromiseLike<{ data: any[] | null; error: any }>[] = [
+    admin.from("crm_clientes").select(CLIENT_SELECT).in("auth_user_id", authIds),
+  ];
+  if (metadataClientIds.length) queries.push(admin.from("crm_clientes").select(CLIENT_SELECT).in("id", metadataClientIds));
+  if (emails.length) queries.push(admin.from("crm_clientes").select(CLIENT_SELECT).in("email", emails));
+  if (phones.length) {
+    queries.push(admin.from("crm_clientes").select(CLIENT_SELECT).in("telefono_normalizado", phones));
+    queries.push(admin.from("crm_clientes").select(CLIENT_SELECT).in("telefono", phones));
+  }
+
+  const batches = await Promise.all(queries);
+  const unique = new Map<string, any>();
+  for (const batch of batches) {
+    if (batch.error) throw batch.error;
+    for (const row of batch.data || []) unique.set(String(row.id), row);
+  }
+  return Array.from(unique.values()).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+}
+
 function authEmailKey(value: unknown) {
   return String(value || "").trim().toLowerCase();
 }
@@ -91,9 +155,46 @@ function authPhoneKey(value: unknown) {
   return normalizePhoneDigits(String(value || ""));
 }
 
+function isMissingAuthUserError(error: any) {
+  const status = Number(error?.status || error?.statusCode || 0);
+  const text = String(error?.message || error?.code || "").toLowerCase();
+  return status === 404 || text.includes("user not found") || text.includes("user_not_found");
+}
+
+function authUserMatchesClient(user: AuthSummary, client: any) {
+  const metadata = (user.user_metadata || {}) as Record<string, unknown>;
+  const normalizedPhone = authPhoneKey(client.telefono_normalizado || client.telefono);
+  let aliasEmail = "";
+  try { aliasEmail = normalizedPhone ? buildClienteAliasEmail(normalizedPhone) : ""; } catch { aliasEmail = ""; }
+  return String(metadata.crm_cliente_id || "").trim() === String(client.id)
+    || Boolean(client.email && authEmailKey(user.email) === authEmailKey(client.email))
+    || Boolean(aliasEmail && authEmailKey(user.email) === authEmailKey(aliasEmail))
+    || Boolean(normalizedPhone && authPhoneKey(metadata.telefono_normalizado || metadata.telefono || metadata.phone) === normalizedPhone);
+}
+
+async function resolveClientAuthUser(admin: any, client: any) {
+  const directId = String(client.auth_user_id || "").trim();
+  if (directId) {
+    const { data, error } = await admin.auth.admin.getUserById(directId);
+    if (!error && data?.user) return publicAuthUser(data.user);
+    if (error && !isMissingAuthUserError(error)) throw error;
+  }
+
+  const [users, workerAuthUserIds] = await Promise.all([
+    listAllAuthUsers(admin, true),
+    loadWorkerAuthUserIds(admin),
+  ]);
+  const match = users.find((user) => !workerAuthUserIds.has(user.id) && authUserMatchesClient(user, client)) || null;
+  if (match && match.id !== directId) {
+    const { error } = await admin.from("crm_clientes").update({ auth_user_id: match.id }).eq("id", client.id);
+    if (error) throw error;
+  }
+  return match;
+}
+
 async function writeAudit(admin: any, worker: any, clientId: string, authUserId: string, action: string, payload: Record<string, unknown>) {
   const { error } = await admin.from("crm_audit_logs").insert({
-    cliente_id: clientId,
+    client_id: clientId,
     worker_id: worker.id,
     action_type: action,
     entity_type: "auth.users",
@@ -116,7 +217,16 @@ export async function GET(req: Request) {
     const accountFilter = cleanSearch(url.searchParams.get("account") || "all");
     const accessFilter = cleanSearch(url.searchParams.get("access") || "web");
 
-    const [clients, authUsers] = await Promise.all([loadClients(gate.admin), listAllAuthUsers(gate.admin)]);
+    const [authUsers, workerAuthUserIds, clientCountResult] = await Promise.all([
+      listAllAuthUsers(gate.admin),
+      loadWorkerAuthUserIds(gate.admin),
+      gate.admin.from("crm_clientes").select("id", { count: "exact", head: true }),
+    ]);
+    if (clientCountResult.error) throw clientCountResult.error;
+    const clients = accessFilter === "web"
+      ? await loadWebClients(gate.admin, authUsers, workerAuthUserIds)
+      : await loadClients(gate.admin);
+    const allClientCount = Math.max(0, Number(clientCountResult.count || clients.length));
     const authById = new Map(authUsers.map((user) => [user.id, user]));
     const authByClientId = new Map<string, AuthSummary>();
     const authByEmail = new Map<string, AuthSummary>();
@@ -127,6 +237,7 @@ export async function GET(req: Request) {
       if (key) clientPhoneCounts.set(key, (clientPhoneCounts.get(key) || 0) + 1);
     }
     for (const user of authUsers) {
+      if (workerAuthUserIds.has(user.id)) continue;
       const metadata = (user.user_metadata || {}) as Record<string, unknown>;
       const clientId = String(metadata.crm_cliente_id || "").trim();
       const emailKey = authEmailKey(user.email);
@@ -263,7 +374,7 @@ export async function GET(req: Request) {
         web: linked.filter(({ auth }) => Boolean(auth)).length,
         active: linked.filter(({ auth }) => Boolean(auth) && !isBlocked(auth)).length,
         blocked: linked.filter(({ auth }) => Boolean(auth) && isBlocked(auth)).length,
-        without_access: linked.filter(({ auth }) => !auth).length,
+        without_access: Math.max(0, allClientCount - linked.filter(({ auth }) => Boolean(auth)).length),
       },
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
@@ -340,23 +451,21 @@ export async function POST(req: Request) {
       if (password !== confirm) return NextResponse.json({ ok: false, error: "Las contraseñas no coinciden." }, { status: 400 });
       if (!client.telefono) return NextResponse.json({ ok: false, error: "La clienta necesita un teléfono para crear el acceso web." }, { status: 400 });
 
+      if (client.auth_user_id) {
+        const existing = await resolveClientAuthUser(gate.admin, client);
+        if (!existing) {
+          const { error: clearError } = await gate.admin.from("crm_clientes").update({ auth_user_id: null }).eq("id", clientId);
+          if (clearError) throw clearError;
+        }
+      }
       const linked = await ensureClienteAuthUser({ phone: String(client.telefono), password });
+      invalidateAuthUsersCache();
       await writeAudit(gate.admin, gate.me, clientId, linked.auth_user_id, "admin_cliente_web_crear_acceso", { created: linked.created });
       return NextResponse.json({ ok: true, auth_user_id: linked.auth_user_id, created: linked.created });
     }
 
     if (action === "delete_access") {
-      const users = await listAllAuthUsers(gate.admin);
-      const directId = String(client.auth_user_id || "").trim();
-      const normalizedPhone = authPhoneKey(client.telefono);
-      let aliasEmail = "";
-      try { aliasEmail = normalizedPhone ? buildClienteAliasEmail(normalizedPhone) : ""; } catch { aliasEmail = ""; }
-      const authUser = directId
-        ? users.find((user) => user.id === directId) || null
-        : users.find((user) => {
-            return (client.email && authEmailKey(user.email) === authEmailKey(client.email))
-              || (aliasEmail && authEmailKey(user.email) === authEmailKey(aliasEmail));
-          }) || null;
+      const authUser = await resolveClientAuthUser(gate.admin, client);
 
       if (!authUser) return NextResponse.json({ ok: false, error: "Esta ficha no tiene un acceso web propio que se pueda eliminar." }, { status: 404 });
 
@@ -371,19 +480,40 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "Esta cuenta Auth también está vinculada a otra ficha. Revisa la duplicidad antes de eliminarla." }, { status: 409 });
       }
 
-      await writeAudit(gate.admin, gate.me, clientId, authUser.id, "admin_cliente_web_eliminar_acceso", {
-        preserved_crm_client: true,
-        phone: client.telefono || null,
-      });
+      const { data: workerIdentity, error: workerIdentityError } = await gate.admin
+        .from("workers")
+        .select("id")
+        .eq("user_id", authUser.id)
+        .maybeSingle();
+      if (workerIdentityError) throw workerIdentityError;
 
-      const { error: banError } = await gate.admin.auth.admin.updateUserById(authUser.id, { ban_duration: "876000h" });
-      if (banError) throw banError;
+      if (!workerIdentity) {
+        const { error: banError } = await gate.admin.auth.admin.updateUserById(authUser.id, { ban_duration: "876000h" });
+        if (banError) throw banError;
+      }
 
       const { error: unlinkError } = await gate.admin
         .from("crm_clientes")
         .update({ auth_user_id: null, updated_at: new Date().toISOString() })
         .eq("id", clientId);
-      if (unlinkError) throw unlinkError;
+      if (unlinkError) {
+        if (!workerIdentity) await gate.admin.auth.admin.updateUserById(authUser.id, { ban_duration: "none" });
+        throw unlinkError;
+      }
+
+      await writeAudit(gate.admin, gate.me, clientId, authUser.id, "admin_cliente_web_eliminar_acceso", {
+        preserved_crm_client: true,
+        preserved_auth_identity: Boolean(workerIdentity),
+        phone: client.telefono || null,
+      });
+
+      // Si la identidad también pertenece a un trabajador, borrar auth.users
+      // eliminaría su acceso interno y activaría cascadas sobre su historial.
+      // En ese caso basta con retirar el vínculo de cliente web.
+      if (workerIdentity) {
+        invalidateAuthUsersCache();
+        return NextResponse.json({ ok: true, preserved_crm_client: true, preserved_auth_identity: true });
+      }
 
       // Desvincular primero protege la ficha CRM incluso si la FK histórica
       // estuviera configurada con una acción destructiva al borrar auth.users.
@@ -394,33 +524,13 @@ export async function POST(req: Request) {
         throw deleteError;
       }
 
+      invalidateAuthUsersCache();
       return NextResponse.json({ ok: true, preserved_crm_client: true });
     }
 
-    let authUserId = String(client.auth_user_id || "").trim();
-    if (!authUserId) {
-      const users = await listAllAuthUsers(gate.admin);
-      const normalizedPhone = authPhoneKey(client.telefono);
-      let aliasEmail = "";
-      try { aliasEmail = normalizedPhone ? buildClienteAliasEmail(normalizedPhone) : ""; } catch { aliasEmail = ""; }
-      const match = users.find((user) => {
-        const metadata = (user.user_metadata || {}) as Record<string, unknown>;
-        return String(metadata.crm_cliente_id || "") === clientId
-          || (client.email && authEmailKey(user.email) === authEmailKey(client.email))
-          || (aliasEmail && authEmailKey(user.email) === authEmailKey(aliasEmail))
-          || (normalizedPhone && authPhoneKey(metadata.telefono_normalizado || metadata.telefono || metadata.phone) === normalizedPhone);
-      });
-      authUserId = match?.id || "";
-      if (authUserId) {
-        const { error: linkError } = await gate.admin.from("crm_clientes").update({ auth_user_id: authUserId }).eq("id", clientId);
-        if (linkError) throw linkError;
-      }
-    }
-    if (!authUserId) return NextResponse.json({ ok: false, error: "CLIENT_WITHOUT_WEB_ACCESS" }, { status: 400 });
-
-    const { data: authData, error: authError } = await gate.admin.auth.admin.getUserById(authUserId);
-    if (authError) throw authError;
-    if (!authData.user) return NextResponse.json({ ok: false, error: "AUTH_USER_NOT_FOUND" }, { status: 404 });
+    const authUser = await resolveClientAuthUser(gate.admin, client);
+    if (!authUser) return NextResponse.json({ ok: false, error: "CLIENT_WITHOUT_WEB_ACCESS" }, { status: 400 });
+    const authUserId = authUser.id;
 
     if (action === "password") {
       const password = String(body.password || "");
@@ -429,6 +539,7 @@ export async function POST(req: Request) {
       if (password !== confirm) return NextResponse.json({ ok: false, error: "Las contraseñas no coinciden." }, { status: 400 });
       const { error } = await gate.admin.auth.admin.updateUserById(authUserId, { password });
       if (error) throw error;
+      invalidateAuthUsersCache();
       await writeAudit(gate.admin, gate.me, clientId, authUserId, "admin_cliente_web_password", { changed: true });
       return NextResponse.json({ ok: true });
     }
