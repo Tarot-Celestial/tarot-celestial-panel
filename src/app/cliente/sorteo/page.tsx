@@ -1,0 +1,92 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Gift, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "lucide-react";
+import ClienteLayout from "@/components/cliente/ClienteLayout";
+import { supabaseBrowser } from "@/lib/supabase-browser";
+import styles from "./sorteo.module.css";
+
+const sb = supabaseBrowser();
+
+type NumberEntry = { id: string; number: number; assigned_at: string };
+
+export default function ClienteSorteoPage() {
+  const [numbers, setNumbers] = useState<NumberEntry[]>([]);
+  const [raffleTitle, setRaffleTitle] = useState("Sorteo actual");
+  const [clientId, setClientId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) setLoading(true);
+    setMessage("");
+    try {
+      const session = await sb.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) {
+        window.location.href = "/cliente/login";
+        return;
+      }
+      const response = await fetch("/api/cliente/raffle", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar tu sorteo.");
+      setClientId(String(json.client_id || ""));
+      setRaffleTitle(String(json.raffle?.title || "Sorteo actual"));
+      setNumbers(Array.isArray(json.numbers) ? json.numbers : []);
+    } catch (error: any) {
+      setMessage(error?.message || "No se pudo cargar tu sorteo.");
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!clientId) return;
+    const channel = sb
+      .channel(`cliente:${clientId}:sorteo`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "raffle_entries", filter: `client_id=eq.${clientId}` }, () => {
+        void load(true);
+      })
+      .subscribe();
+    return () => { void sb.removeChannel(channel); };
+  }, [clientId, load]);
+
+  return (
+    <ClienteLayout
+      title="Sorteo"
+      subtitle="Consulta aquí el número que te ha asignado tu central."
+      summaryItems={[{ label: "Números asignados", value: String(numbers.length), meta: raffleTitle, tone: "points" }]}
+    >
+      <section className={styles.root}>
+        <header className={styles.header}>
+          <div className={styles.icon}><Gift /></div>
+          <div><span>NOVEDAD CELESTIAL</span><h2>{raffleTitle}</h2><p>Tu participación se sincroniza automáticamente cuando la central te asigna un número.</p></div>
+          <button type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? styles.spin : undefined} /> Actualizar</button>
+        </header>
+
+        {message ? <div className={styles.message} role="alert">{message}</div> : null}
+        {loading ? <div className={styles.loading}><LoaderCircle className={styles.spin} /> Consultando tu número…</div> : numbers.length ? (
+          <div className={styles.ticketGrid}>
+            {numbers.map((entry) => (
+              <article key={entry.id} className={styles.ticket}>
+                <div className={styles.ticketTop}><TicketCheck /><span>TU NÚMERO DE SORTEO</span></div>
+                <strong>{entry.number}</strong>
+                <p>Asignado el {new Date(entry.assigned_at).toLocaleString("es-ES")}</p>
+                <div><Sparkles /> Participación confirmada</div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.empty}>
+            <Gift />
+            <h3>Aún no tienes un número asignado</h3>
+            <p>Cuando tu central te añada al sorteo, tu número aparecerá aquí automáticamente.</p>
+          </div>
+        )}
+      </section>
+    </ClienteLayout>
+  );
+}
+

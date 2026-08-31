@@ -25,6 +25,7 @@ import MyInvoicePanel, { useMyInvoice } from "@/features/central/MyInvoicePanel"
 import { ChatProvider } from "@/providers/ChatProvider";
 import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
+import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
@@ -43,6 +44,10 @@ import CentralTeamLivePanel from "@/features/central/CentralTeamLivePanel";
 import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
+const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralRafflePanel"), {
+  ssr: false,
+  loading: () => <section className="tc-card"><div className="tc-sub">Preparando el sorteo…</div></section>,
+});
 
 const TABS = [
   "central",
@@ -1484,19 +1489,7 @@ function CentralPage() {
           )}
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
-          {tab === "sorteo" && (
-            <section className="tc-card" aria-labelledby="central-sorteo-title">
-              <div className="tc-row" style={{ alignItems: "center", gap: 12 }}>
-                <Gift aria-hidden="true" />
-                <div>
-                  <div id="central-sorteo-title" className="tc-title">Sorteo</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Espacio preparado para gestionar los sorteos del equipo.
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
+          {tab === "sorteo" && <CentralRafflePanel />}
           {tab === "captacion" && (
             <CaptacionPanel
               onOpenClient={(clienteId) => {

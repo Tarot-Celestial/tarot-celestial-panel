@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronRight, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
+import { BellRing, ChevronRight, Gift, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useEffect } from "react";
 import styles from "./ClientePremium.module.css";
@@ -100,6 +100,11 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                   <WandSparkles size={16} /> Oráculo <span className="tc-nav-new-badge">NUEVO</span>
+                </span>
+              </Link>
+              <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/sorteo" ? "tc-nav-link-active" : ""}`} href="/cliente/sorteo">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  <Gift size={16} /> Sorteo <span className="tc-nav-new-badge">NUEVO</span>
                 </span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/tarotistas" ? "tc-nav-link-active" : ""}`} href="/cliente/tarotistas">
