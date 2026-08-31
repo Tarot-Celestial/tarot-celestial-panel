@@ -40,7 +40,7 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import CentralTeamLivePanel from "@/features/central/CentralTeamLivePanel";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
 
@@ -56,6 +56,7 @@ const TABS = [
   "panel",
   "equipo",
   "crm",
+  "sorteo",
   "chat",
   "reservas",
   "diario",
@@ -92,6 +93,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "equipo", label: "Equipo", icon: Users },
   { key: "crm", label: "CRM", icon: Users },
+  { key: "sorteo", label: "Sorteo", icon: Gift },
   { key: "reservas", label: "Reservas", icon: CalendarDays },
   { key: "captacion", label: "Captación", icon: Megaphone },
   { key: "incidencias", label: "Incidencias", icon: ShieldCheck },
@@ -1482,6 +1484,19 @@ function CentralPage() {
           )}
 
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
+          {tab === "sorteo" && (
+            <section className="tc-card" aria-labelledby="central-sorteo-title">
+              <div className="tc-row" style={{ alignItems: "center", gap: 12 }}>
+                <Gift aria-hidden="true" />
+                <div>
+                  <div id="central-sorteo-title" className="tc-title">Sorteo</div>
+                  <div className="tc-sub" style={{ marginTop: 6 }}>
+                    Espacio preparado para gestionar los sorteos del equipo.
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
           {tab === "captacion" && (
             <CaptacionPanel
               onOpenClient={(clienteId) => {
