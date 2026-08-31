@@ -208,6 +208,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
 
   useEffect(() => {
     if (!enabled) return;
+    let disposed = false;
     void load();
 
     const refreshSoon = () => {
@@ -246,11 +247,20 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => { if (viewingToday) refreshSoon(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => { if (viewingToday) refreshSoon(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => { if (viewingToday) refreshSoon(); })
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setSyncStatus("error");
+      .subscribe((status, channelError) => {
+        if (disposed) return;
+        // CLOSED es el resultado normal de removeChannel al cambiar de pestaña.
+        // Solo los estados que Supabase documenta como fallo deben encender el
+        // indicador rojo.
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("[central-xp-realtime]", status, channelError);
+          setSyncStatus("error");
+        }
       });
 
     return () => {
+      disposed = true;
+      requestRef.current += 1;
       window.clearInterval(refreshTimer);
       if (refreshDebounceRef.current != null) {
         window.clearTimeout(refreshDebounceRef.current);

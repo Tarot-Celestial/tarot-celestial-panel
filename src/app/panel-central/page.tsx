@@ -235,8 +235,18 @@ function CentralPage() {
   const requestedDate = String(searchParams?.get("date") || "");
   const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= todayKey ? requestedDate : todayKey;
   const needsXpData = tab === "central" || tab === "mis-clientas" || tab.startsWith("tu-sistema-xp");
+  const needsFidelityData = tab === "central" || tab === "mis-clientas";
   const xpFeed = useCentralXpData(selectedDate, ok && needsXpData);
-  const fidelityFeed = useCentralFidelityData(ok && (tab === "central" || tab === "mis-clientas"));
+  const fidelityFeed = useCentralFidelityData(ok && needsFidelityData);
+  const activeSyncStatuses = [
+    ...(needsXpData ? [xpFeed.syncStatus] : []),
+    ...(needsFidelityData ? [fidelityFeed.syncStatus] : []),
+  ];
+  const headerSyncStatus = !ok || activeSyncStatuses.includes("syncing")
+    ? "syncing"
+    : activeSyncStatuses.includes("error")
+    ? "error"
+    : "synced";
   const xpData = xpFeed.data;
   const xpProgress = xpData?.progress;
   const currentTierName = xpProgress?.tier?.name || "Sin categoría";
@@ -1165,7 +1175,7 @@ function CentralPage() {
             progress={centralProgress}
             profile={centralProfile}
             onSync={() => { void xpFeed.load(); void fidelityFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
-            syncStatus={xpFeed.syncStatus === "error" || fidelityFeed.syncStatus === "error" ? "error" : xpFeed.syncStatus === "syncing" || fidelityFeed.syncStatus === "syncing" ? "syncing" : "synced"}
+            syncStatus={headerSyncStatus}
             lastSyncedAt={fidelityFeed.lastSyncedAt || xpFeed.lastSyncedAt}
           />
           {tab === "central" && <CentralDateSelector value={selectedDate} today={todayKey} loading={xpFeed.busy} onChange={(date) => { const params=new URLSearchParams(searchParams?.toString()||""); params.set("tab","central"); params.set("date",date); router.push(`${pathname}?${params.toString()}`,{scroll:false}); }} />}
