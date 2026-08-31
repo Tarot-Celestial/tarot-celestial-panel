@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       alias_email: result.alias_email,
+      auth_phone: result.auth_phone,
       created: result.created,
       auth_user_id: result.auth_user_id,
     });

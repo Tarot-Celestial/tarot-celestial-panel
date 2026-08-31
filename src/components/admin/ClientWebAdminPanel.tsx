@@ -155,6 +155,18 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
     }
   };
 
+  const submitPassword = async () => {
+    if (password.length < 8) {
+      setMessage("La contraseña debe tener al menos 8 caracteres.");
+      return;
+    }
+    if (password !== confirm) {
+      setMessage("Las contraseñas no coinciden.");
+      return;
+    }
+    await runAction({ action: selected?.web_access ? "password" : "create_access", password, confirm });
+  };
+
   const giftCoins = async () => {
     if (!selected || giftBusy) return;
     const amount = Number(giftAmount);
@@ -278,7 +290,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
       </div>
     </div></div> : null}
 
-    {selected && passwordOpen ? <div className={styles.backdropTop}><div className={styles.smallModal}><div className={styles.modalHeader}><div><div className={styles.eyebrow}>ACCESO SEGURO</div><h2>{selected.web_access ? "Restablecer contraseña" : "Crear acceso web"}</h2></div><button className={styles.close} onClick={() => setPasswordOpen(false)}>×</button></div><p>{selected.web_access ? "La contraseña actual nunca se muestra ni se recupera. Solo se establecerá una nueva." : "Se creará o enlazará de forma segura la cuenta web de esta clienta sin duplicar su ficha CRM."}</p><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)}/></label><label>Confirmar contraseña<input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)}/></label>{message ? <div className={styles.message}>{message}</div> : null}<div className={styles.dialogActions}><button onClick={() => setPasswordOpen(false)}>Cancelar</button><button className={styles.primaryButton} disabled={busy || password.length < 8 || password !== confirm} onClick={() => void runAction({ action: selected.web_access ? "password" : "create_access", password, confirm })}>{busy ? (selected.web_access ? "Cambiando…" : "Creando…") : (selected.web_access ? "Cambiar contraseña" : "Crear acceso web")}</button></div></div></div> : null}
+    {selected && passwordOpen ? <div className={styles.backdropTop}><div className={styles.smallModal}><div className={styles.modalHeader}><div><div className={styles.eyebrow}>ACCESO SEGURO</div><h2>{selected.web_access ? "Restablecer contraseña" : "Crear acceso web"}</h2></div><button className={styles.close} onClick={() => setPasswordOpen(false)}>×</button></div><p>{selected.web_access ? "La contraseña actual nunca se muestra ni se recupera. Solo se establecerá una nueva." : "Se creará o enlazará de forma segura la cuenta web de esta clienta sin duplicar su ficha CRM."}</p><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={(e) => { setPassword(e.target.value); setMessage(""); }}/><small>Mínimo 8 caracteres.</small></label><label>Confirmar contraseña<input type="password" autoComplete="new-password" value={confirm} onChange={(e) => { setConfirm(e.target.value); setMessage(""); }}/></label>{message ? <div className={styles.message}>{message}</div> : null}<div className={styles.dialogActions}><button onClick={() => setPasswordOpen(false)}>Cancelar</button><button className={styles.primaryButton} disabled={busy} onClick={() => void submitPassword()}>{busy ? (selected.web_access ? "Cambiando…" : "Creando…") : (selected.web_access ? "Cambiar contraseña" : "Crear acceso web")}</button></div></div></div> : null}
 
     {selected && blockOpen ? <div className={styles.backdropTop}><div className={styles.smallModal}><div className={styles.modalHeader}><div><div className={styles.eyebrow}>CONTROL DE ACCESO</div><h2>Bloquear cuenta</h2></div><button className={styles.close} onClick={() => setBlockOpen(false)}>×</button></div><p>El cliente no podrá iniciar sesión, pero conservará CRM, compras, Coins, minutos, tiradas y rango.</p><label>Tipo de bloqueo<select value={blockMode} onChange={(e) => setBlockMode(e.target.value as "temporary" | "indefinite")}><option value="temporary">Temporal</option><option value="indefinite">Indefinido</option></select></label>{blockMode === "temporary" ? <label>Bloqueado hasta<input type="datetime-local" value={blockUntil} onChange={(e) => setBlockUntil(e.target.value)}/></label> : null}<label>Motivo<textarea rows={3} value={blockReason} onChange={(e) => setBlockReason(e.target.value)} placeholder="Motivo administrativo (opcional)"/></label>{message ? <div className={styles.message}>{message}</div> : null}<div className={styles.dialogActions}><button onClick={() => setBlockOpen(false)}>Cancelar</button><button className={styles.dangerButton} disabled={busy || (blockMode === "temporary" && !blockUntil)} onClick={() => void runAction({ action: "block", mode: blockMode, until: blockMode === "temporary" ? new Date(blockUntil).toISOString() : null, reason: blockReason })}>{busy ? "Bloqueando…" : "Bloquear acceso"}</button></div></div></div> : null}
 

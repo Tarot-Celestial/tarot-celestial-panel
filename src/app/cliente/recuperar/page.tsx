@@ -89,7 +89,10 @@ export default function ClienteRecuperarPage() {
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.ok || !json?.alias_email) throw new Error(json?.error || "No hemos podido actualizar tu contraseña.");
 
-      const { error } = await sb.auth.signInWithPassword({ email: String(json.alias_email), password });
+      const credentials = json.auth_phone
+        ? { phone: String(json.auth_phone), password }
+        : { email: String(json.alias_email), password };
+      const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
       router.replace("/cliente/dashboard");
     } catch (e: any) {

@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 type AuthSummary = {
   id: string;
   email: string | null;
+  phone: string | null;
   created_at: string | null;
   last_sign_in_at: string | null;
   banned_until: string | null;
@@ -44,6 +45,7 @@ function publicAuthUser(user: any): AuthSummary {
   return {
     id: String(user?.id || ""),
     email: user?.email || null,
+    phone: user?.phone || null,
     created_at: user?.created_at || null,
     last_sign_in_at: user?.last_sign_in_at || null,
     banned_until: user?.banned_until || null,
@@ -161,15 +163,17 @@ function isMissingAuthUserError(error: any) {
   return status === 404 || text.includes("user not found") || text.includes("user_not_found");
 }
 
-function authUserMatchesClient(user: AuthSummary, client: any) {
+function authUserMatchScore(user: AuthSummary, client: any) {
   const metadata = (user.user_metadata || {}) as Record<string, unknown>;
   const normalizedPhone = authPhoneKey(client.telefono_normalizado || client.telefono);
   let aliasEmail = "";
   try { aliasEmail = normalizedPhone ? buildClienteAliasEmail(normalizedPhone) : ""; } catch { aliasEmail = ""; }
-  return String(metadata.crm_cliente_id || "").trim() === String(client.id)
-    || Boolean(client.email && authEmailKey(user.email) === authEmailKey(client.email))
-    || Boolean(aliasEmail && authEmailKey(user.email) === authEmailKey(aliasEmail))
-    || Boolean(normalizedPhone && authPhoneKey(metadata.telefono_normalizado || metadata.telefono || metadata.phone) === normalizedPhone);
+  if (String(metadata.crm_cliente_id || "").trim() === String(client.id)) return 120;
+  if (aliasEmail && authEmailKey(user.email) === authEmailKey(aliasEmail)) return 110;
+  if (client.email && authEmailKey(user.email) === authEmailKey(client.email)) return 100;
+  if (normalizedPhone && authPhoneKey(user.phone) === normalizedPhone) return 90;
+  if (normalizedPhone && authPhoneKey(metadata.telefono_normalizado || metadata.telefono || metadata.phone) === normalizedPhone) return 70;
+  return 0;
 }
 
 async function resolveClientAuthUser(admin: any, client: any) {
@@ -184,7 +188,11 @@ async function resolveClientAuthUser(admin: any, client: any) {
     listAllAuthUsers(admin, true),
     loadWorkerAuthUserIds(admin),
   ]);
-  const match = users.find((user) => !workerAuthUserIds.has(user.id) && authUserMatchesClient(user, client)) || null;
+  const match = users
+    .filter((user) => !workerAuthUserIds.has(user.id))
+    .map((user) => ({ user, score: authUserMatchScore(user, client) }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.user || null;
   if (match && match.id !== directId) {
     const { error } = await admin.from("crm_clientes").update({ auth_user_id: match.id }).eq("id", client.id);
     if (error) throw error;

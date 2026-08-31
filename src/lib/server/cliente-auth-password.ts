@@ -185,6 +185,83 @@ export async function findAuthUserByAliasEmail(aliasEmail: string) {
   return null;
 }
 
+function authEmail(value: unknown) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function authPhone(value: unknown) {
+  return normalizePhoneDigits(String(value || ""));
+}
+
+function isMissingAuthUser(error: any) {
+  const status = Number(error?.status || error?.statusCode || 0);
+  const message = String(error?.message || error?.code || "").toLowerCase();
+  return status === 404 || message.includes("user not found") || message.includes("user_not_found");
+}
+
+async function listClientAuthUsers(admin: ReturnType<typeof adminSupabase>) {
+  const [workers, usersResult] = await Promise.all([
+    admin.from("workers").select("user_id").not("user_id", "is", null),
+    (async () => {
+      const users: any[] = [];
+      let page = 1;
+      const perPage = 200;
+      while (page <= 50) {
+        const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+        if (error) throw error;
+        const batch = data?.users || [];
+        users.push(...batch);
+        if (batch.length < perPage) break;
+        page += 1;
+      }
+      return users;
+    })(),
+  ]);
+  if (workers.error) throw workers.error;
+  const workerIds = new Set((workers.data || []).map((row: any) => String(row.user_id || "")).filter(Boolean));
+  return usersResult.filter((user: any) => !workerIds.has(String(user.id || "")));
+}
+
+async function resolveClienteAuthUser(admin: ReturnType<typeof adminSupabase>, cliente: any, phoneDigits: string, aliasEmail: string) {
+  const directId = String(cliente.auth_user_id || "").trim();
+  if (directId) {
+    const { data, error } = await admin.auth.admin.getUserById(directId);
+    if (!error && data?.user) return data.user;
+    if (error && !isMissingAuthUser(error)) throw error;
+  }
+
+  const users = await listClientAuthUsers(admin);
+  const clientEmail = authEmail(cliente.email);
+  const scored = users
+    .map((user: any) => {
+      const metadata = user.user_metadata || {};
+      let score = 0;
+      if (String(metadata.crm_cliente_id || "").trim() === String(cliente.id)) score = 120;
+      else if (authEmail(user.email) === authEmail(aliasEmail)) score = 110;
+      else if (clientEmail && authEmail(user.email) === clientEmail) score = 100;
+      else if (phoneDigits && authPhone(user.phone) === phoneDigits) score = 90;
+      else if (phoneDigits && authPhone(metadata.telefono_normalizado || metadata.telefono || metadata.phone) === phoneDigits) score = 70;
+      return { user, score };
+    })
+    .filter((candidate: any) => candidate.score > 0)
+    .sort((a: any, b: any) => b.score - a.score);
+
+  const match = scored[0]?.user || null;
+  if (match && String(match.id) !== directId) await linkClienteAuthUser(admin, cliente.id, match.id);
+  return match;
+}
+
+function loginIdentity(user: any, aliasEmail: string) {
+  const email = String(user?.email || "").trim();
+  const phone = String(user?.phone || "").trim();
+  return {
+    // Conservamos alias_email por compatibilidad, aunque en cuentas antiguas
+    // puede ser el correo real de Auth en vez del alias técnico.
+    alias_email: email || aliasEmail,
+    auth_phone: email ? null : (phone || null),
+  };
+}
+
 export async function ensureClienteAuthUser(params: {
   phone: string;
   password?: string;
@@ -201,12 +278,15 @@ export async function ensureClienteAuthUser(params: {
     throw new Error("CLIENTE_NOT_FOUND");
   }
 
-  if (cliente.auth_user_id) {
+  const resolvedUser = await resolveClienteAuthUser(sb, cliente, phoneDigits, aliasEmail);
+
+  if (resolvedUser) {
     if (params.password) {
-      const { error } = await sb.auth.admin.updateUserById(cliente.auth_user_id, {
+      const { error } = await sb.auth.admin.updateUserById(resolvedUser.id, {
         password: params.password,
         email_confirm: true,
         user_metadata: {
+          ...(resolvedUser.user_metadata || {}),
           telefono_normalizado: phoneDigits,
           crm_cliente_id: cliente.id,
           password_ready: true,
@@ -215,12 +295,15 @@ export async function ensureClienteAuthUser(params: {
       if (error) throw error;
     }
 
+    await linkClienteAuthUser(sb, cliente.id, resolvedUser.id);
     await syncClientePhone(sb, cliente.id, phoneDigits);
+
+    const identity = loginIdentity(resolvedUser, aliasEmail);
 
     return {
       ok: true,
-      auth_user_id: cliente.auth_user_id,
-      alias_email: aliasEmail,
+      auth_user_id: resolvedUser.id,
+      ...identity,
       created: false,
     };
   }
@@ -249,7 +332,7 @@ export async function ensureClienteAuthUser(params: {
     return {
       ok: true,
       auth_user_id: existingUser.id,
-      alias_email: aliasEmail,
+      ...loginIdentity(existingUser, aliasEmail),
       created: false,
     };
   }
@@ -274,7 +357,7 @@ export async function ensureClienteAuthUser(params: {
   return {
     ok: true,
     auth_user_id: created.user.id,
-    alias_email: aliasEmail,
+    ...loginIdentity(created.user, aliasEmail),
     created: true,
   };
 }

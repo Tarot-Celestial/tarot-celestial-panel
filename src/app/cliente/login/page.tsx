@@ -68,10 +68,10 @@ export default function ClienteLoginPage() {
         throw new Error(json?.error || "No hemos podido preparar tu acceso.");
       }
 
-      const { error } = await sb.auth.signInWithPassword({
-        email: String(json.alias_email),
-        password,
-      });
+      const credentials = json.auth_phone
+        ? { phone: String(json.auth_phone), password }
+        : { email: String(json.alias_email), password };
+      const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
 
       router.replace("/cliente/dashboard");
@@ -114,10 +114,10 @@ export default function ClienteLoginPage() {
         throw new Error(json?.error || "No hemos podido crear tu acceso.");
       }
 
-      const { error } = await sb.auth.signInWithPassword({
-        email: String(json.alias_email),
-        password: createPassword,
-      });
+      const credentials = json.auth_phone
+        ? { phone: String(json.auth_phone), password: createPassword }
+        : { email: String(json.alias_email), password: createPassword };
+      const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
 
       router.replace("/cliente/dashboard");

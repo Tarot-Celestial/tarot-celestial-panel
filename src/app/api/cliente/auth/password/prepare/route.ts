@@ -42,6 +42,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       alias_email: result.alias_email,
+      auth_phone: result.auth_phone,
       created: result.created,
       auth_user_id: result.auth_user_id,
       onboarding_completado: Boolean((cliente as any)?.onboarding_completado),

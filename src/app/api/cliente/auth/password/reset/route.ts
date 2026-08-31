@@ -71,6 +71,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       alias_email: authState.alias_email,
+      auth_phone: authState.auth_phone,
       created: authState.created,
       auth_user_id: authState.auth_user_id,
     });
