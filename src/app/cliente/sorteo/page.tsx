@@ -75,6 +75,21 @@ export default function ClienteSorteoPage() {
           <button type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? styles.spin : undefined} /> Actualizar</button>
         </header>
 
+        <article className={styles.secret}>
+          <div className={styles.secretIcon}><Sparkles /></div>
+          <div className={styles.secretContent}>
+            <span className={styles.secretEyebrow}>SECRETO CELESTIAL</span>
+            <h3>EL SECRETO CELESTIAL HA DESPERTADO</h3>
+            <p>Tu premio está escondido en algún lugar de tu panel... 👀</p>
+            <div className={styles.clue}>
+              <strong>PISTA:</strong>
+              <span>“No necesitas gastar para encontrarme. Pregunta al destino, donde una respuesta puede llegar sin pagar.” 🔮</span>
+            </div>
+            <p>Encuentra el símbolo celestial <strong className={styles.secretSymbol}>«</strong> y tócalo.</p>
+            <p className={styles.secretPrize}>Tu premio sigue siendo un secreto... 🎁</p>
+          </div>
+        </article>
+
         {message ? <div className={styles.message} role="alert">{message}</div> : null}
         {loading ? <div className={styles.loading}><LoaderCircle className={styles.spin} /> Consultando tu número…</div> : numbers.length ? (
           <div className={styles.ticketGrid}>
