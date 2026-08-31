@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getConversionProbability } from "@/lib/conversion-engine";
 import { sortByDecision, getNextBestAction } from "@/lib/decision-engine";
 import { getAnalytics } from "@/lib/analytics-lite";
@@ -303,6 +303,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
   const [chatItems, setChatItems] = useState<any[]>([]);
   const [incidentItems, setIncidentItems] = useState<any[]>([]);
   const [refreshedAt, setRefreshedAt] = useState<string | null>(null);
+  const loadInFlightRef = useRef(false);
 
   const fireAction = useCallback(
     (action: InboxAction) => {
@@ -325,6 +326,8 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
   );
 
   const load = useCallback(async () => {
+    if (loadInFlightRef.current || document.visibilityState === "hidden") return;
+    loadInFlightRef.current = true;
     setLoading(true);
     setError("");
 
@@ -407,13 +410,23 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       setError(String(e?.message || "No se pudo cargar la bandeja"));
     } finally {
       setLoading(false);
+      loadInFlightRef.current = false;
     }
   }, [mode]);
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), mode === "tarotista" ? 45_000 : 30_000);
-    return () => window.clearInterval(id);
+    const id = window.setInterval(() => void load(), 120_000);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [load, mode]);
 
   const loadSummary = useMemo(() => {

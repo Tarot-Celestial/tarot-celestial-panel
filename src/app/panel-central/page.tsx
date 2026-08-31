@@ -225,16 +225,18 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 
 function CentralPage() {
   const [ok, setOk] = useState(false);
+  const [tab, setTab] = useState<TabKey>("panel");
   const notificationFeed = useCentralNotificationsFeed();
-  const myInvoiceFeed = useMyInvoice();
+  const myInvoiceFeed = useMyInvoice(ok && tab === "mi-factura");
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const todayKey = madridTodayKey();
   const requestedDate = String(searchParams?.get("date") || "");
   const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= todayKey ? requestedDate : todayKey;
-  const xpFeed = useCentralXpData(selectedDate, ok);
-  const fidelityFeed = useCentralFidelityData(ok);
+  const needsXpData = tab === "central" || tab === "mis-clientas" || tab.startsWith("tu-sistema-xp");
+  const xpFeed = useCentralXpData(selectedDate, ok && needsXpData);
+  const fidelityFeed = useCentralFidelityData(ok && (tab === "central" || tab === "mis-clientas"));
   const xpData = xpFeed.data;
   const xpProgress = xpData?.progress;
   const currentTierName = xpProgress?.tier?.name || "Sin categoría";
@@ -244,7 +246,6 @@ function CentralPage() {
     ? `${xpProgress.next_level}${nextTierName ? ` · ${nextTierName}` : ""}`
     : "máximo";
   const notificationCount = Number(notificationFeed.summary.active ?? notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0);
-  const [tab, setTab] = useState<TabKey>("panel");
   const [myClientsView, setMyClientsView] = useState<MyClientsView>("all");
   const [newClientOpen, setNewClientOpen] = useState(false);
   const closeNewClient = useCallback(() => setNewClientOpen(false), []);
@@ -430,6 +431,7 @@ function CentralPage() {
   }, []);
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
+  const crmCloseNotifInFlightRef = useRef(false);
   const [month, setMonth] = useState(monthKeyNow());
 
   const [rank, setRank] = useState<any>(null);
@@ -554,12 +556,17 @@ function CentralPage() {
       )
       .subscribe();
 
-    const timer = setInterval(() => {
-      loadLatestCrmCloseNotif(true);
-    }, 10000);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void loadLatestCrmCloseNotif(true);
+    };
+    const timer = setInterval(refreshVisible, 120000);
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
 
     return () => {
       clearInterval(timer);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
       sb.removeChannel(channel);
     };
   }, [ok, crmDismissedIds]);
@@ -567,6 +574,8 @@ function CentralPage() {
 
 
   async function loadLatestCrmCloseNotif(silent = false) {
+    if (crmCloseNotifInFlightRef.current) return;
+    crmCloseNotifInFlightRef.current = true;
     try {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
@@ -584,6 +593,7 @@ function CentralPage() {
       if (crmDismissedIds.includes(String(notif.id))) return;
       setCrmCloseNotif(notif);
     } catch {}
+    finally { crmCloseNotifInFlightRef.current = false; }
   }
 
 

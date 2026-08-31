@@ -7,7 +7,7 @@ import type { CentralXpData } from "@/features/central/useCentralXpData";
 import styles from "./PaymentMotivationWatcher.module.css";
 
 const sb = supabaseBrowser();
-const POLL_MS = 12000;
+const FALLBACK_POLL_MS = 120000;
 const MAX_VISIBLE = 3;
 const DISPLAY_MS = 4400;
 
@@ -71,6 +71,7 @@ export default function PaymentMotivationWatcher({
   const seenRef = useRef(new Set<string>());
   const mountedAtRef = useRef(Date.now());
   const lastPaymentRef = useRef("");
+  const pollInFlightRef = useRef(false);
   const rules = useMemo(() => new Map((xpData?.rules || []).map((rule) => [rule.action_key, rule.name])), [xpData?.rules]);
   const workerId = String(xpData?.worker?.id || "");
 
@@ -158,6 +159,9 @@ export default function PaymentMotivationWatcher({
     let stopped = false;
     let initialized = false;
     const poll = async () => {
+      if (document.visibilityState === "hidden" || pollInFlightRef.current) return;
+      pollInFlightRef.current = true;
+      try {
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token || stopped) return;
@@ -174,11 +178,31 @@ export default function PaymentMotivationWatcher({
       if (String(latest.id) !== lastPaymentRef.current) {
         showPayment({ paymentId: latest.id, clientName: latest.cliente_nombre || "Clienta", amount: latest.importe, countToday: snapshot?.count });
       }
+      } finally {
+        pollInFlightRef.current = false;
+      }
     };
     void poll();
-    const timer = window.setInterval(() => void poll(), POLL_MS);
-    return () => { stopped = true; window.clearInterval(timer); };
-  }, [showPayment]);
+    // Realtime entrega el aviso inmediatamente. El sondeo queda como red de
+    // seguridad y deja de golpear el endpoint cada 12 segundos.
+    const channel = sb
+      .channel(`payment-motivation-${mode}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "crm_cliente_pagos" }, () => void poll())
+      .subscribe();
+    const timer = window.setInterval(() => void poll(), FALLBACK_POLL_MS);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+      void sb.removeChannel(channel);
+    };
+  }, [mode, showPayment]);
 
   if (!items.length) return null;
   return (

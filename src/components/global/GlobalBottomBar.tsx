@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabase-browser";
 import { usePhone } from "@/context/PhoneContext";
 import { useRealtimeCounters } from "@/hooks/useRealtimeCounters";
+import { useAttendance } from "@/hooks/useAttendance";
 import IPPhoneBar from "@/components/phone/IPPhoneBar";
 import DockChatWidget from "@/components/global/DockChatWidget";
 import { TC_EVENTS, emitDockOpenCaptacion, emitDockOpenParking } from "@/lib/tc-events";
@@ -77,15 +77,11 @@ export default function GlobalBottomBar() {
   const pathname = usePathname();
   const { isOpen, setIsOpen } = usePhone();
   const { parking, leads } = useRealtimeCounters();
+  const attendance = useAttendance();
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
-  const [presence, setPresence] = useState<DockPresence>({
-    online: false,
-    status: "offline",
-    label: "Desconectado",
-    tone: "offline",
-  });
+  const presence = useMemo(() => presenceFromAttendance(attendance), [attendance.online, attendance.status]);
   const [activeTab, setActiveTab] = useState<string>("");
 
   const prevParkingRef = useRef(0);
@@ -98,34 +94,6 @@ export default function GlobalBottomBar() {
   const captacionActive = activeTab === "captacion";
   const isTarotistaPanel = path.startsWith("/panel-tarotista");
 
-  async function refreshPresence() {
-    try {
-      const sb = supabaseBrowser();
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token || "";
-
-      if (!token) {
-        setPresence({ online: false, status: "offline", label: "Desconectado", tone: "offline" });
-        return;
-      }
-
-      const res = await fetch(`/api/attendance/me?t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok || !json?.ok) {
-        setPresence({ online: false, status: "offline", label: "Desconectado", tone: "offline" });
-        return;
-      }
-
-      setPresence(presenceFromAttendance(json));
-    } catch {
-      setPresence({ online: false, status: "offline", label: "Desconectado", tone: "offline" });
-    }
-  }
-
   useEffect(() => {
     if (!visible) return;
 
@@ -136,35 +104,6 @@ export default function GlobalBottomBar() {
 
     window.addEventListener(TC_EVENTS.activeTabChanged, onActiveTabChanged as EventListener);
     return () => window.removeEventListener(TC_EVENTS.activeTabChanged, onActiveTabChanged as EventListener);
-  }, [visible]);
-
-  // Estado real del operador: viene de attendance_state vía /api/attendance/me.
-  // No depende solo de que exista sesión Supabase.
-  useEffect(() => {
-    if (!visible) return;
-
-    const sb = supabaseBrowser();
-    void refreshPresence();
-
-    const interval = window.setInterval(() => void refreshPresence(), 30000);
-    const onFocus = () => void refreshPresence();
-    const onAttendanceChanged = () => void refreshPresence();
-
-    window.addEventListener("focus", onFocus);
-    window.addEventListener(TC_EVENTS.attendanceChanged, onAttendanceChanged as EventListener);
-
-    const {
-      data: { subscription },
-    } = sb.auth.onAuthStateChange(() => {
-      void refreshPresence();
-    });
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener(TC_EVENTS.attendanceChanged, onAttendanceChanged as EventListener);
-      subscription.unsubscribe();
-    };
   }, [visible]);
 
   // Sonidos de parking/leads, evitando sonar en la primera carga.

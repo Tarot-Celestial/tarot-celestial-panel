@@ -273,9 +273,18 @@ export default function ReservasPanel({
 
   useEffect(() => {
     loadReservas(false);
-    const t = setInterval(() => loadReservas(true), 15000);
-    return () => clearInterval(t);
-  }, []);
+    const channel = sb
+      .channel(`reservas-panel-${mode}-${activeBrand}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "reservas" }, () => void loadReservas(true))
+      .subscribe();
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void loadReservas(true);
+    }, 120000);
+    return () => {
+      clearInterval(t);
+      void sb.removeChannel(channel);
+    };
+  }, [activeBrand, mode]);
 
   const filtered = useMemo(() => {
     const now = new Date();
@@ -530,4 +539,3 @@ export default function ReservasPanel({
     </div>
   );
 }
-

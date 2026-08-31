@@ -26,11 +26,12 @@ type Props = { feed: MyInvoiceFeed };
 const sb = supabaseBrowser();
 const eur = (n: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(Number(n) || 0);
 
-export function useMyInvoice() {
+export function useMyInvoice(enabled = true) {
   const [data, setData] = useState<MyInvoiceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
+    if (!enabled) return;
     const { data: session } = await sb.auth.getSession();
     const token = session.session?.access_token;
     if (!token) return;
@@ -41,16 +42,16 @@ export function useMyInvoice() {
       setData(json as MyInvoiceData); setError("");
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo cargar la factura"); }
     finally { setLoading(false); }
-  }, []);
-  useEffect(() => { void load(); }, [load]);
+  }, [enabled]);
+  useEffect(() => { if (enabled) void load(); }, [enabled, load]);
   useEffect(() => {
-    if (!data?.worker.id) return;
+    if (!enabled || !data?.worker.id) return;
     const channel = sb.channel(`central-my-invoice-${data.worker.id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices", filter: `worker_id=eq.${data.worker.id}` }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "invoice_lines", filter: `invoice_id=eq.${data.invoice?.id || "00000000-0000-0000-0000-000000000000"}` }, () => void load())
       .subscribe();
     return () => { void sb.removeChannel(channel); };
-  }, [data?.worker.id, data?.invoice?.id, load]);
+  }, [data?.worker.id, data?.invoice?.id, enabled, load]);
   return { data, loading, error, reload: load };
 }
 

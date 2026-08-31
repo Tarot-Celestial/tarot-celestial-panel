@@ -5,6 +5,7 @@ import AppHeader from "@/components/AppHeader";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
+import { useAttendance } from "@/hooks/useAttendance";
 
 const sb = supabaseBrowser();
 
@@ -178,6 +179,7 @@ type ChatMessage = {
 };
 
 export default function Tarotista() {
+  const attendance = useAttendance();
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("resumen");
 
@@ -338,15 +340,7 @@ export default function Tarotista() {
       setAttMsg("");
     }
     try {
-      const token = await getTokenSafe();
-      if (!token) return;
-
-      const res = await fetch("/api/attendance/me", { headers: { Authorization: `Bearer ${token}` } });
-      const j = await safeJson(res);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
-      setAttOnline(!!j.online);
-      setAttStatus(String(j.status || (j.online ? "working" : "offline")));
+      attendance.refreshAttendance();
       if (!silent) setAttMsg("");
     } catch (e: any) {
       if (!silent) setAttMsg(`❌ Estado: ${e?.message || "Error"}`);
@@ -356,6 +350,11 @@ export default function Tarotista() {
       if (!silent) setAttLoading(false);
     }
   }
+
+  useEffect(() => {
+    setAttOnline(attendance.online);
+    setAttStatus(String(attendance.status || (attendance.online ? "working" : "offline")));
+  }, [attendance.online, attendance.status]);
 
   async function postAttendanceEvent(event_type: "online" | "offline" | "heartbeat", metaExtra: any = {}) {
     try {
@@ -953,12 +952,6 @@ export default function Tarotista() {
       popupChannelRef.current = null;
     };
   }, [ok, myWorkerId]);
-
-  useEffect(() => {
-    if (!ok) return;
-    const t = setInterval(() => loadAttendanceMe(true), 60_000);
-    return () => clearInterval(t);
-  }, [ok]);
 
   async function loadActiveCall(workerId?: string) {
     const wid = String(workerId || myWorkerId || "").trim();

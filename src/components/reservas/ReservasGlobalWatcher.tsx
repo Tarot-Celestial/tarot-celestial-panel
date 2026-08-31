@@ -36,7 +36,14 @@ function isClosedEstado(v: any) {
 export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }: { enabled?: boolean; onGoToReserva?: (reserva: any) => void; }) {
   const [popupReserva, setPopupReserva] = useState<any | null>(null);
   const avisadasRef = useRef<string[]>([]);
-  const tickInFlightRef = useRef(false);
+  const readyInFlightRef = useRef(false);
+  const scheduleInFlightRef = useRef(false);
+  const scheduleRef = useRef<any[]>([]);
+  const popupRef = useRef<any | null>(null);
+
+  useEffect(() => {
+    popupRef.current = popupReserva;
+  }, [popupReserva]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -47,11 +54,10 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
       return data.session?.access_token || "";
     }
 
-    async function tick() {
-      if (document.visibilityState === "hidden" || tickInFlightRef.current) return;
-      tickInFlightRef.current = true;
+    async function checkReady() {
+      if (document.visibilityState === "hidden" || readyInFlightRef.current || popupRef.current) return;
+      readyInFlightRef.current = true;
       try {
-        if (popupReserva) return;
         const token = await getTokenOrLogin();
         if (!token) return;
         const readyRes = await fetch("/api/crm/reservas/ready", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
@@ -64,13 +70,34 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
           if (!cancelled) setPopupReserva({ ...row, __popup_kind: "tarotista_idle" });
           return;
         }
+      } catch {
+        // El respaldo periódico vuelve a intentarlo sin solapar peticiones.
+      } finally {
+        readyInFlightRef.current = false;
+      }
+    }
 
+    async function loadSchedule() {
+      if (document.visibilityState === "hidden" || scheduleInFlightRef.current) return;
+      scheduleInFlightRef.current = true;
+      try {
+        const token = await getTokenOrLogin();
+        if (!token) return;
         const r = await fetch("/api/crm/reservas/listar", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const j = await safeJson(r);
         if (!j?._ok || !j?.ok) return;
-        const rows = Array.isArray(j.reservas) ? j.reservas : [];
-        const now = new Date();
-        for (const row of rows) {
+        scheduleRef.current = Array.isArray(j.reservas) ? j.reservas : [];
+      } catch {
+        // Realtime o el siguiente respaldo volverán a sincronizar la agenda.
+      } finally {
+        scheduleInFlightRef.current = false;
+      }
+    }
+
+    function checkDueLocally() {
+      if (document.visibilityState === "hidden" || popupRef.current) return;
+      const now = new Date();
+      for (const row of scheduleRef.current) {
           const id = String(row?.id || "");
           const fecha = parseReservaDate(row?.fecha_reserva);
           if (!id || !fecha || isClosedEstado(row?.estado) || avisadasRef.current.includes(id)) continue;
@@ -80,30 +107,40 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
             if (!cancelled) setPopupReserva(row);
             break;
           }
-        }
-      } catch {
-        // El siguiente ciclo vuelve a intentarlo sin solapar peticiones.
-      } finally {
-        tickInFlightRef.current = false;
       }
     }
 
-    void tick();
-    // Realtime cubre los cambios normales; este sondeo es solo una red de
-    // seguridad. Antes hacía hasta 24 peticiones/minuto por cada panel abierto.
-    const interval = window.setInterval(() => void tick(), 30000);
+    void checkReady();
+    void loadSchedule();
+    const channel = sb
+      .channel("global-reservation-monitor")
+      .on("postgres_changes", { event: "*", schema: "public", table: "reservas" }, () => {
+        void loadSchedule();
+        void checkReady();
+      })
+      .subscribe();
+    // La hora exacta se comprueba en memoria; no necesita consultar PostgreSQL.
+    const dueInterval = window.setInterval(checkDueLocally, 5000);
+    const readyInterval = window.setInterval(() => void checkReady(), 60000);
+    const scheduleInterval = window.setInterval(() => void loadSchedule(), 300000);
     const refreshVisible = () => {
-      if (document.visibilityState === "visible") void tick();
+      if (document.visibilityState !== "visible") return;
+      void checkReady();
+      void loadSchedule();
+      checkDueLocally();
     };
     window.addEventListener("focus", refreshVisible);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      window.clearInterval(dueInterval);
+      window.clearInterval(readyInterval);
+      window.clearInterval(scheduleInterval);
       window.removeEventListener("focus", refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);
+      void sb.removeChannel(channel);
     };
-  }, [enabled, popupReserva]);
+  }, [enabled]);
 
   if (!enabled || !popupReserva) return null;
 

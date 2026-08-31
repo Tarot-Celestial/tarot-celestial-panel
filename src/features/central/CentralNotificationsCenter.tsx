@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Bell, CheckCircle2, ChevronRight, Clock3, Gift, Info, ShieldAlert, Sparkles } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -94,8 +94,11 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
+  const inFlightRef = useRef<Promise<void> | null>(null);
 
   const reload = useCallback(async () => {
+    if (inFlightRef.current) return inFlightRef.current;
+    const task = (async () => {
     const token = await authToken();
     if (!token) {
       setLoading(false);
@@ -118,6 +121,13 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
     } finally {
       setLoading(false);
     }
+    })();
+    inFlightRef.current = task;
+    try {
+      await task;
+    } finally {
+      if (inFlightRef.current === task) inFlightRef.current = null;
+    }
   }, []);
 
   useEffect(() => {
@@ -132,13 +142,21 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
       .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, reload)
       .subscribe();
     const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       setNow(Date.now());
       void reload();
-    }, 30_000);
+    }, 120_000);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void reload();
+    };
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
       window.removeEventListener("tc-followup-changed", onFollowUp);
       window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
       void sb.removeChannel(channel);
     };
   }, [reload]);

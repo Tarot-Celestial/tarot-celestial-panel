@@ -248,7 +248,7 @@ export default function DockChatWidget({ open, onClose, onUnreadChange }: Props)
       if (document.visibilityState === "visible") void loadThreads(true);
     };
     refresh();
-    const interval = window.setInterval(refresh, 30000);
+    const interval = window.setInterval(refresh, 120000);
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {

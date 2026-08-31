@@ -23,6 +23,7 @@ export type OpsAttendance = {
   loading: boolean;
   online: boolean;
   status: string;
+  lastEventAt: string | null;
   error: string | null;
   refreshedAt: string | null;
 };
@@ -77,6 +78,7 @@ const DEFAULT_ATTENDANCE: OpsAttendance = {
   loading: false,
   online: false,
   status: "offline",
+  lastEventAt: null,
   error: null,
   refreshedAt: null,
 };
@@ -229,6 +231,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
           loading: false,
           online: false,
           status: "offline",
+          lastEventAt: null,
           error: String(json?.error || `HTTP ${res.status}`),
           refreshedAt: new Date().toISOString(),
         });
@@ -239,6 +242,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
         loading: false,
         online: !!json.online,
         status: String(json.status || (json.online ? "working" : "offline")),
+        lastEventAt: json.last_event_at ? String(json.last_event_at) : null,
         error: null,
         refreshedAt: new Date().toISOString(),
       });
@@ -248,6 +252,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
         loading: false,
         online: false,
         status: "offline",
+        lastEventAt: null,
         error: String(e?.message || "Error"),
         refreshedAt: new Date().toISOString(),
       });
@@ -402,7 +407,9 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
     const sb = supabaseBrowser();
     const needsCentralPresence = isCentralPath;
-    const needsOwnAttendance = isCentralPath || isTarotistaPath;
+    // Fuente única para cabecera, dock y panel. Antes esas tres superficies
+    // consultaban /api/attendance/me de forma independiente.
+    const needsOwnAttendance = shouldRunOps;
 
     // No bloquear el primer render: las lecturas operativas arrancan en background.
     const initialTimer = window.setTimeout(() => {
@@ -419,11 +426,14 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => void fetchLeads())
       .subscribe();
 
-    const parkingInterval = ASTERISK_ENABLED ? window.setInterval(() => void fetchParking(), PARKING_REFRESH_MS) : null;
-    const leadsInterval = window.setInterval(() => void fetchLeads(), LEADS_REFRESH_MS);
-    const attendanceInterval = needsOwnAttendance ? window.setInterval(() => void fetchAttendance(), ATTENDANCE_REFRESH_MS) : null;
-    const presencesInterval = needsCentralPresence ? window.setInterval(() => void fetchPresences(), PRESENCES_REFRESH_MS) : null;
-    const expectedInterval = needsCentralPresence ? window.setInterval(() => void fetchExpected(), EXPECTED_REFRESH_MS) : null;
+    const runVisible = (task: () => void) => {
+      if (document.visibilityState === "visible") task();
+    };
+    const parkingInterval = ASTERISK_ENABLED ? window.setInterval(() => runVisible(() => void fetchParking()), PARKING_REFRESH_MS) : null;
+    const leadsInterval = window.setInterval(() => runVisible(() => void fetchLeads()), LEADS_REFRESH_MS);
+    const attendanceInterval = needsOwnAttendance ? window.setInterval(() => runVisible(() => void fetchAttendance()), ATTENDANCE_REFRESH_MS) : null;
+    const presencesInterval = needsCentralPresence ? window.setInterval(() => runVisible(() => void fetchPresences()), PRESENCES_REFRESH_MS) : null;
+    const expectedInterval = needsCentralPresence ? window.setInterval(() => runVisible(() => void fetchExpected()), EXPECTED_REFRESH_MS) : null;
 
     const refreshVisibleOps = () => {
       if (document.visibilityState !== "visible") return;
@@ -450,6 +460,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
     window.addEventListener("focus", onFocus);
     window.addEventListener("tc-counters-refresh", onCountersRefresh as EventListener);
     window.addEventListener("tc-attendance-refresh", onAttendanceRefresh as EventListener);
+    window.addEventListener("tc-attendance-changed", onAttendanceRefresh as EventListener);
     window.addEventListener("tc-presences-refresh", onPresencesRefresh as EventListener);
     window.addEventListener("tc-expected-refresh", onExpectedRefresh as EventListener);
     document.addEventListener("visibilitychange", onVisible);
@@ -465,6 +476,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("tc-counters-refresh", onCountersRefresh as EventListener);
       window.removeEventListener("tc-attendance-refresh", onAttendanceRefresh as EventListener);
+      window.removeEventListener("tc-attendance-changed", onAttendanceRefresh as EventListener);
       window.removeEventListener("tc-presences-refresh", onPresencesRefresh as EventListener);
       window.removeEventListener("tc-expected-refresh", onExpectedRefresh as EventListener);
       document.removeEventListener("visibilitychange", onVisible);
@@ -477,7 +489,6 @@ export function OpsProvider({ children }: { children: ReactNode }) {
     fetchParking,
     fetchPresences,
     isCentralPath,
-    isTarotistaPath,
     refreshAttendance,
     refreshCounters,
     refreshExpected,

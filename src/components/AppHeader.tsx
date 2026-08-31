@@ -7,6 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
+import { useAttendance } from "@/hooks/useAttendance";
 import styles from "./AppHeader.module.css";
 
 const sb = supabaseBrowser();
@@ -45,6 +46,7 @@ type AppHeaderProps = {
 export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
+  const attendance = useAttendance();
 
   const [name, setName] = useState("Cargando…");
   const [role, setRole] = useState("");
@@ -86,48 +88,21 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  async function syncEstado() {
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return;
-
-      const res = await fetch("/api/attendance/me", {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-      const j = await res.json().catch(() => null);
-      if (!j?.ok) return;
-
-      const online = !!j.online;
-      const status = j.status || (online ? "working" : "offline");
-
-      if (!online) {
-        setEstado("offline");
-        setStartTime(null);
-        return;
-      }
-
-      if (status === "break") {
-        setEstado("break");
-        setStartTime(null);
-        return;
-      }
-
-      setEstado("online");
-      if (j.last_event_at) {
-        setStartTime(new Date(j.last_event_at).getTime());
-      }
-    } catch {
-      // noop
-    }
-  }
-
   useEffect(() => {
-    syncEstado();
-    const i = setInterval(syncEstado, 60000);
-    return () => clearInterval(i);
-  }, []);
+    if (!attendance.online) {
+      setEstado("offline");
+      setStartTime(null);
+      return;
+    }
+    const status = String(attendance.status || "working").toLowerCase();
+    if (["break", "bathroom", "paused"].includes(status)) {
+      setEstado("break");
+      setStartTime(null);
+      return;
+    }
+    setEstado("online");
+    setStartTime(attendance.lastEventAt ? new Date(attendance.lastEventAt).getTime() : Date.now());
+  }, [attendance.lastEventAt, attendance.online, attendance.status]);
 
   async function loadNotifications() {
     if (!notifUserId) return;
@@ -278,7 +253,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
         body: JSON.stringify({ event_type: nuevo === "break" ? "heartbeat" : nuevo }),
       });
 
-      await syncEstado();
+      attendance.refreshAttendance();
       window.dispatchEvent(new CustomEvent("tc-attendance-changed"));
     } finally {
       setEstadoLoading(false);

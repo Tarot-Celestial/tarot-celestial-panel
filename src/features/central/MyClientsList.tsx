@@ -89,7 +89,9 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, requestRefresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides" }, requestRefresh)
       .subscribe();
-    const fallback = window.setInterval(requestRefresh, 15000);
+    const fallback = window.setInterval(() => {
+      if (document.visibilityState === "visible") requestRefresh();
+    }, 120000);
     return () => { window.clearInterval(fallback); void client.removeChannel(channel); };
   }, [requestRefresh]);
 

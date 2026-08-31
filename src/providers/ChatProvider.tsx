@@ -310,11 +310,22 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       })
       .subscribe();
 
-    refreshTimerRef.current = window.setInterval(() => void loadThreads(true), 30_000);
+    // Realtime mantiene los mensajes al día. Este refresco es únicamente un
+    // respaldo para recuperar eventos perdidos, no un sondeo constante.
+    refreshTimerRef.current = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadThreads(true);
+    }, 120_000);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void loadThreads(true);
+    };
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
 
     return () => {
       mountedRef.current = false;
       if (refreshTimerRef.current) window.clearInterval(refreshTimerRef.current);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
       sb.removeChannel(channel);
     };
   }, [loadThreads]);
