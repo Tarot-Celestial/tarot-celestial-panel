@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Gift, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "lucide-react";
+import { Gift, KeyRound, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./sorteo.module.css";
@@ -80,12 +80,12 @@ export default function ClienteSorteoPage() {
           <div className={styles.secretContent}>
             <span className={styles.secretEyebrow}>SECRETO CELESTIAL</span>
             <h3>EL SECRETO CELESTIAL HA DESPERTADO</h3>
-            <p>Tu premio está escondido en algún lugar de tu panel... 👀</p>
+            <p className={styles.secretLead}>Tu premio está escondido en algún lugar de tu panel... 👀</p>
             <div className={styles.clue}>
               <strong>PISTA:</strong>
               <span>“No necesitas gastar para encontrarme. Pregunta al destino, donde una respuesta puede llegar sin pagar.” 🔮</span>
             </div>
-            <p>Encuentra el símbolo celestial <strong className={styles.secretSymbol}>«</strong> y tócalo.</p>
+            <p className={styles.secretFind}>Encuentra el símbolo celestial <span className={styles.secretKey} aria-label="llave dorada"><KeyRound /></span> y tócalo.</p>
             <p className={styles.secretPrize}>Tu premio sigue siendo un secreto... 🎁</p>
           </div>
         </article>
