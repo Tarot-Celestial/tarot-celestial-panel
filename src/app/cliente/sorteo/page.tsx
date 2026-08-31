@@ -29,7 +29,16 @@ export default function ClienteSorteoPage() {
       }
       const response = await fetch("/api/cliente/raffle", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const json = await response.json().catch(() => null);
-      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar tu sorteo.");
+      if (response.status === 401 || json?.error === "SESSION_EXPIRED") {
+        window.location.href = "/cliente/login";
+        return;
+      }
+      if (!response.ok || !json?.ok) {
+        const errorMessage = json?.error === "CLIENT_NOT_LINKED"
+          ? "Tu acceso existe, pero no está vinculado a una ficha de cliente."
+          : json?.error || "No se pudo cargar tu sorteo.";
+        throw new Error(errorMessage);
+      }
       setClientId(String(json.client_id || ""));
       setRaffleTitle(String(json.raffle?.title || "Sorteo actual"));
       setNumbers(Array.isArray(json.numbers) ? json.numbers : []);
@@ -89,4 +98,3 @@ export default function ClienteSorteoPage() {
     </ClienteLayout>
   );
 }
-

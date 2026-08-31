@@ -7,6 +7,14 @@ declare global {
 }
 
 let client: SupabaseClient | null = null;
+let sessionRefreshPromise: Promise<any> | null = null;
+
+const SESSION_REFRESH_MARGIN_MS = 60_000;
+
+function sessionNeedsRefresh(session: any): boolean {
+  const expiresAt = Number(session?.expires_at || 0) * 1000;
+  return Boolean(session?.refresh_token) && (!expiresAt || expiresAt <= Date.now() + SESSION_REFRESH_MARGIN_MS);
+}
 
 export function supabaseBrowserStorageKey(): string {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -44,6 +52,29 @@ export function supabaseBrowser(): SupabaseClient {
       // ❌ NO storageKey personalizado (ok como lo tenías)
     },
   });
+
+  // Las pestañas del panel realizan varias consultas en paralelo. Si el JWT
+  // está a punto de vencer, renueva una sola vez y comparte el resultado con
+  // todas ellas; así evitamos ráfagas de refresh y respuestas 401 intermitentes.
+  const originalGetSession = client.auth.getSession.bind(client.auth);
+  client.auth.getSession = (async () => {
+    const current = await originalGetSession();
+    const session = current.data.session;
+    if (current.error || !session || !sessionNeedsRefresh(session)) return current;
+
+    if (!sessionRefreshPromise) {
+      sessionRefreshPromise = client!.auth
+        .refreshSession(session)
+        .finally(() => { sessionRefreshPromise = null; });
+    }
+
+    const refreshed = await sessionRefreshPromise;
+    if (refreshed.data.session) {
+      return { data: { session: refreshed.data.session }, error: null };
+    }
+
+    return { data: { session: null }, error: refreshed.error || current.error };
+  }) as typeof client.auth.getSession;
 
   // Evita llamadas repetidas a /auth/v1/user desde el navegador.
   // Para el panel basta la sesión local; las APIs siguen validando roles con service role.

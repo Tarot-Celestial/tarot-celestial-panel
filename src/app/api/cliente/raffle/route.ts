@@ -7,8 +7,16 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.admin || !gate.cliente?.id) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!gate.uid || !gate.admin) {
+      console.warn("[cliente:raffle:auth] sesión ausente o vencida", {
+        hasUid: Boolean(gate.uid),
+        hasAdmin: Boolean(gate.admin),
+      });
+      return NextResponse.json({ ok: false, error: "SESSION_EXPIRED" }, { status: 401 });
+    }
+    if (!gate.cliente?.id) {
+      console.warn("[cliente:raffle:auth] cuenta sin ficha CRM vinculada", { uid: gate.uid });
+      return NextResponse.json({ ok: false, error: "CLIENT_NOT_LINKED" }, { status: 403 });
     }
 
     const raffle = await gate.admin
@@ -50,4 +58,3 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_RAFFLE" }, { status: 500 });
   }
 }
-
