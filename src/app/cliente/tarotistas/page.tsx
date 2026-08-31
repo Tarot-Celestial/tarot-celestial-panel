@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Award, Gem, HeartHandshake, Loader2, MoonStar, ShieldCheck, Sparkles, Star, Wifi, WifiOff } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 type Tarotista = {
   id: string;

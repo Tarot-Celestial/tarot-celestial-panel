@@ -25,9 +25,9 @@ import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 type Cliente = {
   id: string;

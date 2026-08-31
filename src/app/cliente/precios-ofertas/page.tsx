@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Gift, PhoneCall, ShoppingBag, Sparkles, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./PricesOffers.module.css";
-const sb=supabaseBrowser();
+const sb=supabaseClienteBrowser();
 type OraclePack={id:string;nombre:string;descripcion:string;priceEur:number;credits:number}; type QuestionPack={id:string;nombre:string;descripcion:string;priceEur:number;questions:number}; type MinutePack={id:string;nombre:string;descripcion:string;priceUsd:number;totalMinutes:number;bonusMinutes:number;highlight?:boolean};
 export default function PreciosOfertasPage(){
  const [oraclePacks,setOraclePacks]=useState<OraclePack[]>([]),[questionPack,setQuestionPack]=useState<QuestionPack|null>(null),[minutePacks,setMinutePacks]=useState<MinutePack[]>([]); const [freeAvailable,setFreeAvailable]=useState(false),[credits,setCredits]=useState(0),[busy,setBusy]=useState(""),[message,setMessage]=useState("");

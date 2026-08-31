@@ -4,10 +4,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 declare global {
   // eslint-disable-next-line no-var
   var __tcSupabaseBrowserClient: SupabaseClient | undefined;
+  // eslint-disable-next-line no-var
+  var __tcSupabaseClienteBrowserClient: SupabaseClient | undefined;
 }
 
 let client: SupabaseClient | null = null;
-let sessionRefreshPromise: Promise<any> | null = null;
+let clienteClient: SupabaseClient | null = null;
 
 const SESSION_REFRESH_MARGIN_MS = 60_000;
 
@@ -25,22 +27,16 @@ export function supabaseBrowserStorageKey(): string {
   return `sb-${projectRef}-auth-token`;
 }
 
-export function supabaseBrowser(): SupabaseClient {
-  if (client) return client;
-  if (globalThis.__tcSupabaseBrowserClient) {
-    client = globalThis.__tcSupabaseBrowserClient;
-    return client;
-  }
-
+function createBrowserClient(storageKey: string): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!url) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_URL");
   if (!anon) throw new Error("Missing env NEXT_PUBLIC_SUPABASE_ANON_KEY");
 
-  client = createClient(url, anon, {
+  const browserClient = createClient(url, anon, {
     auth: {
-      storageKey: supabaseBrowserStorageKey(),
+      storageKey,
       // ✅ Mantén refresh y persistencia
       persistSession: true,
       autoRefreshToken: true,
@@ -56,14 +52,15 @@ export function supabaseBrowser(): SupabaseClient {
   // Las pestañas del panel realizan varias consultas en paralelo. Si el JWT
   // está a punto de vencer, renueva una sola vez y comparte el resultado con
   // todas ellas; así evitamos ráfagas de refresh y respuestas 401 intermitentes.
-  const originalGetSession = client.auth.getSession.bind(client.auth);
-  client.auth.getSession = (async () => {
+  let sessionRefreshPromise: Promise<any> | null = null;
+  const originalGetSession = browserClient.auth.getSession.bind(browserClient.auth);
+  browserClient.auth.getSession = (async () => {
     const current = await originalGetSession();
     const session = current.data.session;
     if (current.error || !session || !sessionNeedsRefresh(session)) return current;
 
     if (!sessionRefreshPromise) {
-      sessionRefreshPromise = client!.auth
+      sessionRefreshPromise = browserClient.auth
         .refreshSession(session)
         .finally(() => { sessionRefreshPromise = null; });
     }
@@ -74,17 +71,43 @@ export function supabaseBrowser(): SupabaseClient {
     }
 
     return { data: { session: null }, error: refreshed.error || current.error };
-  }) as typeof client.auth.getSession;
+  }) as typeof browserClient.auth.getSession;
 
   // Evita llamadas repetidas a /auth/v1/user desde el navegador.
   // Para el panel basta la sesión local; las APIs siguen validando roles con service role.
-  const originalGetUser = client.auth.getUser.bind(client.auth);
-  client.auth.getUser = (async (jwt?: string) => {
+  const originalGetUser = browserClient.auth.getUser.bind(browserClient.auth);
+  browserClient.auth.getUser = (async (jwt?: string) => {
     if (jwt) return originalGetUser(jwt);
-    const { data, error } = await client!.auth.getSession();
+    const { data, error } = await browserClient.auth.getSession();
     return { data: { user: data.session?.user ?? null }, error } as any;
   }) as any;
 
+  return browserClient;
+}
+
+export function supabaseBrowser(): SupabaseClient {
+  if (client) return client;
+  if (globalThis.__tcSupabaseBrowserClient) {
+    client = globalThis.__tcSupabaseBrowserClient;
+    return client;
+  }
+
+  client = createBrowserClient(supabaseBrowserStorageKey());
+
   globalThis.__tcSupabaseBrowserClient = client;
   return client;
+}
+
+export function supabaseClienteBrowser(): SupabaseClient {
+  if (clienteClient) return clienteClient;
+  if (globalThis.__tcSupabaseClienteBrowserClient) {
+    clienteClient = globalThis.__tcSupabaseClienteBrowserClient;
+    return clienteClient;
+  }
+
+  // El panel cliente usa una sesión independiente. De esta forma iniciar
+  // sesión como central/admin en otra pestaña no reemplaza al cliente.
+  clienteClient = createBrowserClient(`${supabaseBrowserStorageKey()}-cliente`);
+  globalThis.__tcSupabaseClienteBrowserClient = clienteClient;
+  return clienteClient;
 }

@@ -4,11 +4,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { BellRing, ChevronRight, Gift, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useEffect } from "react";
 import styles from "./ClientePremium.module.css";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 type SummaryItem = {
   label: string;

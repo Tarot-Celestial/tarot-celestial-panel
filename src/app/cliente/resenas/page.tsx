@@ -2,9 +2,9 @@
 import { useEffect,useState } from "react";
 import { Star } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./Reviews.module.css";
-const sb=supabaseBrowser();
+const sb=supabaseClienteBrowser();
 type T={id:string;nombre:string;average:number;count:number;mine:any;reviews:any[]};
 export default function ReviewsPage(){const [items,setItems]=useState<T[]>([]);const [drafts,setDrafts]=useState<Record<string,{rating:number;comment:string}>>({});const [msg,setMsg]=useState("");const [saving,setSaving]=useState("");
 async function token(){return (await sb.auth.getSession()).data.session?.access_token||""} async function load(){const t=await token();if(!t){location.href="/cliente/login";return}const r=await fetch("/api/cliente/resenas",{headers:{Authorization:`Bearer ${t}`},cache:"no-store"});const j=await r.json();if(j.ok){setItems(j.tarotistas);const d:any={};j.tarotistas.forEach((x:T)=>d[x.id]={rating:Number(x.mine?.rating||0),comment:String(x.mine?.comment||"")});setDrafts(d)}else setMsg(j.error)} useEffect(()=>{void load()},[]);

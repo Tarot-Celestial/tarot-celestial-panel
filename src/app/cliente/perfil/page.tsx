@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Mail, Phone, ShieldCheck } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 type Cliente = {
   nombre?: string | null;

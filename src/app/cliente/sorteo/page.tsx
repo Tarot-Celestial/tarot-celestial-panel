@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Gift, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./sorteo.module.css";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 type NumberEntry = { id: string; number: number; assigned_at: string };
 

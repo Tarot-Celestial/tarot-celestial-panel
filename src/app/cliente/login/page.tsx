@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LockKeyhole, Sparkles } from "lucide-react";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
   DEFAULT_COUNTRY_CODE,
@@ -15,7 +15,7 @@ import {
   normalizeLocalPhone,
 } from "@/lib/countries";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 type LoginMode = "password" | "setup";
 

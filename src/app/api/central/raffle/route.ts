@@ -168,10 +168,6 @@ export async function POST(req: Request) {
         .select("id,raffle_id,raffle_number,client_id,assigned_at")
         .single();
       if (inserted.error?.code === "23505") {
-        const sameClient = await gate.admin.from("raffle_entries").select("raffle_number").eq("raffle_id", raffle.id).eq("client_id", clientId).maybeSingle();
-        if (sameClient.data) {
-          return NextResponse.json({ ok: false, error: `Este cliente ya utiliza el número ${sameClient.data.raffle_number}.` }, { status: 409 });
-        }
         return NextResponse.json({ ok: false, error: `El número ${raffleNumber} ya está utilizado.` }, { status: 409 });
       }
       if (inserted.error) throw inserted.error;
@@ -191,4 +187,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: error?.message || "ERR_RAFFLE_ACTION" }, { status: 500 });
   }
 }
-

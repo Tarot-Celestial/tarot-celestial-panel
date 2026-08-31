@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, CircleDollarSign, GitFork, Heart, HelpCircle, LockKeyhole, MoonStar, SendHorizontal, Shuffle, Sparkles, Stars, Users, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./Oracle.module.css";
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 const TOPICS = [{ id: "general", label: "General", icon: Stars }, { id: "amor", label: "Amor", icon: Heart }, { id: "dinero", label: "Dinero", icon: CircleDollarSign }, { id: "energia", label: "Energía", icon: MoonStar }] as const;
 type TopicId = (typeof TOPICS)[number]["id"];
 

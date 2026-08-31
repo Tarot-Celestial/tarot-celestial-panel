@@ -176,7 +176,7 @@ export default function CentralRafflePanel() {
         <div>
           <span>SORTEO CONECTADO</span>
           <h2 id="central-raffle-title">{raffle?.title || "Sorteo actual"}</h2>
-          <p>Selecciona un número libre, busca al cliente por teléfono y asígnalo una sola vez.</p>
+          <p>Selecciona un número libre y busca al cliente por teléfono. Un mismo cliente puede participar con varios números.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading || busy}><RefreshCw className={loading ? styles.spin : undefined} /> Actualizar</button>
       </header>
@@ -250,4 +250,3 @@ export default function CentralRafflePanel() {
     </section>
   );
 }
-
