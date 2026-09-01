@@ -8,6 +8,7 @@ import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
 import { useAttendance } from "@/hooks/useAttendance";
+import { ArrowLeft, Network } from "lucide-react";
 import styles from "./AppHeader.module.css";
 
 const sb = supabaseBrowser();
@@ -25,6 +26,7 @@ type HeaderNotif = {
 
 function pathLabel(pathname: string) {
   if (!pathname) return "Panel";
+  if (pathname === "/admin/cerebro") return "Cerebro Celestial";
   if (pathname === "/admin") return "Admin";
   if (pathname === "/panel-central") return "Centrales";
   if (pathname === "/panel-tarotista") return "Tarotista";
@@ -358,6 +360,17 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                   {pathLabel(pathname || "")}
                 </div>
               </div>
+
+              {role === "admin" ? (
+                <button
+                  type="button"
+                  className={styles.brainButton}
+                  onClick={() => router.push(pathname === "/admin/cerebro" ? "/admin" : "/admin/cerebro")}
+                >
+                  {pathname === "/admin/cerebro" ? <ArrowLeft size={16} /> : <Network size={16} />}
+                  <span>{pathname === "/admin/cerebro" ? "Volver al panel" : "Cerebro Celestial"}</span>
+                </button>
+              ) : null}
             </div>
 
             <div className={`tc-row ${styles.controls}`} style={{ gap: 10, flexWrap: "wrap", position: "relative" }}>
