@@ -95,6 +95,8 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const inFlightRef = useRef<Promise<void> | null>(null);
+  const reloadTimerRef = useRef<number | null>(null);
+  const lastVisibleReloadRef = useRef(0);
 
   const reload = useCallback(async () => {
     if (inFlightRef.current) return inFlightRef.current;
@@ -132,28 +134,39 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
 
   useEffect(() => {
     void reload();
-    const onBrand = () => void reload();
-    const onFollowUp = () => void reload();
+    const scheduleReload = () => {
+      if (reloadTimerRef.current != null) window.clearTimeout(reloadTimerRef.current);
+      reloadTimerRef.current = window.setTimeout(() => {
+        reloadTimerRef.current = null;
+        void reload();
+      }, 800);
+    };
+    const onBrand = () => scheduleReload();
+    const onFollowUp = () => scheduleReload();
     window.addEventListener("tc-brand-changed", onBrand);
     window.addEventListener("tc-followup-changed", onFollowUp);
     const channel = sb
       .channel("central-notifications-shared")
-      .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, reload)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, reload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, scheduleReload)
       .subscribe();
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       setNow(Date.now());
       void reload();
-    }, 120_000);
+    }, 300_000);
     const refreshVisible = () => {
-      if (document.visibilityState === "visible") void reload();
+      if (document.visibilityState !== "visible") return;
+      const nowMs = Date.now();
+      if (nowMs - lastVisibleReloadRef.current < 5_000) return;
+      lastVisibleReloadRef.current = nowMs;
+      scheduleReload();
     };
     window.addEventListener("focus", refreshVisible);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
       window.removeEventListener("tc-followup-changed", onFollowUp);
+      if (reloadTimerRef.current != null) window.clearTimeout(reloadTimerRef.current);
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);

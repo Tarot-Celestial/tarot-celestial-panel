@@ -5,7 +5,6 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
 
 const sb = supabaseBrowser();
-const madridToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 export type CentralXpData = {
   worker: { id: string; name: string };
@@ -152,7 +151,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
   const inFlightRef = useRef<Promise<boolean> | null>(null);
   const refreshDebounceRef = useRef<number | null>(null);
   const completedMissionRef = useRef<Set<string> | null>(null);
-  const viewingToday = !selectedDate || selectedDate === madridToday();
+  const workerId = data?.worker.id || null;
 
   const load = useCallback(async (silent = false) => {
     if (!enabled) return false;
@@ -208,8 +207,12 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
 
   useEffect(() => {
     if (!enabled) return;
-    let disposed = false;
     void load();
+  }, [enabled, load]);
+
+  useEffect(() => {
+    if (!enabled || !workerId) return;
+    let disposed = false;
 
     const refreshSoon = () => {
       if (document.visibilityState !== "visible") return;
@@ -221,7 +224,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
     };
     const refreshTimer = window.setInterval(() => {
       if (document.visibilityState === "visible") void load(true);
-    }, 120000);
+    }, 300_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void load(true);
     };
@@ -230,23 +233,13 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
     window.addEventListener("tc-xp-recorded", onLocalXp);
 
     const channel = sb
-      .channel("central-xp-readonly")
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_rules" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_config" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_config" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_missions" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_level_missions" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_tier_missions" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_mission_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_processing", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_config" }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions", filter: data?.worker.id ? `worker_id=eq.${data.worker.id}` : undefined }, refreshSoon)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, () => { if (viewingToday) refreshSoon(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, () => { if (viewingToday) refreshSoon(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => { if (viewingToday) refreshSoon(); })
+      .channel(`central-xp-readonly-${workerId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_events", filter: `worker_id=eq.${workerId}` }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_mission_claims", filter: `worker_id=eq.${workerId}` }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_claims", filter: `worker_id=eq.${workerId}` }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_reward_processing", filter: `worker_id=eq.${workerId}` }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_coin_wallets", filter: `worker_id=eq.${workerId}` }, refreshSoon)
+      .on("postgres_changes", { event: "*", schema: "public", table: "worker_xp_coin_conversions", filter: `worker_id=eq.${workerId}` }, refreshSoon)
       .subscribe((status, channelError) => {
         if (disposed) return;
         // CLOSED es el resultado normal de removeChannel al cambiar de pestaña.
@@ -270,7 +263,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
       window.removeEventListener("tc-xp-recorded", onLocalXp);
       void sb.removeChannel(channel);
     };
-  }, [data?.worker.id, enabled, load, viewingToday]);
+  }, [enabled, load, workerId]);
 
   const claimLevelReward = useCallback(async (level: number, operationId: string) => {
     const { data: sessionData } = await sb.auth.getSession();

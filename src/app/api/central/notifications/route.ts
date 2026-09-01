@@ -236,14 +236,19 @@ async function persistFollowUpState(
     const { error } = await admin.from("central_notifications").update(payload).eq("id", existing.id);
     if (error) throw error;
   } else {
-    const { error } = await admin.from("central_notifications").insert(payload);
+    // Two tabs can act on the same follow-up at nearly the same time. The
+    // deduplication key is the authority, so a retry updates instead of
+    // competing with another INSERT and raising 23505.
+    const { error } = await admin
+      .from("central_notifications")
+      .upsert(payload, { onConflict: "deduplication_key" });
     if (error) throw error;
   }
 }
 
 export async function GET(req: Request) {
   try {
-    const { admin, worker, authUserId } = await getWorker(req);
+    const { admin, worker } = await getWorker(req);
     const url = new URL(req.url);
     const brand = normalizeBrand(url.searchParams.get("business"));
     const stateFilter = normalizeState(url.searchParams.get("state"));
@@ -263,22 +268,6 @@ export async function GET(req: Request) {
     }
 
     const followUpItems = followUps.map((row) => followUpToNotification(row, storedFollowUps.get(`followup:${row.id}`), now));
-
-    // Keep read/resolved history in central_notifications, but the follow-up row remains the source of truth.
-    await Promise.all(
-      followUpItems.map(async (item) => {
-        const followUpId = String(item.metadata?.followup_id || "");
-        const existing = storedFollowUps.get(`followup:${followUpId}`);
-        if (!existing || existing.priority !== item.priority || existing.state !== item.state || existing.scheduled_at !== item.scheduled_at) {
-          try {
-            await persistFollowUpState(admin, item, existing, authUserId);
-          } catch (persistError) {
-            // The follow-up itself is the source of truth. A history-sync failure must not hide it.
-            console.error("[central-notifications:followup-history-sync]", { followUpId, error: persistError });
-          }
-        }
-      })
-    );
 
     const otherItems: NotificationItem[] = stored
       .filter((row) => row.type !== "followup" && !row.deduplication_key?.startsWith("followup:"))

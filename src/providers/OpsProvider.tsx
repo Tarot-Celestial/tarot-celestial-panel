@@ -94,10 +94,10 @@ function defaultListState<T>(): OpsListState<T> {
 
 const PARKING_REFRESH_MS = 60000;
 const ASTERISK_ENABLED = process.env.NEXT_PUBLIC_ENABLE_ASTERISK === "true";
-const LEADS_REFRESH_MS = 60000;
-const ATTENDANCE_REFRESH_MS = 120000;
-const PRESENCES_REFRESH_MS = 120000;
-const EXPECTED_REFRESH_MS = 300000;
+const LEADS_REFRESH_MS = 300000;
+const ATTENDANCE_REFRESH_MS = 180000;
+const PRESENCES_REFRESH_MS = 180000;
+const EXPECTED_REFRESH_MS = 600000;
 
 const OpsContext = createContext<OpsContextValue | null>(null);
 
@@ -133,6 +133,7 @@ export function OpsProvider({ children }: { children: ReactNode }) {
   const presencesInFlightRef = useRef(false);
   const expectedInFlightRef = useRef(false);
   const parkingDisabledUntilRef = useRef(0);
+  const lastVisibleRefreshRef = useRef(0);
 
   const fetchParking = useCallback(async () => {
     if (!ASTERISK_ENABLED) {
@@ -437,6 +438,9 @@ export function OpsProvider({ children }: { children: ReactNode }) {
 
     const refreshVisibleOps = () => {
       if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastVisibleRefreshRef.current < 5_000) return;
+      lastVisibleRefreshRef.current = now;
       refreshCounters();
       if (needsOwnAttendance) refreshAttendance();
       if (needsCentralPresence) {
