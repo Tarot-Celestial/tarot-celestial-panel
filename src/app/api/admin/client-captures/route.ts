@@ -67,7 +67,7 @@ export async function GET(req: Request) {
       return detail ? NextResponse.json({ ok: true, ...detail }, { headers: { "Cache-Control": "no-store" } }) : NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
     }
 
-    const business = url.searchParams.get("business") === "orion" ? "orion" : "celestial";
+    const business = "celestial";
     const portfolio = String(url.searchParams.get("portfolio") || "all").trim();
     const search = cleanSearch(String(url.searchParams.get("q") || ""));
     const pageSize = safeInt(url.searchParams.get("page_size"), 25, 10, 100);

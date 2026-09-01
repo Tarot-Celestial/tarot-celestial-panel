@@ -118,13 +118,13 @@ export async function POST(req: Request) {
     const pais = String(body?.pais || "").trim();
     const email = String(body?.email || "").trim();
     const notas = String(body?.notas || "").trim();
-    const requestedBrand = String(body?.brand || "").trim().toLowerCase() === "orion" ? "orion" : "celestial";
+    const requestedBrand = "celestial" as const;
     const requestedOrigin = String(body?.origen || "manual").trim();
     const source = String(body?.source || "").trim();
     const requestedResponsibleId = String(body?.responsible_worker_id || "").trim();
     const origen = worker.role === "central"
-      ? (requestedBrand === "orion" ? "tarot_orion" : "tarot_celestial")
-      : requestedOrigin;
+      ? "tarot_celestial"
+      : (requestedOrigin.toLowerCase().includes("orion") ? "tarot_celestial" : requestedOrigin);
     const etiquetaIds = Array.from(new Set(
       (Array.isArray(body?.etiquetas) ? body.etiquetas : []).map((value: unknown) => String(value || "").trim()).filter(Boolean)
     ));

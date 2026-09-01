@@ -2,8 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type BrandKey = "celestial" | "orion";
 
-export function normalizeBrand(value: unknown): BrandKey {
-  return String(value || "").trim().toLowerCase() === "orion" ? "orion" : "celestial";
+export function normalizeBrand(_value: unknown): BrandKey {
+  return "celestial";
 }
 
 export function brandFromRequest(req: Request): BrandKey {

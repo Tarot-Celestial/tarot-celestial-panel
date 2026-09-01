@@ -83,7 +83,7 @@ export async function GET(req: Request) {
     const sort = String(url.searchParams.get("sort") || "recent");
     const view = ["active", "followup"].includes(String(url.searchParams.get("view") || "")) ? String(url.searchParams.get("view")) : "all";
     const status = String(url.searchParams.get("status") || "all").trim();
-    const brand: "celestial" | "orion" = String(url.searchParams.get("marca") || "celestial").toLowerCase() === "orion" ? "orion" : "celestial";
+    const brand: "celestial" = "celestial";
     const admin = adminClient();
 
     // La cartera se decide exclusivamente por el ID del responsable actual.

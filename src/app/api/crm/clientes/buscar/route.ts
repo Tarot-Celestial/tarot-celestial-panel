@@ -77,8 +77,7 @@ export async function GET(req: Request) {
     const etiqueta = String(searchParams.get("etiqueta") || searchParams.get("tag") || "").trim().toLowerCase();
     const rango = String(searchParams.get("rango") || "").trim().toLowerCase();
     const webFilter = String(searchParams.get("web_filter") || "todos").trim().toLowerCase();
-    const marca = String(searchParams.get("marca") || searchParams.get("brand") || "celestial").trim().toLowerCase();
-    const brandFilter = marca === "orion" ? "orion" : "celestial";
+    const brandFilter = "celestial";
 
     const admin = adminClient();
     let clienteIdsFiltro: string[] | null = null;
@@ -101,10 +100,6 @@ export async function GET(req: Request) {
       .limit(120);
 
     if (clienteIdsFiltro) query = query.in("id", clienteIdsFiltro);
-
-    if (brandFilter === "orion") {
-      query = query.ilike("origen", "%orion%");
-    }
 
     const searchQ = q.replace(/[%]/g, " ").replace(/,/g, " ").trim();
     const qDigits = normalizeSpanishPhone(searchQ);
@@ -153,11 +148,7 @@ export async function GET(req: Request) {
     if (error) throw error;
     let clientes = data || [];
 
-    if (brandFilter === "celestial") {
-      clientes = clientes.filter((c: any) => !String(c?.origen || "").toLowerCase().includes("orion"));
-    } else {
-      clientes = clientes.filter((c: any) => String(c?.origen || "").toLowerCase().includes("orion"));
-    }
+    clientes = clientes.filter((c: any) => !String(c?.origen || "").toLowerCase().includes("orion"));
 
     const ids = clientes.map((c: any) => String(c.id)).filter(Boolean);
     if (!ids.length) return NextResponse.json({ ok: true, clientes: [] });

@@ -49,7 +49,7 @@ export async function GET(req: Request) {
     const worker = await authenticatedCentral(req);
     if (!worker) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     const url = new URL(req.url);
-    const business = url.searchParams.get("marca") === "orion" ? "orion" : "celestial";
+    const business = "celestial";
     const clientId = String(url.searchParams.get("client_id") || "").trim();
     const admin = adminClient();
     const identityIds = Array.from(new Set([String(worker.id), ...worker.identityIds].filter(Boolean)));
