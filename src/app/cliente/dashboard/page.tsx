@@ -25,6 +25,7 @@ import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
+import ManualPurchaseButton from "@/components/cliente/ManualPurchaseButton";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseClienteBrowser();
@@ -168,7 +169,6 @@ export default function ClienteDashboardPage() {
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
   const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
-  const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
@@ -176,7 +176,6 @@ export default function ClienteDashboardPage() {
   const [savingOnboarding, setSavingOnboarding] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [buyingPackId, setBuyingPackId] = useState("");
   const [msg, setMsg] = useState("");
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
     typeof window === "undefined" || !("Notification" in window) ? "unsupported" : Notification.permission
@@ -584,53 +583,6 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function buyPack(packId: string) {
-    try {
-      setBuyingPackId(packId);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const res = await fetch("/api/cliente/pagos/checkout", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ pack_id: packId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
-      window.location.href = json.url;
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido iniciar el pago");
-    } finally {
-      setBuyingPackId("");
-    }
-  }
-
-  async function buyOraclePack(packId: string) {
-    try {
-      setBuyingOraclePackId(packId);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const res = await fetch("/api/cliente/oraculo/checkout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ pack_id: packId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
-      window.location.href = json.url;
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido iniciar el pago");
-    } finally {
-      setBuyingOraclePackId("");
-    }
-  }
-
   async function trackCallAndOpen() {
     if (!callTarget) return;
     try {
@@ -819,9 +771,7 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">${pack.priceUsd.toFixed(2)} USD</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales disponibles para tu cuenta</div>
-                    <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
-                      {buyingPackId === pack.id ? "Conectando con Stripe..." : "Comprar ahora"}
-                    </button>
+                    <ManualPurchaseButton className="tc-btn tc-btn-gold">Comprar ahora</ManualPurchaseButton>
                   </div>
                 ))}
               </div>
@@ -849,9 +799,7 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{pack.priceEur.toFixed(2).replace(".", ",")} €</div>
                     <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
-                    <button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
-                      {buyingOraclePackId === pack.id ? "Conectando con Stripe..." : "COMPRAR"}
-                    </button>
+                    <ManualPurchaseButton className="tc-btn tc-btn-gold" />
                   </div>
                 ))}
               </div>

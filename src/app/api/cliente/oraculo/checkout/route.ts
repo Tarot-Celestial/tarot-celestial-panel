@@ -20,6 +20,17 @@ function baseUrl(req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (process.env.CLIENTE_AUTOMATED_CHECKOUT_ENABLED !== "true") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "CHECKOUT_TEMPORALMENTE_DESACTIVADO",
+        message: "El cobro se realiza manualmente por teléfono con el código Cliente web.",
+      },
+      { status: 503 }
+    );
+  }
+
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
