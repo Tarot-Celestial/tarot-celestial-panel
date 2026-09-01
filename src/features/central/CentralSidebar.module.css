@@ -24,9 +24,16 @@
 
 .sidebarTitle {
   position: relative;
+  flex: 1;
   padding: 2px 4px 11px;
   color: var(--ct-accent, rgba(242, 215, 157, 0.82)) !important;
   text-shadow: 0 0 18px rgba(232, 199, 118, 0.16);
+}
+
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
 }
 
 .sidebarTitle::after {

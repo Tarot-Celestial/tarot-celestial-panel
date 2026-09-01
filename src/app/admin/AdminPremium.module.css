@@ -32,6 +32,8 @@
   box-shadow:0 0 18px rgba(168,108,255,.18);
 }
 .sidebarTitle{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:0 4px 5px}
+.sidebarTitleRow{display:flex;align-items:flex-start;gap:9px}
+.sidebarTitleRow .sidebarTitle{flex:1}
 .sidebarTitle span{font-size:11px;letter-spacing:.16em;color:rgba(247,221,166,.82)}
 .sidebarTitle small{font-size:8px;letter-spacing:.12em;color:rgba(201,181,225,.48);font-weight:800}
 .navItem{

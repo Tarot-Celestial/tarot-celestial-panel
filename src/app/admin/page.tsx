@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import NavigationVisibilityMenu, { useHiddenNavigation } from "@/components/navigation/NavigationVisibilityMenu";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
@@ -283,6 +284,8 @@ function AdminPage() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
   const [xpMenuOpen, setXpMenuOpen] = useState(false);
+  const { hiddenKeys: hiddenAdminNav, toggleHidden: toggleAdminNav, resetHidden: resetAdminNav } = useHiddenNavigation("tc:navigation:hidden:admin:v1");
+  const visibleAdminNav = useMemo(() => ADMIN_NAV.filter((item) => !hiddenAdminNav.includes(item.key)), [hiddenAdminNav]);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -1816,9 +1819,18 @@ function AdminPage() {
         <aside className={`tc-sidebar ${adminStyles.sidebar}`}>
           <div className={`tc-sidebar-card ${adminStyles.sidebarCard}`}>
             <div className={adminStyles.sidebarHudLine} aria-hidden="true" />
-            <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
+            <div className={adminStyles.sidebarTitleRow}>
+              <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
+              <NavigationVisibilityMenu
+                panelName="Administración"
+                items={ADMIN_NAV.map((item) => ({ key: item.key, label: item.label }))}
+                hiddenKeys={hiddenAdminNav}
+                onToggle={toggleAdminNav}
+                onReset={resetAdminNav}
+              />
+            </div>
             <div className="tc-sidebar-nav">
-              {ADMIN_NAV.map((item) => {
+              {visibleAdminNav.map((item) => {
                 const Icon = item.icon;
                 const rankGroup = item.key === "rangos-clientes";
                 const xpGroup = item.key === "sistema-xp";

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronDown, type LucideIcon } from "lucide-react";
+import NavigationVisibilityMenu, { useHiddenNavigation } from "@/components/navigation/NavigationVisibilityMenu";
 import styles from "./CentralSidebar.module.css";
 
 export type CentralNavItem<T extends string = string> = {
@@ -49,6 +50,8 @@ function navTone(key: string, notificationAlert: boolean) {
 
 export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange }: CentralSidebarProps<T>) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const { hiddenKeys, toggleHidden, resetHidden } = useHiddenNavigation("tc:navigation:hidden:central:v1");
+  const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)));
 
   useEffect(() => {
     const activeParent = items.find((item) => item.children?.some((child) => child.key === activeTab));
@@ -60,9 +63,18 @@ export default function CentralSidebar<T extends string = string>({ items, activ
   return (
     <aside className={`tc-sidebar ${styles.sidebar}`}>
       <div className={`tc-sidebar-card ${styles.sidebarCard}`}>
-        <div className={`tc-sidebar-title ${styles.sidebarTitle}`}>Navegación centrales</div>
+        <div className={styles.titleRow}>
+          <div className={`tc-sidebar-title ${styles.sidebarTitle}`}>Navegación centrales</div>
+          <NavigationVisibilityMenu
+            panelName="Centrales"
+            items={items.map((item) => ({ key: String(item.key), label: item.label }))}
+            hiddenKeys={hiddenKeys}
+            onToggle={toggleHidden}
+            onReset={resetHidden}
+          />
+        </div>
         <div className="tc-sidebar-nav">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
             const key = String(item.key);
             const hasChildren = Boolean(item.children?.length);
