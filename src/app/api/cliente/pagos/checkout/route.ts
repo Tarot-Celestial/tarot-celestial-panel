@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { CLIENTE_PACKS, getClientePack } from "@/lib/server/cliente-platform";
+import { CLIENT_MINUTE_PURCHASE_MAINTENANCE, CLIENT_PURCHASE_MAINTENANCE_MESSAGE, CLIENT_PURCHASE_CALL_OPTIONS } from "@/lib/client-purchase-maintenance";
 
 export const runtime = "nodejs";
 
@@ -19,14 +20,15 @@ function getBaseUrl(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (process.env.CLIENTE_AUTOMATED_CHECKOUT_ENABLED !== "true") {
+  if (CLIENT_MINUTE_PURCHASE_MAINTENANCE || process.env.CLIENTE_AUTOMATED_CHECKOUT_ENABLED !== "true") {
     return NextResponse.json(
       {
         ok: false,
         error: "CHECKOUT_TEMPORALMENTE_DESACTIVADO",
-        message: "El cobro se realiza manualmente por teléfono con el código Cliente web.",
+        message: CLIENT_PURCHASE_MAINTENANCE_MESSAGE,
+        contacts: CLIENT_PURCHASE_CALL_OPTIONS,
       },
-      { status: 503 }
+      { status: 503, headers: { "Cache-Control": "no-store" } }
     );
   }
 

@@ -22,6 +22,7 @@ import {
   Clock3,
 } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
+import ManualPurchaseButton from "@/components/cliente/ManualPurchaseButton";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
@@ -175,7 +176,6 @@ export default function ClienteDashboardPage() {
   const [savingOnboarding, setSavingOnboarding] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [buyingPackId, setBuyingPackId] = useState("");
   const [msg, setMsg] = useState("");
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
     typeof window === "undefined" || !("Notification" in window) ? "unsupported" : Notification.permission
@@ -585,31 +585,6 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function buyPack(packId: string) {
-    try {
-      setBuyingPackId(packId);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const res = await fetch("/api/cliente/pagos/checkout-v2", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ pack_id: packId }),
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
-      window.location.href = json.url;
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido iniciar el pago");
-    } finally {
-      setBuyingPackId("");
-    }
-  }
-
   async function buyOraclePack(packId: string) {
     try {
       setBuyingOraclePackId(packId);
@@ -801,7 +776,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">La compra usa {paymentProvider === "redsys" ? "Redsys" : "Stripe"}, añade tus minutos y genera 1 giro de Ruleta Celestial del nivel correspondiente.</div>
+                  <div className="tc-panel-sub">Compra web temporalmente en mantenimiento. Pulsa Comprar e indica «Cliente web» al llamar para conservar estos precios. Cobro manual por teléfono.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <ShoppingBag size={14} /> Precio app
@@ -819,9 +794,7 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{paymentProvider === "redsys" ? `${pack.priceUsd.toFixed(2).replace(".", ",")} €` : `$${pack.priceUsd.toFixed(2)} USD`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales · Ruleta Nivel {pack.totalMinutes <= 30 ? 1 : 2}</div>
-                    <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
-                      {buyingPackId === pack.id ? "Conectando con la pasarela..." : "Comprar ahora"}
-                    </button>
+                    <ManualPurchaseButton className="tc-btn tc-btn-gold">Comprar ahora</ManualPurchaseButton>
                   </div>
                 ))}
               </div>

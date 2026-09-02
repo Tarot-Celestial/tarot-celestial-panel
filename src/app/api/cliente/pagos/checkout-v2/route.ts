@@ -5,6 +5,7 @@ import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { redsysCurrencyLabel } from "@/lib/server/redsys";
+import { CLIENT_MINUTE_PURCHASE_MAINTENANCE, CLIENT_PURCHASE_MAINTENANCE_MESSAGE, CLIENT_PURCHASE_CALL_OPTIONS } from "@/lib/client-purchase-maintenance";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,13 @@ function makeRedsysOrder() {
 }
 
 export async function POST(req: Request) {
+  // Stop before auth/database/gateway work, including requests from older tabs.
+  if (CLIENT_MINUTE_PURCHASE_MAINTENANCE) {
+    return NextResponse.json(
+      { ok: false, error: "CHECKOUT_TEMPORALMENTE_DESACTIVADO", message: CLIENT_PURCHASE_MAINTENANCE_MESSAGE, contacts: CLIENT_PURCHASE_CALL_OPTIONS },
+      { status: 503, headers: { "Cache-Control": "no-store" } }
+    );
+  }
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) {

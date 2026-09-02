@@ -1,15 +1,10 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { BadgeAlert, PhoneCall, Tag, X } from "lucide-react";
 import styles from "./ManualPurchaseButton.module.css";
-
-const CALL_OPTIONS = [
-  { country: "Puerto Rico", flag: "🇵🇷", number: "+1 787 945 0710", href: "tel:+17879450710" },
-  { country: "Estados Unidos", flag: "🇺🇸", number: "+1 786 539 4750", href: "tel:+17865394750" },
-  { country: "España", flag: "🇪🇸", number: "93 050 25 86", href: "tel:+34930502586" },
-] as const;
+import { CLIENT_PURCHASE_CALL_OPTIONS, CLIENT_WEB_PURCHASE_CODE } from "@/lib/client-purchase-maintenance";
 
 type ManualPurchaseButtonProps = {
   children?: ReactNode;
@@ -19,6 +14,9 @@ type ManualPurchaseButtonProps = {
 export default function ManualPurchaseButton({ children = "COMPRAR", className }: ManualPurchaseButtonProps) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const titleId = useId();
+  const dialogRef = useRef<HTMLElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => setMounted(true), []);
 
@@ -27,18 +25,33 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
+      if (event.key === "Tab") {
+        const controls = dialogRef.current?.querySelectorAll<HTMLElement>("button, a[href]");
+        if (!controls?.length) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
     };
     document.body.style.overflow = "hidden";
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     window.addEventListener("keydown", closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
+      triggerRef.current?.focus();
     };
   }, [open]);
 
   return (
     <>
-      <button type="button" className={className} onClick={() => setOpen(true)}>
+      <button ref={triggerRef} type="button" className={className} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {children}
       </button>
 
@@ -46,10 +59,11 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
         ? createPortal(
             <div className={styles.backdrop} onMouseDown={() => setOpen(false)}>
               <section
+                ref={dialogRef}
                 className={styles.modal}
                 role="dialog"
                 aria-modal="true"
-                aria-labelledby="manual-purchase-title"
+                aria-labelledby={titleId}
                 onMouseDown={(event) => event.stopPropagation()}
               >
                 <button type="button" className={styles.close} onClick={() => setOpen(false)} aria-label="Cerrar aviso">
@@ -58,7 +72,7 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
 
                 <div className={styles.alertIcon}><BadgeAlert /></div>
                 <span className={styles.eyebrow}>AVISO IMPORTANTE</span>
-                <h2 id="manual-purchase-title">Compra web temporalmente desactivada</h2>
+                <h2 id={titleId}>Compra web temporalmente en mantenimiento</h2>
                 <p className={styles.intro}>
                   Mientras solucionamos el servicio de pago, los cobros se realizarán manualmente por teléfono.
                 </p>
@@ -67,7 +81,7 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
                   <Tag />
                   <div>
                     <span>CÓDIGO PARA CONSERVAR EL PRECIO DE LA WEB</span>
-                    <strong>Cliente web</strong>
+                    <strong>{CLIENT_WEB_PURCHASE_CODE}</strong>
                     <p>Indícalo al comenzar la llamada para que te apliquen las tarifas más bajas publicadas en el panel.</p>
                   </div>
                 </div>
@@ -75,7 +89,7 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
                 <div className={styles.callArea}>
                   <strong>Elige tu país para llamar a Tarot Celestial</strong>
                   <div className={styles.callGrid}>
-                    {CALL_OPTIONS.map((option) => (
+                    {CLIENT_PURCHASE_CALL_OPTIONS.map((option) => (
                       <a key={option.country} href={option.href} className={styles.callButton}>
                         <span className={styles.flag} aria-hidden="true">{option.flag}</span>
                         <span><b>{option.country}</b><small>{option.number}</small></span>
