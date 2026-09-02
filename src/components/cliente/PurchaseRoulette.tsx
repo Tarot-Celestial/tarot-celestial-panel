@@ -31,8 +31,12 @@ function wheelGradient(level: RouletteLevel) {
   ];
   const segment = 360 / prizes.length;
 
+  const jackpot = LEVEL_COPY[level].jackpot;
   return `conic-gradient(from ${-segment / 2}deg, ${prizes
-    .map((_, index) => `${tones[index % tones.length]} ${index * segment}deg ${(index + 1) * segment}deg`)
+    .map((prize, index) => {
+      const tone = prize === jackpot ? "#9f7428" : tones[index % tones.length];
+      return `${tone} ${index * segment}deg ${(index + 1) * segment}deg`;
+    })
     .join(",")})`;
 }
 
@@ -74,8 +78,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const labels = useMemo(
     () =>
       prizes.map((prize, index) => {
-        const angle = index * (360 / prizes.length) + 360 / prizes.length / 2;
-        return { prize, transform: `rotate(${angle}deg) translateX(33%) rotate(90deg)` };
+        const angle = index * (360 / prizes.length) + 360 / prizes.length / 2 - 90;
+        const radians = (angle * Math.PI) / 180;
+        return {
+          prize,
+          left: `${50 + Math.cos(radians) * 34}%`,
+          top: `${50 + Math.sin(radians) * 34}%`,
+        };
       }),
     [prizes],
   );
@@ -215,9 +224,17 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               style={{ transform: `rotate(${rotation}deg)`, background: wheelGradient(level) }}
             >
               <div className={styles.innerGrid} aria-hidden="true" />
-              {labels.map(({ prize, transform }) => (
-                <span key={prize} className={styles.label} style={{ transform }}>
-                  {prize}
+              {labels.map(({ prize, left, top }) => (
+                <span
+                  key={prize}
+                  className={styles.label}
+                  style={{
+                    left,
+                    top,
+                    transform: `translate(-50%, -50%) rotate(${-rotation}deg)`,
+                  }}
+                >
+                  +{prize}
                 </span>
               ))}
               <div className={styles.wheelCore} aria-hidden="true">

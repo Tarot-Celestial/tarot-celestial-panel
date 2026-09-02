@@ -102,6 +102,11 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
                   <WandSparkles size={16} /> Oráculo <span className="tc-nav-new-badge">NUEVO</span>
                 </span>
               </Link>
+              <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/ruleta" ? "tc-nav-link-active" : ""}`} href="/cliente/ruleta">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  <Sparkles size={16} /> Ruleta <span className="tc-nav-new-badge">NUEVO</span>
+                </span>
+              </Link>
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/sorteo" ? "tc-nav-link-active" : ""}`} href="/cliente/sorteo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                   <Gift size={16} /> Sorteo <span className="tc-nav-new-badge">NUEVO</span>

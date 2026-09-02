@@ -25,7 +25,6 @@ import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
-import PurchaseRoulette from "@/components/cliente/PurchaseRoulette";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 
 const sb = supabaseClienteBrowser();
@@ -164,6 +163,7 @@ export default function ClienteDashboardPage() {
   const [paymentProvider, setPaymentProvider] = useState<"stripe" | "redsys">("stripe");
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
   const [oracleCredits, setOracleCredits] = useState(0);
+  const [rouletteSpins, setRouletteSpins] = useState(0);
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
   const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
@@ -242,10 +242,23 @@ export default function ClienteDashboardPage() {
     }
   }, []);
 
+  const loadRouletteSummary = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const res = await fetch("/api/cliente/ruleta", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const json = await res.json().catch(() => null);
+    if (json?.ok) setRouletteSpins(Number(json.available_spins || 0));
+  }, []);
+
   useEffect(() => {
     loadData();
     loadOracle();
-  }, [loadData, loadOracle]);
+    loadRouletteSummary();
+  }, [loadData, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
     if (oracleFreeAvailable || !oracleNextFreeAt) { setOracleFreeCountdown(0); return; }
@@ -257,12 +270,15 @@ export default function ClienteDashboardPage() {
 
   useEffect(() => {
     const channel = typeof window !== "undefined" && "BroadcastChannel" in window ? new BroadcastChannel("tc-oracle-balance") : null;
-    const refresh = () => loadOracle();
+    const refresh = () => {
+      loadOracle();
+      loadRouletteSummary();
+    };
     channel?.addEventListener("message", refresh);
     window.addEventListener("focus", refresh);
     const timer = window.setInterval(refresh, 20000);
     return () => { channel?.close(); window.removeEventListener("focus", refresh); window.clearInterval(timer); };
-  }, [loadOracle]);
+  }, [loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -271,7 +287,10 @@ export default function ClienteDashboardPage() {
     if (checkout === "ok") {
       setMsg("✅ Pago completado. En unos segundos verás tus minutos y puntos actualizados.");
       window.history.replaceState({}, "", "/cliente/dashboard");
-      window.setTimeout(() => loadData(), 1200);
+      window.setTimeout(() => {
+        loadData();
+        loadRouletteSummary();
+      }, 1200);
     }
     if (checkout === "cancelled") {
       setMsg("Has cancelado el pago. Puedes volver a intentarlo cuando quieras.");
@@ -286,7 +305,7 @@ export default function ClienteDashboardPage() {
       setMsg("Has cancelado la compra de tiradas.");
       window.history.replaceState({}, "", "/cliente/dashboard#comprar-tiradas");
     }
-  }, [loadData, loadOracle]);
+  }, [loadData, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
     if (cliente && !cliente.onboarding_completado) {
@@ -348,6 +367,7 @@ export default function ClienteDashboardPage() {
           },
           () => {
             loadData();
+            loadRouletteSummary();
           }
         )
         .on(
@@ -360,6 +380,7 @@ export default function ClienteDashboardPage() {
           },
           () => {
             loadData();
+            loadRouletteSummary();
           }
         )
         .subscribe();
@@ -368,7 +389,7 @@ export default function ClienteDashboardPage() {
     return () => {
       if (channel) sb.removeChannel(channel);
     };
-  }, [cliente?.id, loadData]);
+  }, [cliente?.id, loadData, loadRouletteSummary]);
 
   useEffect(() => {
     async function checkPush() {
@@ -413,6 +434,13 @@ export default function ClienteDashboardPage() {
         meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes",
       },
       {
+        label: "Tiros disponibles",
+        value: String(rouletteSpins),
+        meta: rouletteSpins === 1 ? "Tienes 1 giro listo en la Ruleta Celestial" : rouletteSpins > 1 ? `Tienes ${rouletteSpins} giros listos en la Ruleta Celestial` : "Compra minutos para conseguir un giro",
+        href: "/cliente/ruleta",
+        tone: "oracle" as const,
+      },
+      {
         label: "Coins disponibles",
         value: String(totalPoints),
         meta: "Tu saldo real de recompensas",
@@ -437,7 +465,7 @@ export default function ClienteDashboardPage() {
         tone: "oracle" as const,
       },
     ],
-    [rankBadge.label, rankProgress?.monthly_requirement_text, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
+    [rankBadge.label, rankProgress?.monthly_requirement_text, rouletteSpins, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
   );
 
   async function saveOnboarding(payload: {
@@ -799,7 +827,6 @@ export default function ClienteDashboardPage() {
               </div>
             </section>
 
-            <PurchaseRoulette onReward={loadData} />
 
             <section id="comprar-tiradas" className="tc-card tc-purchase-panel" style={{ borderColor: "rgba(167, 111, 255, .22)" }}>
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
