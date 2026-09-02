@@ -20,7 +20,11 @@ function baseUrl(req: Request) {
 }
 
 function esc(value: string) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 export async function GET(req: Request) {
@@ -36,26 +40,44 @@ export async function GET(req: Request) {
       .eq("provider", "redsys")
       .maybeSingle();
     if (error) throw error;
-    if (!attempt || attempt.status !== "pending") return new Response("Operación no disponible", { status: 404 });
+    if (!attempt || attempt.status !== "pending") {
+      return new Response("Operación no disponible", { status: 404 });
+    }
 
-    const amount = String(Math.round(Number(attempt.amount || 0) * 100));
+    const appUrl = baseUrl(req);
+    const amountCents = String(Math.round(Number(attempt.amount || 0) * 100));
     const parameters = encodeMerchantParameters({
-      DS_MERCHANT_AMOUNT: amount,
+      DS_MERCHANT_AMOUNT: amountCents,
       DS_MERCHANT_ORDER: String(attempt.order_id),
       DS_MERCHANT_MERCHANTCODE: redsysMerchantCode(),
       DS_MERCHANT_CURRENCY: redsysCurrency(),
       DS_MERCHANT_TRANSACTIONTYPE: "0",
       DS_MERCHANT_TERMINAL: redsysTerminal(),
-      DS_MERCHANT_MERCHANTURL: `${baseUrl(req)}/api/webhooks/redsys`,
-      DS_MERCHANT_URLOK: `${baseUrl(req)}/cliente/dashboard?checkout=ok`,
-      DS_MERCHANT_URLKO: `${baseUrl(req)}/cliente/dashboard?checkout=cancelled`,
-      DS_MERCHANT_MERCHANTDATA: String(attempt.id),
+      DS_MERCHANT_MERCHANTURL: `${appUrl}/api/webhooks/redsys`,
+      DS_MERCHANT_URLOK: `${appUrl}/cliente/dashboard?checkout=ok`,
+      DS_MERCHANT_URLKO: `${appUrl}/cliente/dashboard?checkout=cancelled`,
     });
     const signature = createRedsysSignature(parameters, String(attempt.order_id));
-    const action = redsysEndpoint();
 
-    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectando con Redsys</title></head><body style="font-family:system-ui;background:#090511;color:#fff;display:grid;place-items:center;min-height:100vh"><div style="text-align:center"><p>Conectando con Redsys…</p></div><form id="redsys" method="post" action="${esc(action)}"><input type="hidden" name="Ds_SignatureVersion" value="${REDSYS_SIGNATURE_VERSION}"><input type="hidden" name="Ds_MerchantParameters" value="${esc(parameters)}"><input type="hidden" name="Ds_Signature" value="${esc(signature)}"></form><script>document.getElementById('redsys').submit();</script></body></html>`;
-    return new Response(html, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+    const html = `<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectando con Redsys</title></head>
+<body style="font-family:system-ui;background:#090511;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0">
+  <div style="text-align:center"><p>Conectando con Redsys…</p></div>
+  <form id="redsys" method="post" action="${esc(redsysEndpoint())}">
+    <input type="hidden" name="Ds_SignatureVersion" value="${REDSYS_SIGNATURE_VERSION}">
+    <input type="hidden" name="Ds_MerchantParameters" value="${esc(parameters)}">
+    <input type="hidden" name="Ds_Signature" value="${esc(signature)}">
+  </form>
+  <script>document.getElementById('redsys').submit();</script>
+</body></html>`;
+
+    return new Response(html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
   } catch (error: any) {
     console.error("[redsys/start]", error);
     return new Response("No hemos podido iniciar el pago con Redsys", { status: 500 });

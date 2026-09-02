@@ -1,42 +1,72 @@
-import { CLIENTE_PACKS, getClientePack } from "@/lib/server/cliente-platform";
+export type ClienteMinutePack = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  priceUsd: number;
+  totalMinutes: number;
+  bonusMinutes: number;
+  highlight?: boolean;
+};
 
-const NEW_PACK_VALUES = [
-  { minutes: 10, priceUsd: 12 },
-  { minutes: 20, priceUsd: 22 },
-  { minutes: 30, priceUsd: 26 },
-  { minutes: 40, priceUsd: 29 },
-  { minutes: 50, priceUsd: 32 },
-  { minutes: 60, priceUsd: 35 },
-] as const;
-
-const sortedBasePacks = [...CLIENTE_PACKS].sort(
-  (a: any, b: any) => Number(a?.totalMinutes || 0) - Number(b?.totalMinutes || 0),
-);
-
-export const CLIENTE_MINUTE_PACKS = NEW_PACK_VALUES.map((config, index) => {
-  const exactPack = sortedBasePacks.find(
-    (pack: any) => Number(pack?.totalMinutes || 0) === config.minutes,
-  );
-  const pack = exactPack || sortedBasePacks[index];
-  if (!pack) return null;
-
-  return {
-    ...pack,
-    nombre: `${config.minutes} minutos`,
-    descripcion: `Pack de ${config.minutes} minutos para tus consultas.`,
-    priceUsd: config.priceUsd,
-    totalMinutes: config.minutes,
+export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
+  {
+    id: "pack_10",
+    nombre: "10 minutos",
+    descripcion: "Consulta rápida de 10 minutos.",
+    priceUsd: 12,
+    totalMinutes: 10,
     bonusMinutes: 0,
-    highlight: config.minutes === 30 ? true : Boolean(pack?.highlight),
-  };
-}).filter(Boolean) as any[];
+  },
+  {
+    id: "pack_20",
+    nombre: "20 minutos",
+    descripcion: "20 minutos para profundizar en tu consulta.",
+    priceUsd: 22,
+    totalMinutes: 20,
+    bonusMinutes: 0,
+  },
+  {
+    id: "pack_30",
+    nombre: "30 minutos",
+    descripcion: "30 minutos para una consulta completa.",
+    priceUsd: 26,
+    totalMinutes: 30,
+    bonusMinutes: 0,
+    highlight: true,
+  },
+  {
+    id: "pack_40",
+    nombre: "40 minutos",
+    descripcion: "40 minutos para una consulta extensa.",
+    priceUsd: 29,
+    totalMinutes: 40,
+    bonusMinutes: 0,
+  },
+  {
+    id: "pack_50",
+    nombre: "50 minutos",
+    descripcion: "50 minutos para trabajar varias preguntas.",
+    priceUsd: 32,
+    totalMinutes: 50,
+    bonusMinutes: 0,
+  },
+  {
+    id: "pack_60",
+    nombre: "60 minutos",
+    descripcion: "Una hora completa de consulta.",
+    priceUsd: 35,
+    totalMinutes: 60,
+    bonusMinutes: 0,
+    highlight: true,
+  },
+];
 
-export function getConfiguredMinutePack(packId: unknown) {
-  const raw = String(packId || "").trim();
-  if (!raw) return null;
+export function getConfiguredMinutePack(packId: unknown): ClienteMinutePack | null {
+  const id = String(packId || "").trim();
+  if (!id) return null;
+  return CLIENTE_MINUTE_PACKS.find((pack) => pack.id === id) || null;
+}
 
-  const original = getClientePack(raw) as any;
-  if (!original) return null;
-
-  return CLIENTE_MINUTE_PACKS.find((pack: any) => String(pack.id) === raw) || null;
+export function rouletteLevelForPack(pack: ClienteMinutePack): 1 | 2 {
+  return pack.totalMinutes <= 30 ? 1 : 2;
 }

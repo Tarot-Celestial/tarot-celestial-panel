@@ -161,6 +161,7 @@ export default function ClienteDashboardPage() {
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
   const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
   const [packs, setPacks] = useState<ClientePack[]>([]);
+  const [paymentProvider, setPaymentProvider] = useState<"stripe" | "redsys">("stripe");
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
   const [oracleCredits, setOracleCredits] = useState(0);
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
@@ -217,6 +218,7 @@ export default function ClienteDashboardPage() {
     setRankProgress(json.rank_progress || null);
     setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
     setPacks(Array.isArray(json.packs) ? json.packs : []);
+    setPaymentProvider(json.payment_provider === "redsys" ? "redsys" : "stripe");
     setCallTarget(json.call_target || null);
     if (json.welcome_gift?.granted) {
       setWelcomeGiftMinutes(Number(json.welcome_gift?.minutes || 10));
@@ -771,7 +773,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">Paga con la pasarela activa y el sistema añade minutos, Coins, rango, historial y 1 giro de ruleta automáticamente.</div>
+                  <div className="tc-panel-sub">La compra usa {paymentProvider === "redsys" ? "Redsys" : "Stripe"}, añade tus minutos y genera 1 giro de Ruleta Celestial del nivel correspondiente.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <ShoppingBag size={14} /> Precio app
@@ -787,8 +789,8 @@ export default function ClienteDashboardPage() {
                       </div>
                       {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
                     </div>
-                    <div className="tc-pack-price">${pack.priceUsd.toFixed(2)} USD</div>
-                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales disponibles para tu cuenta</div>
+                    <div className="tc-pack-price">{paymentProvider === "redsys" ? `${pack.priceUsd.toFixed(2).replace(".", ",")} €` : `$${pack.priceUsd.toFixed(2)} USD`}</div>
+                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales · Ruleta Nivel {pack.totalMinutes <= 30 ? 1 : 2}</div>
                     <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
                       {buyingPackId === pack.id ? "Conectando con la pasarela..." : "Comprar ahora"}
                     </button>

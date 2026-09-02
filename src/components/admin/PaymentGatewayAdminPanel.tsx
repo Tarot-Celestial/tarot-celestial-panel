@@ -4,11 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Landmark, ShieldCheck } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
-type Provider = "stripe" | "redsys";
 const sb = supabaseBrowser();
+type Provider = "stripe" | "redsys";
 
 export default function PaymentGatewayAdminPanel() {
-  const [provider, setProvider] = useState<Provider>("redsys");
+  const [provider, setProvider] = useState<Provider>("stripe");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -24,10 +24,13 @@ export default function PaymentGatewayAdminPanel() {
     try {
       setLoading(true);
       const headers = await authHeaders();
-      const res = await fetch("/api/admin/payment-settings", { headers, cache: "no-store" });
+      const res = await fetch("/api/admin/payment-settings", {
+        headers,
+        cache: "no-store",
+      });
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No se pudo cargar la pasarela");
-      setProvider(json.provider === "stripe" ? "stripe" : "redsys");
+      setProvider(json.provider === "redsys" ? "redsys" : "stripe");
     } catch (error: any) {
       setMessage(error?.message || "No se pudo cargar la configuración");
     } finally {
@@ -35,7 +38,9 @@ export default function PaymentGatewayAdminPanel() {
     }
   }, [authHeaders]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   async function save(next: Provider) {
     try {
@@ -50,7 +55,9 @@ export default function PaymentGatewayAdminPanel() {
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No se pudo guardar la pasarela");
       setProvider(next);
-      setMessage(`✅ ${next === "redsys" ? "Redsys" : "Stripe"} queda como pasarela activa para nuevas compras de minutos.`);
+      setMessage(
+        `✅ ${next === "redsys" ? "Redsys" : "Stripe"} queda activa para las nuevas compras de minutos.`,
+      );
     } catch (error: any) {
       setMessage(error?.message || "No se pudo guardar la configuración");
     } finally {
@@ -59,54 +66,79 @@ export default function PaymentGatewayAdminPanel() {
   }
 
   return (
-    <div className="tc-stack" style={{ gap: 16 }}>
-      <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 14 }}>
-        <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-          <div>
-            <div className="tc-title">Pasarela de pago del panel cliente</div>
-            <div className="tc-sub" style={{ marginTop: 6 }}>
-              Elige qué pasarela utilizarán las nuevas compras de minutos. Stripe permanece disponible y puedes alternar entre ambas cuando quieras.
-            </div>
+    <section
+      style={{
+        display: "grid",
+        gap: 14,
+        padding: 18,
+        marginBottom: 18,
+        border: "1px solid rgba(215,181,109,.24)",
+        borderRadius: 20,
+        background: "rgba(215,181,109,.055)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: ".14em", color: "#d7b56d" }}>
+            PASARELA DE PAGOS WEB
           </div>
-          <span className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-            <ShieldCheck size={15} /> Activa: {provider === "redsys" ? "Redsys" : "Stripe"}
-          </span>
+          <h2 style={{ margin: "5px 0 4px" }}>Stripe / Redsys</h2>
+          <p style={{ margin: 0, opacity: .7, fontSize: 13 }}>
+            El cambio afecta únicamente a las nuevas compras de minutos del panel cliente.
+          </p>
         </div>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 800 }}>
+          <ShieldCheck size={16} /> Activa: {provider === "redsys" ? "Redsys" : "Stripe"}
+        </span>
+      </div>
 
-        {message ? <div className="tc-sub" style={{ padding: 12, borderRadius: 12, background: "rgba(255,255,255,.04)" }}>{message}</div> : null}
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14, opacity: loading ? .65 : 1 }}>
-          <button
-            type="button"
-            className={`tc-card tc-click ${provider === "redsys" ? "tc-golden-panel" : ""}`}
-            disabled={loading || saving}
-            onClick={() => void save("redsys")}
-            style={{ textAlign: "left", cursor: "pointer", minHeight: 150 }}
-          >
-            <div className="tc-row" style={{ justifyContent: "space-between" }}>
-              <Landmark size={24} />
-              {provider === "redsys" ? <span className="tc-chip">ACTIVA</span> : null}
-            </div>
-            <div className="tc-title" style={{ marginTop: 18 }}>Redsys</div>
-            <div className="tc-sub" style={{ marginTop: 7 }}>TPV Virtual por redirección. Es la opción predeterminada del sistema.</div>
-          </button>
-
-          <button
-            type="button"
-            className={`tc-card tc-click ${provider === "stripe" ? "tc-golden-panel" : ""}`}
-            disabled={loading || saving}
-            onClick={() => void save("stripe")}
-            style={{ textAlign: "left", cursor: "pointer", minHeight: 150 }}
-          >
-            <div className="tc-row" style={{ justifyContent: "space-between" }}>
-              <CreditCard size={24} />
-              {provider === "stripe" ? <span className="tc-chip">ACTIVA</span> : null}
-            </div>
-            <div className="tc-title" style={{ marginTop: 18 }}>Stripe</div>
-            <div className="tc-sub" style={{ marginTop: 7 }}>Checkout actual de Stripe. No se elimina ni se desactiva su integración.</div>
-          </button>
+      {message ? (
+        <div style={{ padding: 11, borderRadius: 12, background: "rgba(255,255,255,.045)" }}>
+          {message}
         </div>
-      </section>
-    </div>
+      ) : null}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12 }}>
+        <button
+          type="button"
+          disabled={loading || saving}
+          onClick={() => void save("stripe")}
+          style={{
+            minHeight: 110,
+            padding: 16,
+            textAlign: "left",
+            borderRadius: 16,
+            border: provider === "stripe" ? "1px solid rgba(215,181,109,.5)" : "1px solid rgba(255,255,255,.1)",
+            background: provider === "stripe" ? "rgba(215,181,109,.11)" : "rgba(255,255,255,.035)",
+            color: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          <CreditCard size={22} />
+          <strong style={{ display: "block", marginTop: 10 }}>Stripe {provider === "stripe" ? "· ACTIVA" : ""}</strong>
+          <small style={{ display: "block", marginTop: 5, opacity: .65 }}>Cobro actual en USD.</small>
+        </button>
+
+        <button
+          type="button"
+          disabled={loading || saving}
+          onClick={() => void save("redsys")}
+          style={{
+            minHeight: 110,
+            padding: 16,
+            textAlign: "left",
+            borderRadius: 16,
+            border: provider === "redsys" ? "1px solid rgba(215,181,109,.5)" : "1px solid rgba(255,255,255,.1)",
+            background: provider === "redsys" ? "rgba(215,181,109,.11)" : "rgba(255,255,255,.035)",
+            color: "inherit",
+            cursor: "pointer",
+          }}
+        >
+          <Landmark size={22} />
+          <strong style={{ display: "block", marginTop: 10 }}>Redsys {provider === "redsys" ? "· ACTIVA" : ""}</strong>
+          <small style={{ display: "block", marginTop: 5, opacity: .65 }}>TPV Virtual por redirección · terminal EUR.</small>
+        </button>
+      </div>
+    </section>
   );
 }

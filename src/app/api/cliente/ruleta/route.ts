@@ -18,7 +18,9 @@ function spinSummary(rows: any[]) {
 export async function GET(req: Request) {
   try {
     const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!gate.uid || !gate.cliente) {
+      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    }
 
     const [pendingResult, lastUsedResult] = await Promise.all([
       gate.admin
@@ -41,30 +43,42 @@ export async function GET(req: Request) {
     if (lastUsedResult.error) throw lastUsedResult.error;
 
     const rows = pendingResult.data || [];
-    const summary = spinSummary(rows);
-    const lastUsed = lastUsedResult.data || null;
-
     return NextResponse.json({
       ok: true,
-      ...summary,
-      last_prize: Number(lastUsed?.premio_minutos || 0) || null,
-      last_prize_level: lastUsed ? (Number(lastUsed?.nivel || 1) === 2 ? 2 : 1) : null,
+      ...spinSummary(rows),
+      last_prize: Number(lastUsedResult.data?.premio_minutos || 0) || null,
+      last_prize_level: lastUsedResult.data
+        ? Number(lastUsedResult.data?.nivel || 1) === 2
+          ? 2
+          : 1
+        : null,
     });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_RULETA" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: error?.message || "ERR_RULETA" },
+      { status: 500 },
+    );
   }
 }
 
 export async function POST(req: Request) {
   try {
     const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!gate.uid || !gate.cliente) {
+      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    }
 
-    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta", { p_cliente_id: gate.cliente.id });
+    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta", {
+      p_cliente_id: gate.cliente.id,
+    });
     if (error) throw error;
+
     const result = Array.isArray(data) ? data[0] : data;
     if (!result?.prize_minutes) {
-      return NextResponse.json({ ok: false, error: "SIN_GIROS_DISPONIBLES" }, { status: 409 });
+      return NextResponse.json(
+        { ok: false, error: "SIN_GIROS_DISPONIBLES" },
+        { status: 409 },
+      );
     }
 
     return NextResponse.json({
@@ -78,6 +92,9 @@ export async function POST(req: Request) {
       total_minutes: Number(result.total_minutes || 0),
     });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_GIRAR_RULETA" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: error?.message || "ERR_GIRAR_RULETA" },
+      { status: 500 },
+    );
   }
 }

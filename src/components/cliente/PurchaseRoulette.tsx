@@ -41,7 +41,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
-    const res = await fetch("/api/cliente/ruleta", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+
+    const res = await fetch("/api/cliente/ruleta", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
     const json = await res.json().catch(() => null);
     if (json?.ok) {
       const nextAvailable = Number(json.available_spins || 0);
@@ -52,13 +56,19 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const prizes = PRIZES[level];
-  const labels = useMemo(() => prizes.map((prize, index) => {
-    const angle = index * (360 / prizes.length) + (360 / prizes.length) / 2;
-    return { prize, transform: `rotate(${angle}deg) translateX(32%) rotate(90deg)` };
-  }), [prizes]);
+  const labels = useMemo(
+    () =>
+      prizes.map((prize, index) => {
+        const angle = index * (360 / prizes.length) + 360 / prizes.length / 2;
+        return { prize, transform: `rotate(${angle}deg) translateX(32%) rotate(90deg)` };
+      }),
+    [prizes],
+  );
 
   async function spin() {
     try {
@@ -69,9 +79,18 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       const token = data.session?.access_token;
       if (!token) throw new Error("Sesión no válida");
 
-      const res = await fetch("/api/cliente/ruleta", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch("/api/cliente/ruleta", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error === "SIN_GIROS_DISPONIBLES" ? "No tienes giros pendientes." : json?.error || "No se pudo girar la ruleta");
+      if (!json?.ok) {
+        throw new Error(
+          json?.error === "SIN_GIROS_DISPONIBLES"
+            ? "No tienes giros pendientes."
+            : json?.error || "No se pudo girar la ruleta",
+        );
+      }
 
       const prize = Number(json.prize_minutes);
       const awardedLevel: RouletteLevel = Number(json.spin_level || 1) === 2 ? 2 : 1;
@@ -110,9 +129,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         <div>
           <div className={styles.kicker}>RULETA CELESTIAL</div>
           <h2 className={styles.title}>Cada compra te regala 1 giro</h2>
-          <p className={styles.copy}>El nivel del giro depende del pack comprado. Todos los giros tienen premio y los minutos ganados se añaden automáticamente a tu saldo.</p>
+          <p className={styles.copy}>
+            El nivel del giro queda guardado con el pack comprado. Todos los giros tienen premio y los minutos ganados se añaden automáticamente a tu saldo.
+          </p>
         </div>
-        <div className={styles.counter}>{available} {available === 1 ? "GIRO DISPONIBLE" : "GIROS DISPONIBLES"}</div>
+        <div className={styles.counter}>
+          {available} {available === 1 ? "GIRO DISPONIBLE" : "GIROS DISPONIBLES"}
+        </div>
       </div>
 
       <div className={styles.levelGrid}>
@@ -133,8 +156,15 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       <div className={styles.body}>
         <div className={styles.wheelBox}>
           <div className={styles.pointer} />
-          <div className={styles.wheel} style={{ transform: `rotate(${rotation}deg)`, background: wheelGradient(level) }}>
-            {labels.map(({ prize, transform }) => <span key={prize} className={styles.label} style={{ transform }}>{prize}</span>)}
+          <div
+            className={styles.wheel}
+            style={{ transform: `rotate(${rotation}deg)`, background: wheelGradient(level) }}
+          >
+            {labels.map(({ prize, transform }) => (
+              <span key={prize} className={styles.label} style={{ transform }}>
+                {prize}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -146,17 +176,35 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           </div>
           <div className={styles.prizes}>
             {prizes.map((prize) => (
-              <span key={prize} className={`${styles.prize} ${prize === jackpot ? styles.prizeJackpot : ""}`}>
+              <span
+                key={prize}
+                className={`${styles.prize} ${prize === jackpot ? styles.prizeJackpot : ""}`}
+              >
                 +{prize} min{prize === jackpot ? " · ESPECIAL 5%" : ""}
               </span>
             ))}
           </div>
-          <button className={styles.button} type="button" disabled={busy || available <= 0} onClick={() => void spin()}>
-            {busy ? "GIRANDO…" : available > 0 ? `GIRAR RULETA · NIVEL ${level}` : "COMPRA PARA CONSEGUIR UN GIRO"}
+          <button
+            className={styles.button}
+            type="button"
+            disabled={busy || available <= 0}
+            onClick={() => void spin()}
+          >
+            {busy
+              ? "GIRANDO…"
+              : available > 0
+                ? `GIRAR RULETA · NIVEL ${level}`
+                : "COMPRA PARA CONSEGUIR UN GIRO"}
           </button>
-          {result ? <div className={styles.result}>✨ Premio Nivel {result.level}: <strong>+{result.prize} minutos</strong>. Ya están añadidos a tu cuenta.</div> : null}
+          {result ? (
+            <div className={styles.result}>
+              ✨ Premio Nivel {result.level}: <strong>+{result.prize} minutos</strong>. Ya están añadidos a tu cuenta.
+            </div>
+          ) : null}
           {message ? <div className={styles.result}>{message}</div> : null}
-          <div className={styles.foot}>1 compra confirmada = 1 giro de su nivel. Un mismo pago nunca genera dos giros aunque la pasarela reintente la confirmación.</div>
+          <div className={styles.foot}>
+            El premio especial tiene un 5% real de probabilidad. El 95% restante se reparte por igual entre los premios normales de cada nivel.
+          </div>
         </div>
       </div>
     </section>

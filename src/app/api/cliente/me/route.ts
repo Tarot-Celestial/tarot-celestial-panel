@@ -7,8 +7,9 @@ import {
   toNum,
   touchClientActivity,
 } from "@/lib/server/cliente-platform";
-import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 import { loadEffectiveClientRank, normalizeClientRank } from "@/lib/server/client-rank-effective";
+import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
+import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 
 export const runtime = "nodejs";
 
@@ -324,6 +325,8 @@ const rolling30Spend = spendPagos + spendLlamadas;
       ).values()
     );
 
+    const paymentProvider = await getActiveClientPaymentProvider(gate.admin);
+
     return NextResponse.json({
       ok: true,
       cliente: {
@@ -340,6 +343,7 @@ const rolling30Spend = spendPagos + spendLlamadas;
       cliente_notificaciones: notificaciones || [],
       call_target: callTarget,
       packs: CLIENTE_MINUTE_PACKS,
+      payment_provider: paymentProvider,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ME" }, { status: 500 });

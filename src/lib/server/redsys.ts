@@ -1,64 +1,84 @@
 import { createCipheriv, createHmac, timingSafeEqual } from "crypto";
 
-export const REDSYS_SIGNATURE_VERSION = "HMAC_SHA512_V2";
+// El TPV de CaixaBank/Cyberpac facilitado para este comercio usa SHA-256.
+export const REDSYS_SIGNATURE_VERSION = "HMAC_SHA256_V1";
 
-function requiredEnv(name: string) {
-  const value = String(process.env[name] || "").trim();
-  if (!value) throw new Error(`Missing env var: ${name}`);
-  return value;
+function requiredEnv(...names: string[]) {
+  for (const name of names) {
+    const value = String(process.env[name] || "").trim();
+    if (value) return value;
+  }
+  throw new Error(`Missing env var: ${names.join(" or ")}`);
 }
 
-function base64UrlFromBuffer(value: Buffer) {
-  return value
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+function merchantSecret() {
+  // Aceptamos ambos nombres para no romper una variable creada con el nombre anterior.
+  return requiredEnv("REDSYS_SECRET_KEY", "REDSYS_MERCHANT_SECRET");
+}
+
+function decodeBase64Flexible(value: string) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
+  const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
+  return Buffer.from(normalized + padding, "base64");
 }
 
 function normalizeSignature(value: string) {
-  return String(value || "").trim().replace(/=+$/g, "");
+  return decodeBase64Flexible(value);
+}
+
+function zeroPadToBlock(value: Buffer, blockSize: number) {
+  const targetLength = Math.ceil(value.length / blockSize) * blockSize;
+  if (targetLength === value.length) return value;
+  const padded = Buffer.alloc(targetLength, 0);
+  value.copy(padded);
+  return padded;
 }
 
 /**
- * Redsys HMAC_SHA512_V2 diversifies the merchant key with AES-128-CBC.
- * The configured secret is treated as text and adjusted to exactly 16 chars.
+ * HMAC_SHA256_V1 de Redsys:
+ * 1) clave del comercio en Base64 -> bytes (24 bytes para 3DES)
+ * 2) diversificación cifrando Ds_Order con 3DES-CBC, IV=0 y relleno a cero
+ * 3) HMAC-SHA256 de Ds_MerchantParameters usando la clave diversificada
+ * 4) resultado en Base64
  */
 function deriveOrderKey(order: string) {
-  const secret = requiredEnv("REDSYS_SECRET_KEY");
-  const keyText = secret.length >= 16 ? secret.slice(0, 16) : secret.padEnd(16, "0");
+  const key = decodeBase64Flexible(merchantSecret());
+  if (key.length !== 24) {
+    throw new Error("REDSYS_SECRET_KEY_INVALIDA");
+  }
 
-  const cipher = createCipheriv(
-    "aes-128-cbc",
-    Buffer.from(keyText, "utf8"),
-    Buffer.alloc(16, 0),
-  );
-
-  const encrypted = Buffer.concat([cipher.update(order, "utf8"), cipher.final()]);
-
-  // Redsys V2 uses the Base64 text of the diversified key as the HMAC key.
-  return encrypted.toString("base64");
+  const orderBytes = zeroPadToBlock(Buffer.from(order, "utf8"), 8);
+  const cipher = createCipheriv("des-ede3-cbc", key, Buffer.alloc(8, 0));
+  cipher.setAutoPadding(false);
+  return Buffer.concat([cipher.update(orderBytes), cipher.final()]);
 }
 
 export function encodeMerchantParameters(parameters: Record<string, string>) {
-  return base64UrlFromBuffer(Buffer.from(JSON.stringify(parameters), "utf8"));
+  return Buffer.from(JSON.stringify(parameters), "utf8").toString("base64");
 }
 
 export function decodeMerchantParameters(encoded: string): Record<string, string> {
-  const text = Buffer.from(encoded, "base64url").toString("utf8");
-  return JSON.parse(text);
+  const json = decodeBase64Flexible(encoded).toString("utf8");
+  return JSON.parse(json);
 }
 
 export function createRedsysSignature(merchantParameters: string, order: string) {
-  const diversifiedKeyBase64 = deriveOrderKey(order);
-  return createHmac("sha512", Buffer.from(diversifiedKeyBase64, "utf8"))
+  const diversifiedKey = deriveOrderKey(order);
+  return createHmac("sha256", diversifiedKey)
     .update(merchantParameters, "utf8")
-    .digest("base64url");
+    .digest("base64");
 }
 
-export function verifyRedsysSignature(merchantParameters: string, signature: string, order: string) {
-  const expected = Buffer.from(normalizeSignature(createRedsysSignature(merchantParameters, order)), "utf8");
-  const received = Buffer.from(normalizeSignature(signature), "utf8");
+export function verifyRedsysSignature(
+  merchantParameters: string,
+  signature: string,
+  order: string,
+) {
+  const expected = normalizeSignature(createRedsysSignature(merchantParameters, order));
+  const received = normalizeSignature(signature);
   return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
@@ -77,6 +97,10 @@ export function redsysTerminal() {
 }
 
 export function redsysCurrency() {
-  // 840 = USD. El terminal Redsys debe tener habilitada esta divisa.
-  return String(process.env.REDSYS_CURRENCY || "840").trim();
+  // El terminal de pruebas facilitado por CaixaBank está configurado en EUR (978).
+  return String(process.env.REDSYS_CURRENCY || "978").trim();
+}
+
+export function redsysCurrencyLabel(): "EUR" | "USD" {
+  return redsysCurrency() === "840" ? "USD" : "EUR";
 }

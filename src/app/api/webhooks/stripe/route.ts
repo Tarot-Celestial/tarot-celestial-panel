@@ -1,7 +1,9 @@
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { adminClient } from "@/lib/server/auth-cliente";
 import { applyClientPurchase, getClientePack } from "@/lib/server/cliente-platform";
+import { applyConfiguredMinutePurchase } from "@/lib/server/client-minute-purchase";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { addClientChatCredits, getChatPack } from "@/lib/server/chat-platform";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
@@ -20,7 +22,7 @@ export async function POST(req: Request) {
 
   try {
     const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"), { apiVersion: "2023-10-16" });
-    const signature = req.headers.get("stripe-signature");
+    const signature = headers().get("stripe-signature");
     if (!signature) {
       return NextResponse.json({ ok: false, error: "MISSING_STRIPE_SIGNATURE" }, { status: 400 });
     }
@@ -150,7 +152,9 @@ export async function POST(req: Request) {
       // =========================
       else {
         const packId = String(session.metadata?.pack_id || "").trim();
-        const pack = getConfiguredMinutePack(packId) || getClientePack(packId);
+        const configuredPack = getConfiguredMinutePack(packId);
+        const legacyPack = configuredPack ? null : getClientePack(packId);
+        const pack = configuredPack || legacyPack;
 
         if (!clienteId || !pack) {
           return NextResponse.json(
@@ -159,26 +163,43 @@ export async function POST(req: Request) {
           );
         }
 
-        // ✅ 1. APLICAR COMPRA (YA EXISTENTE)
-        await applyClientPurchase(admin, {
-          clienteId,
-          packId,
-          paymentRef,
-          paymentIntent:
-            typeof session.payment_intent === "string"
-              ? session.payment_intent
-              : session.payment_intent?.id || null,
-          stripeSessionId: session.id,
-          amountUsd: amountTotal || pack.priceUsd,
-          totalMinutes: Number(session.metadata?.total_minutes || pack.totalMinutes),
-          metodo: "stripe_checkout",
-          notas: `Stripe checkout completado · ${pack.nombre}`,
-        });
+        if (configuredPack) {
+          await applyConfiguredMinutePurchase(admin, {
+            clienteId,
+            packId,
+            paymentRef,
+            paymentIntent:
+              typeof session.payment_intent === "string"
+                ? session.payment_intent
+                : session.payment_intent?.id || null,
+            stripeSessionId: session.id,
+            amount: amountTotal || configuredPack.priceUsd,
+            currency: "USD",
+            metodo: "stripe_checkout",
+            notas: `Stripe checkout completado · ${configuredPack.nombre}`,
+          });
+        } else {
+          // Compatibilidad con sesiones de Stripe iniciadas antes de este cambio.
+          await applyClientPurchase(admin, {
+            clienteId,
+            packId,
+            paymentRef,
+            paymentIntent:
+              typeof session.payment_intent === "string"
+                ? session.payment_intent
+                : session.payment_intent?.id || null,
+            stripeSessionId: session.id,
+            amountUsd: amountTotal || legacyPack!.priceUsd,
+            totalMinutes: Number(session.metadata?.total_minutes || legacyPack!.totalMinutes),
+            metodo: "stripe_checkout",
+            notas: `Stripe checkout completado · ${legacyPack!.nombre}`,
+          });
+        }
 
-        // ✅ 2. NUEVO → CREAR NOTA EN CRM
+        // ✅ 2. CREAR NOTA EN CRM
         await admin.from("crm_client_notes").insert({
           cliente_id: clienteId,
-          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${Number(amountTotal || pack.priceUsd).toFixed(2)} USD) a través del panel cliente`,
+          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${amountTotal || pack.priceUsd} USD) a través del panel cliente`,
           author_user_id: null,
           author_name: "Sistema",
           author_email: null,
