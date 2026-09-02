@@ -5,7 +5,6 @@ import {
   currentRankBenefits,
   getCallTarget,
   toNum,
-  touchClientActivity,
 } from "@/lib/server/cliente-platform";
 import { loadEffectiveClientRank, normalizeClientRank } from "@/lib/server/client-rank-effective";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
@@ -196,8 +195,6 @@ export async function GET(req: Request) {
     if (!gate.cliente) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
-
-    await touchClientActivity(gate.admin, gate.cliente.id, { access: false });
 
     const welcomeState = await maybeGrantWelcomeGift(gate as any);
     const cliente = welcomeState.cliente;
