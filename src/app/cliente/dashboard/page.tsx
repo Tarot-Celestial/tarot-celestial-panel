@@ -25,10 +25,10 @@ import ClienteLayout from "@/components/cliente/ClienteLayout";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
-import ManualPurchaseButton from "@/components/cliente/ManualPurchaseButton";
-import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import PurchaseRoulette from "@/components/cliente/PurchaseRoulette";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
-const sb = supabaseClienteBrowser();
+const sb = supabaseBrowser();
 
 type Cliente = {
   id: string;
@@ -104,10 +104,7 @@ type ClienteNotif = {
   tipo?: string | null;
   leida?: boolean | null;
   created_at?: string | null;
-  meta?: { amount?: number; balance?: number; reason?: string } | null;
 };
-
-type CoinGiftNotice = { amount: number; balance: number; reason: string };
 
 type ClientePack = {
   id: string;
@@ -169,6 +166,7 @@ export default function ClienteDashboardPage() {
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
   const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
+  const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
@@ -176,13 +174,13 @@ export default function ClienteDashboardPage() {
   const [savingOnboarding, setSavingOnboarding] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [buyingPackId, setBuyingPackId] = useState("");
   const [msg, setMsg] = useState("");
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
     typeof window === "undefined" || !("Notification" in window) ? "unsupported" : Notification.permission
   );
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
-  const [coinGiftNotice, setCoinGiftNotice] = useState<CoinGiftNotice | null>(null);
 
   const [checkingPasswordStatus, setCheckingPasswordStatus] = useState(false);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
@@ -362,26 +360,6 @@ export default function ClienteDashboardPage() {
             loadData();
           }
         )
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "cliente_notificaciones",
-            filter: `cliente_id=eq.${cliente.id}`,
-          },
-          (payload) => {
-            const notification = payload.new as ClienteNotif;
-            if (notification.tipo === "coin_gift") {
-              setCoinGiftNotice({
-                amount: Math.max(0, Number(notification.meta?.amount || 0)),
-                balance: Math.max(0, Number(notification.meta?.balance || 0)),
-                reason: String(notification.meta?.reason || "Has recibido un regalo de administración."),
-              });
-            }
-            loadData();
-          }
-        )
         .subscribe();
     }
 
@@ -389,12 +367,6 @@ export default function ClienteDashboardPage() {
       if (channel) sb.removeChannel(channel);
     };
   }, [cliente?.id, loadData]);
-
-  useEffect(() => {
-    if (!coinGiftNotice) return;
-    const timer = window.setTimeout(() => setCoinGiftNotice(null), 6500);
-    return () => window.clearTimeout(timer);
-  }, [coinGiftNotice]);
 
   useEffect(() => {
     async function checkPush() {
@@ -583,6 +555,53 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  async function buyPack(packId: string) {
+    try {
+      setBuyingPackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/pagos/checkout-v2", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingPackId("");
+    }
+  }
+
+  async function buyOraclePack(packId: string) {
+    try {
+      setBuyingOraclePackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/oraculo/checkout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingOraclePackId("");
+    }
+  }
+
   async function trackCallAndOpen() {
     if (!callTarget) return;
     try {
@@ -681,7 +700,6 @@ export default function ClienteDashboardPage() {
         subtitle="Tu panel cliente reúne compra, minutos, llamadas, Coins, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
         summaryItems={summaryItems}
       >
-        {coinGiftNotice ? <aside className="tc-coin-gift-toast" role="status" aria-live="polite"><button type="button" onClick={()=>setCoinGiftNotice(null)} aria-label="Cerrar notificación">×</button><div className="tc-coin-gift-icon"><Gift/></div><div><span>¡TIENES UN OBSEQUIO!</span><strong>+{coinGiftNotice.amount.toLocaleString("es-ES")} Coins</strong><p>{coinGiftNotice.reason}</p><small>Nuevo saldo: {coinGiftNotice.balance.toLocaleString("es-ES")} Coins</small></div></aside> : null}
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
 
         <div className="tc-dashboard-grid">
@@ -753,7 +771,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">Pagas por Stripe y el sistema añade minutos, Coins, rango e historial automáticamente.</div>
+                  <div className="tc-panel-sub">Paga con la pasarela activa y el sistema añade minutos, Coins, rango, historial y 1 giro de ruleta automáticamente.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <ShoppingBag size={14} /> Precio app
@@ -771,11 +789,15 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">${pack.priceUsd.toFixed(2)} USD</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales disponibles para tu cuenta</div>
-                    <ManualPurchaseButton className="tc-btn tc-btn-gold">Comprar ahora</ManualPurchaseButton>
+                    <button className="tc-btn tc-btn-gold" disabled={buyingPackId === pack.id} onClick={() => buyPack(pack.id)}>
+                      {buyingPackId === pack.id ? "Conectando con la pasarela..." : "Comprar ahora"}
+                    </button>
                   </div>
                 ))}
               </div>
             </section>
+
+            <PurchaseRoulette onReward={loadData} />
 
             <section id="comprar-tiradas" className="tc-card tc-purchase-panel" style={{ borderColor: "rgba(167, 111, 255, .22)" }}>
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -799,7 +821,9 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{pack.priceEur.toFixed(2).replace(".", ",")} €</div>
                     <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
-                    <ManualPurchaseButton className="tc-btn tc-btn-gold" />
+                    <button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
+                      {buyingOraclePackId === pack.id ? "Conectando con Stripe..." : "COMPRAR"}
+                    </button>
                   </div>
                 ))}
               </div>

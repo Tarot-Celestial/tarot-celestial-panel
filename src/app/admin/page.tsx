@@ -6,10 +6,8 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
-import NavigationVisibilityMenu, { useHiddenNavigation } from "@/components/navigation/NavigationVisibilityMenu";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 
 
@@ -22,9 +20,8 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, UserCheck, Users, Trophy, Sparkles } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy, Sparkles } from "lucide-react";
 import adminStyles from "./AdminPremium.module.css";
-import workersStyles from "./WorkersPanel.module.css";
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -45,7 +42,7 @@ const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientW
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
-const ClientCapturesAdminPanel = nextDynamic(() => import("@/components/admin/ClientCapturesAdminPanel"), { ssr:false });
+const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -57,7 +54,7 @@ const ADMIN_NAV = [
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
-  { key: "clientas-captadas", icon: UserCheck, label: "Clientas captadas", kicker: "Atribución y responsables", tone: "goldPurple" },
+  { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Stripe / Redsys", tone: "gold" },
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
@@ -152,7 +149,7 @@ type TabKey =
   | "asistencia"
   | "trabajadores"
   | "clientes"
-  | "clientas-captadas"
+  | "pagos-web"
   | "rangos-clientes"
   | "clientes-web"
   | "sistema-xp"
@@ -284,8 +281,6 @@ function AdminPage() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
   const [xpMenuOpen, setXpMenuOpen] = useState(false);
-  const { hiddenKeys: hiddenAdminNav, toggleHidden: toggleAdminNav, resetHidden: resetAdminNav } = useHiddenNavigation("tc:navigation:hidden:admin:v1");
-  const visibleAdminNav = useMemo(() => ADMIN_NAV.filter((item) => !hiddenAdminNav.includes(item.key)), [hiddenAdminNav]);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -345,10 +340,6 @@ function AdminPage() {
   const [newLabel, setNewLabel] = useState("Ajuste");
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
-  const [newBonusMode, setNewBonusMode] = useState<"fixed" | "units">("fixed");
-  const [newBonusQuantity, setNewBonusQuantity] = useState("1");
-  const [newBonusRate, setNewBonusRate] = useState("0");
-  const [newDescription, setNewDescription] = useState("");
 
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsMsg, setStatsMsg] = useState("");
@@ -357,7 +348,6 @@ function AdminPage() {
   const [statsPreviousTotals, setStatsPreviousTotals] = useState<any>(null);
   const [statsPreviousRows, setStatsPreviousRows] = useState<any[]>([]);
   const [statsPreviousInvoiceSummary, setStatsPreviousInvoiceSummary] = useState<any>(null);
-  const [statsComparisonPeriod, setStatsComparisonPeriod] = useState<any>(null);
   const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
   const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
   const [statsLiveStatus, setStatsLiveStatus] = useState<"connecting" | "live" | "updating" | "reconnecting" | "offline">("connecting");
@@ -436,11 +426,6 @@ function AdminPage() {
   const [staffWorkers, setStaffWorkers] = useState<any[]>([]);
   const [staffSchedules, setStaffSchedules] = useState<any[]>([]);
   const [staffQ, setStaffQ] = useState("");
-  const [staffRoleFilter, setStaffRoleFilter] = useState("all");
-  const [staffTeamFilter, setStaffTeamFilter] = useState("all");
-  const [staffStatusFilter, setStaffStatusFilter] = useState("all");
-  const [staffLiveStatus, setStaffLiveStatus] = useState<"connecting" | "live" | "fallback">("connecting");
-  const staffRealtimeTimerRef = useRef<number | null>(null);
 
   const [newWorkerName, setNewWorkerName] = useState("");
   const [newWorkerRole, setNewWorkerRole] = useState<"tarotista" | "central" | "admin">("tarotista");
@@ -500,7 +485,6 @@ function AdminPage() {
   }, [tab]);
 
   useEffect(() => {
-  let active = true;
   (async () => {
     try {
       const cachedRole = sessionStorage.getItem("tc_admin_role");
@@ -511,25 +495,42 @@ function AdminPage() {
         return;
       }
 
-      const identity = await loadPanelIdentity(sb);
-      if (!active) return;
-      const role = String(identity.role || "").toLowerCase();
+      const { data } = await sb.auth.getSession();
+      const user = data.session?.user;
+
+      if (!user) {
+        window.location.href = "/login";
+        return;
+      }
+
+      const { data: worker, error } = await sb
+        .from("workers")
+        .select("role")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error || !worker) {
+        console.error("❌ No se encontró worker:", error);
+        window.location.href = "/login";
+        return;
+      }
+
+      const role = worker.role?.toLowerCase();
 
       sessionStorage.setItem("tc_admin_role", role || "");
       sessionStorage.setItem("tc_admin_role_ts", String(Date.now()));
 
       if (role !== "admin") {
-        window.location.replace(panelPathForRole(role));
+        window.location.href =
+          role === "central" ? "/panel-central" : "/panel-tarotista";
         return;
       }
 
       setOk(true);
     } catch (e) {
       console.error("admin auth error", e);
-      if (active) redirectToLogin(e instanceof Error ? e.message : "session");
     }
   })();
-  return () => { active = false; };
 }, []);
 
   useEffect(() => {
@@ -883,29 +884,17 @@ function AdminPage() {
     if (!selId) return;
     try {
       const amt = Number(String(newAmount).replace(",", "."));
-      const quantity = Number(String(newBonusQuantity).replace(",", "."));
-      const unitRate = Number(String(newBonusRate).replace(",", "."));
       await postEdit({
         action: "add_line",
         invoice_id: selId,
         kind: newKind,
         label: newLabel,
         amount: isFinite(amt) ? amt : 0,
-        meta: newKind === "bonus" ? {
-          bonus_mode: newBonusMode,
-          description: newDescription,
-          quantity: newBonusMode === "units" ? quantity : undefined,
-          unit_rate: newBonusMode === "units" ? unitRate : undefined,
-        } : { description: newDescription },
+        meta: {},
       });
       await loadInvoice(selId);
       await listInvoices(true);
       setSelMsg("✅ Línea añadida.");
-      setNewLabel(newKind === "bonus" ? "Nuevo bonus" : "Ajuste");
-      setNewAmount("0");
-      setNewBonusQuantity("1");
-      setNewBonusRate("0");
-      setNewDescription("");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
     }
@@ -1049,7 +1038,6 @@ function AdminPage() {
       );
       setStatsPreviousRows(statsJ.previous?.rows || []);
       setStatsPreviousInvoiceSummary(invJ.previous_summary || null);
-      setStatsComparisonPeriod(statsJ.comparison_period || null);
       setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
       setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
       setInvoices(invJ.invoices || []);
@@ -1311,12 +1299,6 @@ function AdminPage() {
   }
 
   async function toggleWorker(worker: any, enable: boolean) {
-    if (!enable) {
-      const confirmed = window.confirm(
-        `¿Dar de baja a ${worker?.display_name || "este trabajador"}?\n\nEsta persona dejará de aparecer en paneles operativos. Su histórico no se eliminará.`
-      );
-      if (!confirmed) return;
-    }
     try {
       setStaffMsg("");
       const token = await getTokenOrLogin();
@@ -1575,50 +1557,6 @@ function AdminPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok, tab, month]);
 
-  useEffect(() => {
-    if (!ok || tab !== "trabajadores") return;
-    let active = true;
-    setStaffLiveStatus("connecting");
-
-    const scheduleRefresh = () => {
-      if (staffRealtimeTimerRef.current !== null) window.clearTimeout(staffRealtimeTimerRef.current);
-      staffRealtimeTimerRef.current = window.setTimeout(() => {
-        staffRealtimeTimerRef.current = null;
-        if (active && document.visibilityState === "visible") void loadStaff(true);
-      }, 650);
-    };
-
-    const channel = sb
-      .channel("admin-workers-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, scheduleRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_state" }, scheduleRefresh)
-      .subscribe((status: any) => {
-        if (!active) return;
-        if (status === "SUBSCRIBED") setStaffLiveStatus("live");
-        else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") setStaffLiveStatus("fallback");
-      });
-
-    const fallback = window.setInterval(() => {
-      if (document.visibilityState === "visible") void loadStaff(true);
-    }, 60_000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void loadStaff(true);
-    };
-    document.addEventListener("visibilitychange", onVisible);
-
-    return () => {
-      active = false;
-      if (staffRealtimeTimerRef.current !== null) {
-        window.clearTimeout(staffRealtimeTimerRef.current);
-        staffRealtimeTimerRef.current = null;
-      }
-      window.clearInterval(fallback);
-      document.removeEventListener("visibilitychange", onVisible);
-      void sb.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ok, tab]);
-
 
   useEffect(() => {
     if (!ok || tab !== "estadisticas") return;
@@ -1652,7 +1590,6 @@ function AdminPage() {
     const channel = sb
       .channel(`admin-statistics-${month}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleRefresh("rendimiento_llamadas", payload))
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_cliente_pagos" }, (payload: any) => scheduleRefresh("crm_cliente_pagos", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleRefresh("invoices", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "workers" }, (payload: any) => scheduleRefresh("workers", payload))
       .subscribe((status: any) => {
@@ -1759,27 +1696,22 @@ function AdminPage() {
       .slice(0, 5);
   }, [statsMergedRows]);
 
+  const activeWorkers = useMemo(() => {
+    return (staffWorkers || []).filter((w: any) => w?.is_active !== false);
+  }, [staffWorkers]);
+
   const filteredWorkers = useMemo(() => {
     const q = staffQ.trim().toLowerCase();
-    return (staffWorkers || []).filter((w: any) => {
+    const base = activeWorkers || [];
+    if (!q) return base;
+    return base.filter((w: any) => {
       const text = [w.display_name || "", w.role || "", w.team || "", w.email || ""].join(" ").toLowerCase();
-      const team = String(w.team || "").trim().toLowerCase();
-      const roleMatches = staffRoleFilter === "all" || String(w.role || "") === staffRoleFilter;
-      const teamMatches = staffTeamFilter === "all" || (staffTeamFilter === "none" ? !team : team === staffTeamFilter);
-      const statusMatches = staffStatusFilter === "all" || (staffStatusFilter === "active" ? w.is_active !== false : w.is_active === false);
-      return (!q || text.includes(q)) && roleMatches && teamMatches && statusMatches;
+      return text.includes(q);
     });
-  }, [staffWorkers, staffQ, staffRoleFilter, staffTeamFilter, staffStatusFilter]);
-
-  const staffSummary = useMemo(() => ({
-    total: (staffWorkers || []).length,
-    active: (staffWorkers || []).filter((worker: any) => worker.is_active !== false).length,
-    connected: (staffWorkers || []).filter((worker: any) => worker.is_active !== false && worker.presence_status === "connected").length,
-    down: (staffWorkers || []).filter((worker: any) => worker.is_active === false).length,
-  }), [staffWorkers]);
+  }, [activeWorkers, staffQ]);
 
   const staffOperationalWorkers = useMemo(() => {
-    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin" && w.is_active !== false);
+    return (filteredWorkers || []).filter((w: any) => String(w.role || "") !== "admin");
   }, [filteredWorkers]);
 
   const schedulesByWorker = useMemo(() => {
@@ -1819,18 +1751,9 @@ function AdminPage() {
         <aside className={`tc-sidebar ${adminStyles.sidebar}`}>
           <div className={`tc-sidebar-card ${adminStyles.sidebarCard}`}>
             <div className={adminStyles.sidebarHudLine} aria-hidden="true" />
-            <div className={adminStyles.sidebarTitleRow}>
-              <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
-              <NavigationVisibilityMenu
-                panelName="Administración"
-                items={ADMIN_NAV.map((item) => ({ key: item.key, label: item.label }))}
-                hiddenKeys={hiddenAdminNav}
-                onToggle={toggleAdminNav}
-                onReset={resetAdminNav}
-              />
-            </div>
+            <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
             <div className="tc-sidebar-nav">
-              {visibleAdminNav.map((item) => {
+              {ADMIN_NAV.map((item) => {
                 const Icon = item.icon;
                 const rankGroup = item.key === "rangos-clientes";
                 const xpGroup = item.key === "sistema-xp";
@@ -2107,20 +2030,120 @@ function AdminPage() {
                 onBack={() => setTab("facturas")}
               />
             ) : (
-            <BillingEditor
-              invoiceId={selId} invoice={selInvoice} worker={selWorker} lines={selLines}
-              loading={selLoading} message={selMsg}
-              newKind={newKind} setNewKind={setNewKind}
-              newLabel={newLabel} setNewLabel={setNewLabel}
-              newAmount={newAmount} setNewAmount={setNewAmount}
-              bonusMode={newBonusMode} setBonusMode={setNewBonusMode}
-              bonusQuantity={newBonusQuantity} setBonusQuantity={setNewBonusQuantity}
-              bonusRate={newBonusRate} setBonusRate={setNewBonusRate}
-              description={newDescription} setDescription={setNewDescription}
-              onBack={() => setTab("facturas")} onReload={() => selId && loadInvoice(selId)}
-              onPdf={() => selId && downloadInvoicePdf(selId)} onStatus={setStatus}
-              onAdd={addLine} onSaveLine={updateLine} onDeleteLine={deleteLine}
-            />
+            <div className="tc-card">
+              <div className="tc-row" style={{ justifyContent: "space-between" }}>
+                <div>
+                  <div className="tc-title">✏️ Editor de factura</div>
+                  <div className="tc-sub">Líneas con desglose automático (minutos x tarifa)</div>
+                </div>
+
+                {selId && (
+                  <div className="tc-row">
+                    <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
+                    <button className="tc-btn tc-btn-gold" onClick={() => downloadInvoicePdf(selId)}>Descargar PDF</button>
+                    <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
+                    <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
+                  </div>
+                )}
+              </div>
+
+              {!selId ? (
+                <div className="tc-sub" style={{ marginTop: 10 }}>Selecciona una factura desde <b>Facturas</b>.</div>
+              ) : selLoading ? (
+                <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
+              ) : (
+                <>
+                  <div style={{ marginTop: 10 }} className="tc-sub">
+                    <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
+                    <br />
+                    Total: <b>{eur(selInvoice?.total || 0)}</b> · Estado: <b>{selInvoice?.status}</b>
+                    <br />
+                    Aceptación:{" "}
+                    <span className="tc-chip" style={{ ...ackStyle(selInvoice?.worker_ack), padding: "4px 10px" }}>
+                      {ackLabel(selInvoice?.worker_ack)}
+                    </span>
+                    {selInvoice?.worker_ack_note ? (
+                      <>
+                        {" "}· Nota: <b>{selInvoice.worker_ack_note}</b>
+                      </>
+                    ) : null}
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  {(selLines || []).some((line: any) => String(line?.kind || "") === "salary_base") && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: 10,
+                        padding: 14,
+                        marginBottom: 12,
+                        borderRadius: 16,
+                        background: "linear-gradient(135deg, rgba(181,156,255,.14), rgba(255,215,130,.08))",
+                        border: "1px solid rgba(181,156,255,.28)",
+                      }}
+                    >
+                      <div>
+                        <div className="tc-sub">Sueldo fijo protegido</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_base")?.amount || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="tc-sub">Bonus opcional</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_bonus")?.amount || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="tc-sub">Total de la factura</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur(selInvoice?.total || 0)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(selLines || []).map((l: any) => (
+                      <LineEditor
+                        key={l.id}
+                        line={l}
+                        onSave={(payload) => updateLine(l.id, payload)}
+                        onDelete={() => deleteLine(l.id)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
+
+                  <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                    <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+                      <option value="adjustment">adjustment</option>
+                      <option value="incident">incident</option>
+                      <option value="bonus_ranking">bonus_ranking</option>
+                      <option value="bonus_captadas">bonus_captadas</option>
+                      <option value="minutes_free">minutes_free</option>
+                      <option value="minutes_rueda">minutes_rueda</option>
+                      <option value="minutes_cliente">minutes_cliente</option>
+                      <option value="minutes_repite">minutes_repite</option>
+                      <option value="salary_base">salary_base</option>
+                      <option value="salary_bonus">salary_bonus</option>
+                    </select>
+
+                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
+                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 140 }} />
+
+                    <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
+                  </div>
+
+                  <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
+                </>
+              )}
+            </div>
             )
           )}
 
@@ -2138,119 +2161,82 @@ function AdminPage() {
               teams={statsTeams}
               invoices={invoices}
               previousInvoiceSummary={statsPreviousInvoiceSummary}
-              comparisonPeriod={statsComparisonPeriod}
-              brand={getActiveBrand()}
               onRefresh={() => void loadAdminStats(false, "manual")}
             />
           )}
 
 
           {tab === "trabajadores" && (
-            <section className={workersStyles.panel}>
-              <header className={workersStyles.hero}>
-                <div>
-                  <div className={workersStyles.eyebrow}>Centro de plantilla</div>
-                  <h2>Trabajadores</h2>
-                  <p>Fuente única de personas, roles, equipos, accesos y estado operativo.</p>
-                </div>
-                <div className={workersStyles.heroActions}>
-                  <span className={`${workersStyles.live} ${staffLiveStatus === "live" ? "" : workersStyles.liveFallback}`}>
-                    <i /> {staffLiveStatus === "live" ? "En vivo" : staffLiveStatus === "connecting" ? "Conectando" : "Respaldo activo"}
-                  </span>
-                  <button className={workersStyles.buttonGold} onClick={() => void loadStaff(false)} disabled={staffLoading}>
-                    {staffLoading ? "Cargando…" : "↻ Recargar"}
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="tc-card">
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div>
+                    <div className="tc-title">👥 Trabajadores</div>
+                    <div className="tc-sub" style={{ marginTop: 6 }}>
+                      Gestiona roles, nivel de tarotista, estado y contraseñas. {staffMsg ? "· " + staffMsg : ""}
+                    </div>
+                  </div>
+                  <button className="tc-btn tc-btn-gold" onClick={() => loadStaff(false)} disabled={staffLoading}>
+                    {staffLoading ? "Cargando…" : "Recargar"}
                   </button>
                 </div>
-              </header>
-
-              {staffMsg ? <div className={workersStyles.message}>{staffMsg}</div> : null}
-
-              <div className={workersStyles.summary}>
-                <article><strong>{staffSummary.total}</strong><span>Total registrados</span></article>
-                <article><strong>{staffSummary.active}</strong><span>Activos</span></article>
-                <article><strong>{staffSummary.connected}</strong><span>Conectados ahora</span></article>
-                <article><strong>{staffSummary.down}</strong><span>Dados de baja</span></article>
-              </div>
-
-              <div className={workersStyles.filters}>
-                <input value={staffQ} onChange={(event) => setStaffQ(event.target.value)} placeholder="Buscar nombre, email, rol o equipo" aria-label="Buscar trabajadores" />
-                <select value={staffRoleFilter} onChange={(event) => setStaffRoleFilter(event.target.value)} aria-label="Filtrar por rol">
-                  <option value="all">Todos los roles</option><option value="admin">Admin</option><option value="central">Central</option><option value="tarotista">Tarotista</option>
-                </select>
-                <select value={staffTeamFilter} onChange={(event) => setStaffTeamFilter(event.target.value)} aria-label="Filtrar por equipo">
-                  <option value="all">Todos los equipos</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option><option value="none">Sin equipo</option>
-                </select>
-                <select value={staffStatusFilter} onChange={(event) => setStaffStatusFilter(event.target.value)} aria-label="Filtrar por estado">
-                  <option value="all">Todos los estados</option><option value="active">Activo</option><option value="down">Baja</option>
-                </select>
-              </div>
-
-              <div className={workersStyles.tableCard}>
-                <div className={workersStyles.tableScroll}>
-                  <table className={workersStyles.table}>
-                    <thead><tr><th>Persona</th><th>Rol / nivel</th><th>Equipo</th><th>Estado</th><th>Presencia</th><th>Acciones</th></tr></thead>
+                <div className="tc-hr" />
+                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <input className="tc-input" value={staffQ} onChange={(e) => setStaffQ(e.target.value)} placeholder="Buscar por nombre, rol, equipo o email…" style={{ width: 340, maxWidth: "100%" }} />
+                  <div className="tc-sub">Total: <b>{filteredWorkers.length}</b></div>
+                </div>
+                <div className="tc-hr" />
+                <div style={{ overflowX: "auto" }}>
+                  <table className="tc-table">
+                    <thead><tr><th>Nombre</th><th>Rol</th><th>Nivel tarotista</th><th>Equipo</th><th>Email</th><th>Estado</th><th>Acciones</th></tr></thead>
                     <tbody>
-                      {(filteredWorkers || []).map((worker: any) => {
-                        const team = String(worker.team || "").toLowerCase();
-                        const presence = String(worker.presence_status || "disconnected");
-                        const teamClass = team === "fuego" ? workersStyles.teamFuego : team === "agua" ? workersStyles.teamAgua : team === "tierra" ? workersStyles.teamTierra : "";
-                        const presenceClass = presence === "connected" ? workersStyles.presenceConnected : presence === "break" || presence === "bathroom" ? workersStyles.presenceBreak : workersStyles.presenceDisconnected;
-                        return (
-                          <tr key={worker.id}>
-                            <td><div className={workersStyles.identity}><div className={workersStyles.avatar}>{String(worker.display_name || "T").charAt(0).toUpperCase()}</div><div><strong>{worker.display_name || "—"}</strong><small>{worker.email || "Sin email"} · {worker.auth_linked ? "Auth vinculado" : "Sin usuario Auth"}</small></div></div></td>
-                            <td><span className={workersStyles.role}>{worker.role || "—"}{worker.role === "tarotista" ? ` · Nv. ${Number(worker.tarotista_level || 1)}` : ""}</span></td>
-                            <td><span className={`${workersStyles.team} ${teamClass}`}>{team === "fuego" ? "🔥 Fuego" : team === "agua" ? "💧 Agua" : team === "tierra" ? "🌍 Tierra" : "Sin equipo"}</span></td>
-                            <td><span className={`${workersStyles.status} ${worker.is_active !== false ? workersStyles.statusActive : workersStyles.statusDown}`}>{worker.is_active !== false ? "Activo" : "Baja"}</span></td>
-                            <td><span className={`${workersStyles.presence} ${presenceClass}`}><i />{presence === "connected" ? "Conectado" : presence === "bathroom" ? "Baño" : presence === "break" ? "Descanso" : "Desconectado"}</span></td>
-                            <td><div className={workersStyles.actions}>
-                              <button className={workersStyles.button} onClick={() => startEditWorker(worker)}>Editar</button>
-                              <button className={workersStyles.buttonGold} onClick={() => setPasswordWorkerId(String(worker.id || ""))}>Contraseña</button>
-                              {worker.is_active !== false ? <button className={workersStyles.buttonDanger} onClick={() => void toggleWorker(worker, false)}>Dar de baja</button> : <button className={workersStyles.button} onClick={() => void toggleWorker(worker, true)}>Reactivar</button>}
-                            </div></td>
-                          </tr>
-                        );
-                      })}
-                      {filteredWorkers.length === 0 ? <tr><td colSpan={6} className={workersStyles.empty}>{staffLoading ? "Cargando trabajadores…" : staffMsg.startsWith("❌") ? "No se pudo cargar la plantilla. Pulsa Recargar para volver a intentarlo." : "No hay trabajadores para estos filtros."}</td></tr> : null}
+                      {(filteredWorkers || []).map((w: any) => (
+                        <tr key={w.id}>
+                          <td><b>{w.display_name || "—"}</b></td>
+                          <td>{w.role || "—"}</td>
+                          <td>{String(w.role || "") === "tarotista" ? <span className="tc-chip">Nivel {Number(w.tarotista_level || 1) === 2 ? "2 · sin euros" : "1 · completo"}</span> : <span className="tc-muted">—</span>}</td>
+                          <td>{w.team || "—"}</td>
+                          <td>{w.email || "—"}</td>
+                          <td><span className="tc-chip">{w.is_active ? "Activo" : "Inactivo"}</span></td>
+                          <td><div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                            <button className="tc-btn" onClick={() => startEditWorker(w)}>Editar</button>
+                            <button className="tc-btn tc-btn-gold" onClick={() => setPasswordWorkerId(String(w.id || ""))}>Contraseña</button>
+                            <button className="tc-btn tc-btn-danger" onClick={() => toggleWorker(w, false)}>Dar de baja</button>
+                          </div></td>
+                        </tr>
+                      ))}
+                      {(!filteredWorkers || filteredWorkers.length === 0) && <tr><td colSpan={7} className="tc-muted">No hay trabajadores.</td></tr>}
                     </tbody>
                   </table>
                 </div>
               </div>
-
-              <div className={workersStyles.forms}>
-                <div className={workersStyles.formCard}>
-                  <h3>➕ Crear trabajador</h3><p>La ficha no crea automáticamente un usuario de Supabase Auth.</p>
-                  <div className={workersStyles.formGrid}>
-                    <input value={newWorkerName} onChange={(event) => setNewWorkerName(event.target.value)} placeholder="Nombre" />
-                    <select value={newWorkerRole} onChange={(event) => setNewWorkerRole(event.target.value as any)}><option value="tarotista">Tarotista</option><option value="central">Central</option><option value="admin">Admin</option></select>
-                    {newWorkerRole === "tarotista" ? <select value={newWorkerLevel} onChange={(event) => setNewWorkerLevel(Number(event.target.value) === 2 ? 2 : 1)}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select> : <div />}
-                    <select value={newWorkerTeam} onChange={(event) => setNewWorkerTeam(event.target.value)}><option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option></select>
-                    <input className={workersStyles.wide} value={newWorkerEmail} onChange={(event) => setNewWorkerEmail(event.target.value)} placeholder="Email (opcional)" />
-                  </div>
-                  <div className={workersStyles.formActions}><button className={workersStyles.buttonGold} onClick={() => void createWorker()}>Crear trabajador</button></div>
-                </div>
-
-                <div className={workersStyles.formCard}>
-                  <h3>🔐 Cambiar contraseña</h3><p>Disponible únicamente cuando la ficha tiene un usuario Auth vinculado.</p>
-                  <div className={workersStyles.formGrid}>
-                    <select className={workersStyles.wide} value={passwordWorkerId} onChange={(event) => setPasswordWorkerId(event.target.value)}><option value="">Selecciona trabajador</option>{(staffWorkers || []).map((worker: any) => <option key={worker.id} value={worker.id}>{worker.display_name || worker.email || worker.id}</option>)}</select>
-                    <input className={workersStyles.wide} type="password" value={passwordValue} onChange={(event) => setPasswordValue(event.target.value)} placeholder="Nueva contraseña · mínimo 6 caracteres" />
-                  </div>
-                  <div className={workersStyles.formActions}><button className={workersStyles.buttonGold} onClick={() => void changeWorkerPassword()}>Actualizar contraseña</button></div>
-                </div>
+              <div className="tc-grid-2">
+                <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>➕ Crear trabajador</div><div className="tc-hr" />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <input className="tc-input" value={newWorkerName} onChange={(e) => setNewWorkerName(e.target.value)} placeholder="Nombre" />
+                    <select className="tc-select" value={newWorkerRole} onChange={(e) => setNewWorkerRole(e.target.value as any)}><option value="tarotista">tarotista</option><option value="central">central</option><option value="admin">admin</option></select>
+                    {newWorkerRole === "tarotista" && <select className="tc-select" value={newWorkerLevel} onChange={(e) => setNewWorkerLevel(Number(e.target.value) === 2 ? 2 : 1)}><option value={1}>Nivel 1 · ve ganancias y euros</option><option value={2}>Nivel 2 · solo minutos y rankings</option></select>}
+                    <input className="tc-input" value={newWorkerTeam} onChange={(e) => setNewWorkerTeam(e.target.value)} placeholder="Equipo" />
+                    <input className="tc-input" value={newWorkerEmail} onChange={(e) => setNewWorkerEmail(e.target.value)} placeholder="Email" />
+                    <button className="tc-btn tc-btn-ok" onClick={createWorker}>Crear trabajador</button>
+                  </div></div>
+                <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>🔐 Cambiar contraseña</div><div className="tc-hr" />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <select className="tc-select" value={passwordWorkerId} onChange={(e) => setPasswordWorkerId(e.target.value)}><option value="">Selecciona trabajador</option>{(filteredWorkers || []).map((w: any) => <option key={w.id} value={w.id}>{w.display_name || w.email || w.id}</option>)}</select>
+                    <input className="tc-input" type="password" value={passwordValue} onChange={(e) => setPasswordValue(e.target.value)} placeholder="Nueva contraseña · mínimo 6 caracteres" />
+                    <button className="tc-btn tc-btn-gold" onClick={changeWorkerPassword}>Actualizar contraseña</button>
+                    <div className="tc-sub">Necesita que el trabajador tenga <b>user_id</b> asociado en Supabase Auth.</div>
+                  </div></div>
               </div>
-
-              {editingWorkerId ? <div className={workersStyles.formCard}>
-                <h3>✏️ Editar trabajador</h3><p>Los cambios de equipo se sincronizan con el HUD sin reescribir llamadas históricas.</p>
-                <div className={workersStyles.formGrid}>
-                  <input value={editingWorkerName} onChange={(event) => setEditingWorkerName(event.target.value)} placeholder="Nombre" />
-                  <select value={editingWorkerRole} onChange={(event) => setEditingWorkerRole(event.target.value as any)}><option value="tarotista">Tarotista</option><option value="central">Central</option><option value="admin">Admin</option></select>
-                  <select value={editingWorkerLevel} onChange={(event) => setEditingWorkerLevel(Number(event.target.value) === 2 ? 2 : 1)} disabled={editingWorkerRole !== "tarotista"}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select>
-                  <select value={editingWorkerTeam} onChange={(event) => setEditingWorkerTeam(event.target.value)}><option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option></select>
-                  <input className={workersStyles.wide} value={editingWorkerEmail} onChange={(event) => setEditingWorkerEmail(event.target.value)} placeholder="Email" />
-                </div>
-                <div className={workersStyles.formActions}><button className={workersStyles.button} onClick={cancelEditWorker}>Cancelar</button><button className={workersStyles.buttonGold} onClick={() => void updateWorker()}>Guardar cambios</button></div>
-              </div> : null}
-            </section>
+              {editingWorkerId ? <div className="tc-card"><div className="tc-title" style={{ fontSize: 14 }}>✏️ Editar trabajador</div><div className="tc-hr" />
+                <div className="tc-grid-4">
+                  <input className="tc-input" value={editingWorkerName} onChange={(e) => setEditingWorkerName(e.target.value)} placeholder="Nombre" />
+                  <select className="tc-select" value={editingWorkerRole} onChange={(e) => setEditingWorkerRole(e.target.value as any)}><option value="tarotista">tarotista</option><option value="central">central</option><option value="admin">admin</option></select>
+                  <select className="tc-select" value={editingWorkerLevel} onChange={(e) => setEditingWorkerLevel(Number(e.target.value) === 2 ? 2 : 1)} disabled={editingWorkerRole !== "tarotista"}><option value={1}>Nivel 1 · completo</option><option value={2}>Nivel 2 · sin euros</option></select>
+                  <input className="tc-input" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} placeholder="Equipo" />
+                  <input className="tc-input" value={editingWorkerEmail} onChange={(e) => setEditingWorkerEmail(e.target.value)} placeholder="Email" />
+                </div><div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}><button className="tc-btn" onClick={cancelEditWorker}>Cancelar</button><button className="tc-btn tc-btn-ok" onClick={updateWorker}>Guardar cambios</button></div></div> : null}
+            </div>
           )}
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
@@ -2535,9 +2521,12 @@ function AdminPage() {
                         </div>
                         <div>
                           <div className="tc-sub">Equipo</div>
-                          <select className="tc-select" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} style={{ width: "100%", marginTop: 6 }}>
-                            <option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option>
-                          </select>
+                          <input
+                            className="tc-input"
+                            value={editingWorkerTeam}
+                            onChange={(e) => setEditingWorkerTeam(e.target.value)}
+                            style={{ width: "100%", marginTop: 6 }}
+                          />
                         </div>
                         <div>
                           <div className="tc-sub">Email</div>
@@ -2587,9 +2576,12 @@ function AdminPage() {
                         <option value="central">central</option>
                         <option value="admin">admin</option>
                       </select>
-                      <select className="tc-select" value={newWorkerTeam} onChange={(e) => setNewWorkerTeam(e.target.value)}>
-                        <option value="">Sin equipo</option><option value="fuego">🔥 Fuego</option><option value="agua">💧 Agua</option><option value="tierra">🌍 Tierra</option>
-                      </select>
+                      <input
+                        className="tc-input"
+                        value={newWorkerTeam}
+                        onChange={(e) => setNewWorkerTeam(e.target.value)}
+                        placeholder="Equipo (opcional)"
+                      />
                       <input
                         className="tc-input"
                         value={newWorkerEmail}
@@ -2943,12 +2935,12 @@ function AdminPage() {
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
           )}
 
-          {tab === "clientas-captadas" && <ClientCapturesAdminPanel />}
-
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
 
           {tab === "sistema-xp" && <XpSystemAdminPanel />}
           {tab === "sistema-xp-niveles" && <XpLevelsAdminPanel />}
+
+          {tab === "pagos-web" && <PaymentGatewayAdminPanel />}
 
           {tab === "clientes-web" && (
             <ClientWebAdminPanel
@@ -3150,104 +3142,12 @@ function TopStatsCard({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-function BillingEditor(props: any) {
-  const { invoiceId, invoice, worker, lines = [], loading, message } = props;
-  const status = String(invoice?.status || "draft");
-  const editable = ["draft", "pending", "review"].includes(status);
-  const minuteLines = lines.filter((line: any) => line?.meta?.minutes != null && line?.meta?.rate != null);
-  const bonuses = lines.filter((line: any) => String(line?.kind || "").includes("bonus") || String(line?.kind || "").includes("reward"));
-  const adjustments = lines.filter((line: any) => ["adjustment", "incident"].includes(String(line?.kind || "")));
-  const fixed = lines.find((line: any) => String(line?.kind || "") === "salary_base");
-  const minutes = minuteLines.reduce((sum: number, line: any) => sum + Number(line?.meta?.minutes || 0), 0);
-  const minutePay = minuteLines.reduce((sum: number, line: any) => sum + Number(line?.amount || 0), 0);
-  const bonusTotal = bonuses.reduce((sum: number, line: any) => sum + Number(line?.amount || 0), 0);
-  const adjustmentTotal = adjustments.reduce((sum: number, line: any) => sum + Number(line?.amount || 0), 0);
-  const unitPreview = roundMoney((Number(String(props.bonusQuantity).replace(",", ".")) || 0) * (Number(String(props.bonusRate).replace(",", ".")) || 0));
-
-  return <section className="tc-billing-editor">
-    <div className="tc-billing-aurora" aria-hidden="true" />
-    <header className="tc-billing-command">
-      <button className="tc-billing-back" onClick={props.onBack}>← Facturas</button>
-      <div className="tc-billing-title">
-        <span className="tc-billing-kicker">CENTRO FINANCIERO · TAROT CELESTIAL</span>
-        <h1><span>✦</span> Editor de factura</h1>
-        <p>Control económico de líneas reales, bonus y cierre mensual.</p>
-      </div>
-      {invoiceId && <div className="tc-billing-actions">
-        <button onClick={props.onReload}>↻ Sincronizar</button>
-        <button onClick={props.onPdf}>⇩ Vista PDF</button>
-        {editable ? <button className="tc-billing-final" onClick={() => props.onStatus("final")}>◆ Finalizar factura</button>
-          : <button onClick={() => props.onStatus("draft")}>Reabrir borrador</button>}
-      </div>}
-    </header>
-
-    {!invoiceId ? <div className="tc-billing-empty">Selecciona una factura para entrar en el centro financiero.</div>
-    : loading ? <div className="tc-billing-empty">Sincronizando datos reales…</div>
-    : <>
-      <div className="tc-billing-profile">
-        <div className="tc-billing-avatar">{String(worker?.display_name || "T").charAt(0).toUpperCase()}</div>
-        <div><small>PROFESIONAL</small><strong>{worker?.display_name || "Sin nombre"}</strong><span>{worker?.role || "—"} · periodo {invoice?.month_key || "—"}</span></div>
-        <div className={`tc-billing-status tc-billing-status-${status}`}><i />{status === "final" ? "Factura finalizada" : status === "paid" ? "Factura pagada" : "Edición activa"}</div>
-        <div className="tc-billing-ack"><small>CONFIRMACIÓN PROFESIONAL</small><span style={ackStyle(invoice?.worker_ack)}>{ackLabel(invoice?.worker_ack)}</span>{invoice?.worker_ack_note && <em>{invoice.worker_ack_note}</em>}</div>
-      </div>
-
-      <div className="tc-billing-kpis">
-        <article><span>◷</span><div><small>MINUTOS LIQUIDADOS</small><strong>{numES(minutes, 0)}</strong><em>{minuteLines.length} categorías</em></div></article>
-        <article><span>€</span><div><small>VALOR POR MINUTOS</small><strong>{eur(minutePay)}</strong><em>Cálculo automático</em></div></article>
-        <article><span>✦</span><div><small>BONUS Y RECOMPENSAS</small><strong>{eur(bonusTotal)}</strong><em>{bonuses.length} conceptos</em></div></article>
-        <article className="tc-billing-total"><span>◆</span><div><small>TOTAL REAL</small><strong>{eur(invoice?.total || 0)}</strong><em>Fuente: factura persistida</em></div></article>
-      </div>
-
-      {!editable && <div className="tc-billing-lock">🔒 La factura está cerrada. Sus líneas e históricos están protegidos. Reábrela como borrador si necesitas corregirla.</div>}
-
-      <div className="tc-billing-layout">
-        <main className="tc-billing-ledger">
-          <div className="tc-billing-section-head"><div><small>LIBRO DE MOVIMIENTOS</small><h2>Conceptos de factura</h2></div><span>{lines.length} líneas sincronizadas</span></div>
-          <div className="tc-billing-lines">
-            {lines.map((line: any, index: number) => <LineEditor key={line.id} line={line} index={index + 1} disabled={!editable} onSave={(payload) => props.onSaveLine(line.id, payload)} onDelete={() => props.onDeleteLine(line.id)} />)}
-            {!lines.length && <div className="tc-billing-empty">Todavía no hay conceptos en esta factura.</div>}
-          </div>
-        </main>
-
-        <aside className="tc-billing-side">
-          <div className="tc-billing-summary">
-            <small>RESUMEN DEL CIERRE</small><h3>Balance mensual</h3>
-            <div><span>Sueldo fijo</span><b>{eur(fixed?.amount || 0)}</b></div>
-            <div><span>Minutos</span><b>{eur(minutePay)}</b></div>
-            <div><span>Bonus</span><b>{eur(bonusTotal)}</b></div>
-            <div><span>Ajustes</span><b className={adjustmentTotal < 0 ? "is-negative" : ""}>{eur(adjustmentTotal)}</b></div>
-            <footer><span>TOTAL</span><strong>{eur(invoice?.total || 0)}</strong></footer>
-          </div>
-
-          <div className={`tc-billing-create ${!editable ? "is-disabled" : ""}`}>
-            <small>NUEVO MOVIMIENTO</small><h3>Añadir concepto</h3>
-            <label>Tipo<select value={props.newKind} onChange={(e) => props.setNewKind(e.target.value)} disabled={!editable}>
-              <option value="bonus">Bonus personalizado</option><option value="adjustment">Ajuste manual</option><option value="incident">Incidencia económica</option>
-            </select></label>
-            <label>Nombre<input value={props.newLabel} onChange={(e) => props.setNewLabel(e.target.value)} placeholder="Ej. Bonus calidad excepcional" disabled={!editable} /></label>
-            {props.newKind === "bonus" && <div className="tc-billing-toggle"><button className={props.bonusMode === "fixed" ? "active" : ""} onClick={() => props.setBonusMode("fixed")} disabled={!editable}>Importe fijo</button><button className={props.bonusMode === "units" ? "active" : ""} onClick={() => props.setBonusMode("units")} disabled={!editable}>Por unidades</button></div>}
-            {props.newKind === "bonus" && props.bonusMode === "units" ? <div className="tc-billing-fields"><label>Cantidad<input value={props.bonusQuantity} onChange={(e) => props.setBonusQuantity(e.target.value)} disabled={!editable} /></label><label>€/unidad<input value={props.bonusRate} onChange={(e) => props.setBonusRate(e.target.value)} disabled={!editable} /></label><output>{eur(unitPreview)}</output></div>
-              : <label>Importe €<input value={props.newAmount} onChange={(e) => props.setNewAmount(e.target.value)} disabled={!editable} /></label>}
-            <label>Descripción<textarea value={props.description} onChange={(e) => props.setDescription(e.target.value)} placeholder="Detalle visible en la factura y PDF" disabled={!editable} /></label>
-            <button className="tc-billing-add" onClick={props.onAdd} disabled={!editable || !String(props.newLabel).trim()}>＋ Añadir a la factura</button>
-          </div>
-        </aside>
-      </div>
-      <div className="tc-billing-message" aria-live="polite">{message || "● Sincronizado con la fuente real de facturación"}</div>
-    </>}
-  </section>;
-}
-
 function LineEditor({
   line,
-  index,
-  disabled,
   onSave,
   onDelete,
 }: {
   line: any;
-  index: number;
-  disabled?: boolean;
   onSave: (payload: { label: string; amount?: number; meta?: any }) => void;
   onDelete: () => void;
 }) {
@@ -3261,22 +3161,15 @@ function LineEditor({
     meta?.locked === true ||
     meta?.protected === true;
   const isSalaryBonus = String(line?.kind || "") === "salary_bonus";
-  const isCustomBonus = String(line?.kind || "") === "bonus";
 
   const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
   const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
-  const [description, setDescription] = useState(String(meta.description ?? ""));
-  const [quantity, setQuantity] = useState(String(meta.quantity ?? "1"));
-  const [unitRate, setUnitRate] = useState(String(meta.unit_rate ?? "0"));
 
   useEffect(() => {
     setLabel(String(line.label || ""));
     setAmount(String(line.amount ?? "0"));
     setMinutes(String(line?.meta?.minutes ?? ""));
     setRate(String(line?.meta?.rate ?? ""));
-    setDescription(String(line?.meta?.description ?? ""));
-    setQuantity(String(line?.meta?.quantity ?? "1"));
-    setUnitRate(String(line?.meta?.unit_rate ?? "0"));
   }, [line]);
 
   const parsedMinutes = Number(String(minutes).replace(",", "."));
@@ -3285,11 +3178,9 @@ function LineEditor({
 
   const displayAmount = hasBreakdown ? calcAmount : Number(String(amount).replace(",", ".")) || 0;
   const code = String(meta.code || "").toUpperCase();
-  const unitAmount = roundMoney((Number(String(quantity).replace(",", ".")) || 0) * (Number(String(unitRate).replace(",", ".")) || 0));
-  const changed = label !== String(line.label || "") || amount !== String(line.amount ?? "0") || minutes !== String(meta.minutes ?? "") || rate !== String(meta.rate ?? "") || description !== String(meta.description ?? "") || quantity !== String(meta.quantity ?? "1") || unitRate !== String(meta.unit_rate ?? "0");
 
   function saveLine() {
-    if (isProtectedSalary || disabled) return;
+    if (isProtectedSalary) return;
 
     if (hasBreakdown) {
       const nextMeta = {
@@ -3305,16 +3196,6 @@ function LineEditor({
       return;
     }
 
-    if (isCustomBonus) {
-      const nextMeta = { ...meta, description };
-      if (meta.bonus_mode === "units") {
-        nextMeta.quantity = Number(String(quantity).replace(",", ".")) || 0;
-        nextMeta.unit_rate = Number(String(unitRate).replace(",", ".")) || 0;
-      }
-      onSave({ label, amount: meta.bonus_mode === "units" ? unitAmount : Number(String(amount).replace(",", ".")) || 0, meta: nextMeta });
-      return;
-    }
-
     onSave({
       label,
       amount: Number(String(amount).replace(",", ".")) || 0,
@@ -3322,23 +3203,120 @@ function LineEditor({
     });
   }
 
-  const tone = isProtectedSalary ? "salary" : hasBreakdown ? "minutes" : isCustomBonus || isSalaryBonus ? "bonus" : Number(line.amount || 0) < 0 ? "negative" : "adjustment";
-  const shownAmount = isCustomBonus && meta.bonus_mode === "units" ? unitAmount : displayAmount;
-  return <article className={`tc-billing-line tc-billing-line-${tone} ${changed ? "is-dirty" : ""}`}>
-    <div className="tc-billing-line-index">{String(index).padStart(2, "0")}</div>
-    <div className="tc-billing-line-body">
-      <div className="tc-billing-line-top"><span>{isProtectedSalary ? "SUELDO PROTEGIDO" : hasBreakdown ? `MINUTOS ${code || "LIQUIDADOS"}` : isCustomBonus ? "BONUS PERSONALIZADO" : "MOVIMIENTO"}</span><strong>{eur(shownAmount)}</strong></div>
-      <input className="tc-billing-line-name" value={label} onChange={(e) => setLabel(e.target.value)} disabled={disabled || isProtectedSalary || isSalaryBonus} />
-      {hasBreakdown && <div className="tc-billing-line-fields"><label>Minutos<input value={minutes} onChange={(e) => setMinutes(e.target.value)} disabled={disabled} /></label><span>×</span><label>Tarifa €/min<input value={rate} onChange={(e) => setRate(e.target.value)} disabled={disabled} /></label><output>{eur(calcAmount)}</output></div>}
-      {!hasBreakdown && !isProtectedSalary && <div className="tc-billing-line-fields">
-        {isCustomBonus && meta.bonus_mode === "units" ? <><label>Unidades<input value={quantity} onChange={(e) => setQuantity(e.target.value)} disabled={disabled} /></label><span>×</span><label>€/unidad<input value={unitRate} onChange={(e) => setUnitRate(e.target.value)} disabled={disabled} /></label></> : <label>Importe €<input value={amount} onChange={(e) => setAmount(e.target.value)} disabled={disabled} /></label>}
-        {isCustomBonus && <label className="tc-billing-description">Descripción<input value={description} onChange={(e) => setDescription(e.target.value)} disabled={disabled} /></label>}
-      </div>}
+  return (
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
+      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
+        <div style={{ minWidth: 220 }}>
+          <div style={{ fontWeight: 900 }}>{label}</div>
+          {hasBreakdown && (
+            <div className="tc-sub" style={{ marginTop: 6 }}>
+              {numES(isFinite(parsedRate) ? parsedRate : 0, 2)}€ x {numES(isFinite(parsedMinutes) ? parsedMinutes : 0, 0)} min = <b>{eur(calcAmount)}</b>
+              {code ? <> · Código <b>{code}</b></> : null}
+            </div>
+          )}
+        </div>
+
+        <div style={{ fontWeight: 900, whiteSpace: "nowrap" }}>{eur(displayAmount)}</div>
+      </div>
+
+      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+        <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <input
+            className="tc-input"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            disabled={isProtectedSalary || isSalaryBonus}
+            style={{ width: "100%", opacity: isProtectedSalary ? 0.8 : 1 }}
+          />
+          {isProtectedSalary && (
+            <span className="tc-chip" style={{ padding: "5px 9px" }}>
+              🔒 Importe fijo protegido
+            </span>
+          )}
+          {isSalaryBonus && (
+            <span className="tc-chip" style={{ padding: "5px 9px" }}>
+              Bonus opcional · editable por factura
+            </span>
+          )}
+        </div>
+
+        {hasBreakdown ? (
+          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 160 }}>
+              <div className="tc-sub">Minutos</div>
+              <input
+                className="tc-input"
+                value={minutes}
+                onChange={(e) => setMinutes(e.target.value)}
+                style={{ width: 160, marginTop: 6 }}
+              />
+            </div>
+
+            <div style={{ minWidth: 160 }}>
+              <div className="tc-sub">Tarifa €/min</div>
+              <input
+                className="tc-input"
+                value={rate}
+                onChange={(e) => setRate(e.target.value)}
+                style={{ width: 160, marginTop: 6 }}
+              />
+            </div>
+
+            <div style={{ minWidth: 180 }}>
+              <div className="tc-sub">Importe recalculado</div>
+              <div className="tc-chip" style={{ marginTop: 6 }}>
+                <b>{eur(calcAmount)}</b>
+              </div>
+            </div>
+
+            <div className="tc-row" style={{ alignItems: "flex-end" }}>
+              <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                Guardar
+              </button>
+              <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                Borrar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
+            <div>
+              <div className="tc-sub">
+                {isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
+              </div>
+              <input
+                className="tc-input"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                disabled={isProtectedSalary}
+                style={{ width: 160, marginTop: 6, opacity: isProtectedSalary ? 0.75 : 1 }}
+              />
+            </div>
+
+            <div className="tc-row">
+              {!isProtectedSalary && (
+                <button className="tc-btn tc-btn-ok" onClick={saveLine}>
+                  Guardar
+                </button>
+              )}
+              {!isProtectedSalary && !isSalaryBonus && (
+                <button className="tc-btn tc-btn-danger" onClick={onDelete}>
+                  Borrar
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
-    <div className="tc-billing-line-actions">
-      {isProtectedSalary ? <span>🔒</span> : <><button onClick={saveLine} disabled={disabled || !changed}>Guardar</button>{!isSalaryBonus && <button className="danger" onClick={onDelete} disabled={disabled}>Eliminar</button>}</>}
-    </div>
-  </article>;
+  );
 }
 
 function ScheduleRow({
@@ -3432,3 +3410,4 @@ export default function Page() {
     </Suspense>
   );
 }
+

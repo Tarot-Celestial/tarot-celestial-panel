@@ -1,8 +1,8 @@
-import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { adminClient } from "@/lib/server/auth-cliente";
 import { applyClientPurchase, getClientePack } from "@/lib/server/cliente-platform";
+import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { addClientChatCredits, getChatPack } from "@/lib/server/chat-platform";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   try {
     const stripe = new Stripe(getEnv("STRIPE_SECRET_KEY"), { apiVersion: "2023-10-16" });
-    const signature = headers().get("stripe-signature");
+    const signature = req.headers.get("stripe-signature");
     if (!signature) {
       return NextResponse.json({ ok: false, error: "MISSING_STRIPE_SIGNATURE" }, { status: 400 });
     }
@@ -150,7 +150,7 @@ export async function POST(req: Request) {
       // =========================
       else {
         const packId = String(session.metadata?.pack_id || "").trim();
-        const pack = getClientePack(packId);
+        const pack = getConfiguredMinutePack(packId) || getClientePack(packId);
 
         if (!clienteId || !pack) {
           return NextResponse.json(
@@ -178,7 +178,7 @@ export async function POST(req: Request) {
         // ✅ 2. NUEVO → CREAR NOTA EN CRM
         await admin.from("crm_client_notes").insert({
           cliente_id: clienteId,
-          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${amountTotal || pack.priceUsd}€) a través del panel cliente`,
+          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${Number(amountTotal || pack.priceUsd).toFixed(2)} USD) a través del panel cliente`,
           author_user_id: null,
           author_name: "Sistema",
           author_email: null,

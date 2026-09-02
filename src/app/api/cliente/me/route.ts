@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
-  CLIENTE_PACKS,
   computeCurrentRankFromSpend,
   currentRankBenefits,
   getCallTarget,
   toNum,
   touchClientActivity,
 } from "@/lib/server/cliente-platform";
+import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 import { loadEffectiveClientRank, normalizeClientRank } from "@/lib/server/client-rank-effective";
 
 export const runtime = "nodejs";
@@ -235,7 +235,7 @@ export async function GET(req: Request) {
 
   gate.admin
     .from("cliente_notificaciones")
-    .select("id, titulo, mensaje, tipo, leida, created_at, meta")
+    .select("id, titulo, mensaje, tipo, leida, created_at")
     .eq("cliente_id", cliente.id)
     .order("created_at", { ascending: false })
     .limit(8),
@@ -339,7 +339,7 @@ const rolling30Spend = spendPagos + spendLlamadas;
       welcome_gift: welcomeState.welcomeGift,
       cliente_notificaciones: notificaciones || [],
       call_target: callTarget,
-      packs: CLIENTE_PACKS,
+      packs: CLIENTE_MINUTE_PACKS,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ME" }, { status: 500 });
