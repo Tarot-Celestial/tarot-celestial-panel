@@ -1,0 +1,19 @@
+.dialog { width: min(620px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 28px; margin: auto; border: 1px solid #9d7e41; border-radius: 24px; background: linear-gradient(145deg, #23192f, #100d18); color: #fff; box-shadow: 0 24px 90px #000b; color-scheme: dark; }
+.dialog::backdrop { background: #08050dcc; backdrop-filter: blur(5px); }
+.header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.header h2 { font-size: 25px; margin: 8px 0; }
+.kicker { color: #e4c67c; font-size: 11px; letter-spacing: .15em; font-weight: 800; }
+.dialog button { border: 1px solid #63516f; background: #282031; color: #fff; border-radius: 12px; padding: 12px 18px; cursor: pointer; font-weight: 700; }
+.header button { font-size: 24px; padding: 3px 13px; }
+.description { color: #cfc6d8; line-height: 1.6; font-size: 14px; margin: 12px 0 22px; }
+.fields { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 22px; padding: 0; margin: 0; border: 0; min-width: 0; }
+.fields label { display: grid; gap: 9px; font-size: 14px; font-weight: 600; min-width: 0; }
+.full { grid-column: 1 / -1; }
+.fields input { box-sizing: border-box; width: 100%; min-width: 0; height: 52px; padding: 12px 14px; background: #0c0912; color: #fff4d4; border: 1px solid #675371; border-radius: 12px; font: inherit; font-size: 18px; font-variant-numeric: tabular-nums; }
+.fields small { font-size: 12px; color: #bfb0cb; font-weight: 400; }
+.dialog :focus-visible { outline: 2px solid #efd188; outline-offset: 3px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 26px; }
+.actions .save { background: linear-gradient(110deg,#edcf87,#b68b35); color: #191107; border-color: #dfbf72; }
+.dialog button:disabled { opacity: .6; cursor: wait; }
+.error { background: #4c1723; color: #ffd6dd; border: 1px solid #984153; border-radius: 12px; padding: 14px; line-height: 1.5; }
+@media(max-width: 480px) { .dialog { padding: 20px; } .fields { grid-template-columns: 1fr; gap: 18px; } .actions button { flex: 1; } }

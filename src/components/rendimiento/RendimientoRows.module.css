@@ -19,6 +19,8 @@
 
 .row > td:last-child { border-right: 1px solid rgba(var(--row-accent), 0.12); }
 .row:hover { filter: brightness(1.08); }
+.row:has(details[open]) { z-index: 5; filter: none; }
+.row:has(details[open]) > td:last-child { z-index: 1; }
 .row:hover > td { background-color: rgba(var(--row-accent), 0.035); }
 .row:hover > td:first-child { border-left-color: rgba(var(--row-accent), 0.78); }
 
