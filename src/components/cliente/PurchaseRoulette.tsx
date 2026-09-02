@@ -20,8 +20,17 @@ const sb = supabaseClienteBrowser();
 
 function wheelGradient(level: RouletteLevel) {
   const prizes = PRIZES[level];
-  const tones = ["#5a2a86", "#23123f", "#7a3da8", "#2c184b", "#9150b7", "#35205c", "#bb8d35"];
+  const tones = [
+    "#6d28d9",
+    "#17112f",
+    "#8b46d7",
+    "#26154f",
+    "#a45ce0",
+    "#321a68",
+    "#9f7528",
+  ];
   const segment = 360 / prizes.length;
+
   return `conic-gradient(from ${-segment / 2}deg, ${prizes
     .map((_, index) => `${tones[index % tones.length]} ${index * segment}deg ${(index + 1) * segment}deg`)
     .join(",")})`;
@@ -47,6 +56,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       cache: "no-store",
     });
     const json = await res.json().catch(() => null);
+
     if (json?.ok) {
       const nextAvailable = Number(json.available_spins || 0);
       setAvailable(nextAvailable);
@@ -65,7 +75,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     () =>
       prizes.map((prize, index) => {
         const angle = index * (360 / prizes.length) + 360 / prizes.length / 2;
-        return { prize, transform: `rotate(${angle}deg) translateX(32%) rotate(90deg)` };
+        return { prize, transform: `rotate(${angle}deg) translateX(33%) rotate(90deg)` };
       }),
     [prizes],
   );
@@ -75,6 +85,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       setBusy(true);
       setMessage("");
       setResult(null);
+
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
       if (!token) throw new Error("Sesión no válida");
@@ -84,6 +95,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json().catch(() => null);
+
       if (!json?.ok) {
         throw new Error(
           json?.error === "SIN_GIROS_DISPONIBLES"
@@ -124,88 +136,162 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const jackpot = LEVEL_COPY[level].jackpot;
 
   return (
-    <section className={styles.wrap}>
+    <section className={styles.wrap} data-active={available > 0 ? "true" : "false"}>
+      <div className={styles.ambient} aria-hidden="true">
+        <span className={styles.ambientGlowOne} />
+        <span className={styles.ambientGlowTwo} />
+        <span className={styles.scanLine} />
+        <span className={styles.starField} />
+      </div>
+
+      <div className={styles.topHud} aria-hidden="true">
+        <span>CELESTIAL EXPERIENCE</span>
+        <i />
+        <b>ONLINE</b>
+      </div>
+
       <div className={styles.head}>
-        <div>
-          <div className={styles.kicker}>RULETA CELESTIAL</div>
+        <div className={styles.headCopy}>
+          <div className={styles.brandRow}>
+            <span className={styles.brandOrb} aria-hidden="true"><i /></span>
+            <div className={styles.kicker}>RULETA CELESTIAL</div>
+          </div>
           <h2 className={styles.title}>Cada compra te regala 1 giro</h2>
           <p className={styles.copy}>
             El nivel del giro queda guardado con el pack comprado. Todos los giros tienen premio y los minutos ganados se añaden automáticamente a tu saldo.
           </p>
+          <div className={styles.counter}>
+            <span className={styles.counterIcon}>✦</span>
+            <strong>{available}</strong>
+            <span>{available === 1 ? "GIRO DISPONIBLE" : "GIROS DISPONIBLES"}</span>
+          </div>
         </div>
-        <div className={styles.counter}>
-          {available} {available === 1 ? "GIRO DISPONIBLE" : "GIROS DISPONIBLES"}
+
+        <div className={styles.orbitalHud} aria-hidden="true">
+          <span className={styles.orbitOne} />
+          <span className={styles.orbitTwo} />
+          <span className={styles.orbitThree} />
+          <strong>✦</strong>
         </div>
       </div>
 
       <div className={styles.levelGrid}>
         <div className={`${styles.levelCard} ${level === 1 && available > 0 ? styles.levelActive : ""}`}>
-          <strong>NIVEL 1</strong>
-          <span>10 · 20 · 30 min</span>
-          <small>Premios +2, +3, +4, +5 · Especial +60 min (5%)</small>
-          <em>{level1Spins} {level1Spins === 1 ? "giro pendiente" : "giros pendientes"}</em>
+          <div className={styles.cardHudLine}><span>01</span><i /></div>
+          <div className={styles.levelTitle}><span>✦</span><strong>NIVEL 1</strong></div>
+          <span className={styles.levelMinutes}>10 · 20 · 30 min</span>
+          <small>Premios +2, +3, +4, +5 · Premio especial +60 min</small>
+          <em><i />{level1Spins} {level1Spins === 1 ? "giro pendiente" : "giros pendientes"}</em>
         </div>
+
         <div className={`${styles.levelCard} ${level === 2 && available > 0 ? styles.levelActive : ""}`}>
-          <strong>NIVEL 2</strong>
-          <span>40 · 50 · 60 min</span>
-          <small>Premios +6, +8, +10, +12, +14, +16 · Especial +80 min (5%)</small>
-          <em>{level2Spins} {level2Spins === 1 ? "giro pendiente" : "giros pendientes"}</em>
+          <div className={styles.cardHudLine}><span>02</span><i /></div>
+          <div className={styles.levelTitle}><span>✦</span><strong>NIVEL 2</strong></div>
+          <span className={styles.levelMinutes}>40 · 50 · 60 min</span>
+          <small>Premios +6, +8, +10, +12, +14, +16 · Premio especial +80 min</small>
+          <em><i />{level2Spins} {level2Spins === 1 ? "giro pendiente" : "giros pendientes"}</em>
         </div>
       </div>
 
       <div className={styles.body}>
-        <div className={styles.wheelBox}>
-          <div className={styles.pointer} />
-          <div
-            className={styles.wheel}
-            style={{ transform: `rotate(${rotation}deg)`, background: wheelGradient(level) }}
-          >
-            {labels.map(({ prize, transform }) => (
-              <span key={prize} className={styles.label} style={{ transform }}>
-                {prize}
-              </span>
-            ))}
+        <div className={`${styles.wheelStage} ${busy ? styles.wheelStageActive : ""}`}>
+          <div className={styles.energyRail} aria-hidden="true">
+            <span>ENERGÍA</span>
+            <strong>{busy ? "100%" : available > 0 ? "86%" : "42%"}</strong>
+            <i><b /></i>
           </div>
+
+          <div className={styles.wheelHalo} aria-hidden="true">
+            <span className={styles.haloOne} />
+            <span className={styles.haloTwo} />
+            <span className={styles.haloThree} />
+          </div>
+
+          <div className={styles.wheelBox}>
+            <div className={styles.pointer}><i /></div>
+            <div className={styles.wheelFrame} aria-hidden="true" />
+            <div
+              className={styles.wheel}
+              style={{ transform: `rotate(${rotation}deg)`, background: wheelGradient(level) }}
+            >
+              <div className={styles.innerGrid} aria-hidden="true" />
+              {labels.map(({ prize, transform }) => (
+                <span key={prize} className={styles.label} style={{ transform }}>
+                  {prize}
+                </span>
+              ))}
+              <div className={styles.wheelCore} aria-hidden="true">
+                <span>✦</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.platform} aria-hidden="true"><i /><b /></div>
         </div>
 
         <div className={styles.info}>
+          <div className={styles.infoHudTop} aria-hidden="true">
+            <span>PRÓXIMO EVENTO</span>
+            <div><i /><i /><i /></div>
+          </div>
+
           <div className={styles.currentLevel}>
             <span>PRÓXIMO GIRO</span>
             <strong>Nivel {level}</strong>
             <small>{LEVEL_COPY[level].purchases}</small>
           </div>
+
           <div className={styles.prizes}>
             {prizes.map((prize) => (
               <span
                 key={prize}
                 className={`${styles.prize} ${prize === jackpot ? styles.prizeJackpot : ""}`}
               >
-                +{prize} min{prize === jackpot ? " · ESPECIAL 5%" : ""}
+                {prize === jackpot ? `✦ PREMIO ESPECIAL · +${prize} min` : `+${prize} min`}
               </span>
             ))}
           </div>
+
           <button
             className={styles.button}
             type="button"
             disabled={busy || available <= 0}
             onClick={() => void spin()}
           >
-            {busy
-              ? "GIRANDO…"
-              : available > 0
-                ? `GIRAR RULETA · NIVEL ${level}`
-                : "COMPRA PARA CONSEGUIR UN GIRO"}
+            <span>
+              {busy
+                ? "ACTIVANDO RULETA…"
+                : available > 0
+                  ? `GIRAR RULETA · NIVEL ${level}`
+                  : "COMPRA PARA CONSEGUIR UN GIRO"}
+            </span>
+            <i aria-hidden="true">›</i>
           </button>
+
           {result ? (
             <div className={styles.result}>
-              ✨ Premio Nivel {result.level}: <strong>+{result.prize} minutos</strong>. Ya están añadidos a tu cuenta.
+              <span>✦</span>
+              <div>
+                <small>RECOMPENSA DESBLOQUEADA</small>
+                Premio Nivel {result.level}: <strong>+{result.prize} minutos</strong>
+                <p>Ya están añadidos automáticamente a tu cuenta.</p>
+              </div>
             </div>
           ) : null}
-          {message ? <div className={styles.result}>{message}</div> : null}
+
+          {message ? <div className={styles.message}>{message}</div> : null}
+
           <div className={styles.foot}>
-            El premio especial tiene un 5% real de probabilidad. El 95% restante se reparte por igual entre los premios normales de cada nivel.
+            <span className={styles.securityDot} />
+            Todos los giros tienen premio. Las recompensas se acreditan automáticamente en tu saldo al finalizar el giro.
           </div>
         </div>
+      </div>
+
+      <div className={styles.systemBar} aria-hidden="true">
+        <span><i /> CELESTIAL OS <b>ONLINE</b></span>
+        <span>SINCRONIZADO <i className={styles.pulseLine} /></span>
+        <span>EXPERIENCIA SEGURA <b>ACTIVA</b></span>
       </div>
     </section>
   );
