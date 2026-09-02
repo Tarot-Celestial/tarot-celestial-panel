@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./PurchaseRoulette.module.css";
 
 type RouletteLevel = 1 | 2;
@@ -16,7 +16,7 @@ const LEVEL_COPY: Record<RouletteLevel, { purchases: string; jackpot: number }> 
   2: { purchases: "Compras de 40, 50 y 60 min", jackpot: 80 },
 };
 
-const sb = supabaseBrowser();
+const sb = supabaseClienteBrowser();
 
 function wheelGradient(level: RouletteLevel) {
   const prizes = PRIZES[level];
