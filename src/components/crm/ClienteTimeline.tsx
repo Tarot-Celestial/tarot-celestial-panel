@@ -123,12 +123,12 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
     items.push({
       id: `note-${nota?.id || index}`,
       type: "note",
-      icon: nota?.is_pinned ? "📌" : isWebPurchaseNote ? "🟣" : "📝",
-      title: nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
+      icon: nota?.event_type === "ruleta_reward" ? "🎡" : nota?.is_pinned ? "📌" : isWebPurchaseNote ? "🟣" : "📝",
+      title: nota?.event_type === "ruleta_reward" ? "Premio Ruleta Celestial · Solo lectura" : nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
       subtitle: nota?.author_name || nota?.author_email || "Usuario",
       body,
       date: getNoteDate(nota),
-      tone: nota?.is_pinned ? "gold" : isWebPurchaseNote ? "purple" : "muted",
+      tone: nota?.event_type === "ruleta_reward" ? "gold" : nota?.is_pinned ? "gold" : isWebPurchaseNote ? "purple" : "muted",
     });
   });
 

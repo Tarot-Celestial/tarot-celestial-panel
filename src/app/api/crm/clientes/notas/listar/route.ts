@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { rouletteStaff, RouletteAccessError } from "@/lib/server/ruleta-access";
 
 function getSupabase() {
   return createClient(
@@ -18,12 +18,7 @@ export async function GET(req: Request) {
     }
 
     const token = auth.replace("Bearer ", "");
-    const sb = getSupabase();
-
-    const { data: userData } = getAuthUserFromRequest(req);
-    if (!userData?.user) {
-      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
-    }
+    const { admin: sb } = await rouletteStaff(req);
 
     const { searchParams } = new URL(req.url);
     const cliente_id = String(searchParams.get("cliente_id") || "").trim();
@@ -43,6 +38,6 @@ export async function GET(req: Request) {
 
     return NextResponse.json({ ok: true, notas: data || [] });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e instanceof RouletteAccessError ? e.message : "No se pudo cargar el historial." }, { status: e instanceof RouletteAccessError ? e.status : 500 });
   }
 }

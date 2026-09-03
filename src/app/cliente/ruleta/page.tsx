@@ -17,7 +17,7 @@ export default function ClienteRuletaPage() {
     sb.auth.getSession().then(({ data }) => {
       if (!active) return;
       if (!data.session?.user) {
-        router.replace("/cliente/login");
+        router.replace("/cliente/login?next=ruleta");
         return;
       }
       setReady(true);
@@ -28,7 +28,7 @@ export default function ClienteRuletaPage() {
   return (
     <ClienteLayout
       title="Ruleta Celestial"
-      subtitle="Tus compras desbloquean giros con premio garantizado. Entra, gira y descubre tus minutos extra."
+      subtitle="Tus compras desbloquean giros. Descubre tus premios de minutos FREE y Coins."
       eyebrow="Experiencia Celestial"
     >
       <div style={{ marginTop: 18 }}>

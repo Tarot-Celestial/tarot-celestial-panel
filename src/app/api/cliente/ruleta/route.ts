@@ -1,100 +1,36 @@
 import { NextResponse } from "next/server";
-import { clientFromRequest } from "@/lib/server/auth-cliente";
-
+import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function spinSummary(rows: any[]) {
-  const pending = rows.filter((row: any) => row.estado === "pending");
-  const next = pending[0] || null;
-  return {
-    available_spins: pending.length,
-    next_level: Number(next?.nivel || 1) === 2 ? 2 : 1,
-    level_1_spins: pending.filter((row: any) => Number(row?.nivel || 1) === 1).length,
-    level_2_spins: pending.filter((row: any) => Number(row?.nivel || 1) === 2).length,
-  };
+const headers = { "Cache-Control": "private, no-store" };
+function failure(error: unknown) {
+  if (error instanceof RouletteAccessError) return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers });
+  const message = error && typeof error === "object" && "message" in error ? String(error.message) : "";
+  if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].some(code => message.includes(code))) {
+    return NextResponse.json({ ok: false, error: "Este giro ya no está disponible. Actualiza para ver tus giros actuales." }, { status: 409, headers });
+  }
+  console.error("[ruleta]", error);
+  return NextResponse.json({ ok: false, error: "No hemos podido confirmar la operación. Puedes reintentar con seguridad." }, { status: 503, headers });
 }
-
 export async function GET(req: Request) {
   try {
-    const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.cliente) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    }
-
-    const [pendingResult, lastUsedResult] = await Promise.all([
-      gate.admin
-        .from("cliente_ruleta_giros")
-        .select("id,estado,nivel,purchase_minutes,premio_minutos,created_at,used_at")
-        .eq("cliente_id", gate.cliente.id)
-        .eq("estado", "pending")
-        .order("created_at", { ascending: true })
-        .limit(100),
-      gate.admin
-        .from("cliente_ruleta_giros")
-        .select("id,estado,nivel,purchase_minutes,premio_minutos,created_at,used_at")
-        .eq("cliente_id", gate.cliente.id)
-        .eq("estado", "used")
-        .order("used_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-    ]);
-    if (pendingResult.error) throw pendingResult.error;
-    if (lastUsedResult.error) throw lastUsedResult.error;
-
-    const rows = pendingResult.data || [];
-    return NextResponse.json({
-      ok: true,
-      ...spinSummary(rows),
-      last_prize: Number(lastUsedResult.data?.premio_minutos || 0) || null,
-      last_prize_level: lastUsedResult.data
-        ? Number(lastUsedResult.data?.nivel || 1) === 2
-          ? 2
-          : 1
-        : null,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { ok: false, error: error?.message || "ERR_RULETA" },
-      { status: 500 },
-    );
-  }
+    const gate = await rouletteClient(req);
+    const { data, error } = await gate.admin.rpc("cliente_ruleta_resumen_v2", { p_cliente_id: gate.cliente.id });
+    if (error) throw error;
+    return NextResponse.json({ ok: true, ...data }, { headers });
+  } catch (error) { return failure(error); }
 }
-
 export async function POST(req: Request) {
   try {
-    const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.cliente) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    const gate = await rouletteClient(req);
+    const body = await req.json().catch(() => null);
+    if (![1, 2].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
+      return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
-
-    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta", {
-      p_cliente_id: gate.cliente.id,
+    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta_v2", {
+      p_cliente_id: gate.cliente.id, p_spin_id: body.spin_id, p_level: body.level,
     });
     if (error) throw error;
-
-    const result = Array.isArray(data) ? data[0] : data;
-    if (!result?.prize_minutes) {
-      return NextResponse.json(
-        { ok: false, error: "SIN_GIROS_DISPONIBLES" },
-        { status: 409 },
-      );
-    }
-
-    return NextResponse.json({
-      ok: true,
-      prize_minutes: Number(result.prize_minutes),
-      spin_level: Number(result.spin_level || 1) === 2 ? 2 : 1,
-      available_spins: Number(result.available_spins || 0),
-      next_level: Number(result.next_spin_level || 1) === 2 ? 2 : 1,
-      level_1_spins: Number(result.level_1_spins || 0),
-      level_2_spins: Number(result.level_2_spins || 0),
-      total_minutes: Number(result.total_minutes || 0),
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { ok: false, error: error?.message || "ERR_GIRAR_RULETA" },
-      { status: 500 },
-    );
-  }
+    return NextResponse.json({ ok: true, ...data }, { headers });
+  } catch (error) { return failure(error); }
 }

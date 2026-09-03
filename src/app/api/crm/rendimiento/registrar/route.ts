@@ -85,7 +85,7 @@ async function uidFromBearer(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data } = getAuthUserFromRequest(req);
+  const { data } = await sb.auth.getUser(token);
   return data.user?.id || null;
 }
 
@@ -95,11 +95,11 @@ async function workerFromReq(req: Request) {
   const admin = adminClient();
   const { data, error } = await admin
     .from("workers")
-    .select("id, user_id, role, display_name, email")
+    .select("id, user_id, role, display_name, email, is_active")
     .eq("user_id", uid)
     .maybeSingle();
   if (error) throw error;
-  return data || null;
+  return data?.is_active === false ? null : data || null;
 }
 
 function toNum(v: any) {
@@ -469,6 +469,8 @@ export async function POST(req: Request) {
       recuperado,
       next_free: nextFree,
       next_normales: nextNormales,
+      expected_free: currentFree,
+      expected_normal: currentNormales,
       note_text: notaTexto,
       note_author_user_id: me.user_id || null,
       note_author_name: me.display_name || me.email || "Central",
@@ -480,7 +482,7 @@ export async function POST(req: Request) {
     };
 
     const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_atomic_v4",
+      "crm_register_call_ruleta_safe_v1",
       { p_payload: atomicPayload },
     );
 
@@ -515,6 +517,7 @@ export async function POST(req: Request) {
 
       const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
       const knownBalanceError = [
+        "BALANCE_CHANGED",
         "INSUFFICIENT_FREE_MINUTES",
         "INSUFFICIENT_NORMAL_MINUTES",
         "INSUFFICIENT_MINUTES",
@@ -594,7 +597,9 @@ export async function POST(req: Request) {
 
     await syncClienteMonthTag(admin, clienteId);
 
-
+    const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
+      ? await admin.from("cliente_ruleta_giros").select("id,nivel").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
+      : { data: null };
     return NextResponse.json({
       ok: true,
       data: inserted,
@@ -610,9 +615,9 @@ export async function POST(req: Request) {
       capture_assignment: captureAssignment,
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
       business: String(cliente?.origen || "celestial"),
-      message: collaboratorDisplayName
+      message: (collaboratorDisplayName
         ? "✅ Llamada registrada y vinculada a CALL MARIO"
-        : "✅ Llamada registrada correctamente",
+        : "✅ Llamada registrada correctamente") + (awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
     });
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);

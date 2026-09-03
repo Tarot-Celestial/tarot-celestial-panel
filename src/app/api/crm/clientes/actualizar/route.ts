@@ -23,7 +23,7 @@ async function uidFromBearer(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data } = getAuthUserFromRequest(req);
+  const { data } = await userClient.auth.getUser(token);
   return { uid: data.user?.id || null };
 }
 
@@ -37,13 +37,13 @@ async function requireCentralOrAdmin(req: Request) {
 
   const { data: me, error } = await admin
     .from("workers")
-    .select("id, role, display_name")
+    .select("id, role, display_name, is_active")
     .eq("user_id", uid)
     .maybeSingle();
 
   if (error) throw error;
   if (!me) return { ok: false as const, error: "NO_WORKER" as const };
-  if (me.role !== "admin" && me.role !== "central") {
+  if (me.is_active === false || (me.role !== "admin" && me.role !== "central")) {
     return { ok: false as const, error: "FORBIDDEN" as const };
   }
 
@@ -101,16 +101,32 @@ export async function POST(req: Request) {
       patch.minutos_normales_pendientes = toNumberOrZero(body.minutos_normales_pendientes);
     }
 
-    const { data: updated, error } = await gate.admin
+    let updateQuery = gate.admin
       .from("crm_clientes")
       .update(patch)
-      .eq("id", id)
+      .eq("id", id);
+    // Compare and update in the same SQL statement: a concurrent reward must never be overwritten.
+    if (body?.minutos_free_pendientes !== undefined || body?.minutos_normales_pendientes !== undefined) {
+      if (!Object.hasOwn(body, "expected_free") || !Object.hasOwn(body, "expected_normal")) {
+        return NextResponse.json({ ok: false, error: "Vuelve a abrir la ficha para comprobar el saldo antes de guardar." }, { status: 409 });
+      }
+      for (const [column, expected] of [
+        ["minutos_free_pendientes", body.expected_free],
+        ["minutos_normales_pendientes", body.expected_normal],
+      ] as const) {
+        if (expected !== null && !Number.isFinite(Number(expected))) {
+          return NextResponse.json({ ok: false, error: "Saldo de referencia no válido." }, { status: 400 });
+        }
+        updateQuery = expected === null ? updateQuery.is(column, null) : updateQuery.eq(column, Number(expected));
+      }
+    }
+    const { data: updated, error } = await updateQuery
       .select("*")
       .maybeSingle();
 
     if (error) throw error;
     if (!updated) {
-      return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+      return NextResponse.json({ ok: false, error: "La ficha o su saldo han cambiado. Vuelve a abrirla antes de guardar." }, { status: 409 });
     }
 
     return NextResponse.json({

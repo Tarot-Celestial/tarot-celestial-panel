@@ -40,7 +40,7 @@ export default function ClienteLoginPage() {
     setCountryCode(guessed.code);
 
     sb.auth.getSession().then(({ data }) => {
-      if (data.session?.user) router.replace("/cliente/dashboard");
+      if (data.session?.user) router.replace(new URLSearchParams(window.location.search).get("next") === "ruleta" ? "/cliente/ruleta" : "/cliente/dashboard");
     });
   }, [router]);
 
@@ -74,7 +74,7 @@ export default function ClienteLoginPage() {
       const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
 
-      router.replace("/cliente/dashboard");
+      router.replace(new URLSearchParams(window.location.search).get("next") === "ruleta" ? "/cliente/ruleta" : "/cliente/dashboard");
     } catch (e: any) {
       setMsg(e?.message || "No hemos podido iniciar sesión.");
     } finally {
@@ -120,7 +120,7 @@ export default function ClienteLoginPage() {
       const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
 
-      router.replace("/cliente/dashboard");
+      router.replace(new URLSearchParams(window.location.search).get("next") === "ruleta" ? "/cliente/ruleta" : "/cliente/dashboard");
     } catch (e: any) {
       setMsg(e?.message || "No hemos podido crear tu acceso.");
     } finally {

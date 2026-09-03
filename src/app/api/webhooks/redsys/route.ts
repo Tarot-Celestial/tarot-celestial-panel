@@ -63,10 +63,11 @@ export async function POST(req: Request) {
 
     const responseAmount = Number(readParam(params, "Ds_Amount", "DS_AMOUNT"));
     const expectedAmount = Math.round(Number(existing.amount || 0) * 100);
-    if (Number.isFinite(responseAmount) && responseAmount !== expectedAmount) {
+    if (!Number.isFinite(responseAmount) || responseAmount <= 0 || responseAmount !== expectedAmount) {
       throw new Error("REDSYS_AMOUNT_MISMATCH");
     }
 
+    if (existing.status === "completed") return okResponse();
     if (!approved) {
       await admin
         .from("cliente_payment_attempts")
@@ -89,7 +90,8 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", existing.id)
-      .in("status", ["pending", "failed"])
+      // The payment RPC is idempotent: retry a processing attempt after a lost response/crash.
+      .in("status", ["pending", "failed", "processing"])
       .select("*")
       .maybeSingle();
     if (lockError) throw lockError;
@@ -98,14 +100,14 @@ export async function POST(req: Request) {
     const pack = getConfiguredMinutePack(locked.pack_id);
     if (!pack) throw new Error("PACK_REDSYS_NO_ENCONTRADO");
 
-    await applyConfiguredMinutePurchase(admin, {
+    const purchase = await applyConfiguredMinutePurchase(admin, {
       clienteId: locked.cliente_id,
       packId: pack.id,
       paymentRef: `redsys:${orderId}`,
       paymentIntent:
         readParam(params, "Ds_AuthorisationCode", "DS_AUTHORISATIONCODE") || null,
       stripeSessionId: null,
-      amount: Number(locked.amount || pack.priceUsd),
+      amount: responseAmount / 100,
       currency: String(locked.currency || "EUR").toUpperCase() === "USD" ? "USD" : "EUR",
       metodo: "redsys_checkout",
       notas: `Redsys completado · ${pack.nombre}`,
@@ -121,7 +123,7 @@ export async function POST(req: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", locked.id),
-      admin.from("crm_client_notes").insert({
+      purchase.duplicated ? Promise.resolve() : admin.from("crm_client_notes").insert({
         cliente_id: locked.cliente_id,
         texto: `🟣 Compra web: ha comprado ${pack.nombre} (${Number(
           locked.amount || pack.priceUsd,

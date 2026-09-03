@@ -4,7 +4,7 @@ import Stripe from "stripe";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { redsysCurrencyLabel } from "@/lib/server/redsys";
+import { redsysCurrency } from "@/lib/server/redsys";
 import { CLIENT_MINUTE_PURCHASE_MAINTENANCE, CLIENT_PURCHASE_MAINTENANCE_MESSAGE, CLIENT_PURCHASE_CALL_OPTIONS } from "@/lib/client-purchase-maintenance";
 
 export const runtime = "nodejs";
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
           {
             quantity: 1,
             price_data: {
-              currency: "usd",
+              currency: "eur",
               product_data: {
                 name: pack.nombre,
                 description: pack.descripcion,
@@ -80,13 +80,13 @@ export async function POST(req: Request) {
           cliente_id: gate.cliente.id,
           pack_id: pack.id,
           total_minutes: String(pack.totalMinutes),
-          roulette_level: pack.totalMinutes <= 30 ? "1" : "2",
         },
       });
 
       return NextResponse.json({ ok: true, provider, url: session.url, session_id: session.id });
     }
 
+    if (redsysCurrency() !== "978") throw new Error("Configura Redsys en EUR (978) antes de activar los cobros.");
     let attempt: any = null;
     let lastError: any = null;
 
@@ -102,7 +102,7 @@ export async function POST(req: Request) {
           public_token: publicToken,
           pack_id: pack.id,
           amount: pack.priceUsd,
-          currency: redsysCurrencyLabel(),
+          currency: "EUR",
           total_minutes: pack.totalMinutes,
           status: "pending",
         })

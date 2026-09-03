@@ -33,8 +33,9 @@ export async function POST(req: Request) {
       getEnv("STRIPE_WEBHOOK_SECRET")
     );
 
-    if (event.type === "checkout.session.completed") {
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.payment_status !== "paid") return NextResponse.json({ received: true, pending: true });
 
       const source = String(session.metadata?.source || "cliente_panel").trim();
       const clienteId = String(session.metadata?.cliente_id || "").trim();
@@ -164,7 +165,11 @@ export async function POST(req: Request) {
         }
 
         if (configuredPack) {
-          await applyConfiguredMinutePurchase(admin, {
+          // Honor already-paid legacy USD sessions without relabelling their currency.
+          if (!["eur", "usd"].includes(String(session.currency))) {
+            return NextResponse.json({ ok: false, error: "UNSUPPORTED_PAYMENT_CURRENCY" }, { status: 400 });
+          }
+          const purchase = await applyConfiguredMinutePurchase(admin, {
             clienteId,
             packId,
             paymentRef,
@@ -173,11 +178,12 @@ export async function POST(req: Request) {
                 ? session.payment_intent
                 : session.payment_intent?.id || null,
             stripeSessionId: session.id,
-            amount: amountTotal || configuredPack.priceUsd,
-            currency: "USD",
+            amount: amountTotal,
+            currency: session.currency === "eur" ? "EUR" : "USD",
             metodo: "stripe_checkout",
             notas: `Stripe checkout completado · ${configuredPack.nombre}`,
           });
+          if (purchase.duplicated) return NextResponse.json({ received: true, duplicated: true });
         } else {
           // Compatibilidad con sesiones de Stripe iniciadas antes de este cambio.
           await applyClientPurchase(admin, {
@@ -199,7 +205,7 @@ export async function POST(req: Request) {
         // ✅ 2. CREAR NOTA EN CRM
         await admin.from("crm_client_notes").insert({
           cliente_id: clienteId,
-          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${amountTotal || pack.priceUsd} USD) a través del panel cliente`,
+          texto: `🟣 Compra web: ha comprado ${pack.nombre} (${amountTotal} ${String(session.currency || "").toUpperCase()}) a través del panel cliente`,
           author_user_id: null,
           author_name: "Sistema",
           author_email: null,

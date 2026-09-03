@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BellRing,
   Crown,
@@ -27,6 +27,10 @@ import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import RouletteBenefit from "@/components/cliente/RouletteBenefit";
+import type { RouletteSummary } from "@/lib/ruleta";
+import rewardStyles from "./reward.module.css";
 
 const sb = supabaseClienteBrowser();
 
@@ -164,7 +168,9 @@ export default function ClienteDashboardPage() {
   const [paymentProvider, setPaymentProvider] = useState<"stripe" | "redsys">("stripe");
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
   const [oracleCredits, setOracleCredits] = useState(0);
-  const [rouletteSpins, setRouletteSpins] = useState(0);
+  const [rouletteSpins, setRouletteSpins] = useState<number | null>(null);
+  const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
+  const [rewardHighlight, setRewardHighlight] = useState("");
   const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
   const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
@@ -190,7 +196,12 @@ export default function ClienteDashboardPage() {
   const [passwordCreateConfirm, setPasswordCreateConfirm] = useState("");
   const [passwordMsg, setPasswordMsg] = useState("");
 
+  const loadingDataRef = useRef(false);
+  const queuedDataRef = useRef(false);
   const loadData = useCallback(async () => {
+    if (loadingDataRef.current) { queuedDataRef.current = true; return; }
+    loadingDataRef.current = true;
+    try {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) {
@@ -201,6 +212,7 @@ export default function ClienteDashboardPage() {
     const res = await fetch("/api/cliente/me", {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     });
     const json = await res.json().catch(() => null);
 
@@ -225,6 +237,13 @@ export default function ClienteDashboardPage() {
       setShowWelcomeGift(true);
     }
     setLoading(false);
+    } catch {
+      setMsg("No se ha podido comprobar el saldo. Conservamos los últimos datos confirmados; vuelve a intentarlo.");
+    } finally {
+      loadingDataRef.current = false;
+      setLoading(false);
+      if (queuedDataRef.current) { queuedDataRef.current = false; void loadData(); }
+    }
   }, []);
 
   const loadOracle = useCallback(async () => {
@@ -251,13 +270,13 @@ export default function ClienteDashboardPage() {
       cache: "no-store",
     });
     const json = await res.json().catch(() => null);
-    if (json?.ok) setRouletteSpins(Number(json.available_spins || 0));
+    if (json?.ok) { setRouletteSpins(Number(json.available_spins)); setRouletteSummary(json); }
   }, []);
 
   useEffect(() => {
     loadData();
-    loadOracle();
-    loadRouletteSummary();
+    void loadOracle().catch(() => {});
+    void loadRouletteSummary().catch(() => {});
   }, [loadData, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
@@ -271,14 +290,12 @@ export default function ClienteDashboardPage() {
   useEffect(() => {
     const channel = typeof window !== "undefined" && "BroadcastChannel" in window ? new BroadcastChannel("tc-oracle-balance") : null;
     const refresh = () => {
-      loadOracle();
-      loadRouletteSummary();
+      if (!document.hidden) void loadOracle().catch(() => {});
     };
     channel?.addEventListener("message", refresh);
     window.addEventListener("focus", refresh);
-    const timer = window.setInterval(refresh, 20000);
-    return () => { channel?.close(); window.removeEventListener("focus", refresh); window.clearInterval(timer); };
-  }, [loadOracle, loadRouletteSummary]);
+    return () => { channel?.close(); window.removeEventListener("focus", refresh); };
+  }, [loadOracle]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -352,44 +369,37 @@ export default function ClienteDashboardPage() {
     checkPasswordStatus();
   }, [cliente?.id, cliente?.onboarding_completado, showOnboarding]);
 
+  useRouletteSignal(sb, cliente?.id, async () => { await Promise.all([loadData(), loadRouletteSummary()]); });
   useEffect(() => {
-    let channel: any = null;
-    if (cliente?.id) {
-      channel = sb
-        .channel(`cliente-dashboard-${cliente.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "crm_clientes",
-            filter: `id=eq.${cliente.id}`,
-          },
-          () => {
-            loadData();
-            loadRouletteSummary();
-          }
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "client_rank_overrides",
-            filter: `client_id=eq.${cliente.id}`,
-          },
-          () => {
-            loadData();
-            loadRouletteSummary();
-          }
-        )
-        .subscribe();
-    }
-
-    return () => {
-      if (channel) sb.removeChannel(channel);
+    if (!cliente?.id) return;
+    let channel: ReturnType<typeof sb.channel> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (document.hidden || timer) return;
+      timer = setTimeout(() => { timer = null; void loadData().catch(() => {}); }, 600);
     };
-  }, [cliente?.id, loadData, loadRouletteSummary]);
+    const visibility = () => {
+      if (document.hidden) { if (channel) void sb.removeChannel(channel); channel = null; }
+      else if (!channel) channel = sb.channel("cliente-rank-" + cliente.id)
+        .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides", filter: "client_id=eq." + cliente.id }, refresh)
+        .subscribe();
+    };
+    visibility(); document.addEventListener("visibilitychange", visibility);
+    return () => { if (channel) void sb.removeChannel(channel); if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
+  }, [cliente?.id, loadData]);
+  useEffect(() => {
+    if (loading || !cliente) return;
+    const reward = new URLSearchParams(window.location.search).get("reward");
+    if (reward !== "coins" && reward !== "minutes") return;
+    setRewardHighlight(reward);
+    const timer = setTimeout(() => document.getElementById("saldo-" + reward)?.scrollIntoView({
+      block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    }), 150);
+    // The query only selects a highlight. Amounts always come from /me.
+    window.history.replaceState({}, "", "/cliente/dashboard#saldo-" + reward);
+    const clear = setTimeout(() => setRewardHighlight(""), 9000);
+    return () => { clearTimeout(timer); clearTimeout(clear); };
+  }, [loading, cliente?.id]);
 
   useEffect(() => {
     async function checkPush() {
@@ -434,9 +444,9 @@ export default function ClienteDashboardPage() {
         meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes",
       },
       {
-        label: "Tiros disponibles",
-        value: String(rouletteSpins),
-        meta: rouletteSpins === 1 ? "Tienes 1 giro listo en la Ruleta Celestial" : rouletteSpins > 1 ? `Tienes ${rouletteSpins} giros listos en la Ruleta Celestial` : "Compra minutos para conseguir un giro",
+        label: "Giros disponibles",
+        value: rouletteSpins === null ? "—" : String(rouletteSpins),
+        meta: rouletteSummary ? `Nivel 1: ${rouletteSummary.level_1_spins} · Nivel 2: ${rouletteSummary.level_2_spins}` : "Consulta tus giros en Ruleta",
         href: "/cliente/ruleta",
         tone: "oracle" as const,
       },
@@ -465,7 +475,7 @@ export default function ClienteDashboardPage() {
         tone: "oracle" as const,
       },
     ],
-    [rankBadge.label, rankProgress?.monthly_requirement_text, rouletteSpins, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
+    [rankBadge.label, rankProgress?.monthly_requirement_text, rouletteSpins, rouletteSummary, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
   );
 
   async function saveOnboarding(payload: {
@@ -698,6 +708,7 @@ export default function ClienteDashboardPage() {
     );
   }
 
+  if (!cliente) return <ClienteLayout title="Tu panel cliente"><p role="alert">{msg || "No se ha podido comprobar tu cuenta."}</p><button type="button" onClick={() => void loadData()}>Volver a cargar</button></ClienteLayout>;
   return (
     <>
       <ClienteLayout
@@ -721,7 +732,7 @@ export default function ClienteDashboardPage() {
               </div>
 
               <div className="tc-status-grid">
-                <div className="tc-mini-stat">
+                <div id="saldo-coins" className={`tc-mini-stat ${rewardHighlight === "coins" ? rewardStyles.highlight : ""}`}>
                   <div className="tc-kpi-label">Coins disponibles</div>
                   <strong>{totalPoints}</strong>
                   <div className="tc-kpi-meta">Tu saldo real de recompensas para desbloquear minutos.</div>
@@ -729,7 +740,7 @@ export default function ClienteDashboardPage() {
                     <span className="tc-client-resource-pill"><Coins size={12} /> Moneda de recompensa</span>
                   </div>
                 </div>
-                <div className="tc-mini-stat">
+                <div id="saldo-minutes" className={`tc-mini-stat ${rewardHighlight === "minutes" ? rewardStyles.highlight : ""}`}>
                   <div className="tc-kpi-label">Minutos disponibles</div>
                   <strong>{totalMinutes}</strong>
                   <div className="tc-kpi-meta">Todo tu saldo disponible para consultar cuando quieras.</div>
@@ -792,8 +803,9 @@ export default function ClienteDashboardPage() {
                       </div>
                       {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
                     </div>
-                    <div className="tc-pack-price">{paymentProvider === "redsys" ? `${pack.priceUsd.toFixed(2).replace(".", ",")} €` : `$${pack.priceUsd.toFixed(2)} USD`}</div>
-                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales · Ruleta Nivel {pack.totalMinutes <= 30 ? 1 : 2}</div>
+                    <div className="tc-pack-price">{`${pack.priceUsd.toFixed(2).replace(".", ",")} €`}</div>
+                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
+                    <RouletteBenefit amount={pack.priceUsd} summary={rouletteSummary}/>
                     <ManualPurchaseButton className="tc-btn tc-btn-gold">Comprar ahora</ManualPurchaseButton>
                   </div>
                 ))}

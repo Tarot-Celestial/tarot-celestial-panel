@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { rouletteStaff, RouletteAccessError } from "@/lib/server/ruleta-access";
 
 function getSupabase() {
   return createClient(
@@ -18,10 +18,7 @@ export async function POST(req: Request) {
     }
 
     const token = auth.replace("Bearer ", "");
-    const sb = getSupabase();
-
-    const { data: userData } = getAuthUserFromRequest(req);
-    const user = userData?.user;
+    const { admin: sb, user } = await rouletteStaff(req);
 
     if (!user) {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
@@ -58,6 +55,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, nota: data });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e instanceof RouletteAccessError ? e.message : "No se pudo crear la nota." }, { status: e instanceof RouletteAccessError ? e.status : 500 });
   }
 }

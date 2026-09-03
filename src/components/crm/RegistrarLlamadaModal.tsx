@@ -278,6 +278,9 @@ function friendlySubmitError(error: unknown) {
   if (message === "CALL_REGISTER_FAILED") {
     return "No se pudo registrar la llamada. No se aplicaron cambios; inténtalo de nuevo.";
   }
+  if (message === "BALANCE_CHANGED") {
+    return "El saldo ha cambiado mientras registrabas la llamada. Vuelve a abrir el formulario para comprobar los minutos actuales; no se ha guardado esta operación.";
+  }
   if (message === "INSUFFICIENT_FREE_MINUTES") {
     return "La clienta no dispone de minutos free suficientes para registrar esta llamada.";
   }

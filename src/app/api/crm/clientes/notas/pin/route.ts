@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { rouletteStaff, RouletteAccessError } from "@/lib/server/ruleta-access";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,7 @@ const supabase = createClient(
 
 export async function POST(req: NextRequest) {
   try {
+    const { admin: supabase } = await rouletteStaff(req);
     const body = await req.json();
 
     const id = String(body?.id || "");
@@ -26,6 +28,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e instanceof RouletteAccessError ? e.message : "No se pudo anclar la nota." }, { status: e instanceof RouletteAccessError ? e.status : 500 });
   }
 }

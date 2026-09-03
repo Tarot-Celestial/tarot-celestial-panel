@@ -39,7 +39,7 @@ async function uidFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data } = getAuthUserFromRequest(req);
+  const { data } = await sb.auth.getUser(token);
   return data.user?.id || null;
 }
 
@@ -51,12 +51,12 @@ async function workerFromReq(req: Request) {
 
   const { data, error } = await admin
     .from("workers")
-    .select("id, role")
+    .select("id, role, is_active")
     .eq("user_id", uid)
     .maybeSingle();
 
   if (error) throw error;
-  return data || null;
+  return data?.is_active === false ? null : data || null;
 }
 
 export async function POST(req: Request) {
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
 
     const cliente_id = String(body?.cliente_id || "").trim();
     const importe = Number(body?.importe || 0);
-    const moneda = String(body?.moneda || "EUR").trim() || "EUR";
+    const moneda = String(body?.moneda || "EUR").trim().toUpperCase() || "EUR";
     const metodo = String(body?.metodo || "paypal_manual").trim() || "paypal_manual";
     const estado = String(body?.estado || "completed").trim() || "completed";
     const notas = String(body?.notas || "").trim();
@@ -85,7 +85,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "FALTA_CLIENTE_ID" }, { status: 400 });
     }
 
-    if (!importe || importe <= 0) {
+    if (moneda !== "EUR") return NextResponse.json({ ok: false, error: "Las nuevas compras deben registrarse en EUR." }, { status: 400 });
+    if (!Number.isFinite(importe) || importe <= 0) {
       return NextResponse.json({ ok: false, error: "IMPORTE_INVALIDO" }, { status: 400 });
     }
 
@@ -115,44 +116,23 @@ export async function POST(req: Request) {
       created_by_role: worker.role,
     };
 
-    const { data: pago, error } = await admin
-      .from("crm_cliente_pagos")
-      .insert(payload)
-      .select("*")
-      .single();
-
-    if (error) throw error;
-
-    // 🔥 SUMA DE PUNTOS CORRECTA
-    if (String(estado) === "completed") {
-      const puntosGanados = pointsFromAmount(importe);
-
-      if (puntosGanados > 0) {
-        const { data: clienteActual } = await admin
-          .from("crm_clientes")
-          .select("id, puntos")
-          .eq("id", cliente_id)
-          .maybeSingle();
-
-        const puntosActuales = Number(clienteActual?.puntos || 0);
-
-        // 🔒 protección básica
-        await admin
-          .from("crm_clientes")
-          .update({
-            puntos: puntosActuales + puntosGanados,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", cliente_id);
-
-        await admin.from("cliente_puntos_historial").insert({
-          cliente_id,
-          tipo: "ganado",
-          puntos: puntosGanados,
-          descripcion: `Compra de ${importe.toFixed(2)}€ → +${puntosGanados} puntos.`,
-        });
-      }
+    let pago: any;
+    if (estado === "completed") {
+      if (!referencia_externa) return NextResponse.json({ ok: false, error: "La referencia del cobro es obligatoria." }, { status: 400 });
+      const { data: transaction, error } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
+        p: { cliente_id, payment_ref: referencia_externa, amount: importe, currency: moneda, metodo,
+          free: 0, normal: 0, points: pointsFromAmount(importe), notas,
+          created_by_user_id: worker.id, created_by_role: worker.role },
+      });
+      if (error) throw error;
+      pago = transaction.payment;
+    } else {
+      const { data, error } = await admin.from("crm_cliente_pagos").insert(payload).select("*").single();
+      if (error) throw error;
+      pago = data;
     }
+    const { data: awardedSpin } = await admin.from("cliente_ruleta_giros").select("id,nivel")
+      .eq("payment_key", referencia_externa ? "payment_ref:" + referencia_externa : "crm_pago:" + pago.id).maybeSingle();
 
     let persistedXpEvent: any = null;
     if (String(estado) === "completed") {
@@ -177,7 +157,7 @@ export async function POST(req: Request) {
       pago,
       client_name: [cliente.nombre, cliente.apellido].filter(Boolean).join(" ").trim() || "Clienta",
       xp_event: persistedXpEvent,
-      msg: "Pago creado correctamente",
+      msg: "Pago creado correctamente" + (awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
     });
 
   } catch (e: any) {

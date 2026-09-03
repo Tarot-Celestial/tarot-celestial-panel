@@ -12,6 +12,7 @@ import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 import { tcToast } from "@/lib/tc-toast";
 import reservationStyles from "./CRMReservation.module.css";
+import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -363,6 +364,9 @@ export default function CRMClientesPanel({
   const [crmEditDeuda, setCrmEditDeuda] = useState("0");
   const [crmEditMinFree, setCrmEditMinFree] = useState("0");
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
+  const balanceConflict = useRef(false);
+  const visibleClientRef = useRef<string | null>(null);
+  visibleClientRef.current = crmClienteFicha?.id || null;
   const [crmSaveLoading, setCrmSaveLoading] = useState(false);
 
   const [crmNewNombre, setCrmNewNombre] = useState("");
@@ -1241,6 +1245,7 @@ export default function CRMClientesPanel({
   }
 
   function startEditCRMNote(note: any) {
+    if (note?.ruleta_spin_id) return;
     setCrmEditingNoteId(String(note?.id || ""));
     setCrmEditingNoteText(String(note?.texto || ""));
     setCrmNotesMsg("");
@@ -1330,8 +1335,38 @@ export default function CRMClientesPanel({
     }
   }
 
+  useRouletteSignal(sb, crmClienteFicha?.id, async () => {
+    const clientId = String(crmClienteFicha?.id || "");
+    const token = await getTokenOrLogin();
+    if (!clientId || !token) return;
+    const response = await fetch("/api/crm/clientes/ficha?id=" + encodeURIComponent(clientId), {
+      headers: { Authorization: "Bearer " + token }, cache: "no-store",
+    });
+    const json = await safeJson(response);
+    if (!json?.ok || visibleClientRef.current !== clientId) return;
+    const current = json.cliente;
+    if (!current) return;
+    const beforeFree = Number(crmClienteFicha.minutos_free_pendientes || 0);
+    const beforeNormal = Number(crmClienteFicha.minutos_normales_pendientes || 0);
+    const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
+    const dirty = Number(crmEditMinFree.replace(",", ".")) !== beforeFree || Number(crmEditMinNormales.replace(",", ".")) !== beforeNormal;
+    if (changed && dirty) {
+      balanceConflict.current = true;
+      setCrmFichaMsg("Hay un premio nuevo en el saldo. Tus cambios no se han borrado: vuelve a abrir la ficha antes de guardar los minutos.");
+    } else if (changed) {
+      setCrmEditMinFree(String(current.minutos_free_pendientes || 0));
+      setCrmEditMinNormales(String(current.minutos_normales_pendientes || 0));
+    }
+    setCrmClienteFicha((previous: any) => previous?.id === clientId ? { ...previous,
+      puntos: current.puntos, minutos_free_pendientes: current.minutos_free_pendientes,
+      minutos_normales_pendientes: current.minutos_normales_pendientes, updated_at: current.updated_at,
+    } : previous);
+    await loadNotasCliente(clientId);
+  });
+
   async function openCRMFicha(id: string) {
     if (!id) return;
+    balanceConflict.current = false;
 
     try {
       setCrmFichaLoading(true);
@@ -1399,6 +1434,10 @@ export default function CRMClientesPanel({
   }
 
   async function saveCRMFicha() {
+    if (balanceConflict.current) {
+      setCrmFichaMsg("El saldo cambió mientras lo editabas. Vuelve a abrir la ficha para revisar los minutos actuales antes de guardar.");
+      return;
+    }
     if (!crmClienteSelId) return;
 
     try {
@@ -1416,6 +1455,8 @@ export default function CRMClientesPanel({
         },
         body: JSON.stringify({
           id: crmClienteSelId,
+          expected_free: crmClienteFicha?.minutos_free_pendientes ?? null,
+          expected_normal: crmClienteFicha?.minutos_normales_pendientes ?? null,
           nombre: crmEditNombre,
           apellido: crmEditApellido,
           telefono: crmEditTelefono,
@@ -1684,7 +1725,7 @@ export default function CRMClientesPanel({
         xpEvent: j?.xp_event || null,
       } }));
 
-      setCrmPagoMsg("✅ Pago registrado correctamente");
+      setCrmPagoMsg(j?.msg || "✅ Pago registrado correctamente");
       setCrmPagoPendienteConfirmacion(false);
       setCrmPagoImporte("");
       setCrmPagoNotas("");
@@ -2273,7 +2314,7 @@ export default function CRMClientesPanel({
                           >
                             {crmPinningNoteId === String(n.id) ? "Guardando..." : n?.is_pinned ? "Desanclar" : "Anclar"}
                           </button>
-                          {crmEditingNoteId !== String(n.id) ? (
+                          {n.ruleta_spin_id ? <span className="tc-chip">🎡 Premio confirmado · Solo lectura</span> : crmEditingNoteId !== String(n.id) ? (
                             <button className="tc-btn" onClick={() => startEditCRMNote(n)}>
                               Editar
                             </button>

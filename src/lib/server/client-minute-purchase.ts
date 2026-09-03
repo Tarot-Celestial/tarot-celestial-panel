@@ -31,70 +31,24 @@ export async function applyConfiguredMinutePurchase(
   const nowIso = new Date().toISOString();
   const metodo = String(params.metodo || "stripe_checkout");
   const currency: ClientPurchaseCurrency = params.currency === "EUR" ? "EUR" : "USD";
-  const amount = Number(params.amount || pack.priceUsd);
+  const amount = Number(params.amount);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("IMPORTE_CONFIRMADO_INVALIDO");
   const totalMinutes = Number(pack.totalMinutes);
   const minutesSplit = splitMinutes(totalMinutes);
   const puntosGanados = pointsFromAmount(amount);
 
-  // Idempotencia: un mismo identificador externo no vuelve a acreditar la compra.
-  const { data: existingPayment, error: existingPaymentError } = await admin
-    .from("crm_cliente_pagos")
-    .select("id, referencia_externa, cliente_id")
-    .eq("referencia_externa", params.paymentRef)
-    .maybeSingle();
-  if (existingPaymentError) throw existingPaymentError;
-  if (existingPayment?.id) {
-    return { ok: true, duplicated: true, payment: existingPayment };
-  }
-
-  const { data: clienteActual, error: clienteError } = await admin
-    .from("crm_clientes")
-    .select("id, nombre, apellido, puntos, minutos_free_pendientes, minutos_normales_pendientes")
-    .eq("id", params.clienteId)
-    .maybeSingle();
-  if (clienteError) throw clienteError;
-  if (!clienteActual?.id) throw new Error("CLIENTE_NO_EXISTE");
-
-  const { data: pago, error: pagoError } = await admin
-    .from("crm_cliente_pagos")
-    .insert({
-      cliente_id: params.clienteId,
-      importe: amount,
-      moneda: currency,
-      metodo,
-      estado: "completed",
-      notas: params.notas || `Compra automatizada desde panel cliente · ${pack.nombre}`,
-      referencia_externa: params.paymentRef,
-      pack_id: pack.id,
-      pack_name: pack.nombre,
-      paid_minutes: totalMinutes,
-      bonus_minutes: 0,
-      stripe_session_id: params.stripeSessionId || null,
-      payment_intent: params.paymentIntent || null,
-      created_by_user_id: null,
-      created_by_role: "cliente_webhook",
-    })
-    .select("*")
-    .single();
-  if (pagoError) throw pagoError;
-
-  await admin
-    .from("crm_clientes")
-    .update({
-      minutos_free_pendientes: toNum(clienteActual.minutos_free_pendientes) + minutesSplit.free,
-      minutos_normales_pendientes: toNum(clienteActual.minutos_normales_pendientes) + minutesSplit.normal,
-      puntos: toNum(clienteActual.puntos) + puntosGanados,
-      updated_at: nowIso,
-    })
-    .eq("id", params.clienteId);
-
-  await admin.from("cliente_puntos_historial").insert({
-    cliente_id: params.clienteId,
-    tipo: "ganado",
-    puntos: puntosGanados,
-    descripcion: `Compra ${pack.nombre} (${amount.toFixed(2)} ${currency}) → +${puntosGanados} puntos.`,
-    created_at: nowIso,
+  const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
+    p: { cliente_id: params.clienteId, payment_ref: params.paymentRef,
+      stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
+      amount, currency, metodo, pack_id: pack.id, pack_name: pack.nombre,
+      free: minutesSplit.free, normal: minutesSplit.normal, points: puntosGanados,
+      notas: params.notas || "Compra automatizada desde panel cliente · " + pack.nombre },
   });
+  if (transactionError) throw transactionError;
+  if (transaction.duplicated) return { ok: true, ...transaction };
+  const pago = transaction.payment;
+  const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
+  const { data: grantedSpin } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("payment_key", "payment_ref:" + params.paymentRef).maybeSingle();
 
   const { start, end } = monthRange(new Date());
   const { data: monthPayments, error: monthPaymentsError } = await admin
@@ -119,12 +73,12 @@ export async function applyConfiguredMinutePurchase(
     cliente_id: params.clienteId,
     tipo: "purchase_completed",
     titulo: "Pago confirmado",
-    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} puntos y 1 giro de Ruleta Celestial a tu cuenta.`,
+    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} puntos a tu cuenta.${grantedSpin ? ` +1 giro Nivel ${grantedSpin.nivel} disponible en Ruleta Celestial.` : ""}`,
     meta: {
       pack_id: pack.id,
       pack_name: pack.nombre,
       total_minutes: totalMinutes,
-      roulette_level: totalMinutes <= 30 ? 1 : 2,
+      roulette_level: grantedSpin?.nivel || null,
       payment_intent: params.paymentIntent || null,
       stripe_session_id: params.stripeSessionId || null,
       payment_reference: params.paymentRef,
