@@ -15,7 +15,7 @@ function failure(error: unknown) {
 export async function GET(req: Request) {
   try {
     const gate = await rouletteClient(req);
-    const { data, error } = await gate.admin.rpc("cliente_ruleta_resumen_v2", { p_cliente_id: gate.cliente.id });
+    const { data, error } = await gate.admin.rpc("cliente_ruleta_resumen_v3", { p_cliente_id: gate.cliente.id });
     if (error) throw error;
     return NextResponse.json({ ok: true, ...data }, { headers });
   } catch (error) { return failure(error); }
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
     if (![1, 2].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
       return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
-    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta_v2", {
+    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta_v3", {
       p_cliente_id: gate.cliente.id, p_spin_id: body.spin_id, p_level: body.level,
     });
     if (error) throw error;

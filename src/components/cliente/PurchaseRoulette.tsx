@@ -159,9 +159,19 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
                 </span>;
               })}
             </div>
-            <div className={styles.core}><Image src="/Nuevo-logo-tarot.png" alt="" width={82} height={82}/></div>
+            <button
+              type="button"
+              className={styles.core}
+              disabled={busy || (!pending && !available)}
+              onClick={() => void spin()}
+              aria-label={pending ? "Comprobar giro pendiente" : available ? `Girar ruleta Nivel ${level}` : "No hay giros disponibles"}
+            >
+              <RotateCw size={24}/>
+              <strong>{busy ? "…" : pending ? "COMPROBAR" : available ? "GIRAR" : "SIN GIROS"}</strong>
+              <small>NIVEL {level}</small>
+            </button>
           </div>
-          <small className={styles.wheelNote}>Sectores ilustrativos. La probabilidad real de cada premio se muestra a la derecha.</small>
+          <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina de forma segura al confirmar el giro.</small>
         </div>
         <div className={styles.controls}>
           <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
@@ -170,7 +180,6 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special}>
             {p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}
             <span>{prizeLabel(p)}{p.special && <small>PREMIO ESPECIAL</small>}</span>
-            <b>{Number(p.probability).toLocaleString("es-ES", { maximumFractionDigits: 2 })} %</b>
           </li>)}</ul>
           <button type="button" className={styles.spin} disabled={busy || (!pending && !available)} onClick={() => void spin()}>
             <RotateCw size={20}/>{busy ? "Descubriendo tu premio…" : pending ? "Comprobar mi giro pendiente" : "Girar · Nivel " + level}
