@@ -43,6 +43,7 @@ const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualIn
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
 const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
+const RaffleWinnerAdmin = nextDynamic(() => import("@/features/central/RaffleWinnerAdmin"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -58,6 +59,7 @@ const ADMIN_NAV = [
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
+  { key: "sorteo", icon: Trophy, label: "Sorteo", kicker: "Selección de ganadores", tone: "goldPurple" },
   { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago", tone: "indigo" },
   { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento", tone: "orange" },
   { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas", tone: "blue" },
@@ -155,6 +157,7 @@ type TabKey =
   | "sistema-xp"
   | "sistema-xp-niveles"
   | "crm"
+  | "sorteo"
   | "chat"
   | "captacion"
   | "rendimiento"
@@ -2961,6 +2964,7 @@ function AdminPage() {
           )}
 
           {tab === "chat" && <AdminChatPanel />}
+          {tab === "sorteo" && <RaffleWinnerAdmin />}
 
           {tab === "captacion" && (
             <CaptacionPanel
@@ -3414,4 +3418,3 @@ export default function Page() {
     </Suspense>
   );
 }
-

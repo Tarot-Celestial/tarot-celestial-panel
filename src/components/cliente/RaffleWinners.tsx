@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./RaffleWinners.module.css";
-type Winner = { position: number; prize_name: string; winning_number: number };
+type Winner = { position: number; prize_name: string; winning_number: number; selection_method: string; is_test: boolean };
 export default function RaffleWinners() {
   const [winners, setWinners] = useState<Winner[]>([]);
   const [error, setError] = useState("");
@@ -45,8 +45,8 @@ export default function RaffleWinners() {
     <header><h2 id="raffle-winners-title">Ganadores del sorteo</h2><button type="button" onClick={() => setRefresh((n) => n + 1)}>Actualizar ganadores</button></header>
     {error ? <p role="alert">{error}</p> : null}
     <div className={styles.grid} aria-live="polite">
-      {winners.map((winner) => <article key={winner.position}><span>Premio puesto N{winner.position}</span><h3>{winner.prize_name}</h3><p>GANADOR NÚMERO</p><strong>{winner.winning_number}</strong></article>)}
+      {winners.map((winner) => <article key={winner.position}><span>Premio puesto N{winner.position}</span><h3>{winner.prize_name}</h3><p>GANADOR NÚMERO</p><strong>{winner.winning_number}</strong><small>{winner.selection_method === "manual" ? "Selección manual" : "Selección aleatoria"}{winner.is_test ? " · PRUEBA IDENTIFICADA" : ""}</small></article>)}
     </div>
-    {!winners.length && !error ? <p>{loading ? "Consultando ganadores…" : "Los ganadores aparecerán aquí cuando la central los confirme."}</p> : null}
+    {!winners.length && !error ? <p>{loading ? "Consultando ganadores…" : "Los ganadores aparecerán aquí cuando un administrador los confirme."}</p> : null}
   </section>;
 }

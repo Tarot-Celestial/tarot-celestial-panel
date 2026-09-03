@@ -1,194 +1,183 @@
 "use client";
-
-import { useEffect, useRef, useState } from "react";
-import { landingRotation, type WheelEntry } from "./raffle-wheel";
+import {useEffect,useMemo,useRef,useState} from "react";
+import type {WheelEntry} from "./raffle-wheel";
+import {landingRotation} from "./raffle-wheel";
+import {type CenterPrize,type CenterEntry,selectionLabel} from "./raffle-center";
+import {useRaffleCenter} from "./useRaffleCenter";
+import RaffleCanvas from "./RaffleCanvas";
 import styles from "./CentralRaffleWheel.module.css";
 
-import { supabaseBrowser } from "@/lib/supabase-browser";
-type Prize = { id: string; position: number; name: string; candidate_entry_id: string | null; candidate_number: number | null; selected_at: string | null; confirmed_at: string | null };
-function PrizeEditor({ position, prize, busy, save }: { position: number; prize?: Prize; busy: boolean; save: (position: number, name: string) => void }) {
-  const [name, setName] = useState(prize?.name || "");
-  useEffect(() => { setName(prize?.name || ""); }, [prize?.name]);
-  return <div className={styles.prizeRow}>
-    <label>Premio N{position}{position === 1 ? " · Mayor valor" : ""}
-      <input maxLength={200} value={name} disabled={busy || Boolean(prize?.selected_at)} placeholder="Ej. 100 minutos de consulta o limpieza espiritual" onChange={(e) => setName(e.target.value)} />
-    </label>
-    <button type="button" disabled={busy || !name.trim() || Boolean(prize?.selected_at)} onClick={() => save(position, name)}>Guardar premio</button>
-    {prize?.selected_at ? <small>{prize.confirmed_at ? "Publicado" : "Pendiente de confirmar"} · Número {prize.candidate_number}</small> : null}
-  </div>;
+function PrizeEditor({position,prize,busy,save}:{position:number;prize?:CenterPrize;busy:boolean;save:(position:number,name:string,previous:string|null)=>Promise<boolean>}){
+ const [draft,setDraft]=useState<{name:string;base:string|null}|null>(null);
+ const name=draft?.name??prize?.name??"";
+ return <div className={styles.prizeRow}><label>Premio N{position}{position===1?" · Mayor valor":""}
+  <input maxLength={200} value={name} disabled={busy||Boolean(prize?.selected_at)} placeholder="Nombre completo del premio" onChange={e=>setDraft({name:e.target.value,base:draft?draft.base:prize?.name??null})}/>
+ </label><button type="button" disabled={busy||!name.trim()||Boolean(prize?.selected_at)||name===prize?.name}
+  onClick={()=>void save(position,name,draft?draft.base:prize?.name??null).then(ok=>{if(ok)setDraft(null);})}>Guardar premio</button>
+ {prize?.selected_at?<small>{prize.confirmed_at?"Confirmado":"Pendiente de confirmar"} · Número {prize.candidate_number}</small>:null}
+ </div>;
 }
-const COLORS = ["#7042a2", "#b48936", "#246f66", "#984663", "#3e6097", "#82622b"];
+const date=(s:string|null)=>s?new Date(s).toLocaleString("es-ES"):"—";
 
-export default function CentralRaffleWheel({ entries: initialEntries, title, raffleId, onClose }: {
-  entries: WheelEntry[]; title: string; raffleId: string; onClose: () => void;
-}) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const spinningRef = useRef(false);
-  const [entries, setEntries] = useState(initialEntries);
-  const [prizes, setPrizes] = useState<Prize[]>([]);
-  const [slots, setSlots] = useState(4);
-  const [selectedPrize, setSelectedPrize] = useState("");
-  const [busy, setBusy] = useState(true);
-  const requestBusy = useRef(false);
-  const [ready, setReady] = useState(false);
-  const [confirmSpin, setConfirmSpin] = useState(false);
-  const [notice, setNotice] = useState("");
-  const activePrize = prizes.find((prize) => prize.id === selectedPrize);
-  async function request(action?: string, values: Record<string, unknown> = {}) {
-    const session = await supabaseBrowser().auth.getSession();
-    const token = session.data.session?.access_token;
-    if (!token) throw new Error("Vuelve a iniciar sesión.");
-    const response = await fetch(action ? "/api/central/raffle/prizes" : `/api/central/raffle/prizes?raffle_id=${raffleId}`, {
-      method: action ? "POST" : "GET", cache: "no-store",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      ...(action ? { body: JSON.stringify({ ...values, action, raffle_id: raffleId }) } : {}),
-    });
-    const json = await response.json();
-    if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo completar la operación.");
-    setPrizes(json.prizes || []);
-    setSlots((n) => Math.max(n, ...((json.prizes || []).map((p: Prize) => p.position))));
-    return json;
-  }
-  useEffect(() => {
-    let alive = true;
-    request().then(() => { if (alive) setReady(true); }).catch((e) => { if (alive) setError(e.message); }).finally(() => { if (alive) setBusy(false); });
-    return () => { alive = false; };
-    // This dialog is keyed by raffle and only loads on opening.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  async function mutate(action: string, values: Record<string, unknown>) {
-    if (requestBusy.current || spinningRef.current) return;
-    requestBusy.current = true; setBusy(true); setError(""); setNotice("");
-    try {
-      await request(action, values);
-      setNotice(action === "confirm" ? "Ganador confirmado y publicado. No se han abonado minutos automáticamente." : "Premio guardado.");
-    } catch (e) { setError(e instanceof Error ? e.message : "No se pudo guardar. Puedes reintentar sin duplicar el resultado."); }
-    finally { requestBusy.current = false; setBusy(false); }
-  }
-  const [rotation, setRotation] = useState(0);
-  const [duration, setDuration] = useState(5200);
-  const [spinning, setSpinning] = useState(false);
-  const [winner, setWinner] = useState<WheelEntry | null>(null);
-  const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    const element = dialog.current;
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const overflow = document.body.style.overflow;
-    element?.showModal();
-    document.body.style.overflow = "hidden";
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-      element?.close();
-      document.body.style.overflow = overflow;
-      previousFocus?.focus();
-    };
-  }, []);
-
-  useEffect(() => {
-    const ctx = canvas.current?.getContext("2d");
-    if (!ctx) return;
-    const size = 1000, center = size / 2, radius = 475;
-    ctx.clearRect(0, 0, size, size);
-    if (!entries.length) {
-      ctx.fillStyle = "#2a2038";
-      ctx.beginPath(); ctx.arc(center, center, radius, 0, Math.PI * 2); ctx.fill();
-      return;
-    }
-    const step = Math.PI * 2 / entries.length;
-    entries.forEach((entry, index) => {
-      const start = -Math.PI / 2 + index * step;
-      ctx.beginPath(); ctx.moveTo(center, center);
-      ctx.arc(center, center, radius, start, start + step); ctx.closePath();
-      ctx.fillStyle = COLORS[index % COLORS.length]; ctx.fill();
-      if (entries.length <= 150) { ctx.strokeStyle = "#e4c77888"; ctx.lineWidth = 2; ctx.stroke(); }
-      // Large pools retain equal sectors; the full, searchable list stays alongside.
-      if (entries.length <= 100 || index % Math.ceil(entries.length / 80) === 0) {
-        ctx.save(); ctx.translate(center, center); ctx.rotate(start + step / 2);
-        ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillStyle = "#fff7de";
-        ctx.font = `700 ${entries.length <= 20 ? 26 : entries.length <= 50 ? 18 : 12}px Arial`;
-        const label = entries.length <= 50 ? `#${entry.number} · ${entry.name.slice(0, 14)}` : String(entry.number);
-        ctx.fillText(label, radius - 20, 0, 300); ctx.restore();
-      }
-    });
-  }, [entries]);
-
-  async function spin() {
-    if (spinningRef.current || requestBusy.current || !activePrize || activePrize.selected_at) return;
-    spinningRef.current = true; setSpinning(true); setError(""); setWinner(null); setConfirmSpin(false);
-    try {
-      const json = await request("draw", { prize_id: activePrize.id });
-      const fresh: WheelEntry[] = json.entries;
-      const prize: Prize = json.prizes.find((p: Prize) => p.id === activePrize.id);
-      const index = fresh.findIndex((entry) => entry.id === prize.candidate_entry_id);
-      if (index < 0) throw new Error("Resultado guardado. Cierra y vuelve a abrir para recuperarlo.");
-      setEntries(fresh);
-      const ms = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 50 : 5200;
-      setDuration(ms);
-      setRotation((previous) => landingRotation(previous, index, fresh.length));
-      timer.current = setTimeout(() => {
-        setWinner(fresh[index]); setSpinning(false); spinningRef.current = false; timer.current = null;
-      }, ms + 80);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "No se pudo girar. Reintenta: un resultado ya guardado no se repite.");
-      setSpinning(false); spinningRef.current = false;
-    }
-  }
-  const savedWinner = activePrize?.candidate_entry_id ? entries.find((entry) => entry.id === activePrize.candidate_entry_id) : null;
-  const displayedWinner = spinning ? null : winner || savedWinner || (activePrize?.candidate_number ? { number: activePrize.candidate_number, name: "Cliente asignado" } : null);
-  const filtered = entries.filter((entry) => `${entry.number} ${entry.name}`.toLocaleLowerCase("es").includes(query.trim().toLocaleLowerCase("es")));
-
-  return <dialog ref={dialog} className={styles.dialog} aria-labelledby="raffle-wheel-title"
-    onCancel={(event) => { event.preventDefault(); if (!spinningRef.current && !requestBusy.current) onClose(); }}>
-    <header className={styles.header}>
-      <div><span className={styles.eyebrow}>SORTEO CELESTIAL</span><h2 id="raffle-wheel-title">Elegir ganadores</h2><p>{title} · {entries.length} números con dueño</p></div>
-      <button type="button" onClick={onClose} disabled={spinning || busy} aria-label="Cerrar ruleta">×</button>
-    </header>
-    <p className={styles.notice}>Configura los premios abajo. Elige uno y confirma el giro; después confirma el ganador para publicar solo su número y el premio. El resultado pendiente se conserva al cerrar. Cada número puede participar en distintos premios; no se abonan minutos automáticamente.</p>
-    <div className={styles.layout}>
-      <section className={styles.stage} aria-label="Ruleta del sorteo">
-        <div className={styles.wheelFrame}>
-          <div className={styles.pointer} aria-hidden="true" />
-          <canvas ref={canvas} width={1000} height={1000} aria-label="Ruleta con los números de la lista de participantes" role="img"
-            style={{ transform: `rotate(${rotation}deg)`, transition: `transform ${duration}ms cubic-bezier(.12,.75,.12,1)` }} />
-          <div className={styles.hub} aria-hidden="true">✦</div>
-        </div>
-        <label className={styles.prizeSelect}>Premio que se sorteará
-          <select value={selectedPrize} disabled={spinning || busy} onChange={(e) => { setSelectedPrize(e.target.value); setWinner(null); setConfirmSpin(false); setNotice(""); }}>
-            <option value="">Selecciona un premio guardado</option>
-            {prizes.map((p) => <option key={p.id} value={p.id}>Premio N{p.position} · {p.name}{p.confirmed_at ? " · Publicado" : p.selected_at ? " · Pendiente de confirmar" : ""}</option>)}
-          </select>
-        </label>
-        {confirmSpin && activePrize ? <div className={styles.confirmBox}>
-          <p>¿Sortear Premio N{activePrize.position}: <strong>{activePrize.name}</strong>?</p>
-          <button type="button" disabled={spinning || busy} onClick={() => void spin()}>Confirmar y girar</button>
-          <button type="button" onClick={() => setConfirmSpin(false)}>Cancelar</button>
-        </div> : <button type="button" className={styles.spinButton} disabled={spinning || busy || !ready || !entries.length || !activePrize || Boolean(activePrize.selected_at)} onClick={() => setConfirmSpin(true)}>{spinning ? "Girando…" : "Girar la ruleta"}</button>}
-        <div className={styles.result} role="status" aria-live="polite" aria-atomic="true">
-          {displayedWinner ? <><span>PREMIO N{activePrize?.position} · {activePrize?.name}</span><strong>{displayedWinner.number}</strong><b>{displayedWinner.name}</b>
-            {activePrize?.confirmed_at ? <p>Ganador publicado</p> : <button type="button" className={styles.spinButton} disabled={busy} onClick={() => void mutate("confirm", { prize_id: selectedPrize })}>Confirmar ganador</button>}</>
-            : <p>{spinning ? "El destino está eligiendo…" : entries.length ? "Todo listo para girar" : "Todavía no hay números asignados a clientes."}</p>}
-        </div>
-        {error ? <p className={styles.error} role="alert">{error}</p> : null}
-        {notice ? <p role="status">{notice}</p> : null}
-      </section>
-      <section className={styles.participants} aria-labelledby="raffle-participants-title">
-        <h3 id="raffle-participants-title">Números participantes <span>{entries.length}</span></h3>
-        <p>Una oportunidad por número. Un mismo cliente puede aparecer varias veces.</p>
-        <label>Buscar número o cliente<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Número o nombre…" /></label>
-        <ul>{filtered.map((entry) => <li key={entry.id} className={winner?.id === entry.id ? styles.selected : undefined}><b>#{entry.number}</b><span>{entry.name}</span></li>)}</ul>
-        {!filtered.length ? <p>{entries.length ? "No hay coincidencias." : "Asigna números en el sorteo para comenzar."}</p> : null}
-        <small>Lista actualizada al abrir. Ciérrala y vuelve a abrirla para incorporar nuevas asignaciones.</small>
-      </section>
-    </div>
-    <section className={styles.prizeSettings} aria-labelledby="prize-settings-title">
-      <h3 id="prize-settings-title">Configurar premios</h3>
-      <p>Premio N1 es el de mayor valor. Escribe el premio completo, por ejemplo «100 minutos de consulta» o «Limpieza espiritual». No incluyas nombres de clientes: este texto se publicará.</p>
-      {Array.from({ length: slots }, (_, i) => <PrizeEditor key={i + 1} position={i + 1} prize={prizes.find((p) => p.position === i + 1)} busy={busy || spinning || !ready} save={(position, name) => void mutate("save", { position, name })} />)}
-      <button type="button" disabled={busy || spinning || !ready || slots >= 100} onClick={() => setSlots((n) => n + 1)}>+ Añadir otro premio</button>
-    </section>
-  </dialog>;
+export default function CentralRaffleWheel({entries:initialEntries,title,raffleId,onClose}:{entries:WheelEntry[];title:string;raffleId:string;onClose:()=>void}){
+ const dialog=useRef<HTMLDialogElement>(null),locked=useRef(false);
+ const timer=useRef<ReturnType<typeof setTimeout>|null>(null),mounted=useRef(true);
+ const [busy,setBusy]=useState(false),[spinning,setSpinning]=useState(false);
+ const {data,error,setError,loading,live,refresh,mutate}=useRaffleCenter(raffleId,locked,busy);
+ const [selected,setSelected]=useState(""),[extraSlots,setExtraSlots]=useState(4);
+ const [confirmSpin,setConfirmSpin]=useState(false),[cancelCheck,setCancelCheck]=useState(false);
+ const [manual,setManual]=useState(false),[manualEntry,setManualEntry]=useState(""),[test,setTest]=useState(true),[simulate,setSimulate]=useState(true);
+ const [query,setQuery]=useState(""),[manualQuery,setManualQuery]=useState(""),[visibleCount,setVisibleCount]=useState(50);
+ const [notice,setNotice]=useState(""),[rotation,setRotation]=useState(0),[duration,setDuration]=useState(5200);
+ const [spinPool,setSpinPool]=useState<CenterEntry[]|null>(null);
+ const prizes=data?.prizes,entries=data?.entries,canManage=data?.canManage===true;
+ const current=prizes?.find(p=>p.id===selected);
+ const pending=prizes?.find(p=>p.selected_at&&!p.confirmed_at);
+ const confirmed=useMemo(()=>prizes?.filter(p=>p.confirmed_at)||[],[prizes]);
+ const eligible=useMemo(()=>entries?.filter(e=>e.eligible)||[],[entries]);
+ const wheelEntries=spinPool||eligible;
+ const unique=useMemo(()=>new Set(entries?.map(e=>e.clientId)).size,[entries]);
+ const byId=useMemo(()=>new Map(entries?.map(e=>[e.id,e])),[entries]);
+ const slots=Math.max(extraSlots,...(prizes?.map(p=>p.position)||[4]));
+ const total=entries?.length??initialEntries.length;
+ const filter=(list:CenterEntry[],value:string)=>{
+  const q=value.trim().toLocaleLowerCase("es"),digits=q.replace(/\D/g,"");
+  return list.filter(e=>`${e.number} ${e.name}`.toLocaleLowerCase("es").includes(q)||(canManage&&digits.length>=3&&(e.phone||"").replace(/\D/g,"").includes(digits)));
+ };
+ const filtered=useMemo(()=>filter(entries||[],query),[entries,query,canManage]);
+ const manualMatches=useMemo(()=>filter(eligible,manualQuery),[eligible,manualQuery,canManage]);
+ useEffect(()=>{setVisibleCount(50);},[query]);
+ useEffect(()=>{if(current?.confirmed_at&&!spinning)setSpinPool(null);},[current?.confirmed_at,spinning]);
+ useEffect(()=>{
+  if(!prizes)return;
+  setSelected(prev=>prizes.some(p=>p.id===prev)?prev:(pending?.id||prizes.find(p=>!p.confirmed_at)?.id||prizes[0]?.id||""));
+ },[prizes,pending?.id]);
+ useEffect(()=>{
+  mounted.current=true;
+  const d=dialog.current,focus=document.activeElement as HTMLElement|null,overflow=document.body.style.overflow;
+  d?.showModal();document.body.style.overflow="hidden";
+  return()=>{mounted.current=false;if(timer.current)clearTimeout(timer.current);d?.close();document.body.style.overflow=overflow;focus?.focus();};
+ },[]);
+ function release(){if(!mounted.current)return;locked.current=false;setBusy(false);setSpinning(false);}
+ async function act(action:string,values:Record<string,unknown>={},message=""){
+  if(locked.current||loading)return false;
+  locked.current=true;setBusy(true);setError("");setNotice("");
+  try{
+   await mutate(action,{prize_id:current?.id,revision:current?.selection_revision,...values});
+   if(mounted.current){setNotice(message);setCancelCheck(false);setManual(false);setManualEntry("");setSpinPool(null);}
+   return true;
+  }catch(e){
+   if(mounted.current)setError(e instanceof Error?e.message:"No se pudo completar. Actualiza antes de reintentar.");
+   return false;
+  }finally{release();}
+ }
+ function selectPrize(id:string){
+  if(current?.selected_at&&!current.confirmed_at){setNotice("Hay un ganador pendiente de confirmar o descartar.");return;}
+  if(pending&&id!==pending.id){setNotice("Hay un ganador pendiente de confirmar o descartar.");setSelected(pending.id);return;}
+  setSelected(id);setManual(false);setCancelCheck(false);setConfirmSpin(false);setSpinPool(null);setNotice("");
+ }
+ async function spin(){
+  if(locked.current||!current||current.selected_at||pending||!eligible.length)return;
+  locked.current=true;setBusy(true);setSpinning(true);setError("");setNotice("");setConfirmSpin(false);setManual(false);
+  try{
+   const next=await mutate("draw",{prize_id:current.id,revision:current.selection_revision});
+   if(!mounted.current)return;
+   const pool=next.spinEntries||[],candidate=next.prizes.find(p=>p.id===current.id);
+   const index=pool.findIndex(e=>e.id===candidate?.candidate_entry_id);
+   if(index<0)throw new Error("El resultado está guardado; actualiza para recuperarlo.");
+   setSpinPool(pool);
+   const ms=window.matchMedia("(prefers-reduced-motion: reduce)").matches?50:5200;
+   setDuration(ms);setRotation(previous=>landingRotation(previous,index,pool.length));
+   timer.current=setTimeout(()=>{timer.current=null;release();},ms+80);
+  }catch(e){if(mounted.current)setError(e instanceof Error?e.message:"No se pudo girar.");release();}
+ }
+ const winnerName=current?.candidate_name||byId.get(current?.candidate_entry_id||"")?.name||"Cliente asignado";
+ const disabled=busy||loading||!data;
+ return <dialog ref={dialog} className={styles.dialog} aria-labelledby="raffle-wheel-title"
+  onCancel={e=>{e.preventDefault();if(!locked.current)onClose();}}>
+  <header className={styles.header}><div><span className={styles.eyebrow}>TAROT CELESTIAL / SORTEOS</span>
+   <h2 id="raffle-wheel-title">Centro de selección de <em>ganadores</em></h2>
+   <p>{title} · Premios reales, decisiones trazables</p>
+  </div><button type="button" onClick={onClose} disabled={busy} aria-label="Cerrar ruleta">×</button></header>
+  <div className={styles.topline}><span className={live?styles.online:styles.offline}>{live?"● Conectado a cambios":"○ Sin conexión en vivo · Actualiza si es necesario"}</span>
+   <button type="button" disabled={disabled} onClick={()=>void refresh()}>Actualizar</button></div>
+  <div className={styles.stats}>
+   {[["Participaciones totales",total],["Participantes únicos",unique],["Números elegibles",eligible.length],["Ganadores confirmados",confirmed.length]].map(([label,n])=><div key={label}><span>{label}</span><strong>{n}</strong></div>)}
+  </div>
+  <div className={styles.rule}><div><b>Ganadores repetidos</b><p>La regla se aplica a la persona y a todos sus números. Nunca se borran participaciones.</p></div>
+   <select aria-label="Ganadores repetidos" value={data?.raffle.allow_repeat_winners?"yes":"no"} disabled={disabled||!canManage||Boolean(pending)}
+    onChange={e=>void act("rule",{allow_repeat_winners:e.target.value==="yes"},"Regla actualizada.")}>
+    <option value="no">No permitir · Una persona, un premio</option><option value="yes">Permitir · Puede ganar otra vez</option>
+   </select></div>
+  {!canManage&&!loading?<p className={styles.notice}>Puedes realizar el giro aleatorio. Solo Admin puede confirmar, descartar, seleccionar manualmente o cambiar la regla. El administrador dispone de Sorteo en su navegación.</p>:null}
+  {pending&&pending.id!==selected?<button type="button" className={styles.pendingLink} disabled={busy} onClick={()=>selectPrize(pending.id)}>Hay un ganador pendiente de confirmar o descartar. Abrir Premio N{pending.position}</button>:null}
+  {error?<div className={styles.error} role="alert">{error} <button type="button" disabled={busy} onClick={()=>void refresh()}>Recuperar estado guardado</button></div>:null}
+  {notice?<p className={styles.notice} role="status">{notice}</p>:null}
+  <div className={styles.layout}>
+   <section className={styles.stage} aria-label="Ruleta del sorteo">
+    <div className={styles.stageHeader}><span className={styles.eyebrow}>01 / SELECCIÓN ALEATORIA</span><span>{spinning?"SELECCIONANDO…":eligible.length+" NÚMEROS"}</span></div>
+    <RaffleCanvas entries={wheelEntries} rotation={rotation} duration={duration} spinning={spinning}/>
+    <label className={styles.prizeSelect}>Premio que se sorteará
+     <select value={selected} disabled={disabled} onChange={e=>selectPrize(e.target.value)}>
+      <option value="">Selecciona un premio guardado</option>
+      {prizes?.map(p=><option key={p.id} value={p.id}>Premio N{p.position} · {p.name}{p.confirmed_at?" · Confirmado":p.selected_at?" · Pendiente de confirmar":""}</option>)}
+     </select></label>
+    {current?<div className={styles.prizePreview}><span>PREMIO N{current.position}</span><b>{current.name}</b><small>{current.confirmed_at?"Confirmado":current.selected_at?"Ganador provisional":"Pendiente de sortear"}</small></div>:null}
+    {confirmSpin&&current?<div className={styles.confirmBox}><p>¿Sortear Premio N{current.position}: <b>{current.name}</b> entre {eligible.length} números elegibles?</p>
+     <button type="button" disabled={disabled||Boolean(pending)} onClick={()=>void spin()}>Confirmar y girar</button><button type="button" disabled={busy} onClick={()=>setConfirmSpin(false)}>Volver</button></div>
+     :<button type="button" className={styles.spinButton} disabled={disabled||!current||Boolean(pending)||Boolean(current.selected_at)||!eligible.length} onClick={()=>{setManual(false);setConfirmSpin(true);}}>{spinning?"Seleccionando ganador…":"✦ Girar la ruleta"}</button>}
+    <p className={styles.hint}>Una oportunidad por número elegible. Selección aleatoria realizada en el servidor.</p>
+    {current?.selected_at&&!spinning?<div key={current.id+":"+current.selection_revision} className={styles.result} role="status" aria-live="polite">
+     <span>{current.confirmed_at?"GANADOR CONFIRMADO":"✦ GANADOR PROVISIONAL ✦"}</span>
+     <strong>#{current.candidate_number}</strong><b>{winnerName}</b><p>{current.name}</p>
+     <span className={current.is_test?styles.testBadge:styles.methodBadge}>{selectionLabel(current)}</span>
+     <small>{current.confirmed_at?"Publicado · "+date(current.confirmed_at):"Pendiente de confirmar"}</small>
+     {!current.confirmed_at&&canManage?<><p className={styles.hint}>{current.simulation_only?"Solo simular: registra la prueba y libera el premio. No publica ni modifica saldos.":current.is_test?"Publicará PRUEBA en Panel Cliente y dejará este premio confirmado. No abona saldo.":"Publica el premio y el número anónimo en Panel Cliente. No abona minutos automáticamente."}</p>
+      <div className={styles.actions}><button type="button" className={styles.spinButton} disabled={disabled} onClick={()=>void act("confirm",{},current.simulation_only?"Simulación registrada: premio disponible, sin publicación ni abonos.":"Ganador confirmado y publicado. Sin abonos automáticos.")}>{busy?"Guardando…":current.simulation_only?"Confirmar simulación":"Confirmar ganador"}</button>
+       <button type="button" className={styles.cancelButton} disabled={disabled} onClick={()=>setCancelCheck(true)}>× Cancelar selección</button></div>
+      {cancelCheck?<div className={styles.confirmBox}><p>¿Descartar este resultado?</p><button type="button" disabled={busy} onClick={()=>setCancelCheck(false)}>No</button><button type="button" disabled={busy} onClick={()=>void act("cancel",{},"Candidato descartado. El premio y las participaciones se conservan.")}>Sí, descartar</button></div>:null}
+     </>:null}
+    </div>:<div className={styles.standby} role="status">{loading?"Consultando premios existentes…":spinning?"Seleccionando ganador…":eligible.length?"El próximo ganador está por descubrirse":"No quedan números elegibles para nuevos premios."}</div>}
+    {canManage?<div className={styles.manualBox}><span className={styles.eyebrow}>02 / CONTROL ADMINISTRATIVO</span>
+     <button type="button" className={styles.manualButton} disabled={disabled||!current||Boolean(pending)||Boolean(current.selected_at)||!eligible.length}
+      onClick={()=>{setManual(v=>!v);setConfirmSpin(false);setManualEntry("");}}>Seleccionar ganador manualmente</button>
+     {manual?<><p>Selección explícita. Nunca se registrará como ruleta.</p>
+      <label className={styles.check}><input type="checkbox" checked={test} onChange={e=>setTest(e.target.checked)} disabled={busy}/> Modo prueba</label>
+      {test?<label className={styles.prizeSelect}>Al confirmar esta prueba<select value={simulate?"simulate":"publish"} disabled={busy} onChange={e=>setSimulate(e.target.value==="simulate")}>
+       <option value="simulate">Solo simular · Sin publicar</option><option value="publish">Publicar prueba en Panel Cliente · Sin abono</option>
+      </select></label>:null}
+      <label className={styles.prizeSelect}>Buscar participante<input value={manualQuery} onChange={e=>setManualQuery(e.target.value)} placeholder="Nombre, número o teléfono" disabled={busy}/></label>
+      <div className={styles.manualList}>{manualMatches.slice(0,50).map(e=><button key={e.id} type="button" disabled={busy} aria-pressed={manualEntry===e.id} onClick={()=>setManualEntry(e.id)}><b>#{e.number}</b><span>{e.name}</span>{manualEntry===e.id?" ✓":""}</button>)}</div>
+      {manualMatches.length>50?<small>Mostrando 50 de {manualMatches.length}. Afina la búsqueda.</small>:null}
+      <button type="button" className={styles.manualButton} disabled={disabled||!manualEntry||!byId.get(manualEntry)?.eligible} onClick={()=>void act("manual",{entry_id:manualEntry,is_test:test,simulation_only:test&&simulate},"Candidato manual seleccionado. Revisa antes de confirmar.")}>Seleccionar participante {manualEntry?"#"+byId.get(manualEntry)?.number:""}</button>
+     </>:null}
+    </div>:null}
+   </section>
+   <section className={styles.participants} aria-labelledby="raffle-participants-title"><span className={styles.eyebrow}>PARTICIPACIONES REALES</span>
+    <h3 id="raffle-participants-title">Números participantes <span>{total}</span></h3>
+    <label>Buscar número o cliente<input value={query} onChange={e=>setQuery(e.target.value)} placeholder={canManage?"Número, nombre o teléfono…":"Número o nombre…"}/></label>
+    <p>{filtered.length} resultados · {eligible.length} elegibles</p>
+    <ul>{filtered.slice(0,visibleCount).map(e=><li key={e.id} className={e.id===current?.candidate_entry_id?styles.selected:!e.eligible?styles.ineligible:undefined}>
+     <b>#{e.number}</b><div><span>{e.name}</span><small>{e.won?(e.eligible?"🏆 Ya ganó · Puede repetir":"🏆 Ya ganó · No elegible"):"✓ Elegible"}</small></div></li>)}</ul>
+    {filtered.length>visibleCount?<button type="button" onClick={()=>setVisibleCount(n=>n+50)}>Mostrar siguientes 50</button>:null}
+    {!filtered.length?<p>No hay coincidencias.</p>:null}<small>Un cliente puede tener varios números. Ganar excluye todos ellos cuando no se permiten ganadores repetidos.</small>
+   </section>
+  </div>
+  <section className={styles.history}><span className={styles.eyebrow}>03 / RESULTADOS CONFIRMADOS</span><h3>Historial de ganadores</h3>
+   {!confirmed.length?<p>Aún no hay ganadores confirmados.</p>:<div className={styles.historyGrid}>{confirmed.map(p=><article key={p.id}>
+    <span>Premio N{p.position} · {selectionLabel(p)}</span><h4>{p.name}</h4><strong>#{p.candidate_number}</strong><b>{p.candidate_name||"Cliente asignado"}</b><small>{date(p.confirmed_at)}</small>
+    <small>Seleccionó: {p.selected_by_name||p.selected_by||"—"} · Confirmó: {p.confirmed_by_name||p.confirmed_by||"—"}</small>
+   </article>)}</div>}
+   {canManage?<details><summary>Registro de actividad · Últimos 100 eventos</summary><ol className={styles.audit}>{data?.audit.map(a=><li key={a.id}>
+    <b>{({raffle_selected:"Candidato seleccionado",raffle_confirmed:"Ganador confirmado",raffle_cancelled:"Candidato descartado",raffle_simulated:"Simulación confirmada · Sin publicar",raffle_rule_changed:"Regla modificada",raffle_prize_saved:"Premio guardado"} as Record<string,string>)[a.action_type]||a.action_type}</b>
+    <span>{a.payload.position?"Premio N"+a.payload.position:""} {a.payload.prize_name||""} {a.payload.number?" · #"+a.payload.number:""} {a.payload.name||""}</span>
+    <small>{a.payload.method?selectionLabel({selection_method:a.payload.method,is_test:a.payload.is_test,simulation_only:a.payload.simulation_only})+" · ":""}{a.actor||"Trabajador registrado"} · {date(a.created_at)}</small>
+   </li>)}</ol></details>:null}
+  </section>
+  <section className={styles.prizeSettings} aria-labelledby="prize-settings-title"><span className={styles.eyebrow}>04 / CONFIGURACIÓN EXISTENTE</span>
+   <h3 id="prize-settings-title">Configurar premios</h3><p>Los nombres y las posiciones existentes se conservan. Solo se modifica un premio al pulsar su botón Guardar. El nombre se publicará: no incluyas datos de clientes.</p>
+   {Array.from({length:slots},(_,i)=><PrizeEditor key={i+1} position={i+1} prize={prizes?.find(p=>p.position===i+1)} busy={disabled} save={(position,name,previous_name)=>act("save",{position,name,previous_name},"Premio guardado.")}/>)}
+   <button type="button" disabled={disabled||slots>=100} onClick={()=>setExtraSlots(slots+1)}>+ Añadir otro premio</button>
+  </section>
+ </dialog>;
 }

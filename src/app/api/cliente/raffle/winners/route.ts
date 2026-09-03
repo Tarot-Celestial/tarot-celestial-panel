@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     if (raffle.error) throw raffle.error;
     if (!raffle.data) return NextResponse.json({ ok: true, winners: [] });
     // Deliberate allowlist: never join CRM, worker or private prize information here.
-    const result = await admin.from("raffle_public_winners").select("position,prize_name,winning_number")
+    const result = await admin.from("raffle_public_winners").select("position,prize_name,winning_number,selection_method,is_test")
       .eq("raffle_id", raffle.data.id).order("position").limit(100);
     if (result.error) throw result.error;
     return NextResponse.json({ ok: true, winners: result.data || [] });
