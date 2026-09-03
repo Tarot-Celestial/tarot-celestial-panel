@@ -26,11 +26,12 @@ export default function CentralRaffleWheel({entries:initialEntries,title,raffleI
  const {data,error,setError,loading,live,refresh,mutate}=useRaffleCenter(raffleId,locked,busy);
  const [selected,setSelected]=useState(""),[extraSlots,setExtraSlots]=useState(4);
  const [confirmSpin,setConfirmSpin]=useState(false),[cancelCheck,setCancelCheck]=useState(false);
- const [manual,setManual]=useState(false),[manualEntry,setManualEntry]=useState(""),[test,setTest]=useState(true),[simulate,setSimulate]=useState(true);
+ const [manual,setManual]=useState(false),[manualEntry,setManualEntry]=useState(""),[test,setTest]=useState(false),[simulate,setSimulate]=useState(true);
  const [query,setQuery]=useState(""),[manualQuery,setManualQuery]=useState(""),[visibleCount,setVisibleCount]=useState(50);
  const [notice,setNotice]=useState(""),[rotation,setRotation]=useState(0),[duration,setDuration]=useState(5200);
  const [spinPool,setSpinPool]=useState<CenterEntry[]|null>(null);
  const prizes=data?.prizes,entries=data?.entries,canManage=data?.canManage===true;
+ const canSelect=data?.canSelect===true||canManage;
  const current=prizes?.find(p=>p.id===selected);
  const pending=prizes?.find(p=>p.selected_at&&!p.confirmed_at);
  const confirmed=useMemo(()=>prizes?.filter(p=>p.confirmed_at)||[],[prizes]);
@@ -72,12 +73,10 @@ export default function CentralRaffleWheel({entries:initialEntries,title,raffleI
   }finally{release();}
  }
  function selectPrize(id:string){
-  if(current?.selected_at&&!current.confirmed_at){setNotice("Hay un ganador pendiente de confirmar o descartar.");return;}
-  if(pending&&id!==pending.id){setNotice("Hay un ganador pendiente de confirmar o descartar.");setSelected(pending.id);return;}
   setSelected(id);setManual(false);setCancelCheck(false);setConfirmSpin(false);setSpinPool(null);setNotice("");
  }
  async function spin(){
-  if(locked.current||!current||current.selected_at||pending||!eligible.length)return;
+  if(locked.current||!current||current.selected_at||!eligible.length)return;
   locked.current=true;setBusy(true);setSpinning(true);setError("");setNotice("");setConfirmSpin(false);setManual(false);
   try{
    const next=await mutate("draw",{prize_id:current.id,revision:current.selection_revision});
@@ -109,8 +108,9 @@ export default function CentralRaffleWheel({entries:initialEntries,title,raffleI
     onChange={e=>void act("rule",{allow_repeat_winners:e.target.value==="yes"},"Regla actualizada.")}>
     <option value="no">No permitir · Una persona, un premio</option><option value="yes">Permitir · Puede ganar otra vez</option>
    </select></div>
-  {!canManage&&!loading?<p className={styles.notice}>Puedes realizar el giro aleatorio. Solo Admin puede confirmar, descartar, seleccionar manualmente o cambiar la regla. El administrador dispone de Sorteo en su navegación.</p>:null}
-  {pending&&pending.id!==selected?<button type="button" className={styles.pendingLink} disabled={busy} onClick={()=>selectPrize(pending.id)}>Hay un ganador pendiente de confirmar o descartar. Abrir Premio N{pending.position}</button>:null}
+  {!canSelect&&!loading?<p className={styles.notice}>Los controles de confirmar, cancelar y asignar manualmente requieren el SQL actualizado de controles del sorteo. No vuelvas a girar el mismo premio si tiene un candidato pendiente.</p>:null}
+  {prizes?.some(p=>p.selected_at&&!p.confirmed_at)?<div className={styles.pendingSummary}><b>Selecciones pendientes</b><p>Cada premio conserva su candidato. Puedes sortear otro premio sin perderlo; confirmar publica el resultado, cancelar libera solamente esa selección.</p>
+   <div>{prizes.filter(p=>p.selected_at&&!p.confirmed_at).map(p=><button key={p.id} type="button" className={styles.pendingLink} disabled={busy} onClick={()=>selectPrize(p.id)}>Premio N{p.position} · #{p.candidate_number} · {p.id===selected?"Abierto":"Revisar ganador"}</button>)}</div></div>:null}
   {error?<div className={styles.error} role="alert">{error} <button type="button" disabled={busy} onClick={()=>void refresh()}>Recuperar estado guardado</button></div>:null}
   {notice?<p className={styles.notice} role="status">{notice}</p>:null}
   <div className={styles.layout}>
@@ -124,31 +124,33 @@ export default function CentralRaffleWheel({entries:initialEntries,title,raffleI
      </select></label>
     {current?<div className={styles.prizePreview}><span>PREMIO N{current.position}</span><b>{current.name}</b><small>{current.confirmed_at?"Confirmado":current.selected_at?"Ganador provisional":"Pendiente de sortear"}</small></div>:null}
     {confirmSpin&&current?<div className={styles.confirmBox}><p>¿Sortear Premio N{current.position}: <b>{current.name}</b> entre {eligible.length} números elegibles?</p>
-     <button type="button" disabled={disabled||Boolean(pending)} onClick={()=>void spin()}>Confirmar y girar</button><button type="button" disabled={busy} onClick={()=>setConfirmSpin(false)}>Volver</button></div>
-     :<button type="button" className={styles.spinButton} disabled={disabled||!current||Boolean(pending)||Boolean(current.selected_at)||!eligible.length} onClick={()=>{setManual(false);setConfirmSpin(true);}}>{spinning?"Seleccionando ganador…":"✦ Girar la ruleta"}</button>}
+     <button type="button" disabled={disabled||Boolean(current.selected_at)} onClick={()=>void spin()}>Confirmar y girar</button><button type="button" disabled={busy} onClick={()=>setConfirmSpin(false)}>Volver</button></div>
+     :<button type="button" className={styles.spinButton} disabled={disabled||!current||Boolean(current.selected_at)||!eligible.length} onClick={()=>{setManual(false);setConfirmSpin(true);}}>{spinning?"Seleccionando ganador…":"✦ Girar la ruleta"}</button>}
+    {current?.selected_at&&!current.confirmed_at?<p className={styles.notice}>Este premio tiene un ganador provisional. Confírmalo o cancela su selección en los botones de abajo para volver a sortear este mismo premio.</p>:null}
     <p className={styles.hint}>Una oportunidad por número elegible. Selección aleatoria realizada en el servidor.</p>
     {current?.selected_at&&!spinning?<div key={current.id+":"+current.selection_revision} className={styles.result} role="status" aria-live="polite">
      <span>{current.confirmed_at?"GANADOR CONFIRMADO":"✦ GANADOR PROVISIONAL ✦"}</span>
      <strong>#{current.candidate_number}</strong><b>{winnerName}</b><p>{current.name}</p>
      <span className={current.is_test?styles.testBadge:styles.methodBadge}>{selectionLabel(current)}</span>
      <small>{current.confirmed_at?"Publicado · "+date(current.confirmed_at):"Pendiente de confirmar"}</small>
-     {!current.confirmed_at&&canManage?<><p className={styles.hint}>{current.simulation_only?"Solo simular: registra la prueba y libera el premio. No publica ni modifica saldos.":current.is_test?"Publicará PRUEBA en Panel Cliente y dejará este premio confirmado. No abona saldo.":"Publica el premio y el número anónimo en Panel Cliente. No abona minutos automáticamente."}</p>
+     {!current.confirmed_at&&canSelect?<><p className={styles.hint}>{current.simulation_only?"Solo simular: registra la prueba y libera el premio. No publica ni modifica saldos.":current.is_test?"Publicará PRUEBA en Panel Cliente y dejará este premio confirmado. No abona saldo.":"Publica el premio y el número anónimo en Panel Cliente. No abona minutos automáticamente."}</p>
       <div className={styles.actions}><button type="button" className={styles.spinButton} disabled={disabled} onClick={()=>void act("confirm",{},current.simulation_only?"Simulación registrada: premio disponible, sin publicación ni abonos.":"Ganador confirmado y publicado. Sin abonos automáticos.")}>{busy?"Guardando…":current.simulation_only?"Confirmar simulación":"Confirmar ganador"}</button>
        <button type="button" className={styles.cancelButton} disabled={disabled} onClick={()=>setCancelCheck(true)}>× Cancelar selección</button></div>
       {cancelCheck?<div className={styles.confirmBox}><p>¿Descartar este resultado?</p><button type="button" disabled={busy} onClick={()=>setCancelCheck(false)}>No</button><button type="button" disabled={busy} onClick={()=>void act("cancel",{},"Candidato descartado. El premio y las participaciones se conservan.")}>Sí, descartar</button></div>:null}
      </>:null}
     </div>:<div className={styles.standby} role="status">{loading?"Consultando premios existentes…":spinning?"Seleccionando ganador…":eligible.length?"El próximo ganador está por descubrirse":"No quedan números elegibles para nuevos premios."}</div>}
-    {canManage?<div className={styles.manualBox}><span className={styles.eyebrow}>02 / CONTROL ADMINISTRATIVO</span>
-     <button type="button" className={styles.manualButton} disabled={disabled||!current||Boolean(pending)||Boolean(current.selected_at)||!eligible.length}
-      onClick={()=>{setManual(v=>!v);setConfirmSpin(false);setManualEntry("");}}>Seleccionar ganador manualmente</button>
-     {manual?<><p>Selección explícita. Nunca se registrará como ruleta.</p>
+    {canSelect?<div className={styles.manualBox}><span className={styles.eyebrow}>02 / ASIGNACIÓN MANUAL · CENTRAL Y ADMIN</span>
+     <button type="button" className={styles.manualButton} disabled={disabled||!current||Boolean(current.selected_at)||!eligible.length}
+      onClick={()=>{setManual(v=>!v);setConfirmSpin(false);setManualEntry("");}}>Asignar ganador por nombre</button>
+     {manual?<><p>Escribe el nombre y elige su número real. Esta selección se registra como Manual, no como un giro aleatorio. Solo se publica después de confirmar al ganador.</p>
       <label className={styles.check}><input type="checkbox" checked={test} onChange={e=>setTest(e.target.checked)} disabled={busy}/> Modo prueba</label>
       {test?<label className={styles.prizeSelect}>Al confirmar esta prueba<select value={simulate?"simulate":"publish"} disabled={busy} onChange={e=>setSimulate(e.target.value==="simulate")}>
        <option value="simulate">Solo simular · Sin publicar</option><option value="publish">Publicar prueba en Panel Cliente · Sin abono</option>
       </select></label>:null}
-      <label className={styles.prizeSelect}>Buscar participante<input value={manualQuery} onChange={e=>setManualQuery(e.target.value)} placeholder="Nombre, número o teléfono" disabled={busy}/></label>
+      <label className={styles.prizeSelect}>Nombre del ganador<input value={manualQuery} onChange={e=>{setManualQuery(e.target.value);setManualEntry("");}} placeholder={canManage?"Nombre, número o teléfono":"Escribe el nombre o número del participante"} disabled={busy}/></label>
       <div className={styles.manualList}>{manualMatches.slice(0,50).map(e=><button key={e.id} type="button" disabled={busy} aria-pressed={manualEntry===e.id} onClick={()=>setManualEntry(e.id)}><b>#{e.number}</b><span>{e.name}</span>{manualEntry===e.id?" ✓":""}</button>)}</div>
       {manualMatches.length>50?<small>Mostrando 50 de {manualMatches.length}. Afina la búsqueda.</small>:null}
+      {!manualMatches.length?<p>No hay participantes elegibles con ese nombre. No se crean clientes ni números ficticios.</p>:null}
       <button type="button" className={styles.manualButton} disabled={disabled||!manualEntry||!byId.get(manualEntry)?.eligible} onClick={()=>void act("manual",{entry_id:manualEntry,is_test:test,simulation_only:test&&simulate},"Candidato manual seleccionado. Revisa antes de confirmar.")}>Seleccionar participante {manualEntry?"#"+byId.get(manualEntry)?.number:""}</button>
      </>:null}
     </div>:null}

@@ -47,6 +47,6 @@ export default function RaffleWinners() {
     <div className={styles.grid} aria-live="polite">
       {winners.map((winner) => <article key={winner.position}><span>Premio puesto N{winner.position}</span><h3>{winner.prize_name}</h3><p>GANADOR NÚMERO</p><strong>{winner.winning_number}</strong><small>{winner.selection_method === "manual" ? "Selección manual" : "Selección aleatoria"}{winner.is_test ? " · PRUEBA IDENTIFICADA" : ""}</small></article>)}
     </div>
-    {!winners.length && !error ? <p>{loading ? "Consultando ganadores…" : "Los ganadores aparecerán aquí cuando un administrador los confirme."}</p> : null}
+    {!winners.length && !error ? <p>{loading ? "Consultando ganadores…" : "Los ganadores aparecerán aquí cuando el equipo de Celestial los confirme."}</p> : null}
   </section>;
 }

@@ -47,7 +47,7 @@ export async function POST(req:Request){
   if(!body||typeof body!=="object"||Array.isArray(body)||!uuid(body.raffle_id)) throw new RequestError("Solicitud inválida.");
   const action=body.action;
   if(!["save","draw","manual","confirm","cancel","rule"].includes(action)) throw new RequestError("Acción inválida.");
-  if(["manual","confirm","cancel","rule"].includes(action)&&worker.role!=="admin") throw new RequestError("Solo un administrador puede realizar esta acción.",403);
+  if(action==="rule"&&worker.role!=="admin") throw new RequestError("Solo un administrador puede cambiar la regla del sorteo.",403);
   const values:Record<string,unknown>={};
   let spinEntries:RaffleCenterState["entries"]|undefined;
   if(action==="save"){

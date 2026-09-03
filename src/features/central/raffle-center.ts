@@ -9,9 +9,8 @@ export type CenterPrize = {
 };
 export type SelectionAudit = { id:string;action_type:string;created_at:string;actor:string|null;
  payload:{position?:number;prize_name?:string;number?:number;name?:string;method?:string;is_test?:boolean;simulation_only?:boolean} };
-export type RaffleCenterState = { raffle:{id:string;title:string;allow_repeat_winners:boolean}; canManage:boolean;
+export type RaffleCenterState = { raffle:{id:string;title:string;allow_repeat_winners:boolean}; canManage:boolean; canSelect?:boolean;
  entries:CenterEntry[]; prizes:CenterPrize[]; audit:SelectionAudit[] };
 export function selectionLabel(prize:{selection_method?:string;is_test?:boolean;simulation_only?:boolean}){
  return prize.selection_method==="manual" ? `Manual${prize.is_test?" · PRUEBA":""}${prize.simulation_only?" · Solo simular":""}` : "Ruleta · Aleatoria";
 }
-
