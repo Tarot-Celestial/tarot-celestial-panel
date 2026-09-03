@@ -45,7 +45,7 @@ export default function CentralRafflePanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [wheel, setWheel] = useState<{ title: string; entries: WheelEntry[] } | null>(null);
+  const [wheel, setWheel] = useState<{ id: string; title: string; entries: WheelEntry[] } | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [phone, setPhone] = useState("");
   const [matches, setMatches] = useState<ClientMatch[]>([]);
@@ -62,7 +62,7 @@ export default function CentralRafflePanel() {
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el sorteo.");
       setRaffle(json.raffle || null);
       setEntries(Array.isArray(json.entries) ? json.entries : []);
-      return { title: String(json.raffle?.title || "Sorteo actual"), entries: eligibleEntries(Array.isArray(json.entries) ? json.entries : []) };
+      return { id: String(json.raffle?.id || ""), title: String(json.raffle?.title || "Sorteo actual"), entries: eligibleEntries(Array.isArray(json.entries) ? json.entries : []) };
     } catch (error: any) {
       setMessage(error?.message || "No se pudo cargar el sorteo.");
       return null;
@@ -230,7 +230,7 @@ export default function CentralRafflePanel() {
         {busy ? <LoaderCircle className={styles.spin} /> : <Plus />} Añadir siguiente fila · {Number(raffle?.max_number || 40) + 1}–{Number(raffle?.max_number || 40) + 40}
       </button> : null}
 
-      {wheel ? <CentralRaffleWheel title={wheel.title} entries={wheel.entries} onClose={() => setWheel(null)} /> : null}
+      {wheel ? <CentralRaffleWheel key={wheel.id} raffleId={wheel.id} title={wheel.title} entries={wheel.entries} onClose={() => setWheel(null)} /> : null}
       {selectedNumber ? (
         <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="raffle-selector-title">
           <div className={styles.modal}>

@@ -5,6 +5,7 @@ import { Gift, KeyRound, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./sorteo.module.css";
+import RaffleWinners from "@/components/cliente/RaffleWinners";
 
 const sb = supabaseClienteBrowser();
 
@@ -109,7 +110,7 @@ export default function ClienteSorteoPage() {
             <p>Cuando tu central te añada al sorteo, tu número aparecerá aquí automáticamente.</p>
           </div>
         )}
-        <h2>Ganadores del sorteo</h2>
+        <RaffleWinners />
       </section>
     </ClienteLayout>
   );
