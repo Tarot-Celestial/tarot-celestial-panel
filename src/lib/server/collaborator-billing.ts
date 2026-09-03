@@ -1,3 +1,4 @@
+import { parseActivityCodes } from "@/lib/activity-codes";
 import { normalizeText, roundMoney } from "@/lib/server/auth-worker";
 
 export type CollaboratorDefinition = {
@@ -559,23 +560,10 @@ function paymentFromCrm(row: any, client: any): PaymentEntry {
 }
 
 function codeMinutes(row: any) {
-  const slots = [
-    { code: String(row?.codigo_1 || ""), minutes: Math.max(0, safeNumber(row?.minutos_1)) },
-    { code: String(row?.codigo_2 || ""), minutes: Math.max(0, safeNumber(row?.minutos_2)) },
-  ];
-  let gift = 0;
-  let paid = 0;
-  for (const slot of slots) {
-    if (!slot.minutes) continue;
-    if (normalizeText(slot.code).includes("free")) gift += slot.minutes;
-    else paid += slot.minutes;
-  }
-  const total = Math.max(0, safeNumber(row?.tiempo));
-  if (paid + gift === 0 && total > 0) {
-    if (normalizeText(row?.resumen_codigo || row?.tipo_registro).includes("free")) gift = total;
-    else paid = total;
-  }
-  return { paid: roundMoney(paid), gift: roundMoney(gift), total: roundMoney(total || paid + gift) };
+  const blocks = parseActivityCodes(row);
+  const gift = blocks.filter(b => b.code === "FREE").reduce((n,b) => n+b.minutes,0);
+  const paid = blocks.filter(b => b.code !== "FREE").reduce((n,b) => n+b.minutes,0);
+  return { paid: roundMoney(paid), gift: roundMoney(gift), total: roundMoney(Math.max(0,safeNumber(row?.tiempo)) || paid+gift) };
 }
 
 function packageLabelFromPerformance(row: any, usage: { paid: number; gift: number; total: number }) {

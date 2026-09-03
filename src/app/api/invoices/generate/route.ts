@@ -148,13 +148,15 @@ function emptyLine(invoice_id: string, month: string) {
 async function upsertInvoice(admin: any, workerId: string, month: string, total: number) {
   const { data: existingRows, error: existingError } = await admin
     .from("invoices")
-    .select("id, created_at")
+    .select("id, created_at, status")
     .eq("worker_id", workerId)
     .eq("month_key", month)
     .order("created_at", { ascending: true });
 
   if (existingError) throw existingError;
 
+  // Never regenerate a closed snapshot, including duplicate historical invoices.
+  if ((existingRows || []).some((row: any) => !["draft", "pending", "review"].includes(String(row.status || "")))) return null;
   const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
   const duplicates = Array.isArray(existingRows) ? existingRows.slice(1) : [];
 
@@ -177,11 +179,13 @@ async function upsertInvoice(admin: any, workerId: string, month: string, total:
         updated_at: new Date().toISOString(),
       })
       .eq("id", existing.id)
+      .in("status", ["draft", "pending", "review"])
       .select("id")
       .maybeSingle();
 
     if (error) throw error;
-    return { id: String(data?.id || existing.id), created: false };
+    if (!data?.id) return null;
+    return { id: String(data.id), created: false };
   }
 
   const { data, error } = await admin
@@ -295,6 +299,7 @@ export async function POST(req: Request) {
 
       const total = roundMoney(preliminaryLines.reduce((acc, line) => acc + Number(line.amount || 0), 0));
       const invoice = await upsertInvoice(admin, workerId, month, total);
+      if (!invoice) continue;
       if (invoice.created) created += 1;
       else updated += 1;
 

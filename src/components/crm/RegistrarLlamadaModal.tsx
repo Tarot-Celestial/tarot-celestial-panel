@@ -1,4 +1,5 @@
 "use client";
+import { CALL_CODE_OPTIONS as CODIGO_OPTIONS } from "@/lib/activity-codes";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -293,13 +294,8 @@ function fmtMinutes(v: any) {
   return String(toNum(v)).replace(".00", "");
 }
 
-const CODIGO_OPTIONS = [
-  { value: "FREE", label: "Free" },
-  { value: "RUEDA", label: "Rueda" },
-  { value: "CLIENTE", label: "Cliente" },
-  { value: "REPITE", label: "Repite" },
-  { value: "CALL", label: "CALL · 0,06 €/min" },
-] as const;
+// Shared with the performance editor; stored codes and registration behavior are unchanged.
+
 
 const PAGO_OPTIONS = ["TPV", "PAYPAL", "BIZUM", "OTROS"] as const;
 const CALL_MANUAL_VALUE = "CALL";

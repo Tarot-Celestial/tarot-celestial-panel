@@ -6,11 +6,11 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./RendimientoPanel.module.css";
 import rowStyles from "./RendimientoRows.module.css";
-import RendimientoEditDialog from "./RendimientoEditDialog";
+import RendimientoEditDialog, { type EditableRow } from "./RendimientoEditDialog";
 
 const sb = supabaseBrowser();
 type Props = { mode?: "admin" | "central" };
-type Row = { id?: string; fecha_hora?: string | null; fecha?: string | null; cliente_nombre?: string | null; telefonista_nombre?: string | null; telefonista_worker_id?: string | null; tarotista_nombre?: string | null; tarotista_manual_call?: string | null; llamada_call?: boolean | null; tiempo?: number | null; resumen_codigo?: string | null; codigo_1?: string | null; codigo_2?: string | null; forma_pago?: string | null; importe?: number | null; promo?: boolean | null; captado?: boolean | null };
+type Row = EditableRow & { can_edit?: boolean; can_delete?: boolean; edit_reason?: string | null; id?: string; fecha_hora?: string | null; fecha?: string | null; cliente_nombre?: string | null; telefonista_nombre?: string | null; telefonista_worker_id?: string | null; tarotista_nombre?: string | null; tarotista_manual_call?: string | null; llamada_call?: boolean | null; tiempo?: number | null; resumen_codigo?: string | null; codigo_1?: string | null; codigo_2?: string | null; forma_pago?: string | null; importe?: number | null; promo?: boolean | null; captado?: boolean | null };
 type Filters = { tarotista: string; telefonista: string; codigo: string; cliente: string; metodo: string; from: string; to: string; captado: string; promo: string; call: string; importe: string };
 const EMPTY_FILTERS: Filters = { tarotista: "", telefonista: "", codigo: "", cliente: "", metodo: "", from: "", to: "", captado: "", promo: "", call: "", importe: "all" };
 
@@ -54,7 +54,10 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
   const [liveState, setLiveState] = useState<"connecting" | "synced" | "updating" | "error">("connecting");
   const [message, setMessage] = useState("");
   const [editingRow, setEditingRow] = useState<Row | null>(null);
-  const [viewer, setViewer] = useState<{ role?: string; worker_id?: string }>({});
+  const activeRequest = useRef<AbortController | null>(null);
+  const queuedRefresh = useRef(false);
+  const deferredRefresh = useRef(false);
+  const savedRevision = useRef<{ id?: string; edit_revision?: number }>({});
   const [savedNotice, setSavedNotice] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
   const refreshTimer = useRef<number | null>(null);
@@ -65,20 +68,25 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
 
   async function getToken() { const { data } = await sb.auth.getSession(); return data.session?.access_token || ""; }
   const load = useCallback(async (silent = false) => {
+    if (silent && activeRequest.current && !activeRequest.current.signal.aborted) { queuedRefresh.current = true; return; }
+    queuedRefresh.current = false;
     const currentRequest = ++requestId.current;
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
     if (!silent) setLoading(true);
     setLiveState(silent ? "updating" : "connecting");
     try {
       const token = await getToken();
+      if (controller.signal.aborted) return;
       if (!token) throw new Error("Sesión no disponible");
       const params = new URLSearchParams({ mode, brand: activeBrand, page: String(page), page_size: "50" });
       Object.entries(applied).forEach(([key, value]) => { if (value && value !== "all") params.set(key, value); });
-      const response = await fetch(`/api/crm/rendimiento/listar?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const response = await fetch(`/api/crm/rendimiento/listar?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal });
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar Rendimiento");
       if (currentRequest !== requestId.current) return;
       const nextRows: Row[] = json.data || [];
-      setViewer(json.viewer || {});
       setRows(nextRows); setTotals(json.totals || {}); setMethods(json.payment_methods || []);
       const insertedId = pendingNewRowId.current;
       if (insertedId && nextRows.some((row) => String(row.id || "") === insertedId)) {
@@ -90,9 +98,19 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
       setPages(Number(json.pagination?.pages || 1)); setTotalRows(Number(json.pagination?.total || 0));
       setLiveState("synced"); setMessage("");
     } catch (error: any) {
-      if (currentRequest !== requestId.current) return;
+      if (controller.signal.aborted || currentRequest !== requestId.current) return;
       setLiveState("error"); setMessage(error?.message || "No se pudo actualizar Rendimiento");
-    } finally { if (currentRequest === requestId.current) setLoading(false); }
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+        activeRequest.current = null;
+        if (queuedRefresh.current && !controller.signal.aborted) {
+          queuedRefresh.current = false;
+          if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
+          refreshTimer.current = window.setTimeout(() => void loadRef.current(true), 650);
+        }
+      }
+    }
   }, [activeBrand, applied, mode, page]);
 
   useEffect(() => {
@@ -101,7 +119,8 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     window.addEventListener("tc-brand-changed", onBrand as EventListener);
     return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; void load(); return () => { activeRequest.current?.abort(); }; }, [load]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setPage(1);
@@ -110,15 +129,23 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
     return () => window.clearTimeout(timer);
   }, [filters.cliente]);
   useEffect(() => {
+    function refreshVisible() {
+      if (document.hidden) { deferredRefresh.current = true; return; }
+      deferredRefresh.current = false;
+      if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
+      refreshTimer.current = window.setTimeout(() => void loadRef.current(true), 650);
+    }
+    function onVisible() { if (!document.hidden && deferredRefresh.current) refreshVisible(); }
+    document.addEventListener("visibilitychange", onVisible);
     const channel = sb.channel(`rendimiento-control-${mode}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload) => {
         if (payload.eventType === "INSERT") pendingNewRowId.current = String((payload.new as { id?: unknown })?.id || "") || null;
-        setLiveState("updating");
-        if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
-        refreshTimer.current = window.setTimeout(() => void load(true), 650);
-      }).subscribe((status) => { if (status === "SUBSCRIBED") setLiveState("synced"); if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setLiveState("error"); });
-    return () => { if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current); if (newRowTimer.current !== null) window.clearTimeout(newRowTimer.current); void sb.removeChannel(channel); };
-  }, [load, mode]);
+        const changed = payload.new as { id?: string; edit_revision?: number };
+        if (payload.eventType === "UPDATE" && changed.id === savedRevision.current.id && changed.edit_revision === savedRevision.current.edit_revision) return;
+        refreshVisible();
+      }).subscribe((status) => { if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setLiveState("error"); });
+    return () => { document.removeEventListener("visibilitychange", onVisible); if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current); if (newRowTimer.current !== null) window.clearTimeout(newRowTimer.current); void sb.removeChannel(channel); };
+  }, [mode]);
 
   function applyFilters() { setPage(1); setApplied({ ...filters }); }
   function clearFilters() { setFilters(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }
@@ -175,15 +202,15 @@ export default function RendimientoPanel({ mode = "admin" }: Props) {
           <table><thead><tr><th>Fecha</th><th>Telefonista</th><th>Cliente</th><th>Tarotista</th><th>Tiempo</th><th>CALL</th><th>Código</th><th>Método</th><th>Importe</th><th>Promo</th><th>Captado</th><th aria-label="Acciones" /></tr></thead>
           <tbody>{loading ? Array.from({ length: 7 }).map((_, index) => <tr key={index} className={styles.skeleton}><td colSpan={12}><span /></td></tr>) : rows.map((row) => {
             const id = String(row.id || ""); const editing = editingRow?.id === id;
-            const canEdit = viewer.role === "admin" || (viewer.role === "central" && Boolean(viewer.worker_id) && row.telefonista_worker_id === viewer.worker_id);
+            const canEdit = row.can_edit === true;
             const payment = paymentVisual(row.forma_pago, row.importe); const PaymentIcon = payment.Icon;
             const rowClass = [rowStyles.row, payment.paid ? rowStyles[payment.tone] : "", row.captado ? rowStyles.isCaptured : "", editing ? rowStyles.isEditing : "", newRowId === id ? rowStyles.isNew : ""].filter(Boolean).join(" ");
-            return <tr key={id || `${row.fecha_hora}-${row.cliente_nombre}`} className={rowClass} data-payment={payment.tone}><td>{fmt(row.fecha_hora || row.fecha)}</td><td>{row.telefonista_nombre || "—"}</td><td><strong>{row.cliente_nombre || "—"}</strong></td><td>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</td><td className={styles.numeric}>{number(row.tiempo, 2)} min</td><td><span className={`${styles.badge} ${row.llamada_call ? styles.call : styles.muted}`}>{row.llamada_call ? "CALL" : "No"}</span></td><td><span className={`${styles.badge} ${styles.code}`}>{codeLabel(row)}</span></td><td><span className={`${styles.badge} ${styles.payment} ${payment.paid ? `${rowStyles.paymentBadge} ${rowStyles[payment.tone]}` : ""}`}><PaymentIcon size={12} aria-hidden="true" /> {payment.label}</span></td><td className={`${styles.numeric} ${payment.paid ? rowStyles.paidAmount : ""}`}>{eur(row.importe)}</td><td><span className={`${styles.badge} ${row.promo ? styles.promo : styles.muted}`}>{row.promo ? "Promo" : "No"}</span></td><td><span className={`${styles.badge} ${row.captado ? styles.captured : styles.muted} ${row.captado ? rowStyles.capturedBadge : ""}`}>{row.captado ? <><Check size={12} aria-hidden="true" /> Captado</> : "No"}</span></td><td>{canEdit ? <details className={styles.menu}><summary aria-label="Acciones del registro"><MoreHorizontal size={17} /></summary><div><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setSavedNotice(""); setEditingRow({ ...row }); }}>Editar</button><button type="button" disabled={savingId === id} className={styles.danger} onClick={() => void deleteRow(id)}>Eliminar</button></div></details> : <span title="Solo la central responsable o un administrador pueden modificar este registro.">Solo lectura</span>}</td></tr>;
+            return <tr key={id || `${row.fecha_hora}-${row.cliente_nombre}`} className={rowClass} data-payment={payment.tone}><td>{fmt(row.fecha_hora || row.fecha)}</td><td>{row.telefonista_nombre || "—"}</td><td><strong>{row.cliente_nombre || "—"}</strong></td><td>{row.tarotista_nombre || row.tarotista_manual_call || "—"}</td><td className={styles.numeric}>{number(row.tiempo, 2)} min</td><td><span className={`${styles.badge} ${row.llamada_call ? styles.call : styles.muted}`}>{row.llamada_call ? "CALL" : "No"}</span></td><td><span className={`${styles.badge} ${styles.code}`}>{codeLabel(row)}</span></td><td><span className={`${styles.badge} ${styles.payment} ${payment.paid ? `${rowStyles.paymentBadge} ${rowStyles[payment.tone]}` : ""}`}><PaymentIcon size={12} aria-hidden="true" /> {payment.label}</span></td><td className={`${styles.numeric} ${payment.paid ? rowStyles.paidAmount : ""}`}>{eur(row.importe)}</td><td><span className={`${styles.badge} ${row.promo ? styles.promo : styles.muted}`}>{row.promo ? "Promo" : "No"}</span></td><td><span className={`${styles.badge} ${row.captado ? styles.captured : styles.muted} ${row.captado ? rowStyles.capturedBadge : ""}`}>{row.captado ? <><Check size={12} aria-hidden="true" /> Captado</> : "No"}</span></td><td>{canEdit ? <details className={styles.menu}><summary aria-label="Acciones del registro"><MoreHorizontal size={17} /></summary><div><button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); setSavedNotice(""); setEditingRow({ ...row }); }}>Editar registro</button>{row.can_delete ? <button type="button" disabled={savingId === id} className={styles.danger} onClick={() => void deleteRow(id)}>Eliminar</button> : null}</div></details> : <span title={row.edit_reason || "Este registro no está autorizado para edición."}>Solo lectura</span>}</td></tr>;
           })}{!loading && !rows.length ? <tr><td colSpan={12}><div className={styles.empty}><Filter size={26} /><strong>No hay registros para estos filtros.</strong><span>Prueba a ampliar el periodo o limpiar algún filtro.</span></div></td></tr> : null}</tbody></table>
         </div>
         <footer className={styles.pagination}><span>Mostrando {rows.length} de {totalRows.toLocaleString("es-ES")}</span><div><button disabled={page <= 1 || loading} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={15} /> Anterior</button><button disabled={page >= pages || loading} onClick={() => setPage((value) => Math.min(pages, value + 1))}>Siguiente <ChevronRight size={15} /></button></div></footer>
       </section>
-      {editingRow ? <RendimientoEditDialog key={editingRow.id} row={editingRow} onClose={() => setEditingRow(null)} onSaved={() => { setEditingRow(null); setSavedNotice("Cambios guardados correctamente."); void load(true); }} /> : null}
+      {editingRow ? <RendimientoEditDialog key={editingRow.id} row={editingRow} onClose={() => setEditingRow(null)} onSaved={(updated, notice) => { savedRevision.current = updated; if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current); setRows(current => current.map(row => row.id === updated.id ? { ...row, ...updated } as Row : row)); setEditingRow(null); setSavedNotice(notice); activeRequest.current?.abort(); void load(true); }} /> : null}
     </section>
   );
 }

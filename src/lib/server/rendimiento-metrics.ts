@@ -1,6 +1,8 @@
+import { activityBreakdown, parseCodeSummary } from '@/lib/activity-codes';
 import { getAdminClient, isSpecialCallName, normalizeText, rateForCode, roundMoney } from '@/lib/server/auth-worker';
 
 type RendimientoRow = {
+  code_blocks?: unknown;
   id?: string | null;
   fecha?: string | null;
   fecha_hora?: string | null;
@@ -51,108 +53,11 @@ function breakdownTotal(parsed: ParsedBreakdown) {
   return Object.values(parsed).reduce((acc, n) => acc + (Number(n || 0) || 0), 0);
 }
 
-function classifyCode(raw: unknown): keyof ParsedBreakdown | null {
-  const code = normalizeText(raw).replace(/\s+/g, '');
-  const text = normalizeText(raw);
-  if (!code && !text) return null;
-  if (code === 'free' || code === '7free' || text.includes('free')) return 'free';
-  if (text.includes('rueda')) return 'rueda';
-  if (text.includes('cliente')) return 'cliente';
-  if (text.includes('repite')) return 'repite';
-  if (text.includes('call')) return 'call_fixed';
-  return 'otros';
-}
-
-function addToBreakdown(target: ParsedBreakdown, code: keyof ParsedBreakdown | null, minutes: number) {
-  const safeMinutes = Number(minutes || 0) || 0;
-  if (!safeMinutes) return;
-  target[code || 'otros'] = roundMoney(Number(target[code || 'otros'] || 0) + safeMinutes);
-}
-
 export function parseResumenCodigo(resumen: unknown, fallbackTiempo = 0, fallbackTipo = '') {
-  const result = emptyBreakdown();
-  const raw = String(resumen || '').trim();
-  const safeFallback = Number(fallbackTiempo || 0) || 0;
-
-  if (!raw) {
-    const typeCode = classifyCode(fallbackTipo);
-    if (safeFallback > 0) addToBreakdown(result, typeCode, safeFallback);
-    return result;
-  }
-
-  const parts = raw
-    .split(/·|\+|,|\n|;/)
-    .map((x) => String(x || '').trim())
-    .filter(Boolean);
-
-  for (const part of parts) {
-    const txt = normalizeText(part);
-    const code = classifyCode(part);
-    const numberMatch = part.match(/\d+(?:[\.,]\d+)?/);
-    let mins = Number(numberMatch?.[0]?.replace(',', '.') || 0) || 0;
-
-    // Casos habituales: "Cliente", "Repite", "Rueda", "Free", "Call" sin número.
-    // En esos casos el minuto real es el campo tiempo del registro.
-    if (!mins && parts.length === 1 && safeFallback > 0 && code) mins = safeFallback;
-
-    // "7 free" debe contar 7 minutos free, pero "free" sin número usa tiempo.
-    if (!mins) continue;
-    if (txt.includes('free')) addToBreakdown(result, 'free', mins);
-    else if (txt.includes('rueda')) addToBreakdown(result, 'rueda', mins);
-    else if (txt.includes('cliente')) addToBreakdown(result, 'cliente', mins);
-    else if (txt.includes('repite')) addToBreakdown(result, 'repite', mins);
-    else if (txt.includes('call')) addToBreakdown(result, 'call_fixed', mins);
-    else addToBreakdown(result, code, mins);
-  }
-
-  if (breakdownTotal(result) === 0 && safeFallback > 0) {
-    addToBreakdown(result, classifyCode(raw) || classifyCode(fallbackTipo), safeFallback);
-  }
-
-  return result;
+  return activityBreakdown({ code_blocks: parseCodeSummary(resumen, fallbackTiempo, fallbackTipo) });
 }
 
-function parseCodeSlot(rawCode: unknown, rawMinutes: unknown, fallbackMinutes = 0) {
-  const result = emptyBreakdown();
-  const hasCode = String(rawCode || '').trim().length > 0;
-  const minsFromSlot = Number(rawMinutes || 0) || 0;
-  const mins = minsFromSlot || (hasCode ? Number(fallbackMinutes || 0) || 0 : 0);
-  if (!mins) return result;
-  addToBreakdown(result, classifyCode(rawCode), mins);
-  return result;
-}
-
-function sumParsed(a: ParsedBreakdown, b: ParsedBreakdown) {
-  return {
-    free: roundMoney((a.free || 0) + (b.free || 0)),
-    rueda: roundMoney((a.rueda || 0) + (b.rueda || 0)),
-    cliente: roundMoney((a.cliente || 0) + (b.cliente || 0)),
-    repite: roundMoney((a.repite || 0) + (b.repite || 0)),
-    call_fixed: roundMoney((a.call_fixed || 0) + (b.call_fixed || 0)),
-    otros: roundMoney((a.otros || 0) + (b.otros || 0)),
-  };
-}
-
-function parseRowBreakdown(row: RendimientoRow) {
-  const tiempo = Number(row.tiempo || 0) || 0;
-  const code1 = String(row.codigo_1 || '').trim();
-  const code2 = String(row.codigo_2 || '').trim();
-  const mins1 = Number(row.minutos_1 || 0) || 0;
-  const mins2 = Number(row.minutos_2 || 0) || 0;
-
-  // Si viene código por columnas, respetamos esos minutos. Si solo hay un código sin minutos,
-  // usamos tiempo para que coincida con lo que se ve manualmente en Rendimiento.
-  const onlyOneCodeWithoutMinutes = Boolean((code1 && !code2 && !mins1 && !mins2) || (code2 && !code1 && !mins1 && !mins2));
-  const fromSlots = sumParsed(
-    parseCodeSlot(row.codigo_1, row.minutos_1, onlyOneCodeWithoutMinutes && code1 ? tiempo : 0),
-    parseCodeSlot(row.codigo_2, row.minutos_2, onlyOneCodeWithoutMinutes && code2 ? tiempo : 0)
-  );
-
-  const slotTotal = breakdownTotal(fromSlots);
-  if (slotTotal > 0) return fromSlots;
-
-  return parseResumenCodigo(row.resumen_codigo, tiempo, String(row.tipo_registro || ''));
-}
+function parseRowBreakdown(row: RendimientoRow) { return activityBreakdown(row); }
 
 export function resolveTarotistaWorkerId(row: RendimientoRow, workerIdByName: Map<string, string>) {
   if (row.tarotista_worker_id) return String(row.tarotista_worker_id);
