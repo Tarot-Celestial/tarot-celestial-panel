@@ -109,6 +109,7 @@ export default function ClienteSorteoPage() {
             <p>Cuando tu central te añada al sorteo, tu número aparecerá aquí automáticamente.</p>
           </div>
         )}
+        <h2>Ganadores del sorteo</h2>
       </section>
     </ClienteLayout>
   );

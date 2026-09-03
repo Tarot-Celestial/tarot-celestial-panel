@@ -70,13 +70,27 @@ async function getOrCreateActiveRaffle(admin: ReturnType<typeof getServiceClient
 }
 
 async function loadEntries(admin: ReturnType<typeof getServiceClient>, raffleId: string) {
-  const result = await admin
-    .from("raffle_entries")
-    .select("id,raffle_id,raffle_number,client_id,assigned_at,client:crm_clientes!raffle_entries_client_id_fkey(id,nombre,apellido,telefono,telefono_normalizado,email)")
-    .eq("raffle_id", raffleId)
-    .order("raffle_number", { ascending: true });
-  if (result.error) throw result.error;
-  return result.data || [];
+  const entries: any[] = [];
+  let expected: number | null = null;
+  // Do not silently truncate the wheel at the Data API's page limit.
+  while (entries.length < 10000) {
+    const result = await admin
+      .from("raffle_entries")
+      .select("id,raffle_id,raffle_number,client_id,assigned_at,client:crm_clientes!raffle_entries_client_id_fkey(id,nombre,apellido,telefono,telefono_normalizado,email)", { count: "exact" })
+      .eq("raffle_id", raffleId)
+      .order("raffle_number", { ascending: true })
+      .range(entries.length, entries.length + 999);
+    if (result.error) throw result.error;
+    if (result.count === null || (expected !== null && result.count !== expected)) {
+      throw new Error("Las participaciones han cambiado. Actualiza el sorteo antes de girar.");
+    }
+    expected = result.count;
+    const page = result.data || [];
+    entries.push(...page);
+    if (entries.length === expected) return entries;
+    if (!page.length || entries.length > expected) break;
+  }
+  throw new Error("No se pudo cargar la lista completa de participaciones. Actualiza antes de girar.");
 }
 
 export async function GET(req: Request) {

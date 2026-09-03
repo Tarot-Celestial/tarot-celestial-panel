@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gift, LoaderCircle, Plus, RefreshCw, Search, Ticket, UserRound, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./CentralRafflePanel.module.css";
+import CentralRaffleWheel from "./CentralRaffleWheel";
+import { eligibleEntries, type WheelEntry } from "./raffle-wheel";
 
 const sb = supabaseBrowser();
 
@@ -43,6 +45,7 @@ export default function CentralRafflePanel() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [wheel, setWheel] = useState<{ title: string; entries: WheelEntry[] } | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [phone, setPhone] = useState("");
   const [matches, setMatches] = useState<ClientMatch[]>([]);
@@ -59,8 +62,10 @@ export default function CentralRafflePanel() {
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar el sorteo.");
       setRaffle(json.raffle || null);
       setEntries(Array.isArray(json.entries) ? json.entries : []);
+      return { title: String(json.raffle?.title || "Sorteo actual"), entries: eligibleEntries(Array.isArray(json.entries) ? json.entries : []) };
     } catch (error: any) {
       setMessage(error?.message || "No se pudo cargar el sorteo.");
+      return null;
     } finally {
       setLoading(false);
     }
@@ -175,7 +180,11 @@ export default function CentralRafflePanel() {
         <div className={styles.headerIcon}><Gift /></div>
         <div>
           <span>SORTEO CONECTADO</span>
-          <h2 id="central-raffle-title">{raffle?.title || "Sorteo actual"}</h2>
+          <div className={styles.titleRow}>
+            <h2 id="central-raffle-title">{raffle?.title || "Sorteo actual"}</h2>
+            <button type="button" className={styles.winnersButton} disabled={loading || busy}
+              onClick={async () => { const fresh = await load(); if (fresh) setWheel(fresh); }}>✦ Elegir ganadores</button>
+          </div>
           <p>Selecciona un número libre y busca al cliente por teléfono. Un mismo cliente puede participar con varios números.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={loading || busy}><RefreshCw className={loading ? styles.spin : undefined} /> Actualizar</button>
@@ -221,6 +230,7 @@ export default function CentralRafflePanel() {
         {busy ? <LoaderCircle className={styles.spin} /> : <Plus />} Añadir siguiente fila · {Number(raffle?.max_number || 40) + 1}–{Number(raffle?.max_number || 40) + 40}
       </button> : null}
 
+      {wheel ? <CentralRaffleWheel title={wheel.title} entries={wheel.entries} onClose={() => setWheel(null)} /> : null}
       {selectedNumber ? (
         <div className={styles.backdrop} role="dialog" aria-modal="true" aria-labelledby="raffle-selector-title">
           <div className={styles.modal}>
