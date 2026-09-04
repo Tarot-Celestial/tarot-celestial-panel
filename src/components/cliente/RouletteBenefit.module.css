@@ -1,1 +1,59 @@
-.benefit{display:grid;gap:7px;padding:13px;border-radius:12px;background:linear-gradient(110deg,#71459124,#d3a54812);border:1px solid #b69c524d;margin:10px 0;color:#eadbfb;text-decoration:none;font-size:12px}.benefit strong,.benefit a{display:flex;align-items:center;gap:6px;color:#f1d795;font-size:11px}.benefit a{width:fit-content;text-underline-offset:3px}.benefit small{font-size:10px;color:#c2b6cc}.benefit[data-premium=true]{border-color:#d8b85d80;background:linear-gradient(110deg,#b5863926,#733b9426)}.benefit a:focus-visible{outline:2px solid #ffe6a0;outline-offset:3px}
+.benefit {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 7px;
+  margin: 2px 0 4px;
+  padding: 13px;
+  border: 1px solid rgba(231, 189, 98, .24);
+  border-radius: 14px;
+  color: #efe5d2;
+  background:
+    radial-gradient(circle at 100% 0, rgba(231, 189, 98, .12), transparent 45%),
+    linear-gradient(130deg, rgba(231, 189, 98, .075), rgba(255, 255, 255, .018));
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.eyebrow {
+  color: rgba(255, 246, 218, .48);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .16em;
+}
+
+.benefit strong,
+.benefit a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  color: #f6d982;
+}
+
+.benefit strong { font-size: 11px; letter-spacing: .045em; }
+.benefit a { font-size: 10px; font-weight: 850; text-underline-offset: 3px; }
+.benefit a svg { transition: transform .16s ease; }
+.benefit a:hover svg { transform: translateX(2px); }
+.prizes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: rgba(255, 249, 231, .76); }
+.prizes i { width: 1px; height: 11px; background: rgba(231, 189, 98, .24); }
+.benefit small { color: rgba(255, 255, 255, .43); font-size: 9px; }
+
+.benefit[data-premium="true"] {
+  border-color: rgba(244, 202, 103, .40);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 213, 106, .17), transparent 45%),
+    linear-gradient(130deg, rgba(181, 121, 21, .14), rgba(66, 28, 68, .10));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035), 0 0 20px rgba(231, 189, 98, .045);
+}
+
+.benefit a:focus-visible { outline: 2px solid #ffe6a0; outline-offset: 3px; }
+
+@media (max-width: 420px) {
+  .prizes { display: grid; gap: 5px; }
+  .prizes i { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .benefit a svg { transition: none; }
+}

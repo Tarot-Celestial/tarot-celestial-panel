@@ -663,7 +663,7 @@
 .premiumShell :global(.tc-rank-live-stats span), .premiumShell :global(.tc-rank-live-stats strong) { display: block; }
 .premiumShell :global(.tc-rank-live-stats span) { font-size: 9px; color: rgba(255,255,255,.45); text-transform: uppercase; letter-spacing: .07em; }
 .premiumShell :global(.tc-rank-live-stats strong) { margin-top: 3px; color: rgba(255,255,255,.92); }
-.premiumShell :global(.tc-rank-progress-head) { display: flex; justify-content: space-between; gap: 14px; align-items: end; margin-top: 22px; }
+.premiumShell :global(.tc-rank-progress-head) { display: flex; justify-content: space-between; gap: 14px; align-items: flex-end; margin-top: 22px; }
 .premiumShell :global(.tc-rank-path) { display: flex; gap: 9px; align-items: center; margin-top: 5px; color: rgba(255,255,255,.77); }
 .premiumShell :global(.tc-rank-path strong) { color: #fff; }
 .premiumShell :global(.tc-rank-percent) { font-size: 25px; color: #f4d89f; }
@@ -728,3 +728,109 @@
 @media (min-width:801px){.premiumShell :global(.tc-hero-summary){grid-template-columns:repeat(5,minmax(0,1fr))}}
 @media (max-width:1100px) and (min-width:801px){.premiumShell :global(.tc-hero-summary){grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:800px){.premiumShell :global(.tc-nav){max-width:100%;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:thin}.premiumShell :global(.tc-nav-link){flex:0 0 auto}}
+
+/* Tarot Celestial · Nueva Era: lenguaje negro, dorado y champagne para todo el Panel Cliente. */
+.premiumShell::before {
+  background:
+    radial-gradient(circle at 13% 10%, rgba(219, 169, 65, .085), transparent 27%),
+    radial-gradient(circle at 88% 15%, rgba(255, 226, 153, .055), transparent 24%),
+    radial-gradient(circle at 55% 94%, rgba(91, 46, 104, .045), transparent 31%);
+}
+
+.premiumShell :global(.tc-client-hero) {
+  border-color: rgba(231, 189, 98, .27);
+  background:
+    linear-gradient(110deg, rgba(255, 255, 255, .018), transparent 36%),
+    radial-gradient(circle at 8% 0, rgba(231, 189, 98, .15), transparent 31%),
+    radial-gradient(circle at 91% 8%, rgba(231, 189, 98, .12), transparent 27%),
+    linear-gradient(145deg, rgba(21, 17, 12, .99), rgba(6, 6, 8, .995) 56%, rgba(14, 9, 17, .99));
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .56), inset 0 1px rgba(255, 255, 255, .045), 0 0 0 1px rgba(231, 189, 98, .025);
+}
+
+.premiumShell :global(.tc-client-hero)::before { border-color: rgba(231, 189, 98, .06); }
+.premiumShell :global(.tc-brand-logo) {
+  border-color: rgba(231, 189, 98, .38);
+  background: radial-gradient(circle at 50% 34%, rgba(255, 232, 170, .20), transparent 43%), linear-gradient(145deg, rgba(113, 75, 17, .24), rgba(255, 255, 255, .025));
+  box-shadow: 0 0 0 5px rgba(231, 189, 98, .04), 0 0 30px rgba(231, 189, 98, .12), inset 0 1px rgba(255, 255, 255, .09);
+}
+
+.premiumShell :global(.tc-brand-title) {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -.025em;
+  color: #fff8e7;
+  text-shadow: 0 0 26px rgba(231, 189, 98, .12);
+}
+
+.premiumShell :global(.tc-brand-overline) { color: rgba(231, 189, 98, .88); letter-spacing: .18em; }
+.premiumShell :global(.tc-chip) { border-color: rgba(231, 189, 98, .17); background: rgba(231, 189, 98, .045); color: rgba(255, 247, 224, .72); }
+
+.premiumShell :global(.tc-nav) {
+  border-color: rgba(231, 189, 98, .16);
+  background: linear-gradient(180deg, rgba(17, 14, 10, .92), rgba(7, 7, 9, .94));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .035), 0 12px 30px rgba(0, 0, 0, .24);
+}
+
+.premiumShell :global(.tc-nav-link) { color: rgba(255, 248, 230, .70); }
+.premiumShell :global(.tc-nav-link:hover) {
+  border-color: rgba(231, 189, 98, .18);
+  background: linear-gradient(180deg, rgba(231, 189, 98, .08), rgba(255, 255, 255, .022));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .24), 0 0 16px rgba(231, 189, 98, .04);
+}
+
+.premiumShell :global(.tc-nav-link-active) {
+  color: #fff9e9;
+  border-color: rgba(231, 189, 98, .40);
+  background: radial-gradient(circle at 20% 0, rgba(255, 224, 145, .16), transparent 42%), linear-gradient(145deg, rgba(117, 78, 20, .20), rgba(73, 33, 81, .07));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 0 22px rgba(231, 189, 98, .09);
+}
+
+.premiumShell :global(.tc-nav-link svg) { filter: drop-shadow(0 0 5px rgba(231, 189, 98, .22)); }
+.premiumShell :global(.tc-nav-new-badge) { background: linear-gradient(135deg, #ffe797, #b97f18); box-shadow: 0 0 12px rgba(231, 189, 98, .14); }
+
+.premiumShell :global(.tc-kpi) {
+  border-color: rgba(231, 189, 98, .12);
+  background: radial-gradient(circle at 87% 8%, rgba(231, 189, 98, .095), transparent 36%), linear-gradient(155deg, rgba(255, 255, 255, .052), rgba(255, 255, 255, .016));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .04), 0 14px 32px rgba(0, 0, 0, .22);
+}
+
+.premiumShell :global(.tc-kpi:hover) { border-color: rgba(231, 189, 98, .25); box-shadow: 0 18px 38px rgba(0, 0, 0, .30), 0 0 22px rgba(231, 189, 98, .045); }
+.premiumShell :global(.tc-kpi[data-tone="points"] .tc-kpi-value) { color: #ffe17b; }
+.premiumShell :global(.tc-kpi[data-tone="minutes"] .tc-kpi-value) { color: #fff2cc; }
+.premiumShell :global(.tc-kpi[data-tone="oracle"] .tc-kpi-value) { color: #ffe9a3; }
+.premiumShell :global(.tc-kpi[data-tone="alerts"][data-alert="true"]) { border-color: rgba(244, 63, 94, .34); box-shadow: 0 15px 35px rgba(0, 0, 0, .22), 0 0 24px rgba(244, 63, 94, .09); }
+
+.premiumShell :global(.tc-card),
+.premiumShell :global(.tc-golden-panel) {
+  border-color: rgba(231, 189, 98, .11);
+  background: radial-gradient(circle at 93% 0, rgba(231, 189, 98, .075), transparent 29%), linear-gradient(155deg, rgba(24, 20, 15, .72), rgba(9, 8, 11, .88));
+}
+
+.premiumShell :global(.tc-btn-gold) {
+  border-color: rgba(255, 229, 153, .48);
+  background: linear-gradient(135deg, #f1d275, #c38d27 54%, #986413);
+  color: #130e06;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .34), 0 8px 20px rgba(129, 83, 8, .18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .premiumShell :global(.tc-nav-link),
+  .premiumShell :global(.tc-kpi) { transition: none; }
+}
+
+@media (max-width: 600px) {
+  .premiumShell { overflow-x: clip; }
+  .premiumShell :global(.tc-container),
+  .premiumShell :global(.tc-client-hero),
+  .premiumShell :global(.tc-hero-top),
+  .premiumShell :global(.tc-brand-badge),
+  .premiumShell :global(.tc-brand-badge > div),
+  .premiumShell :global(.tc-row) { min-width: 0; max-width: 100%; box-sizing: border-box; }
+  .premiumShell :global(.tc-brand-badge) { align-items: flex-start; }
+  .premiumShell :global(.tc-brand-title),
+  .premiumShell :global(.tc-brand-copy) { overflow-wrap: anywhere; }
+  .premiumShell :global(.tc-chip) { width: 100% !important; max-width: 100%; box-sizing: border-box; white-space: normal; line-height: 1.4; }
+  .premiumShell :global(.tc-nav) { width: 100%; max-width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; box-sizing: border-box; }
+  .premiumShell :global(.tc-nav-link) { width: auto; min-width: 0; flex: initial; white-space: normal; }
+  .premiumShell :global(.tc-row) { font-size: 11px !important; line-height: 1.45; }
+}
