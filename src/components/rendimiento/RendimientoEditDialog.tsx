@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Clock3, Coins, Layers3, LockKeyhole, Plus, Save, ShieldCheck, Trash2, X } from "lucide-react";
+import { Clock3, Coins, Layers3, LockKeyhole, Plus, Save, ShieldCheck, Trash2, UserRound, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { ACTIVITY_CODE_OPTIONS, decimalValue, parseActivityCodes, serializeActivityCodes, validateActivityCodes, type ActivitySource } from "@/lib/activity-codes";
 import styles from "./RendimientoEditDialog.module.css";
@@ -18,6 +18,7 @@ export default function RendimientoEditDialog({ row, onClose, onSaved }: {
   const nextKey = useRef(100);
   const [tiempo, setTiempo] = useState(String(row.tiempo ?? 0));
   const [importe, setImporte] = useState(String(row.importe ?? 0));
+  const [tarotista, setTarotista] = useState(String(row.tarotista_nombre || ""));
   const [blocks, setBlocks] = useState(() => parseActivityCodes(row).map((b, key) => ({ key, code: String(b.code), minutes: String(b.minutes) })));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -45,7 +46,9 @@ export default function RendimientoEditDialog({ row, onClose, onSaved }: {
     inFlight.current = true; setSaving(true);
     try {
       const minutes = decimalValue(tiempo, "Tiempo");
-      const updates = { tiempo: minutes, importe: decimalValue(importe, "Importe"), code_blocks: validateActivityCodes(blocks, minutes) };
+      const tarotistaNombre = tarotista.trim().replace(/\s+/g, " ");
+      if (!tarotistaNombre || tarotistaNombre.length > 120) throw new Error("Escribe un nombre de tarotista válido (máximo 120 caracteres).");
+      const updates = { tiempo: minutes, importe: decimalValue(importe, "Importe"), tarotista_nombre: tarotistaNombre, code_blocks: validateActivityCodes(blocks, minutes) };
       const { data, error: sessionError } = await supabaseBrowser().auth.getSession();
       if (sessionError || !data.session?.access_token) throw new Error("Tu sesión no está disponible. Vuelve a iniciar sesión.");
       const response = await fetch("/api/crm/rendimiento/update", {
@@ -54,7 +57,7 @@ export default function RendimientoEditDialog({ row, onClose, onSaved }: {
       });
       const result = await response.json().catch(() => null);
       if (!response.ok || !result?.ok || !result.data?.id) throw new Error(result?.message || "No se pudo confirmar el guardado. Tus cambios siguen aquí.");
-      onSaved(result.data, `Registro corregido · ${row.resumen_codigo || serializeActivityCodes(parseActivityCodes(row)) || "Sin código"} → ${result.data.resumen_codigo || "Sin tramos"} · ${result.data.tiempo} min · ${Number(result.data.importe).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}`);
+      onSaved(result.data, `Registro corregido · Tarotista: ${result.data.tarotista_nombre || "—"} · ${row.resumen_codigo || serializeActivityCodes(parseActivityCodes(row)) || "Sin código"} → ${result.data.resumen_codigo || "Sin tramos"} · ${result.data.tiempo} min · ${Number(result.data.importe).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}`);
     } catch (e) { setError(e instanceof Error ? e.message : "No se pudo guardar. Tus cambios se conservan."); }
     finally { inFlight.current = false; setSaving(false); }
   }
@@ -73,9 +76,13 @@ export default function RendimientoEditDialog({ row, onClose, onSaved }: {
       <div className={styles.scroll}>
         <section className={styles.identity} id="rendimiento-edit-description">
           <div><span><LockKeyhole size={12} /> CLIENTE · IDENTIDAD PROTEGIDA</span><strong>{row.cliente_nombre || "Sin nombre"}</strong></div>
-          <p>Central: <b>{row.telefonista_nombre || "Sin asignar"}</b> · Tarotista: <b>{row.tarotista_nombre || "—"}</b></p>
-          <small>{row.fecha_hora ? new Date(row.fecha_hora).toLocaleString("es-ES") : "Fecha original conservada"} · No se modifican cliente, responsables ni fecha.</small>
+          <p>Central: <b>{row.telefonista_nombre || "Sin asignar"}</b> · Tarotista actual: <b>{row.tarotista_nombre || "—"}</b></p>
+          <small>{row.fecha_hora ? new Date(row.fecha_hora).toLocaleString("es-ES") : "Fecha original conservada"} · Se conservan cliente, central, relación interna y fecha.</small>
         </section>
+        <fieldset disabled={saving} className={styles.tarotistField}>
+          <label><span><UserRound size={15}/> NOMBRE DEL TAROTISTA</span><input aria-label="Nombre del tarotista" required maxLength={120} value={tarotista} onChange={e=>setTarotista(e.target.value)} /></label>
+          <small>Corrige el nombre mostrado en este registro. No renombra la cuenta ni cambia su relación interna.</small>
+        </fieldset>
         <fieldset disabled={saving} className={styles.fields}>
           <label><span><Clock3 size={15} /> TIEMPO TOTAL</span><div className={styles.inputUnit}><input autoFocus aria-label="Tiempo total" inputMode="decimal" required value={tiempo} onChange={e=>setTiempo(e.target.value)} /><b>min</b></div></label>
           <label><span><Coins size={15} /> IMPORTE</span><div className={styles.inputUnit}><input aria-label="Importe" inputMode="decimal" required value={importe} onChange={e=>setImporte(e.target.value)} /><b>€</b></div></label>
