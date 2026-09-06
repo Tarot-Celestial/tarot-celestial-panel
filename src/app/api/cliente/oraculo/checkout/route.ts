@@ -16,8 +16,6 @@ function env(name: string) {
 }
 
 function baseUrl(req: Request) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured) return configured.replace(/\/$/, "");
   const url = new URL(req.url);
   return `${url.protocol}//${url.host}`;
 }
@@ -65,7 +63,8 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: true,
         provider,
-        url: `${appUrl}/api/cliente/pagos/redsys/start?token=${encodeURIComponent(attempt.public_token)}`,
+        // Ruta relativa: nunca abandona el dominio real desde el que compra el cliente.
+        url: `/api/cliente/pagos/redsys/start?token=${encodeURIComponent(attempt.public_token)}`,
         order_id: attempt.order_id,
       });
     }
