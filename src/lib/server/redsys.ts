@@ -3,6 +3,13 @@ import { createCipheriv, createHmac, timingSafeEqual } from "crypto";
 // El TPV de CaixaBank/Cyberpac facilitado para este comercio usa SHA-256.
 export const REDSYS_SIGNATURE_VERSION = "HMAC_SHA256_V1";
 
+export function makeRedsysOrder() {
+  // Redsys admite 4-12 posiciones y exige que las cuatro primeras sean numéricas.
+  const time = String(Date.now()).slice(-10);
+  const random = String(Math.floor(Math.random() * 100)).padStart(2, "0");
+  return `${time}${random}`;
+}
+
 function requiredEnv(...names: string[]) {
   for (const name of names) {
     const value = String(process.env[name] || "").trim();
