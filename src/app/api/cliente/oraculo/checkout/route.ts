@@ -1,8 +1,11 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
+import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 import { getOraclePack, ORACLE_PACKS } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, ORACLE_QUESTION_PACK } from "@/lib/server/oracle-questions";
+import { makeRedsysOrder, redsysCurrency } from "@/lib/server/redsys";
 
 export const runtime = "nodejs";
 
@@ -20,17 +23,6 @@ function baseUrl(req: Request) {
 }
 
 export async function POST(req: Request) {
-  if (process.env.CLIENTE_AUTOMATED_CHECKOUT_ENABLED !== "true") {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "CHECKOUT_TEMPORALMENTE_DESACTIVADO",
-        message: "El cobro se realiza manualmente por teléfono con el código Cliente web.",
-      },
-      { status: 503 }
-    );
-  }
-
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
@@ -41,12 +33,49 @@ export async function POST(req: Request) {
     if (!pack) return NextResponse.json({ ok: false, error: "ORACLE_PACK_NO_ENCONTRADO", packs: [...ORACLE_PACKS, ORACLE_QUESTION_PACK] }, { status: 400 });
     const isQuestions = Boolean(questionPack);
 
+    const provider = await getActiveClientPaymentProvider(gate.admin);
+    const appUrl = baseUrl(req);
+
+    if (provider === "redsys") {
+      if (redsysCurrency() !== "978") throw new Error("Configura Redsys en EUR (978) antes de activar los cobros.");
+
+      let attempt: any = null;
+      let lastError: any = null;
+      for (let tries = 0; tries < 5 && !attempt; tries += 1) {
+        const { data, error } = await gate.admin
+          .from("cliente_payment_attempts")
+          .insert({
+            cliente_id: gate.cliente.id,
+            provider: "redsys",
+            order_id: makeRedsysOrder(),
+            public_token: randomUUID(),
+            pack_id: pack.id,
+            amount: pack.priceEur,
+            currency: "EUR",
+            total_minutes: 0,
+            status: "pending",
+          })
+          .select("id,public_token,order_id")
+          .single();
+        if (!error && data) attempt = data;
+        else lastError = error;
+      }
+
+      if (!attempt) throw lastError || new Error("NO_SE_PUDO_CREAR_OPERACION_REDSYS");
+      return NextResponse.json({
+        ok: true,
+        provider,
+        url: `${appUrl}/api/cliente/pagos/redsys/start?token=${encodeURIComponent(attempt.public_token)}`,
+        order_id: attempt.order_id,
+      });
+    }
+
     const stripe = new Stripe(env("STRIPE_SECRET_KEY"), { apiVersion: "2023-10-16" });
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       payment_method_types: ["card"],
-      success_url: isQuestions ? `${baseUrl(req)}/cliente/oraculo?questions_checkout=ok` : `${baseUrl(req)}/cliente/dashboard?oracle_checkout=ok#comprar-tiradas`,
-      cancel_url: isQuestions ? `${baseUrl(req)}/cliente/oraculo?questions_checkout=cancelled` : `${baseUrl(req)}/cliente/dashboard?oracle_checkout=cancelled#comprar-tiradas`,
+      success_url: isQuestions ? `${appUrl}/cliente/oraculo?questions_checkout=ok` : `${appUrl}/cliente/dashboard?oracle_checkout=ok#comprar-tiradas`,
+      cancel_url: isQuestions ? `${appUrl}/cliente/oraculo?questions_checkout=cancelled` : `${appUrl}/cliente/dashboard?oracle_checkout=cancelled#comprar-tiradas`,
       customer_email: gate.cliente.email || undefined,
       line_items: [{
         quantity: 1,
@@ -68,7 +97,7 @@ export async function POST(req: Request) {
       },
     });
 
-    return NextResponse.json({ ok: true, url: session.url, session_id: session.id });
+    return NextResponse.json({ ok: true, provider, url: session.url, session_id: session.id });
   } catch (error: any) {
     console.error("[cliente/oraculo/checkout]", error);
     return NextResponse.json({ ok: false, error: error?.message || "ERR_ORACLE_CHECKOUT" }, { status: 500 });
