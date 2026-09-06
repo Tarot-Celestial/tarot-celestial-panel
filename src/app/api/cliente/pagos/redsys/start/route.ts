@@ -15,10 +15,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function baseUrl(req: Request) {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured) return configured.replace(/\/$/, "");
   const url = new URL(req.url);
-  return `${url.protocol}//${url.host}`;
+  const forwardedHost = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const host = forwardedHost || req.headers.get("host") || url.host;
+  const protocol = forwardedProto || url.protocol.replace(":", "") || "https";
+  return `${protocol}://${host}`;
 }
 
 function esc(value: string) {
