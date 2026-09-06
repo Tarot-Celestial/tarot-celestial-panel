@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { loadClientFidelityBatch } from "@/lib/server/client-fidelity";
+import { loadClientCaptureStatusBatch, type ClientCaptureStage } from "@/lib/server/client-capture-status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -83,6 +84,10 @@ export async function GET(req: Request) {
     const sort = String(url.searchParams.get("sort") || "recent");
     const view = ["active", "followup"].includes(String(url.searchParams.get("view") || "")) ? String(url.searchParams.get("view")) : "all";
     const status = String(url.searchParams.get("status") || "all").trim();
+    const requestedCaptureStage = String(url.searchParams.get("capture_stage") || "all").trim();
+    const captureStage: ClientCaptureStage | "all" = ["captured", "pending", "untouched"].includes(requestedCaptureStage)
+      ? requestedCaptureStage as ClientCaptureStage
+      : "all";
     const brand: "celestial" = "celestial";
     const admin = adminClient();
 
@@ -91,12 +96,15 @@ export async function GET(req: Request) {
     const assignments = await loadOwnedAssignments(admin, identityIds);
     const assignmentByClient = new Map(assignments.map((row: any) => [String(row.client_id), row]));
     const ownedIds = Array.from(assignmentByClient.keys());
-    if (!ownedIds.length) return NextResponse.json({ ok: true, clientes: [], total: 0, page: 1, page_size: pageSize, total_pages: 1, negocio: brand, stats: { active: 0, followup: 0 } });
+    if (!ownedIds.length) return NextResponse.json({ ok: true, clientes: [], total: 0, page: 1, page_size: pageSize, total_pages: 1, negocio: brand, stats: { active: 0, followup: 0, capture: { captured: 0, pending: 0, untouched: 0 } } });
 
     const clients = await selectInChunks(admin, "crm_clientes", "*", "id", ownedIds);
     const portfolio = clients.filter((client: any) => belongsToBrand(client, assignmentByClient.get(String(client.id)), brand));
     const portfolioIds = portfolio.map((client: any) => String(client.id)).filter(Boolean);
-    const followups = await selectInChunks(admin, "crm_client_followups", "client_id,worker_id,completed_at", "client_id", portfolioIds);
+    const [followups, captureStatusByClient] = await Promise.all([
+      selectInChunks(admin, "crm_client_followups", "client_id,worker_id,completed_at", "client_id", portfolioIds),
+      loadClientCaptureStatusBatch(admin, portfolio),
+    ]);
     const identitySet = new Set(identityIds);
     const followupIds = new Set(followups.filter((row: any) => identitySet.has(String(row.worker_id)) && !row.completed_at).map((row: any) => String(row.client_id)));
     const activeIds = new Set(portfolio.filter((client: any) => clientIsActive(client)).map((client: any) => String(client.id)));
@@ -108,6 +116,7 @@ export async function GET(req: Request) {
       if (view === "active" && !activeIds.has(clientId)) return false;
       if (view === "followup" && !followupIds.has(clientId)) return false;
       if (status !== "all" && (status === "unclassified" ? Boolean(currentStatus) : currentStatus !== status)) return false;
+      if (captureStage !== "all" && captureStatusByClient.get(clientId)?.stage !== captureStage) return false;
       if (!normalizedQuery) return true;
       if (searchedDigits) {
         const phones = [phoneDigits(client.telefono), phoneDigits(client.telefono_normalizado)].filter(Boolean);
@@ -117,6 +126,13 @@ export async function GET(req: Request) {
     });
 
     filtered.sort((left: any, right: any) => {
+      if (sort === "capture_priority") {
+        const priority: Record<ClientCaptureStage, number> = { pending: 0, untouched: 1, captured: 2 };
+        const leftStage = captureStatusByClient.get(String(left.id))?.stage || "untouched";
+        const rightStage = captureStatusByClient.get(String(right.id))?.stage || "untouched";
+        const difference = priority[leftStage] - priority[rightStage];
+        if (difference) return difference;
+      }
       if (sort === "name") return searchableText(`${left.nombre || ""} ${left.apellido || ""}`).localeCompare(searchableText(`${right.nombre || ""} ${right.apellido || ""}`), "es");
       if (sort === "oldest") return new Date(left.created_at || 0).getTime() - new Date(right.created_at || 0).getTime();
       const leftAssignment: any = assignmentByClient.get(String(left.id)); const rightAssignment: any = assignmentByClient.get(String(right.id));
@@ -126,10 +142,9 @@ export async function GET(req: Request) {
     const total = filtered.length; const totalPages = Math.max(1, Math.ceil(total / pageSize)); const page = Math.min(requestedPage, totalPages);
     const pagedClients = filtered.slice((page - 1) * pageSize, page * pageSize); const pageIds = pagedClients.map((client: any) => String(client.id));
     const capturedAtByClient = new Map(pageIds.map((clientId) => [clientId, (assignmentByClient.get(clientId) as any)?.captured_at || null]));
-    const [relations, tags, interactions, fidelityByClient] = await Promise.all([
+    const [relations, tags, fidelityByClient] = await Promise.all([
       selectInChunks(admin, "crm_cliente_etiquetas", "cliente_id,etiqueta_id", "cliente_id", pageIds),
       pageIds.length ? admin.from("crm_etiquetas").select("id,nombre,color").then(({ data, error }) => { if (error) throw error; return data || []; }) : Promise.resolve([]),
-      selectInChunks(admin, "crm_interacciones", "cliente_id,created_at,cerrado_at,origen,estado", "cliente_id", pageIds),
       loadClientFidelityBatch(admin, pagedClients, { capturedAtByClient }),
     ]);
 
@@ -139,21 +154,22 @@ export async function GET(req: Request) {
       const clientId = String(relation.cliente_id || ""); const tag: any = tagById.get(String(relation.etiqueta_id || ""));
       if (!clientId || !tag) continue; const current = tagsByClient.get(clientId) || []; if (!current.some((item) => item.id === tag.id)) current.push(tag); tagsByClient.set(clientId, current);
     }
-    const lastInteractionByClient = new Map<string, any>();
-    [...(interactions || [])].sort((a: any, b: any) => new Date(b.created_at || b.cerrado_at || 0).getTime() - new Date(a.created_at || a.cerrado_at || 0).getTime()).forEach((interaction: any) => {
-      const clientId = String(interaction.cliente_id || ""); if (clientId && !lastInteractionByClient.has(clientId)) lastInteractionByClient.set(clientId, interaction);
-    });
-
     const capturedIds = assignments.map((row: any) => String(row.captured_by_worker_id || "")).filter(Boolean);
     const responsibleIds = assignments.map((row: any) => String(row.responsible_worker_id || "")).filter(Boolean);
     const workerRows = await selectInChunks(admin, "workers", "id,display_name", "id", [...identityIds, ...responsibleIds, ...capturedIds]);
     const workerNames = new Map(workerRows.map((row: any) => [String(row.id), String(row.display_name || "").trim()]));
     const enriched = pagedClients.map((client: any) => {
       const assignment: any = assignmentByClient.get(String(client.id));
-      return { ...client, etiquetas: tagsByClient.get(String(client.id)) || [], estado_actual: existingStatus(client), telefonista_responsable: workerNames.get(String(assignment?.responsible_worker_id || "")) || "Responsable", captada_por: workerNames.get(String(assignment?.captured_by_worker_id || "")) || null, capture_status: assignment?.status || "pending", captured_at: assignment?.captured_at || null, assigned_at: assignment?.updated_at || null, ultima_conversacion: lastInteractionByClient.get(String(client.id)) || null, fidelity: fidelityByClient.get(String(client.id)) || null };
+      const captureIndicator = captureStatusByClient.get(String(client.id)) || { stage: "untouched", first_purchase_at: null, last_interaction_at: null, free_minutes_used: 0 };
+      return { ...client, etiquetas: tagsByClient.get(String(client.id)) || [], estado_actual: existingStatus(client), telefonista_responsable: workerNames.get(String(assignment?.responsible_worker_id || "")) || "Responsable", captada_por: workerNames.get(String(assignment?.captured_by_worker_id || "")) || null, capture_status: assignment?.status || "pending", capture_indicator: captureIndicator, captured_at: assignment?.captured_at || null, assigned_at: assignment?.updated_at || null, ultima_conversacion: captureIndicator.last_interaction_at ? { created_at: captureIndicator.last_interaction_at } : null, fidelity: fidelityByClient.get(String(client.id)) || null };
     });
 
-    return NextResponse.json({ ok: true, clientes: enriched, total, page, page_size: pageSize, total_pages: totalPages, negocio: brand, stats: { active: activeIds.size, followup: followupIds.size } });
+    const captureStats = { captured: 0, pending: 0, untouched: 0 };
+    for (const client of portfolio) {
+      const stage = captureStatusByClient.get(String(client.id))?.stage || "untouched";
+      captureStats[stage] += 1;
+    }
+    return NextResponse.json({ ok: true, clientes: enriched, total, page, page_size: pageSize, total_pages: totalPages, negocio: brand, stats: { active: activeIds.size, followup: followupIds.size, capture: captureStats } });
   } catch (error: any) {
     console.error("[central/my-clients] cartera no disponible", { message: error?.message, code: error?.code, details: error?.details });
     return NextResponse.json({ ok: false, error: "No se pudieron cargar tus clientas.", code: "ERR_MY_CLIENTS" }, { status: 500 });

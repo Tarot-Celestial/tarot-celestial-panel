@@ -8,6 +8,13 @@ import type { ClientFidelityResult } from "@/lib/server/client-fidelity";
 import styles from "./MyClientsList.module.css";
 
 type ClientTag = { id: string; nombre: string; color?: string | null };
+type CaptureStage = "captured" | "pending" | "untouched";
+type CaptureIndicator = {
+  stage: CaptureStage;
+  first_purchase_at?: string | null;
+  last_interaction_at?: string | null;
+  free_minutes_used?: number | null;
+};
 type ClientRow = {
   id: string;
   nombre?: string | null;
@@ -21,11 +28,12 @@ type ClientRow = {
   telefonista_responsable?: string | null;
   captada_por?: string | null;
   capture_status?: string | null;
+  capture_indicator?: CaptureIndicator | null;
   ultima_conversacion?: { created_at?: string | null; cerrado_at?: string | null; origen?: string | null } | null;
   fidelity?: ClientFidelityResult | null;
 };
 
-type SortKey = "recent" | "oldest" | "name";
+type SortKey = "recent" | "oldest" | "name" | "capture_priority";
 export type MyClientsView = "all" | "active" | "followup";
 type MyClientsListProps = { onOpenClient: (clientId: string) => void; onNewClient: () => void; view: MyClientsView; onViewChange: (view: MyClientsView) => void; onStats: (stats: {active:number;followup:number}) => void };
 const PAGE_SIZE = 10;
@@ -38,11 +46,23 @@ async function getAccessToken() {
   const { data } = await supabaseBrowser().auth.getSession();
   return data.session?.access_token || null;
 }
-function formatLastConversation(value?: string | null) {
-  if (!value) return "Sin datos";
+function formatShortDate(value?: string | null) {
+  if (!value) return null;
   const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "Sin datos";
-  return new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(date);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat("es-ES", { dateStyle: "short" }).format(date);
+}
+function capturePresentation(indicator?: CaptureIndicator | null) {
+  if (indicator?.stage === "captured") {
+    const date = formatShortDate(indicator.first_purchase_at);
+    return { label: "Captada", detail: date ? `Primera compra: ${date}` : "Compra válida registrada", tooltip: "Esta clienta ya realizó al menos una compra válida." };
+  }
+  if (indicator?.stage === "pending") {
+    const free = Number(indicator.free_minutes_used || 0);
+    const date = formatShortDate(indicator.last_interaction_at);
+    return { label: "Pendiente de captación", detail: free > 0 ? `${free.toLocaleString("es-ES")} min FREE utilizados` : date ? `Interacción: ${date}` : "Interacción registrada", tooltip: "Ya tuvo una interacción, pero aún no ha comprado." };
+  }
+  return { label: "Sin interacción", detail: "Sin actividad registrada", tooltip: "Todavía no hay actividad registrada con esta clienta." };
 }
 
 export default function MyClientsList({ onOpenClient, onNewClient, view, onViewChange, onStats }: MyClientsListProps) {
@@ -50,6 +70,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("recent");
   const [status, setStatus] = useState("all");
+  const [captureStage, setCaptureStage] = useState<CaptureStage | "all">("all");
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<ClientRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -57,6 +78,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [captureStats, setCaptureStats] = useState({ captured: 0, pending: 0, untouched: 0 });
 
   useEffect(() => {
     setBrand(getActiveBrand());
@@ -110,6 +132,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
         const params = new URLSearchParams({ marca: brand, page: String(page), page_size: String(PAGE_SIZE), sort });
         params.set("view", view);
         if (status !== "all") params.set("status", status);
+        if (captureStage !== "all") params.set("capture_stage", captureStage);
         if (debouncedQuery) params.set("q", debouncedQuery);
         const response = await fetch(`/api/central/my-clients?${params.toString()}`, {
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
@@ -119,14 +142,14 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
           console.error("[Mis clientas] Error de cartera", { status: response.status, code: payload?.code, detail: payload?.error });
           throw new Error("No se pudieron cargar tus clientas.");
         }
-        if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); onStats({active:Number(payload.stats?.active||0),followup:Number(payload.stats?.followup||0)}); }
+        if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); setCaptureStats({ captured: Number(payload.stats?.capture?.captured || 0), pending: Number(payload.stats?.capture?.pending || 0), untouched: Number(payload.stats?.capture?.untouched || 0) }); onStats({active:Number(payload.stats?.active||0),followup:Number(payload.stats?.followup||0)}); }
       } catch (loadError: any) {
         if (!cancelled) { setRows([]); setTotal(0); setError("No se pudieron cargar tus clientas."); }
       } finally { if (!cancelled) setLoading(false); }
     }
     void loadClients();
     return () => { cancelled = true; };
-  }, [brand, debouncedQuery, page, sort, status, refreshKey, view, onStats]);
+  }, [brand, captureStage, debouncedQuery, page, sort, status, refreshKey, view, onStats]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
@@ -138,26 +161,35 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
     <section className={styles.panel} aria-labelledby="my-clients-list-title">
       <div className={styles.headingRow}><div><div className={styles.kicker}>CARTERA {brand.toUpperCase()}</div><h2 id="my-clients-list-title" className={styles.title}>Mis clientas</h2></div><button type="button" className={styles.newButton} onClick={onNewClient}><UserPlus size={18} aria-hidden="true" />Nueva clienta</button></div>
       <div className={styles.viewTabs} aria-label="Vista de clientas"><button className={view==="all"?styles.viewActive:""} onClick={()=>{onViewChange("all");setPage(1)}}>Todas</button><button className={view==="active"?styles.viewActive:""} onClick={()=>{onViewChange("active");setPage(1)}}>Activas</button><button className={view==="followup"?styles.viewActive:""} onClick={()=>{onViewChange("followup");setPage(1)}}>Sin seguimiento</button></div>
+      <div className={styles.captureCounters} aria-label="Resumen por estado de captación">
+        <button type="button" data-stage="captured" aria-pressed={captureStage === "captured"} onClick={() => { setCaptureStage(captureStage === "captured" ? "all" : "captured"); setPage(1); }}><span>Captadas</span><strong>{captureStats.captured}</strong></button>
+        <button type="button" data-stage="pending" aria-pressed={captureStage === "pending"} onClick={() => { setCaptureStage(captureStage === "pending" ? "all" : "pending"); setPage(1); }}><span>Pendientes</span><strong>{captureStats.pending}</strong></button>
+        <button type="button" data-stage="untouched" aria-pressed={captureStage === "untouched"} onClick={() => { setCaptureStage(captureStage === "untouched" ? "all" : "untouched"); setPage(1); }}><span>Sin interacción</span><strong>{captureStats.untouched}</strong></button>
+      </div>
       <div className={styles.controls}>
         <label className={styles.searchBox}><Search size={18} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por nombre o teléfono" aria-label="Buscar clientas" /></label>
-        <label className={styles.selectWrap}><SlidersHorizontal size={17} aria-hidden="true" /><select aria-label="Filtrar por estado" value={status} onChange={event=>{setStatus(event.target.value);setPage(1)}}><option value="all">Todos los estados</option>{knownStatuses.map((item) => <option key={item} value={item}>{item}</option>)}<option value="unclassified">Sin clasificar</option></select></label>
-        <label className={styles.selectWrap}><select value={sort} onChange={(event) => { setSort(event.target.value as SortKey); setPage(1); }} aria-label="Ordenar clientas"><option value="recent">Más recientes</option><option value="oldest">Más antiguas</option><option value="name">Nombre</option></select></label>
+        <label className={styles.selectWrap}><SlidersHorizontal size={17} aria-hidden="true" /><select aria-label="Filtrar por estado de captación" value={captureStage} onChange={event=>{setCaptureStage(event.target.value as CaptureStage | "all");setPage(1)}}><option value="all">Toda captación</option><option value="captured">Captadas</option><option value="pending">Pendientes de captación</option><option value="untouched">Sin interacción</option></select></label>
+        <label className={styles.selectWrap}><select aria-label="Filtrar por estado CRM" value={status} onChange={event=>{setStatus(event.target.value);setPage(1)}}><option value="all">Todos los estados CRM</option>{knownStatuses.map((item) => <option key={item} value={item}>{item}</option>)}<option value="unclassified">Sin clasificar</option></select></label>
+        <label className={styles.selectWrap}><select value={sort} onChange={(event) => { setSort(event.target.value as SortKey); setPage(1); }} aria-label="Ordenar clientas"><option value="recent">Más recientes</option><option value="capture_priority">Oportunidades primero</option><option value="oldest">Más antiguas</option><option value="name">Nombre</option></select></label>
       </div>
       <div className={styles.tableWrap}>
-        <div className={styles.tableHeader} role="row"><span>CLIENTA</span><span>TELEFONISTA RESPONSABLE</span><span>ÚLTIMA CONVERSACIÓN</span><span>ESTADO</span><span aria-hidden="true" /></div>
+        <div className={styles.tableHeader} role="row"><span>CLIENTA</span><span>TELEFONISTA RESPONSABLE</span><span>ESTADO DE CAPTACIÓN</span><span>ESTADO CRM</span><span aria-hidden="true" /></div>
         <div className={styles.tableBody}>
           {loading && <div className={styles.emptyState}>Cargando clientas…</div>}
           {!loading && error && <div className={styles.errorState}><strong>{error}</strong><button type="button" className={styles.retryButton} onClick={requestRefresh}><RotateCw size={16} />Reintentar</button></div>}
           {!loading && !error && rows.length === 0 && <div className={styles.emptyState}><UsersRound size={28} aria-hidden="true" />{debouncedQuery ? "No se encontraron clientas para esta búsqueda." : "Todavía no tienes clientas asignadas."}</div>}
-          {!loading && !error && rows.map((client) => (
+          {!loading && !error && rows.map((client) => {
+            const capture = capturePresentation(client.capture_indicator);
+            const stage = client.capture_indicator?.stage || "untouched";
+            return (
             <button type="button" className={styles.clientRow} key={client.id} onClick={() => onOpenClient(client.id)} aria-label={`Abrir ficha de ${fullName(client)}`}>
               <span className={styles.clientCell}><span className={styles.avatar} aria-hidden="true">{initialFor(client)}</span><span className={styles.clientCopy}><strong>{fullName(client)}</strong><small>{client.telefono || "Sin teléfono"}</small><span className={styles.captureOwner}>{client.captada_por ? (client.captada_por === client.telefonista_responsable ? `Captada y gestionada por: ${client.captada_por}` : `Captada por: ${client.captada_por} · Responsable: ${client.telefonista_responsable || "Pendiente"}`) : `Captación pendiente · Responsable: ${client.telefonista_responsable || "Pendiente"}`}</span>{client.fidelity && <span className={`${styles.fidelityBadge} ${styles[`fidelity_${client.fidelity.level}`]}`} title={client.fidelity.description}>{client.fidelity.maturity === "insufficient" ? "Datos insuficientes" : `${client.fidelity.score}% · ${client.fidelity.label}`}{client.fidelity.needsAttention ? " · Necesita atención" : ""}</span>}{Boolean(client.etiquetas?.length) && <span className={styles.tags}>{client.etiquetas!.slice(0, 3).map((tag) => <span key={tag.id} className={styles.tag}>{tag.nombre}</span>)}{client.etiquetas!.length > 3 && <span className={styles.tag}>+{client.etiquetas!.length - 3}</span>}</span>}</span></span>
               <span className={styles.ownerBadge}>{client.telefonista_responsable || "Celestial"}</span>
-              <span className={styles.neutralText}>{formatLastConversation(client.ultima_conversacion?.created_at || client.ultima_conversacion?.cerrado_at)}</span>
+              <span className={`${styles.captureState} ${styles[`capture_${stage}`]}`} title={capture.tooltip}><strong><span aria-hidden="true" />{capture.label}</strong><small>{capture.detail}</small></span>
               <span className={styles.statusBadge}>{client.estado_actual || "Sin clasificar"}</span>
               <span className={styles.openIcon}><ChevronRight size={20} aria-hidden="true" /></span>
             </button>
-          ))}
+          )})}
         </div>
       </div>
       <div className={styles.pagination}><span>Mostrando {rangeStart}-{rangeEnd} de {total} clientas</span><div className={styles.pageControls}><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page <= 1} aria-label="Página anterior"><ChevronLeft size={18} aria-hidden="true" /></button><span>Página {page} de {totalPages}</span><button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages} aria-label="Página siguiente"><ChevronRight size={18} aria-hidden="true" /></button></div></div>
