@@ -4,8 +4,7 @@ import Stripe from "stripe";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { redsysCurrency } from "@/lib/server/redsys";
-import { CLIENT_MINUTE_PURCHASE_MAINTENANCE, CLIENT_PURCHASE_MAINTENANCE_MESSAGE, CLIENT_PURCHASE_CALL_OPTIONS } from "@/lib/client-purchase-maintenance";
+import { makeRedsysOrder, redsysCurrency } from "@/lib/server/redsys";
 
 export const runtime = "nodejs";
 
@@ -22,21 +21,7 @@ function baseUrl(req: Request) {
   return `${url.protocol}//${url.host}`;
 }
 
-function makeRedsysOrder() {
-  // Redsys: 4-12 posiciones; las cuatro primeras deben ser numéricas.
-  const time = String(Date.now()).slice(-10);
-  const random = String(Math.floor(Math.random() * 100)).padStart(2, "0");
-  return `${time}${random}`;
-}
-
 export async function POST(req: Request) {
-  // Stop before auth/database/gateway work, including requests from older tabs.
-  if (CLIENT_MINUTE_PURCHASE_MAINTENANCE) {
-    return NextResponse.json(
-      { ok: false, error: "CHECKOUT_TEMPORALMENTE_DESACTIVADO", message: CLIENT_PURCHASE_MAINTENANCE_MESSAGE, contacts: CLIENT_PURCHASE_CALL_OPTIONS },
-      { status: 503, headers: { "Cache-Control": "no-store" } }
-    );
-  }
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) {
