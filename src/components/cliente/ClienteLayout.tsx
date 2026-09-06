@@ -3,9 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronRight, Gift, Home, LogOut, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
+import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useEffect, useRef } from "react";
 import styles from "./ClientePremium.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -26,9 +26,38 @@ type Props = {
   children: ReactNode;
 };
 
+type HologramIconProps = {
+  children: ReactNode;
+  tone?: SummaryItem["tone"] | "gold" | "cyan" | "rose";
+  compact?: boolean;
+};
+
+function HologramIcon({ children, tone = "gold", compact = false }: HologramIconProps) {
+  return (
+    <span className={`${styles.particleIcon} ${compact ? styles.particleIconCompact : ""}`} data-tone={tone} aria-hidden="true">
+      <i />
+      <i />
+      <i />
+      <span className={styles.particleIconCore}>{children}</span>
+    </span>
+  );
+}
+
+function SummaryIcon({ label, tone }: { label: string; tone: NonNullable<SummaryItem["tone"]> }) {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("rango")) return <HologramIcon tone="rank"><Medal size={25} /></HologramIcon>;
+  if (normalized.includes("coins") || normalized.includes("puntos")) return <HologramIcon tone="points"><Coins size={26} /></HologramIcon>;
+  if (normalized.includes("minutos")) return <HologramIcon tone="minutes"><Clock3 size={25} /></HologramIcon>;
+  if (normalized.includes("notificaciones")) return <HologramIcon tone="alerts"><BellRing size={25} /></HologramIcon>;
+  if (normalized.includes("tiradas")) return <HologramIcon tone="gold"><WandSparkles size={25} /></HologramIcon>;
+  return <HologramIcon tone={tone}><Sparkles size={25} /></HologramIcon>;
+}
+
 export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const pointerFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     let timer: any = null;
@@ -68,8 +97,42 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
     router.replace("/cliente/login");
   }
 
+  function updateDepth(clientX: number, clientY: number) {
+    if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
+    pointerFrameRef.current = window.requestAnimationFrame(() => {
+      const root = shellRef.current;
+      if (!root) return;
+      const x = (clientX / Math.max(window.innerWidth, 1) - 0.5) * 2;
+      const y = (clientY / Math.max(window.innerHeight, 1) - 0.5) * 2;
+      root.style.setProperty("--tc-shift-x", `${(x * 12).toFixed(1)}px`);
+      root.style.setProperty("--tc-shift-y", `${(y * 12).toFixed(1)}px`);
+      root.style.setProperty("--tc-shift-x-near", `${(x * 24).toFixed(1)}px`);
+      root.style.setProperty("--tc-shift-y-near", `${(y * 24).toFixed(1)}px`);
+      root.style.setProperty("--tc-shift-x-far", `${(x * -8).toFixed(1)}px`);
+      root.style.setProperty("--tc-shift-y-far", `${(y * -8).toFixed(1)}px`);
+      root.style.setProperty("--tc-tilt-x", `${(y * -7).toFixed(2)}deg`);
+      root.style.setProperty("--tc-tilt-y", `${(x * 8).toFixed(2)}deg`);
+      pointerFrameRef.current = null;
+    });
+  }
+
+  useEffect(() => () => {
+    if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
+  }, []);
+
   return (
-    <div className={`tc-wrap ${styles.premiumShell}`}>
+    <div
+      ref={shellRef}
+      className={`tc-wrap ${styles.premiumShell}`}
+      onPointerMove={(event) => updateDepth(event.clientX, event.clientY)}
+      onPointerLeave={() => updateDepth(window.innerWidth / 2, window.innerHeight / 2)}
+    >
+      <div className={styles.spaceField} aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
       <div className="tc-container tc-client-shell">
         <section className="tc-client-hero">
           <div className="tc-hero-top">
@@ -92,42 +155,42 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
 
             <div className="tc-nav">
               <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
-                <Home size={16} /> Inicio
+                <HologramIcon compact><Home size={15} /></HologramIcon> Inicio
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/precios-ofertas" ? "tc-nav-link-active" : ""}`} href="/cliente/precios-ofertas">
-                <Tags size={16} /> Precios y ofertas
+                <HologramIcon compact><Tags size={15} /></HologramIcon> Precios y ofertas
               </Link>
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <WandSparkles size={16} /> Oráculo <span className="tc-nav-new-badge">NUEVO</span>
+                  <HologramIcon compact tone="gold"><WandSparkles size={15} /></HologramIcon> Oráculo <span className="tc-nav-new-badge">NUEVO</span>
                 </span>
               </Link>
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/ruleta" ? "tc-nav-link-active" : ""}`} href="/cliente/ruleta">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <Sparkles size={16} /> Ruleta <span className="tc-nav-new-badge">NUEVO</span>
+                  <HologramIcon compact tone="oracle"><Sparkles size={15} /></HologramIcon> Ruleta <span className="tc-nav-new-badge">NUEVO</span>
                 </span>
               </Link>
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/sorteo" ? "tc-nav-link-active" : ""}`} href="/cliente/sorteo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <Gift size={16} /> Sorteo <span className="tc-nav-new-badge">NUEVO</span>
+                  <HologramIcon compact tone="gold"><Gift size={15} /></HologramIcon> Sorteo <span className="tc-nav-new-badge">NUEVO</span>
                 </span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/tarotistas" ? "tc-nav-link-active" : ""}`} href="/cliente/tarotistas">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <MoonStar size={16} /> Tarotistas
+                  <HologramIcon compact tone="cyan"><MoonStar size={15} /></HologramIcon> Tarotistas
                 </span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/resenas" ? "tc-nav-link-active" : ""}`} href="/cliente/resenas">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Star size={16} /> Reseñas</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact><Star size={15} /></HologramIcon> Reseñas</span>
               </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/perfil" ? "tc-nav-link-active" : ""}`} href="/cliente/perfil">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <UserCircle2 size={16} /> Perfil
+                  <HologramIcon compact tone="cyan"><UserCircle2 size={15} /></HologramIcon> Perfil
                 </span>
               </Link>
-              <button className="tc-nav-link" onClick={logout}>
+              <button type="button" className="tc-nav-link" onClick={logout}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <LogOut size={16} /> Salir
+                  <HologramIcon compact tone="rose"><LogOut size={15} /></HologramIcon> Salir
                 </span>
               </button>
             </div>
@@ -149,11 +212,14 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
                   ? "oracle"
                   : "default");
                 const hasAlert = tone === "alerts" && Number(item.value || 0) > 0;
-                const content = <>
-                  <div className="tc-kpi-label">{item.label}</div>
-                  <div className="tc-kpi-value">{item.value}</div>
-                  {item.meta ? <div className="tc-kpi-meta">{item.meta}</div> : null}
-                </>;
+                const content = <div className={styles.summaryContent}>
+                  <div className={styles.summaryCopy}>
+                    <div className="tc-kpi-label">{item.label}</div>
+                    <div className="tc-kpi-value">{item.value}</div>
+                    {item.meta ? <div className="tc-kpi-meta">{item.meta}</div> : null}
+                  </div>
+                  <SummaryIcon label={item.label} tone={tone} />
+                </div>;
                 return item.href ? (
                   <Link key={item.label} href={item.href} className="tc-kpi tc-kpi-link" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>{content}</Link>
                 ) : (
