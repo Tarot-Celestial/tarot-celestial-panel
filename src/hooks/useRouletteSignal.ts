@@ -27,7 +27,7 @@ export function useRouletteSignal(sb: SupabaseClient, clienteId: string | null |
       if (disposed || document.hidden || channel) return;
       channel = sb.channel("ruleta-signal-" + clienteId + "-" + Math.random().toString(36).slice(2))
         .on("postgres_changes", { event: "*", schema: "public", table: "cliente_ruleta_signal", filter: "cliente_id=eq." + clienteId }, schedule)
-        .subscribe((status) => { if (status === "SUBSCRIBED") schedule(); });
+        .subscribe();
     };
     const visibility = () => {
       if (document.hidden) { if (channel) void sb.removeChannel(channel); channel = null; }

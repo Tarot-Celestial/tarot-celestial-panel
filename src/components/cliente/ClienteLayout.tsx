@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, useEffect } from "react";
 import styles from "./ClientePremium.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -35,9 +35,6 @@ type HologramIconProps = {
 function HologramIcon({ children, tone = "gold", compact = false }: HologramIconProps) {
   return (
     <span className={`${styles.particleIcon} ${compact ? styles.particleIconCompact : ""}`} data-tone={tone} aria-hidden="true">
-      <i />
-      <i />
-      <i />
       <span className={styles.particleIconCore}>{children}</span>
     </span>
   );
@@ -56,8 +53,6 @@ function SummaryIcon({ label, tone }: { label: string; tone: NonNullable<Summary
 export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
-  const shellRef = useRef<HTMLDivElement | null>(null);
-  const pointerFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     let timer: any = null;
@@ -97,40 +92,9 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
     router.replace("/cliente/login");
   }
 
-  function updateDepth(clientX: number, clientY: number) {
-    if (typeof window === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
-    pointerFrameRef.current = window.requestAnimationFrame(() => {
-      const root = shellRef.current;
-      if (!root) return;
-      const x = (clientX / Math.max(window.innerWidth, 1) - 0.5) * 2;
-      const y = (clientY / Math.max(window.innerHeight, 1) - 0.5) * 2;
-      root.style.setProperty("--tc-shift-x", `${(x * 12).toFixed(1)}px`);
-      root.style.setProperty("--tc-shift-y", `${(y * 12).toFixed(1)}px`);
-      root.style.setProperty("--tc-shift-x-near", `${(x * 24).toFixed(1)}px`);
-      root.style.setProperty("--tc-shift-y-near", `${(y * 24).toFixed(1)}px`);
-      root.style.setProperty("--tc-shift-x-far", `${(x * -8).toFixed(1)}px`);
-      root.style.setProperty("--tc-shift-y-far", `${(y * -8).toFixed(1)}px`);
-      root.style.setProperty("--tc-tilt-x", `${(y * -7).toFixed(2)}deg`);
-      root.style.setProperty("--tc-tilt-y", `${(x * 8).toFixed(2)}deg`);
-      pointerFrameRef.current = null;
-    });
-  }
-
-  useEffect(() => () => {
-    if (pointerFrameRef.current !== null) window.cancelAnimationFrame(pointerFrameRef.current);
-  }, []);
-
   return (
-    <div
-      ref={shellRef}
-      className={`tc-wrap ${styles.premiumShell}`}
-      onPointerMove={(event) => updateDepth(event.clientX, event.clientY)}
-      onPointerLeave={() => updateDepth(window.innerWidth / 2, window.innerHeight / 2)}
-    >
+    <div className={`tc-wrap ${styles.premiumShell}`}>
       <div className={styles.spaceField} aria-hidden="true">
-        <span />
-        <span />
         <span />
       </div>
       <div className="tc-container tc-client-shell">

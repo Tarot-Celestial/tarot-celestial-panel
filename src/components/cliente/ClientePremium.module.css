@@ -1227,3 +1227,84 @@
 @media (max-width: 800px) {
   .premiumShell :global(.tc-kpi) { min-height: 112px; }
 }
+
+/* Rendimiento: misma estética, con composición GPU y sin repintados continuos. */
+.premiumShell {
+  background:
+    radial-gradient(circle at 50% 4%, rgba(215,181,109,.08), transparent 30%),
+    radial-gradient(circle at 86% 32%, rgba(108,92,246,.065), transparent 26%),
+    linear-gradient(145deg, #171820 0%, #101117 45%, #18171c 100%);
+  perspective: none;
+}
+
+.spaceField span:nth-child(1) {
+  animation: clientStarDriftGpu 38s ease-in-out infinite alternate;
+}
+
+.spaceField span:nth-child(n+2) { display: none; }
+
+.premiumShell :global(.tc-client-hero)::after {
+  right: -12%;
+  bottom: -46%;
+}
+
+.premiumShell :global(.tc-client-hero),
+.premiumShell :global(.tc-card),
+.premiumShell :global(.tc-kpi),
+.premiumShell :global(.tc-mini-stat),
+.premiumShell :global(.tc-pack-card),
+.premiumShell :global(.tc-list-item),
+.premiumShell :global(.tc-notif-card),
+.premiumShell :global(.tc-callout-box) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.particleIcon,
+.particleIcon::before,
+.particleIcon::after {
+  animation: none;
+}
+
+.particleIcon {
+  filter: none;
+  transform: none;
+  transition: transform .18s ease-out;
+}
+
+.particleIconCompact,
+.particleIconCore :global(svg),
+.premiumShell :global(.tc-card svg),
+.premiumShell :global(.tc-mini-stat svg),
+.premiumShell :global(.tc-list-item svg),
+.premiumShell :global(.tc-callout-box svg) {
+  filter: none;
+}
+
+.premiumShell :global(.tc-kpi:hover) .particleIcon:not(.particleIconCompact),
+.premiumShell :global(.tc-nav-link:hover) .particleIconCompact {
+  transform: translate3d(0, -2px, 0) scale(1.035);
+}
+
+.premiumShell :global(.tc-container > section:not(:first-child)) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 620px;
+}
+
+.premiumShell :global(.tc-card),
+.premiumShell :global(.tc-kpi),
+.premiumShell :global(.tc-pack-card) {
+  contain: layout paint style;
+}
+
+@keyframes clientStarDriftGpu {
+  from { transform: translate3d(-12px, -8px, 0) scale(1.01); }
+  to { transform: translate3d(18px, 13px, 0) scale(1.015); }
+}
+
+@media (hover: none), (pointer: coarse), (max-width: 800px) {
+  .spaceField span:nth-child(1) { animation: none; }
+  .premiumShell :global(.tc-container > section:not(:first-child)) {
+    contain-intrinsic-size: auto 480px;
+  }
+}
