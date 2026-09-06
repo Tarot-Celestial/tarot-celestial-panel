@@ -803,7 +803,7 @@ export default function ClienteDashboardPage() {
                       </div>
                       {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
                     </div>
-                    <div className="tc-pack-price">{`${pack.priceUsd.toFixed(2).replace(".", ",")} €`}</div>
+                    <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
                     <RouletteBenefit amount={pack.priceUsd} summary={rouletteSummary}/>
                     <ManualPurchaseButton className="tc-btn tc-btn-gold">Comprar ahora</ManualPurchaseButton>
@@ -833,7 +833,7 @@ export default function ClienteDashboardPage() {
                       </div>
                       <div className="tc-chip">{pack.credits} tiradas</div>
                     </div>
-                    <div className="tc-pack-price">{pack.priceEur.toFixed(2).replace(".", ",")} €</div>
+                    <div className="tc-pack-price">${pack.priceEur.toFixed(2).replace(".", ",")}</div>
                     <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
                     <button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
                       {buyingOraclePackId === pack.id ? "Conectando con Stripe..." : "COMPRAR"}

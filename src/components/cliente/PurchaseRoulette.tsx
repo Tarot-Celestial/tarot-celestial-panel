@@ -140,7 +140,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         {([1, 2] as const).map(n => <button type="button" key={n} aria-pressed={level === n} disabled={busy || !!pending} onClick={() => { setLevel(n); setRotation(0); setResult(null); setCountdown(null); }} className={styles.level} data-selected={level === n}>
           <span className={styles.eyebrow}>{n === 1 ? "DESTELLO CELESTIAL" : "CONSTELACIÓN DORADA"}</span>
           <div><strong>Nivel {n}</strong><b>{summary ? (n === 1 ? summary.level_1_spins : summary.level_2_spins) : "—"} <small>giros</small></b></div>
-          <span>{n === 1 ? "Compras inferiores a " : "Compras desde "}{summary?.level_2_from ?? "…"} € · importe de tu compra</span>
+          <span>{n === 1 ? "Compras inferiores a $" : "Compras desde $"}{summary?.level_2_from ?? "…"} · importe de tu compra</span>
           <small>{n === 1 ? "Hasta 60 min · 400 Coins" : "Hasta 80 min · 1000 Coins"}</small>
         </button>)}
       </div>

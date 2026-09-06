@@ -126,7 +126,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.levelIdentity}>
                   <span>PRIMER UMBRAL</span>
                   <h3 id="level-one-title">Nivel 1</h3>
-                  <p>Consultas rápidas + giro con premio. Compras de hasta 26 €.</p>
+                  <p>Consultas rápidas + giro con premio. Compras de hasta $26.</p>
                 </div>
                 <div className={styles.levelBenefits}>
                   <strong>Tu compra incluye</strong>
@@ -144,7 +144,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.levelIdentity}>
                   <span>EXPERIENCIA SUPERIOR</span>
                   <h3 id="level-two-title">Nivel 2</h3>
-                  <p>Más consulta. Premios superiores. Compras desde 27 €.</p>
+                  <p>Más consulta. Premios superiores. Compras desde $27.</p>
                 </div>
                 <div className={styles.levelBenefits}>
                   <strong>Tu compra incluye</strong>
@@ -173,7 +173,7 @@ export default function PreciosOfertasPage() {
               <article key={pack.id} className={`${styles.card} ${index === 1 ? styles.featured : ""}`}>
                 <div className={styles.serviceTop}><div className={styles.icon}>{index === 0 ? "🔮" : "✨"}</div><span className={styles.badge}>{pack.credits} TIRADAS</span></div>
                 <h3>{pack.nombre}</h3><p>{pack.descripcion}</p>
-                <strong className={styles.price}>{pack.priceEur.toFixed(2).replace(".", ",")} €</strong>
+                <strong className={styles.price}>${pack.priceEur.toFixed(2).replace(".", ",")}</strong>
                 <button className={styles.buyButton} disabled={busy === pack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button>
               </article>
             ))}
@@ -181,7 +181,7 @@ export default function PreciosOfertasPage() {
               <article className={`${styles.card} ${styles.featured}`}>
                 <div className={styles.serviceTop}><div className={styles.icon}>💬</div><span className={styles.badge}>{questionPack.questions} PREGUNTAS</span></div>
                 <h3>{questionPack.nombre}</h3><p>{questionPack.descripcion}</p>
-                <strong className={styles.price}>{questionPack.priceEur.toFixed(2).replace(".", ",")} €</strong>
+                <strong className={styles.price}>${questionPack.priceEur.toFixed(2).replace(".", ",")}</strong>
                 <button className={styles.buyButton} disabled={busy === questionPack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button>
               </article>
             ) : null}
@@ -206,7 +206,7 @@ function MinuteCard({ pack, summary, level }: { pack: MinutePack; summary: Roule
       </div>
       <div className={styles.productCopy}><h3>{pack.nombre}</h3><p>{pack.descripcion}</p></div>
       <div className={styles.priceRow}>
-        <strong className={styles.price}>{pack.priceUsd.toFixed(2).replace(".", ",")} €</strong>
+        <strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong>
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
       <RouletteBenefit amount={pack.priceUsd} summary={summary} />
