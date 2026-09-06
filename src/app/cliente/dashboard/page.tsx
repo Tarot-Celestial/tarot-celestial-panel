@@ -22,7 +22,6 @@ import {
   Clock3,
 } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import ManualPurchaseButton from "@/components/cliente/ManualPurchaseButton";
 import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
@@ -175,6 +174,7 @@ export default function ClienteDashboardPage() {
   const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
   const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
+  const [buyingMinutePackId, setBuyingMinutePackId] = useState("");
   const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
@@ -617,6 +617,28 @@ export default function ClienteDashboardPage() {
     }
   }
 
+  async function buyMinutePack(packId: string) {
+    try {
+      setBuyingMinutePackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/pagos/checkout-v2", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingMinutePackId("");
+    }
+  }
+
   async function trackCallAndOpen() {
     if (!callTarget) return;
     try {
@@ -787,7 +809,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">Compra web temporalmente en mantenimiento. Pulsa Comprar e indica «Cliente web» al llamar para conservar estos precios. Cobro manual por teléfono.</div>
+                  <div className="tc-panel-sub">Pago seguro mediante Redsys / CaixaBank. Tus minutos se acreditan solo después de la confirmación bancaria.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <ShoppingBag size={14} /> Precio app
@@ -806,7 +828,9 @@ export default function ClienteDashboardPage() {
                     <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
                     <RouletteBenefit amount={pack.priceUsd} summary={rouletteSummary}/>
-                    <ManualPurchaseButton className="tc-btn tc-btn-gold">Comprar ahora</ManualPurchaseButton>
+                    <button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
+                      {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -817,7 +841,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar tiradas de cartas</div>
-                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. El saldo se añade únicamente cuando Stripe confirma el pago.</div>
+                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. El saldo se añade únicamente cuando {paymentProvider === "redsys" ? "Redsys" : "Stripe"} confirma el pago.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <WandSparkles size={14} /> Tiradas disponibles: {oracleCredits}
@@ -836,7 +860,7 @@ export default function ClienteDashboardPage() {
                     <div className="tc-pack-price">${pack.priceEur.toFixed(2).replace(".", ",")}</div>
                     <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
                     <button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
-                      {buyingOraclePackId === pack.id ? "Conectando con Stripe..." : "COMPRAR"}
+                      {buyingOraclePackId === pack.id ? `Conectando con ${paymentProvider === "redsys" ? "Redsys" : "Stripe"}...` : "COMPRAR"}
                     </button>
                   </div>
                 ))}
