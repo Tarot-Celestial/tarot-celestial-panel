@@ -1,4 +1,6 @@
 import { adminClient } from "@/lib/server/auth-cliente";
+import { getOraclePack } from "@/lib/server/oracle-premium";
+import { getOracleQuestionPack } from "@/lib/server/oracle-questions";
 import {
   createRedsysSignature,
   encodeMerchantParameters,
@@ -45,6 +47,18 @@ export async function GET(req: Request) {
     }
 
     const appUrl = baseUrl(req);
+    const isOracleQuestions = Boolean(getOracleQuestionPack(attempt.pack_id));
+    const isOracle = Boolean(getOraclePack(attempt.pack_id));
+    const successUrl = isOracleQuestions
+      ? `${appUrl}/cliente/oraculo?questions_checkout=ok`
+      : isOracle
+        ? `${appUrl}/cliente/dashboard?oracle_checkout=ok#comprar-tiradas`
+        : `${appUrl}/cliente/dashboard?checkout=ok`;
+    const cancelUrl = isOracleQuestions
+      ? `${appUrl}/cliente/oraculo?questions_checkout=cancelled`
+      : isOracle
+        ? `${appUrl}/cliente/dashboard?oracle_checkout=cancelled#comprar-tiradas`
+        : `${appUrl}/cliente/dashboard?checkout=cancelled`;
     const amountCents = String(Math.round(Number(attempt.amount || 0) * 100));
     const parameters = encodeMerchantParameters({
       DS_MERCHANT_AMOUNT: amountCents,
@@ -54,8 +68,8 @@ export async function GET(req: Request) {
       DS_MERCHANT_TRANSACTIONTYPE: "0",
       DS_MERCHANT_TERMINAL: redsysTerminal(),
       DS_MERCHANT_MERCHANTURL: `${appUrl}/api/webhooks/redsys`,
-      DS_MERCHANT_URLOK: `${appUrl}/cliente/dashboard?checkout=ok`,
-      DS_MERCHANT_URLKO: `${appUrl}/cliente/dashboard?checkout=cancelled`,
+      DS_MERCHANT_URLOK: successUrl,
+      DS_MERCHANT_URLKO: cancelUrl,
     });
     const signature = createRedsysSignature(parameters, String(attempt.order_id));
 
