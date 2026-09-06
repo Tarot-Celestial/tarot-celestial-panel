@@ -1,6 +1,8 @@
 import { adminClient } from "@/lib/server/auth-cliente";
 import { applyConfiguredMinutePurchase } from "@/lib/server/client-minute-purchase";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
+import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
+import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 import {
   decodeMerchantParameters,
   REDSYS_SIGNATURE_VERSION,
@@ -97,21 +99,45 @@ export async function POST(req: Request) {
     if (lockError) throw lockError;
     if (!locked) return okResponse();
 
-    const pack = getConfiguredMinutePack(locked.pack_id);
+    const minutePack = getConfiguredMinutePack(locked.pack_id);
+    const oraclePack = getOraclePack(locked.pack_id);
+    const questionPack = getOracleQuestionPack(locked.pack_id);
+    const pack = minutePack || oraclePack || questionPack;
     if (!pack) throw new Error("PACK_REDSYS_NO_ENCONTRADO");
 
-    const purchase = await applyConfiguredMinutePurchase(admin, {
-      clienteId: locked.cliente_id,
-      packId: pack.id,
-      paymentRef: `redsys:${orderId}`,
-      paymentIntent:
-        readParam(params, "Ds_AuthorisationCode", "DS_AUTHORISATIONCODE") || null,
-      stripeSessionId: null,
-      amount: responseAmount / 100,
-      currency: String(locked.currency || "EUR").toUpperCase() === "USD" ? "USD" : "EUR",
-      metodo: "redsys_checkout",
-      notas: `Redsys completado · ${pack.nombre}`,
-    });
+    let duplicated = false;
+    if (questionPack) {
+      await grantOracleQuestions(admin, {
+        clienteId: locked.cliente_id,
+        questions: questionPack.questions,
+        reference: `redsys:${orderId}`,
+        notes: `Redsys completado · ${questionPack.nombre}`,
+        meta: { order_id: orderId, amount_eur: responseAmount / 100 },
+      });
+    } else if (oraclePack) {
+      await grantOracleCredits(admin, {
+        clienteId: locked.cliente_id,
+        credits: oraclePack.credits,
+        reference: `redsys:${orderId}`,
+        packId: oraclePack.id,
+        notes: `Redsys completado · ${oraclePack.nombre}`,
+        meta: { order_id: orderId, amount_eur: responseAmount / 100 },
+      });
+    } else {
+      const purchase = await applyConfiguredMinutePurchase(admin, {
+        clienteId: locked.cliente_id,
+        packId: minutePack!.id,
+        paymentRef: `redsys:${orderId}`,
+        paymentIntent:
+          readParam(params, "Ds_AuthorisationCode", "DS_AUTHORISATIONCODE") || null,
+        stripeSessionId: null,
+        amount: responseAmount / 100,
+        currency: String(locked.currency || "EUR").toUpperCase() === "USD" ? "USD" : "EUR",
+        metodo: "redsys_checkout",
+        notas: `Redsys completado · ${minutePack!.nombre}`,
+      });
+      duplicated = purchase.duplicated;
+    }
 
     await Promise.allSettled([
       admin
@@ -123,10 +149,10 @@ export async function POST(req: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", locked.id),
-      purchase.duplicated ? Promise.resolve() : admin.from("crm_client_notes").insert({
+      duplicated ? Promise.resolve() : admin.from("crm_client_notes").insert({
         cliente_id: locked.cliente_id,
         texto: `🟣 Compra web: ha comprado ${pack.nombre} (${Number(
-          locked.amount || pack.priceUsd,
+          locked.amount || ("priceUsd" in pack ? pack.priceUsd : pack.priceEur),
         ).toFixed(2)} ${String(locked.currency || "EUR")}) mediante Redsys`,
         author_user_id: null,
         author_name: "Sistema",
