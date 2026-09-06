@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, Crown, Gift, Gem, PhoneCall, ShoppingBag, Sparkles, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
-import ManualPurchaseButton from "@/components/cliente/ManualPurchaseButton";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import type { RouletteSummary } from "@/lib/ruleta";
@@ -134,7 +133,7 @@ export default function PreciosOfertasPage() {
                 </div>
               </div>
               <div className={styles.grid}>
-                {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={1} />)}
+                {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={1} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
 
@@ -152,14 +151,14 @@ export default function PreciosOfertasPage() {
                 </div>
               </div>
               <div className={styles.grid}>
-                {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={2} />)}
+                {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
           </div>
 
           <div className={styles.maintenanceNote}>
             <PhoneCall />
-            <span>Compra web temporalmente en mantenimiento. Pulsa <b>Comprar</b>, llama e indica el código <b>«Cliente web»</b> para conservar estos precios.</span>
+            <span>Pago seguro mediante <b>Redsys / CaixaBank</b>. El saldo se acredita únicamente cuando la entidad confirma la operación.</span>
           </div>
         </section>
 
@@ -196,7 +195,7 @@ export default function PreciosOfertasPage() {
   );
 }
 
-function MinuteCard({ pack, summary, level }: { pack: MinutePack; summary: RouletteSummary | null; level: 1 | 2 }) {
+function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: 1 | 2; busy: boolean; onBuy: () => void }) {
   return (
     <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`}>
       {pack.highlight ? <span className={styles.recommended}>{level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
@@ -210,7 +209,7 @@ function MinuteCard({ pack, summary, level }: { pack: MinutePack; summary: Roule
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
       <RouletteBenefit amount={pack.priceUsd} summary={summary} />
-      <ManualPurchaseButton className={styles.buyButton}>COMPRAR</ManualPurchaseButton>
+      <button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button>
     </article>
   );
 }
