@@ -43,7 +43,6 @@ const COLUMNS: Array<{ key: ColumnKey; title: string; short: string; subtitle: s
   { key: "nuevo", title: "Cliente nuevo", short: "Nuevo", subtitle: "Primer contacto", icon: Sparkles },
   { key: "pend_free", title: "Pend FREE", short: "Pend FREE", subtitle: "Consulta gratis pendiente", icon: Clock3 },
   { key: "pend_cap", title: "Pend CAP", short: "Pend CAP", subtitle: "Lista para convertir", icon: Target },
-  { key: "cliente", title: "Cliente", short: "Clientes", subtitle: "Compra confirmada", icon: UserCheck },
 ];
 
 function fullName(lead: Lead) {

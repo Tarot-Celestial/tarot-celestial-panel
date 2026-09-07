@@ -7,3 +7,8 @@
 @media(max-width:900px){.heroRow{align-items:flex-start;flex-direction:column}.heroActions{width:100%;justify-content:space-between}.filters{grid-template-columns:1fr 1fr}.search{grid-column:1/-1}.board{grid-template-columns:repeat(4,minmax(260px,82vw))}.closedList{grid-template-columns:1fr}.funnel{overflow-x:auto}.hud{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:640px){.command{padding:15px;border-radius:18px}.titleBlock h2{font-size:25px}.heroIcon{width:44px;height:44px}.live{font-size:9px}.heroActions button{font-size:0}.heroActions button svg{width:17px}.hud{grid-template-columns:repeat(2,1fr);gap:7px}.hudCard{min-height:64px;padding:10px}.hudCard strong{font-size:20px}.filters{grid-template-columns:1fr}.search{grid-column:auto}.funnel{display:none}.viewTabs{display:grid;grid-template-columns:repeat(3,1fr)}.viewTabs button{padding:8px 5px;font-size:10px}.mobileTabs{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}.mobileTabs button{display:flex;justify-content:space-between;font-size:10px}.board{display:block;overflow:visible}.column{display:none}.column.mobileActive{display:block}.cards{max-height:none;overflow:visible}.closedList{padding:10px}.card{contain-intrinsic-size:310px}}
 @media(prefers-reduced-motion:reduce){.spin,.fresh{animation:none}.card{transition:none}}
+
+/* Tres fases operativas; los clientes convertidos se conservan solo en el contador superior. */
+.board{grid-template-columns:repeat(3,minmax(250px,1fr))}
+@media(max-width:1450px){.board{grid-template-columns:repeat(3,minmax(270px,1fr))}}
+@media(max-width:900px){.board{grid-template-columns:repeat(3,minmax(260px,82vw))}}
