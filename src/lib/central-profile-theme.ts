@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 
 export type CentralTeam = "agua" | "fuego" | "tierra" | "celestial";
 export type CentralThemeVariant = "balanced" | "soft" | "vivid";
+export type CentralWorkSchedule = { dayOfWeek: number; startTime: string; endTime: string; timezone: string };
 
 export function normalizeCentralTeam(value: unknown): CentralTeam {
   const team = String(value || "").trim().toLowerCase();
@@ -32,4 +33,21 @@ export function centralThemeStyle(teamValue: unknown, variantValue: unknown = "b
     "--central-rgb": palette[2],
     "--central-intensity": intensity,
   } as CSSProperties;
+}
+
+const DAY_LABELS: Record<number, string> = { 0: "Dom", 1: "Lun", 2: "Mar", 3: "Mié", 4: "Jue", 5: "Vie", 6: "Sáb" };
+
+export function formatCentralSchedule(rows: CentralWorkSchedule[]) {
+  const groups = new Map<string, number[]>();
+  for (const row of rows || []) {
+    const key = `${row.startTime}–${row.endTime}`;
+    groups.set(key, [...(groups.get(key) || []), Number(row.dayOfWeek)]);
+  }
+  return [...groups.entries()].map(([hours, days]) => {
+    const ordered = [...new Set(days)].sort((a, b) => (a || 7) - (b || 7));
+    const label = ordered.length > 1 && ordered.every((day, index) => index === 0 || (day || 7) === (ordered[index - 1] || 7) + 1)
+      ? `${DAY_LABELS[ordered[0]]}–${DAY_LABELS[ordered[ordered.length - 1]]}`
+      : ordered.map((day) => DAY_LABELS[day] || "—").join(", ");
+    return `${label} · ${hours}`;
+  });
 }

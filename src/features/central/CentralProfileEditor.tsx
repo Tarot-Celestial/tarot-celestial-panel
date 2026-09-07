@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Camera, Save, Star, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { BadgeCheck, Camera, Clock3, Save, Star, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { centralTeamLabel, centralThemeStyle, type CentralThemeVariant } from "@/lib/central-profile-theme";
+import { centralTeamLabel, centralThemeStyle, formatCentralSchedule, type CentralThemeVariant, type CentralWorkSchedule } from "@/lib/central-profile-theme";
 import styles from "./CentralProfileEditor.module.css";
 
 export type CentralPublicProfile = {
@@ -14,6 +15,8 @@ export type CentralPublicProfile = {
   reviewCount: number;
   team: string;
   themeVariant: CentralThemeVariant;
+  schedule: CentralWorkSchedule[];
+  reviews: Array<{ id: string; rating: number; comment: string; verified: boolean; createdAt: string }>;
 };
 
 type Props = {
@@ -109,9 +112,9 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
     onClose();
   }
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div className={styles.backdrop} role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="central-profile-title">
         <button type="button" className={styles.close} onClick={onClose} aria-label="Cerrar"><X size={19} /></button>
@@ -123,6 +126,16 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
           <span>{[1, 2, 3, 4, 5].map((value) => <Star key={value} size={18} fill={value <= Math.round(profile.rating) ? "currentColor" : "none"} />)}</span>
           <strong>{profile.reviewCount ? `${profile.rating.toFixed(1)} de 5 · ${profile.reviewCount} reseña${profile.reviewCount === 1 ? "" : "s"}` : "Sin reseñas todavía"}</strong>
         </div>
+
+        <section className={styles.scheduleBlock} aria-label="Tu horario público">
+          <div className={styles.blockTitle}><Clock3 size={17} /><div><strong>Tu horario público</strong><small>Las clientas verán estos turnos en horario de Madrid.</small></div></div>
+          <div className={styles.scheduleList}>{formatCentralSchedule(profile.schedule).length ? formatCentralSchedule(profile.schedule).map((line) => <span key={line}>{line}</span>) : <span>Sin horario publicado</span>}</div>
+        </section>
+
+        <section className={styles.ownReviews} aria-label="Tus reseñas">
+          <div className={styles.blockTitle}><Star size={17} /><div><strong>Tus reseñas</strong><small>{profile.reviewCount ? `${profile.reviewCount} valoración${profile.reviewCount === 1 ? "" : "es"} recibida${profile.reviewCount === 1 ? "" : "s"}` : "Todavía no has recibido valoraciones"}</small></div></div>
+          {profile.reviews.length ? <div className={styles.reviewScroller}>{profile.reviews.map((review) => <article key={review.id}><div><span>{"★".repeat(review.rating)}</span>{review.verified ? <em><BadgeCheck size={12} /> Verificada</em> : null}</div><p>{review.comment || "Sin comentario escrito."}</p><time>{new Date(review.createdAt).toLocaleDateString("es-ES")}</time></article>)}</div> : null}
+        </section>
 
         <div className={styles.previewCard} style={centralThemeStyle(profile.team, themeVariant)}>
           <span>{centralTeamLabel(profile.team)}</span><strong>{name || "Tu nombre público"}</strong><small>{presentation || "Tu presentación aparecerá aquí."}</small>
@@ -166,6 +179,7 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
           <button type="button" className={styles.save} disabled={saving} onClick={save}><Save size={17} /> {saving ? "Guardando…" : "Guardar perfil"}</button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

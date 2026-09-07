@@ -49,14 +49,15 @@ export async function GET(req: Request) {
     const ids = workers.map((row: any) => String(row.id));
     if (!ids.length) return NextResponse.json({ ok: true, centrales: [], recentReviews: [] });
 
-    const [profilesResult, reviewsResult, mineResult, statsResult, experiences] = await Promise.all([
+    const [profilesResult, reviewsResult, mineResult, statsResult, schedulesResult, experiences] = await Promise.all([
       gate.admin.from("central_public_profiles").select("worker_id,public_name,presentation,photo_path,theme_variant,is_published").in("worker_id", ids),
       gate.admin.from("cliente_tarotista_reviews").select("id,worker_id,rating,comment,verified,created_at").in("worker_id", ids).eq("status", "published").order("created_at", { ascending: false }).limit(300),
       gate.admin.from("cliente_tarotista_reviews").select("id,worker_id,rating,comment,status,created_at,updated_at").eq("cliente_id", gate.cliente.id).in("worker_id", ids).neq("status", "deleted").order("created_at", { ascending: false }),
       gate.admin.from("central_review_stats").select("worker_id,rating_sum,review_count,star_1,star_2,star_3,star_4,star_5").in("worker_id", ids),
+      gate.admin.from("shift_schedules").select("worker_id,day_of_week,start_time,end_time,timezone").in("worker_id", ids).eq("active", true).order("day_of_week"),
       experienceMap(gate.admin, gate.cliente, ids),
     ]);
-    for (const result of [profilesResult, reviewsResult, mineResult, statsResult]) if (result.error) throw result.error;
+    for (const result of [profilesResult, reviewsResult, mineResult, statsResult, schedulesResult]) if (result.error) throw result.error;
     const profiles = new Map((profilesResult.data || []).map((row: any) => [String(row.worker_id), row]));
     const stats = new Map((statsResult.data || []).map((row: any) => [String(row.worker_id), row]));
     const ownIds = new Set((mineResult.data || []).map((row: any) => String(row.id)));
@@ -67,6 +68,7 @@ export async function GET(req: Request) {
       return {
         id, name: String(profile?.public_name || worker.display_name || "Central"), team: String(worker.team || ""), themeVariant: String(profile?.theme_variant || "balanced"),
         presentation: String(profile?.presentation || "Central de Tarot Celestial preparada para acompañarte durante tu consulta."), photoUrl: photoUrl(gate.admin, profile?.photo_path),
+        schedule: (schedulesResult.data || []).filter((row: any) => String(row.worker_id) === id).map((row: any) => ({ dayOfWeek: Number(row.day_of_week), startTime: String(row.start_time).slice(0,5), endTime: String(row.end_time).slice(0,5), timezone: String(row.timezone || "Europe/Madrid") })),
         average: count ? Number(stat.rating_sum || 0) / count : 0, count,
         distribution: [1,2,3,4,5].map((star) => Number(stat[`star_${star}`] || 0)),
         canCreateReview: experiences.has(id), mine,

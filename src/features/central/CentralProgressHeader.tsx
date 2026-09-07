@@ -58,6 +58,8 @@ export default function CentralProgressHeader({
     reviewCount: 0,
     team: profile.team || "",
     themeVariant: "balanced",
+    schedule: [],
+    reviews: [],
   });
 
   useEffect(() => {
