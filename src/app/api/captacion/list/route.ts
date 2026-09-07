@@ -5,6 +5,7 @@ export const revalidate = 0;
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { brandFromRequest, originMatchesBrand } from "@/lib/server/brand-filter";
+import { getBearerToken } from "@/lib/server/auth-fast";
 
 function env(name: string) {
   const v = process.env[name];
@@ -26,6 +27,22 @@ type LeadItem = AnyRow & {
 };
 
 const CLOSED_STATES = new Set(["captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"]);
+
+async function currentWorker(req: NextRequest) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData.user?.id) return null;
+  const { data } = await supabase
+    .from("workers")
+    .select("id,role,display_name,is_active")
+    .or(`user_id.eq.${authData.user.id},auth_user_id.eq.${authData.user.id}`)
+    .eq("is_active", true)
+    .in("role", ["admin", "central"])
+    .limit(1)
+    .maybeSingle();
+  return data || null;
+}
 
 function norm(value: unknown) {
   return String(value || "").trim().toLowerCase();
@@ -236,6 +253,10 @@ async function enrichWithRevenue(rows: AnyRow[]) {
 
 export async function GET(req: NextRequest) {
   try {
+    const worker = await currentWorker(req);
+    if (!worker) {
+      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    }
     const { searchParams } = new URL(req.url);
     const scope = norm(searchParams.get("scope") || "pendientes");
     const brand = brandFromRequest(req);
@@ -252,9 +273,20 @@ export async function GET(req: NextRequest) {
     // de cada cliente en cada refresco. Evitamos agregaciones pesadas en pagos/rendimiento.
 
     raw = raw.filter((item: AnyRow) => originMatchesBrand(item?.cliente?.origen || item?.origen, brand));
+    if (worker.role === "central") {
+      raw = raw.filter((item: AnyRow) => !item?.assigned_worker_id || String(item.assigned_worker_id) === String(worker.id));
+    }
+
+    const workerIds = Array.from(new Set(raw.map((item) => String(item?.assigned_worker_id || "")).filter(Boolean)));
+    const workerNames = new Map<string, string>();
+    if (workerIds.length) {
+      const { data: assignedWorkers } = await supabase.from("workers").select("id,display_name").in("id", workerIds);
+      for (const item of assignedWorkers || []) workerNames.set(String(item.id), String(item.display_name || "Central"));
+    }
 
     let items: LeadItem[] = raw.map((item) => ({
       ...item,
+      assigned_worker_name: workerNames.get(String(item?.assigned_worker_id || "")) || null,
       workflow_state: computeWorkflowState(item),
       is_closed: isClosed(item),
     }));
@@ -281,7 +313,18 @@ export async function GET(req: NextRequest) {
       return bCreated - aCreated;
     });
 
-    return new NextResponse(JSON.stringify({ ok: true, brand, items }), {
+    let metaSync: AnyRow | null = null;
+    try {
+      const { data } = await supabase
+        .from("meta_lead_events")
+        .select("status,source,received_at,inserted_at,visible_at,last_error")
+        .order("received_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      metaSync = data || null;
+    } catch {}
+
+    return new NextResponse(JSON.stringify({ ok: true, brand, items, server_time: new Date().toISOString(), meta_sync: metaSync }), {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
       },

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { getBearerToken } from "@/lib/server/auth-fast";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,16 +22,9 @@ function norm(value: unknown) {
 }
 
 async function uidFromBearer(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const token = getBearerToken(req);
   if (!token) return null;
-
-  const sb = createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false },
-  });
-
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await adminClient().auth.getUser(token);
   if (error) throw error;
   return data.user?.id || null;
 }
@@ -42,8 +35,9 @@ async function workerFromReq(req: Request) {
   const admin = adminClient();
   const { data, error } = await admin
     .from("workers")
-    .select("id, user_id, display_name, email, role")
-    .eq("user_id", uid)
+    .select("id, user_id, auth_user_id, display_name, email, role, is_active")
+    .or(`user_id.eq.${uid},auth_user_id.eq.${uid}`)
+    .eq("is_active", true)
     .maybeSingle();
   if (error) throw error;
   return data || null;
@@ -78,6 +72,9 @@ function noteForAction(action: string, who: string, nowIso: string, extra?: Reco
   if (action === "reabrir") {
     return `♻️ Lead reabierto por ${who} el ${when}.`;
   }
+  if (action === "programar") {
+    return `📆 Próxima gestión programada por ${who} el ${when}.${next ? ` Nueva fecha: ${next}.` : ""}`;
+  }
   return `ℹ️ Acción de captación: ${action} (${when}).`;
 }
 
@@ -99,6 +96,10 @@ export async function POST(req: Request) {
   try {
     const admin = adminClient();
     const worker = await workerFromReq(req).catch(() => null);
+    if (!worker) return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
+    if (!["admin", "central"].includes(String(worker.role))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
     const who = String(worker?.display_name || worker?.email || "Captación").trim() || "Captación";
 
     const body = await req.json().catch(() => ({}));
@@ -110,10 +111,13 @@ export async function POST(req: Request) {
 
     const { data: lead, error: leadErr } = await admin
       .from("captacion_leads")
-      .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result")
+      .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, assigned_worker_id")
       .eq("id", leadId)
       .single();
     if (leadErr || !lead) throw leadErr || new Error("Lead no encontrado");
+    if (worker.role === "central" && lead.assigned_worker_id && String(lead.assigned_worker_id) !== String(worker.id)) {
+      return NextResponse.json({ ok: false, error: "LEAD_NOT_ASSIGNED_TO_YOU" }, { status: 403 });
+    }
 
     const nowIso = new Date().toISOString();
     const currentAttempt = Math.max(1, Number(lead.intento_actual || 1));
@@ -198,6 +202,15 @@ export async function POST(req: Request) {
       patch.next_contact_at = nowIso;
       crmPatch.lead_status = "nuevo";
       message = "♻️ Lead reabierto y devuelto a nuevos.";
+    } else if (action === "programar") {
+      const requested = new Date(String(body?.next_contact_at || ""));
+      if (!Number.isFinite(requested.getTime())) {
+        return NextResponse.json({ ok: false, error: "FECHA_INVALIDA" }, { status: 400 });
+      }
+      patch.next_contact_at = requested.toISOString();
+      patch.last_result = lead.last_result;
+      patch.last_contact_at = lead.last_contact_at;
+      message = `📆 Próxima gestión programada para ${requested.toLocaleString("es-ES")}.`;
     } else {
       return NextResponse.json({ ok: false, error: "ACCION_INVALIDA" }, { status: 400 });
     }
@@ -237,6 +250,22 @@ if (updErr || !updatedLead) {
     }
 
     const finalState = String(updatedLead?.estado || patch.estado || lead.estado || "nuevo");
+
+    await admin.from("captacion_state_events").insert({
+      lead_id: updatedLead.id,
+      cliente_id: clienteId || null,
+      actor_worker_id: worker.id,
+      previous_state: String(lead.estado || "nuevo"),
+      next_state: finalState,
+      action,
+      source: "captacion_panel",
+      metadata: {
+        previous_next_contact_at: lead.next_contact_at || null,
+        next_contact_at: updatedLead?.next_contact_at || patch.next_contact_at || null,
+      },
+    }).then(({ error }) => {
+      if (error) console.error("CAPTACION_AUDIT_FAILED", { leadId: updatedLead.id, error: error.message });
+    });
 
     if (action === "captado" && worker?.id) {
       try {

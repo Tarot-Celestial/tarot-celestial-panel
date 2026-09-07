@@ -1,8 +1,15 @@
 "use client";
 
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { Activity, CalendarClock, ChevronDown, Clock3, ExternalLink, Filter, Mail, Megaphone, Phone, RefreshCw, Search, Sparkles, Target, UserCheck, Users } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
+import styles from "./CaptacionPanel.module.css";
+
+type ColumnKey = "nuevo" | "pend_free" | "pend_cap" | "cliente";
+type ViewKey = "pendientes" | "hoy" | "urgentes" | "todos" | "cerrados";
+type SortKey = "priority" | "recent" | "oldest" | "next" | "attempts" | "origin";
+type ActionKey = "no_contesta" | "pendiente_free" | "hizo_free" | "recontacto" | "captado" | "no_interesado" | "reabrir" | "programar";
 
 type Lead = {
   id: string;
@@ -19,501 +26,318 @@ type Lead = {
   campaign_name?: string | null;
   form_name?: string | null;
   origen?: string | null;
-  notas?: string | null;
+  assigned_worker_id?: string | null;
+  assigned_worker_name?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
-  cliente?: {
-    id?: string | null;
-    nombre?: string | null;
-    apellido?: string | null;
-    telefono?: string | null;
-    email?: string | null;
-    origen?: string | null;
-    lead_status?: string | null;
-  } | null;
+  cliente?: { id?: string | null; nombre?: string | null; apellido?: string | null; telefono?: string | null; email?: string | null; origen?: string | null } | null;
 };
+
+type Props = { onOpenClient?: (clienteId: string) => void };
+type LiveState = "connecting" | "live" | "degraded";
 
 const sb = supabaseBrowser();
-
-const columns = [
-  { key: "nuevo", title: "1 · Cliente nuevo", subtitle: "Primer contacto para ofrecer la consulta gratis" },
-  { key: "pend_free", title: "2 · Pend free", subtitle: "No responde o queda pendiente de hacer la free" },
-  { key: "pend_cap", title: "3 · Pend cap", subtitle: "Ya hizo la free y falta vender promo bienvenida" },
-  { key: "cliente", title: "4 · Cliente", subtitle: "Ya pagó / captado" },
-] as const;
-
-type ColumnKey = (typeof columns)[number]["key"];
-
-type Props = {
-  onOpenClient?: (clienteId: string) => void;
-};
+const PAGE_SIZE = 18;
+const CLOSED = new Set(["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"]);
+const COLUMNS: Array<{ key: ColumnKey; title: string; short: string; subtitle: string; icon: typeof Users }> = [
+  { key: "nuevo", title: "Cliente nuevo", short: "Nuevo", subtitle: "Primer contacto", icon: Sparkles },
+  { key: "pend_free", title: "Pend FREE", short: "Pend FREE", subtitle: "Consulta gratis pendiente", icon: Clock3 },
+  { key: "pend_cap", title: "Pend CAP", short: "Pend CAP", subtitle: "Lista para convertir", icon: Target },
+  { key: "cliente", title: "Cliente", short: "Clientes", subtitle: "Compra confirmada", icon: UserCheck },
+];
 
 function fullName(lead: Lead) {
-  const crm = [lead.cliente?.nombre, lead.cliente?.apellido].filter(Boolean).join(" ").trim();
-  if (crm) return crm;
-  return "Lead sin nombre";
+  return [lead.cliente?.nombre, lead.cliente?.apellido].filter(Boolean).join(" ").trim() || "Lead sin nombre";
 }
 
 function phone(lead: Lead) {
-  return String(lead.cliente?.telefono || "").trim() || "Sin teléfono";
+  return String(lead.cliente?.telefono || "").trim();
 }
 
-function fmtDate(value?: string | null) {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString("es-ES");
-}
-
-function relativeDue(value?: string | null) {
-  if (!value) return "Sin fecha";
-  const ts = new Date(value).getTime();
-  if (!Number.isFinite(ts)) return "Sin fecha";
-  const diffMin = Math.round((ts - Date.now()) / 60000);
-  const abs = Math.abs(diffMin);
-  const label = abs < 60 ? `${abs} min` : abs < 1440 ? `${Math.floor(abs / 60)}h` : `${Math.floor(abs / 1440)}d`;
-  if (diffMin < 0) return `Vencido hace ${label}`;
-  if (diffMin === 0) return "Ahora";
-  return `En ${label}`;
-}
-
-function workflowState(lead: Lead): ColumnKey | "cerrado" {
+function phaseOf(lead: Lead): ColumnKey | "cerrado" {
   const state = String(lead.workflow_state || lead.estado || "nuevo").toLowerCase();
   if (["cliente", "captado"].includes(state)) return "cliente";
   if (["pend_cap", "hizo_free", "recontacto"].includes(state)) return "pend_cap";
-  if (["pend_free", "pendiente_free", "no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(state) || Number(lead.intento_actual || 1) > 1) return "pend_free";
-  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(state) || !!lead.closed_at) return "cerrado";
+  if (["pend_free", "pendiente_free", "no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(state)) return "pend_free";
+  if (CLOSED.has(state) || lead.closed_at) return "cerrado";
   return "nuevo";
 }
 
-function stateChip(state: string) {
-  const phase = workflowState({ estado: state } as Lead);
-  if (phase === "nuevo") return { label: "Cliente nuevo", bg: "rgba(139,92,246,.18)", border: "1px solid rgba(139,92,246,.35)" };
-  if (phase === "pend_free") return { label: "Pend free", bg: "rgba(245,158,11,.18)", border: "1px solid rgba(245,158,11,.35)" };
-  if (phase === "pend_cap") return { label: "Pend cap", bg: "rgba(236,72,153,.18)", border: "1px solid rgba(236,72,153,.35)" };
-  if (phase === "cliente") return { label: "Cliente", bg: "rgba(34,197,94,.18)", border: "1px solid rgba(34,197,94,.35)" };
-  return { label: "Cerrado", bg: "rgba(239,68,68,.18)", border: "1px solid rgba(239,68,68,.35)" };
+function timestamp(value?: string | null) {
+  const time = value ? new Date(value).getTime() : NaN;
+  return Number.isFinite(time) ? time : 0;
 }
 
-function cardTone(lead: Lead) {
-  const next = lead.next_contact_at ? new Date(lead.next_contact_at).getTime() : null;
-  if (next && next <= Date.now()) return { bg: "rgba(239,68,68,.08)", border: "1px solid rgba(239,68,68,.24)" };
-  if (workflowState(lead) === "nuevo") return { bg: "rgba(139,92,246,.08)", border: "1px solid rgba(139,92,246,.2)" };
-  if (workflowState(lead) === "pend_cap") return { bg: "rgba(236,72,153,.07)", border: "1px solid rgba(236,72,153,.18)" };
-  return { bg: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.08)" };
+function formatDate(value?: string | null) {
+  const time = timestamp(value);
+  return time ? new Date(time).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }) : "Sin programar";
+}
+
+function relative(value?: string | null) {
+  const time = timestamp(value);
+  if (!time) return "Sin fecha";
+  const minutes = Math.round((time - Date.now()) / 60000);
+  const abs = Math.abs(minutes);
+  const amount = abs < 60 ? `${abs} min` : abs < 1440 ? `${Math.floor(abs / 60)} h` : `${Math.floor(abs / 1440)} d`;
+  if (minutes < 0) return `Vencida ${amount}`;
+  if (minutes < 1440) return "Hoy";
+  return `En ${amount}`;
+}
+
+function urgency(lead: Lead) {
+  const due = timestamp(lead.next_contact_at);
+  if (!due) return { key: "today", label: "HOY" };
+  const delta = due - Date.now();
+  if (delta < 0) return { key: "overdue", label: relative(lead.next_contact_at).toUpperCase() };
+  if (delta < 24 * 60 * 60 * 1000) return { key: "today", label: "HOY" };
+  return { key: "scheduled", label: "PROGRAMADA" };
+}
+
+function priorityScore(lead: Lead) {
+  let score = phaseOf(lead) === "pend_cap" ? 5000 : phaseOf(lead) === "nuevo" ? 3500 : phaseOf(lead) === "pend_free" ? 2500 : 0;
+  const due = timestamp(lead.next_contact_at);
+  if (!due) score += 1200;
+  else if (due <= Date.now()) score += Math.min(2000, Math.floor((Date.now() - due) / 3600000) * 10 + 900);
+  score += Math.min(500, Number(lead.intento_actual || 0) * 100);
+  return score;
+}
+
+function dateTimeInput(value?: string | null) {
+  const time = timestamp(value);
+  const date = time ? new Date(time) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
 export default function CaptacionPanel({ onOpenClient }: Props) {
-  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
+  const [brand, setBrand] = useState<"celestial" | "orion">("celestial");
   const [items, setItems] = useState<Lead[]>([]);
-  const [view, setView] = useState<"pendientes" | "todos" | "cerrados">("pendientes");
+  const [view, setView] = useState<ViewKey>("pendientes");
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const [origin, setOrigin] = useState("all");
+  const [campaign, setCampaign] = useState("all");
+  const [worker, setWorker] = useState("all");
+  const [sort, setSort] = useState<SortKey>("priority");
+  const [mobileColumn, setMobileColumn] = useState<ColumnKey>("nuevo");
+  const [limits, setLimits] = useState<Record<ColumnKey, number>>({ nuevo: PAGE_SIZE, pend_free: PAGE_SIZE, pend_cap: PAGE_SIZE, cliente: PAGE_SIZE });
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
-  const [msg, setMsg] = useState("");
+  const [message, setMessage] = useState("");
+  const [liveState, setLiveState] = useState<LiveState>("connecting");
+  const [newLeadIds, setNewLeadIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
-    setActiveBrand(getActiveBrand());
-    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
-    window.addEventListener("tc-brand-changed", onBrand as EventListener);
-    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
+    setBrand(getActiveBrand());
+    const onBrand = (event: Event) => setBrand(String((event as CustomEvent)?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
+    window.addEventListener("tc-brand-changed", onBrand);
+    return () => window.removeEventListener("tc-brand-changed", onBrand);
   }, []);
 
-  async function load(showSpinner = false) {
+  const load = useCallback(async (spinner = false) => {
     try {
-      if (showSpinner) setLoading(true);
-      setMsg("");
-      const res = await fetch(`/api/captacion/list?scope=${view}&brand=${activeBrand}&t=${Date.now()}`, {
-  cache: "no-store",
-});
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar captación");
-      setItems(Array.isArray(json.items) ? json.items : []);
-    } catch (e: any) {
-      setMsg(e?.message || "Error cargando captación");
-    } finally {
-      if (showSpinner) setLoading(false);
-    }
-  }
-
-  async function act(id: string, action: "no_contesta" | "pendiente_free" | "hizo_free" | "recontacto" | "captado" | "no_interesado" | "reabrir") {
-    const prevItems = items;
-
-    try {
-      setBusyId(id);
-      setMsg("");
-
-      setItems((current) =>
-        current.map((lead) => {
-          if (lead.id !== id) return lead;
-
-          const nowIso = new Date().toISOString();
-          const currentAttempt = Math.max(1, Number(lead.intento_actual || 1));
-          const maxAttempts = Math.max(3, Number(lead.max_intentos || 3));
-
-          if (action === "no_contesta") {
-            const nextAttempt = currentAttempt + 1;
-            const shouldClose = nextAttempt > maxAttempts;
-            return {
-              ...lead,
-              estado: shouldClose ? "no_interesado" : "pend_free",
-              workflow_state: shouldClose ? "no_interesado" : "pend_free",
-              intento_actual: shouldClose ? maxAttempts : nextAttempt,
-              next_contact_at: shouldClose ? nowIso : lead.next_contact_at,
-              contacted_at: null,
-              closed_at: shouldClose ? nowIso : null,
-              last_result: "no_contesta",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          if (action === "pendiente_free") {
-            return {
-              ...lead,
-              estado: "pend_free",
-              workflow_state: "pend_free",
-              contacted_at: nowIso,
-              closed_at: null,
-              last_result: "pendiente_free",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          if (action === "hizo_free") {
-            return {
-              ...lead,
-              estado: "pend_cap",
-              workflow_state: "pend_cap",
-              contacted_at: nowIso,
-              closed_at: null,
-              intento_actual: 1,
-              max_intentos: 3,
-              last_result: "hizo_free",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          if (action === "recontacto") {
-            const nextAttempt = currentAttempt + 1;
-            const shouldClose = nextAttempt > maxAttempts;
-            return {
-              ...lead,
-              estado: shouldClose ? "no_interesado" : "pend_cap",
-              workflow_state: shouldClose ? "no_interesado" : "pend_cap",
-              intento_actual: shouldClose ? maxAttempts : nextAttempt,
-              contacted_at: nowIso,
-              closed_at: shouldClose ? nowIso : null,
-              last_result: "recontacto",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          if (action === "captado") {
-            return {
-              ...lead,
-              estado: "captado",
-              workflow_state: "captado",
-              contacted_at: nowIso,
-              closed_at: nowIso,
-              last_result: "captado",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          if (action === "no_interesado") {
-            return {
-              ...lead,
-              estado: "no_interesado",
-              workflow_state: "no_interesado",
-              closed_at: nowIso,
-              last_result: "no_interesado",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          if (action === "reabrir") {
-            return {
-              ...lead,
-              estado: "nuevo",
-              workflow_state: "nuevo",
-              closed_at: null,
-              contacted_at: null,
-              intento_actual: 1,
-              max_intentos: 3,
-              last_result: "reabrir",
-              updated_at: nowIso,
-              last_contact_at: nowIso,
-            };
-          }
-
-          return lead;
-        })
-      );
-
+      if (spinner) setLoading(true);
       const { data } = await sb.auth.getSession();
       const token = data.session?.access_token;
-      const res = await fetch("/api/captacion/action", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ lead_id: id, action }),
+      if (!token) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
+      const scope = view === "cerrados" ? "cerrados" : view === "todos" ? "todos" : "pendientes";
+      const response = await fetch(`/api/captacion/list?scope=${scope}&brand=${brand}&t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) {
-        setItems(prevItems);
-        throw new Error(json?.error || "No se pudo actualizar el lead");
-      }
-      setMsg(json?.message || "Lead actualizado");
-    } catch (e: any) {
-      setItems(prevItems);
-      setMsg(e?.message || "Error actualizando lead");
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar Captación");
+      setItems(Array.isArray(json.items) ? json.items : []);
+      setMessage("");
+    } catch (error: any) {
+      setMessage(String(error?.message || "Error cargando Captación"));
+      setLiveState("degraded");
+    } finally {
+      if (spinner) setLoading(false);
+    }
+  }, [brand, view]);
+
+  useEffect(() => { void load(true); }, [load]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(false);
+    }, 60_000);
+    return () => window.clearInterval(interval);
+  }, [load]);
+
+  useEffect(() => {
+    setLiveState("connecting");
+    const channel = sb
+      .channel(`captacion-live-${brand}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, (payload: any) => {
+        const id = String(payload?.new?.id || "");
+        if (payload?.eventType === "INSERT" && id) {
+          setNewLeadIds((current) => new Set(current).add(id));
+          window.setTimeout(() => setNewLeadIds((current) => {
+            const next = new Set(current); next.delete(id); return next;
+          }), 8000);
+        }
+        void load(false);
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") setLiveState("live");
+        else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) setLiveState("degraded");
+      });
+    return () => { void sb.removeChannel(channel); };
+  }, [brand, load]);
+
+  const act = useCallback(async (lead: Lead, action: ActionKey, nextContactAt?: string) => {
+    const snapshot = items;
+    const now = new Date().toISOString();
+    setBusyId(lead.id);
+    setMessage("");
+    setItems((current) => current.map((item) => {
+      if (item.id !== lead.id) return item;
+      if (action === "programar") return { ...item, next_contact_at: nextContactAt || item.next_contact_at, updated_at: now };
+      const nextState = action === "hizo_free" || action === "recontacto" ? "pend_cap" : action === "pendiente_free" || action === "no_contesta" ? "pend_free" : action === "captado" ? "captado" : action === "no_interesado" ? "no_interesado" : "nuevo";
+      return { ...item, estado: nextState, workflow_state: nextState, updated_at: now, last_contact_at: now, closed_at: ["captado", "no_interesado"].includes(nextState) ? now : null };
+    }));
+    try {
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      const response = await fetch("/api/captacion/action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ lead_id: lead.id, action, next_contact_at: nextContactAt }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar el lead");
+      setMessage(json.message || "✓ Lead actualizado");
+      window.setTimeout(() => setMessage(""), 3500);
+      void load(false);
+    } catch (error: any) {
+      setItems(snapshot);
+      setMessage(String(error?.message || "Error actualizando lead"));
     } finally {
       setBusyId("");
     }
-  }
+  }, [items, load]);
 
-  function openClient(lead: Lead) {
-    const id = String(lead.cliente_id || lead.cliente?.id || "").trim();
+  const openClient = useCallback((lead: Lead) => {
+    const id = String(lead.cliente_id || lead.cliente?.id || "");
     if (!id) return;
-    if (onOpenClient) {
-      onOpenClient(id);
-      return;
-    }
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("captacion-open-cliente", { detail: { id } }));
-    }
-  }
+    if (onOpenClient) onOpenClient(id);
+    else window.dispatchEvent(new CustomEvent("captacion-open-cliente", { detail: { id } }));
+  }, [onOpenClient]);
 
-  useEffect(() => {
-    load(true);
-  }, [view, activeBrand]);
-
-  useEffect(() => {
-    const timer = setInterval(() => load(false), 20000);
-    return () => clearInterval(timer);
-  }, [view, activeBrand]);
-
-  useEffect(() => {
-    const channel = sb
-      .channel(`captacion-live-${view}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, () => {
-  setTimeout(() => {
-    load(false);
-  }, 1500);
-})
-      .subscribe();
-    return () => {
-      sb.removeChannel(channel);
-    };
-  }, [view, activeBrand]);
+  const options = useMemo(() => ({
+    origins: Array.from(new Set(items.map((item) => item.origen || item.cliente?.origen).filter(Boolean) as string[])).sort(),
+    campaigns: Array.from(new Set(items.map((item) => item.campaign_name).filter(Boolean) as string[])).sort(),
+    workers: Array.from(new Map(items.filter((item) => item.assigned_worker_id).map((item) => [String(item.assigned_worker_id), String(item.assigned_worker_name || "Central")])).entries()),
+  }), [items]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((lead) => {
-      const haystack = [
-        fullName(lead),
-        phone(lead),
-        lead.cliente?.email || "",
-        lead.campaign_name || "",
-        lead.form_name || "",
-        lead.origen || "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(q);
+    const q = deferredQuery.trim().toLowerCase();
+    const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+    const rows = items.filter((lead) => {
+      const due = timestamp(lead.next_contact_at);
+      if (view === "hoy" && due > todayEnd.getTime()) return false;
+      if (view === "urgentes" && due && due > Date.now()) return false;
+      if (origin !== "all" && (lead.origen || lead.cliente?.origen) !== origin) return false;
+      if (campaign !== "all" && lead.campaign_name !== campaign) return false;
+      if (worker !== "all" && String(lead.assigned_worker_id || "") !== worker) return false;
+      if (!q) return true;
+      return [fullName(lead), phone(lead), lead.cliente?.email, lead.campaign_name, lead.form_name, lead.origen].filter(Boolean).join(" ").toLowerCase().includes(q);
     });
-  }, [items, query]);
-
-  const stats = useMemo(() => {
-    const pendientesHoy = filtered.filter((lead) => {
-      const ts = lead.next_contact_at ? new Date(lead.next_contact_at).getTime() : 0;
-      return !ts || ts <= Date.now();
-    }).length;
-    return {
-      total: filtered.length,
-      hoy: pendientesHoy,
-      nuevos: filtered.filter((x) => workflowState(x) === "nuevo").length,
-      pendFree: filtered.filter((x) => workflowState(x) === "pend_free").length,
-      pendCap: filtered.filter((x) => workflowState(x) === "pend_cap").length,
-    };
-  }, [filtered]);
+    return [...rows].sort((a, b) => {
+      if (sort === "recent") return timestamp(b.created_at) - timestamp(a.created_at);
+      if (sort === "oldest") return timestamp(a.created_at) - timestamp(b.created_at);
+      if (sort === "next") return (timestamp(a.next_contact_at) || Number.MAX_SAFE_INTEGER) - (timestamp(b.next_contact_at) || Number.MAX_SAFE_INTEGER);
+      if (sort === "attempts") return Number(b.intento_actual || 0) - Number(a.intento_actual || 0);
+      if (sort === "origin") return String(a.origen || "").localeCompare(String(b.origen || ""));
+      return priorityScore(b) - priorityScore(a);
+    });
+  }, [campaign, deferredQuery, items, origin, sort, view, worker]);
 
   const byColumn = useMemo(() => {
-    const map: Record<string, Lead[]> = { nuevo: [], pend_free: [], pend_cap: [], cliente: [], cerrado: [] };
-    for (const lead of filtered) {
-      map[workflowState(lead)].push(lead);
-    }
+    const map: Record<ColumnKey | "cerrado", Lead[]> = { nuevo: [], pend_free: [], pend_cap: [], cliente: [], cerrado: [] };
+    for (const lead of filtered) map[phaseOf(lead)].push(lead);
     return map;
   }, [filtered]);
 
-  return (
-    <div className="tc-captacion-shell">
-      <div style={panelStyle}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 28, fontWeight: 800 }}>📞 Captación</div>
-            <div style={{ opacity: 0.72, marginTop: 6 }}>Cola operativa en 4 fases: Cliente nuevo → Pend free → Pend cap → Cliente.</div>
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={() => setView("pendientes")} style={buttonStyle(view === "pendientes" ? "linear-gradient(135deg,#8b5cf6,#6366f1)" : "rgba(255,255,255,.08)")}>Pendientes</button>
-            <button onClick={() => setView("todos")} style={buttonStyle(view === "todos" ? "linear-gradient(135deg,#8b5cf6,#6366f1)" : "rgba(255,255,255,.08)")}>Todos</button>
-            <button onClick={() => setView("cerrados")} style={buttonStyle(view === "cerrados" ? "linear-gradient(135deg,#8b5cf6,#6366f1)" : "rgba(255,255,255,.08)")}>Cerrados</button>
-            <button onClick={() => load(true)} style={buttonStyle("rgba(255,255,255,.08)")}>{loading ? "Cargando…" : "Actualizar"}</button>
-          </div>
-        </div>
+  const totals = useMemo(() => {
+    const count = { nuevo: 0, pend_free: 0, pend_cap: 0, cliente: 0, cerrado: 0, due: 0 };
+    for (const lead of items) {
+      count[phaseOf(lead)] += 1;
+      if (!lead.closed_at && (!timestamp(lead.next_contact_at) || timestamp(lead.next_contact_at) <= Date.now())) count.due += 1;
+    }
+    return count;
+  }, [items]);
 
-        <div className="tc-captacion-kpis">
-          <div style={kpiStyle}><div style={kpiLabel}>En vista</div><div style={kpiValue}>{stats.total}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Llamar hoy</div><div style={kpiValue}>{stats.hoy}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Cliente nuevo</div><div style={kpiValue}>{stats.nuevos}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Pend free</div><div style={kpiValue}>{stats.pendFree}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Pend cap</div><div style={kpiValue}>{stats.pendCap}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Clientes</div><div style={kpiValue}>{items.filter((x) => workflowState(x) === "cliente").length}</div></div>
-          <div style={kpiStyle}><div style={kpiLabel}>Cerrados</div><div style={kpiValue}>{items.filter((x) => workflowState(x) === "cerrado").length}</div></div>
-        </div>
-
-        <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 12, alignItems: "center" }}>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por nombre, teléfono, email o campaña"
-            style={{ width: "100%", borderRadius: 14, border: "1px solid rgba(255,255,255,.10)", background: "rgba(255,255,255,.04)", color: "white", padding: "12px 14px", outline: "none" }}
-          />
-
-        </div>
-
-        {msg ? <div style={{ marginTop: 14, color: "#c8f7d0", fontWeight: 700 }}>{msg}</div> : null}
+  return <section className={styles.shell}>
+    <header className={styles.command}>
+      <div className={styles.heroRow}>
+        <div className={styles.titleBlock}><span className={styles.heroIcon}><Megaphone /></span><div><span className={styles.eyebrow}>CENTRO DE CONVERSIÓN</span><h2>Captación</h2><p>Entiende, prioriza y convierte cada oportunidad.</p></div></div>
+        <div className={styles.heroActions}><span className={`${styles.live} ${styles[liveState]}`}><i />{liveState === "live" ? "EN VIVO" : liveState === "connecting" ? "CONECTANDO" : "SINCRONIZACIÓN DEGRADADA"}</span><button type="button" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? styles.spin : ""} />{loading ? "Actualizando" : "Actualizar"}</button></div>
       </div>
 
-      {view === "cerrados" ? (
-        <div style={{ marginTop: 18, display: "grid", gap: 14 }}>
-          {!loading && !filtered.length ? <div style={emptyStyle}>No hay leads cerrados.</div> : null}
-          {filtered.map((lead) => <LeadCard key={lead.id} lead={lead} busyId={busyId} onAction={act} onOpenClient={openClient} />)}
-        </div>
-      ) : (
-        <div className="tc-captacion-board">
-          {columns.map((column) => (
-            <div key={column.key} className="tc-captacion-column">
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>{column.title}</div>
-                  <div style={{ fontSize: 12, opacity: 0.68, marginTop: 4 }}>{column.subtitle}</div>
-                </div>
-                <div style={countStyle}>{byColumn[column.key]?.length || 0}</div>
-              </div>
-
-              <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-                {!byColumn[column.key]?.length ? <div style={emptyMiniStyle}>Sin leads</div> : null}
-                {byColumn[column.key]?.map((lead) => <LeadCard key={lead.id} lead={lead} busyId={busyId} onAction={act} onOpenClient={openClient} />)}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function LeadCard({
-  lead,
-  busyId,
-  onAction,
-  onOpenClient,
-}: {
-  lead: Lead;
-  busyId: string;
-  onAction: (id: string, action: "no_contesta" | "pendiente_free" | "hizo_free" | "recontacto" | "captado" | "no_interesado" | "reabrir") => void;
-  onOpenClient: (lead: Lead) => void;
-}) {
-  const state = String(lead.workflow_state || lead.estado || "nuevo").toLowerCase();
-  const chip = stateChip(state);
-  const tone = cardTone(lead);
-  const phase = workflowState(lead);
-  const disabled = busyId === lead.id;
-
-  return (
-    <div className="tc-captacion-lead-card" style={{ background: tone.bg, border: tone.border }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-        <div>
-          <div style={{ fontSize: 17, fontWeight: 800 }}>{fullName(lead)}</div>
-          <div style={{ marginTop: 5, opacity: 0.78, fontSize: 13 }}>{phone(lead)}{lead.cliente?.email ? ` · ${lead.cliente.email}` : ""}</div>
-        </div>
-        <span style={{ ...chipPill, background: chip.bg, border: chip.border }}>{chip.label}</span>
+      <div className={styles.hud}>
+        <Hud icon={Activity} label="En vista" value={filtered.length} />
+        <Hud icon={Phone} label="Llamar hoy" value={totals.due} tone="amber" />
+        <Hud icon={Sparkles} label="Nuevos" value={totals.nuevo} tone="cyan" />
+        <Hud icon={Clock3} label="Pend FREE" value={totals.pend_free} tone="gold" />
+        <Hud icon={Target} label="Pend CAP" value={totals.pend_cap} tone="hot" featured />
+        <Hud icon={UserCheck} label="Clientes" value={totals.cliente} tone="green" />
       </div>
 
-      <div style={{ marginTop: 12, display: "grid", gap: 6, fontSize: 12, opacity: 0.8 }}>
-        <div>Entrada: <b>{fmtDate(lead.created_at)}</b></div>
-        <div>Próxima gestión: <b>{fmtDate(lead.next_contact_at)}</b> · {relativeDue(lead.next_contact_at)}</div>
-        <div>Intentos: <b>{Math.max(1, Number(lead.intento_actual || 1))}/{Math.max(3, Number(lead.max_intentos || 3))}</b></div>
-        {(lead.campaign_name || lead.form_name || lead.origen) ? <div>{[lead.campaign_name, lead.form_name, lead.origen].filter(Boolean).join(" · ")}</div> : null}
+      <div className={styles.funnel} aria-label="Embudo actual"><span>NUEVOS <b>{totals.nuevo}</b></span><i /><span>FREE <b>{totals.pend_free}</b></span><i /><span>PEND CAP <b>{totals.pend_cap}</b></span><i /><span>CLIENTES <b>{totals.cliente}</b></span></div>
+
+      <div className={styles.viewTabs}>
+        {(["pendientes", "hoy", "urgentes", "todos", "cerrados"] as ViewKey[]).map((key) => <button type="button" key={key} className={view === key ? styles.active : ""} onClick={() => setView(key)}>{key === "pendientes" ? "Pendientes" : key === "hoy" ? "Hoy" : key === "urgentes" ? "Urgentes" : key === "todos" ? "Todos" : `Cerrados · ${totals.cerrado}`}</button>)}
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button onClick={() => onOpenClient(lead)} style={miniButton("rgba(255,255,255,.10)")}>Abrir CRM</button>
-        <a href={phone(lead) !== "Sin teléfono" ? `tel:${phone(lead)}` : undefined} style={{ textDecoration: "none" }}>
-          <button disabled={phone(lead) === "Sin teléfono"} style={miniButton("#0ea5e9", phone(lead) === "Sin teléfono")}>Llamar</button>
-        </a>
-
-        {phase !== "cerrado" && phase !== "cliente" ? (
-          <>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "no_contesta")} style={miniButton("#f59e0b", disabled)}>No responde → Pend free</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "pendiente_free")} style={miniButton("#38bdf8", disabled)}>Pend free</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, phase === "pend_cap" ? "recontacto" : "hizo_free")} style={miniButton("#ec4899", disabled)}>{phase === "pend_cap" ? "Recontacto promo" : "Free hecha → Pend cap"}</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "captado")} style={miniButton("#22c55e", disabled)}>Cliente</button>
-            <button disabled={disabled} onClick={() => onAction(lead.id, "no_interesado")} style={miniButton("#ef4444", disabled)}>No interesa</button>
-          </>
-        ) : null}
-
-        {(phase === "cerrado" || phase === "cliente") ? (
-          <button disabled={disabled} onClick={() => onAction(lead.id, "reabrir")} style={miniButton("#6366f1", disabled)}>Reabrir</button>
-        ) : null}
+      <div className={styles.filters}>
+        <label className={styles.search}><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar nombre, teléfono, email o campaña" /></label>
+        <Select icon={Filter} value={origin} onChange={setOrigin} label="Todos los orígenes" options={options.origins.map((value) => [value, value])} />
+        <Select value={campaign} onChange={setCampaign} label="Todas las campañas" options={options.campaigns.map((value) => [value, value])} />
+        {options.workers.length ? <Select value={worker} onChange={setWorker} label="Todas las centrales" options={options.workers} /> : null}
+        <Select value={sort} onChange={(value) => setSort(value as SortKey)} label="Prioridad automática" options={[["priority","Más urgente"],["recent","Más reciente"],["oldest","Más antiguo"],["next","Próxima gestión"],["attempts","Más intentos"],["origin","Origen"]]} />
       </div>
-    </div>
-  );
+      {message ? <div className={styles.feedback}>{message}</div> : null}
+    </header>
+
+    {view === "cerrados" ? <div className={styles.closedList}>{filtered.length ? filtered.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} />) : <Empty />}</div> : <>
+      <div className={styles.mobileTabs}>{COLUMNS.map((column) => <button type="button" key={column.key} className={mobileColumn === column.key ? styles.active : ""} onClick={() => setMobileColumn(column.key)}>{column.short}<b>{byColumn[column.key].length}</b></button>)}</div>
+      <div className={styles.board}>
+        {COLUMNS.map((column) => { const Icon = column.icon; const rows = byColumn[column.key]; const shown = rows.slice(0, limits[column.key]); return <article key={column.key} className={`${styles.column} ${styles[column.key]} ${mobileColumn === column.key ? styles.mobileActive : ""}`}>
+          <div className={styles.columnHead}><span><Icon /></span><div><h3>{column.title}</h3><p>{column.subtitle}</p></div><b>{rows.length}</b></div>
+          <div className={styles.cards}>{shown.length ? shown.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} />) : <Empty />}</div>
+          {shown.length < rows.length ? <button type="button" className={styles.more} onClick={() => setLimits((current) => ({ ...current, [column.key]: current[column.key] + PAGE_SIZE }))}>Ver {Math.min(PAGE_SIZE, rows.length - shown.length)} más <ChevronDown /></button> : null}
+        </article>; })}
+      </div>
+    </>}
+  </section>;
 }
 
-const panelStyle: CSSProperties = {
-  borderRadius: 20,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.03)",
-  padding: 18,
-};
-
-const columnStyle: CSSProperties = {
-  borderRadius: 20,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.03)",
-  padding: 14,
-  minHeight: 220,
-};
-
-const kpiStyle: CSSProperties = {
-  borderRadius: 16,
-  border: "1px solid rgba(255,255,255,.08)",
-  background: "rgba(255,255,255,.04)",
-  padding: 14,
-};
-
-const kpiLabel: CSSProperties = { opacity: 0.68, fontSize: 13, marginBottom: 6 };
-const kpiValue: CSSProperties = { fontSize: 26, fontWeight: 800 };
-const emptyStyle: CSSProperties = { borderRadius: 18, border: "1px solid rgba(255,255,255,.08)", background: "rgba(255,255,255,.03)", padding: 18, opacity: 0.75 };
-const emptyMiniStyle: CSSProperties = { borderRadius: 14, border: "1px dashed rgba(255,255,255,.10)", padding: 14, opacity: 0.58, textAlign: "center" };
-const countStyle: CSSProperties = { minWidth: 34, height: 34, borderRadius: 999, display: "grid", placeItems: "center", background: "rgba(255,255,255,.08)", fontWeight: 800 };
-const chipPill: CSSProperties = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "6px 10px", borderRadius: 999, fontSize: 12, fontWeight: 700 };
-
-function buttonStyle(background: string): CSSProperties {
-  return { background, color: "white", border: "none", padding: "10px 14px", borderRadius: 12, fontWeight: 700, cursor: "pointer" };
+function Hud({ icon: Icon, label, value, tone = "neutral", featured = false }: { icon: typeof Activity; label: string; value: number; tone?: string; featured?: boolean }) {
+  return <article className={`${styles.hudCard} ${styles[tone]} ${featured ? styles.featured : ""}`}><span><Icon /></span><div><small>{label}</small><strong>{value}</strong></div></article>;
 }
 
-function miniButton(background: string, disabled = false): CSSProperties {
-  return { background, color: "white", border: "none", padding: "8px 10px", borderRadius: 10, fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.55 : 1 };
+function Select({ icon: Icon, value, onChange, label, options }: { icon?: typeof Filter; value: string; onChange: (value: string) => void; label: string; options: Array<[string,string]> }) {
+  return <label className={styles.select}>{Icon ? <Icon /> : null}<select value={value} onChange={(event) => onChange(event.target.value)}><option value="all">{label}</option>{options.map(([key,text]) => <option key={key} value={key}>{text}</option>)}</select><ChevronDown /></label>;
 }
+
+function LeadCard({ lead, fresh, busy, onAction, onOpen }: { lead: Lead; fresh: boolean; busy: boolean; onAction: (lead: Lead, action: ActionKey, next?: string) => void; onOpen: (lead: Lead) => void }) {
+  const phase = phaseOf(lead);
+  const due = urgency(lead);
+  const [schedule, setSchedule] = useState(() => dateTimeInput(lead.next_contact_at));
+  return <div className={`${styles.card} ${fresh ? styles.fresh : ""}`}>
+    {fresh ? <span className={styles.newFlag}>✨ NUEVO LEAD</span> : null}
+    <div className={styles.cardTop}><div><h4>{fullName(lead)}</h4><a href={phone(lead) ? `tel:${phone(lead)}` : undefined}><Phone />{phone(lead) || "Sin teléfono"}</a>{lead.cliente?.email ? <span><Mail />{lead.cliente.email}</span> : null}</div><span className={`${styles.due} ${styles[due.key]}`}>{due.label}</span></div>
+    <div className={styles.meta}><span className={styles.phase}>{phase === "nuevo" ? "Cliente nuevo" : phase === "pend_free" ? "Pendiente FREE" : phase === "pend_cap" ? "Pendiente captación" : phase === "cliente" ? "Cliente" : "Cerrado"}</span><span>{lead.origen || lead.cliente?.origen || "Origen sin registrar"}</span>{lead.campaign_name ? <span>{lead.campaign_name}</span> : null}</div>
+    <dl><div><dt>Próxima gestión</dt><dd>{formatDate(lead.next_contact_at)}</dd></div><div><dt>Última gestión</dt><dd>{lead.last_contact_at ? relative(lead.last_contact_at).replace("Vencida", "Hace") : "Sin gestión"}</dd></div><div><dt>Intentos</dt><dd>{Math.max(1, Number(lead.intento_actual || 1))}/{Math.max(3, Number(lead.max_intentos || 3))}</dd></div>{lead.assigned_worker_name ? <div><dt>Central</dt><dd>{lead.assigned_worker_name}</dd></div> : null}</dl>
+    <div className={styles.primaryActions}><a className={!phone(lead) ? styles.disabled : ""} href={phone(lead) ? `tel:${phone(lead)}` : undefined}><Phone />Llamar</a><button type="button" onClick={() => onOpen(lead)}><ExternalLink />Abrir CRM</button></div>
+    <details className={styles.quick}><summary>Acciones rápidas <ChevronDown /></summary><div>
+      {phase !== "cerrado" && phase !== "cliente" ? <><button disabled={busy} onClick={() => onAction(lead,"no_contesta")}>No responde</button><button disabled={busy} onClick={() => onAction(lead,"pendiente_free")}>Pend FREE</button><button disabled={busy} onClick={() => onAction(lead, phase === "pend_cap" ? "recontacto" : "hizo_free")}>{phase === "pend_cap" ? "Recontactar promo" : "FREE realizada"}</button><button disabled={busy} onClick={() => onAction(lead,"captado")}>Cliente</button><button disabled={busy} className={styles.danger} onClick={() => onAction(lead,"no_interesado")}>No interesa</button></> : <button disabled={busy} onClick={() => onAction(lead,"reabrir")}>Reabrir</button>}
+      <label><CalendarClock /><input type="datetime-local" value={schedule} onChange={(event) => setSchedule(event.target.value)} /><button disabled={busy || !schedule} onClick={() => onAction(lead,"programar",new Date(schedule).toISOString())}>Programar</button></label>
+    </div></details>
+  </div>;
+}
+
+function Empty() { return <div className={styles.empty}>Sin leads en esta fase</div>; }

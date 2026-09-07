@@ -1,244 +1,122 @@
+import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { processExpandedMetaLead, processMetaLeadById, type MetaLeadPayload } from "@/lib/server/meta-leads";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
-function text(v: any) {
-  const s = String(v ?? "").trim();
-  return s || null;
+function safeEqual(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
-function normalizePhonePretty(v: any) {
-  return String(v ?? "").replace(/\s+/g, " ").trim() || null;
+function validMetaSignature(rawBody: string, signature: string | null) {
+  const secret = String(process.env.META_APP_SECRET || "").trim();
+  if (!secret || !signature?.startsWith("sha256=")) return false;
+  const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
+  return safeEqual(expected, signature);
 }
 
-function normalizePhoneDigits(v: any) {
-  const digits = String(v ?? "").replace(/\D/g, "").trim();
-  if (!digits) return null;
-  if (digits.length === 9) return `34${digits}`;
-  return digits;
+function validInternalSecret(req: NextRequest) {
+  const configured = String(process.env.META_INGEST_SECRET || "").trim();
+  if (!configured) return false;
+  const bearer = String(req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  const header = String(req.headers.get("x-meta-ingest-secret") || "");
+  return safeEqual(configured, bearer || header);
 }
 
-function splitName(fullName: string | null) {
-  const value = String(fullName || "").trim();
-  if (!value) return { nombre: "Lead Facebook", apellido: null as string | null };
-  const parts = value.split(/\s+/).filter(Boolean);
-  return {
-    nombre: parts[0] || "Lead Facebook",
-    apellido: parts.length > 1 ? parts.slice(1).join(" ") : null,
-  };
-}
-
-async function findExistingClient(admin: ReturnType<typeof supabaseAdmin>, args: { telefonoDigits?: string | null; email?: string | null; }) {
-  if (args.telefonoDigits) {
-    const { data } = await admin
-      .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, email, origen")
-      .eq("telefono_normalizado", args.telefonoDigits)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) return data;
+function leadgenChanges(body: any) {
+  const changes: Array<{ leadgenId: string; pageId: string | null; formId: string | null; campaignId: string | null; adId: string | null }> = [];
+  for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+    for (const change of Array.isArray(entry?.changes) ? entry.changes : []) {
+      if (String(change?.field || "").toLowerCase() !== "leadgen") continue;
+      const value = change?.value || {};
+      const leadgenId = String(value?.leadgen_id || value?.leadgenId || "").trim();
+      if (!leadgenId) continue;
+      changes.push({
+        leadgenId,
+        pageId: String(value?.page_id || entry?.id || "").trim() || null,
+        formId: String(value?.form_id || "").trim() || null,
+        campaignId: String(value?.campaign_id || "").trim() || null,
+        adId: String(value?.ad_id || "").trim() || null,
+      });
+    }
   }
-
-  if (args.email) {
-    const { data } = await admin
-      .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, telefono_normalizado, email, origen")
-      .ilike("email", args.email)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data) return data;
-  }
-
-  return null;
-}
-
-async function insertLeadNotifications(admin: ReturnType<typeof supabaseAdmin>, clienteId: string, fullName: string, phone: string | null) {
-  const { data: workers } = await admin
-    .from("workers")
-    .select("user_id, role")
-    .in("role", ["admin", "central"]);
-
-  const targets = (workers || []).filter((x: any) => x?.user_id);
-  if (!targets.length) return;
-
-  const rows = targets.map((worker: any) => ({
-    user_id: worker.user_id,
-    title: "🔥 Nuevo lead de Facebook",
-    message: [fullName, phone].filter(Boolean).join(" · ") || "Ha entrado un lead nuevo en captación.",
-    read: false,
-    client_id: clienteId,
-    kind: "lead",
-  }));
-
-  try {
-    const { error } = await admin.from("notifications").insert(rows);
-    if (error) throw error;
-  } catch {
-    const fallback = rows.map(({ user_id, title, message, read }: any) => ({ user_id, title, message, read }));
-    await admin.from("notifications").insert(fallback);
-  }
-}
-
-async function tryInsertClientNote(admin: ReturnType<typeof supabaseAdmin>, payload: any) {
-  try {
-    await admin.from("crm_client_notes").insert(payload);
-  } catch {
-    // tabla opcional
-  }
+  return changes;
 }
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const mode = url.searchParams.get("hub.mode");
-  const token = url.searchParams.get("hub.verify_token");
-  const challenge = url.searchParams.get("hub.challenge");
-
-  if (mode === "subscribe" && token === process.env.META_VERIFY_TOKEN) {
-    return new NextResponse(challenge || "OK", { status: 200 });
+  const token = url.searchParams.get("hub.verify_token") || "";
+  const challenge = url.searchParams.get("hub.challenge") || "";
+  const expected = String(process.env.META_VERIFY_TOKEN || "").trim();
+  if (mode === "subscribe" && expected && safeEqual(token, expected)) {
+    return new NextResponse(challenge, { status: 200, headers: { "Cache-Control": "no-store" } });
   }
-
-  return NextResponse.json({ ok: false, error: "VERIFY_FAILED" }, { status: 200 });
+  return NextResponse.json({ ok: false, error: "VERIFY_FAILED" }, { status: 403 });
 }
 
 export async function POST(req: NextRequest) {
+  const receivedAt = new Date().toISOString();
+  const rawBody = await req.text();
+  let body: any;
   try {
-    const admin = supabaseAdmin();
-    const body = await req.json().catch(() => ({}));
+    body = rawBody ? JSON.parse(rawBody) : {};
+  } catch {
+    return NextResponse.json({ ok: false, error: "INVALID_JSON" }, { status: 400 });
+  }
 
-    const fullName = text(body?.nombre) || text(body?.full_name) || text(body?.name) || "Lead Facebook";
-    const { nombre, apellido } = splitName(fullName);
-    const telefono = normalizePhonePretty(body?.telefono || body?.phone || body?.phone_number || null);
-    const telefonoDigits = normalizePhoneDigits(telefono);
-    const email = text(body?.email);
-    const origen = text(body?.origen) || "facebook_ads";
-    const campaignName = text(body?.campaign_name) || null;
-    const formName = text(body?.form_name) || null;
+  const isMetaWebhook = body?.object === "page" && Array.isArray(body?.entry);
+  if (isMetaWebhook && !validMetaSignature(rawBody, req.headers.get("x-hub-signature-256"))) {
+    console.warn("META_WEBHOOK_REJECTED", { reason: "invalid_signature", receivedAt });
+    return NextResponse.json({ ok: false, error: "INVALID_META_SIGNATURE" }, { status: 401 });
+  }
+  if (!isMetaWebhook && !validInternalSecret(req)) {
+    console.warn("META_WEBHOOK_REJECTED", { reason: "missing_internal_secret", receivedAt });
+    return NextResponse.json({ ok: false, error: "UNAUTHORIZED_INGEST" }, { status: 401 });
+  }
 
-    if (!telefono && !email) {
-      return NextResponse.json({ ok: false, error: "Lead sin teléfono ni email" }, { status: 400 });
-    }
-
-    const existing = await findExistingClient(admin, { telefonoDigits, email });
-
-    const clientPayload: Record<string, any> = {
-      nombre,
-      apellido,
-      telefono: telefono || existing?.telefono || "sin_telefono",
-      telefono_normalizado: telefonoDigits || existing?.telefono_normalizado || `sin_telefono_${Date.now()}`,
-      email: email || existing?.email || null,
-      origen,
-    };
-
-    let cliente: any = null;
-
-    if (existing?.id) {
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .update(clientPayload)
-        .eq("id", existing.id)
-        .select("*")
-        .single();
-      if (error) throw error;
-      cliente = data;
-    } else {
-      const insertPayload = {
-        ...clientPayload,
-        pais: null,
-        notas: null,
-        deuda_pendiente: 0,
-        minutos_free_pendientes: 0,
-        minutos_normales_pendientes: 0,
-      };
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .insert(insertPayload)
-        .select("*")
-        .single();
-      if (error) throw error;
-      cliente = data;
-    }
-
-    // Intentamos dejar también el CRM en modo lead nuevo, pero sin romper si esas columnas no existen.
-    try {
-      await admin
-        .from("crm_clientes")
-        .update({
-          lead_status: "nuevo",
-          lead_contacted_at: null,
-          lead_campaign_name: campaignName,
-          lead_form_name: formName,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", cliente.id);
-    } catch {}
-
-    await tryInsertClientNote(admin, {
-      cliente_id: cliente.id,
-      texto: [
-        "🔥 Nuevo lead recibido automáticamente.",
-        `• Nombre: ${fullName}`,
-        telefono ? `• Teléfono: ${telefono}` : null,
-        email ? `• Email: ${email}` : null,
-        campaignName ? `• Campaña: ${campaignName}` : null,
-        formName ? `• Formulario: ${formName}` : null,
-      ].filter(Boolean).join("\n"),
-      author_name: "Sistema · Captación",
-      author_email: "no-reply@tarotcelestial.local",
-      is_pinned: true,
-    });
-
-    const { data: openLead } = await admin
-      .from("captacion_leads")
-      .select("id")
-      .eq("cliente_id", cliente.id)
-      .in("estado", ["nuevo", "no_contesta", "pendiente_free", "hizo_free", "recontacto"])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (openLead?.id) {
-      await admin
-        .from("captacion_leads")
-        .update({
-          estado: "nuevo",
-          intento_actual: 1,
-          max_intentos: 3,
-          next_contact_at: new Date().toISOString(),
-          contacted_at: null,
-          last_contact_at: null,
-          last_result: null,
-          closed_at: null,
-          campaign_name: campaignName,
-          form_name: formName,
-          origen,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", openLead.id);
-    } else {
-      await admin.from("captacion_leads").insert({
-        cliente_id: cliente.id,
-        estado: "nuevo",
-        intento_actual: 1,
-        max_intentos: 3,
-        next_contact_at: new Date().toISOString(),
-        contacted_at: null,
-        last_contact_at: null,
-        last_result: null,
-        closed_at: null,
-        campaign_name: campaignName,
-        form_name: formName,
-        origen,
+  try {
+    if (isMetaWebhook) {
+      const changes = leadgenChanges(body);
+      console.info("META_WEBHOOK_RECEIVED", { receivedAt, changes: changes.length });
+      const results = [];
+      for (const change of changes) {
+        results.push(await processMetaLeadById(change.leadgenId, {
+          source: "meta_webhook",
+          pageId: change.pageId,
+          formId: change.formId,
+          campaignId: change.campaignId,
+          adId: change.adId,
+          payload: body,
+        }));
+      }
+      return NextResponse.json({
+        ok: true,
+        received: changes.length,
+        processed: results.filter((item: any) => !item?.duplicate).length,
+        duplicates: results.filter((item: any) => item?.duplicate).length,
       });
     }
 
-    await insertLeadNotifications(admin, String(cliente.id), fullName, telefono);
+    const expanded = body?.lead && typeof body.lead === "object" ? body.lead : body;
+    const leadgenId = String(expanded?.id || expanded?.leadgen_id || body?.leadgen_id || "").trim();
+    if (!leadgenId) return NextResponse.json({ ok: false, error: "META_LEAD_ID_REQUIRED" }, { status: 400 });
 
-    return NextResponse.json({ ok: true, cliente_id: cliente.id });
-  } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ ok: false, error: err?.message || "ERR" }, { status: 500 });
+    if (Array.isArray(expanded?.field_data)) {
+      const result = await processExpandedMetaLead({ ...expanded, id: leadgenId } as MetaLeadPayload, {
+        source: "internal_ingest",
+        payload: body,
+      });
+      return NextResponse.json(result);
+    }
+
+    const result = await processMetaLeadById(leadgenId, { source: "internal_ingest", payload: body });
+    return NextResponse.json(result);
+  } catch (error: any) {
+    return NextResponse.json({ ok: false, error: String(error?.message || "META_WEBHOOK_FAILED") }, { status: 500 });
   }
 }

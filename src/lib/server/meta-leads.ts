@@ -5,7 +5,7 @@ type LeadField = {
   values?: any[];
 };
 
-type MetaLeadPayload = {
+export type MetaLeadPayload = {
   id?: string;
   created_time?: string;
   field_data?: LeadField[];
@@ -34,7 +34,8 @@ function normalizePhone(value: any) {
   const raw = String(value ?? "").trim();
   if (!raw) return { pretty: null as string | null, digits: null as string | null };
   const pretty = raw.replace(/\s+/g, " ").trim();
-  const digits = pretty.replace(/\D/g, "").trim();
+  const rawDigits = pretty.replace(/\D/g, "").trim();
+  const digits = rawDigits.length === 9 ? `34${rawDigits}` : rawDigits;
   return {
     pretty: pretty || null,
     digits: digits || null,
@@ -95,7 +96,7 @@ async function trySelectClienteByLeadgenId(leadgenId: string) {
   try {
     const { data, error } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, email")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email")
       .eq("leadgen_id", leadgenId)
       .maybeSingle();
 
@@ -121,7 +122,7 @@ async function findExistingClient(args: {
   if (args.phoneDigits) {
     const { data, error } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, email")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email")
       .eq("telefono_normalizado", args.phoneDigits)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -133,7 +134,7 @@ async function findExistingClient(args: {
   if (args.email) {
     const { data, error } = await admin
       .from("crm_clientes")
-      .select("id, nombre, apellido, telefono, email")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, email")
       .ilike("email", args.email)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -168,9 +169,9 @@ async function upsertClient(args: {
   const commonPatch: Record<string, any> = {
     nombre: args.nombre,
     apellido: args.apellido || null,
-    telefono: args.telefono || null,
-    telefono_normalizado: args.telefonoDigits || null,
-    email: args.email || null,
+    telefono: args.telefono || existing?.telefono || `sin_telefono_${args.leadgenId || Date.now()}`,
+    telefono_normalizado: args.telefonoDigits || existing?.telefono_normalizado || `sin_telefono_${args.leadgenId || Date.now()}`,
+    email: args.email || existing?.email || null,
     origen: args.sourceLabel,
   };
 
@@ -492,7 +493,7 @@ export async function ingestMetaLead(lead: MetaLeadPayload, options: IngestOptio
   });
 
   await insertClientNote(String(cliente.id), note);
-  await upsertCaptacionLead({
+  const captacionLeadId = await upsertCaptacionLead({
     clienteId: String(cliente.id),
     origen: sourceLabel,
     campaignName: sanitizeText(lead?.campaign_name),
@@ -525,5 +526,151 @@ export async function ingestMetaLead(lead: MetaLeadPayload, options: IngestOptio
     phone: phoneInfo.pretty,
     email,
     leadgenId: sanitizeText(lead?.id),
+    captacionLeadId,
   };
+}
+
+type MetaEventContext = {
+  source?: string;
+  pageId?: string | null;
+  formId?: string | null;
+  campaignId?: string | null;
+  adId?: string | null;
+  payload?: Record<string, any> | null;
+};
+
+export async function claimMetaLeadEvent(leadgenId: string, context: MetaEventContext = {}) {
+  const admin = supabaseAdmin();
+  const now = new Date().toISOString();
+  const { data, error } = await admin
+    .from("meta_lead_events")
+    .insert({
+      leadgen_id: leadgenId,
+      status: "received",
+      source: context.source || "meta_webhook",
+      page_id: context.pageId || null,
+      form_id: context.formId || null,
+      campaign_id: context.campaignId || null,
+      ad_id: context.adId || null,
+      received_at: now,
+      payload: context.payload || null,
+      updated_at: now,
+    })
+    .select("id,status,received_at")
+    .single();
+
+  if (!error && data) return { claimed: true as const, event: data };
+
+  if (error?.code === "23505") {
+    const { data: existing } = await admin
+      .from("meta_lead_events")
+      .select("id,status,received_at,cliente_id,captacion_lead_id")
+      .eq("leadgen_id", leadgenId)
+      .maybeSingle();
+    return { claimed: false as const, event: existing || null };
+  }
+
+  throw error || new Error("META_EVENT_CLAIM_FAILED");
+}
+
+export async function markMetaLeadEvent(
+  eventId: string,
+  patch: Record<string, any>
+) {
+  const admin = supabaseAdmin();
+  const { error } = await admin
+    .from("meta_lead_events")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", eventId);
+  if (error) throw error;
+}
+
+export async function processMetaLeadById(
+  leadgenId: string,
+  context: MetaEventContext = {}
+) {
+  const claimed = await claimMetaLeadEvent(leadgenId, context);
+  if (!claimed.claimed) {
+    console.info("META_LEAD_DUPLICATE", { leadgenId, status: claimed.event?.status || "unknown" });
+    return { ok: true, duplicate: true, leadgenId, event: claimed.event };
+  }
+
+  const eventId = String(claimed.event.id);
+  try {
+    await markMetaLeadEvent(eventId, { status: "fetching", attempt_count: 1 });
+    console.info("META_LEAD_FETCH", { leadgenId, eventId });
+    const lead = await fetchMetaLeadById(leadgenId);
+    const fetchedAt = new Date().toISOString();
+    const result = await ingestMetaLead(lead, {
+      sourceLabel: "facebook_ads",
+      rawWebhookBody: context.payload || null,
+      metaContext: context,
+    });
+    const insertedAt = new Date().toISOString();
+
+    await markMetaLeadEvent(eventId, {
+      status: "processed",
+      cliente_id: result.cliente?.id || null,
+      captacion_lead_id: result.captacionLeadId || null,
+      meta_created_at: lead.created_time || null,
+      fetched_at: fetchedAt,
+      inserted_at: insertedAt,
+      visible_at: insertedAt,
+      campaign_id: lead.campaign_id || context.campaignId || null,
+      ad_id: lead.ad_id || context.adId || null,
+      form_id: lead.form_id || context.formId || null,
+      last_error: null,
+      payload: { webhook: context.payload || null, lead },
+    });
+
+    console.info("META_LEAD_PROCESSED", {
+      leadgenId,
+      eventId,
+      clienteId: result.cliente?.id || null,
+      captacionLeadId: result.captacionLeadId || null,
+    });
+    return { ...result, duplicate: false, eventId };
+  } catch (error: any) {
+    const message = String(error?.message || "META_LEAD_PROCESSING_FAILED").slice(0, 1000);
+    await markMetaLeadEvent(eventId, { status: "failed", last_error: message }).catch(() => null);
+    console.error("META_LEAD_FAILED", { leadgenId, eventId, error: message });
+    throw error;
+  }
+}
+
+export async function processExpandedMetaLead(
+  lead: MetaLeadPayload,
+  context: MetaEventContext = {}
+) {
+  const leadgenId = sanitizeText(lead?.id);
+  if (!leadgenId) throw new Error("META_LEAD_ID_REQUIRED");
+
+  const claimed = await claimMetaLeadEvent(leadgenId, context);
+  if (!claimed.claimed) return { ok: true, duplicate: true, leadgenId, event: claimed.event };
+
+  const eventId = String(claimed.event.id);
+  try {
+    const result = await ingestMetaLead(lead, {
+      sourceLabel: "facebook_ads",
+      rawWebhookBody: context.payload || null,
+      metaContext: context,
+    });
+    const insertedAt = new Date().toISOString();
+    await markMetaLeadEvent(eventId, {
+      status: "processed",
+      cliente_id: result.cliente?.id || null,
+      captacion_lead_id: result.captacionLeadId || null,
+      meta_created_at: lead.created_time || null,
+      fetched_at: insertedAt,
+      inserted_at: insertedAt,
+      visible_at: insertedAt,
+      last_error: null,
+      payload: { webhook: context.payload || null, lead },
+    });
+    return { ...result, duplicate: false, eventId };
+  } catch (error: any) {
+    const message = String(error?.message || "META_LEAD_PROCESSING_FAILED").slice(0, 1000);
+    await markMetaLeadEvent(eventId, { status: "failed", last_error: message }).catch(() => null);
+    throw error;
+  }
 }
