@@ -56,11 +56,11 @@
 .detailSection ul { margin: 8px 0 0; padding-left: 17px; }
 .detailSection li { margin: 5px 0; color: rgba(255,255,255,.58); font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
 .empty { color: rgba(255,255,255,.35); font-size: 10px; }
-.impactBox { display: flex; gap: 10px; margin-top: 8px; padding: 13px; border: 1px solid rgba(255,103,128,.2); border-radius: 13px; color: #ff91a4; background: rgba(145,27,53,.1); }
-.impactBox p { margin: 4px 0 0; color: rgba(255,220,227,.65); font-size: 10px; line-height: 1.5; }
-.errors { margin-top: 10px; padding: 13px; border: 1px solid rgba(244,196,94,.16); border-radius: 13px; background: rgba(150,105,20,.07); }
-.errors strong { color: #edcd82; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
-.errors p { margin: 6px 0 0; color: rgba(255,244,216,.6); font-size: 10px; line-height: 1.5; }
+.impactBox { display: flex; gap: 10px; margin-top: 8px; padding: 13px; border: 1px solid color-mix(in srgb, var(--status) 34%, transparent); border-radius: 13px; color: var(--status); background: color-mix(in srgb, var(--status) 9%, transparent); }
+.impactBox p { margin: 4px 0 0; color: rgba(255,255,255,.65); font-size: 10px; line-height: 1.5; }
+.errors { margin-top: 10px; padding: 13px; border: 1px solid color-mix(in srgb, var(--status) 24%, transparent); border-radius: 13px; background: color-mix(in srgb, var(--status) 6%, transparent); }
+.errors strong { color: var(--status); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.errors p { margin: 6px 0 0; color: rgba(255,255,255,.6); font-size: 10px; line-height: 1.5; }
 .detailFooter { display: flex; align-items: center; gap: 7px; margin-top: 15px; color: rgba(255,255,255,.35); font-size: 9px; }
 @media (max-width: 1050px) { .hero { align-items: flex-start; flex-direction: column; } .auditStrip { width: 100%; } .viewport { height: calc(100vh - 320px); } }
 @media (max-width: 680px) { .page { padding: 10px; } .hero { padding: 17px; } .auditStrip { grid-template-columns: repeat(2, 1fr); } .auditStrip div:nth-child(3) { border-left: 0; border-top: 1px solid rgba(255,255,255,.07); } .auditStrip div:nth-child(4) { border-top: 1px solid rgba(255,255,255,.07); } .toolbar { align-items: stretch; flex-direction: column; } .search { width: 100%; } .toolGroup { justify-content: flex-end; } .viewport { height: 68vh; min-height: 520px; } .detailPanel { top: auto; max-height: 72%; } }

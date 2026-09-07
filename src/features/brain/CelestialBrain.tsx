@@ -3,10 +3,13 @@
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent, type WheelEvent } from "react";
 import {
   Activity,
+  Bot,
   ArrowDownToLine,
   ArrowUpFromLine,
   Boxes,
   CircleDollarSign,
+  CircleHelp,
+  Clock3,
   Database,
   FileCode2,
   GitBranch,
@@ -17,6 +20,7 @@ import {
   RotateCcw,
   Search,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   Users,
   X,
@@ -39,6 +43,15 @@ const nodeIcons: Record<string, typeof Network> = {
   billing: CircleDollarSign,
   infra: Database,
 };
+
+const detailContext = {
+  stable: { title: "Protecciones activas", observations: "Verificación reciente", icon: ShieldCheck },
+  attention: { title: "Punto de atención", observations: "Observaciones recientes", icon: ShieldAlert },
+  error: { title: "Fallo detectado", observations: "Errores detectados", icon: ShieldAlert },
+  realtime: { title: "Operación en tiempo real", observations: "Estado reciente", icon: Clock3 },
+  automation: { title: "Automatización activa", observations: "Ejecuciones recientes", icon: Bot },
+  unknown: { title: "Pendiente de auditoría", observations: "Información disponible", icon: CircleHelp },
+} as const;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -67,6 +80,8 @@ export default function CelestialBrain() {
     () => brainNodes.find((node) => node.id === selectedId) || brainNodes[0],
     [selectedId]
   );
+  const selectedContext = detailContext[selected.status];
+  const ContextIcon = selectedContext.icon;
   const visibleIds = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("es");
     if (!normalized) return new Set(brainNodes.map((node) => node.id));
@@ -215,8 +230,14 @@ export default function CelestialBrain() {
               <DetailList icon={ArrowUpFromLine} title="Salidas" values={selected.outputs} />
               <DetailList icon={GitBranch} title="Rutas de código" values={selected.sources} />
 
-              <section className={styles.impactBox}><ShieldAlert size={17} /><div><strong>Si falla</strong><p>{selected.impact}</p></div></section>
-              <section className={styles.errors}><strong>Observaciones recientes</strong>{selected.recentErrors.map((error) => <p key={error}>{error}</p>)}</section>
+              <section className={styles.impactBox} style={{ "--status": statusMeta[selected.status].color } as CSSProperties}>
+                <ContextIcon size={17} />
+                <div><strong>{selectedContext.title}</strong><p>{selected.impact}</p></div>
+              </section>
+              <section className={styles.errors} style={{ "--status": statusMeta[selected.status].color } as CSSProperties}>
+                <strong>{selectedContext.observations}</strong>
+                {selected.recentErrors.map((error) => <p key={error}>{error}</p>)}
+              </section>
               <footer className={styles.detailFooter}><FileCode2 size={14} />{selected.lastChecked}</footer>
             </aside>
           ) : null}

@@ -1,7 +1,10 @@
 "use client";
 
-import { Flame, RefreshCw, ShieldCheck, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Flame, Pencil, RefreshCw, ShieldCheck, Sparkles, Star } from "lucide-react";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import CentralThemeCustomizer from "./CentralThemeCustomizer";
+import CentralProfileEditor, { type CentralPublicProfile } from "./CentralProfileEditor";
 import styles from "./CentralProgressHeader.module.css";
 
 export type CentralOperatorProgress = {
@@ -35,6 +38,8 @@ function getInitials(name: string) {
   return firstCharacter ? firstCharacter.toUpperCase() : "T";
 }
 
+const sb = supabaseBrowser();
+
 export default function CentralProgressHeader({
   progress,
   profile,
@@ -42,6 +47,34 @@ export default function CentralProgressHeader({
   syncStatus = "syncing",
   lastSyncedAt,
 }: CentralProgressHeaderProps) {
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [publicProfile, setPublicProfile] = useState<CentralPublicProfile>({
+    name: profile.name,
+    presentation: "",
+    photoUrl: profile.photoUrl || null,
+    rating: 0,
+    reviewCount: 0,
+  });
+
+  useEffect(() => {
+    let active = true;
+    async function loadPublicProfile() {
+      const token = (await sb.auth.getSession()).data.session?.access_token || "";
+      if (!token) return;
+      const response = await fetch("/api/central/public-profile", {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const result = await response.json().catch(() => ({}));
+      if (active && result.ok && result.profile) setPublicProfile(result.profile);
+    }
+    void loadPublicProfile();
+    return () => { active = false; };
+  }, []);
+
+  const shownName = publicProfile.name || profile.name;
+  const shownPhoto = publicProfile.photoUrl || profile.photoUrl;
+
   return (
     <section className={styles.header} aria-label="Resumen de progreso de la telefonista">
       <div className={styles.brand}>
@@ -96,24 +129,30 @@ export default function CentralProgressHeader({
             <RefreshCw size={19} />
           </button>
         </div>
-        <article className={styles.profileCard}>
+        <button type="button" className={styles.profileCard} onClick={() => setEditorOpen(true)} aria-label="Abrir y editar mi perfil público">
           <div className={styles.avatar}>
-            {profile.photoUrl ? (
+            {shownPhoto ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.photoUrl} alt={`Foto de ${profile.name}`} />
+              <img src={shownPhoto} alt={`Foto de ${shownName}`} />
             ) : (
-              <span>{getInitials(profile.name)}</span>
+              <span>{getInitials(shownName)}</span>
             )}
           </div>
 
           <div className={styles.profileText}>
-            <div className={styles.profileName}>{profile.name}</div>
+            <div className={styles.profileName}>{shownName}</div>
             <div className={styles.profileRole}>{profile.role}</div>
             <div className={styles.profileLevel}>Nivel {profile.level}</div>
+            <div className={styles.profileRating}>
+              <span>{[1, 2, 3, 4, 5].map((value) => <Star key={value} size={10} fill={value <= Math.round(publicProfile.rating) ? "currentColor" : "none"} />)}</span>
+              <small>{publicProfile.reviewCount ? publicProfile.rating.toFixed(1) : "Sin reseñas"}</small>
+            </div>
           </div>
-        </article>
+          <Pencil className={styles.editProfileIcon} size={14} aria-hidden="true" />
+        </button>
         <CentralThemeCustomizer />
       </div>
+      <CentralProfileEditor open={editorOpen} profile={publicProfile} onClose={() => setEditorOpen(false)} onSaved={setPublicProfile} />
     </section>
   );
 }
