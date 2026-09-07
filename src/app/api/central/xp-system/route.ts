@@ -149,13 +149,14 @@ export async function GET(req: Request) {
     const operationalDay = buildOperationalDay(requestedDate);
     const week = startOfWeek();
     const previousWeek = new Date(week); previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
-    const [rulesR, events, workersR, rankingEvents] = await Promise.all([
+    const monthStartDate = startOfUtcMonth();
+    const [rulesR, events, workersR, rankingR] = await Promise.all([
       admin.from("worker_xp_rules").select("id,action_key,name,description,xp_reward,frequency,enabled,integration_status,created_at,updated_at").order("created_at", { ascending: true }),
       loadAllAppliedXpEvents(admin, String(me.id)),
       admin.from("workers").select("id,display_name").eq("role", "central").or("is_active.is.null,is_active.eq.true"),
-      loadAllAppliedXpEvents(admin),
+      admin.rpc("get_worker_xp_rollup", { p_month_start: monthStartDate.toISOString(), p_day_start: operationalDay.start, p_worker_id: null }),
     ]);
-    for (const r of [rulesR, workersR]) if (r.error) throw r.error;
+    for (const r of [rulesR, workersR, rankingR]) if (r.error) throw r.error;
 
     const total = events.reduce((s, e: any) => s + num(e.xp_amount), 0);
     const level = configuredXpProgress(total, levelConfig.levels, levelConfig.tiers);
@@ -292,7 +293,7 @@ export async function GET(req: Request) {
       coinExchangeSummary(admin, String(me.id), total),
     ]);
 
-    const monthStart = startOfUtcMonth().getTime();
+    const monthStart = monthStartDate.getTime();
     const weekStart = week.getTime();
     const prevStart = previousWeek.getTime();
     const sumSince = (ms: number) => events.filter((e: any) => new Date(e.created_at).getTime() >= ms).reduce((s, e: any) => s + num(e.xp_amount), 0);
@@ -304,8 +305,7 @@ export async function GET(req: Request) {
       return { date: start.toISOString().slice(0, 10), xp: events.filter((e: any) => { const t = new Date(e.created_at).getTime(); return t >= start.getTime() && t < end.getTime(); }).reduce((s, e: any) => s + num(e.xp_amount), 0) };
     });
 
-    const totals = new Map<string, number>();
-    for (const e of rankingEvents) totals.set(String((e as any).worker_id), (totals.get(String((e as any).worker_id)) || 0) + num((e as any).xp_amount));
+    const totals = new Map<string, number>((rankingR.data || []).map((row: any) => [String(row.worker_id), num(row.total_xp)]));
     const ranking = (workersR.data || []).map((w: any) => { const xp = totals.get(String(w.id)) || 0; return { worker_id: w.id, name: w.display_name, xp, level: configuredXpProgress(xp, levelConfig.levels, levelConfig.tiers).level, is_me: w.id === me.id }; }).sort((a, b) => b.xp - a.xp).map((r, i) => ({ ...r, position: i + 1 }));
 
     const counts = (key: string) => events.filter((e: any) => e.action_key === key).length;

@@ -16,16 +16,18 @@ export async function GET(req:Request){
   const gate=await requireAdmin(req); if(!gate.ok) return NextResponse.json({ok:false,error:gate.error},{status:403});
   const {admin}=gate;
   const levelConfig = await loadXpLevelConfiguration(admin);
-  const [rulesR,eventsR,workersR,auditR,missionsR,levelMissionsR,tierMissionsR]=await Promise.all([
+  const monthStartIso=monthStart(), dayStartIso=dayStart();
+  const [rulesR,eventsR,rollupR,workersR,auditR,missionsR,levelMissionsR,tierMissionsR]=await Promise.all([
    admin.from("worker_xp_rules").select("*").order("created_at"),
    admin.from("worker_xp_events").select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,created_at").order("created_at",{ascending:false}).limit(250),
+   admin.rpc("get_worker_xp_rollup",{p_month_start:monthStartIso,p_day_start:dayStartIso,p_worker_id:null}),
    admin.from("workers").select("id,display_name,email,role,team,is_active").eq("role","central").order("display_name"),
    admin.from("worker_xp_audit").select("*").order("created_at",{ascending:false}).limit(100),
    admin.from("worker_xp_missions").select("*").order("display_order"),
    admin.from("worker_xp_level_missions").select("level,mission_id,availability,display_order,active"),
    admin.from("worker_xp_tier_missions").select("tier_key,mission_id,availability,display_order,active"),
   ]);
-  for(const r of [rulesR,eventsR,workersR,auditR]) if(r.error) throw r.error;
+  for(const r of [rulesR,eventsR,rollupR,workersR,auditR]) if(r.error) throw r.error;
   const missionInstalled=!missionsR.error&&!levelMissionsR.error&&!tierMissionsR.error;
   const [coinConfigR,walletsR,conversionsR]=await Promise.all([
    admin.from("worker_xp_coin_config").select("xp_units,coin_units,min_xp,enabled,updated_at").eq("id",true).maybeSingle(),
@@ -37,10 +39,10 @@ export async function GET(req:Request){
   const conversionsByWorker=new Map<string,{spent:number;coins:number}>();
   for(const row of conversionsR.data||[]){if(row.status!=="completed")continue;const key=String(row.worker_id);const old=conversionsByWorker.get(key)||{spent:0,coins:0};conversionsByWorker.set(key,{spent:old.spent+num(row.xp_spent),coins:old.coins+num(row.coins_granted)});}
   const events=eventsR.data||[], workers=workersR.data||[];
-  const cards=workers.map((w:any)=>{ const own=events.filter((e:any)=>e.worker_id===w.id&&e.status==="applied"); const total=own.reduce((s:any,e:any)=>s+num(e.xp_amount),0); const month=own.filter((e:any)=>e.created_at>=monthStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const today=own.filter((e:any)=>e.created_at>=dayStart()).reduce((s:any,e:any)=>s+num(e.xp_amount),0); const lvl=configuredXpProgress(total, levelConfig.levels, levelConfig.tiers); const conversion=conversionsByWorker.get(String(w.id)); return {...w,total_xp:total,xp_month:month,xp_today:today,level:lvl.level,level_xp:lvl.current,next_level_xp:lvl.span,next_level_total:lvl.next,clients_captured:own.filter((e:any)=>e.action_key==="client_capture").length,repurchases:own.filter((e:any)=>e.action_key==="repurchase").length,followups:own.filter((e:any)=>e.action_key==="followup").length,consultations:own.filter((e:any)=>e.action_key==="consultation").length,positive_reviews:own.filter((e:any)=>e.action_key==="positive_review").length,missions:own.filter((e:any)=>e.action_key==="daily_mission").length,coins:coinInstalled?(walletByWorker.get(String(w.id))||0):null,coins_spent:coinInstalled?(conversion?.spent||0):null,rewards_claimed:null,rewards_value:null}; });
-  const applied=events.filter((e:any)=>e.status==="applied"); const monthEvents=applied.filter((e:any)=>e.created_at>=monthStart()); const todayEvents=applied.filter((e:any)=>e.created_at>=dayStart());
+  const rollupByWorker=new Map<string,any>((rollupR.data||[]).map((row:any)=>[String(row.worker_id),row]));
+  const cards=workers.map((w:any)=>{ const stats=rollupByWorker.get(String(w.id))||{}; const total=num(stats.total_xp); const month=num(stats.xp_month); const today=num(stats.xp_today); const lvl=configuredXpProgress(total, levelConfig.levels, levelConfig.tiers); const conversion=conversionsByWorker.get(String(w.id)); return {...w,total_xp:total,xp_month:month,xp_today:today,level:lvl.level,level_xp:lvl.current,next_level_xp:lvl.span,next_level_total:lvl.next,clients_captured:num(stats.clients_captured),repurchases:num(stats.repurchases),followups:num(stats.followups),consultations:num(stats.consultations),positive_reviews:num(stats.positive_reviews),missions:num(stats.missions),coins:coinInstalled?(walletByWorker.get(String(w.id))||0):null,coins_spent:coinInstalled?(conversion?.spent||0):null,rewards_claimed:null,rewards_value:null}; });
   const top=[...cards].sort((a:any,b:any)=>b.xp_month-a.xp_month)[0]||null;
-  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,missions:{installed:missionInstalled,catalog:missionInstalled?missionsR.data||[]:[],levels:missionInstalled?levelMissionsR.data||[]:[],tiers:missionInstalled?tierMissionsR.data||[]:[]},coin_exchange:{installed:coinInstalled,config:coinConfigR.data||null},summary:{xp_month:monthEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),xp_today:todayEvents.reduce((s:any,e:any)=>s+num(e.xp_amount),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:coinInstalled?(conversionsR.data||[]).filter((r:any)=>r.status==="completed").reduce((s:number,r:any)=>s+num(r.coins_granted),0):null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
+  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,missions:{installed:missionInstalled,catalog:missionInstalled?missionsR.data||[]:[],levels:missionInstalled?levelMissionsR.data||[]:[],tiers:missionInstalled?tierMissionsR.data||[]:[]},coin_exchange:{installed:coinInstalled,config:coinConfigR.data||null},summary:{xp_month:cards.reduce((s:any,w:any)=>s+num(w.xp_month),0),xp_today:cards.reduce((s:any,w:any)=>s+num(w.xp_today),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:coinInstalled?(conversionsR.data||[]).filter((r:any)=>r.status==="completed").reduce((s:number,r:any)=>s+num(r.coins_granted),0):null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
  }catch(e:any){ return NextResponse.json({ok:false,error:e?.message||"ERR"},{status:500}); }
 }
 

@@ -238,7 +238,7 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
                       <span>
                         <b>Nivel {level.level}</b>
                         <small>{level.next_active_level ? `${fmt(level.xp_to_next || 0)} XP → Nivel ${level.next_active_level}` : "Nivel máximo"}</small>
-                        <em>{rewardSummary(level.reward_type, level.reward_amount, level.reward_label)}</em>
+                        <em>{level.next_active_level ? `Al completar: ${rewardSummary(level.reward_type, level.reward_amount, level.reward_label)}` : rewardSummary(level.reward_type, level.reward_amount, level.reward_label)}</em>
                         <em>{data.missions?.level_links?.filter(link=>link.level===level.level).length||0} misiones</em>
                         {done && level.reward_type === "coins" && Number(level.reward_amount) > 0 ? <em className={claim ? styles.rewardClaimed : styles.rewardPending}>{claim ? "Recompensa entregada" : "Pendiente de reclamar"}</em> : null}
                       </span>
@@ -271,6 +271,8 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
       {selectedLevel ? (() => {
         const tier = data.tier_config.find((item) => item.key === selectedLevel.tier_key);
         const reached = progress.total_xp >= selectedLevel.cumulative_xp;
+        const completionXp = selectedLevel.cumulative_xp + Math.max(0, Number(selectedLevel.xp_to_next) || 0);
+        const completed = Boolean(selectedLevel.next_active_level) && progress.total_xp >= completionXp;
         const reward = rewardValue(selectedLevel.reward_type, selectedLevel.reward_amount);
         const existingClaim = claimForLevel(selectedLevel.level);
         return (
@@ -293,13 +295,13 @@ export default function CentralXpLevelsPanel({ data, error, busy, load, acknowle
               <div className={styles.detailReward}>
                 {selectedLevel.reward_type === "coins" ? <Coins /> : <Gift />}
                 <div>
-                  <span>RECOMPENSA DEL NIVEL</span>
+                  <span>{selectedLevel.next_active_level ? "RECOMPENSA AL COMPLETAR EL NIVEL" : "RECOMPENSA DEL NIVEL"}</span>
                   <strong>{reward || (selectedLevel.reward_label ? "Recompensa configurada" : "Beneficios por definir")}</strong>
                   {selectedLevel.reward_label ? <p>“{selectedLevel.reward_label}”</p> : null}
                 </div>
               </div>
               <div className={styles.detailMissions}><span>MISIONES DESBLOQUEADAS · {(data.missions?.level_links||[]).filter(link=>link.level===selectedLevel.level).length}</span>{(data.missions?.level_links||[]).filter(link=>link.level===selectedLevel.level).map(link=>data.missions.catalog.find(m=>m.id===link.mission_id)).filter(Boolean).map((mission:any)=>{const active=data.missions.active.find(item=>item.id===mission.id);const complete=Boolean(active?.completed);return <div key={mission.id} className={!reached?styles.previewMission:complete?styles.completedMission:""}>{!reached?<LockKeyhole size={15}/>:complete?<CheckCircle2 size={15}/>:<Target size={15}/>}<p><strong>{mission.name}</strong><small>{mission.description} · objetivo {mission.target_count} · +{mission.xp_reward} XP</small>{reached&&active?<em>{active.claimed?"✓ Reclamada":complete?"✓ Completada":`${active.progress} / ${active.target_count}`}</em>:!reached?<em>🔒 Misión bloqueada</em>:null}</p>{active&&complete&&!active.claimed?<button type="button" disabled={claimingMission===mission.id} onClick={()=>void claimMissionReward(mission.id,active.period_key)}>{claimingMission===mission.id?"RECLAMANDO…":`RECLAMAR +${mission.xp_reward} XP`}</button>:null}</div>})}{!(data.missions?.level_links||[]).some(link=>link.level===selectedLevel.level)?<small>Este nivel no tiene misiones configuradas.</small>:null}</div>
-              {reached && selectedLevel.reward_type === "coins" && Number(selectedLevel.reward_amount) > 0 ? (
+              {completed && selectedLevel.reward_type === "coins" && Number(selectedLevel.reward_amount) > 0 ? (
                 existingClaim ? <div className={styles.claimedState}><CheckCircle2 size={16}/> Recompensa ya entregada</div> : <button className={styles.claimButton} type="button" disabled={claimingLevel != null} onClick={() => void claimLevel(selectedLevel.level)}>{claimingLevel === selectedLevel.level ? "ENTREGANDO…" : "RECLAMAR RECOMPENSA"}</button>
               ) : null}
               {claimMessage ? <div className={styles.claimMessage}>{claimMessage}</div> : null}
