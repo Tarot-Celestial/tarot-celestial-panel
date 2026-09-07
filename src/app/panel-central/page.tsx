@@ -385,6 +385,7 @@ function CentralPage() {
       role: String(worker?.job_title || worker?.category || "Telefonista Experta"),
       level: xpProgress ? `${xpProgress.level} · ${currentTierName}` : currentTierName,
       photoUrl: photoUrl ? String(photoUrl) : null,
+      team: String(worker?.team || connectedOperator?.team || ""),
     };
   }, [connectedOperator, currentTierName, xpProgress]);
 

@@ -13,16 +13,12 @@ const PHOTO_TYPES: Record<string, string> = {
 };
 
 async function reviewSummary(admin: ReturnType<typeof getAdminClient>, workerId: string) {
-  const { data, error } = await admin
-    .from("cliente_tarotista_reviews")
-    .select("rating")
-    .eq("worker_id", workerId)
-    .eq("status", "published");
+  const { data, error } = await admin.from("central_review_stats").select("rating_sum,review_count").eq("worker_id", workerId).maybeSingle();
   if (error) throw error;
-  const ratings = (data || []).map((row) => Number(row.rating) || 0);
+  const count = Number(data?.review_count || 0);
   return {
-    rating: ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : 0,
-    reviewCount: ratings.length,
+    rating: count ? Number(data?.rating_sum || 0) / count : 0,
+    reviewCount: count,
   };
 }
 
@@ -40,7 +36,7 @@ export async function GET(req: Request) {
     const admin = getAdminClient();
     const { data, error } = await admin
       .from("central_public_profiles")
-      .select("public_name,presentation,photo_path,is_published,updated_at")
+      .select("public_name,presentation,photo_path,theme_variant,is_published,updated_at")
       .eq("worker_id", me.id)
       .maybeSingle();
     if (error) throw error;
@@ -51,6 +47,8 @@ export async function GET(req: Request) {
         name: String(data?.public_name || me.display_name || "Central"),
         presentation: String(data?.presentation || ""),
         photoUrl: photoUrl(admin, data?.photo_path),
+        team: String(me.team || ""),
+        themeVariant: String(data?.theme_variant || "balanced"),
         isPublished: data?.is_published !== false,
         ...summary,
       },
@@ -71,6 +69,7 @@ export async function POST(req: Request) {
     const form = await req.formData();
     const name = String(form.get("name") || "").trim();
     const presentation = String(form.get("presentation") || "").trim();
+    const themeVariant = String(form.get("themeVariant") || "balanced");
     const fileValue = form.get("photo");
     const photo = fileValue instanceof File && fileValue.size ? fileValue : null;
 
@@ -79,6 +78,9 @@ export async function POST(req: Request) {
     }
     if (presentation.length > 700) {
       return NextResponse.json({ ok: false, error: "La presentación no puede superar 700 caracteres." }, { status: 400 });
+    }
+    if (!["balanced", "soft", "vivid"].includes(themeVariant)) {
+      return NextResponse.json({ ok: false, error: "Tema de perfil no válido." }, { status: 400 });
     }
     if (photo && (!PHOTO_TYPES[photo.type] || photo.size > MAX_PHOTO_BYTES)) {
       return NextResponse.json({ ok: false, error: "Usa una imagen JPG, PNG o WebP de hasta 4 MB." }, { status: 400 });
@@ -110,6 +112,7 @@ export async function POST(req: Request) {
       public_name: name,
       presentation,
       photo_path: nextPhotoPath,
+      theme_variant: themeVariant,
       is_published: true,
       updated_at: new Date().toISOString(),
     }, { onConflict: "worker_id" });
@@ -117,9 +120,6 @@ export async function POST(req: Request) {
       if (photo && nextPhotoPath) await admin.storage.from(BUCKET).remove([nextPhotoPath]);
       throw profileError;
     }
-
-    const { error: workerError } = await admin.from("workers").update({ display_name: name }).eq("id", me.id);
-    if (workerError) throw workerError;
 
     if (photo && current?.photo_path && current.photo_path !== nextPhotoPath) {
       await admin.storage.from(BUCKET).remove([current.photo_path]);
@@ -132,6 +132,8 @@ export async function POST(req: Request) {
         name,
         presentation,
         photoUrl: photoUrl(admin, nextPhotoPath),
+        team: String(me.team || ""),
+        themeVariant,
         isPublished: true,
         ...summary,
       },

@@ -5,6 +5,7 @@ import { Flame, Pencil, RefreshCw, ShieldCheck, Sparkles, Star } from "lucide-re
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import CentralThemeCustomizer from "./CentralThemeCustomizer";
 import CentralProfileEditor, { type CentralPublicProfile } from "./CentralProfileEditor";
+import { centralThemeStyle } from "@/lib/central-profile-theme";
 import styles from "./CentralProgressHeader.module.css";
 
 export type CentralOperatorProgress = {
@@ -19,6 +20,7 @@ export type CentralOperatorProfile = {
   role: string;
   level: string;
   photoUrl?: string | null;
+  team?: string;
 };
 
 type CentralProgressHeaderProps = {
@@ -54,6 +56,8 @@ export default function CentralProgressHeader({
     photoUrl: profile.photoUrl || null,
     rating: 0,
     reviewCount: 0,
+    team: profile.team || "",
+    themeVariant: "balanced",
   });
 
   useEffect(() => {
@@ -69,7 +73,11 @@ export default function CentralProgressHeader({
       if (active && result.ok && result.profile) setPublicProfile(result.profile);
     }
     void loadPublicProfile();
-    return () => { active = false; };
+    const channel = sb.channel("central-public-profile-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "central_review_stats" }, () => void loadPublicProfile())
+      .on("postgres_changes", { event: "*", schema: "public", table: "central_public_profiles" }, () => void loadPublicProfile())
+      .subscribe();
+    return () => { active = false; void sb.removeChannel(channel); };
   }, []);
 
   const shownName = publicProfile.name || profile.name;
@@ -129,7 +137,7 @@ export default function CentralProgressHeader({
             <RefreshCw size={19} />
           </button>
         </div>
-        <button type="button" className={styles.profileCard} onClick={() => setEditorOpen(true)} aria-label="Abrir y editar mi perfil público">
+        <button type="button" className={styles.profileCard} style={centralThemeStyle(publicProfile.team || profile.team, publicProfile.themeVariant)} onClick={() => setEditorOpen(true)} aria-label="Abrir y editar mi perfil público">
           <div className={styles.avatar}>
             {shownPhoto ? (
               // eslint-disable-next-line @next/next/no-img-element

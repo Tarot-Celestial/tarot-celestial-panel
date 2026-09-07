@@ -44,6 +44,7 @@ const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystem
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
 const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
 const RaffleWinnerAdmin = nextDynamic(() => import("@/features/central/RaffleWinnerAdmin"), { ssr:false });
+const CentralReviewsAdminPanel = nextDynamic(() => import("@/components/admin/CentralReviewsAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -2243,6 +2244,7 @@ function AdminPage() {
                   <input className="tc-input" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} placeholder="Equipo" />
                   <input className="tc-input" value={editingWorkerEmail} onChange={(e) => setEditingWorkerEmail(e.target.value)} placeholder="Email" />
                 </div><div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}><button className="tc-btn" onClick={cancelEditWorker}>Cancelar</button><button className="tc-btn tc-btn-ok" onClick={updateWorker}>Guardar cambios</button></div></div> : null}
+              <CentralReviewsAdminPanel />
             </div>
           )}
           {tab === "asistencia" && (

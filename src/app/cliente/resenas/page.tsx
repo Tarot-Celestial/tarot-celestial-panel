@@ -1,171 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { LockKeyhole, MessageCircle, Star } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { BadgeCheck, LockKeyhole, MessageCircle, Star, Trash2, X } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import { centralTeamLabel, centralThemeStyle } from "@/lib/central-profile-theme";
 import styles from "./Reviews.module.css";
 
 const sb = supabaseClienteBrowser();
-
-type Review = { id: string; rating: number; comment: string; isMine: boolean };
-type Central = {
-  id: string;
-  name: string;
-  presentation: string;
-  photoUrl: string | null;
-  average: number;
-  count: number;
-  eligible: boolean;
-  mine: Review | null;
-  reviews: Review[];
-};
+type Review = { id: string; workerId?: string; rating: number; comment: string; verified?: boolean; createdAt?: string; isMine: boolean };
+type Central = { id:string; name:string; team:string; themeVariant:string; presentation:string; photoUrl:string|null; average:number; count:number; distribution:number[]; canCreateReview:boolean; mine:Review|null; reviews:Review[] };
 
 export default function ReviewsPage() {
-  const [items, setItems] = useState<Central[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, { rating: number; comment: string }>>({});
-  const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState("");
-  const [loading, setLoading] = useState(true);
-
-  async function token() {
-    return (await sb.auth.getSession()).data.session?.access_token || "";
-  }
-
-  async function load() {
-    setLoading(true);
-    const accessToken = await token();
-    if (!accessToken) {
-      window.location.href = "/cliente/login";
-      return;
-    }
-    const response = await fetch("/api/cliente/resenas", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    const result = await response.json();
-    if (result.ok) {
-      setItems(result.centrales || []);
-      const nextDrafts: Record<string, { rating: number; comment: string }> = {};
-      for (const central of result.centrales || []) {
-        nextDrafts[central.id] = {
-          rating: Number(central.mine?.rating || 0),
-          comment: String(central.mine?.comment || ""),
-        };
-      }
-      setDrafts(nextDrafts);
-    } else {
-      setMessage(result.error || "No se pudieron cargar los perfiles.");
-    }
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function save(central: Central) {
-    const draft = drafts[central.id];
-    if (!draft?.rating) {
-      setMessage("Selecciona de 1 a 5 estrellas.");
-      return;
-    }
-    setSaving(central.id);
-    setMessage("");
-    const accessToken = await token();
-    const response = await fetch("/api/cliente/resenas", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ workerId: central.id, rating: draft.rating, comment: draft.comment }),
-    });
-    const result = await response.json();
-    setSaving("");
-    if (!result.ok) {
-      setMessage(result.error || "No se pudo guardar la reseña.");
-      return;
-    }
-    setMessage("Reseña guardada correctamente.");
-    await load();
-  }
-
-  return (
-    <ClienteLayout title="Reseñas" subtitle="Conoce a nuestras centrales y comparte tu experiencia real.">
-      <section className={`tc-card ${styles.section}`}>
-        <div className={styles.intro}>
-          <div>
-            <div className="tc-panel-title">Perfiles y reputación</div>
-            <p className="tc-muted">Las estrellas proceden únicamente de clientas atendidas. Cada clienta mantiene una sola reseña editable por central.</p>
-          </div>
-          <div className={styles.realBadge}><Star size={15} /> Valoraciones verificadas</div>
-        </div>
-
-        {message ? <div className={styles.message}>{message}</div> : null}
-        {loading ? <div className={styles.empty}>Cargando perfiles de las centrales…</div> : null}
-        {!loading && !items.length ? <div className={styles.empty}>Todavía no hay centrales activas para mostrar.</div> : null}
-
-        <div className={styles.grid}>
-          {items.map((central) => {
-            const draft = drafts[central.id] || { rating: 0, comment: "" };
-            return (
-              <article className={styles.card} key={central.id}>
-                <div className={styles.profileTop}>
-                  <div className={styles.avatar}>
-                    {central.photoUrl ? <img src={central.photoUrl} alt={`Foto de ${central.name}`} /> : central.name.slice(0, 1).toUpperCase()}
-                  </div>
-                  <div className={styles.identity}>
-                    <span className={styles.kicker}>CENTRAL TAROT CELESTIAL</span>
-                    <h2>{central.name}</h2>
-                    <div className={styles.publicRating} aria-label={`${central.average.toFixed(1)} de 5 estrellas`}>
-                      <span>{[1, 2, 3, 4, 5].map((value) => <Star key={value} size={15} fill={value <= Math.round(central.average) ? "currentColor" : "none"} />)}</span>
-                      <strong>{central.count ? `${central.average.toFixed(1)} · ${central.count} reseña${central.count === 1 ? "" : "s"}` : "Nueva · sin reseñas"}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <p className={styles.presentation}>{central.presentation}</p>
-
-                {central.eligible ? (
-                  <div className={styles.reviewForm}>
-                    <div className={styles.formLabel}><MessageCircle size={15} /> Tu valoración</div>
-                    <div className={styles.stars}>
-                      {[1, 2, 3, 4, 5].map((value) => (
-                        <button
-                          type="button"
-                          aria-label={`${value} estrellas`}
-                          key={value}
-                          className={value <= draft.rating ? styles.starOn : styles.star}
-                          onClick={() => setDrafts((current) => ({ ...current, [central.id]: { ...draft, rating: value } }))}
-                        >★</button>
-                      ))}
-                    </div>
-                    <textarea
-                      className={`tc-input tc-textarea ${styles.textarea}`}
-                      maxLength={500}
-                      value={draft.comment}
-                      onChange={(event) => setDrafts((current) => ({ ...current, [central.id]: { ...draft, comment: event.target.value } }))}
-                      placeholder={`¿Cómo fue tu experiencia con ${central.name}?`}
-                    />
-                    <button className="tc-btn tc-btn-gold" disabled={saving === central.id} onClick={() => save(central)}>
-                      {saving === central.id ? "Guardando…" : central.mine ? "Actualizar reseña" : "Publicar reseña"}
-                    </button>
-                  </div>
-                ) : (
-                  <div className={styles.locked}><LockKeyhole size={16} /><span>Podrás valorar este perfil después de haber sido atendida por esta central.</span></div>
-                )}
-
-                <div className={styles.reviewList}>
-                  {central.reviews.length ? central.reviews.slice(0, 3).map((review) => (
-                    <div className={styles.review} key={review.id}>
-                      <strong>{"★".repeat(review.rating)}{review.isMine ? " · Tu reseña" : ""}</strong>
-                      {review.comment ? <p>{review.comment}</p> : null}
-                    </div>
-                  )) : <div className={styles.noReviews}>Todavía no hay opiniones publicadas.</div>}
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </section>
-    </ClienteLayout>
-  );
+  const [items,setItems]=useState<Central[]>([]); const [drafts,setDrafts]=useState<Record<string,{rating:number;comment:string}>>({});
+  const [message,setMessage]=useState(""); const [saving,setSaving]=useState(""); const [loading,setLoading]=useState(true); const [selected,setSelected]=useState<Central|null>(null);
+  const [team,setTeam]=useState("all"); const [sort,setSort]=useState("rating");
+  const token=useCallback(async()=> (await sb.auth.getSession()).data.session?.access_token||"",[]);
+  const load=useCallback(async(silent=false)=>{ if(!silent)setLoading(true); const accessToken=await token(); if(!accessToken){window.location.href="/cliente/login";return;} const response=await fetch("/api/cliente/resenas",{headers:{Authorization:`Bearer ${accessToken}`},cache:"no-store"}); const result=await response.json().catch(()=>({})); if(result.ok){setItems(result.centrales||[]);setDrafts((current)=>{const next={...current};for(const central of result.centrales||[])next[central.id]??=central.canCreateReview?{rating:0,comment:""}:{rating:Number(central.mine?.rating||0),comment:String(central.mine?.comment||"")};return next;});setSelected((current)=>current?(result.centrales||[]).find((row:Central)=>row.id===current.id)||null:null);}else setMessage(result.error||"No se pudieron cargar los perfiles.");setLoading(false);},[token]);
+  useEffect(()=>{void load();const channel=sb.channel("cliente-central-reputation-live").on("postgres_changes",{event:"*",schema:"public",table:"central_review_stats"},()=>void load(true)).on("postgres_changes",{event:"*",schema:"public",table:"central_public_profiles"},()=>void load(true)).subscribe();const visible=()=>document.visibilityState==="visible"&&void load(true);document.addEventListener("visibilitychange",visible);return()=>{document.removeEventListener("visibilitychange",visible);void sb.removeChannel(channel);};},[load]);
+  useEffect(()=>{if(!selected)return;const old=document.body.style.overflow;document.body.style.overflow="hidden";const esc=(e:KeyboardEvent)=>e.key==="Escape"&&setSelected(null);window.addEventListener("keydown",esc);return()=>{document.body.style.overflow=old;window.removeEventListener("keydown",esc);};},[selected]);
+  const filtered=useMemo(()=>items.filter(row=>team==="all"||row.team.toLowerCase()===team).sort((a,b)=>sort==="reviews"?b.count-a.count:sort==="name"?a.name.localeCompare(b.name):b.average-a.average),[items,team,sort]);
+  const totals=useMemo(()=>({reviews:items.reduce((n,row)=>n+row.count,0),average:(()=>{const count=items.reduce((n,row)=>n+row.count,0);return count?items.reduce((n,row)=>n+row.average*row.count,0)/count:0;})()}),[items]);
+  async function save(central:Central){const draft=drafts[central.id];if(!draft?.rating){setMessage("Selecciona de 1 a 5 estrellas.");return;}setSaving(central.id);setMessage("");const response=await fetch("/api/cliente/resenas",{method:"POST",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({workerId:central.id,reviewId:central.canCreateReview?null:central.mine?.id,rating:draft.rating,comment:draft.comment})});const result=await response.json();setSaving("");if(!result.ok){setMessage(result.error||"No se pudo guardar la reseña.");return;}setMessage("Reseña verificada guardada correctamente.");await load(true);}
+  async function remove(reviewId:string){if(!window.confirm("¿Quieres eliminar tu reseña?"))return;const response=await fetch("/api/cliente/resenas",{method:"DELETE",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({reviewId})});const result=await response.json();setMessage(result.ok?"Reseña eliminada.":result.error||"No se pudo eliminar.");if(result.ok)await load(true);}
+  const stars=(value:number,size=15)=><span className={styles.starsDisplay}>{[1,2,3,4,5].map(star=><Star key={star} size={size} fill={star<=Math.round(value)?"currentColor":"none"}/>)}</span>;
+  return <ClienteLayout title="Reseñas" subtitle="Conoce perfiles reales y comparte experiencias verificadas.">
+    <section className={`tc-card ${styles.section}`}>
+      <div className={styles.intro}><div><div className="tc-panel-title">Centrales y reputación real</div><p className="tc-muted">Cada valoración se vincula a una atención real. Una nueva experiencia permite una nueva reseña.</p></div><div className={styles.realBadge}><BadgeCheck size={16}/> Opiniones verificadas</div></div>
+      <div className={styles.summary}><article><strong>{items.length}</strong><span>perfiles activos</span></article><article><strong>{totals.reviews}</strong><span>reseñas publicadas</span></article><article><strong>{totals.average?totals.average.toFixed(1):"—"}</strong><span>media general</span></article></div>
+      <div className={styles.filters}><select value={team} onChange={e=>setTeam(e.target.value)} aria-label="Filtrar por equipo"><option value="all">Todos los equipos</option><option value="agua">Equipo Agua</option><option value="fuego">Equipo Fuego</option><option value="tierra">Equipo Tierra</option></select><select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Ordenar perfiles"><option value="rating">Mejor valoración</option><option value="reviews">Más reseñas</option><option value="name">Nombre</option></select></div>
+      {message&&<div className={styles.message}>{message}</div>}{loading&&<div className={styles.empty}>Cargando perfiles…</div>}
+      <div className={styles.grid}>{filtered.map(central=><article className={styles.card} style={centralThemeStyle(central.team,central.themeVariant)} key={central.id}>
+        <div className={styles.profileTop}><div className={styles.avatar}>{central.photoUrl?<img src={central.photoUrl} alt={`Foto de ${central.name}`}/>:central.name[0]}</div><div className={styles.identity}><span className={styles.kicker}>{centralTeamLabel(central.team)}</span><h2>{central.name}</h2><div className={styles.publicRating}>{stars(central.average)}<strong>{central.count?`${central.average.toFixed(1)} · ${central.count}`:"Sin reseñas"}</strong></div></div></div>
+        <p className={styles.presentation}>{central.presentation}</p><button className={styles.profileButton} onClick={()=>setSelected(central)}>Ver perfil completo</button>
+        {(central.canCreateReview||central.mine)?<div className={styles.reviewForm}><div className={styles.formLabel}><MessageCircle size={15}/>{central.canCreateReview?"Valora tu nueva experiencia":"Edita tu reseña"}</div><div className={styles.starButtons}>{[1,2,3,4,5].map(value=><button type="button" aria-label={`${value} estrellas`} key={value} className={value<=(drafts[central.id]?.rating||0)?styles.starOn:styles.star} onClick={()=>setDrafts(c=>({...c,[central.id]:{...(c[central.id]||{comment:""}),rating:value}}))}>★</button>)}</div><textarea className={`tc-input tc-textarea ${styles.textarea}`} maxLength={500} value={drafts[central.id]?.comment||""} onChange={e=>setDrafts(c=>({...c,[central.id]:{...(c[central.id]||{rating:0}),comment:e.target.value}}))}/><div className={styles.formActions}>{central.mine&&!central.canCreateReview&&<button className={styles.deleteButton} onClick={()=>void remove(central.mine!.id)}><Trash2 size={15}/>Eliminar</button>}<button className="tc-btn tc-btn-gold" disabled={saving===central.id} onClick={()=>void save(central)}>{saving===central.id?"Guardando…":central.canCreateReview?"Publicar reseña":"Actualizar"}</button></div></div>:<div className={styles.locked}><LockKeyhole size={16}/>Podrás valorar después de una atención real.</div>}
+      </article>)}</div>
+      <h2 className={styles.sectionTitle}>Tus reseñas</h2><div className={styles.myReviews}>{items.filter(c=>c.mine).map(c=><article key={c.mine!.id}><strong>{c.name}</strong>{stars(c.mine!.rating)}<p>{c.mine!.comment||"Sin comentario"}</p></article>)}{!items.some(c=>c.mine)&&<div className={styles.empty}>Aún no has publicado reseñas.</div>}</div>
+      <h2 className={styles.sectionTitle}>Opiniones recientes</h2><div className={styles.recent}>{items.flatMap(c=>c.reviews.map(r=>({...r,name:c.name}))).sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt))).slice(0,12).map(r=><article key={r.id}><div><strong>{r.name}</strong>{r.verified&&<span className={styles.verified}><BadgeCheck size={13}/>Verificada</span>}</div>{stars(r.rating)}{r.comment&&<p>{r.comment}</p>}</article>)}</div>
+    </section>
+    {selected&&<div className={styles.backdrop} onMouseDown={e=>e.target===e.currentTarget&&setSelected(null)}><section className={styles.modal} role="dialog" aria-modal="true" aria-label={`Perfil de ${selected.name}`} style={centralThemeStyle(selected.team,selected.themeVariant)}><button className={styles.close} onClick={()=>setSelected(null)} aria-label="Cerrar"><X/></button><div className={styles.modalHead}><div className={styles.avatar}>{selected.photoUrl?<img src={selected.photoUrl} alt=""/>:selected.name[0]}</div><div><span className={styles.kicker}>{centralTeamLabel(selected.team)}</span><h2>{selected.name}</h2>{stars(selected.average,18)} <strong>{selected.count?selected.average.toFixed(1):"Sin reseñas"}</strong></div></div><p className={styles.modalBio}>{selected.presentation}</p><h3>Distribución de valoraciones</h3>{[5,4,3,2,1].map(star=><div className={styles.bar} key={star}><span>{star} ★</span><i><b style={{width:`${selected.count?(selected.distribution[star-1]/selected.count)*100:0}%`}}/></i><small>{selected.distribution[star-1]}</small></div>)}<h3>Opiniones recientes</h3>{selected.reviews.slice(0,8).map(review=><article className={styles.modalReview} key={review.id}>{stars(review.rating)}{review.verified&&<span className={styles.verified}><BadgeCheck size={13}/>Verificada</span>}<p>{review.comment||"Sin comentario"}</p></article>)}</section></div>}
+  </ClienteLayout>;
 }

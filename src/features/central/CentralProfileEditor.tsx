@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Camera, Save, Star, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { centralTeamLabel, centralThemeStyle, type CentralThemeVariant } from "@/lib/central-profile-theme";
 import styles from "./CentralProfileEditor.module.css";
 
 export type CentralPublicProfile = {
@@ -11,6 +12,8 @@ export type CentralPublicProfile = {
   photoUrl: string | null;
   rating: number;
   reviewCount: number;
+  team: string;
+  themeVariant: CentralThemeVariant;
 };
 
 type Props = {
@@ -22,11 +25,27 @@ type Props = {
 
 const sb = supabaseBrowser();
 
+async function optimizePhoto(file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Selecciona una imagen válida.");
+  if (file.size > 12 * 1024 * 1024) throw new Error("La imagen original no puede superar 12 MB.");
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/webp", .84));
+  if (!blob) throw new Error("No se pudo preparar la fotografía.");
+  return new File([blob], "perfil.webp", { type: "image/webp" });
+}
+
 export default function CentralProfileEditor({ open, profile, onClose, onSaved }: Props) {
   const [name, setName] = useState(profile.name);
   const [presentation, setPresentation] = useState(profile.presentation);
   const [photo, setPhoto] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(profile.photoUrl);
+  const [themeVariant, setThemeVariant] = useState<CentralThemeVariant>(profile.themeVariant || "balanced");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -36,6 +55,7 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
     setPresentation(profile.presentation);
     setPhoto(null);
     setPreview(profile.photoUrl);
+    setThemeVariant(profile.themeVariant || "balanced");
     setMessage("");
   }, [open, profile]);
 
@@ -45,6 +65,21 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [photo]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", closeOnEscape); };
+  }, [open, onClose]);
+
+  async function choosePhoto(file?: File) {
+    if (!file) return;
+    try { setMessage("Optimizando fotografía…"); setPhoto(await optimizePhoto(file)); setMessage(""); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "No se pudo preparar la fotografía."); }
+  }
 
   async function save() {
     if (name.trim().length < 2) {
@@ -57,6 +92,7 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
     const form = new FormData();
     form.set("name", name.trim());
     form.set("presentation", presentation.trim());
+    form.set("themeVariant", themeVariant);
     if (photo) form.set("photo", photo);
     const response = await fetch("/api/central/public-profile", {
       method: "POST",
@@ -88,13 +124,17 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
           <strong>{profile.reviewCount ? `${profile.rating.toFixed(1)} de 5 · ${profile.reviewCount} reseña${profile.reviewCount === 1 ? "" : "s"}` : "Sin reseñas todavía"}</strong>
         </div>
 
+        <div className={styles.previewCard} style={centralThemeStyle(profile.team, themeVariant)}>
+          <span>{centralTeamLabel(profile.team)}</span><strong>{name || "Tu nombre público"}</strong><small>{presentation || "Tu presentación aparecerá aquí."}</small>
+        </div>
+
         <div className={styles.photoRow}>
           <div className={styles.photo}>
             {preview ? <img src={preview} alt="Vista previa de tu perfil" /> : <span>{name.trim().charAt(0).toUpperCase() || "C"}</span>}
           </div>
           <label className={styles.photoButton}>
             <Camera size={17} /> Elegir fotografía
-            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setPhoto(event.target.files?.[0] || null)} />
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void choosePhoto(event.target.files?.[0])} />
           </label>
           <small>JPG, PNG o WebP · máximo 4 MB</small>
         </div>
@@ -102,6 +142,17 @@ export default function CentralProfileEditor({ open, profile, onClose, onSaved }
         <label className={styles.field}>
           <span>Nombre público</span>
           <input value={name} maxLength={60} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className={styles.field}>
+          <span>Equipo</span>
+          <input value={centralTeamLabel(profile.team)} disabled aria-describedby="team-help" />
+          <small id="team-help">Lo asigna administración y define la identidad visual del perfil.</small>
+        </label>
+        <label className={styles.field}>
+          <span>Intensidad visual</span>
+          <select value={themeVariant} onChange={(event) => setThemeVariant(event.target.value as CentralThemeVariant)}>
+            <option value="soft">Suave</option><option value="balanced">Equilibrada</option><option value="vivid">Viva</option>
+          </select>
         </label>
         <label className={styles.field}>
           <span>Presentación</span>
