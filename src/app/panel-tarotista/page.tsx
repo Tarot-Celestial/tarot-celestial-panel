@@ -7,6 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { useAttendance } from "@/hooks/useAttendance";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
+import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 
 const sb = supabaseBrowser();
 
@@ -192,6 +193,7 @@ export default function Tarotista() {
   const [incidents, setIncidents] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any>(null);
   const [invoiceLines, setInvoiceLines] = useState<any[]>([]);
+  const [invoiceInsights, setInvoiceInsights] = useState<any>(null);
   const [ackNote, setAckNote] = useState<string>("");
 
   const [myWorkerId, setMyWorkerId] = useState<string>("");
@@ -505,9 +507,11 @@ export default function Tarotista() {
       if (invJ?._ok && invJ?.ok) {
         setInvoice(invJ.invoice || null);
         setInvoiceLines(invJ.lines || []);
+        setInvoiceInsights(invJ.insights || null);
       } else {
         setInvoice(null);
         setInvoiceLines([]);
+        setInvoiceInsights(null);
       }
 
       if ((sJ && sJ.ok === false) || (rnkJ && rnkJ.ok === false))
@@ -516,6 +520,28 @@ export default function Tarotista() {
       if (invJ && invJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
+    }
+  }
+
+  async function refreshInvoiceOnly() {
+    try {
+      setMsg("");
+      const token = await getTokenSafe();
+      if (!token) return;
+      const headers = { Authorization: `Bearer ${token}` };
+      const [statsResponse, invoiceResponse] = await Promise.all([
+        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, { headers }),
+        fetch(`/api/invoices/my?month=${encodeURIComponent(month)}`, { headers }),
+      ]);
+      const [statsJson, invoiceJson] = await Promise.all([safeJson(statsResponse), safeJson(invoiceResponse)]);
+      if (!statsJson?._ok || !statsJson?.ok) throw new Error(statsJson?.error || "No se pudieron actualizar las métricas");
+      if (!invoiceJson?._ok || !invoiceJson?.ok) throw new Error(invoiceJson?.error || "No se pudo actualizar la factura");
+      setStats(statsJson);
+      setInvoice(invoiceJson.invoice || null);
+      setInvoiceLines(invoiceJson.lines || []);
+      setInvoiceInsights(invoiceJson.insights || null);
+    } catch (error: any) {
+      setMsg(`⚠️ Factura: ${error?.message || "Error"}`);
     }
   }
 
@@ -2059,6 +2085,22 @@ export default function Tarotista() {
             )}
 
             {tab === "facturas" && (
+              <TarotistaInvoiceDashboard
+                month={month}
+                invoice={invoice}
+                lines={invoiceLines}
+                insights={invoiceInsights}
+                liveStats={s}
+                incidents={incidents}
+                canSeeMoney={canSeeMoney}
+                ackNote={ackNote}
+                onAckNoteChange={setAckNote}
+                onRespond={respondInvoice}
+                onReload={refreshInvoiceOnly}
+              />
+            )}
+
+            {false && tab === "facturas" && (
               <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between" }}>
                   <div>

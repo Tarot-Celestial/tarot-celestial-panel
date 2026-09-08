@@ -130,6 +130,27 @@ function bonusCaptadasLine(invoice_id: string, captadas: number) {
   } satisfies InvoiceLinePayload;
 }
 
+function bonusRepiteGoalLine(invoice_id: string, minutesRepite: number) {
+  const target = 8000;
+  const minutes = Math.max(0, Number(minutesRepite || 0));
+  if (minutes < target) return null;
+
+  return {
+    invoice_id,
+    kind: "bonus_repite_goal",
+    label: "Bonus objetivo Repite · 8.000 minutos",
+    amount: 7,
+    meta: {
+      code: "bonus_repite_goal",
+      minutes,
+      target,
+      reward: 7,
+      source: "auto_generate",
+      unique_goal: "repite_8000_monthly",
+    },
+  } satisfies InvoiceLinePayload;
+}
+
 function emptyLine(invoice_id: string, month: string) {
   return {
     invoice_id,
@@ -145,7 +166,7 @@ function emptyLine(invoice_id: string, month: string) {
   } satisfies InvoiceLinePayload;
 }
 
-async function upsertInvoice(admin: any, workerId: string, month: string, total: number) {
+async function upsertInvoice(admin: any, workerId: string, month: string, total: number, snapshot: Record<string, number>) {
   const { data: existingRows, error: existingError } = await admin
     .from("invoices")
     .select("id, created_at, status")
@@ -175,6 +196,8 @@ async function upsertInvoice(admin: any, workerId: string, month: string, total:
       .from("invoices")
       .update({
         total,
+        total_calc: total,
+        ...snapshot,
         status: "draft",
         updated_at: new Date().toISOString(),
       })
@@ -195,6 +218,8 @@ async function upsertInvoice(admin: any, workerId: string, month: string, total:
       month_key: month,
       status: "draft",
       total,
+      total_calc: total,
+      ...snapshot,
       notes: null,
     })
     .select("id")
@@ -295,10 +320,17 @@ export async function POST(req: Request) {
             minuteLine({ invoice_id: "__pending__", kind: "minutes_call", label: "Minutos CALL", code: "CALL", minutes: Number(row.minutes_call_fixed || 0), specialCall: true }),
             minuteLine({ invoice_id: "__pending__", kind: "minutes_otros", label: "Minutos otros / no facturables", code: "otros", minutes: Number(row.minutes_otros || 0) }),
             bonusCaptadasLine("__pending__", Number(row.captadas_total || 0)),
+            bonusRepiteGoalLine("__pending__", Number(row.minutes_repite || 0)),
           ].filter(Boolean) as InvoiceLinePayload[];
 
       const total = roundMoney(preliminaryLines.reduce((acc, line) => acc + Number(line.amount || 0), 0));
-      const invoice = await upsertInvoice(admin, workerId, month, total);
+      const invoice = await upsertInvoice(admin, workerId, month, total, {
+        minutes_total: roundMoney(Number(row.minutes_total || 0)),
+        pay_minutes: fixedSalary > 0 ? 0 : roundMoney(Number(row.pay_minutes || 0)),
+        captadas_total: Math.max(0, Math.round(Number(row.captadas_total || 0))),
+        bonus_captadas: fixedSalary > 0 ? 0 : roundMoney(Number(row.bonus_captadas || 0)),
+        salary_base: fixedSalary,
+      });
       if (!invoice) continue;
       if (invoice.created) created += 1;
       else updated += 1;
