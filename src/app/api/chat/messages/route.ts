@@ -1,220 +1,75 @@
-// src/app/api/chat/messages/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { getStaffChatActor, requireStaffChatThread, staffChatError } from "@/lib/server/staff-chat";
 
 export const runtime = "nodejs";
-
-function getEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-function getBearer(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token || null;
-}
-
-async function uidFromBearer(req: Request) {
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
-  const token = getBearer(req);
-  if (!token) return { uid: null as string | null, token: null as string | null };
-
-  const userClient = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data } = getAuthUserFromRequest(req);
-  return { uid: data.user?.id || null, token };
-}
-
-async function getMe(uid: string) {
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-  const db = createClient(url, service, { auth: { persistSession: false } });
-
-  const { data: me, error } = await db
-    .from("workers")
-    .select("id, role, display_name, team")
-    .eq("user_id", uid)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!me) throw new Error("NO_WORKER");
-
-  return { db, me };
-}
-
-function senderDisplayFromJoin(senderRel: any): string | null {
-  // Supabase puede devolver objeto o array según el join / tipado
-  if (!senderRel) return null;
-  if (Array.isArray(senderRel)) return senderRel?.[0]?.display_name ? String(senderRel[0].display_name) : null;
-  return senderRel?.display_name ? String(senderRel.display_name) : null;
-}
+export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
-    const { uid } = await uidFromBearer(req);
-    if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    const { db, me } = await getStaffChatActor(req);
+    const url = new URL(req.url);
+    const threadId = String(url.searchParams.get("thread_id") || "");
+    const before = url.searchParams.get("before");
+    const limit = Math.min(50, Math.max(10, Number(url.searchParams.get("limit") || 40)));
+    if (!threadId) throw new Error("MISSING_THREAD_ID");
+    const thread = await requireStaffChatThread(db, me, threadId);
 
-    const { searchParams } = new URL(req.url);
-    const thread_id_q = searchParams.get("thread_id");
+    let query = db.from("chat_messages").select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, client_message_id").eq("thread_id", threadId).order("created_at", { ascending: false }).limit(limit + 1);
+    if (before) query = query.lt("created_at", before);
+    const { data, error } = await query;
+    if (error) throw error;
+    const rows = data || [];
+    const hasMore = rows.length > limit;
+    const page = rows.slice(0, limit).reverse();
+    const otherWorkerId = me.id === String(thread.central_worker_id || "") ? String(thread.tarotist_worker_id) : String(thread.central_worker_id || "");
+    const { data: otherRead } = otherWorkerId ? await db.from("chat_thread_reads").select("last_read_at").eq("thread_id", threadId).eq("worker_id", otherWorkerId).maybeSingle() : { data: null };
 
-    const { db, me } = await getMe(uid);
-
-    let threadId = thread_id_q ? String(thread_id_q) : null;
-
-    if (me.role === "tarotista") {
-      // tarotista siempre su hilo (ignora thread_id si lo pasan)
-      const { data: t, error: et } = await db.from("chat_threads").select("id").eq("tarotist_worker_id", me.id).maybeSingle();
-      if (et) throw et;
-
-      if (!t?.id) {
-        const { data: created, error: ec } = await db
-          .from("chat_threads")
-          .insert({ tarotist_worker_id: me.id, status: "open" })
-          .select("id")
-          .single();
-        if (ec) throw ec;
-        threadId = String(created.id);
-      } else {
-        threadId = String(t.id);
-      }
-    } else {
-      // staff necesita thread_id
-      if (me.role !== "central" && me.role !== "admin") {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-      }
-      if (!threadId) return NextResponse.json({ ok: false, error: "MISSING_THREAD_ID" }, { status: 400 });
+    if (!before) {
+      const now = new Date().toISOString();
+      const { error: readError } = await db.from("chat_thread_reads").upsert({ thread_id: threadId, worker_id: me.id, last_read_at: now, updated_at: now }, { onConflict: "thread_id,worker_id" });
+      if (readError) throw readError;
     }
-
-    const { data: msgs, error: em } = await db
-      .from("chat_messages")
-      .select(
-        `
-        id, thread_id, sender_worker_id, sender_display_name, body, created_at,
-        sender:workers!chat_messages_sender_worker_id_fkey (id, display_name, role, team)
-      `
-      )
-      .eq("thread_id", threadId)
-      .order("created_at", { ascending: true })
-      .limit(200);
-
-    if (em) throw em;
-
-    const normalized = (msgs || []).map((m: any) => ({
-      id: String(m.id),
-      thread_id: String(m.thread_id),
-      sender_worker_id: m.sender_worker_id != null ? String(m.sender_worker_id) : null,
-      sender_display_name:
-        m.sender_display_name != null
-          ? String(m.sender_display_name)
-          : senderDisplayFromJoin(m.sender) || null,
-      text: m.body != null ? String(m.body) : "",
-      created_at: m.created_at != null ? String(m.created_at) : null,
-    }));
-
-    return NextResponse.json({ ok: true, thread_id: threadId, messages: normalized });
-  } catch (e: any) {
-    const msg = e?.message || "ERR";
-    const status = msg === "NO_WORKER" ? 403 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status });
+    return NextResponse.json({
+      ok: true,
+      thread_id: threadId,
+      messages: page.map((message: any) => ({
+        id: String(message.id), thread_id: String(message.thread_id), sender_worker_id: String(message.sender_worker_id), sender_display_name: String(message.sender_display_name || ""), text: String(message.body || ""), created_at: String(message.created_at), client_message_id: message.client_message_id ? String(message.client_message_id) : null,
+        read_at: otherRead?.last_read_at && new Date(otherRead.last_read_at).getTime() >= new Date(message.created_at).getTime() ? String(otherRead.last_read_at) : null,
+      })),
+      has_more: hasMore,
+      next_cursor: hasMore && page[0]?.created_at ? String(page[0].created_at) : null,
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const { code, status } = staffChatError(error);
+    return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const { uid } = await uidFromBearer(req);
-    if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-
+    const { db, me } = await getStaffChatActor(req);
     const body = await req.json().catch(() => ({}));
-    const thread_id_body = body?.thread_id ? String(body.thread_id) : null;
-    const text = String(body?.body ?? body?.text ?? "").trim();
+    const threadId = String(body?.thread_id || "").trim();
+    const text = String(body?.text ?? body?.body ?? "").trim();
+    const clientMessageId = String(body?.client_message_id || "").trim() || crypto.randomUUID();
+    if (!threadId) throw new Error("MISSING_THREAD_ID");
+    if (!text) throw new Error("EMPTY_BODY");
+    if (text.length > 2000) throw new Error("INVALID_MESSAGE_LENGTH");
+    await requireStaffChatThread(db, me, threadId);
 
-    if (!text) return NextResponse.json({ ok: false, error: "EMPTY_BODY" }, { status: 400 });
+    const { data: inserted, error } = await db.from("chat_messages").insert({ thread_id: threadId, sender_worker_id: me.id, sender_display_name: me.display_name, body: text, client_message_id: clientMessageId }).select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, client_message_id").single();
+    let saved = inserted;
+    if (error?.code === "23505") {
+      const { data: existing, error: existingError } = await db.from("chat_messages").select("id, thread_id, sender_worker_id, sender_display_name, body, created_at, client_message_id").eq("sender_worker_id", me.id).eq("client_message_id", clientMessageId).single();
+      if (existingError) throw existingError;
+      saved = existing;
+    } else if (error) throw error;
+    if (!saved) throw new Error("MESSAGE_NOT_SAVED");
 
-    const { db, me } = await getMe(uid);
-
-    let threadId = thread_id_body;
-
-    if (me.role === "tarotista") {
-      // tarotista siempre su hilo
-      const { data: t, error: et } = await db.from("chat_threads").select("id").eq("tarotist_worker_id", me.id).maybeSingle();
-      if (et) throw et;
-
-      if (!t?.id) {
-        const { data: created, error: ec } = await db
-          .from("chat_threads")
-          .insert({ tarotist_worker_id: me.id, status: "open" })
-          .select("id")
-          .single();
-        if (ec) throw ec;
-        threadId = String(created.id);
-      } else {
-        threadId = String(t.id);
-      }
-    } else {
-      // staff
-      if (me.role !== "central" && me.role !== "admin") {
-        return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-      }
-      if (!threadId) return NextResponse.json({ ok: false, error: "MISSING_THREAD_ID" }, { status: 400 });
-    }
-
-    const sender_display_name = me.display_name ? String(me.display_name) : me.role === "tarotista" ? "Tarotista" : "Central";
-
-    const { data: msgRow, error: ei } = await db
-      .from("chat_messages")
-      .insert({
-        thread_id: threadId,
-        sender_worker_id: me.id,
-        sender_display_name,
-        body: text,
-      })
-      .select(
-        `
-        id, thread_id, sender_worker_id, sender_display_name, body, created_at,
-        sender:workers!chat_messages_sender_worker_id_fkey (id, display_name, role, team)
-      `
-      )
-      .single();
-
-    if (ei) throw ei;
-
-    await db
-      .from("chat_threads")
-      .update({
-        last_message_at: msgRow.created_at,
-        last_message_preview: text.slice(0, 180),
-        status: "open",
-      })
-      .eq("id", threadId)
-      .then(() => null);
-
-    const senderNameFromJoin = senderDisplayFromJoin((msgRow as any)?.sender);
-
-    return NextResponse.json({
-      ok: true,
-      thread_id: String(msgRow.thread_id),
-      message: {
-        id: String(msgRow.id),
-        thread_id: String(msgRow.thread_id),
-        sender_worker_id: msgRow.sender_worker_id != null ? String(msgRow.sender_worker_id) : null,
-        sender_display_name:
-          msgRow.sender_display_name != null
-            ? String(msgRow.sender_display_name)
-            : senderNameFromJoin || sender_display_name,
-        text: msgRow.body != null ? String(msgRow.body) : "",
-        created_at: msgRow.created_at != null ? String(msgRow.created_at) : null,
-      },
-    });
-  } catch (e: any) {
-    const msg = e?.message || "ERR";
-    const status = msg === "NO_WORKER" ? 403 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status });
+    await db.from("chat_threads").update({ last_message_at: saved.created_at, last_message_preview: text.slice(0, 180), status: "open" }).eq("id", threadId);
+    return NextResponse.json({ ok: true, thread_id: threadId, message: { id: String(saved.id), thread_id: String(saved.thread_id), sender_worker_id: String(saved.sender_worker_id), sender_display_name: String(saved.sender_display_name || me.display_name), text: String(saved.body || ""), created_at: String(saved.created_at), client_message_id: saved.client_message_id ? String(saved.client_message_id) : clientMessageId, read_at: null } }, { status: error?.code === "23505" ? 200 : 201 });
+  } catch (error) {
+    const { code, status } = staffChatError(error);
+    return NextResponse.json({ ok: false, error: code }, { status });
   }
 }

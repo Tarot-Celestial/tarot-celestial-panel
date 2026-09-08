@@ -50,6 +50,7 @@ function navTone(key: string, notificationAlert: boolean) {
 
 export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange }: CentralSidebarProps<T>) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [chatUnread, setChatUnread] = useState(0);
   const { hiddenKeys, toggleHidden, resetHidden } = useHiddenNavigation("tc:navigation:hidden:central:v1");
   const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)));
 
@@ -59,6 +60,12 @@ export default function CentralSidebar<T extends string = string>({ items, activ
       setOpenGroups((current) => ({ ...current, [String(activeParent.key)]: true }));
     }
   }, [activeTab, items]);
+
+  useEffect(() => {
+    const update = (event: Event) => setChatUnread(Math.max(0, Number((event as CustomEvent<{ count?: number }>).detail?.count || 0)));
+    window.addEventListener("tc-chat-unread", update as EventListener);
+    return () => window.removeEventListener("tc-chat-unread", update as EventListener);
+  }, []);
 
   return (
     <aside className={`tc-sidebar ${styles.sidebar}`}>
@@ -147,6 +154,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                           <span className={styles.subDot} />
                           <span>
                             <b>{child.label}</b>
+                            {String(child.key) === "chat" && chatUnread > 0 ? <em className={styles.badge}>{chatUnread > 99 ? "99+" : chatUnread}</em> : null}
                             {child.kicker ? <small>{child.kicker}</small> : null}
                           </span>
                         </button>

@@ -26,6 +26,27 @@ function playNotificationSound(type: "parking" | "lead") {
   }
 }
 
+function playChatSound() {
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const gain = ctx.createGain();
+    gain.gain.value = 0.12;
+    gain.connect(ctx.destination);
+    [880, 1174].forEach((frequency, index) => {
+      const oscillator = ctx.createOscillator();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      const start = ctx.currentTime + index * 0.11;
+      oscillator.start(start);
+      oscillator.stop(start + 0.12);
+    });
+    window.setTimeout(() => void ctx.close(), 500);
+  } catch {}
+}
+
 function shouldShowDock(pathname: string | null) {
   const path = pathname || "";
   if (path === "/admin/cerebro" || path.startsWith("/admin/cerebro/")) return false;
@@ -82,6 +103,7 @@ export default function GlobalBottomBar() {
 
   const [chatOpen, setChatOpen] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
+  const [chatNotice, setChatNotice] = useState<{ name: string; text: string } | null>(null);
   const presence = useMemo(() => presenceFromAttendance(attendance), [attendance.online, attendance.status]);
   const [activeTab, setActiveTab] = useState<string>("");
 
@@ -125,11 +147,37 @@ export default function GlobalBottomBar() {
     prevLeadsRef.current = leads;
   }, [visible, parking, leads]);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("tc-chat-unread", { detail: { count: chatUnread } }));
+  }, [chatUnread]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const onIncoming = (event: Event) => {
+      const detail = (event as CustomEvent<{ name?: string; text?: string }>).detail || {};
+      setChatNotice({ name: String(detail.name || "Contacto"), text: String(detail.text || "") });
+      playChatSound();
+      window.setTimeout(() => setChatNotice(null), 6500);
+    };
+    window.addEventListener("tc-chat-incoming", onIncoming as EventListener);
+    return () => window.removeEventListener("tc-chat-incoming", onIncoming as EventListener);
+  }, [visible]);
+
   if (!visible) return null;
 
   return (
     <>
       <IPPhoneBar forcedOpen={isOpen} onOpenChange={setIsOpen} />
+      {chatNotice ? (
+        <button
+          type="button"
+          onClick={() => { setChatOpen(true); setChatNotice(null); }}
+          style={{ position: "fixed", right: 18, top: 86, zIndex: 230, width: "min(360px,calc(100vw - 28px))", display: "grid", gap: 4, padding: 14, borderRadius: 17, border: "1px solid rgba(229,195,108,.42)", background: "rgba(18,13,27,.97)", color: "#fff", textAlign: "left", boxShadow: "0 22px 70px rgba(0,0,0,.45)", cursor: "pointer" }}
+        >
+          <b>💬 Nuevo mensaje de {chatNotice.name}</b>
+          <span style={{ opacity: .7, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chatNotice.text}</span>
+        </button>
+      ) : null}
 
       <nav className="tc-ops-dock-root" aria-label="Acciones rápidas de centralita">
         <div className="tc-ops-dock" role="toolbar" aria-label="Centralita">

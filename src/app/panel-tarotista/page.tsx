@@ -6,6 +6,7 @@ import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { useAttendance } from "@/hooks/useAttendance";
+import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 
 const sb = supabaseBrowser();
 
@@ -219,8 +220,14 @@ export default function Tarotista() {
 
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMsg, setChatMsg] = useState("");
+  const [chatUnread, setChatUnread] = useState(0);
   const [thread, setThread] = useState<ChatThread | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  useEffect(() => {
+    const update = (event: Event) => setChatUnread(Math.max(0, Number((event as CustomEvent<{ count?: number }>).detail?.count || 0)));
+    window.addEventListener("tc-chat-unread", update as EventListener);
+    return () => window.removeEventListener("tc-chat-unread", update as EventListener);
+  }, []);
   const [msgText, setMsgText] = useState("");
   const msgEndRef = useRef<HTMLDivElement | null>(null);
   const chatChannelRef = useRef<any>(null);
@@ -1355,7 +1362,9 @@ export default function Tarotista() {
                       <div className="tc-sidebtn-main">{item.label}</div>
                       <div className="tc-sidebtn-kicker">{item.kicker}</div>
                     </div>
-                    <span className="tc-sidebtn-dot" />
+                    {item.key === "chat" && chatUnread > 0 ? (
+                      <span style={{ minWidth: 22, height: 22, padding: "0 6px", borderRadius: 999, display: "grid", placeItems: "center", background: "#e9385b", color: "#fff", fontSize: 11, fontWeight: 900 }}>{chatUnread > 99 ? "99+" : chatUnread}</span>
+                    ) : <span className="tc-sidebtn-dot" />}
                   </button>
                 ))}
               </div>
@@ -1466,7 +1475,8 @@ export default function Tarotista() {
 
             </div>
 
-            {tab === "chat" && (
+            {tab === "chat" && <StaffDirectChatPanel />}
+            {false && (
               <div className="tc-card">
                 <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div>
@@ -1511,9 +1521,9 @@ export default function Tarotista() {
                     }}
                   >
                     <div style={{ padding: 12 }}>
-                      <div style={{ fontWeight: 900 }}>{thread.title || "Chat con Central"}</div>
+                      <div style={{ fontWeight: 900 }}>{thread?.title || "Chat con Central"}</div>
                       <div className="tc-sub" style={{ marginTop: 6 }}>
-                        Thread: {selectedThreadId || thread.id}
+                        Thread: {selectedThreadId || thread?.id}
                       </div>
                     </div>
 

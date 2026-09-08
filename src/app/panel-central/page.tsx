@@ -41,6 +41,7 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import CentralTeamLivePanel from "@/features/central/CentralTeamLivePanel";
+import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
 
 const sb = supabaseBrowser();
@@ -76,7 +77,7 @@ const TABS = [
 
 type TabKey = typeof TABS[number];
 
-const HIDDEN_TELEPHONIST_TABS = new Set<TabKey>(["chat", "diario", "llamadas"]);
+const HIDDEN_TELEPHONIST_TABS = new Set<TabKey>(["diario", "llamadas"]);
 
 const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "central", label: "Central", icon: LayoutDashboard },
@@ -96,7 +97,15 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   },
   { key: "tienda", label: "Tienda", icon: ShoppingBag, kicker: "Bóveda de recompensas" },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
-  { key: "equipo", label: "Equipo", icon: Users },
+  {
+    key: "equipo",
+    label: "Equipo",
+    icon: Users,
+    children: [
+      { key: "equipo", label: "Presencias", kicker: "Estado del equipo" },
+      { key: "chat", label: "Chat", kicker: "Conversaciones privadas" },
+    ],
+  },
   { key: "crm", label: "CRM", icon: Users },
   { key: "sorteo", label: "Sorteo", icon: Gift },
   { key: "reservas", label: "Reservas", icon: CalendarDays },
@@ -1316,7 +1325,8 @@ function CentralPage() {
               <OperatorPanel mode="central" />
             </>
           )}
-          {tab === "chat" && (
+          {tab === "chat" && <StaffDirectChatPanel />}
+          {false && (
             <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>

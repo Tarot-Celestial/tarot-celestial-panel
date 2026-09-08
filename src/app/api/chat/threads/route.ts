@@ -1,165 +1,78 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { getStaffChatActor, staffChatError } from "@/lib/server/staff-chat";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function getEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-function getBearer(req: Request) {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  return token || null;
-}
-
-async function uidFromBearer(req: Request) {
-  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
-
-  const token = getBearer(req);
-  if (!token) return { uid: null as string | null, token: null as string | null };
-
-  const userClient = createClient(url, anon, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-
-  const { data } = getAuthUserFromRequest(req);
-  return { uid: data.user?.id || null, token };
+function publicWorker(worker: any) {
+  return { id: String(worker.id), display_name: String(worker.display_name || "Sin nombre"), role: String(worker.role), team: worker.team ? String(worker.team) : null, state: String(worker.state || "offline") };
 }
 
 export async function GET(req: Request) {
   try {
-    const { uid } = await uidFromBearer(req);
-    if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    const { db, me } = await getStaffChatActor(req);
+    const contactRole = me.role === "tarotista" ? "central" : "tarotista";
+    const contactsQuery = db.from("workers").select("id, display_name, role, team, state").eq("role", contactRole).eq("is_active", true).order("display_name");
+    let threadsQuery = db.from("chat_threads").select("id, central_worker_id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview, title").order("last_message_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
+    if (me.role === "central") threadsQuery = threadsQuery.eq("central_worker_id", me.id);
+    if (me.role === "tarotista") threadsQuery = threadsQuery.eq("tarotist_worker_id", me.id);
+    const [{ data: contacts, error: contactsError }, { data: threads, error: threadsError }] = await Promise.all([contactsQuery, threadsQuery]);
+    if (contactsError) throw contactsError;
+    if (threadsError) throw threadsError;
 
-    const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const db = createClient(url, service, { auth: { persistSession: false } });
-
-    // quién soy
-    const { data: me, error: em } = await db
+    const threadIds = (threads || []).map((thread: any) => String(thread.id));
+    const participantIds = Array.from(new Set((threads || []).flatMap((thread: any) => [thread.central_worker_id, thread.tarotist_worker_id]).filter(Boolean).map(String)));
+    const { data: participants, error: participantError } = await db
       .from("workers")
-      .select("id, role, display_name, team")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (em) throw em;
-    if (!me) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
-
-    // TAROTISTA => asegurar 1 thread y devolverlo
-    if (me.role === "tarotista") {
-      const { data: existing, error: ee } = await db
-        .from("chat_threads")
-        .select("id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview")
-        .eq("tarotist_worker_id", me.id)
-        .maybeSingle();
-      if (ee) throw ee;
-
-      if (existing?.id) {
-        return NextResponse.json({ ok: true, mode: "tarotista", me, thread: existing });
-      }
-
-      const { data: created, error: ec } = await db
-        .from("chat_threads")
-        .insert({ tarotist_worker_id: me.id, status: "open" })
-        .select("id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview")
-        .single();
-      if (ec) throw ec;
-
-      return NextResponse.json({ ok: true, mode: "tarotista", me, thread: created });
-    }
-
-    // STAFF (central/admin) => lista todos
-    if (me.role !== "central" && me.role !== "admin") {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-    }
-
-    const { data: threads, error: et } = await db
-      .from("chat_threads")
-      .select(`
-        id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview,
-        tarotist:workers!chat_threads_tarotist_worker_id_fkey (id, display_name, team, role)
-      `)
-      .order("last_message_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
-
-    if (et) throw et;
-
-    return NextResponse.json({ ok: true, mode: "staff", me, threads: threads ?? [] });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+      .select("id, display_name, role, team, state")
+      .in("id", participantIds.length ? participantIds : ["00000000-0000-0000-0000-000000000000"]);
+    if (participantError) throw participantError;
+    const workerById = new Map((participants || []).map((worker: any) => [String(worker.id), publicWorker(worker)]));
+    const unreadByThread = new Map<string, number>();
+    const { data: unreadRows, error: unreadError } = threadIds.length
+      ? await db.rpc("staff_chat_unread_counts", { p_worker_id: me.id, p_thread_ids: threadIds })
+      : { data: [], error: null };
+    if (unreadError) throw unreadError;
+    for (const row of unreadRows || []) unreadByThread.set(String(row.thread_id), Number(row.unread_count || 0));
+    const normalizedThreads = (threads || []).map((thread: any) => {
+      const otherId = me.role === "tarotista" ? thread.central_worker_id : thread.tarotist_worker_id;
+      const legacyContact = !otherId && me.role === "tarotista" ? { id: `legacy:${thread.id}`, display_name: "Historial anterior", role: "central", team: null, state: "offline" } : null;
+      return { ...thread, id: String(thread.id), contact: otherId ? workerById.get(String(otherId)) || null : legacyContact, unread_count: unreadByThread.get(String(thread.id)) || 0, legacy: !thread.central_worker_id };
+    });
+    const legacyContacts = normalizedThreads.filter((thread: any) => thread.legacy && thread.contact).map((thread: any) => thread.contact);
+    return NextResponse.json({ ok: true, mode: me.role, me, contacts: [...(contacts || []).map(publicWorker), ...legacyContacts], threads: normalizedThreads, unread_total: normalizedThreads.reduce((total: number, thread: any) => total + Number(thread.unread_count || 0), 0) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const { code, status } = staffChatError(error);
+    return NextResponse.json({ ok: false, error: code }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }
 
-// ✅ NUEVO: central/admin puede “abrir chat” con una tarotista (crear thread si no existe)
 export async function POST(req: Request) {
   try {
-    const { uid } = await uidFromBearer(req);
-    if (!uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-
-    const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
-    const service = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const db = createClient(url, service, { auth: { persistSession: false } });
-
-    // quién soy
-    const { data: me, error: em } = await db
-      .from("workers")
-      .select("id, role, display_name, team")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (em) throw em;
-    if (!me) return NextResponse.json({ ok: false, error: "NO_WORKER" }, { status: 403 });
-
-    if (me.role !== "central" && me.role !== "admin") {
-      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-    }
-
+    const { db, me } = await getStaffChatActor(req);
+    if (me.role === "admin") throw new Error("FORBIDDEN");
     const body = await req.json().catch(() => ({}));
-    const tarotist_worker_id = String(body?.tarotist_worker_id || "").trim();
-    if (!tarotist_worker_id) {
-      return NextResponse.json({ ok: false, error: "MISSING_TAROTIST_WORKER_ID" }, { status: 400 });
-    }
-
-    // validar que existe tarotista
-    const { data: tw, error: twErr } = await db
-      .from("workers")
-      .select("id, role, display_name, team")
-      .eq("id", tarotist_worker_id)
-      .maybeSingle();
-    if (twErr) throw twErr;
-    if (!tw?.id) return NextResponse.json({ ok: false, error: "TAROTIST_NOT_FOUND" }, { status: 404 });
-    if (tw.role !== "tarotista") return NextResponse.json({ ok: false, error: "NOT_TAROTISTA" }, { status: 400 });
-
-    // asegurar thread (1 por tarotista)
-    const { data: existing, error: ee } = await db
-      .from("chat_threads")
-      .select(`
-        id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview,
-        tarotist:workers!chat_threads_tarotist_worker_id_fkey (id, display_name, team, role)
-      `)
-      .eq("tarotist_worker_id", tarotist_worker_id)
-      .maybeSingle();
-    if (ee) throw ee;
-
+    const requestedId = String(body?.contact_worker_id || body?.tarotist_worker_id || "").trim();
+    if (!requestedId) throw new Error("MISSING_CONTACT_WORKER_ID");
+    const { data: contact, error: contactError } = await db.from("workers").select("id, display_name, role, team, state, is_active").eq("id", requestedId).eq("is_active", true).maybeSingle();
+    if (contactError) throw contactError;
+    if (!contact?.id) throw new Error("CONTACT_NOT_FOUND");
+    if ((me.role === "central" && contact.role !== "tarotista") || (me.role === "tarotista" && contact.role !== "central")) throw new Error("INVALID_CONTACT_ROLE");
+    const centralWorkerId = me.role === "central" ? me.id : String(contact.id);
+    const tarotistWorkerId = me.role === "tarotista" ? me.id : String(contact.id);
+    const { data: existing, error: existingError } = await db.from("chat_threads").select("*").eq("central_worker_id", centralWorkerId).eq("tarotist_worker_id", tarotistWorkerId).maybeSingle();
+    if (existingError) throw existingError;
     if (existing?.id) return NextResponse.json({ ok: true, thread: existing, created: false });
-
-    const title = tw.display_name ? `Chat ${tw.display_name}` : `Chat ${tw.id.slice(0, 6)}`;
-
-    const { data: created, error: ec } = await db
-      .from("chat_threads")
-      .insert({ tarotist_worker_id, status: "open", title })
-      .select(`
-        id, tarotist_worker_id, status, created_at, last_message_at, last_message_preview,
-        tarotist:workers!chat_threads_tarotist_worker_id_fkey (id, display_name, team, role)
-      `)
-      .single();
-    if (ec) throw ec;
-
-    return NextResponse.json({ ok: true, thread: created, created: true });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    const { data: created, error: createError } = await db.from("chat_threads").insert({ central_worker_id: centralWorkerId, tarotist_worker_id: tarotistWorkerId, status: "open", title: `${me.display_name} · ${contact.display_name || "Chat"}` }).select("*").single();
+    if (createError?.code === "23505") {
+      const { data: raced, error: racedError } = await db.from("chat_threads").select("*").eq("central_worker_id", centralWorkerId).eq("tarotist_worker_id", tarotistWorkerId).single();
+      if (racedError) throw racedError;
+      return NextResponse.json({ ok: true, thread: raced, created: false });
+    }
+    if (createError) throw createError;
+    return NextResponse.json({ ok: true, thread: created, created: true }, { status: 201 });
+  } catch (error) {
+    const { code, status } = staffChatError(error);
+    return NextResponse.json({ ok: false, error: code }, { status });
   }
 }

@@ -15,6 +15,8 @@ type ChatThread = {
   last_message_at?: string | null;
   created_at?: string | null;
   tarotist?: { display_name?: string | null; team?: string | null } | null;
+  contact?: { id?: string; display_name?: string | null; role?: string | null; team?: string | null; state?: string | null } | null;
+  unread_count?: number | null;
 };
 
 type ChatMessage = {
@@ -48,6 +50,7 @@ function fmtTime(v?: string | null) {
 }
 
 function threadTitle(thread: ChatThread, mode: RoleMode) {
+  if (thread.contact?.display_name) return String(thread.contact.display_name);
   if (mode === "tarotista") return "Central / Administración";
   return (
     thread.tarotist_display_name ||
@@ -112,7 +115,6 @@ export default function DockChatWidget({ open, onClose, onUnreadChange }: Props)
   const [sending, setSending] = useState(false);
   const [msg, setMsg] = useState("");
   const [search, setSearch] = useState("");
-  const [lastSeenStamp, setLastSeenStamp] = useState("");
   const messagesRef = useRef<HTMLDivElement | null>(null);
 
   const selectedThread = useMemo(
@@ -132,22 +134,9 @@ export default function DockChatWidget({ open, onClose, onUnreadChange }: Props)
     });
   }, [threads, search, mode]);
 
-  const newestStamp = useMemo(() => {
-    const stamps = threads
-      .map((thread) => thread.last_message_at || thread.created_at || "")
-      .filter(Boolean)
-      .sort();
-    return stamps[stamps.length - 1] || "";
-  }, [threads]);
-
   useEffect(() => {
-    if (open && newestStamp) setLastSeenStamp(newestStamp);
-  }, [open, newestStamp]);
-
-  useEffect(() => {
-    const unread = !open && newestStamp && lastSeenStamp && newestStamp !== lastSeenStamp ? 1 : 0;
-    onUnreadChange?.(unread);
-  }, [open, newestStamp, lastSeenStamp, onUnreadChange]);
+    onUnreadChange?.(threads.reduce((total, thread) => total + Number(thread.unread_count || 0), 0));
+  }, [threads, onUnreadChange]);
 
   const loadThreads = useCallback(async (silent = false) => {
     try {
@@ -257,6 +246,22 @@ export default function DockChatWidget({ open, onClose, onUnreadChange }: Props)
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [loadThreads]);
+
+  useEffect(() => {
+    const channel = sb
+      .channel(`dock-chat-global-${meId || "session"}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
+        const row: any = payload.new || {};
+        if (!row.id || String(row.sender_worker_id || "") === String(meId || "")) return;
+        window.dispatchEvent(new CustomEvent("tc-chat-incoming", { detail: { name: String(row.sender_display_name || "Contacto"), text: String(row.body || ""), threadId: String(row.thread_id || "") } }));
+        void loadThreads(true);
+        if (!open) {
+          window.dispatchEvent(new CustomEvent("tc-chat-incoming", { detail: { name: String(row.sender_display_name || "Contacto"), text: String(row.body || ""), threadId: String(row.thread_id || "") } }));
+        }
+      })
+      .subscribe();
+    return () => { void sb.removeChannel(channel); };
+  }, [loadThreads, meId, open]);
 
   useEffect(() => {
     if (!selectedThreadId) return;
