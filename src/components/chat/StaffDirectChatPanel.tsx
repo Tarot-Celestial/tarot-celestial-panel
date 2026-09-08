@@ -56,7 +56,7 @@ export default function StaffDirectChatPanel() {
   const [live, setLive] = useState(false); const [hasMore, setHasMore] = useState(false); const [cursor, setCursor] = useState<string | null>(null); const [loadingMore, setLoadingMore] = useState(false);
   const [sound, setSound] = useState(true); const [volume, setVolume] = useState(72); const [toast, setToast] = useState<{ name: string; text: string; threadId: string } | null>(null);
   const [mobileConversation, setMobileConversation] = useState(false); const [newBelow, setNewBelow] = useState(0);
-  const listRef = useRef<HTMLDivElement | null>(null); const selectedRef = useRef(""); const meRef = useRef(""); const soundRef = useRef(true); const volumeRef = useRef(72);
+  const listRef = useRef<HTMLDivElement | null>(null); const selectedRef = useRef(""); const meRef = useRef(""); const threadsRef = useRef<Thread[]>([]); const soundRef = useRef(true); const volumeRef = useRef(72);
 
   const selectedThread = useMemo(() => threads.find((item) => item.id === selectedThreadId) || null, [threads, selectedThreadId]);
   const selectedContact = useMemo(() => contacts.find((item) => item.id === selectedContactId) || selectedThread?.contact || null, [contacts, selectedContactId, selectedThread]);
@@ -71,6 +71,7 @@ export default function StaffDirectChatPanel() {
 
   useEffect(() => { const saved = localStorage.getItem(SOUND_KEY); if (saved) { try { const value = JSON.parse(saved); setSound(value.enabled !== false); setVolume(Number(value.volume || 72)); } catch {} } }, []);
   useEffect(() => { selectedRef.current = selectedThreadId; meRef.current = meId; soundRef.current = sound; volumeRef.current = volume; localStorage.setItem(SOUND_KEY, JSON.stringify({ enabled: sound, volume })); }, [meId, selectedThreadId, sound, volume]);
+  useEffect(() => { threadsRef.current = threads; }, [threads]);
   useEffect(() => { window.dispatchEvent(new CustomEvent("tc-chat-unread", { detail: { count: unreadTotal } })); }, [unreadTotal]);
 
   const loadOverview = useCallback(async (silent = false) => {
@@ -99,9 +100,19 @@ export default function StaffDirectChatPanel() {
   useEffect(() => { if (selectedThreadId) void loadMessages(selectedThreadId).catch((reason) => setError(reason instanceof Error ? reason.message : "No se cargaron los mensajes.")); else setMessages([]); }, [loadMessages, selectedThreadId]);
 
   useEffect(() => {
-    const channel = sb.channel(`staff-chat-${meId || "session"}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
+    if (!meId) return;
+    let disposed = false;
+    let channel: ReturnType<typeof sb.channel> | null = null;
+    const authListener = sb.auth.onAuthStateChange((_event, session) => {
+      if (session?.access_token) void sb.realtime.setAuth(session.access_token);
+    });
+
+    void sb.auth.getSession().then(({ data }) => {
+      if (disposed || !data.session?.access_token) return;
+      void sb.realtime.setAuth(data.session.access_token);
+      channel = sb.channel(`staff-chat-${meId}`).on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages" }, (payload) => {
       const row: any = payload.new || {}; if (!row.id || String(row.sender_worker_id) === meRef.current) return;
-      const thread = threads.find((item) => item.id === String(row.thread_id)); if (!thread) { void loadOverview(true); return; }
+      const thread = threadsRef.current.find((item) => item.id === String(row.thread_id)); if (!thread) { void loadOverview(true); return; }
       const isOpen = selectedRef.current === String(row.thread_id) && document.visibilityState === "visible";
       const incoming: ChatMessage = { id: String(row.id), thread_id: String(row.thread_id), sender_worker_id: String(row.sender_worker_id), sender_display_name: String(row.sender_display_name || thread.contact?.display_name || "Contacto"), text: String(row.body || ""), created_at: String(row.created_at), read_at: null };
       if (isOpen) {
@@ -114,9 +125,27 @@ export default function StaffDirectChatPanel() {
         if (Notification.permission === "granted") new Notification(`Nuevo mensaje de ${notice.name}`, { body: notice.text.slice(0, 110), tag: `chat-${notice.threadId}` });
       }
       void loadOverview(true);
-    }).subscribe((status) => setLive(status === "SUBSCRIBED"));
-    return () => { void sb.removeChannel(channel); };
-  }, [loadMessages, loadOverview, meId, threads]);
+      }).subscribe((status, reason) => {
+        if (disposed) return;
+        setLive(status === "SUBSCRIBED");
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.error("[staff-chat] realtime subscription failed", { status, reason });
+          setError("El chat en vivo perdió la conexión. Reconectando…");
+        } else if (status === "SUBSCRIBED") {
+          setError((current) => current === "El chat en vivo perdió la conexión. Reconectando…" ? "" : current);
+        }
+      });
+    }).catch((reason) => {
+      console.error("[staff-chat] realtime authentication failed", reason);
+      if (!disposed) setError("No se pudo activar el chat en vivo.");
+    });
+
+    return () => {
+      disposed = true;
+      authListener.data.subscription.unsubscribe();
+      if (channel) void sb.removeChannel(channel);
+    };
+  }, [loadMessages, loadOverview, meId]);
 
   async function send() {
     const text = composer.trim(); if (!text || !selectedThreadId || sending || text.length > 2000) return;
