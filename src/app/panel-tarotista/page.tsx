@@ -8,6 +8,9 @@ import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/pane
 import { useAttendance } from "@/hooks/useAttendance";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
+import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
+import { BadgeEuro, ClipboardCheck, Flame, LayoutDashboard, MessageSquare, ReceiptText, Send, Star, Trophy, type LucideIcon } from "lucide-react";
+import panelStyles from "./TarotistaPanel.module.css";
 
 const sb = supabaseBrowser();
 
@@ -22,16 +25,16 @@ type TabKey =
   | "checklist"
   | "chat";
 
-const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string }> = [
-  { key: "resumen", label: "📊 Resumen", kicker: "Actividad y métricas" },
-  { key: "clientes", label: "📤 Clientes", kicker: "Listas enviadas" },
-  { key: "chat", label: "💬 Chat", kicker: "Central en directo" },
-  { key: "bonos", label: "💰 Bonos", kicker: "Captadas y tramos" },
-  { key: "rangos", label: "⭐ Rangos", kicker: "Categoría y progreso" },
-  { key: "ranking", label: "🏆 Ranking", kicker: "Top del mes" },
-  { key: "equipos", label: "🔥💧 Equipos", kicker: "Competición" },
-  { key: "checklist", label: "✅ Checklist", kicker: "Turno actual" },
-  { key: "facturas", label: "🧾 Factura", kicker: "Resumen mensual" },
+const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string; icon: LucideIcon }> = [
+  { key: "resumen", label: "Resumen", kicker: "Centro de turno", icon: LayoutDashboard },
+  { key: "clientes", label: "Clientes", kicker: "Listas enviadas", icon: Send },
+  { key: "chat", label: "Chat", kicker: "Central en directo", icon: MessageSquare },
+  { key: "bonos", label: "Bonos", kicker: "Captadas y tramos", icon: BadgeEuro },
+  { key: "rangos", label: "Rangos", kicker: "Categoría y progreso", icon: Star },
+  { key: "ranking", label: "Ranking", kicker: "Top del mes", icon: Trophy },
+  { key: "equipos", label: "Equipos", kicker: "Competición", icon: Flame },
+  { key: "checklist", label: "Checklist", kicker: "Turno actual", icon: ClipboardCheck },
+  { key: "facturas", label: "Factura", kicker: "Resumen mensual", icon: ReceiptText },
 ];
 
 function monthKeyNow() {
@@ -127,20 +130,6 @@ function clampPct(n: number) {
   return Math.max(0, Math.min(100, x));
 }
 
-function attLabel(online: boolean, status: string) {
-  if (!online) return "⚪ Offline";
-  if (status === "break") return "🟡 Descanso";
-  if (status === "bathroom") return "🟣 Baño";
-  return "🟢 Online";
-}
-
-function attStyle(online: boolean, status: string) {
-  if (!online) return { background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" };
-  if (status === "break") return { background: "rgba(215,181,109,0.10)", border: "1px solid rgba(215,181,109,0.25)" };
-  if (status === "bathroom") return { background: "rgba(181,156,255,0.10)", border: "1px solid rgba(181,156,255,0.25)" };
-  return { background: "rgba(120,255,190,0.10)", border: "1px solid rgba(120,255,190,0.25)" };
-}
-
 function getInvoiceVisibleStatus(invoice: any) {
   const ack = String(invoice?.worker_ack || "").trim().toLowerCase();
   if (ack === "accepted" || ack === "rejected" || ack === "review") return ack;
@@ -191,6 +180,7 @@ export default function Tarotista() {
   const [stats, setStats] = useState<any>(null);
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
+  const [dataRefreshing, setDataRefreshing] = useState(false);
 
   const [incidents, setIncidents] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any>(null);
@@ -474,6 +464,7 @@ export default function Tarotista() {
 
   async function refresh(forMonth?: string) {
     try {
+      setDataRefreshing(true);
       setMsg("");
       const token = await getTokenSafe();
       if (!token) return;
@@ -525,7 +516,33 @@ export default function Tarotista() {
       if (invJ && invJ.ok === false) setMsg((p) => `${p ? p + " · " : ""}⚠️ Factura: ${invJ.error || "error"}`);
     } catch (e: any) {
       setMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      setDataRefreshing(false);
     }
+  }
+
+  async function changeAttendanceStatus(action: "connected" | "break" | "bathroom" | "offline") {
+    if (action === "offline") {
+      await postAttendanceEvent("offline", { action: "check_out" });
+      return;
+    }
+    if (action === "break") {
+      await postAttendanceEvent("online", { action: "break", phase: "start" });
+      return;
+    }
+    if (action === "bathroom") {
+      await postAttendanceEvent("online", { action: "bathroom", phase: "start" });
+      return;
+    }
+    if (attStatus === "break") {
+      await postAttendanceEvent("online", { action: "break", phase: "end" });
+      return;
+    }
+    if (attStatus === "bathroom") {
+      await postAttendanceEvent("online", { action: "bathroom", phase: "end" });
+      return;
+    }
+    await postAttendanceEvent("online", { action: "check_in" });
   }
 
   async function refreshInvoiceOnly() {
@@ -1378,135 +1395,58 @@ export default function Tarotista() {
       ) : null}
 
       {!ok ? (
-        <div style={{ padding: 40 }}>Cargando…</div>
+        <div className={panelStyles.loadingShell} aria-label="Cargando panel">
+          <div className={panelStyles.loadingPulse} />
+        </div>
       ) : (
         <div className="tc-shell tc-shell-premium">
           <aside className="tc-sidebar">
             <div className="tc-sidebar-card">
               <div className="tc-sidebar-title">Panel tarotista</div>
               <div className="tc-sidebar-nav">
-                {TAROTISTA_NAV.map((item) => (
-                  <button
-                    key={item.key}
-                    className={`tc-sidebtn ${tab === item.key ? "tc-sidebtn-active" : ""}`}
-                    onClick={() => setTab(item.key)}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div className="tc-sidebtn-main">{item.label}</div>
-                      <div className="tc-sidebtn-kicker">{item.kicker}</div>
-                    </div>
-                    {item.key === "chat" && chatUnread > 0 ? (
-                      <span style={{ minWidth: 22, height: 22, padding: "0 6px", borderRadius: 999, display: "grid", placeItems: "center", background: "#e9385b", color: "#fff", fontSize: 11, fontWeight: 900 }}>{chatUnread > 99 ? "99+" : chatUnread}</span>
-                    ) : <span className="tc-sidebtn-dot" />}
-                  </button>
-                ))}
+                {TAROTISTA_NAV.map((item) => {
+                  const Icon = item.icon;
+                  const badge = item.key === "chat"
+                    ? chatUnread
+                    : item.key === "checklist"
+                      ? Math.max(0, clProgress.total - clProgress.completed)
+                      : item.key === "facturas" ? incidents.length : 0;
+                  return (
+                    <button key={item.key} className={`tc-sidebtn ${tab === item.key ? "tc-sidebtn-active" : ""}`} onClick={() => setTab(item.key)}>
+                      <div className={panelStyles.navMain}>
+                        <span className={panelStyles.navIcon}><Icon size={17} /></span>
+                        <div className={panelStyles.navCopy}>
+                          <div className="tc-sidebtn-main">{item.label}</div>
+                          <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                        </div>
+                      </div>
+                      {badge > 0 ? <span className={panelStyles.navBadge} data-tone={item.key === "checklist" ? "amber" : "red"}>{badge > 99 ? "99+" : badge}</span> : <span className="tc-sidebtn-dot" />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </aside>
 
           <main className="tc-main">
             <div className="tc-container">
-              <div className="tc-card">
-              <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                <div>
-                  <div className="tc-title" style={{ fontSize: 18 }}>
-                    🔮 Panel Tarotista
-                  </div>
-
-                  <div
-                    className="tc-sub"
-                    style={{ marginTop: 6, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}
-                  >
-                    <span>
-                      Mes: <b>{month}</b> {msg ? `· ${msg}` : ""}
-                    </span>
-
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                      <span className="tc-chip" style={{ padding: "4px 10px" }}>
-                        Cambiar mes
-                      </span>
-                      <input
-                        className="tc-input"
-                        type="month"
-                        value={month}
-                        onChange={(e) => {
-                          const m = e.target.value || monthKeyNow();
-                          setMonth(m);
-                          setMonthInUrl(m);
-                          refresh(m);
-                        }}
-                        style={{ width: 160 }}
-                        aria-label="Seleccionar mes"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="tc-row" style={{ flexWrap: "wrap", gap: 8 }}>
-                  <span
-                    className="tc-chip"
-                    style={{ ...attStyle(attOnline, attStatus), padding: "6px 10px", borderRadius: 999, fontSize: 12 }}
-                    title={attStatus}
-                  >
-                    {attLabel(attOnline, attStatus)}
-                  </span>
-
-                  <button className="tc-btn tc-btn-gold" onClick={() => refresh()}>
-                    Actualizar
-                  </button>
-
-                  <button
-                    className="tc-btn tc-btn-ok"
-                    onClick={() => postAttendanceEvent("online", { action: "check_in" })}
-                    disabled={attLoading || attOnline}
-                    title="Solo te conecta si estás en turno"
-                  >
-                    {attLoading && !attOnline ? "…" : "🟢 Conectarme"}
-                  </button>
-
-                  <button
-                    className="tc-btn tc-btn-danger"
-                    onClick={() => postAttendanceEvent("offline", { action: "check_out" })}
-                    disabled={attLoading || !attOnline}
-                  >
-                    🔴 Desconectarme
-                  </button>
-
-                  <button
-                    className="tc-btn"
-                    onClick={() => postAttendanceEvent("online", { action: "break", phase: "start" })}
-                    disabled={attLoading || !attOnline || attStatus === "break"}
-                  >
-                    ⏸️ Descanso
-                  </button>
-                  <button
-                    className="tc-btn"
-                    onClick={() => postAttendanceEvent("online", { action: "break", phase: "end" })}
-                    disabled={attLoading || !attOnline || attStatus !== "break"}
-                  >
-                    ▶️ Volver
-                  </button>
-
-                  <button
-                    className="tc-btn"
-                    onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "start" })}
-                    disabled={attLoading || !attOnline || attStatus === "bathroom"}
-                  >
-                    🚻 Baño
-                  </button>
-                  <button
-                    className="tc-btn"
-                    onClick={() => postAttendanceEvent("online", { action: "bathroom", phase: "end" })}
-                    disabled={attLoading || !attOnline || attStatus !== "bathroom"}
-                  >
-                    ✅ Salí
-                  </button>
-                </div>
-              </div>
-
-              {attMsg ? <div className="tc-sub" style={{ marginTop: 10 }}>{attMsg}</div> : null}
-
-            </div>
+              <TarotistaStatusHeader
+                workerName={stats?.worker?.display_name || "Tarotista"}
+                team={stats?.worker?.team}
+                month={month}
+                online={attOnline}
+                status={attStatus}
+                loading={attLoading || dataRefreshing}
+                message={attMsg || msg}
+                onMonthChange={(value) => {
+                  const nextMonth = value || monthKeyNow();
+                  setMonth(nextMonth);
+                  setMonthInUrl(nextMonth);
+                  void refresh(nextMonth);
+                }}
+                onRefresh={() => void refresh()}
+                onStatusChange={(action) => void changeAttendanceStatus(action)}
+              />
 
             {tab === "chat" && <StaffDirectChatPanel />}
             {false && (
@@ -1614,87 +1554,55 @@ export default function Tarotista() {
             )}
 
             {tab === "resumen" && (
-              <>
+              <div className={panelStyles.overview}>
                 <OperationalInbox
                   mode="tarotista"
                   compact
+                  externalChatUnread={chatUnread}
                   onAction={(action) => {
                     if (action === "chat") setTab("chat");
                     if (action === "calls") setTab("clientes");
                     if (action === "incidents") setTab("facturas");
-                    if (action === "attendance") setTab("resumen");
+                    if (action === "attendance") void changeAttendanceStatus("connected");
                   }}
                 />
-                <div className="tc-grid-2">
-                <div className="tc-card">
-                  <div className="tc-title">📊 Mis estadísticas</div>
-                  <div className="tc-hr" />
-                  <div className="tc-kpis">
-                    <Kpi label="Minutos totales" value={n2(s?.minutes_total || 0)} />
-                    <Kpi label="Captadas" value={String(captadas)} />
-                    <Kpi label="% Cliente" value={pct(s?.pct_cliente || 0)} />
-                    <Kpi label="% Repite" value={pct(s?.pct_repite || 0)} />
-                    <Kpi label="Rango público" value={`Rango ${myPublicRange}`} highlight={myPublicRange === "A"} />
-                    <Kpi label="Puntuación pública" value={myPublicRangeScore > 0 ? `${myPublicRangeScore.toLocaleString("es-ES", { maximumFractionDigits: 1 })}/10` : "Sin datos"} />
-                  </div>
-                  <div className="tc-sub" style={{ marginTop: 12 }}>
-                    Este rango aparece también en el panel cliente. Rango A se consigue superando el 25% de minutos Cliente; la puntuación pública se calcula con % Cliente y % Repite.
-                    {myPublicRangePosition && myPublicRangeTotal ? ` Posición interna: ${myPublicRangePosition}/${myPublicRangeTotal}.` : ""}
-                  </div>
-                </div>
 
-                <div className="tc-card">
-                  <div className="tc-title">💶 Vista rápida de pago</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Esto es una vista motivacional. La factura oficial la ves en la pestaña “Factura”.
-                  </div>
-                  <div className="tc-hr" />
-
-                  <div className="tc-kpis">
-                    <Kpi label="Pago por minutos" value={money(payMinutes)} />
-                    <Kpi label="Bono captadas" value={money(bonusCaptadas)} />
-                    <Kpi label="Bono ranking (hoy)" value={money(bonusRanking)} />
-                    <Kpi label="Incidencias (en vivo)" value={canSeeMoney ? `- ${eur(incidenciasLive)}` : "Oculto nivel 2"} />
-                    <Kpi label="Total estimado" value={money(totalPreview)} highlight />
-                  </div>
-
-                  <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
-                    Bonos totales del mes: <b>{money(bonusTotal)}</b>
-                  </div>
-                </div>
-
-                <div className="tc-card" style={{ gridColumn: "1 / -1" }}>
-                  <div className="tc-title">⚠️ Incidencias del mes (en vivo)</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Te aparecen aquí en cuanto la central las crea (no depende de regenerar factura).
-                  </div>
-                  <div className="tc-hr" />
-                  {!incidents || incidents.length === 0 ? (
-                    <div className="tc-sub">No tienes incidencias este mes.</div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {(incidents || []).slice(0, 8).map((i: any) => (
-                        <div
-                          key={i.id}
-                          style={{
-                            border: "1px solid rgba(255,255,255,0.10)",
-                            borderRadius: 14,
-                            padding: 12,
-                            background: "rgba(255,80,80,0.06)",
-                          }}
-                        >
-                          <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                            <div style={{ fontWeight: 900 }}>{i.title || i.reason || "Incidencia"}</div>
-                            <div style={{ fontWeight: 900 }}>{canSeeMoney ? `-${eur(i.amount)}` : "Oculto nivel 2"}</div>
-                          </div>
-                          {i.reason ? <div className="tc-sub" style={{ marginTop: 6 }}>{i.reason}</div> : null}
-                        </div>
-                      ))}
+                <aside className={panelStyles.rail} aria-label="Rendimiento del mes">
+                  <section className={panelStyles.railCard}>
+                    <div className={panelStyles.railKicker}>Rendimiento real · {month}</div>
+                    <h3>Tu mes, de un vistazo</h3>
+                    <p>Solo datos registrados en rendimiento.</p>
+                    <div className={panelStyles.statGrid}>
+                      <div className={panelStyles.stat}><span>Llamadas</span><strong>{Number(s?.calls_total || 0)}</strong></div>
+                      <div className={panelStyles.stat}><span>Minutos</span><strong>{n2(s?.minutes_total || 0)}</strong></div>
+                      <div className={panelStyles.stat}><span>Captadas</span><strong>{captadas}</strong></div>
+                      <div className={panelStyles.stat}><span>Rango</span><strong>{myPublicRange}</strong></div>
                     </div>
-                  )}
-                </div>
-                </div>
-              </>
+                    <div className={panelStyles.progressRow}>
+                      <div className={panelStyles.progressMeta}><span>Cliente</span><strong>{pct(s?.pct_cliente || 0)}</strong></div>
+                      <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_cliente || 0))}%` }} /></div>
+                    </div>
+                    <div className={panelStyles.progressRow}>
+                      <div className={panelStyles.progressMeta}><span>Repite</span><strong>{pct(s?.pct_repite || 0)}</strong></div>
+                      <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_repite || 0))}%` }} /></div>
+                    </div>
+                    <button className={panelStyles.railButton} type="button" onClick={() => setTab("ranking")}>Ver estadísticas completas</button>
+                  </section>
+
+                  <section className={panelStyles.railCard}>
+                    <div className={panelStyles.railKicker}>Progreso operativo</div>
+                    <h3>Objetivos y cierre</h3>
+                    <p>Resumen conectado con tus módulos actuales.</p>
+                    <div className={panelStyles.quickList}>
+                      <div className={panelStyles.quickItem}><span>Checklist</span><strong>{clProgress.total ? `${clProgress.completed}/${clProgress.total}` : "Sin tareas"}</strong></div>
+                      <div className={panelStyles.quickItem}><span>Ranking Cliente</span><strong>{posCliente ? `#${posCliente}` : "Sin posición"}</strong></div>
+                      <div className={panelStyles.quickItem}><span>Factura</span><strong>{invoice ? getInvoiceVisibleStatus(invoice) : "Pendiente"}</strong></div>
+                      <div className={panelStyles.quickItem}><span>Total estimado</span><strong>{money(totalPreview)}</strong></div>
+                    </div>
+                    <button className={panelStyles.railButton} type="button" onClick={() => setTab("facturas")}>Abrir factura</button>
+                  </section>
+                </aside>
+              </div>
             )}
 
             {tab === "clientes" && (

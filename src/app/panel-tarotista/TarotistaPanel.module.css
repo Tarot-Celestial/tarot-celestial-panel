@@ -1,0 +1,30 @@
+.overview { display: grid; grid-template-columns: minmax(0, 2.25fr) minmax(260px, .85fr); gap: 16px; align-items: start; }
+.rail { display: grid; gap: 13px; }
+.railCard { padding: 16px; border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: radial-gradient(circle at 100% 0%, rgba(139,92,246,.12), transparent 38%), rgba(17,12,27,.92); box-shadow: 0 20px 60px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05); }
+.railKicker { color: #e5bd6d; font-size: 9px; font-weight: 950; letter-spacing: .14em; text-transform: uppercase; }
+.railCard h3 { margin: 7px 0 3px; font-size: 17px; }
+.railCard > p { margin: 0; color: rgba(255,255,255,.53); font-size: 11px; line-height: 1.45; }
+.statGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 13px; }
+.stat { min-height: 78px; padding: 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: rgba(255,255,255,.032); }
+.stat span { display: block; color: rgba(255,255,255,.45); font-size: 9px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.stat strong { display: block; margin-top: 7px; font-size: 19px; }
+.progressRow { display: grid; gap: 6px; margin-top: 14px; }
+.progressMeta { display: flex; justify-content: space-between; gap: 8px; color: rgba(255,255,255,.64); font-size: 10px; }
+.track { height: 7px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.08); }
+.track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8955ef, #f1cd78); box-shadow: 0 0 16px rgba(174,112,255,.45); }
+.quickList { display: grid; gap: 8px; margin-top: 13px; }
+.quickItem { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid rgba(255,255,255,.075); border-radius: 12px; background: rgba(255,255,255,.025); font-size: 11px; }
+.quickItem span { color: rgba(255,255,255,.55); }
+.quickItem strong { font-size: 11px; text-align: right; }
+.railButton { width: 100%; min-height: 38px; margin-top: 12px; border: 1px solid rgba(226,187,105,.28); border-radius: 11px; color: #f3d58b; background: rgba(226,187,105,.075); cursor: pointer; font-weight: 850; }
+.navMain { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.navIcon { width: 32px; height: 32px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.09); border-radius: 11px; color: rgba(255,255,255,.68); background: rgba(255,255,255,.035); }
+.navCopy { min-width: 0; }
+.navBadge { min-width: 22px; height: 22px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; color: #fff; background: #d92f54; box-shadow: 0 0 18px rgba(217,47,84,.35); font-size: 10px; font-weight: 950; }
+.navBadge[data-tone="amber"] { color: #1b1207; background: #e8bd5f; box-shadow: 0 0 18px rgba(232,189,95,.3); }
+.loadingShell { min-height: 360px; display: grid; place-items: center; color: rgba(255,255,255,.55); }
+.loadingPulse { width: min(520px, 86%); height: 180px; border-radius: 24px; background: linear-gradient(100deg, rgba(255,255,255,.035), rgba(255,255,255,.09), rgba(255,255,255,.035)); background-size: 200% 100%; animation: loading 1.25s ease-in-out infinite; }
+@keyframes loading { to { background-position: -200% 0; } }
+@media (max-width: 1080px) { .overview { grid-template-columns: 1fr; } .rail { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 680px) { .rail { grid-template-columns: 1fr; } .statGrid { grid-template-columns: 1fr 1fr; } }
+@media (prefers-reduced-motion: reduce) { .loadingPulse { animation: none; } }

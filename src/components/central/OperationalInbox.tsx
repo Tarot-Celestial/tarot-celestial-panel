@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { getConversionProbability } from "@/lib/conversion-engine";
 import { sortByDecision, getNextBestAction } from "@/lib/decision-engine";
 import { getAnalytics } from "@/lib/analytics-lite";
@@ -12,6 +12,8 @@ import { evaluateSla, type SlaStatus } from "@/lib/sla-engine";
 import { getLoadSummary } from "@/lib/load-engine";
 import { getOperatorControlSummary } from "@/lib/operator-score-engine";
 import { revenueLabel, revenueProfile } from "@/lib/revenue-engine";
+import { AlertTriangle, Gauge, MessageSquare, Phone, RefreshCw, Sparkles } from "lucide-react";
+import styles from "./OperationalInbox.module.css";
 
 type InboxMode = "admin" | "central" | "tarotista";
 
@@ -29,6 +31,7 @@ type OperationalInboxProps = {
   mode: InboxMode;
   onAction?: (action: InboxAction) => void;
   compact?: boolean;
+  externalChatUnread?: number;
 };
 
 export type InboxItem = {
@@ -294,7 +297,7 @@ function withSla<T extends InboxItem>(item: T): T {
   };
 }
 
-export default function OperationalInbox({ mode, onAction, compact = false }: OperationalInboxProps) {
+export default function OperationalInbox({ mode, onAction, compact = false, externalChatUnread = 0 }: OperationalInboxProps) {
   const ops = useOps();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -462,6 +465,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
     const offlineExpected = loadSummary.offlineExpected;
 
     if (mode === "tarotista") {
+      const unread = Math.max(externalChatUnread, Number(ops.counters.chatUnread || 0));
       return [
         {
           key: "turno",
@@ -490,44 +494,35 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
           tone: "gold",
           action: "calls",
           empty: "No tienes llamadas asignadas para hoy.",
-          items: sortItems(
-  leads.map((lead: any) => {
-    const probability = getConversionProbability(lead);
-
-    const revenue =
-      Number(lead?.cliente_revenue_total) ||
-      Number(lead?.cliente_revenue_30d) ||
-      20;
-
-    const expectedValue = probability * revenue;
-
-    return withSla({
-      id: String(lead.id),
-      title: normalizeLeadName(lead),
-
-      subtitle: `Prob: ${Math.round(probability * 100)}% · Valor: ${expectedValue.toFixed(0)}€`,
-
-      meta: lead.workflow_state
-        ? `Estado: ${lead.workflow_state}`
-        : "Lead pendiente",
-
-      priority:
-        expectedValue > 50
-          ? "high"
-          : expectedValue > 20
-          ? "medium"
-          : "low",
-
-      action: "leads",
-      type: "lead",
-
-      value: expectedValue,
-      created_at: lead.created_at,
-      last_activity_at: lead.updated_at,
-    });
-})
-)
-},
+          items: sortItems(outboundItems.map((item: any) => withSla({
+            id: String(item.id),
+            title: item.customer_name || item.phone || "Llamada asignada",
+            subtitle: item.phone ? `Teléfono: ${item.phone}` : "Contacto asignado",
+            meta: item.current_status ? `Estado: ${item.current_status}` : "Pendiente para hoy",
+            priority: String(item.priority || "").toLowerCase() === "urgent" ? "high" : "low",
+            action: "calls",
+            type: "call",
+            last_activity_at: item.last_call_at,
+          }))),
+        },
+        {
+          key: "my-chat",
+          title: "Chat del equipo",
+          icon: "💬",
+          count: unread,
+          tone: "purple",
+          action: "chat",
+          empty: "No tienes mensajes sin leer.",
+          items: unread > 0 ? [withSla({
+            id: "my-unread-chat",
+            title: `${unread} mensaje${unread === 1 ? "" : "s"} sin leer`,
+            subtitle: "Tu central está esperando respuesta.",
+            priority: unread >= 3 ? "high" : "medium",
+            action: "chat",
+            type: "chat",
+            unread_count: unread,
+          })] : [],
+        },
         {
           key: "my-incidents",
           title: "Mis avisos",
@@ -738,7 +733,7 @@ export default function OperationalInbox({ mode, onAction, compact = false }: Op
       },
       ...baseSections,
     ];
-  }, [chatItems, incidentItems, leads, loadSummary, mode, operatorControl, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
+  }, [chatItems, externalChatUnread, incidentItems, leads, loadSummary, mode, operatorControl, ops.attendance, ops.counters, ops.expected.rows, ops.presences.rows, outboundItems]);
 
   const decisionItems = useMemo(() => {
   return sortByDecision(
@@ -762,18 +757,99 @@ const nextSuggestion = nextBestItem
   ? getSuggestion(nextBestItem, nextBestItem.action)
   : null;
 
+  if (mode === "tarotista") {
+    const unread = Math.max(externalChatUnread, Number(ops.counters.chatUnread || 0));
+    const pressureLevel = loadSummary.level === "critical" || loadSummary.level === "high"
+      ? "Alta"
+      : loadSummary.level === "medium" ? "Media" : "Baja";
+    const pressureTone = pressureLevel === "Alta" ? "alert" : pressureLevel === "Media" ? "amber" : "green";
+    const callsSection = sections.find((section) => section.key === "assigned-calls");
+    const incidentsSection = sections.find((section) => section.key === "my-incidents");
+    const statusSection = sections.find((section) => section.key === "turno");
+    const priorityAction = nextSuggestion?.action || nextBestItem?.action;
+
+    const renderSection = (section: InboxSection | undefined, icon: ReactNode) => (
+      <article className={styles.section}>
+        <div className={styles.sectionHead}>
+          <h3>{icon}{section?.title || "Actividad"}</h3>
+          <span className={styles.count}>{section?.count || 0}</span>
+        </div>
+        {section?.items?.length ? (
+          <div className={styles.items}>
+            {section.items.slice(0, 3).map((item) => (
+              <div className={styles.item} key={`${section.key}-${item.id}`}>
+                <strong>{item.title}</strong>
+                {item.subtitle ? <span>{item.subtitle}</span> : null}
+                {item.meta ? <span>{item.meta}</span> : null}
+                <button type="button" onClick={() => fireAction((item.action || section.action) as InboxAction)}>
+                  {itemActionLabel(item, section.action)} →
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : <div className={styles.empty}>{section?.empty || "Sin actividad pendiente."}</div>}
+      </article>
+    );
+
+    return (
+      <section className={styles.command} aria-label="Centro de turno">
+        <div className={styles.head}>
+          <div>
+            <div className={styles.eyebrow}>Operaciones en tiempo real</div>
+            <h2>Centro de turno</h2>
+            <p>Todo lo importante para decidir qué hacer ahora.</p>
+          </div>
+          <div className={styles.live}>
+            <span className={styles.liveBadge}><span className={styles.liveDot} /> EN VIVO</span>
+            <button className={styles.refresh} type="button" onClick={() => void load()} disabled={loading} aria-label="Actualizar centro de turno" title={refreshedAt ? `Actualizado ${timeAgo(refreshedAt)}` : "Actualizar"}>
+              <RefreshCw size={16} className={loading ? styles.skeleton : ""} />
+            </button>
+          </div>
+        </div>
+
+        <div className={styles.hud} aria-label="Métricas operativas">
+          <div className={styles.metric} data-tone="cyan"><div className={styles.metricLabel}><Phone size={14} /> Llamadas</div><div className={styles.metricValue}>{outboundItems.length}</div><div className={styles.metricNote}>Asignadas para hoy</div></div>
+          <div className={styles.metric} data-tone="violet"><div className={styles.metricLabel}><MessageSquare size={14} /> Chats</div><div className={styles.metricValue}>{unread}</div><div className={styles.metricNote}>{unread ? "Sin leer" : "Al día"}</div></div>
+          <div className={styles.metric} data-tone="alert"><div className={styles.metricLabel}><AlertTriangle size={14} /> Avisos</div><div className={styles.metricValue}>{incidentItems.length}</div><div className={styles.metricNote}>{incidentItems.length ? "Requieren revisión" : "Sin pendientes"}</div></div>
+          <div className={styles.metric} data-tone={pressureTone}><div className={styles.metricLabel}><Gauge size={14} /> Presión</div><div className={styles.metricValue}>{pressureLevel}</div><div className={styles.metricNote}>{loadSummary.label}</div></div>
+        </div>
+
+        <div className={styles.layout}>
+          <article className={styles.priority} data-level={nextBestItem?.priority || "low"}>
+            <div className={styles.priorityTop}><span className={styles.priorityKicker}><Sparkles size={13} /> Prioridad ahora</span>{nextBestItem?.priority ? <span className={styles.count}>{priorityLabel(nextBestItem.priority)}</span> : null}</div>
+            <h3>{nextBestItem?.title || "Turno bajo control"}</h3>
+            <p>{nextBestItem?.subtitle || "No hay acciones urgentes. Mantente disponible para nueva actividad."}</p>
+            {nextSuggestion?.reason ? <p>{nextSuggestion.reason}</p> : null}
+            {priorityAction ? <button type="button" onClick={() => fireAction(priorityAction as InboxAction)}>{nextSuggestion?.label || "Revisar ahora"}</button> : null}
+          </article>
+
+          <article className={`${styles.section} ${styles.statusPanel}`} data-online={String(Boolean(ops.attendance.online))}>
+            <div className={styles.priorityKicker}>Estado de turno</div>
+            <div className={styles.statusLabel}><span className={styles.statusDot} />{ops.attendance.online ? "En servicio" : "Desconectada"}</div>
+            <p>{statusSection?.items?.[0]?.subtitle || (ops.attendance.online ? "Esperando nueva actividad." : "Conéctate para empezar a recibir llamadas y mensajes.")}</p>
+            <button className={styles.sectionButton} type="button" onClick={() => fireAction("attendance")}>{ops.attendance.online ? "Gestionar estado" : "Conectarme"}</button>
+          </article>
+        </div>
+
+        <div className={styles.sections}>
+          {renderSection(callsSection, <Phone size={16} />)}
+          {renderSection(incidentsSection, <AlertTriangle size={16} />)}
+        </div>
+        {error ? <div className={styles.error}>{error}</div> : null}
+      </section>
+    );
+  }
+
   return (
     <section className="tc-card" style={{ border: "1px solid rgba(215,181,109,0.18)", overflow: "hidden" }}>
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div className="tc-title" style={{ fontSize: compact ? 16 : 18 }}>
-            {mode === "admin" ? "👑 Bandeja supervisión" : mode === "tarotista" ? "🔮 Mi bandeja de turno" : "⚡ Bandeja central"}
+            {mode === "admin" ? "👑 Bandeja supervisión" : "⚡ Bandeja central"}
           </div>
           <div className="tc-sub" style={{ marginTop: 6 }}>
             {mode === "admin"
               ? "Visión global de lo que requiere atención. Parking manda; chats no bloquean salvo pendientes."
-              : mode === "tarotista"
-              ? "Resumen reducido de tu turno, llamadas y avisos."
               : "Trabajo operativo priorizado: parking primero, leads/rangos y ausencias después."}
             {refreshedAt ? ` · Actualizado ${timeAgo(refreshedAt)}` : ""}
             {error ? ` · ${error}` : ""}
@@ -873,7 +949,7 @@ const nextSuggestion = nextBestItem
       >
         {sections.map((section) => {
           const tone = toneStyle(section.tone);
-          const visibleItems = section.items.slice(0, mode === "tarotista" ? 3 : 4);
+          const visibleItems = section.items.slice(0, 4);
 
           return (
             <div
