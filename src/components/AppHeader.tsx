@@ -10,6 +10,7 @@ import { tcToast } from "@/lib/tc-toast";
 import { useAttendance } from "@/hooks/useAttendance";
 import { ArrowLeft, Network } from "lucide-react";
 import styles from "./AppHeader.module.css";
+import { backgroundFetch } from "@/lib/background-fetch";
 
 const sb = supabaseBrowser();
 
@@ -111,7 +112,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
     try {
       const { data: sessionData } = await sb.auth.getSession();
       const token = sessionData.session?.access_token;
-      const res = await fetch(`/api/notifications/list?user_id=${encodeURIComponent(notifUserId)}`, {
+      const res = await backgroundFetch(`/api/notifications/list?user_id=${encodeURIComponent(notifUserId)}`, {
         cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
@@ -149,7 +150,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
         });
       }
     } catch {
-      setNotifications([]);
+      // Conserva las notificaciones ya cargadas durante una caída transitoria.
     }
   }
 
@@ -160,7 +161,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
     };
     refreshVisible();
     // Las inserciones ya llegan por Realtime; el sondeo queda como respaldo.
-    const i = window.setInterval(refreshVisible, 120000);
+    const i = window.setInterval(refreshVisible, 300_000);
     window.addEventListener("focus", refreshVisible);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {

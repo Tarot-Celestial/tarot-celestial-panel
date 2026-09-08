@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { backgroundFetch } from "@/lib/background-fetch";
 
 export type ChatThread = {
   id: string;
@@ -156,8 +157,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         setMessages(sortMessages(list));
       } catch (e: any) {
         if (!mountedRef.current) return;
-        setMessages([]);
-        if (!silent) setMessage(`❌ ${e?.message || "Error"}`);
+        if (!silent) {
+          setMessages([]);
+          setMessage(`❌ ${e?.message || "Error"}`);
+        }
       } finally {
         if (mountedRef.current && !silent) setLoading(false);
       }
@@ -176,7 +179,8 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         const token = await getAccessToken();
         if (!token) throw new Error("NO_AUTH");
 
-        const res = await fetch("/api/central/chat/threads", {
+        const request = silent ? backgroundFetch : fetch;
+        const res = await request("/api/central/chat/threads", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         });
@@ -204,8 +208,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         }
       } catch (e: any) {
         if (!mountedRef.current) return;
-        setThreads([]);
-        if (!silent) setMessage(`❌ ${e?.message || "Error"}`);
+        if (!silent) {
+          setThreads([]);
+          setMessage(`❌ ${e?.message || "Error"}`);
+        }
       } finally {
         if (mountedRef.current && !silent) setLoading(false);
       }
@@ -314,7 +320,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     // respaldo para recuperar eventos perdidos, no un sondeo constante.
     refreshTimerRef.current = window.setInterval(() => {
       if (document.visibilityState === "visible") void loadThreads(true);
-    }, 120_000);
+    }, 300_000);
     const refreshVisible = () => {
       if (document.visibilityState === "visible") void loadThreads(true);
     };

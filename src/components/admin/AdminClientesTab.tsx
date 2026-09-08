@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { backgroundFetch } from "@/lib/background-fetch";
 
 const sb = supabaseBrowser();
 
@@ -151,7 +152,10 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
       if (!silent) { setLoading(true); setMsg(""); }
       const token = await getTokenOrLogin();
       if (!token) return;
-      const res = await fetch(`/api/admin/crm/clientes-alertas?t=${Date.now()}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const requestInit = { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" as const };
+      const res = silent
+        ? await backgroundFetch(`/api/admin/crm/clientes-alertas?t=${Date.now()}`, requestInit, { key: "GET:/api/admin/crm/clientes-alertas" })
+        : await fetch(`/api/admin/crm/clientes-alertas?t=${Date.now()}`, requestInit);
       const json = await safeJson(res);
       if (!json?._ok || !json?.ok) throw new Error(json?.error || `HTTP ${json?._status}`);
       setData(json as ApiPayload);
@@ -169,7 +173,10 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
       if (!silent) { setRankLoading(true); setRankMsg(""); }
       const token = await getTokenOrLogin();
       if (!token) return;
-      const res = await fetch(`/api/admin/client-ranks/summary?t=${Date.now()}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const requestInit = { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" as const };
+      const res = silent
+        ? await backgroundFetch(`/api/admin/client-ranks/summary?t=${Date.now()}`, requestInit, { key: "GET:/api/admin/client-ranks/summary" })
+        : await fetch(`/api/admin/client-ranks/summary?t=${Date.now()}`, requestInit);
       const json = await safeJson(res);
       if (!json?._ok || !json?.ok) throw new Error(json?.error || `HTTP ${json?._status}`);
       setRankSummary(json.summary || null);
@@ -219,7 +226,11 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
   useEffect(() => {
     loadAlerts(false);
     loadRankSummary(true);
-    const timer = setInterval(() => { loadAlerts(true); loadRankSummary(true); }, 30000);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      loadAlerts(true);
+      loadRankSummary(true);
+    }, 300_000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

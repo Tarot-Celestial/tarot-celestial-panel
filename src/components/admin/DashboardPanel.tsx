@@ -34,6 +34,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./DashboardPanel.module.css";
+import { backgroundFetch } from "@/lib/background-fetch";
 
 const sb = supabaseBrowser();
 
@@ -344,32 +345,33 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       const token = await getTokenOrLogin();
       if (!token) return;
 
+      const request = silent ? backgroundFetch : fetch;
       const [invRes, statsRes, previousStatsRes, reservasRes, diarioRes, yesterdayRes, accessRes] = await Promise.all([
-        fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
+        request(`/api/admin/invoices/list?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
+        request(`/api/stats/monthly?month=${encodeURIComponent(month)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch(`/api/stats/monthly?month=${encodeURIComponent(previousMonth)}&brand=${activeBrand}`, {
+        request(`/api/stats/monthly?month=${encodeURIComponent(previousMonth)}&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch(`/api/crm/reservas/listar?brand=${activeBrand}`, {
+        request(`/api/crm/reservas/listar?brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch(`/api/crm/diario/listar?mode=hoy&brand=${activeBrand}`, {
+        request(`/api/crm/diario/listar?mode=hoy&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch(`/api/crm/diario/listar?mode=ayer&brand=${activeBrand}`, {
+        request(`/api/crm/diario/listar?mode=ayer&brand=${activeBrand}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
-        fetch("/api/admin/client-access/summary", {
+        request("/api/admin/client-access/summary", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
         }),
@@ -411,17 +413,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
         setMsg(`No se pudo actualizar: ${e?.message || "Error cargando dashboard"}`);
         tcToast({ title: "Error en dashboard", description: String(e?.message || "No se pudo cargar"), tone: "error" });
       }
-      setInvoices([]);
-      setStatsRows([]);
-      setStatsTotals(null);
-      setPreviousStatsRows([]);
-      setPreviousStatsTotals(null);
-      setPreviousStatsLoaded(false);
-      setReservas([]);
-      setDiarioRows([]);
-      setYesterdayRows([]);
-      setYesterdayLoaded(false);
-      setClientAccess(null);
+      // Conserva la última lectura válida si Supabase atraviesa una caída breve.
     } finally {
       if (!silent) setLoading(false);
     }
@@ -434,7 +426,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
     };
     // Cada actualización dispara siete endpoints. Realtime sigue refrescando
     // los pagos; este intervalo queda como respaldo y no trabaja en pestañas ocultas.
-    const timer = window.setInterval(refreshVisible, 60000);
+    const timer = window.setInterval(refreshVisible, 300_000);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       window.clearInterval(timer);
@@ -658,7 +650,7 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
         </div>
         <div className={styles.syncBar}>
           <span className={styles.syncDot} />
-          <span>{msg || "Sincronización automática cada 20 segundos"}</span>
+          <span>{msg || "Sincronización Realtime con respaldo inteligente"}</span>
           <span className={styles.syncSource}>Supabase · Facturas · Reservas · Actividad</span>
         </div>
       </section>

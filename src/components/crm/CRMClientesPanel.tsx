@@ -13,6 +13,7 @@ import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-r
 import { tcToast } from "@/lib/tc-toast";
 import reservationStyles from "./CRMReservation.module.css";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import { backgroundFetch } from "@/lib/background-fetch";
 
 function crmNoteTone(text: string) {
   const s = String(text || "").toLowerCase();
@@ -422,7 +423,8 @@ export default function CRMClientesPanel({
       }
       const token = await getTokenOrLogin();
       if (!token) return;
-      const r = await fetch("/api/admin/client-ranks/summary", {
+      const request = silent ? backgroundFetch : fetch;
+      const r = await request("/api/admin/client-ranks/summary", {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
@@ -681,9 +683,10 @@ export default function CRMClientesPanel({
     }
 
     const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
       loadFreshLeads(true);
       loadRankSummary(true);
-    }, 20000);
+    }, 180_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -801,7 +804,8 @@ export default function CRMClientesPanel({
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const r = await fetch("/api/crm/leads/recent?limit=6&minutes=240", {
+      const request = silent ? backgroundFetch : fetch;
+      const r = await request("/api/crm/leads/recent?limit=6&minutes=240", {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
       });
