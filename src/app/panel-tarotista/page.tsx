@@ -529,17 +529,19 @@ export default function Tarotista() {
       const token = await getTokenSafe();
       if (!token) return;
       const headers = { Authorization: `Bearer ${token}` };
-      const [statsResponse, invoiceResponse] = await Promise.all([
+      const [statsResponse, invoiceResponse, incidentsResponse] = await Promise.all([
         fetch(`/api/stats/monthly?month=${encodeURIComponent(month)}`, { headers }),
         fetch(`/api/invoices/my?month=${encodeURIComponent(month)}`, { headers }),
+        fetch(`/api/incidents/my?month=${encodeURIComponent(month)}`, { headers }),
       ]);
-      const [statsJson, invoiceJson] = await Promise.all([safeJson(statsResponse), safeJson(invoiceResponse)]);
+      const [statsJson, invoiceJson, incidentsJson] = await Promise.all([safeJson(statsResponse), safeJson(invoiceResponse), safeJson(incidentsResponse)]);
       if (!statsJson?._ok || !statsJson?.ok) throw new Error(statsJson?.error || "No se pudieron actualizar las métricas");
       if (!invoiceJson?._ok || !invoiceJson?.ok) throw new Error(invoiceJson?.error || "No se pudo actualizar la factura");
       setStats(statsJson);
       setInvoice(invoiceJson.invoice || null);
       setInvoiceLines(invoiceJson.lines || []);
       setInvoiceInsights(invoiceJson.insights || null);
+      if (incidentsJson?._ok && incidentsJson?.ok) setIncidents(incidentsJson.incidents || []);
     } catch (error: any) {
       setMsg(`⚠️ Factura: ${error?.message || "Error"}`);
     }
