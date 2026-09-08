@@ -35,7 +35,7 @@ type ClientRow = {
 
 type SortKey = "recent" | "oldest" | "name" | "capture_priority";
 export type MyClientsView = "all" | "active" | "followup";
-type MyClientsListProps = { onOpenClient: (clientId: string) => void; onNewClient: () => void; view: MyClientsView; onViewChange: (view: MyClientsView) => void; onStats: (stats: {active:number;followup:number}) => void };
+type MyClientsListProps = { onOpenClient: (clientId: string) => void; onNewClient: () => void; view: MyClientsView; onViewChange: (view: MyClientsView) => void; onStats: (stats: {active:number;activeThisWeek:number;followup:number}) => void };
 const PAGE_SIZE = 10;
 
 function fullName(client: ClientRow) {
@@ -142,7 +142,7 @@ export default function MyClientsList({ onOpenClient, onNewClient, view, onViewC
           console.error("[Mis clientas] Error de cartera", { status: response.status, code: payload?.code, detail: payload?.error });
           throw new Error("No se pudieron cargar tus clientas.");
         }
-        if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); setCaptureStats({ captured: Number(payload.stats?.capture?.captured || 0), pending: Number(payload.stats?.capture?.pending || 0), untouched: Number(payload.stats?.capture?.untouched || 0) }); onStats({active:Number(payload.stats?.active||0),followup:Number(payload.stats?.followup||0)}); }
+        if (!cancelled) { setRows(Array.isArray(payload.clientes) ? payload.clientes : []); setTotal(Number(payload.total || 0)); setCaptureStats({ captured: Number(payload.stats?.capture?.captured || 0), pending: Number(payload.stats?.capture?.pending || 0), untouched: Number(payload.stats?.capture?.untouched || 0) }); onStats({active:Number(payload.stats?.active||0),activeThisWeek:Number(payload.stats?.active_this_week||0),followup:Number(payload.stats?.followup||0)}); }
       } catch (loadError: any) {
         if (!cancelled) { setRows([]); setTotal(0); setError("No se pudieron cargar tus clientas."); }
       } finally { if (!cancelled) setLoading(false); }

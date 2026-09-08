@@ -266,8 +266,14 @@ function CentralPage() {
   const [myClientsView, setMyClientsView] = useState<MyClientsView>("all");
   const [newClientOpen, setNewClientOpen] = useState(false);
   const closeNewClient = useCallback(() => setNewClientOpen(false), []);
-  const [myClientsRealStats, setMyClientsRealStats] = useState<{active:number;followup:number}|null>(null);
-  const handleMyClientsStats = useCallback((stats:{active:number;followup:number}) => setMyClientsRealStats(stats), []);
+  const [myClientsRealStats, setMyClientsRealStats] = useState<{active:number;activeThisWeek:number;followup:number}|null>(null);
+  const handleMyClientsStats = useCallback((stats:{active:number;activeThisWeek?:number;followup:number}) => {
+    setMyClientsRealStats((current) => ({
+      active: Number(stats.active || 0),
+      activeThisWeek: Number(stats.activeThisWeek ?? current?.activeThisWeek ?? 0),
+      followup: Number(stats.followup || 0),
+    }));
+  }, []);
 
   const centralProgress: CentralOperatorProgress = {
     totalXp: xpProgress?.total_xp || 0,
@@ -285,8 +291,8 @@ function CentralPage() {
     nextLevelXp: xpProgress?.level_span || 0,
     nextLevelName,
     xpEvolution: (xpData?.weekly || []).map((point) => Number(point.xp) || 0),
-    activeClients: 24,
-    activeClientsThisWeek: 5,
+    activeClients: myClientsRealStats?.active ?? 0,
+    activeClientsThisWeek: myClientsRealStats?.activeThisWeek ?? 0,
     notificationTotal: Number(notificationFeed.summary.pending ?? notificationFeed.summary.unread ?? 0),
     urgentNotifications: notificationFeed.summary.urgent,
     followUpNotifications: notificationFeed.summary.reminders,
@@ -296,8 +302,6 @@ function CentralPage() {
     earnedMoneyEvolution: (myInvoiceFeed.data?.evolution || []).map((point: { total: number }) => Number(point.total) || 0),
   };
 
-  // Datos visuales provisionales para la primera fila de la pestaña Mis clientas.
-  // Quedan tipados para conectarlos más adelante con XP, CRM y Coins reales.
   const myClientsStats: MyClientsStatsData = {
     currentLevel: xpProgress?.level || 1,
     currentLevelXp: xpProgress?.level_xp || 0,
@@ -362,6 +366,53 @@ function CentralPage() {
 
   const [connectedOperator, setConnectedOperator] = useState<any>(null);
   const themeWorkerId = String(connectedOperator?.worker?.id || connectedOperator?.id || connectedOperator?.user?.id || "");
+
+  useEffect(() => {
+    if (!ok || tab !== "central") return;
+    let cancelled = false;
+
+    const loadClientStats = async () => {
+      try {
+        const { data: sessionData } = await sb.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) return;
+        const response = await fetch("/api/central/my-clients?page=1&page_size=1&view=all&sort=recent", {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok || cancelled) return;
+        handleMyClientsStats({
+          active: Number(payload.stats?.active || 0),
+          activeThisWeek: Number(payload.stats?.active_this_week || 0),
+          followup: Number(payload.stats?.followup || 0),
+        });
+      } catch {
+        // Conserva la última cifra real durante una interrupción transitoria.
+      }
+    };
+
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void loadClientStats();
+    };
+    void loadClientStats();
+    const channel = sb
+      .channel(`central-client-stats-${themeWorkerId || "self"}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_capture_assignments" }, refreshVisible)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_client_followups" }, refreshVisible)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_clientes" }, refreshVisible)
+      .subscribe();
+    const fallback = window.setInterval(refreshVisible, 300_000);
+    window.addEventListener("tc-my-clients-refresh", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      cancelled = true;
+      window.clearInterval(fallback);
+      window.removeEventListener("tc-my-clients-refresh", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+      void sb.removeChannel(channel);
+    };
+  }, [handleMyClientsStats, ok, tab, themeWorkerId]);
 
   const handleIdentityLoaded = useCallback((identity: any) => {
     setConnectedOperator(identity || null);
@@ -1236,7 +1287,7 @@ function CentralPage() {
                 data={centralStats}
                 onViewProgress={() => handleSidebarTabChange("tu-sistema-xp")}
                 onViewLevels={() => handleSidebarTabChange("tu-sistema-xp-niveles")}
-                onViewClients={() => setTab("crm")}
+                onViewClients={() => handleSidebarTabChange("mis-clientas")}
                 onViewNotifications={() => handleSidebarTabChange("notificaciones")}
                 onViewEarnings={() => handleSidebarTabChange("mi-factura")}
               />

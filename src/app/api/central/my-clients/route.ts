@@ -42,6 +42,21 @@ function clientIsActive(client: Record<string, unknown>) {
   if (typeof client.activo === "boolean") return client.activo;
   return !["inactivo", "inactive", "archivado", "archived", "baja", "deleted", "eliminado"].includes(String(existingStatus(client) || "").toLowerCase());
 }
+function madridWeekStartKey(value: unknown) {
+  if (!value) return "";
+  const date = new Date(String(value));
+  if (!Number.isFinite(date.getTime())) return "";
+  const madridDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+  const calendarDate = new Date(`${madridDate}T12:00:00Z`);
+  const weekday = calendarDate.getUTCDay() || 7;
+  calendarDate.setUTCDate(calendarDate.getUTCDate() - weekday + 1);
+  return calendarDate.toISOString().slice(0, 10);
+}
 function belongsToBrand(client: Record<string, unknown>, assignment: Record<string, unknown> | undefined, brand: "celestial" | "orion") {
   // La asignación es la fuente de verdad de la cartera. `origen` queda como
   // compatibilidad para registros históricos que todavía no tengan business.
@@ -64,7 +79,7 @@ async function loadOwnedAssignments(admin: ReturnType<typeof adminClient>, worke
   if (!identities.length) return rows;
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin.from("crm_client_capture_assignments")
-      .select("client_id,status,business,captured_by_worker_id,responsible_worker_id,captured_at,first_contact_at,updated_at")
+      .select("client_id,status,business,captured_by_worker_id,responsible_worker_id,captured_at,first_contact_at,created_at,updated_at")
       .in("responsible_worker_id", identities).order("updated_at", { ascending: false, nullsFirst: false }).range(from, from + 999);
     if (error) throw error; rows.push(...(data || [])); if ((data || []).length < 1000) break;
   }
@@ -96,7 +111,7 @@ export async function GET(req: Request) {
     const assignments = await loadOwnedAssignments(admin, identityIds);
     const assignmentByClient = new Map(assignments.map((row: any) => [String(row.client_id), row]));
     const ownedIds = Array.from(assignmentByClient.keys());
-    if (!ownedIds.length) return NextResponse.json({ ok: true, clientes: [], total: 0, page: 1, page_size: pageSize, total_pages: 1, negocio: brand, stats: { active: 0, followup: 0, capture: { captured: 0, pending: 0, untouched: 0 } } });
+    if (!ownedIds.length) return NextResponse.json({ ok: true, clientes: [], total: 0, page: 1, page_size: pageSize, total_pages: 1, negocio: brand, stats: { active: 0, active_this_week: 0, followup: 0, capture: { captured: 0, pending: 0, untouched: 0 } } });
 
     const clients = await selectInChunks(admin, "crm_clientes", "*", "id", ownedIds);
     const portfolio = clients.filter((client: any) => belongsToBrand(client, assignmentByClient.get(String(client.id)), brand));
@@ -108,6 +123,12 @@ export async function GET(req: Request) {
     const identitySet = new Set(identityIds);
     const followupIds = new Set(followups.filter((row: any) => identitySet.has(String(row.worker_id)) && !row.completed_at).map((row: any) => String(row.client_id)));
     const activeIds = new Set(portfolio.filter((client: any) => clientIsActive(client)).map((client: any) => String(client.id)));
+    const currentWeek = madridWeekStartKey(new Date());
+    const activeThisWeek = portfolio.filter((client: any) => {
+      const clientId = String(client.id);
+      const assignment: any = assignmentByClient.get(clientId);
+      return activeIds.has(clientId) && madridWeekStartKey(assignment?.created_at || assignment?.captured_at) === currentWeek;
+    }).length;
 
     const normalizedQuery = searchableText(queryText.replace(/[%(),]/g, " ").trim());
     const searchedDigits = phoneDigits(queryText);
@@ -169,7 +190,7 @@ export async function GET(req: Request) {
       const stage = captureStatusByClient.get(String(client.id))?.stage || "untouched";
       captureStats[stage] += 1;
     }
-    return NextResponse.json({ ok: true, clientes: enriched, total, page, page_size: pageSize, total_pages: totalPages, negocio: brand, stats: { active: activeIds.size, followup: followupIds.size, capture: captureStats } });
+    return NextResponse.json({ ok: true, clientes: enriched, total, page, page_size: pageSize, total_pages: totalPages, negocio: brand, stats: { active: activeIds.size, active_this_week: activeThisWeek, followup: followupIds.size, capture: captureStats } });
   } catch (error: any) {
     console.error("[central/my-clients] cartera no disponible", { message: error?.message, code: error?.code, details: error?.details });
     return NextResponse.json({ ok: false, error: "No se pudieron cargar tus clientas.", code: "ERR_MY_CLIENTS" }, { status: 500 });
