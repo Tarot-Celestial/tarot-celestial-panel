@@ -117,6 +117,9 @@ type ClientePack = {
   totalMinutes: number;
   bonusMinutes: number;
   rouletteLevel: RouletteLevel;
+  rouletteSpins: number;
+  rewardCoins?: number;
+  oracleCredits?: number;
   highlight?: boolean;
 };
 
@@ -828,7 +831,7 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
-                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary}/>
+                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits}/>
                     <button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
                       {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
                     </button>

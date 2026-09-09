@@ -179,7 +179,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         <div className={styles.controls}>
           <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
           <h3>{available ? "Tu próximo premio te espera" : "Desbloquea tu próximo giro"}</h3>
-          <p>Un giro por cada compra distinta confirmada. Puedes acumular todos los que quieras.</p>
+          <p>Cada paquete acredita los giros indicados al confirmar el pago. Puedes acumularlos y cada premio consume solo uno.</p>
           <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special}>
             {p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}
             <span>{prizeLabel(p)}{p.special && <small>PREMIO ESPECIAL</small>}</span>

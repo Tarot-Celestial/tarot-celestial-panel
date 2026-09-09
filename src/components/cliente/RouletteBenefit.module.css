@@ -36,6 +36,7 @@
 .benefit a svg { transition: transform .16s ease; }
 .benefit a:hover svg { transform: translateX(2px); }
 .prizes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: rgba(255, 249, 231, .76); }
+.confirmed { color: #fff2bd; font-size: 11px; font-weight: 800; line-height: 1.45; }
 .prizes i { width: 1px; height: 11px; background: rgba(231, 189, 98, .24); }
 .benefit small { color: rgba(255, 255, 255, .43); font-size: 9px; }
 

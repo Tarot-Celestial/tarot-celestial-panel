@@ -13,7 +13,7 @@ const sb = supabaseClienteBrowser();
 
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
-type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; highlight?: boolean };
+type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean };
 
 export default function PreciosOfertasPage() {
   const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
@@ -166,7 +166,7 @@ export default function PreciosOfertasPage() {
                 </div>
                 <div className={styles.levelBenefits}>
                   <strong>Tu compra incluye</strong>
-                  <span>✨ 1 giro Nivel 3</span><span>🏆 Hasta +100 min</span><span>🪙 Hasta 2.000 Coins</span>
+                  <span>✨ 1–2 giros Nivel 3</span><span>🏆 Hasta +100 min</span><span>🪙 Hasta 2.000 Coins</span>
                 </div>
               </div>
               <div className={styles.grid}>
@@ -227,7 +227,7 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
         <strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong>
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
-      <RouletteBenefit level={level} summary={summary} />
+      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits} />
       <button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button>
     </article>
   );

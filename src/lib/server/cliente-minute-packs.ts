@@ -6,6 +6,9 @@ export type ClienteMinutePack = {
   totalMinutes: number;
   bonusMinutes: number;
   rouletteLevel: 1 | 2 | 3;
+  rouletteSpins: number;
+  rewardCoins?: number;
+  oracleCredits?: number;
   highlight?: boolean;
 };
 
@@ -18,6 +21,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     totalMinutes: 10,
     bonusMinutes: 0,
     rouletteLevel: 1,
+    rouletteSpins: 1,
   },
   {
     id: "pack_20",
@@ -27,6 +31,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     totalMinutes: 20,
     bonusMinutes: 0,
     rouletteLevel: 1,
+    rouletteSpins: 1,
   },
   {
     id: "pack_30",
@@ -36,6 +41,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     totalMinutes: 30,
     bonusMinutes: 0,
     rouletteLevel: 1,
+    rouletteSpins: 1,
     highlight: true,
   },
   {
@@ -46,6 +52,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     totalMinutes: 40,
     bonusMinutes: 0,
     rouletteLevel: 2,
+    rouletteSpins: 1,
   },
   {
     id: "pack_50",
@@ -55,6 +62,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     totalMinutes: 50,
     bonusMinutes: 0,
     rouletteLevel: 2,
+    rouletteSpins: 1,
   },
   {
     id: "pack_60",
@@ -63,8 +71,46 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 35,
     totalMinutes: 60,
     bonusMinutes: 0,
-    rouletteLevel: 3,
+    rouletteLevel: 2,
+    rouletteSpins: 1,
     highlight: true,
+  },
+  {
+    id: "pack_80",
+    nombre: "80 minutos",
+    descripcion: "Experiencia premium con 80 minutos de consulta.",
+    priceUsd: 49,
+    totalMinutes: 80,
+    bonusMinutes: 0,
+    rouletteLevel: 3,
+    rouletteSpins: 1,
+    rewardCoins: 500,
+    oracleCredits: 1,
+  },
+  {
+    id: "pack_120",
+    nombre: "120 minutos",
+    descripcion: "Experiencia premium con dos horas de consulta.",
+    priceUsd: 69,
+    totalMinutes: 120,
+    bonusMinutes: 0,
+    rouletteLevel: 3,
+    rouletteSpins: 1,
+    rewardCoins: 800,
+    oracleCredits: 2,
+    highlight: true,
+  },
+  {
+    id: "pack_180",
+    nombre: "180 minutos",
+    descripcion: "La experiencia premium más completa.",
+    priceUsd: 99,
+    totalMinutes: 180,
+    bonusMinutes: 0,
+    rouletteLevel: 3,
+    rouletteSpins: 2,
+    rewardCoins: 1500,
+    oracleCredits: 3,
   },
 ];
 
