@@ -5,6 +5,7 @@ export type ClienteMinutePack = {
   priceUsd: number;
   totalMinutes: number;
   bonusMinutes: number;
+  rouletteLevel: 1 | 2 | 3;
   highlight?: boolean;
 };
 
@@ -16,6 +17,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 12,
     totalMinutes: 10,
     bonusMinutes: 0,
+    rouletteLevel: 1,
   },
   {
     id: "pack_20",
@@ -24,6 +26,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 22,
     totalMinutes: 20,
     bonusMinutes: 0,
+    rouletteLevel: 1,
   },
   {
     id: "pack_30",
@@ -32,6 +35,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 26,
     totalMinutes: 30,
     bonusMinutes: 0,
+    rouletteLevel: 1,
     highlight: true,
   },
   {
@@ -41,6 +45,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 29,
     totalMinutes: 40,
     bonusMinutes: 0,
+    rouletteLevel: 2,
   },
   {
     id: "pack_50",
@@ -49,6 +54,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 32,
     totalMinutes: 50,
     bonusMinutes: 0,
+    rouletteLevel: 2,
   },
   {
     id: "pack_60",
@@ -57,6 +63,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     priceUsd: 35,
     totalMinutes: 60,
     bonusMinutes: 0,
+    rouletteLevel: 3,
     highlight: true,
   },
 ];
@@ -67,6 +74,10 @@ export function getConfiguredMinutePack(packId: unknown): ClienteMinutePack | nu
   return CLIENTE_MINUTE_PACKS.find((pack) => pack.id === id) || null;
 }
 
-export function rouletteLevelForPack(pack: ClienteMinutePack): 1 | 2 {
-  return pack.totalMinutes <= 30 ? 1 : 2;
+export function getWheelLevelForPurchase(pack: Pick<ClienteMinutePack, "rouletteLevel">): 1 | 2 | 3 {
+  return pack.rouletteLevel;
+}
+
+export function rouletteLevelForPack(pack: ClienteMinutePack): 1 | 2 | 3 {
+  return getWheelLevelForPurchase(pack);
 }

@@ -194,6 +194,15 @@
   box-shadow: inset 0 1px rgba(255, 255, 255, .05), 0 0 34px rgba(231, 189, 98, .06);
 }
 
+.levelCelestial {
+  border-color: rgba(255, 218, 126, .56);
+  background:
+    radial-gradient(circle at 82% -12%, rgba(255, 209, 90, .24), transparent 32%),
+    radial-gradient(circle at 8% 110%, rgba(105, 52, 159, .22), transparent 36%),
+    linear-gradient(145deg, rgba(31, 20, 8, .95), rgba(9, 7, 13, .98) 48%, rgba(24, 12, 38, .96));
+  box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 0 44px rgba(231, 189, 98, .10);
+}
+
 .levelHeader {
   position: relative;
   z-index: 1;
@@ -209,6 +218,7 @@
 .levelMedallion { width: 56px; height: 56px; border-radius: 18px; }
 .levelMedallion svg { width: 25px; }
 .premiumMedallion { color: #ffe49a; background: radial-gradient(circle at 35% 25%, #ffe7a044, transparent 38%), linear-gradient(145deg, #a86f1938, #251809); }
+.celestialMedallion { color: #fff0b0; background: radial-gradient(circle at 35% 25%, #fff1af66, transparent 38%), linear-gradient(145deg, #a56c1c66, #2d153d); box-shadow: 0 0 26px rgba(245, 202, 100, .18); }
 .levelIdentity h3 { margin: 2px 0 0; font: 600 30px/1 Georgia, "Times New Roman", serif; text-transform: uppercase; letter-spacing: .04em; }
 .levelIdentity p { font-size: 12px; }
 

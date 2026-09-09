@@ -6,14 +6,14 @@ import { ArrowRight, Crown, Gift, Gem, PhoneCall, ShoppingBag, Sparkles, WandSpa
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import type { RouletteSummary } from "@/lib/ruleta";
+import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
 import styles from "./PricesOffers.module.css";
 
 const sb = supabaseClienteBrowser();
 
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
-type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; highlight?: boolean };
+type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; highlight?: boolean };
 
 export default function PreciosOfertasPage() {
   const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
@@ -78,8 +78,9 @@ export default function PreciosOfertasPage() {
   }
 
   const total = credits + (freeAvailable ? 1 : 0);
-  const levelOnePacks = minutePacks.filter((pack) => Number(pack.priceUsd) < 27);
-  const levelTwoPacks = minutePacks.filter((pack) => Number(pack.priceUsd) >= 27);
+  const levelOnePacks = minutePacks.filter((pack) => pack.rouletteLevel === 1);
+  const levelTwoPacks = minutePacks.filter((pack) => pack.rouletteLevel === 2);
+  const levelThreePacks = minutePacks.filter((pack) => pack.rouletteLevel === 3);
 
   return (
     <ClienteLayout
@@ -88,7 +89,7 @@ export default function PreciosOfertasPage() {
       summaryItems={[
         { label: "Giros disponibles", value: String(Number(rouletteSummary?.available_spins || 0)), meta: "Premios por tus compras", href: "/cliente/ruleta", tone: "oracle" },
         { label: "Tiradas disponibles", value: String(total), meta: freeAvailable ? `1 gratis hoy · ${credits} compradas` : `${credits} compradas`, href: "/cliente/oraculo", tone: "oracle" },
-        { label: "Packs de minutos", value: String(minutePacks.length), meta: "Dos niveles de recompensa", tone: "minutes" },
+        { label: "Packs de minutos", value: String(minutePacks.length), meta: "Tres niveles de recompensa", tone: "minutes" },
       ]}
     >
       <div className={styles.shell}>
@@ -125,7 +126,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.levelIdentity}>
                   <span>PRIMER UMBRAL</span>
                   <h3 id="level-one-title">Nivel 1</h3>
-                  <p>Consultas rápidas + giro con premio. Compras de hasta $26.</p>
+                  <p>Consultas rápidas + giro con premio. Paquetes configurados como Nivel 1.</p>
                 </div>
                 <div className={styles.levelBenefits}>
                   <strong>Tu compra incluye</strong>
@@ -143,7 +144,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.levelIdentity}>
                   <span>EXPERIENCIA SUPERIOR</span>
                   <h3 id="level-two-title">Nivel 2</h3>
-                  <p>Más consulta. Premios superiores. Compras desde $27.</p>
+                  <p>Más consulta. Premios superiores. Paquetes configurados como Nivel 2.</p>
                 </div>
                 <div className={styles.levelBenefits}>
                   <strong>Tu compra incluye</strong>
@@ -152,6 +153,24 @@ export default function PreciosOfertasPage() {
               </div>
               <div className={styles.grid}>
                 {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+              </div>
+            </section>
+
+            <section className={`${styles.level} ${styles.levelPremium} ${styles.levelCelestial}`} aria-labelledby="level-three-title">
+              <div className={styles.levelHeader}>
+                <div className={`${styles.levelMedallion} ${styles.celestialMedallion}`}><Gem /></div>
+                <div className={styles.levelIdentity}>
+                  <span>EXPERIENCIA CELESTIAL PREMIUM</span>
+                  <h3 id="level-three-title">Nivel 3</h3>
+                  <p>Tu compra premium desbloquea nuestros premios más exclusivos.</p>
+                </div>
+                <div className={styles.levelBenefits}>
+                  <strong>Tu compra incluye</strong>
+                  <span>✨ 1 giro Nivel 3</span><span>🏆 Hasta +100 min</span><span>🪙 Hasta 2.000 Coins</span>
+                </div>
+              </div>
+              <div className={styles.grid}>
+                {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
           </div>
@@ -195,12 +214,12 @@ export default function PreciosOfertasPage() {
   );
 }
 
-function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: 1 | 2; busy: boolean; onBuy: () => void }) {
+function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel; busy: boolean; onBuy: () => void }) {
   return (
     <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`}>
-      {pack.highlight ? <span className={styles.recommended}>{level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
+      {pack.highlight ? <span className={styles.recommended}>{level === 3 ? "PREMIUM" : level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
       <div className={styles.serviceTop}>
-        <div className={styles.icon}>{level === 2 ? <Gem /> : <ShoppingBag />}</div>
+        <div className={styles.icon}>{level === 3 ? <Crown /> : level === 2 ? <Gem /> : <ShoppingBag />}</div>
         <span className={styles.levelTag}>GIRO NIVEL {level}</span>
       </div>
       <div className={styles.productCopy}><h3>{pack.nombre}</h3><p>{pack.descripcion}</p></div>
@@ -208,7 +227,7 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
         <strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong>
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
-      <RouletteBenefit amount={pack.priceUsd} summary={summary} />
+      <RouletteBenefit level={level} summary={summary} />
       <button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button>
     </article>
   );

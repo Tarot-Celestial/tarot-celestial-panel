@@ -132,7 +132,7 @@ export async function POST(req: Request) {
       pago = data;
     }
     const { data: awardedSpin } = await admin.from("cliente_ruleta_giros").select("id,nivel")
-      .eq("payment_key", referencia_externa ? "payment_ref:" + referencia_externa : "crm_pago:" + pago.id).maybeSingle();
+      .eq("payment_key", "crm_pago:" + pago.id).maybeSingle();
 
     let persistedXpEvent: any = null;
     if (String(estado) === "completed") {

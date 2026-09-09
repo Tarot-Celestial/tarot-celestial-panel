@@ -48,7 +48,7 @@ export async function applyConfiguredMinutePurchase(
   if (transaction.duplicated) return { ok: true, ...transaction };
   const pago = transaction.payment;
   const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
-  const { data: grantedSpin } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("payment_key", "payment_ref:" + params.paymentRef).maybeSingle();
+  const { data: grantedSpin } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("payment_key", "crm_pago:" + pago.id).maybeSingle();
 
   const { start, end } = monthRange(new Date());
   const { data: monthPayments, error: monthPaymentsError } = await admin

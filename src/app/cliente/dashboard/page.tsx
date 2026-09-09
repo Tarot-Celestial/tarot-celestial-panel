@@ -28,7 +28,7 @@ import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
-import type { RouletteSummary } from "@/lib/ruleta";
+import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
 import rewardStyles from "./reward.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -116,6 +116,7 @@ type ClientePack = {
   priceUsd: number;
   totalMinutes: number;
   bonusMinutes: number;
+  rouletteLevel: RouletteLevel;
   highlight?: boolean;
 };
 
@@ -446,7 +447,7 @@ export default function ClienteDashboardPage() {
       {
         label: "Giros disponibles",
         value: rouletteSpins === null ? "—" : String(rouletteSpins),
-        meta: rouletteSummary ? `Nivel 1: ${rouletteSummary.level_1_spins} · Nivel 2: ${rouletteSummary.level_2_spins}` : "Consulta tus giros en Ruleta",
+        meta: rouletteSummary ? `Nivel 1: ${rouletteSummary.level_1_spins} · Nivel 2: ${rouletteSummary.level_2_spins} · Nivel 3: ${rouletteSummary.level_3_spins}` : "Consulta tus giros en Ruleta",
         href: "/cliente/ruleta",
         tone: "oracle" as const,
       },
@@ -827,7 +828,7 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
-                    <RouletteBenefit amount={pack.priceUsd} summary={rouletteSummary}/>
+                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary}/>
                     <button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
                       {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
                     </button>

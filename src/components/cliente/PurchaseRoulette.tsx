@@ -46,7 +46,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       setSummary(json);
       try {
         const saved = JSON.parse(sessionStorage.getItem(storageKey(json.cliente_id)) || "null");
-        if (saved?.spin_id && [1, 2].includes(saved.level)) {
+        if (saved?.spin_id && [1, 2, 3].includes(saved.level)) {
           pendingRef.current = saved; setPending(saved); setLevel(saved.level);
           setMessage("Hay un giro pendiente de comprobar. Recupera su resultado sin gastar otro giro.");
         }
@@ -57,14 +57,17 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   }, [router]);
   useEffect(() => {
     mounted.current = true;
-    if (new URLSearchParams(window.location.search).get("nivel") === "2") setLevel(2);
+    const requestedLevel = Number(new URLSearchParams(window.location.search).get("nivel"));
+    if ([1, 2, 3].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
     void load();
     return () => { mounted.current = false; if (animation.current) clearTimeout(animation.current); };
   }, [load]);
   useRouletteSignal(sb, summary?.cliente_id, load);
 
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
-  const available = summary ? (level === 1 ? summary.level_1_spins : summary.level_2_spins) : null;
+  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins } : null;
+  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3 } : null;
+  const available = spinsByLevel?.[level] ?? null;
   const gradient = useMemo(() => "conic-gradient(" + prizes.map((p, i) => {
     const color = p.special ? "#b58a30" : p.reward_type === "coins" ? "#247b74" : i % 2 ? "#362050" : "#70409b";
     return color + " " + i * 360 / prizes.length + "deg " + (i + 1) * 360 / prizes.length + "deg";
@@ -82,7 +85,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   async function spin() {
     if (inFlight.current || !summary) return;
     const request = pendingRef.current || {
-      spin_id: (level === 1 ? summary.next_spin_1 : summary.next_spin_2) || "", level,
+      spin_id: nextSpinByLevel?.[level] || "", level,
     };
     if (!request.spin_id) return;
     inFlight.current = true; setBusy(true); setResult(null); setCountdown(null); setMessage("");
@@ -137,11 +140,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         <div className={styles.brand}><Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={130} height={130} priority/><span aria-hidden="true"/></div>
       </header>
       <div className={styles.levels} aria-label="Elige el nivel de tu giro">
-        {([1, 2] as const).map(n => <button type="button" key={n} aria-pressed={level === n} disabled={busy || !!pending} onClick={() => { setLevel(n); setRotation(0); setResult(null); setCountdown(null); }} className={styles.level} data-selected={level === n}>
-          <span className={styles.eyebrow}>{n === 1 ? "DESTELLO CELESTIAL" : "CONSTELACIÓN DORADA"}</span>
-          <div><strong>Nivel {n}</strong><b>{summary ? (n === 1 ? summary.level_1_spins : summary.level_2_spins) : "—"} <small>giros</small></b></div>
-          <span>{n === 1 ? "Compras inferiores a $" : "Compras desde $"}{summary?.level_2_from ?? "…"} · importe de tu compra</span>
-          <small>{n === 1 ? "Hasta 60 min · 400 Coins" : "Hasta 80 min · 1000 Coins"}</small>
+        {([1, 2, 3] as const).map(n => <button type="button" key={n} aria-pressed={level === n} disabled={busy || !!pending} onClick={() => { setLevel(n); setRotation(0); setResult(null); setCountdown(null); }} className={styles.level} data-selected={level === n} data-level={n}>
+          <span className={styles.eyebrow}>{n === 1 ? "DESTELLO CELESTIAL" : n === 2 ? "CONSTELACIÓN DORADA" : "CORONA ASTRAL PREMIUM"}</span>
+          <div><strong>Nivel {n}</strong><b>{spinsByLevel?.[n] ?? "—"} <small>giros</small></b></div>
+          <span>{n === 1 ? `Compras inferiores a $${summary?.level_2_from ?? "…"}` : n === 2 ? `Compras desde $${summary?.level_2_from ?? "…"} hasta menos de $${summary?.level_3_from ?? "…"}` : `Compras premium desde $${summary?.level_3_from ?? "…"}`}</span>
+          <small>{n === 1 ? "Hasta 60 min · 400 Coins" : n === 2 ? "Hasta 80 min · 1000 Coins" : "Hasta 100 min · 2000 Coins"}</small>
         </button>)}
       </div>
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
@@ -188,7 +191,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
         </div>
       </div>}
-      {result && <section ref={resultRef} className={styles.result} data-special={result.special} role="status" aria-live="polite">
+      {result && <section ref={resultRef} className={styles.result} data-special={result.special} data-level={result.spin_level} role="status" aria-live="polite">
         <div className={styles.rewardIcon}>{result.reward_type === "coins" ? <Coins size={38}/> : <Clock3 size={38}/>}</div>
         <span className={styles.eyebrow}>{result.special ? "¡PREMIO ESPECIAL CELESTIAL!" : "¡TU PREMIO YA ES TUYO!"}</span>
         <h3>{prizeLabel(result)}</h3>
