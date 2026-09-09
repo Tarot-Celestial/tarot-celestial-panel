@@ -177,7 +177,7 @@ export default function PreciosOfertasPage() {
 
           <div className={styles.maintenanceNote}>
             <PhoneCall />
-            <span>Pago seguro mediante <b>Redsys / CaixaBank</b>. El saldo se acredita únicamente cuando la entidad confirma la operación.</span>
+            <span>Pago seguro mediante <b>Mollie</b>. El saldo se acredita únicamente cuando Mollie confirma la operación.</span>
           </div>
         </section>
 

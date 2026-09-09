@@ -56,7 +56,7 @@ const ADMIN_NAV = [
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
-  { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Stripe / Redsys", tone: "gold" },
+  { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Mollie", tone: "gold" },
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },

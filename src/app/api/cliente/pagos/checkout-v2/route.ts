@@ -1,25 +1,22 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import Stripe from "stripe";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { makeRedsysOrder, redsysCurrency } from "@/lib/server/redsys";
+import { createMolliePayment } from "@/lib/server/mollie";
 
 export const runtime = "nodejs";
 
-function env(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env var: ${name}`);
-  return value;
-}
-
 function baseUrl(req: Request) {
   const url = new URL(req.url);
-  return `${url.protocol}//${url.host}`;
+  const forwardedHost = req.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const host = forwardedHost || req.headers.get("host") || url.host;
+  const protocol = forwardedProto || url.protocol.replace(":", "") || "https";
+  return `${protocol}://${host}`;
 }
 
 export async function POST(req: Request) {
+  let attemptId = "";
   try {
     const gate = await clientFromRequest(req);
     if (!gate.uid || !gate.cliente) {
@@ -32,82 +29,70 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "PACK_NO_ENCONTRADO" }, { status: 400 });
     }
 
-    const provider = await getActiveClientPaymentProvider(gate.admin);
     const appUrl = baseUrl(req);
+    const internalOrder = `mollie-init-${randomUUID()}`;
+    const { data: attempt, error: attemptError } = await gate.admin
+      .from("cliente_payment_attempts")
+      .insert({
+        cliente_id: gate.cliente.id,
+        provider: "mollie",
+        order_id: internalOrder,
+        public_token: randomUUID(),
+        pack_id: pack.id,
+        amount: pack.priceUsd,
+        currency: "EUR",
+        total_minutes: pack.totalMinutes,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+    if (attemptError) throw attemptError;
+    attemptId = String(attempt?.id || "");
 
-    if (provider === "stripe") {
-      const stripe = new Stripe(env("STRIPE_SECRET_KEY"), { apiVersion: "2023-10-16" });
-      const session = await stripe.checkout.sessions.create({
-        mode: "payment",
-        payment_method_types: ["card"],
-        success_url: `${appUrl}/cliente/dashboard?checkout=ok`,
-        cancel_url: `${appUrl}/cliente/dashboard?checkout=cancelled`,
-        customer_email: gate.cliente.email || undefined,
-        phone_number_collection: { enabled: true },
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: "eur",
-              product_data: {
-                name: pack.nombre,
-                description: pack.descripcion,
-                metadata: { source: "cliente_panel", pack_id: pack.id },
-              },
-              unit_amount: Math.round(pack.priceUsd * 100),
-            },
-          },
-        ],
-        metadata: {
-          source: "cliente_panel",
-          cliente_id: gate.cliente.id,
-          pack_id: pack.id,
-          total_minutes: String(pack.totalMinutes),
-        },
-      });
+    const { payment, checkoutUrl } = await createMolliePayment({
+      amount: pack.priceUsd,
+      currency: "EUR",
+      description: `Tarot Celestial · ${pack.nombre}`,
+      redirectUrl: `${appUrl}/cliente/dashboard?checkout=ok`,
+      webhookUrl: `${appUrl}/api/webhooks/mollie`,
+      metadata: {
+        source: "cliente_panel",
+        attempt_id: attemptId,
+        cliente_id: gate.cliente.id,
+        pack_id: pack.id,
+        total_minutes: pack.totalMinutes,
+      },
+    });
 
-      return NextResponse.json({ ok: true, provider, url: session.url, session_id: session.id });
-    }
-
-    if (redsysCurrency() !== "978") throw new Error("Configura Redsys en EUR (978) antes de activar los cobros.");
-    let attempt: any = null;
-    let lastError: any = null;
-
-    for (let tries = 0; tries < 5 && !attempt; tries += 1) {
-      const orderId = makeRedsysOrder();
-      const publicToken = randomUUID();
-      const { data, error } = await gate.admin
-        .from("cliente_payment_attempts")
-        .insert({
-          cliente_id: gate.cliente.id,
-          provider: "redsys",
-          order_id: orderId,
-          public_token: publicToken,
-          pack_id: pack.id,
-          amount: pack.priceUsd,
-          currency: "EUR",
-          total_minutes: pack.totalMinutes,
-          status: "pending",
-        })
-        .select("id,public_token,order_id")
-        .single();
-
-      if (!error && data) attempt = data;
-      else lastError = error;
-    }
-
-    if (!attempt) throw lastError || new Error("NO_SE_PUDO_CREAR_OPERACION_REDSYS");
+    const { error: updateError } = await gate.admin
+      .from("cliente_payment_attempts")
+      .update({
+        order_id: payment.id,
+        provider_response: payment,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", attemptId);
+    if (updateError) throw updateError;
 
     return NextResponse.json({
       ok: true,
-      provider,
-      // Mantener el navegador en el dominio desde el que el cliente inició la compra.
-      // Evita depender de una URL pública antigua o de otro alias de Vercel.
-      url: `/api/cliente/pagos/redsys/start?token=${encodeURIComponent(attempt.public_token)}`,
-      order_id: attempt.order_id,
+      provider: "mollie",
+      url: checkoutUrl,
+      payment_id: payment.id,
     });
   } catch (error: any) {
     console.error("[cliente/pagos/checkout-v2]", error);
+    if (attemptId) {
+      try {
+        const gate = await clientFromRequest(req);
+        await gate.admin
+          .from("cliente_payment_attempts")
+          .update({ status: "failed", last_error: error?.message || "ERR_MOLLIE", updated_at: new Date().toISOString() })
+          .eq("id", attemptId);
+      } catch {
+        // El error original es el que debe devolverse al cliente.
+      }
+    }
     return NextResponse.json(
       { ok: false, error: error?.message || "ERR_CHECKOUT" },
       { status: 500 },

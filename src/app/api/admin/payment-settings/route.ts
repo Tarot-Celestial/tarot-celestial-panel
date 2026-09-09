@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
-import {
-  getActiveClientPaymentProvider,
-  type ClientPaymentProvider,
-} from "@/lib/server/client-payment-settings";
+import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,20 +36,19 @@ export async function PUT(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const provider = String(body?.provider || "").toLowerCase() as ClientPaymentProvider;
-    if (provider !== "stripe" && provider !== "redsys") {
+    if (String(body?.provider || "mollie").toLowerCase() !== "mollie") {
       return NextResponse.json({ ok: false, error: "PROVIDER_INVALIDO" }, { status: 400 });
     }
 
     const { error } = await gate.admin.from("cliente_payment_settings").upsert({
       id: "default",
-      provider,
+      provider: "mollie",
       updated_at: new Date().toISOString(),
       updated_by: null,
     });
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, provider });
+    return NextResponse.json({ ok: true, provider: "mollie" });
   } catch (error: any) {
     return NextResponse.json(
       { ok: false, error: error?.message || "ERR_PAYMENT_SETTINGS" },
