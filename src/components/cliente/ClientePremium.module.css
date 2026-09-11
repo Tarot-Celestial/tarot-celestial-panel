@@ -1308,3 +1308,19 @@
     contain-intrinsic-size: auto 480px;
   }
 }
+.notificationBadge {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  place-items: center;
+  border: 1px solid rgba(255, 148, 178, 0.5);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f54b78, #9f2355);
+  box-shadow: 0 0 18px rgba(245, 75, 120, 0.34);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+

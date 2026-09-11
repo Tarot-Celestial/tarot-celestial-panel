@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import { ReactNode, useEffect } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import styles from "./ClientePremium.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -53,6 +53,33 @@ function SummaryIcon({ label, tone }: { label: string; tone: NonNullable<Summary
 export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  const refreshNotificationCount = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const response = await fetch("/api/cliente/notificaciones?limit=1", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    }).catch(() => null);
+    if (!response?.ok) return;
+    const payload = await response.json().catch(() => null);
+    if (payload?.ok) setUnreadNotifications(Math.max(0, Number(payload.unread_count || 0)));
+  }, []);
+
+  useEffect(() => {
+    void refreshNotificationCount();
+    const refresh = () => void refreshNotificationCount();
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("tc-client-notifications-change", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("tc-client-notifications-change", refresh);
+    };
+  }, [refreshNotificationCount]);
 
   useEffect(() => {
     let timer: any = null;
@@ -147,6 +174,16 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               <Link className={`tc-nav-link ${pathname === "/cliente/resenas" ? "tc-nav-link-active" : ""}`} href="/cliente/resenas">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact><Star size={15} /></HologramIcon> Reseñas</span>
               </Link>
+              <Link className={`tc-nav-link ${pathname === "/cliente/notificaciones" ? "tc-nav-link-active" : ""}`} href="/cliente/notificaciones">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+                  <HologramIcon compact tone="rose"><BellRing size={15} /></HologramIcon> Notificaciones
+                  {unreadNotifications > 0 ? (
+                    <span className={styles.notificationBadge} aria-label={`${unreadNotifications} notificaciones sin leer`}>
+                      {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                    </span>
+                  ) : null}
+                </span>
+              </Link>
               <Link className={`tc-nav-link ${pathname === "/cliente/perfil" ? "tc-nav-link-active" : ""}`} href="/cliente/perfil">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                   <HologramIcon compact tone="cyan"><UserCircle2 size={15} /></HologramIcon> Perfil
@@ -207,3 +244,4 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
     </div>
   );
 }
+

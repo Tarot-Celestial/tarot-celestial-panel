@@ -3,7 +3,6 @@ import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
   computeCurrentRankFromSpend,
   currentRankBenefits,
-  getCallTarget,
   toNum,
 } from "@/lib/server/cliente-platform";
 import { loadEffectiveClientRank, normalizeClientRank } from "@/lib/server/client-rank-effective";
@@ -204,13 +203,11 @@ export async function GET(req: Request) {
     const start30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
     const [
-  { data: historial },
-  { data: recompensas },
-  { data: llamadas },
-  { data: notificaciones },
-  { data: pagos30Dias },
-  { data: llamadas30Dias },
-] = await Promise.all([
+      { data: historial },
+      { data: recompensas },
+      { data: pagos30Dias },
+      { data: llamadas30Dias },
+    ] = await Promise.all([
   gate.admin
     .from("cliente_puntos_historial")
     .select("id, tipo, puntos, descripcion, created_at")
@@ -223,20 +220,6 @@ export async function GET(req: Request) {
     .select("id, nombre, puntos_coste, minutos_otorgados, activo")
     .eq("activo", true)
     .order("puntos_coste", { ascending: true }),
-
-  gate.admin
-    .from("rendimiento_llamadas")
-    .select("id, fecha_hora, tarotista_nombre, tarotista_manual_call")
-    .eq("cliente_id", cliente.id)
-    .order("fecha_hora", { ascending: false })
-    .limit(15),
-
-  gate.admin
-    .from("cliente_notificaciones")
-    .select("id, titulo, mensaje, tipo, leida, created_at")
-    .eq("cliente_id", cliente.id)
-    .order("created_at", { ascending: false })
-    .limit(8),
 
   // 💳 PAGOS APP
   gate.admin
@@ -255,17 +238,6 @@ export async function GET(req: Request) {
     .gte("created_at", start30.toISOString())
     .lte("created_at", now.toISOString()),
 ]);
-
-    const lastTarotistas = Array.from(
-      new Map(
-        (llamadas || [])
-          .map((row: any) => {
-            const nombre = String(row?.tarotista_nombre || row?.tarotista_manual_call || "").trim();
-            return nombre ? [nombre.toLowerCase(), { nombre, fecha_hora: row?.fecha_hora || null }] : null;
-          })
-          .filter(Boolean) as any
-      ).values()
-    ).slice(0, 3);
 
     const spendPagos = (pagos30Dias || []).reduce(
   (acc: number, row: any) => acc + toNum(row?.importe),
@@ -311,8 +283,6 @@ const rolling30Spend = spendPagos + spendLlamadas;
       effectiveRank
     );
 
-    const callTarget = getCallTarget(cliente?.telefono_normalizado || cliente?.telefono);
-
     const recompensasUnicas = Array.from(
       new Map(
         (recompensas || []).map((item: any) => [
@@ -333,12 +303,9 @@ const rolling30Spend = spendPagos + spendLlamadas;
       },
       historial: historial || [],
       recompensas: recompensasUnicas,
-      last_tarotistas: lastTarotistas,
       rank_info: rank,
       rank_progress: rankProgress,
       welcome_gift: welcomeState.welcomeGift,
-      cliente_notificaciones: notificaciones || [],
-      call_target: callTarget,
       packs: CLIENTE_MINUTE_PACKS,
       payment_provider: paymentProvider,
     });
@@ -346,3 +313,4 @@ const rolling30Spend = spendPagos + spendLlamadas;
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ME" }, { status: 500 });
   }
 }
+
