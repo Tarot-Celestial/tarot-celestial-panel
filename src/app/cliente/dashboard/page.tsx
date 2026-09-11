@@ -2,19 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BellRing,
   Crown,
-  Gift,
-  Mail,
-  Phone,
-  PhoneCall,
   ShieldAlert,
-  Sparkles,
-  Star,
-  TimerReset,
   WandSparkles,
   ShoppingBag,
-  ChevronRight,
   LockKeyhole,
   Coins,
   Medal,
@@ -70,11 +61,6 @@ type Recompensa = {
   minutos_otorgados: number;
 };
 
-type LastTarotista = {
-  nombre: string;
-  fecha_hora?: string | null;
-};
-
 type RankInfo = {
   key?: string;
   label: string;
@@ -100,15 +86,6 @@ type RankProgress = {
   monthly_requirement_text?: string;
 };
 
-type ClienteNotif = {
-  id: string;
-  titulo?: string | null;
-  mensaje?: string | null;
-  tipo?: string | null;
-  leida?: boolean | null;
-  created_at?: string | null;
-};
-
 type ClientePack = {
   id: string;
   nombre: string;
@@ -131,13 +108,6 @@ type OraclePack = {
   credits: number;
 };
 
-type CallTarget = {
-  market: string;
-  label: string;
-  displayNumber: string;
-  telHref: string;
-};
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -152,21 +122,12 @@ function getRankBadge(rango: string | null | undefined) {
   return { label: "Bronce", key: "bronze" };
 }
 
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
-}
-
 export default function ClienteDashboardPage() {
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [historial, setHistorial] = useState<Historial[]>([]);
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
-  const [lastTarotistas, setLastTarotistas] = useState<LastTarotista[]>([]);
   const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
-  const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
   const [packs, setPacks] = useState<ClientePack[]>([]);
   const [paymentProvider, setPaymentProvider] = useState<"stripe" | "redsys">("stripe");
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
@@ -179,7 +140,6 @@ export default function ClienteDashboardPage() {
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
   const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [buyingMinutePackId, setBuyingMinutePackId] = useState("");
-  const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -187,12 +147,6 @@ export default function ClienteDashboardPage() {
   const [redeeming, setRedeeming] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [msg, setMsg] = useState("");
-  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
-    typeof window === "undefined" || !("Notification" in window) ? "unsupported" : Notification.permission
-  );
-  const [pushEnabled, setPushEnabled] = useState(false);
-  const [pushBusy, setPushBusy] = useState(false);
-
   const [checkingPasswordStatus, setCheckingPasswordStatus] = useState(false);
   const [showCreatePassword, setShowCreatePassword] = useState(false);
   const [creatingPassword, setCreatingPassword] = useState(false);
@@ -229,13 +183,10 @@ export default function ClienteDashboardPage() {
     setCliente(json.cliente || null);
     setHistorial(Array.isArray(json.historial) ? json.historial : []);
     setRecompensas(Array.isArray(json.recompensas) ? json.recompensas : []);
-    setLastTarotistas(Array.isArray(json.last_tarotistas) ? json.last_tarotistas : []);
     setRankInfo(json.rank_info || null);
     setRankProgress(json.rank_progress || null);
-    setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
     setPacks(Array.isArray(json.packs) ? json.packs : []);
     setPaymentProvider(json.payment_provider === "redsys" ? "redsys" : "stripe");
-    setCallTarget(json.call_target || null);
     if (json.welcome_gift?.granted) {
       setWelcomeGiftMinutes(Number(json.welcome_gift?.minutes || 10));
       setShowWelcomeGift(true);
@@ -405,24 +356,6 @@ export default function ClienteDashboardPage() {
     return () => { clearTimeout(timer); clearTimeout(clear); };
   }, [loading, cliente?.id]);
 
-  useEffect(() => {
-    async function checkPush() {
-      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
-        setPushPermission("unsupported");
-        return;
-      }
-      setPushPermission(Notification.permission);
-      try {
-        const reg = await navigator.serviceWorker.getRegistration("/");
-        const sub = await reg?.pushManager.getSubscription();
-        setPushEnabled(Boolean(sub));
-      } catch {
-        setPushEnabled(false);
-      }
-    }
-    checkPush();
-  }, []);
-
   const nombre = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
   const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
   const rankBadge = getRankBadge(rankInfo?.label || cliente?.rango_actual);
@@ -432,7 +365,6 @@ export default function ClienteDashboardPage() {
   const totalPoints = Number(cliente?.puntos || 0);
   const rankSpend30 = Number(cliente?.rango_gasto_mes_anterior || 0);
   const rankPurchases30 = Number(cliente?.rango_compras_mes_anterior || 0);
-  const unreadNotifs = notificaciones.filter((item) => !item.leida).length;
 
   const oracleRechargeLabel = useMemo(() => {
     const total = Math.max(0, oracleFreeCountdown);
@@ -465,11 +397,6 @@ export default function ClienteDashboardPage() {
         meta: "Tu saldo disponible ahora mismo",
       },
       {
-        label: "Notificaciones",
-        value: String(unreadNotifs),
-        meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día",
-      },
-      {
         label: "Tiradas disponibles",
         value: String(oracleCredits + (oracleFreeAvailable ? 1 : 0)),
         meta: oracleFreeAvailable
@@ -479,7 +406,7 @@ export default function ClienteDashboardPage() {
         tone: "oracle" as const,
       },
     ],
-    [rankBadge.label, rankProgress?.monthly_requirement_text, rouletteSpins, rouletteSummary, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
+    [rankBadge.label, rankProgress?.monthly_requirement_text, rouletteSpins, rouletteSummary, totalPoints, totalMinutes, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
   );
 
   async function saveOnboarding(payload: {
@@ -643,89 +570,6 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function trackCallAndOpen() {
-    if (!callTarget) return;
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (token) {
-        await fetch("/api/cliente/call-click", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ destino: callTarget.displayNumber, mercado: callTarget.market }),
-        }).catch(() => null);
-      }
-    } finally {
-      window.location.href = callTarget.telHref;
-    }
-  }
-
-  async function markNotifRead(id?: string) {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    await fetch("/api/cliente/notificaciones/read", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(id ? { id } : {}),
-    }).catch(() => null);
-    setNotificaciones((prev) => prev.map((n) => (!id || n.id === id ? { ...n, leida: true } : n)));
-  }
-
-  async function enablePushNotifications() {
-    try {
-      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
-        throw new Error("Tu dispositivo no soporta notificaciones web.");
-      }
-      setPushBusy(true);
-      setMsg("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-
-      let permission = Notification.permission;
-      if (permission !== "granted") {
-        permission = await Notification.requestPermission();
-      }
-      setPushPermission(permission);
-      if (permission !== "granted") {
-        throw new Error("Necesitas aceptar el permiso de notificaciones en tu navegador.");
-      }
-
-      const registration = await navigator.serviceWorker.register("/sw.js");
-      const existing = await registration.pushManager.getSubscription();
-      const subscription =
-        existing ||
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""),
-        }));
-
-      const res = await fetch("/api/cliente/push/register", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(subscription),
-      });
-      const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error || "No hemos podido activar las notificaciones.");
-      setPushEnabled(true);
-      setMsg("🔔 Notificaciones activadas en este dispositivo.");
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido activar las notificaciones.");
-    } finally {
-      setPushBusy(false);
-    }
-  }
-
   if (loading) {
     return (
       <ClienteLayout title="Cargando tu panel..." subtitle="Estamos preparando tu área personal." summaryItems={[]}>
@@ -739,12 +583,12 @@ export default function ClienteDashboardPage() {
     <>
       <ClienteLayout
         title={`Hola ${nombre}`}
-        subtitle="Tu panel cliente reúne compra, minutos, llamadas, Coins, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
+        subtitle="Tu panel cliente reúne compras, minutos, Coins y ventajas en un solo lugar para que todo sea rápido y cómodo."
         summaryItems={summaryItems}
       >
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
 
-        <div className="tc-dashboard-grid">
+        <div className="tc-stack">
           <div className="tc-stack">
             <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 16 }}>
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -926,94 +770,6 @@ export default function ClienteDashboardPage() {
           </div>
 
           <div className="tc-stack">
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Llamar ahora</div>
-                <div className="tc-panel-sub">Tu acceso directo cambia según el país del teléfono de tu cuenta.</div>
-              </div>
-              <div className="tc-callout-box">
-                <div>
-                  <div className="tc-list-item-title">{callTarget?.label || "Soporte"}</div>
-                  <div className="tc-list-item-sub">{callTarget?.displayNumber || "Sin número disponible"}</div>
-                </div>
-                <button className="tc-btn tc-btn-gold" onClick={trackCallAndOpen}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><PhoneCall size={16} /> Abrir llamada</span>
-                </button>
-              </div>
-            </section>
-
-            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="tc-panel-title">Tus notificaciones</div>
-                  <div className="tc-panel-sub">Ideas, avisos y movimientos importantes de tu cuenta.</div>
-                </div>
-                {unreadNotifs > 0 ? <button className="tc-btn" onClick={() => markNotifRead()}>Marcar todo leído</button> : null}
-              </div>
-              {notificaciones.length === 0 ? (
-                <div className="tc-empty-state">Aún no tienes notificaciones internas.</div>
-              ) : (
-                <div className="tc-list-card">
-                  {notificaciones.slice(0, 6).map((item) => (
-                    <button key={item.id} className={`tc-notif-card ${item.leida ? "" : "tc-notif-card-unread"}`} onClick={() => markNotifRead(item.id)}>
-                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                        <div>
-                          <div className="tc-list-item-title">{item.titulo || "Notificación"}</div>
-                          <div className="tc-list-item-sub">{item.mensaje || ""}</div>
-                        </div>
-                        {!item.leida ? <BellRing size={15} style={{ color: "var(--tc-gold-2)" }} /> : null}
-                      </div>
-                      <div className="tc-list-item-sub" style={{ marginTop: 8 }}>{formatDate(item.created_at)}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Tu perfil rápido</div>
-                <div className="tc-panel-sub">Tus datos clave y el estado de tu cuenta cliente.</div>
-              </div>
-              <div className="tc-list-card">
-                <div className="tc-list-item">
-                  <div className="tc-row"><Phone size={16} /> <span className="tc-list-item-title">{cliente?.telefono || cliente?.telefono_normalizado || "—"}</span></div>
-                  <div className="tc-list-item-sub">Teléfono de acceso al panel</div>
-                </div>
-                <div className="tc-list-item">
-                  <div className="tc-row"><Mail size={16} /> <span className="tc-list-item-title">{cliente?.email || "No añadido"}</span></div>
-                  <div className="tc-list-item-sub">Email para promociones y novedades</div>
-                </div>
-                <div className="tc-list-item">
-                  <div className="tc-row"><Gift size={16} /> <span className="tc-list-item-title">{cliente?.fecha_nacimiento || "Sin fecha de nacimiento"}</span></div>
-                  <div className="tc-list-item-sub">Tu regalo de cumpleaños depende de este dato</div>
-                </div>
-                <div className="tc-list-item">
-                  <div className="tc-row"><TimerReset size={16} /> <span className="tc-list-item-title">{cliente?.onboarding_completado ? "Perfil verificado" : "Pendiente de completar"}</span></div>
-                  <div className="tc-list-item-sub">Puedes actualizar estos datos desde tu perfil</div>
-                </div>
-              </div>
-            </section>
-
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Tus 3 últimas tarotistas</div>
-                <div className="tc-panel-sub">Consultas recientes registradas en el sistema.</div>
-              </div>
-              {lastTarotistas.length === 0 ? (
-                <div className="tc-empty-state">Todavía no tenemos consultas registradas en rendimiento para mostrarte aquí.</div>
-              ) : (
-                <div className="tc-list-card">
-                  {lastTarotistas.map((item, index) => (
-                    <div key={`${item.nombre}-${index}`} className="tc-list-item">
-                      <div className="tc-list-item-title">{item.nombre}</div>
-                      <div className="tc-list-item-sub">Último contacto: {formatDate(item.fecha_hora)}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
             <section className="tc-card" style={{ display: "grid", gap: 12 }}>
               <div style={{ display: "grid", gap: 6 }}>
                 <div className="tc-panel-title">Historial de Coins</div>
@@ -1035,22 +791,6 @@ export default function ClienteDashboardPage() {
               )}
             </section>
 
-            <section className="tc-card tc-oracle-cta" style={{ display: "grid", gap: 10 }}>
-              <div className="tc-row" style={{ gap: 10, alignItems: "flex-start" }}>
-                <WandSparkles size={18} style={{ color: "var(--tc-gold-2)", marginTop: 2 }} />
-                <div>
-                  <div className="tc-list-item-title">Nuevo: Oráculo diario con chat</div>
-                  <div className="tc-list-item-sub" style={{ marginTop: 4 }}>
-                    Escoge amor, dinero, energía o general y recibe una lectura del día con la opción de preguntar más.
-                  </div>
-                </div>
-              </div>
-              <a className="tc-btn tc-btn-gold" href="/cliente/oraculo">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  Abrir oráculo <ChevronRight size={16} />
-                </span>
-              </a>
-            </section>
           </div>
         </div>
       </ClienteLayout>
@@ -1259,3 +999,4 @@ export default function ClienteDashboardPage() {
     </>
   );
 }
+
