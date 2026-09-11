@@ -302,7 +302,7 @@ function PackageEditor({ pack, busy, onMutate }: { pack: PromoPackage; busy: str
         <label className={styles.span2}>Beneficio extra (texto)<input value={form.extra_benefit || ""} onChange={(e) => setForm({ ...form, extra_benefit: e.target.value })} placeholder="Ej. Acceso a evento especial"/></label>
       </div>
       <div className={styles.packActions}>
-        <button className={styles.primaryButton} disabled={busy === `pack:${pack.id}`} onClick={() => void onMutate({ action: "update_package", promotion_id: pack.promotion_id, package_id: pack.id, ...form }, `pack:${pack.id}`)}><Save size={14}/> Guardar</button>
+        <button className={styles.primaryButton} disabled={busy === `pack:${pack.id}`} onClick={() => void onMutate({ ...form, action: "update_package", promotion_id: pack.promotion_id, package_id: pack.id }, `pack:${pack.id}`)}><Save size={14}/> Guardar</button>
         <button className={styles.secondaryButton} onClick={() => void onMutate({ action: "duplicate_package", promotion_id: pack.promotion_id, package_id: pack.id }, `duplicate-pack:${pack.id}`)}><Copy size={14}/> Duplicar</button>
         <button className={styles.secondaryButton} onClick={() => void onMutate({ action: "delete_package", promotion_id: pack.promotion_id, package_id: pack.id }, `delete:${pack.id}`)}><Trash2 size={14}/> Eliminar</button>
       </div>
