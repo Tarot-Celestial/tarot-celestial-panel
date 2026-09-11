@@ -176,6 +176,10 @@
 .rouletteShortcut:hover { transform: translateY(-1px); background: rgba(231, 189, 98, .11); box-shadow: 0 0 22px rgba(231, 189, 98, .08); }
 
 .levelStack { position: relative; z-index: 1; display: grid; gap: 18px; }
+.showMoreButton { position:relative; z-index:1; display:flex; align-items:center; justify-content:center; gap:9px; width:100%; min-height:52px; border:1px solid rgba(244,205,108,.38); border-radius:17px; color:#ffe59d; background:linear-gradient(135deg,rgba(185,125,25,.16),rgba(111,61,160,.12)); box-shadow:inset 0 1px rgba(255,255,255,.05); font:900 12px/1 inherit; letter-spacing:.06em; cursor:pointer; transition:transform .18s ease,border-color .18s ease,background .18s ease; }
+.showMoreButton:hover { transform:translateY(-1px); border-color:rgba(255,222,137,.62); background:linear-gradient(135deg,rgba(207,146,39,.23),rgba(125,69,181,.17)); }
+.showMoreButton svg { width:17px; height:17px; }
+.showMoreButton:focus-visible { outline:2px solid #ffe39a; outline-offset:3px; }
 .level {
   position: relative;
   overflow: hidden;
@@ -392,3 +396,4 @@
   .rouletteShortcut,
   .buyButton::after { transition: none; }
 }
+
