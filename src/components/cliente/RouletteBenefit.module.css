@@ -22,7 +22,6 @@
   letter-spacing: .16em;
 }
 
-.benefit strong,
 .benefit a {
   display: flex;
   align-items: center;
@@ -31,13 +30,20 @@
   color: #f6d982;
 }
 
-.benefit strong { font-size: 11px; letter-spacing: .045em; }
 .benefit a { font-size: 10px; font-weight: 850; text-underline-offset: 3px; }
 .benefit a svg { transition: transform .16s ease; }
 .benefit a:hover svg { transform: translateX(2px); }
-.prizes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: rgba(255, 249, 231, .76); }
-.confirmed { color: #fff2bd; font-size: 11px; font-weight: 800; line-height: 1.45; }
-.prizes i { width: 1px; height: 11px; background: rgba(231, 189, 98, .24); }
+.includedGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 7px; }
+.includedItem { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; padding: 8px; border: 1px solid rgba(255,255,255,.075); border-radius: 11px; background: rgba(4,3,7,.32); }
+.includedItem > i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(246,217,130,.25); background: rgba(231,189,98,.09); color: #f6d982; font-style: normal; }
+.includedItem > i svg { width: 16px; height: 16px; }
+.includedItem > span { display: grid; min-width: 0; gap: 2px; }
+.includedItem small { color: rgba(255,255,255,.46); font-size: 8px; font-weight: 750; }
+.includedItem b { overflow-wrap: anywhere; color: #fff2bd; font-size: 10px; line-height: 1.25; }
+.coinIcon { color: #f5c94f !important; background: rgba(228,171,31,.12) !important; }
+.oracleIcon { color: #d6b5ff !important; border-color: rgba(181,125,255,.28) !important; background: rgba(126,72,193,.13) !important; }
+.prizes { display: flex; align-items: center; gap: 6px; color: rgba(255, 249, 231, .67); font-size: 9px; line-height: 1.4; }
+.prizes svg { flex: 0 0 auto; width: 13px; height: 13px; color: #e9c86f; }
 .benefit small { color: rgba(255, 255, 255, .43); font-size: 9px; }
 
 .benefit[data-premium="true"] {
@@ -59,10 +65,10 @@
 .benefit a:focus-visible { outline: 2px solid #ffe6a0; outline-offset: 3px; }
 
 @media (max-width: 420px) {
-  .prizes { display: grid; gap: 5px; }
-  .prizes i { display: none; }
+  .includedGrid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .benefit a svg { transition: none; }
 }
+
