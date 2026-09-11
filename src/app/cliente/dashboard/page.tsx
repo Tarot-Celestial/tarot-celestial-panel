@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ChevronDown,
+  ChevronUp,
   Crown,
   ShieldAlert,
   WandSparkles,
@@ -140,6 +142,7 @@ export default function ClienteDashboardPage() {
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
   const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [buyingMinutePackId, setBuyingMinutePackId] = useState("");
+  const [showMoreMinutePacks, setShowMoreMinutePacks] = useState(false);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -664,7 +667,7 @@ export default function ClienteDashboardPage() {
                 </div>
               </div>
               <div className="tc-pack-grid">
-                {packs.map((pack) => (
+                {packs.filter((pack) => showMoreMinutePacks || pack.priceUsd <= 49).map((pack) => (
                   <div key={pack.id} className={`tc-pack-card ${pack.highlight ? "tc-pack-card-highlight" : ""}`}>
                     <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                       <div>
@@ -675,13 +678,16 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
-                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits}/>
+                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins ?? Math.round(pack.priceUsd * 10)} oracleCredits={pack.oracleCredits}/>
                     <button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
                       {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
                     </button>
                   </div>
                 ))}
               </div>
+              {packs.some((pack) => pack.priceUsd > 49) ? <button type="button" className="tc-btn tc-btn-gold" style={{ justifySelf: "center", minWidth: 220 }} aria-expanded={showMoreMinutePacks} onClick={() => setShowMoreMinutePacks((value) => !value)}>
+                {showMoreMinutePacks ? <><ChevronUp size={16} /> Ocultar minutos</> : <>Ver más minutos <ChevronDown size={16} /></>}
+              </button> : null}
             </section>
 
 
