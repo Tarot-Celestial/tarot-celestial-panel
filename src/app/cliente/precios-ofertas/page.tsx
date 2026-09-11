@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Crown, Gift, Gem, PhoneCall, ShoppingBag, Sparkles, WandSparkles } from "lucide-react";
+import { ArrowDown, ArrowRight, ArrowUp, Crown, Gift, Gem, PhoneCall, ShoppingBag, Sparkles, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
@@ -24,6 +24,7 @@ export default function PreciosOfertasPage() {
   const [credits, setCredits] = useState(0);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [showLevelThree, setShowLevelThree] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -156,7 +157,12 @@ export default function PreciosOfertasPage() {
               </div>
             </section>
 
-            <section className={`${styles.level} ${styles.levelPremium} ${styles.levelCelestial}`} aria-labelledby="level-three-title">
+            <button className={styles.showMoreButton} type="button" aria-expanded={showLevelThree} aria-controls="level-three-packs" onClick={() => setShowLevelThree((value) => !value)}>
+              <span>{showLevelThree ? "Ocultar minutos premium" : "Ver más minutos"}</span>
+              {showLevelThree ? <ArrowUp /> : <ArrowDown />}
+            </button>
+
+            {showLevelThree ? <section id="level-three-packs" className={`${styles.level} ${styles.levelPremium} ${styles.levelCelestial}`} aria-labelledby="level-three-title">
               <div className={styles.levelHeader}>
                 <div className={`${styles.levelMedallion} ${styles.celestialMedallion}`}><Gem /></div>
                 <div className={styles.levelIdentity}>
@@ -166,18 +172,18 @@ export default function PreciosOfertasPage() {
                 </div>
                 <div className={styles.levelBenefits}>
                   <strong>Tu compra incluye</strong>
-                  <span>✨ 1–2 giros Nivel 3</span><span>🏆 Hasta +100 min</span><span>🪙 Hasta 2.000 Coins</span>
+                  <span>🎡 1–2 giros Nivel 3</span><span>🪙 Coins por compra</span><span>🔮 2 tiradas Oráculo</span>
                 </div>
               </div>
               <div className={styles.grid}>
                 {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
-            </section>
+            </section> : null}
           </div>
 
           <div className={styles.maintenanceNote}>
             <PhoneCall />
-            <span>Pago seguro mediante <b>Redsys / CaixaBank</b>. El saldo se acredita únicamente cuando la entidad confirma la operación.</span>
+            <span>Pago seguro mediante <b>Mollie</b>. El saldo se acredita únicamente cuando Mollie confirma la operación.</span>
           </div>
         </section>
 
@@ -227,8 +233,9 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
         <strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong>
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
-      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits} />
+      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins ?? Math.round(pack.priceUsd * 10)} oracleCredits={pack.oracleCredits} />
       <button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button>
     </article>
   );
 }
+
