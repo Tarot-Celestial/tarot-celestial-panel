@@ -4,6 +4,7 @@ import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { getMolliePayment } from "@/lib/server/mollie";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
+import { applyPromotionMinutePurchase, type PromotionPackageSnapshot } from "@/lib/server/client-promotions";
 
 export const runtime = "nodejs";
 
@@ -116,14 +117,29 @@ export async function POST(req: Request) {
     if (lockError) throw lockError;
     if (!locked) return okResponse();
 
-    const minutePack = getConfiguredMinutePack(locked.pack_id);
-    const oraclePack = getOraclePack(locked.pack_id);
-    const questionPack = getOracleQuestionPack(locked.pack_id);
-    const pack = minutePack || oraclePack || questionPack;
+    const promotionSnapshot = locked.promotion_snapshot && typeof locked.promotion_snapshot === "object"
+      ? locked.promotion_snapshot as PromotionPackageSnapshot
+      : null;
+    const minutePack = promotionSnapshot ? null : getConfiguredMinutePack(locked.pack_id);
+    const oraclePack = promotionSnapshot ? null : getOraclePack(locked.pack_id);
+    const questionPack = promotionSnapshot ? null : getOracleQuestionPack(locked.pack_id);
+    const pack = promotionSnapshot
+      ? { nombre: `${promotionSnapshot.promotion_name} · ${promotionSnapshot.package_name}` }
+      : minutePack || oraclePack || questionPack;
     if (!pack) throw new Error("PACK_MOLLIE_NO_ENCONTRADO");
 
     let duplicated = false;
-    if (questionPack) {
+    if (promotionSnapshot?.kind === "promotion_minute_pack") {
+      const purchase = await applyPromotionMinutePurchase(admin, {
+        clienteId: locked.cliente_id,
+        snapshot: promotionSnapshot,
+        paymentRef: `mollie:${paymentId}`,
+        paymentIntent: paymentId,
+        amount: paymentAmount,
+        currency: paymentCurrency === "USD" ? "USD" : "EUR",
+      });
+      duplicated = Boolean(purchase.duplicated);
+    } else if (questionPack) {
       await grantOracleQuestions(admin, {
         clienteId: locked.cliente_id,
         questions: questionPack.questions,

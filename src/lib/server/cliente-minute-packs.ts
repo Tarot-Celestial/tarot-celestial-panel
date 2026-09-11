@@ -42,7 +42,6 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     bonusMinutes: 0,
     rouletteLevel: 1,
     rouletteSpins: 1,
-    rewardCoins: 250,
     highlight: true,
   },
   {
@@ -86,7 +85,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     rouletteLevel: 3,
     rouletteSpins: 1,
     rewardCoins: 500,
-    oracleCredits: 2,
+    oracleCredits: 1,
   },
   {
     id: "pack_120",
@@ -111,7 +110,7 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     rouletteLevel: 3,
     rouletteSpins: 2,
     rewardCoins: 1500,
-    oracleCredits: 2,
+    oracleCredits: 3,
   },
 ];
 
@@ -128,4 +127,3 @@ export function getWheelLevelForPurchase(pack: Pick<ClienteMinutePack, "roulette
 export function rouletteLevelForPack(pack: ClienteMinutePack): 1 | 2 | 3 {
   return getWheelLevelForPurchase(pack);
 }
-

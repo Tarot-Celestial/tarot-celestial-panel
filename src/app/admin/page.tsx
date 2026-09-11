@@ -43,6 +43,7 @@ const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualIn
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
 const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
+const PromotionsAdminPanel = nextDynamic(() => import("@/components/admin/PromotionsAdminPanel"), { ssr:false });
 const RaffleWinnerAdmin = nextDynamic(() => import("@/features/central/RaffleWinnerAdmin"), { ssr:false });
 const CentralReviewsAdminPanel = nextDynamic(() => import("@/components/admin/CentralReviewsAdminPanel"), { ssr:false });
 
@@ -57,6 +58,7 @@ const ADMIN_NAV = [
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
   { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Mollie", tone: "gold" },
+  { key: "precios-hoy", icon: Sparkles, label: "Precios de hoy", kicker: "Promociones y packs", tone: "goldPurple" },
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
@@ -153,6 +155,7 @@ type TabKey =
   | "trabajadores"
   | "clientes"
   | "pagos-web"
+  | "precios-hoy"
   | "rangos-clientes"
   | "clientes-web"
   | "sistema-xp"
@@ -2950,6 +2953,7 @@ function AdminPage() {
           {tab === "sistema-xp-niveles" && <XpLevelsAdminPanel />}
 
           {tab === "pagos-web" && <PaymentGatewayAdminPanel />}
+          {tab === "precios-hoy" && <PromotionsAdminPanel />}
 
           {tab === "clientes-web" && (
             <ClientWebAdminPanel

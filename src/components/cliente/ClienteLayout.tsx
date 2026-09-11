@@ -54,6 +54,20 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   const pathname = usePathname();
   const router = useRouter();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [promoActive, setPromoActive] = useState(false);
+
+  const refreshPromoState = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const response = await fetch("/api/cliente/promotions/active", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    }).catch(() => null);
+    if (!response?.ok) return;
+    const payload = await response.json().catch(() => null);
+    if (payload?.ok) setPromoActive(Boolean(payload.promotion));
+  }, []);
 
   const refreshNotificationCount = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -67,6 +81,22 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
     const payload = await response.json().catch(() => null);
     if (payload?.ok) setUnreadNotifications(Math.max(0, Number(payload.unread_count || 0)));
   }, []);
+
+  useEffect(() => {
+    void refreshPromoState();
+    const channel = sb.channel("tc-client-promo-nav")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotions" }, () => { void refreshPromoState(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotion_packages" }, () => { void refreshPromoState(); })
+      .subscribe();
+    const focus = () => void refreshPromoState();
+    const timer = window.setInterval(() => { void refreshPromoState(); }, 30000);
+    window.addEventListener("focus", focus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", focus);
+      void sb.removeChannel(channel);
+    };
+  }, [refreshPromoState]);
 
   useEffect(() => {
     void refreshNotificationCount();
@@ -148,8 +178,8 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
                 <HologramIcon compact><Home size={15} /></HologramIcon> Inicio
               </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/precios-ofertas" ? "tc-nav-link-active" : ""}`} href="/cliente/precios-ofertas">
-                <HologramIcon compact><Tags size={15} /></HologramIcon> Precios y ofertas
+              <Link className={`tc-nav-link ${promoActive ? "tc-nav-oracle-new" : ""} ${pathname === "/cliente/precios-ofertas" ? "tc-nav-link-active" : ""}`} href="/cliente/precios-ofertas">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact><Tags size={15} /></HologramIcon> Precios y ofertas {promoActive ? <span className="tc-nav-new-badge">🔥 HOY</span> : null}</span>
               </Link>
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>

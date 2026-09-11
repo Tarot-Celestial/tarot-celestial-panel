@@ -14,17 +14,30 @@ const sb = supabaseClienteBrowser();
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
 type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean };
+type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number };
+type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
 export default function PreciosOfertasPage() {
   const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
   const [questionPack, setQuestionPack] = useState<QuestionPack | null>(null);
   const [minutePacks, setMinutePacks] = useState<MinutePack[]>([]);
+  const [promotion, setPromotion] = useState<ActivePromotion | null>(null);
   const [freeAvailable, setFreeAvailable] = useState(false);
   const [credits, setCredits] = useState(0);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [showLevelThree, setShowLevelThree] = useState(false);
+
+  const loadPromotion = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const response = await fetch("/api/cliente/promotions/active", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
+    if (!response?.ok) return;
+    const json = await response.json().catch(() => null);
+    if (json?.ok) setPromotion(json.promotion || null);
+  }, []);
 
   const load = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -52,9 +65,21 @@ export default function PreciosOfertasPage() {
       setFreeAvailable(Boolean(oracle.freeDailyAvailable ?? oracle.freeAvailable));
     }
     if (customer?.ok) setMinutePacks(Array.isArray(customer.packs) ? customer.packs : []);
-  }, []);
+    await loadPromotion();
+  }, [loadPromotion]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const channel = sb.channel("tc-client-promotions-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotions" }, () => { void loadPromotion(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotion_packages" }, () => { void loadPromotion(); })
+      .subscribe();
+    const focus = () => void loadPromotion();
+    const timer = window.setInterval(() => { void loadPromotion(); }, 30000);
+    window.addEventListener("focus", focus);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", focus); void sb.removeChannel(channel); };
+  }, [loadPromotion]);
 
   async function checkout(endpoint: string, packId: string) {
     try {
@@ -67,6 +92,28 @@ export default function PreciosOfertasPage() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ pack_id: packId }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido iniciar el pago");
+      window.location.href = result.url;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function checkoutPromotion(packageId: string) {
+    try {
+      setBusy(`promo:${packageId}`);
+      setMessage("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const response = await fetch("/api/cliente/promotions/checkout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ package_id: packageId }),
       });
       const result = await response.json().catch(() => null);
       if (!result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido iniciar el pago");
@@ -108,6 +155,39 @@ export default function PreciosOfertasPage() {
             <div><strong>CADA COMPRA DESBLOQUEA UN GIRO</strong><small>Consulta + giro + premio posible</small></div>
           </div>
         </section>
+
+        {promotion ? (
+          <section className={styles.promoSection}>
+            <div className={styles.promoAura} aria-hidden="true" />
+            <div className={styles.promoHeader}>
+              <div>
+                <span>🔥 PROMOCIÓN DE HOY</span>
+                <h2>{promotion.name}</h2>
+                <p>{promotion.subtitle || promotion.description || "Una ventaja especial disponible ahora en tu panel."}</p>
+              </div>
+              <div className={styles.promoLive}><span /> ACTIVA AHORA</div>
+            </div>
+            <div className={styles.promoGrid}>
+              {promotion.packages.map((pack) => (
+                <article key={pack.id} className={`${styles.promoCard} ${pack.is_recommended ? styles.promoFeatured : ""}`}>
+                  {pack.is_recommended ? <div className={styles.promoRecommended}>MÁS ELEGIDO</div> : null}
+                  <div className={styles.promoPackTop}><Gift /><span>{pack.paid_minutes} MIN {pack.free_minutes ? `+ ${pack.free_minutes} GRATIS` : ""}</span></div>
+                  <h3>{pack.name}</h3>
+                  {pack.description ? <p>{pack.description}</p> : null}
+                  <div className={styles.promoMinutes}><strong>{pack.paid_minutes}</strong><span>minutos</span>{pack.free_minutes ? <><b>+</b><strong>{pack.free_minutes}</strong><span>GRATIS</span></> : null}</div>
+                  <div className={styles.promoPrice}>{pack.regular_price && Number(pack.regular_price) > Number(pack.price) ? <del>{formatPromoMoney(pack.regular_price, pack.currency)}</del> : null}<strong>{formatPromoMoney(pack.price, pack.currency)}</strong></div>
+                  <div className={styles.promoBenefits}>
+                    {pack.coins > 0 ? <span>🪙 +{pack.coins} Coins</span> : null}
+                    {pack.roulette_spins > 0 && pack.roulette_level ? <span>🎡 +{pack.roulette_spins} giro{pack.roulette_spins === 1 ? "" : "s"} Nivel {pack.roulette_level}</span> : null}
+                    {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
+                    {pack.extra_benefit ? <span>✦ {pack.extra_benefit}</span> : null}
+                  </div>
+                  <button className={styles.promoBuy} disabled={busy === `promo:${pack.id}`} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className={`${styles.section} ${styles.minuteSection}`}>
           <div className={styles.heading}>
@@ -212,12 +292,17 @@ export default function PreciosOfertasPage() {
           </div>
         </section>
 
-        <section className={`${styles.section} ${styles.coming}`}>
-          <Gift /><div><span>OFERTAS</span><h2>Nuevas promociones próximamente</h2><p>Un espacio reservado para ventajas reales, sin urgencias ni descuentos inventados.</p></div>
-        </section>
+        {!promotion ? <section className={`${styles.section} ${styles.coming}`}>
+          <Gift /><div><span>OFERTAS</span><h2>Nuevas promociones próximamente</h2><p>Ahora mismo ves los precios normales. Cuando haya una promoción activa aparecerá aquí automáticamente.</p></div>
+        </section> : null}
       </div>
     </ClienteLayout>
   );
+}
+
+function formatPromoMoney(value: number, currency: string) {
+  try { return Number(value || 0).toLocaleString("es-ES", { style: "currency", currency }); }
+  catch { return `${Number(value || 0).toFixed(2)} ${currency}`; }
 }
 
 function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel; busy: boolean; onBuy: () => void }) {
