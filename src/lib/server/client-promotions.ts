@@ -8,6 +8,7 @@ import {
 
 export type PromotionPackageSnapshot = {
   kind: "promotion_minute_pack";
+  snapshot_version: 2;
   promotion_id: string;
   promotion_name: string;
   package_id: string;
@@ -119,6 +120,7 @@ export async function loadActivePromotion(admin: any) {
 export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPackageSnapshot {
   return {
     kind: "promotion_minute_pack",
+    snapshot_version: 2,
     promotion_id: String(promotion.id),
     promotion_name: String(promotion.name || "Promoción"),
     package_id: String(pack.id),
@@ -141,10 +143,10 @@ export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPa
 export async function applyPromotionMinutePurchase(
   admin: any,
   params: {
+    attemptId: string;
     clienteId: string;
     snapshot: PromotionPackageSnapshot;
     paymentRef: string;
-    paymentIntent?: string | null;
     amount: number;
     currency: "EUR" | "USD";
   },
@@ -155,53 +157,33 @@ export async function applyPromotionMinutePurchase(
   if (params.currency !== snap.currency) throw new Error("PROMOTION_CURRENCY_MISMATCH");
 
   const totalMinutes = snap.paid_minutes + snap.free_minutes;
-  const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v3", {
-    p: {
-      cliente_id: params.clienteId,
-      payment_ref: params.paymentRef,
-      stripe_session_id: null,
-      payment_intent: params.paymentIntent || null,
-      amount: params.amount,
-      currency: params.currency,
-      metodo: "mollie_promotion",
-      pack_id: `promo:${snap.package_id}`,
-      pack_name: `${snap.promotion_name} · ${snap.package_name}`,
-      free: snap.free_minutes,
-      normal: snap.paid_minutes,
-      points: snap.coins,
-      oracle_credits: snap.oracle_credits,
-      roulette_spins: snap.roulette_spins,
-      notas: `Compra promoción · ${snap.promotion_name} · ${snap.package_name}`,
-    },
+  const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_promocion_v1", {
+    p_attempt_id: params.attemptId,
   });
   if (transactionError) throw transactionError;
 
   const payment = transaction?.payment;
-  if (payment?.id && snap.roulette_spins > 0 && snap.roulette_level) {
-    const { error: spinError } = await admin
-      .from("cliente_ruleta_giros")
-      .update({ nivel: snap.roulette_level })
-      .eq("purchase_id", payment.id);
-    if (spinError) throw spinError;
-  }
-
   if (transaction?.duplicated) return { ok: true, ...transaction };
 
-  const nowIso = new Date().toISOString();
-  const { start, end } = monthRange(new Date());
-  const { data: monthPayments, error: monthError } = await admin
-    .from("crm_cliente_pagos")
-    .select("id,importe,estado")
-    .eq("cliente_id", params.clienteId)
-    .eq("estado", "completed")
-    .gte("created_at", start.toISOString())
-    .lt("created_at", end.toISOString());
-  if (monthError) throw monthError;
-
-  const monthlySpend = (monthPayments || []).reduce((acc: number, row: any) => acc + toNum(row?.importe), 0);
-  const monthlyPurchases = (monthPayments || []).length;
-  const nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
-  await syncClientMonthTag(admin, params.clienteId);
+  let monthlySpend = 0;
+  let monthlyPurchases = 0;
+  let nextRank = computeCurrentRankFromSpend(0, 0);
+  try {
+    const { start, end } = monthRange(new Date());
+    const { data: monthPayments } = await admin
+      .from("crm_cliente_pagos")
+      .select("id,importe,estado")
+      .eq("cliente_id", params.clienteId)
+      .eq("estado", "completed")
+      .gte("created_at", start.toISOString())
+      .lt("created_at", end.toISOString());
+    monthlySpend = (monthPayments || []).reduce((acc: number, row: any) => acc + toNum(row?.importe), 0);
+    monthlyPurchases = (monthPayments || []).length;
+    nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+    await syncClientMonthTag(admin, params.clienteId);
+  } catch (error) {
+    console.error("[client-promotions/post-purchase-stats]", error);
+  }
 
   const benefitBits = [
     `${snap.paid_minutes} min`,
@@ -211,20 +193,25 @@ export async function applyPromotionMinutePurchase(
     snap.oracle_credits ? `+${snap.oracle_credits} tirada${snap.oracle_credits === 1 ? "" : "s"} de Oráculo` : null,
   ].filter(Boolean).join(" · ");
 
-  await createClientNotification(admin, {
-    cliente_id: params.clienteId,
-    tipo: "purchase_completed",
-    titulo: `Promoción aplicada: ${snap.promotion_name}`,
-    mensaje: `${snap.package_name} confirmada. ${benefitBits}.`,
-    meta: {
-      promotion_id: snap.promotion_id,
-      package_id: snap.package_id,
-      snapshot: snap,
-      payment_reference: params.paymentRef,
-    },
-  });
+  try {
+    await createClientNotification(admin, {
+      cliente_id: params.clienteId,
+      tipo: "purchase_completed",
+      titulo: `Promoción aplicada: ${snap.promotion_name}`,
+      mensaje: `${snap.package_name} confirmada. ${benefitBits}.`,
+      meta: {
+        promotion_id: snap.promotion_id,
+        package_id: snap.package_id,
+        snapshot: snap,
+        payment_reference: params.paymentRef,
+      },
+    });
+  } catch (error) {
+    console.error("[client-promotions/client-notification]", error);
+  }
 
   try {
+    const nowIso = new Date().toISOString();
     const { data: cliente } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
     const name = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
     await admin.from("notifications").insert({

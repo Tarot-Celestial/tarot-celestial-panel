@@ -19,10 +19,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Datos inválidos" }, { status: 400 });
     }
 
-    const { data: note, error: noteError } = await supabase.from("crm_client_notes").select("id,ruleta_spin_id").eq("id", id).maybeSingle();
+    const { data: note, error: noteError } = await supabase.from("crm_client_notes").select("id,ruleta_spin_id,event_type").eq("id", id).maybeSingle();
     if (noteError) throw noteError;
     if (!note) return NextResponse.json({ ok: false, error: "Nota no encontrada." }, { status: 404 });
-    if (note.ruleta_spin_id) return NextResponse.json({ ok: false, error: "Los premios son registros de solo lectura." }, { status: 409 });
+    if (note.ruleta_spin_id || String(note.event_type || "").startsWith("system_")) return NextResponse.json({ ok: false, error: "Los eventos del sistema son registros de solo lectura." }, { status: 409 });
     const { error } = await supabase
       .from("crm_client_notes")
       .update({ texto })

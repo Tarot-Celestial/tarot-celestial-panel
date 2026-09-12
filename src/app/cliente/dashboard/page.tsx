@@ -202,6 +202,7 @@ export default function ClienteDashboardPage() {
 
   const loadingDataRef = useRef(false);
   const queuedDataRef = useRef(false);
+  const redemptionOperationIdsRef = useRef(new Map<string, string>());
   const loadData = useCallback(async () => {
     if (loadingDataRef.current) { queuedDataRef.current = true; return; }
     loadingDataRef.current = true;
@@ -579,16 +580,22 @@ export default function ClienteDashboardPage() {
       const token = data.session?.access_token;
       if (!token) throw new Error("Sesión no válida");
 
+      const operationId = redemptionOperationIdsRef.current.get(recompensaId) || crypto.randomUUID();
+      redemptionOperationIdsRef.current.set(recompensaId, operationId);
       const res = await fetch("/api/cliente/canjear", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ recompensa_id: recompensaId }),
+        body: JSON.stringify({
+          recompensa_id: recompensaId,
+          operation_id: operationId,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (!json?.ok) throw new Error(json?.error || "No hemos podido canjear tus Coins");
+      redemptionOperationIdsRef.current.delete(recompensaId);
       setMsg("✨ Recompensa desbloqueada. Tus minutos ya están actualizados.");
       await loadData();
     } catch (e: any) {

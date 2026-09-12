@@ -120,6 +120,9 @@ export async function POST(req: Request) {
     const promotionSnapshot = locked.promotion_snapshot && typeof locked.promotion_snapshot === "object"
       ? locked.promotion_snapshot as PromotionPackageSnapshot
       : null;
+    if (promotionSnapshot && promotionSnapshot.kind !== "promotion_minute_pack") {
+      throw new Error("PROMOTION_SNAPSHOT_INVALID");
+    }
     const minutePack = promotionSnapshot ? null : getConfiguredMinutePack(locked.pack_id);
     const oraclePack = promotionSnapshot ? null : getOraclePack(locked.pack_id);
     const questionPack = promotionSnapshot ? null : getOracleQuestionPack(locked.pack_id);
@@ -131,10 +134,10 @@ export async function POST(req: Request) {
     let duplicated = false;
     if (promotionSnapshot?.kind === "promotion_minute_pack") {
       const purchase = await applyPromotionMinutePurchase(admin, {
+        attemptId: String(locked.id),
         clienteId: locked.cliente_id,
         snapshot: promotionSnapshot,
         paymentRef: `mollie:${paymentId}`,
-        paymentIntent: paymentId,
         amount: paymentAmount,
         currency: paymentCurrency === "USD" ? "USD" : "EUR",
       });
@@ -183,7 +186,9 @@ export async function POST(req: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq("id", locked.id),
-      duplicated
+      promotionSnapshot
+        ? Promise.resolve()
+        : duplicated
         ? Promise.resolve()
         : admin.from("crm_client_notes").insert({
             cliente_id: locked.cliente_id,
@@ -198,13 +203,21 @@ export async function POST(req: Request) {
     return okResponse();
   } catch (error: any) {
     console.error("[webhooks/mollie]", error);
+    const message = String(error?.message || "ERR_MOLLIE");
+    if (attemptId && message.includes("PROMOTION_PURCHASE_REQUIRES_REVIEW")) {
+      await admin
+        .from("cliente_payment_attempts")
+        .update({ status: "failed", last_error: message, updated_at: new Date().toISOString() })
+        .eq("id", attemptId);
+      return okResponse();
+    }
     if (attemptId) {
       try {
         await admin
           .from("cliente_payment_attempts")
           .update({
             status: "pending",
-            last_error: error?.message || "ERR_MOLLIE",
+            last_error: message,
             updated_at: new Date().toISOString(),
           })
           .eq("id", attemptId)
