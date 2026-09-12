@@ -1,20 +1,41 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { KeyRound, Mail, MessageCircle } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Eye,
+  EyeOff,
+  KeyRound,
+  LoaderCircle,
+  LockKeyhole,
+  Mail,
+  MessageCircle,
+  Phone,
+  ShieldCheck,
+} from "lucide-react";
+import ClientAuthShell from "@/components/cliente/ClientAuthShell";
+import styles from "@/components/cliente/ClientAuthShell.module.css";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import {
   COUNTRY_OPTIONS,
   DEFAULT_COUNTRY_CODE,
   buildInternationalPhone,
-  formatCountryOptionLabel,
   getCountryByCode,
+  guessDefaultCountry,
   normalizeLocalPhone,
 } from "@/lib/countries";
+import {
+  countryFlag,
+  friendlyAuthError,
+  localPhoneMaxLength,
+  validateLocalPhone,
+} from "@/lib/client-auth-ui";
 
 const sb = supabaseClienteBrowser();
-
 type Channel = "whatsapp" | "email";
 
 export default function ClienteRecuperarPage() {
@@ -27,22 +48,38 @@ export default function ClienteRecuperarPage() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loadingChannel, setLoadingChannel] = useState<Channel | "reset" | "">("");
+  const [phoneError, setPhoneError] = useState("");
   const [msg, setMsg] = useState("");
+  const [successMessage, setSuccessMessage] = useState(false);
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
   const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
   const phoneDigits = useMemo(() => phone.replace(/\D/g, ""), [phone]);
+  const loading = Boolean(loadingChannel);
+
+  useEffect(() => setCountryCode(guessDefaultCountry().code), []);
+
+  function updatePhone(value: string) {
+    setPhoneInput(normalizeLocalPhone(value).slice(0, localPhoneMaxLength(selectedCountry)));
+    setPhoneError("");
+    setMsg("");
+  }
+
+  function validatePhone() {
+    const error = validateLocalPhone(selectedCountry, phoneInput);
+    setPhoneError(error);
+    return !error;
+  }
 
   async function sendCode(nextChannel: Channel) {
-    if (!phoneDigits) {
-      setMsg("Introduce un teléfono válido.");
-      return;
-    }
-
+    if (loading || !validatePhone()) return;
     try {
-      setLoading(true);
+      setLoadingChannel(nextChannel);
       setMsg("");
+      setSuccessMessage(false);
       setChannel(nextChannel);
       const endpoint = nextChannel === "email" ? "/api/cliente/auth/email/send" : "/api/cliente/auth/whatsapp/send";
       const res = await fetch(endpoint, {
@@ -51,43 +88,47 @@ export default function ClienteRecuperarPage() {
         body: JSON.stringify({ phone: phoneDigits }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "No hemos podido enviar el código.");
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "SEND_CODE_FAILED");
       setChallengeToken(String(json?.challenge_token || ""));
       setStep("confirm");
-      setMsg(nextChannel === "email" ? "Te hemos enviado un código por e-mail." : "Te hemos enviado un código por WhatsApp.");
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido enviar el código.");
+      setSuccessMessage(true);
+      setMsg(nextChannel === "email" ? "Código enviado a tu e-mail registrado." : "Código enviado a tu WhatsApp registrado.");
+    } catch (error) {
+      setSuccessMessage(false);
+      setMsg(friendlyAuthError(error, "No hemos podido enviar el código. Inténtalo de nuevo."));
     } finally {
-      setLoading(false);
+      setLoadingChannel("");
     }
   }
 
   async function resetPassword() {
+    if (loading) return;
     if (!code.trim()) {
-      setMsg("Introduce el código que te hemos enviado.");
+      setSuccessMessage(false);
+      setMsg("Escribe el código que te hemos enviado.");
       return;
     }
-    if (!password || password !== passwordConfirm) {
+    if (password.length < 6) {
+      setSuccessMessage(false);
+      setMsg("La contraseña debe tener al menos 6 caracteres.");
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setSuccessMessage(false);
       setMsg("Las contraseñas no coinciden.");
       return;
     }
 
     try {
-      setLoading(true);
+      setLoadingChannel("reset");
       setMsg("");
       const res = await fetch("/api/cliente/auth/password/reset", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: phoneDigits,
-          code: code.trim(),
-          challenge_token: challengeToken,
-          password,
-          channel,
-        }),
+        body: JSON.stringify({ phone: phoneDigits, code: code.trim(), challenge_token: challengeToken, password, channel }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok || !json?.alias_email) throw new Error(json?.error || "No hemos podido actualizar tu contraseña.");
+      if (!res.ok || !json?.ok || !json?.alias_email) throw new Error(json?.error || "RESET_FAILED");
 
       const credentials = json.auth_phone
         ? { phone: String(json.auth_phone), password }
@@ -95,105 +136,164 @@ export default function ClienteRecuperarPage() {
       const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
       router.replace("/cliente/dashboard");
-    } catch (e: any) {
-      setMsg(e?.message || "No hemos podido actualizar tu contraseña.");
+    } catch (error) {
+      setSuccessMessage(false);
+      setMsg(friendlyAuthError(error, "No hemos podido actualizar tu contraseña."));
     } finally {
-      setLoading(false);
+      setLoadingChannel("");
     }
   }
 
-  return (
-    <main className="tc-reset-shell">
-      <section className="tc-reset-card">
-        <div className="tc-chip">Recuperar acceso</div>
-        <h1>Crear una nueva contraseña</h1>
-        <p>Verificamos tu teléfono con un código y te dejamos el acceso listo sin romper tu ficha actual.</p>
+  function submitConfirm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (step === "confirm") void resetPassword();
+  }
 
-        {step === "request" ? (
-          <div className="tc-reset-form">
-            <select className="tc-input" value={countryCode} onChange={(e) => setCountryCode(e.target.value)}>
-              {COUNTRY_OPTIONS.map((option) => (
-                <option key={option.code} value={option.code}>
-                  {formatCountryOptionLabel(option)}
-                </option>
-              ))}
-            </select>
-            <div className="tc-phone-field">
-              <div className="tc-phone-prefix">{selectedCountry.dialCode}</div>
+  return (
+    <ClientAuthShell
+      eyebrow="Recuperación segura"
+      title="Recupera tu acceso"
+      subtitle={step === "request" ? "Verifica tu teléfono y crea una nueva contraseña." : "Introduce el código recibido y elige tu nueva contraseña."}
+      footer="Solo utilizamos los datos ya asociados a tu cuenta."
+    >
+      <div className={styles.stepIndicator} aria-label={`Paso ${step === "request" ? "1" : "2"} de 2`}>
+        <span className={`${styles.stepDot} ${step === "request" ? styles.stepDotActive : ""}`} />
+        <span className={`${styles.stepDot} ${step === "confirm" ? styles.stepDotActive : ""}`} />
+      </div>
+
+      {step === "request" ? (
+        <div key="request" className={styles.modePanel}>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="reset-country">País</label>
+            <div className={styles.selectShell}>
+              <span className={styles.flag} aria-hidden="true">{countryFlag(selectedCountry.code)}</span>
+              <select
+                id="reset-country"
+                className={styles.select}
+                value={countryCode}
+                onChange={(event) => {
+                  setCountryCode(event.target.value);
+                  setPhoneInput("");
+                  setPhoneError("");
+                  setMsg("");
+                }}
+                disabled={loading}
+              >
+                {COUNTRY_OPTIONS.map((country) => (
+                  <option key={country.code} value={country.code}>
+                    {countryFlag(country.code)} {country.label} · {country.dialCode}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className={styles.chevron} size={17} aria-hidden="true" />
+            </div>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="reset-phone">Teléfono asociado a tu cuenta</label>
+            <div className={`${styles.phoneShell} ${phoneError ? styles.invalid : ""}`}>
+              <span className={styles.prefix}>{selectedCountry.dialCode}</span>
+              <Phone className={styles.fieldIcon} size={16} aria-hidden="true" />
               <input
-                className="tc-input tc-phone-input"
+                id="reset-phone"
+                className={styles.input}
+                type="tel"
                 inputMode="tel"
-               placeholder={selectedCountry.hint || "600123123"}
+                autoComplete="tel-national"
+                placeholder={selectedCountry.hint || "Tu número"}
                 value={phoneInput}
-                onChange={(e) => setPhoneInput(normalizeLocalPhone(e.target.value))}
+                maxLength={localPhoneMaxLength(selectedCountry)}
+                onChange={(event) => updatePhone(event.target.value)}
+                onBlur={validatePhone}
+                aria-invalid={Boolean(phoneError)}
+                disabled={loading}
               />
             </div>
-            <div className="tc-reset-actions">
-              <button className="tc-primary-btn" onClick={() => sendCode("whatsapp")} disabled={loading}>
-                <MessageCircle size={18} /> {loading && channel === "whatsapp" ? "Enviando..." : "Código por WhatsApp"}
-              </button>
-              <button className="tc-secondary-btn" onClick={() => sendCode("email")} disabled={loading}>
-                <Mail size={18} /> {loading && channel === "email" ? "Enviando..." : "Código por e-mail"}
-              </button>
+            {phoneError ? <span className={styles.errorText}>{phoneError}</span> : <span className={styles.help}>El código llegará al canal que elijas.</span>}
+          </div>
+
+          <div className={styles.note}>
+            <ShieldCheck size={16} />
+            <span>Elige dónde quieres recibir el código de verificación.</span>
+          </div>
+
+          <div className={styles.actionGrid}>
+            <button type="button" className={styles.primaryButton} onClick={() => void sendCode("whatsapp")} disabled={loading}>
+              {loadingChannel === "whatsapp" ? <LoaderCircle className={styles.spinner} size={18} /> : <MessageCircle size={18} />}
+              WhatsApp
+            </button>
+            <button type="button" className={styles.secondaryButton} onClick={() => void sendCode("email")} disabled={loading}>
+              {loadingChannel === "email" ? <LoaderCircle className={styles.spinner} size={18} /> : <Mail size={18} />}
+              E-mail
+            </button>
+          </div>
+
+          <button type="button" className={styles.linkButton} onClick={() => router.push("/cliente/login")} disabled={loading}>
+            <ArrowLeft size={15} /> Volver al inicio de sesión
+          </button>
+        </div>
+      ) : (
+        <form key="confirm" className={styles.modePanel} onSubmit={submitConfirm} noValidate>
+          <div className={styles.note}>
+            {channel === "email" ? <Mail size={16} /> : <MessageCircle size={16} />}
+            <span>Hemos enviado el código por {channel === "email" ? "e-mail" : "WhatsApp"} al número seleccionado.</span>
+          </div>
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="reset-code">Código de verificación</label>
+            <div className={styles.inputShell}>
+              <KeyRound className={styles.fieldIcon} size={16} aria-hidden="true" />
+              <input id="reset-code" className={styles.input} inputMode="numeric" autoComplete="one-time-code" placeholder="Código recibido" value={code} onChange={(event) => { setCode(event.target.value.replace(/\D/g, "").slice(0, 8)); setMsg(""); }} disabled={loading} />
             </div>
           </div>
-        ) : (
-          <div className="tc-reset-form">
-            <input className="tc-input" inputMode="numeric" placeholder="Código recibido" value={code} onChange={(e) => setCode(e.target.value)} />
-            <input className="tc-input" type="password" placeholder="Nueva contraseña" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <input className="tc-input" type="password" placeholder="Repite la contraseña" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />
-            <button className="tc-primary-btn" onClick={resetPassword} disabled={loading}>
-              <KeyRound size={18} /> {loading ? "Guardando..." : "Guardar contraseña"}
-            </button>
-            <button className="tc-secondary-btn" onClick={() => setStep("request")} disabled={loading}>
-              Volver
-            </button>
-          </div>
-        )}
 
-        {msg ? <div className="tc-reset-message">{msg}</div> : null}
-      </section>
+          <RecoveryPasswordField id="reset-password" label="Nueva contraseña" value={password} visible={showPassword} onToggle={() => setShowPassword((current) => !current)} onChange={(value) => { setPassword(value); setMsg(""); }} loading={loading} />
+          <RecoveryPasswordField id="reset-password-confirm" label="Repite la contraseña" value={passwordConfirm} visible={showConfirm} onToggle={() => setShowConfirm((current) => !current)} onChange={(value) => { setPasswordConfirm(value); setMsg(""); }} loading={loading} />
 
-      <style jsx>{`
-        .tc-reset-shell {
-          min-height: 100vh;
-          display: grid;
-          place-items: center;
-          padding: 24px 16px;
-          background: linear-gradient(180deg, #110d12 0%, #1a1320 100%);
-        }
-        .tc-reset-card {
-          width: min(520px, 100%);
-          border-radius: 24px;
-          padding: 24px;
-          display: grid;
-          gap: 16px;
-          color: #fff7ea;
-          border: 1px solid rgba(255,255,255,0.1);
-          background: rgba(18, 13, 21, 0.94);
-        }
-        h1 { margin: 0; font-size: 30px; }
-        p { margin: 0; color: rgba(255,247,234,0.75); line-height: 1.5; }
-        .tc-reset-form { display: grid; gap: 12px; }
-        .tc-phone-field { display:grid; grid-template-columns:auto 1fr; gap:10px; }
-        .tc-phone-prefix, .tc-input {
-          min-height: 50px; border-radius: 16px; border:1px solid rgba(255,255,255,0.1);
-          background: rgba(255,255,255,0.05); color:#fff7ea; padding: 0 14px;
-        }
-        .tc-phone-prefix { display:grid; place-items:center; font-weight:700; }
-        .tc-primary-btn, .tc-secondary-btn {
-          min-height: 50px; border:0; border-radius:16px; cursor:pointer; font-weight:700;
-          display:flex; align-items:center; justify-content:center; gap:8px;
-        }
-        .tc-primary-btn { background: linear-gradient(135deg, #f7c55e, #ffdf9a); color:#24180f; }
-        .tc-secondary-btn { background: rgba(255,255,255,0.08); color:#fff7ea; }
-        .tc-reset-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-        .tc-reset-message { border-radius:16px; padding: 14px 16px; background: rgba(255,255,255,0.05); }
-        @media (max-width: 640px) {
-          .tc-reset-actions, .tc-phone-field { grid-template-columns: 1fr; }
-          .tc-phone-prefix { justify-self: start; }
-        }
-      `}</style>
-    </main>
+          <button type="submit" className={styles.primaryButton} disabled={loading}>
+            {loadingChannel === "reset" ? <LoaderCircle className={styles.spinner} size={18} /> : <LockKeyhole size={18} />}
+            {loadingChannel === "reset" ? "Guardando contraseña..." : "Guardar y entrar"}
+            {!loading ? <ArrowRight size={17} /> : null}
+          </button>
+
+          <button type="button" className={styles.linkButton} onClick={() => { setStep("request"); setMsg(""); setSuccessMessage(false); }} disabled={loading}>
+            <ArrowLeft size={15} /> Solicitar otro código
+          </button>
+        </form>
+      )}
+
+      {msg ? (
+        <div
+          className={`${styles.message} ${successMessage ? styles.messageSuccess : ""}`}
+          role={successMessage ? "status" : "alert"}
+          aria-live="polite"
+        >
+          {successMessage ? <ShieldCheck size={17} /> : <AlertCircle size={17} />}<span>{msg}</span>
+        </div>
+      ) : null}
+    </ClientAuthShell>
+  );
+}
+
+function RecoveryPasswordField({ id, label, value, visible, onToggle, onChange, loading }: {
+  id: string;
+  label: string;
+  value: string;
+  visible: boolean;
+  onToggle: () => void;
+  onChange: (value: string) => void;
+  loading: boolean;
+}) {
+  return (
+    <div className={styles.field}>
+      <label className={styles.label} htmlFor={id}>{label}</label>
+      <div className={styles.inputShell}>
+        <LockKeyhole className={styles.fieldIcon} size={16} aria-hidden="true" />
+        <input id={id} className={styles.input} type={visible ? "text" : "password"} autoComplete="new-password" placeholder="Mínimo 6 caracteres" minLength={6} value={value} onChange={(event) => onChange(event.target.value)} disabled={loading} />
+        <button type="button" className={styles.iconButton} onClick={onToggle} aria-label={visible ? `Ocultar ${label.toLowerCase()}` : `Mostrar ${label.toLowerCase()}`} disabled={loading}>
+          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    </div>
   );
 }
