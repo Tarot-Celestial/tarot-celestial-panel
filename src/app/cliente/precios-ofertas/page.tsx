@@ -169,7 +169,11 @@ export default function PreciosOfertasPage() {
             </div>
             <div className={styles.promoGrid}>
               {promotion.packages.map((pack) => (
-                <article key={pack.id} className={`${styles.promoCard} ${pack.is_recommended ? styles.promoFeatured : ""}`}>
+                <article
+                  key={pack.id}
+                  className={`${styles.promoCard} ${pack.is_recommended ? styles.promoFeatured : ""}`}
+                  data-leo-anchor={pack.is_recommended ? "promotion-featured" : undefined}
+                >
                   {pack.is_recommended ? <div className={styles.promoRecommended}>MÁS ELEGIDO</div> : null}
                   <div className={styles.promoPackTop}><Gift /><span>{pack.paid_minutes} MIN {pack.free_minutes ? `+ ${pack.free_minutes} GRATIS` : ""}</span></div>
                   <h3>{pack.name}</h3>

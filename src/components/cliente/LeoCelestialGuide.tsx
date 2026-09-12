@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Maximize2, Minus, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import styles from "./LeoCelestialGuide.module.css";
 
 const STORAGE_KEY = "tc-leo-celestial-v1";
@@ -20,6 +20,17 @@ type GuideState = {
   href?: string;
   actionLabel?: string;
 };
+
+type AnchorPosition = {
+  left: number;
+  top: number;
+};
+
+type JourneyPhase = "idle" | "departing" | "travelling" | "arrived";
+
+const PROMOTION_ANCHOR = "[data-leo-anchor='promotion-featured'], [data-leo-anchor='active-promotion']";
+const DESKTOP_QUERY = "(min-width: 900px)";
+const IDLE_DELAY = 45_000;
 
 function getGuideState(pathname: string, promoActive: boolean): GuideState {
   if (pathname === "/cliente/precios-ofertas") {
@@ -44,7 +55,62 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   const [muted, setMuted] = useState(false);
   const [ready, setReady] = useState(false);
   const [attention, setAttention] = useState(false);
+  const [sleeping, setSleeping] = useState(false);
+  const [anchor, setAnchor] = useState<AnchorPosition | null>(null);
+  const [journey, setJourney] = useState<JourneyPhase>("idle");
+  const guideRef = useRef<HTMLElement>(null);
+  const movementTimers = useRef<number[]>([]);
   const guide = useMemo(() => getGuideState(pathname, promoActive), [pathname, promoActive]);
+
+  const clearMovementTimers = useCallback(() => {
+    movementTimers.current.forEach(window.clearTimeout);
+    movementTimers.current = [];
+  }, []);
+
+  const locatePromotion = useCallback((force = false, animate = false) => {
+    if (pathname !== "/cliente/precios-ofertas" || !promoActive || !window.matchMedia(DESKTOP_QUERY).matches) {
+      setAnchor(null);
+      setJourney("idle");
+      return;
+    }
+
+    const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
+    if (!target) return;
+
+    const rect = target.getBoundingClientRect();
+    const visible = rect.bottom > 96 && rect.top < window.innerHeight - 72;
+    if (!visible && !force) {
+      setAnchor(null);
+      setJourney("idle");
+      return;
+    }
+
+    const guideWidth = Math.min(470, window.innerWidth - 24);
+    const lionCenterOffset = guideWidth - 84;
+    const next = {
+      left: Math.round(Math.min(Math.max(12, rect.left + rect.width / 2 - lionCenterOffset), window.innerWidth - guideWidth - 12)),
+      top: Math.round(Math.min(Math.max(12, rect.top - 220), window.innerHeight - 308)),
+    };
+
+    const place = () => setAnchor((current) => {
+      if (current && Math.abs(current.left - next.left) < 2 && Math.abs(current.top - next.top) < 2) return current;
+      return next;
+    });
+
+    if (!animate) {
+      place();
+      return;
+    }
+
+    clearMovementTimers();
+    setJourney("departing");
+    movementTimers.current.push(window.setTimeout(() => {
+      setJourney("travelling");
+      place();
+    }, 170));
+    movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 850));
+    movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 1_500));
+  }, [clearMovementTimers, pathname, promoActive]);
 
   useEffect(() => {
     try {
@@ -62,6 +128,74 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
     const timer = window.setTimeout(() => setAttention(false), 2400);
     return () => window.clearTimeout(timer);
   }, [pathname, promoActive]);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(() => locatePromotion(false, true), 260);
+    let frame = 0;
+    const refresh = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        locatePromotion();
+      });
+    };
+    const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
+    const observer = target && "ResizeObserver" in window ? new ResizeObserver(refresh) : null;
+    if (target && observer) observer.observe(target);
+    window.addEventListener("scroll", refresh, { passive: true });
+    window.addEventListener("resize", refresh, { passive: true });
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      if (frame) window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      window.removeEventListener("scroll", refresh);
+      window.removeEventListener("resize", refresh);
+      clearMovementTimers();
+    };
+  }, [clearMovementTimers, locatePromotion]);
+
+  useEffect(() => {
+    let idleTimer = 0;
+    const wake = () => {
+      setSleeping(false);
+      window.clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => setSleeping(true), IDLE_DELAY);
+    };
+    const activityEvents: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "touchstart"];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, wake, { passive: true }));
+    wake();
+    return () => {
+      window.clearTimeout(idleTimer);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, wake));
+    };
+  }, [pathname]);
+
+  useEffect(() => {
+    let frame = 0;
+    let pointerX = 0;
+    let pointerY = 0;
+    const followPointer = (event: PointerEvent) => {
+      pointerX = event.clientX;
+      pointerY = event.clientY;
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const element = guideRef.current;
+        if (!element) return;
+        const rect = element.getBoundingClientRect();
+        const x = Math.min(2.2, Math.max(-2.2, (pointerX - (rect.left + rect.width * .82)) / 140));
+        const y = Math.min(1.5, Math.max(-1.5, (pointerY - (rect.top + rect.height * .24)) / 170));
+        element.style.setProperty("--leo-gaze-x", `${x.toFixed(2)}px`);
+        element.style.setProperty("--leo-gaze-y", `${y.toFixed(2)}px`);
+      });
+    };
+    window.addEventListener("pointermove", followPointer, { passive: true });
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("pointermove", followPointer);
+    };
+  }, []);
 
   function saveState(next: { minimized: boolean; muted: boolean }) {
     try {
@@ -84,7 +218,11 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   }
 
   function focusPromotion() {
-    document.querySelector<HTMLElement>("[data-leo-anchor='active-promotion']")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
+    if (!target) return;
+    setSleeping(false);
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => locatePromotion(true, true), 650);
   }
 
   if (minimized) {
@@ -104,9 +242,14 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
 
   return (
     <aside
+      ref={guideRef}
       className={`${styles.guide} ${ready ? styles.ready : ""}`}
       data-mood={guide.mood}
       data-attention={attention ? "true" : "false"}
+      data-anchored={anchor ? "true" : "false"}
+      data-journey={journey}
+      data-sleeping={sleeping ? "true" : "false"}
+      style={anchor ? ({ "--leo-left": `${anchor.left}px`, "--leo-top": `${anchor.top}px` } as CSSProperties) : undefined}
       aria-label="Leo Celestial, guía del panel"
     >
       {!muted ? (
@@ -131,6 +274,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       )}
 
       <div className={styles.character} aria-hidden="true">
+        <span className={styles.travelTrail} />
         <span className={styles.aura} />
         <span className={`${styles.spark} ${styles.sparkOne}`} />
         <span className={`${styles.spark} ${styles.sparkTwo}`} />
