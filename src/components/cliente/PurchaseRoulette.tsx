@@ -7,6 +7,7 @@ import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw } from "luci
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { prizeLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward } from "@/lib/ruleta";
+import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import styles from "./PurchaseRoulette.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -117,6 +118,15 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         setResult(json); setBusy(false); inFlight.current = false;
         setPending(null); pendingRef.current = null;
         try { sessionStorage.removeItem(storageKey(summary.cliente_id)); } catch {}
+        announceLeoCelestial({
+          id: `roulette:${json.spin_id}`,
+          reaction: "roulette",
+          title: json.special ? "¡Premio especial celestial!" : "¡Tu premio ya es tuyo!",
+          message: `${prizeLabel(json)} ya se ha añadido a tus ${json.reward_type === "coins" ? "Coins" : "minutos FREE"}.`,
+          href: `/cliente/dashboard?reward=${json.reward_type}&spin=${encodeURIComponent(json.spin_id)}#saldo-${json.reward_type}`,
+          actionLabel: "Ver mi nuevo saldo",
+          duration: 9_000,
+        });
         void Promise.resolve(onReward?.()).catch(() => {});
         void load();
         // No forced navigation: countdown starts only when the customer chooses it.

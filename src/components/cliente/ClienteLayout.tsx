@@ -5,11 +5,13 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { announceLeoCelestial, type LeoCelestialEventDetail } from "@/lib/leo-celestial-events";
 import styles from "./ClientePremium.module.css";
 import LeoCelestialGuide from "./LeoCelestialGuide";
 
 const sb = supabaseClienteBrowser();
+const LEO_NOTIFICATION_KEY = "tc-leo-celestial-last-notification-v1";
 
 type SummaryItem = {
   label: string;
@@ -32,6 +34,67 @@ type HologramIconProps = {
   tone?: SummaryItem["tone"] | "gold" | "cyan" | "rose";
   compact?: boolean;
 };
+
+type ClientNotificationSignal = {
+  id: string;
+  titulo?: string | null;
+  mensaje?: string | null;
+  tipo?: string | null;
+  created_at?: string | null;
+  meta?: Record<string, unknown> | null;
+};
+
+function positiveNumber(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
+}
+
+function notificationReaction(item: ClientNotificationSignal): LeoCelestialEventDetail | null {
+  const type = String(item.tipo || "").toLowerCase();
+  const meta = item.meta || {};
+  if (type === "purchase_completed") {
+    const snapshot = meta.snapshot && typeof meta.snapshot === "object" ? meta.snapshot as Record<string, unknown> : {};
+    const benefits: string[] = [];
+    const minutes = positiveNumber(meta.total_minutes) || positiveNumber(snapshot.paid_minutes) + positiveNumber(snapshot.free_minutes);
+    const coins = positiveNumber(meta.coins) || positiveNumber(snapshot.coins);
+    const spins = positiveNumber(meta.roulette_spins) || positiveNumber(snapshot.roulette_spins);
+    const oracle = positiveNumber(meta.oracle_credits) || positiveNumber(snapshot.oracle_credits);
+    if (minutes) benefits.push(`${minutes} minutos`);
+    if (coins) benefits.push(`${coins.toLocaleString("es-ES")} Coins`);
+    if (spins) benefits.push(`${spins} giro${spins === 1 ? "" : "s"} de ruleta`);
+    if (oracle) benefits.push(`${oracle} tirada${oracle === 1 ? "" : "s"} del Oráculo`);
+    return {
+      id: `notification:${item.id}`,
+      reaction: "purchase",
+      title: "Tu compra ya está activa",
+      message: benefits.length ? `Ya tienes ${benefits.join(", ")}.` : String(item.mensaje || "Tus beneficios ya están disponibles en el panel."),
+      href: "/cliente/dashboard",
+      actionLabel: "Ver mis beneficios",
+      duration: 9_000,
+    };
+  }
+  if (["welcome_gift", "gift", "regalo", "reward", "recompensa"].some((token) => type.includes(token))) {
+    return {
+      id: `notification:${item.id}`,
+      reaction: "gift",
+      title: String(item.titulo || "Tienes un regalo celestial"),
+      message: String(item.mensaje || "Tu nueva recompensa ya está disponible."),
+      href: "/cliente/dashboard",
+      actionLabel: "Ver mi regalo",
+    };
+  }
+  if (type.includes("coin")) {
+    return {
+      id: `notification:${item.id}`,
+      reaction: "coins",
+      title: String(item.titulo || "Tus Coins se han actualizado"),
+      message: String(item.mensaje || "Tu nuevo saldo ya está disponible."),
+      href: "/cliente/dashboard#saldo-coins",
+      actionLabel: "Ver mis Coins",
+    };
+  }
+  return null;
+}
 
 function HologramIcon({ children, tone = "gold", compact = false }: HologramIconProps) {
   return (
@@ -56,6 +119,9 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   const router = useRouter();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [promoActive, setPromoActive] = useState(false);
+  const lastLeoNotificationId = useRef("");
+  const promoStateReady = useRef(false);
+  const previousPromoActive = useRef(false);
 
   const refreshPromoState = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -67,20 +133,57 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
     }).catch(() => null);
     if (!response?.ok) return;
     const payload = await response.json().catch(() => null);
-    if (payload?.ok) setPromoActive(Boolean(payload.promotion));
+    if (!payload?.ok) return;
+    const nextActive = Boolean(payload.promotion);
+    if (promoStateReady.current && !previousPromoActive.current && nextActive) {
+      announceLeoCelestial({
+        id: `promotion:${String(payload.promotion?.id || Date.now())}`,
+        reaction: "promotion",
+        title: "Se ha encendido una promoción",
+        message: "Hay una nueva oportunidad activa. Te acompaño para que veas sus beneficios.",
+        href: "/cliente/precios-ofertas",
+        actionLabel: "Descubrir la promoción",
+      });
+    }
+    previousPromoActive.current = nextActive;
+    promoStateReady.current = true;
+    setPromoActive(nextActive);
   }, []);
 
   const refreshNotificationCount = useCallback(async () => {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return;
-    const response = await fetch("/api/cliente/notificaciones?limit=1", {
+    const response = await fetch("/api/cliente/notificaciones?limit=8", {
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     }).catch(() => null);
     if (!response?.ok) return;
     const payload = await response.json().catch(() => null);
-    if (payload?.ok) setUnreadNotifications(Math.max(0, Number(payload.unread_count || 0)));
+    if (!payload?.ok) return;
+    setUnreadNotifications(Math.max(0, Number(payload.unread_count || 0)));
+
+    const items = Array.isArray(payload.data) ? payload.data as ClientNotificationSignal[] : [];
+    const latest = items[0];
+    if (!latest?.id) return;
+    let previousId = lastLeoNotificationId.current;
+    try {
+      previousId = window.localStorage.getItem(LEO_NOTIFICATION_KEY) || previousId;
+    } catch {
+      // La referencia en memoria evita repeticiones si el almacenamiento está bloqueado.
+    }
+    const previousIndex = previousId ? items.findIndex((item) => item.id === previousId) : -1;
+    const unseen = previousId ? (previousIndex >= 0 ? items.slice(0, previousIndex) : items.slice(0, 1)) : items.slice(0, 1);
+    const createdAt = latest.created_at ? new Date(latest.created_at).getTime() : 0;
+    const firstLoadIsRecent = createdAt > 0 && Date.now() - createdAt < 15 * 60 * 1_000;
+    const candidate = (previousId || firstLoadIsRecent) ? unseen.map(notificationReaction).find(Boolean) : null;
+    lastLeoNotificationId.current = latest.id;
+    try {
+      window.localStorage.setItem(LEO_NOTIFICATION_KEY, latest.id);
+    } catch {
+      // La reacción sigue funcionando durante la sesión actual.
+    }
+    if (candidate) announceLeoCelestial(candidate);
   }, []);
 
   useEffect(() => {

@@ -24,6 +24,7 @@ import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
+import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import rewardStyles from "./reward.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -542,6 +543,7 @@ export default function ClienteDashboardPage() {
   }
 
   async function redeemReward(recompensaId: string) {
+    const reward = recompensas.find((item) => item.id === recompensaId);
     try {
       setRedeeming(true);
       setMsg("");
@@ -567,6 +569,16 @@ export default function ClienteDashboardPage() {
       redemptionOperationIdsRef.current.delete(recompensaId);
       setMsg("✨ Recompensa desbloqueada. Tus minutos ya están actualizados.");
       await loadData();
+      announceLeoCelestial({
+        id: `coins:${operationId}`,
+        reaction: "coins",
+        title: "Recompensa desbloqueada",
+        message: reward
+          ? `Has transformado ${Number(reward.puntos_coste).toLocaleString("es-ES")} Coins en ${Number(reward.minutos_otorgados)} minutos.`
+          : "El canje se ha confirmado y tus minutos ya están disponibles.",
+        href: "/cliente/dashboard#saldo-minutes",
+        actionLabel: "Ver mis minutos",
+      });
     } catch (e: any) {
       setMsg(e?.message || "No hemos podido canjear tus Coins");
       throw e;

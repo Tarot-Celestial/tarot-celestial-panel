@@ -5,6 +5,12 @@ import Link from "next/link";
 import { Maximize2, Minus, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  isLeoCelestialEventDetail,
+  LEO_CELESTIAL_EVENT,
+  type LeoCelestialEventDetail,
+  type LeoCelestialReaction,
+} from "@/lib/leo-celestial-events";
 import styles from "./LeoCelestialGuide.module.css";
 
 const STORAGE_KEY = "tc-leo-celestial-v1";
@@ -32,6 +38,21 @@ const PROMOTION_ANCHOR = "[data-leo-anchor='promotion-featured'], [data-leo-anch
 const DESKTOP_QUERY = "(min-width: 900px)";
 const IDLE_DELAY = 45_000;
 
+const REACTION_LABELS: Record<LeoCelestialReaction, string> = {
+  purchase: "BENEFICIOS ACREDITADOS",
+  roulette: "PREMIO CONFIRMADO",
+  coins: "CANJE COMPLETADO",
+  oracle: "EL ORÁCULO HA HABLADO",
+  gift: "REGALO CELESTIAL",
+  promotion: "NOVEDAD ACTIVA",
+};
+
+function reactionMood(reaction: LeoCelestialReaction): GuideState["mood"] {
+  if (reaction === "oracle") return "oracle";
+  if (reaction === "promotion") return "promo";
+  return "reward";
+}
+
 function getGuideState(pathname: string, promoActive: boolean): GuideState {
   if (pathname === "/cliente/precios-ofertas") {
     return promoActive
@@ -58,9 +79,19 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   const [sleeping, setSleeping] = useState(false);
   const [anchor, setAnchor] = useState<AnchorPosition | null>(null);
   const [journey, setJourney] = useState<JourneyPhase>("idle");
+  const [activeEvent, setActiveEvent] = useState<LeoCelestialEventDetail | null>(null);
   const guideRef = useRef<HTMLElement>(null);
   const movementTimers = useRef<number[]>([]);
-  const guide = useMemo(() => getGuideState(pathname, promoActive), [pathname, promoActive]);
+  const eventTimer = useRef<number | null>(null);
+  const eventAttentionTimer = useRef<number | null>(null);
+  const lastEventId = useRef("");
+  const guide = useMemo<GuideState>(() => activeEvent ? {
+    title: activeEvent.title,
+    message: activeEvent.message,
+    mood: reactionMood(activeEvent.reaction),
+    href: activeEvent.href,
+    actionLabel: activeEvent.actionLabel,
+  } : getGuideState(pathname, promoActive), [activeEvent, pathname, promoActive]);
 
   const clearMovementTimers = useCallback(() => {
     movementTimers.current.forEach(window.clearTimeout);
@@ -128,6 +159,29 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
     const timer = window.setTimeout(() => setAttention(false), 2400);
     return () => window.clearTimeout(timer);
   }, [pathname, promoActive]);
+
+  useEffect(() => {
+    const react = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (!isLeoCelestialEventDetail(detail)) return;
+      if (detail.id && detail.id === lastEventId.current) return;
+      lastEventId.current = detail.id || "";
+      if (eventTimer.current) window.clearTimeout(eventTimer.current);
+      if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
+      setSleeping(false);
+      setActiveEvent(detail);
+      setAttention(true);
+      eventAttentionTimer.current = window.setTimeout(() => setAttention(false), 2_400);
+      const duration = Math.min(12_000, Math.max(4_000, Number(detail.duration) || 7_000));
+      eventTimer.current = window.setTimeout(() => setActiveEvent(null), duration);
+    };
+    window.addEventListener(LEO_CELESTIAL_EVENT, react);
+    return () => {
+      window.removeEventListener(LEO_CELESTIAL_EVENT, react);
+      if (eventTimer.current) window.clearTimeout(eventTimer.current);
+      if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => locatePromotion(false, true), 260);
@@ -230,6 +284,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       <button
         type="button"
         className={`${styles.minimized} ${ready ? styles.ready : ""}`}
+        data-reaction={activeEvent?.reaction || "none"}
         onClick={toggleMinimized}
         aria-label="Abrir a Leo Celestial"
       >
@@ -249,6 +304,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       data-anchored={anchor ? "true" : "false"}
       data-journey={journey}
       data-sleeping={sleeping ? "true" : "false"}
+      data-reaction={activeEvent?.reaction || "none"}
       style={anchor ? ({ "--leo-left": `${anchor.left}px`, "--leo-top": `${anchor.top}px` } as CSSProperties) : undefined}
       aria-label="Leo Celestial, guía del panel"
     >
@@ -261,6 +317,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
               <button type="button" onClick={toggleMinimized} aria-label="Minimizar a Leo Celestial" title="Minimizar"><Minus size={16} /></button>
             </div>
           </div>
+          {activeEvent ? <span className={styles.reactionBadge}>{REACTION_LABELS[activeEvent.reaction]}</span> : null}
           <strong>{guide.title}</strong>
           <p>{guide.message}</p>
           {guide.href && guide.actionLabel ? <Link href={guide.href}>{guide.actionLabel}</Link> : null}
