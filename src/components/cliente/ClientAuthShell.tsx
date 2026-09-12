@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { ShieldCheck, Sparkles } from "lucide-react";
+import { LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import styles from "./ClientAuthShell.module.css";
 
@@ -20,24 +20,33 @@ export default function ClientAuthShell({ eyebrow, title, subtitle, children, fo
         <span className={styles.orbGold} />
         <span className={styles.orbViolet} />
         <span className={styles.lightSweep} />
+        <span className={styles.ambientRingOne} />
+        <span className={styles.ambientRingTwo} />
       </div>
 
       <section className={styles.card} aria-labelledby="client-auth-title">
         <div className={styles.cardShine} aria-hidden="true" />
+        <div className={styles.cardEdge} aria-hidden="true" />
+
+        <div className={styles.topStatus} aria-hidden="true">
+          <span><i /> PORTAL CLIENTE</span>
+          <b>SESIÓN SEGURA</b>
+        </div>
 
         <header className={styles.brand}>
-          <div className={styles.logoStage} aria-hidden="true">
-            <span className={styles.logoOrbit} />
-            <span className={`${styles.particle} ${styles.particleOne}`} />
-            <span className={`${styles.particle} ${styles.particleTwo}`} />
-            <span className={`${styles.particle} ${styles.particleThree}`} />
-            <span className={`${styles.particle} ${styles.particleFour}`} />
+          <div className={styles.logoStage}>
+            <span className={styles.logoOrbit} aria-hidden="true" />
+            <span className={styles.logoOrbitInner} aria-hidden="true" />
+            <span className={`${styles.particle} ${styles.particleOne}`} aria-hidden="true" />
+            <span className={`${styles.particle} ${styles.particleTwo}`} aria-hidden="true" />
+            <span className={`${styles.particle} ${styles.particleThree}`} aria-hidden="true" />
+            <span className={`${styles.particle} ${styles.particleFour}`} aria-hidden="true" />
             <div className={styles.logoHalo}>
               <Image
                 src="/Nuevo-logo-tarot.png"
-                alt=""
-                width={92}
-                height={92}
+                alt="Tarot Celestial"
+                width={96}
+                height={96}
                 className={styles.logo}
                 priority
               />
@@ -53,6 +62,7 @@ export default function ClientAuthShell({ eyebrow, title, subtitle, children, fo
 
         <div className={styles.trustRow} aria-label="Información de seguridad">
           <span><ShieldCheck size={14} /> Acceso protegido</span>
+          <span><LockKeyhole size={13} /> Datos cifrados</span>
           <span>Tarot Celestial</span>
         </div>
 

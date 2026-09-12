@@ -163,7 +163,7 @@ export default function ClienteLoginPage() {
     <ClientAuthShell
       eyebrow="Acceso privado"
       title="Tarot Celestial"
-      subtitle="Entra con tu contraseña o crea tu acceso usando tu número."
+      subtitle="Tu espacio privado, seguro y exclusivo. Accede en segundos."
       footer="Tu sesión se mantiene protegida mediante Supabase Auth."
     >
       <div className={styles.tabs} role="tablist" aria-label="Selecciona cómo quieres acceder">
@@ -175,7 +175,7 @@ export default function ClienteLoginPage() {
           onClick={() => updateMode("password")}
           disabled={loading}
         >
-          <LockKeyhole size={16} /> Ya tengo contraseña
+          <span className={styles.tabIcon}><LockKeyhole size={16} /></span><span><strong>Ya tengo contraseña</strong><small>Acceso habitual</small></span>
         </button>
         <button
           type="button"
@@ -185,7 +185,7 @@ export default function ClienteLoginPage() {
           onClick={() => updateMode("setup")}
           disabled={loading}
         >
-          <Sparkles size={16} /> Primer acceso
+          <span className={styles.tabIcon}><Sparkles size={16} /></span><span><strong>Primer acceso</strong><small>Crear mi clave</small></span>
         </button>
       </div>
 
@@ -240,7 +240,7 @@ export default function ClienteLoginPage() {
           {phoneError ? (
             <span id="client-phone-error" className={styles.errorText}>{phoneError}</span>
           ) : (
-            <span id="client-phone-help" className={styles.help}>Escríbelo sin el prefijo ni espacios.</span>
+            <span id="client-phone-help" className={styles.help}>Usa solo tu número local; el prefijo se añade automáticamente.</span>
           )}
         </div>
 
@@ -284,6 +284,10 @@ export default function ClienteLoginPage() {
             </div>
 
             <PasswordField id="client-new-password" label="Crea tu contraseña" value={createPassword} visible={showCreatePassword} setVisible={setShowCreatePassword} onChange={(value) => { setCreatePassword(value); if (msg) setMsg(""); }} loading={loading} placeholder="Mínimo 6 caracteres" />
+            <div className={styles.passwordGuide} data-valid={createPassword.length >= 6 ? "true" : "false"}>
+              <span><i /> Mínimo 6 caracteres</span>
+              <span><i /> Solo tú podrás usarla</span>
+            </div>
             <PasswordField id="client-confirm-password" label="Repite la contraseña" value={createPasswordConfirm} visible={showCreateConfirm} setVisible={setShowCreateConfirm} onChange={(value) => { setCreatePasswordConfirm(value); if (msg) setMsg(""); }} loading={loading} placeholder="Vuelve a escribirla" />
 
             <button type="submit" className={styles.primaryButton} disabled={loading}>

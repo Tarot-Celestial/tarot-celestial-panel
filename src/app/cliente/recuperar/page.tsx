@@ -153,12 +153,13 @@ export default function ClienteRecuperarPage() {
     <ClientAuthShell
       eyebrow="Recuperación segura"
       title="Recupera tu acceso"
-      subtitle={step === "request" ? "Verifica tu teléfono y crea una nueva contraseña." : "Introduce el código recibido y elige tu nueva contraseña."}
+      subtitle={step === "request" ? "Recupera tu acceso de forma sencilla y protegida." : "Verifica el código y crea una nueva contraseña."}
       footer="Solo utilizamos los datos ya asociados a tu cuenta."
     >
       <div className={styles.stepIndicator} aria-label={`Paso ${step === "request" ? "1" : "2"} de 2`}>
-        <span className={`${styles.stepDot} ${step === "request" ? styles.stepDotActive : ""}`} />
-        <span className={`${styles.stepDot} ${step === "confirm" ? styles.stepDotActive : ""}`} />
+        <span className={`${styles.stepItem} ${step === "request" ? styles.stepItemActive : ""}`}><i>1</i><b>Identificación</b></span>
+        <span className={styles.stepLine} aria-hidden="true" />
+        <span className={`${styles.stepItem} ${step === "confirm" ? styles.stepItemActive : ""}`}><i>2</i><b>Nueva contraseña</b></span>
       </div>
 
       {step === "request" ? (
