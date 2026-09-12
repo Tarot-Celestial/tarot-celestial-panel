@@ -24,6 +24,27 @@ export default function ClientAuthShell({ eyebrow, title, subtitle, children, fo
         <span className={styles.ambientRingTwo} />
       </div>
 
+      <div className={styles.backgroundExperience} aria-hidden="true">
+        <div className={styles.backgroundSigilEcho}>
+          <Image src="/Nuevo-logo-tarot.png" alt="" width={980} height={980} sizes="(max-width: 700px) 92vw, 980px" />
+        </div>
+        <div className={styles.backgroundSigil}>
+          <span className={styles.sigilOrbitOuter} />
+          <span className={styles.sigilOrbitInner} />
+          <Image src="/Nuevo-logo-tarot.png" alt="" width={860} height={860} sizes="(max-width: 700px) 86vw, 860px" />
+        </div>
+        <div className={styles.backgroundParticles}>
+          <i className={styles.bgParticleOne} />
+          <i className={styles.bgParticleTwo} />
+          <i className={styles.bgParticleThree} />
+          <i className={styles.bgParticleFour} />
+          <i className={styles.bgParticleFive} />
+          <i className={styles.bgParticleSix} />
+          <i className={styles.bgParticleSeven} />
+          <i className={styles.bgParticleEight} />
+        </div>
+      </div>
+
       <section className={styles.card} aria-labelledby="client-auth-title">
         <div className={styles.cardShine} aria-hidden="true" />
         <div className={styles.cardEdge} aria-hidden="true" />

@@ -75,6 +75,97 @@
 .ambientRingOne { right: -180px; bottom: 8%; }
 .ambientRingTwo { left: -210px; top: 10%; border-color: rgba(123,77,153,.06); }
 
+.backgroundExperience {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateZ(0);
+  contain: layout paint;
+}
+.backgroundSigil,
+.backgroundSigilEcho {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  will-change: transform, opacity;
+}
+.backgroundSigil {
+  width: min(70vw, 860px);
+  transform: translate3d(-50%, -50%, 0) scale(1.02);
+  opacity: .16;
+  filter: saturate(.82) brightness(.84) drop-shadow(0 0 56px rgba(224,177,83,.16));
+  animation: backgroundSigilFloat 14s ease-in-out infinite;
+}
+.backgroundSigil::before {
+  content: "";
+  position: absolute;
+  inset: 8%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(235,191,101,.11), rgba(104,62,127,.04) 48%, transparent 70%);
+  filter: blur(18px);
+}
+.backgroundSigil img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: .84;
+  filter: blur(2.2px);
+}
+.backgroundSigilEcho {
+  width: min(83vw, 1040px);
+  transform: translate3d(-50%, -48%, 0) scale(1.06);
+  opacity: .055;
+  filter: blur(24px) saturate(.8) sepia(.12) drop-shadow(0 0 90px rgba(204,154,60,.18));
+  animation: backgroundSigilEcho 20s ease-in-out infinite;
+}
+.backgroundSigilEcho img { width: 100%; height: 100%; object-fit: contain; }
+.sigilOrbitOuter,
+.sigilOrbitInner {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.sigilOrbitOuter {
+  inset: -4%;
+  border: 1px solid rgba(238,199,119,.16);
+  border-top-color: rgba(238,199,119,.42);
+  border-bottom-color: rgba(113,74,138,.12);
+  box-shadow: 0 0 42px rgba(224,179,91,.045), inset 0 0 32px rgba(115,70,140,.025);
+  animation: backgroundOrbit 42s linear infinite;
+}
+.sigilOrbitInner {
+  inset: 7%;
+  border: 1px dashed rgba(233,195,113,.12);
+  transform: rotate(17deg);
+  animation: backgroundOrbitReverse 58s linear infinite;
+}
+.backgroundParticles { position: absolute; inset: 0; }
+.backgroundParticles i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #f4cf76;
+  opacity: .22;
+  box-shadow: 0 0 9px rgba(244,207,118,.58), 0 0 22px rgba(145,91,165,.12);
+  animation: backgroundParticleDrift 11s ease-in-out infinite;
+}
+.bgParticleOne { left: 16%; top: 19%; }
+.bgParticleTwo { left: 24%; top: 69%; animation-delay: -3s!important; }
+.bgParticleThree { right: 16%; top: 23%; animation-delay: -7s!important; }
+.bgParticleFour { right: 23%; bottom: 18%; animation-delay: -4.5s!important; }
+.bgParticleFive { left: 8%; top: 48%; width: 2px!important; height: 2px!important; animation-delay: -8s!important; }
+.bgParticleSix { right: 8%; top: 56%; width: 2px!important; height: 2px!important; animation-delay: -1.5s!important; }
+.bgParticleSeven { left: 38%; top: 8%; width: 2px!important; height: 2px!important; animation-delay: -5.5s!important; }
+.bgParticleEight { right: 39%; bottom: 7%; width: 2px!important; height: 2px!important; animation-delay: -9s!important; }
+
 .card {
   width: min(540px, 100%);
   position: relative;
@@ -591,6 +682,21 @@
 .trustRow span + span::before { content: "•"; margin-right: 5px; color: rgba(229,189,104,.42); }
 .footer { position: relative; z-index: 1; text-align: center; color: rgba(255,249,239,.38); font-size: 10.5px; }
 
+@keyframes backgroundSigilFloat {
+  0%,100% { transform: translate3d(-50%, -50%, 0) scale(1.02) rotate(-.35deg); opacity: .14; }
+  50% { transform: translate3d(-50%, calc(-50% - 12px), 0) scale(1.045) rotate(.35deg); opacity: .18; }
+}
+@keyframes backgroundSigilEcho {
+  0%,100% { transform: translate3d(-50%, -48%, 0) scale(1.06); opacity: .045; }
+  50% { transform: translate3d(-50%, -51%, 0) scale(1.1); opacity: .07; }
+}
+@keyframes backgroundOrbit { to { transform: rotate(360deg); } }
+@keyframes backgroundOrbitReverse { to { transform: rotate(-360deg); } }
+@keyframes backgroundParticleDrift {
+  0%,100% { transform: translate3d(0,0,0) scale(.72); opacity: .12; }
+  45% { transform: translate3d(6px,-11px,0) scale(1.2); opacity: .5; }
+  70% { transform: translate3d(-4px,-17px,0) scale(.9); opacity: .27; }
+}
 @keyframes cardEnter { from { opacity: 0; transform: translateY(18px) rotateX(1.5deg) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes panelSwap { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @keyframes logoFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -599,6 +705,24 @@
 @keyframes particlePulse { 0%,100% { opacity: .22; transform: scale(.7); } 50% { opacity: 1; transform: scale(1.25); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes errorShake { 0%,100% { transform: translateX(0); } 35% { transform: translateX(-3px); } 70% { transform: translateX(3px); } }
+
+@media (hover: hover) and (pointer: fine) and (min-width: 900px) {
+  .backgroundSigil { width: min(72vw, 900px); opacity: .17; }
+  .backgroundParticles i { box-shadow: 0 0 10px rgba(244,207,118,.62), 0 0 28px rgba(145,91,165,.16); }
+}
+
+@media (max-width: 760px) {
+  .backgroundSigil { width: min(96vw, 690px); opacity: .105; filter: saturate(.76) brightness(.78) drop-shadow(0 0 34px rgba(224,177,83,.1)); }
+  .backgroundSigil img { filter: blur(3px); }
+  .backgroundSigilEcho { width: min(118vw, 800px); opacity: .03; filter: blur(28px) saturate(.72); }
+  .sigilOrbitOuter { inset: 1%; opacity: .6; }
+  .sigilOrbitInner { display: none; }
+  .backgroundParticles i:nth-child(n+5) { display: none; }
+  .bgParticleOne { left: 7%; top: 17%; }
+  .bgParticleTwo { left: 12%; top: 77%; }
+  .bgParticleThree { right: 7%; top: 25%; }
+  .bgParticleFour { right: 11%; bottom: 14%; }
+}
 
 @media (max-width: 560px) {
   .shell { place-items: start center; padding: 10px; overflow-y: auto; }
@@ -642,8 +766,16 @@
   .logoOrbit,
   .logoOrbitInner,
   .particle,
-  .spinner { animation: none; }
+  .spinner,
+  .backgroundSigil,
+  .backgroundSigilEcho,
+  .sigilOrbitOuter,
+  .sigilOrbitInner,
+  .backgroundParticles i { animation: none; }
   .primaryButton::after { display: none; }
+  .backgroundSigil { opacity: .09; transform: translate3d(-50%, -50%, 0) scale(1.02); }
+  .backgroundSigilEcho { opacity: .025; transform: translate3d(-50%, -48%, 0) scale(1.06); }
+  .backgroundParticles { display: none; }
   .logoStage,
   .primaryButton,
   .secondaryButton,
