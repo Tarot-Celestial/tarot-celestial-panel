@@ -150,10 +150,38 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   }
 
   return (
-    <div className={`tc-wrap ${styles.premiumShell}`}>
+    <div className={`tc-wrap ${styles.premiumShell}`} data-home={pathname === "/cliente/dashboard" ? "true" : "false"}>
       <div className={styles.spaceField} aria-hidden="true">
         <span />
+        <span />
+        <span />
       </div>
+
+      <div className={styles.celestialBackdrop} aria-hidden="true">
+        <span className={styles.celestialAmbientGlow} />
+        <span className={styles.celestialOrbitOuter} />
+        <span className={styles.celestialOrbitInner} />
+        <div className={styles.celestialLogoGhost}>
+          <Image
+            src="/tarot-celestial-logo-4k.webp"
+            alt=""
+            fill
+            sizes="(max-width: 800px) 92vw, (max-width: 1500px) 72vw, 1180px"
+            aria-hidden="true"
+          />
+        </div>
+        <div className={styles.celestialLogoMain}>
+          <Image
+            src="/tarot-celestial-logo-4k.webp"
+            alt=""
+            fill
+            sizes="(max-width: 800px) 86vw, (max-width: 1500px) 64vw, 1040px"
+            aria-hidden="true"
+          />
+        </div>
+        <span className={styles.celestialLightSweep} />
+      </div>
+
       <div className="tc-container tc-client-shell">
         <section className="tc-client-hero">
           <div className="tc-hero-top">

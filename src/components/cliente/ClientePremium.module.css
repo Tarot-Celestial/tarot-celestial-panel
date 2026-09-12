@@ -1324,3 +1324,236 @@
   line-height: 1;
 }
 
+
+/* ==========================================================
+   CLIENTE · CELESTIAL 4K AMBIENT BACKDROP
+   Símbolo de marca en profundidad, responsive y GPU-friendly.
+   ========================================================== */
+.premiumShell {
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(238,196,104,.105), transparent 34%),
+    radial-gradient(circle at 82% 28%, rgba(105,82,228,.075), transparent 30%),
+    radial-gradient(circle at 10% 66%, rgba(211,167,74,.042), transparent 26%),
+    linear-gradient(145deg, #111218 0%, #0b0c11 44%, #15141a 100%);
+}
+
+.premiumShell > :global(.tc-container) {
+  position: relative;
+  z-index: 3;
+}
+
+.spaceField {
+  z-index: 1;
+}
+
+.celestialBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,.98) 0%, #000 70%, rgba(0,0,0,.76) 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0,0,0,.98) 0%, #000 70%, rgba(0,0,0,.76) 100%);
+}
+
+.celestialAmbientGlow {
+  position: absolute;
+  left: 50%;
+  top: 43%;
+  width: min(95vw, 1420px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate3d(-50%, -50%, 0);
+  background:
+    radial-gradient(circle, rgba(233,191,94,.13) 0%, rgba(173,118,35,.07) 20%, rgba(110,73,194,.045) 42%, transparent 68%);
+  opacity: .9;
+  animation: celestialGlowBreathe 10s ease-in-out infinite;
+}
+
+.celestialLogoGhost,
+.celestialLogoMain {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  aspect-ratio: 1;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.celestialLogoGhost {
+  width: min(82vw, 1320px);
+  opacity: .055;
+  transform: translate3d(-50%, -50%, 0) scale(1.085) rotate(-1.6deg);
+  filter: blur(8px) saturate(1.18) brightness(1.12);
+  animation: celestialGhostFloat 20s ease-in-out infinite alternate;
+}
+
+.celestialLogoMain {
+  width: min(68vw, 1080px);
+  opacity: .115;
+  transform: translate3d(-50%, -50%, 0) rotate(.7deg);
+  filter: saturate(.9) contrast(1.04) brightness(1.08) drop-shadow(0 0 34px rgba(235,190,91,.11));
+  animation: celestialLogoFloat 17s cubic-bezier(.45,.05,.55,.95) infinite alternate;
+}
+
+.celestialLogoGhost :global(img),
+.celestialLogoMain :global(img) {
+  object-fit: contain;
+  user-select: none;
+}
+
+.celestialOrbitOuter,
+.celestialOrbitInner {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  border-radius: 50%;
+  transform: translate3d(-50%, -50%, 0);
+  pointer-events: none;
+}
+
+.celestialOrbitOuter {
+  width: min(74vw, 1190px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(235,195,105,.10);
+  box-shadow:
+    0 0 0 28px rgba(215,181,109,.013),
+    0 0 95px rgba(214,169,74,.035),
+    inset 0 0 80px rgba(132,91,232,.025);
+  animation: celestialOrbitDrift 30s linear infinite;
+}
+
+.celestialOrbitInner {
+  width: min(56vw, 880px);
+  aspect-ratio: 1;
+  border: 1px dashed rgba(171,137,255,.105);
+  box-shadow: 0 0 46px rgba(139,92,246,.032);
+  animation: celestialOrbitReverse 42s linear infinite;
+}
+
+.celestialLightSweep {
+  position: absolute;
+  left: 50%;
+  top: 10%;
+  width: min(56vw, 920px);
+  height: 120%;
+  opacity: .11;
+  transform: translate3d(-50%, 0, 0) rotate(13deg);
+  background: linear-gradient(90deg, transparent 0%, rgba(255,229,164,.025) 38%, rgba(255,229,164,.16) 50%, rgba(163,121,255,.04) 62%, transparent 100%);
+  filter: blur(1px);
+  animation: celestialSweep 16s ease-in-out infinite;
+}
+
+/* En Inicio el símbolo gana presencia sin competir con las tarjetas. */
+.premiumShell[data-home="true"] .celestialLogoMain { opacity: .155; }
+.premiumShell[data-home="true"] .celestialLogoGhost { opacity: .075; }
+.premiumShell[data-home="true"] .celestialAmbientGlow { opacity: 1; }
+
+/* Mantener los paneles legibles sobre el fondo vivo. */
+.premiumShell :global(.tc-client-hero),
+.premiumShell :global(.tc-card),
+.premiumShell :global(.tc-kpi),
+.premiumShell :global(.tc-pack-card),
+.premiumShell :global(.tc-mini-stat),
+.premiumShell :global(.tc-list-item),
+.premiumShell :global(.tc-callout-box) {
+  background-color: rgba(10,10,16,.58);
+}
+
+@keyframes celestialLogoFloat {
+  0% { transform: translate3d(-50%, -50%, 0) rotate(.7deg) scale(1); }
+  50% { transform: translate3d(calc(-50% + 8px), calc(-50% - 10px), 0) rotate(-.45deg) scale(1.012); }
+  100% { transform: translate3d(calc(-50% - 6px), calc(-50% + 8px), 0) rotate(.95deg) scale(1.006); }
+}
+
+@keyframes celestialGhostFloat {
+  0% { transform: translate3d(-50%, -50%, 0) scale(1.075) rotate(-1.6deg); opacity: .046; }
+  100% { transform: translate3d(calc(-50% + 15px), calc(-50% - 12px), 0) scale(1.105) rotate(1.3deg); opacity: .072; }
+}
+
+@keyframes celestialGlowBreathe {
+  0%, 100% { transform: translate3d(-50%, -50%, 0) scale(.985); opacity: .70; }
+  50% { transform: translate3d(-50%, -50%, 0) scale(1.025); opacity: 1; }
+}
+
+@keyframes celestialOrbitDrift {
+  from { transform: translate3d(-50%, -50%, 0) rotate(0deg); }
+  to { transform: translate3d(-50%, -50%, 0) rotate(360deg); }
+}
+
+@keyframes celestialOrbitReverse {
+  from { transform: translate3d(-50%, -50%, 0) rotate(360deg); }
+  to { transform: translate3d(-50%, -50%, 0) rotate(0deg); }
+}
+
+@keyframes celestialSweep {
+  0%, 18% { opacity: 0; transform: translate3d(-82%, 0, 0) rotate(13deg); }
+  42% { opacity: .12; }
+  68%, 100% { opacity: 0; transform: translate3d(-18%, 0, 0) rotate(13deg); }
+}
+
+/* Tablet: menos capas, logo todavía nítido. */
+@media (max-width: 1000px) {
+  .celestialLogoMain { width: min(82vw, 820px); opacity: .105; }
+  .celestialLogoGhost { width: min(94vw, 940px); opacity: .04; filter: blur(7px) saturate(1.1); }
+  .celestialOrbitOuter { width: min(90vw, 900px); }
+  .celestialOrbitInner { width: min(72vw, 700px); }
+  .celestialLightSweep { opacity: .07; }
+  .premiumShell[data-home="true"] .celestialLogoMain { opacity: .135; }
+}
+
+/* Móvil / dispositivos táctiles: una sola imagen y cero filtros caros. */
+@media (max-width: 800px), (hover: none), (pointer: coarse) {
+  .celestialBackdrop {
+    mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.86) 75%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, rgba(0,0,0,.86) 75%, transparent 100%);
+  }
+  .celestialLogoMain {
+    top: 35%;
+    width: min(106vw, 760px);
+    opacity: .085;
+    filter: none;
+    animation: none;
+  }
+  .premiumShell[data-home="true"] .celestialLogoMain { opacity: .105; }
+  .celestialLogoGhost,
+  .celestialOrbitInner,
+  .celestialLightSweep { display: none; }
+  .celestialOrbitOuter {
+    top: 35%;
+    width: 108vw;
+    opacity: .5;
+    animation: none;
+    box-shadow: none;
+  }
+  .celestialAmbientGlow {
+    top: 35%;
+    width: 118vw;
+    opacity: .62;
+    animation: none;
+  }
+  .spaceField span:nth-child(n+2) { display: none; }
+}
+
+@media (max-width: 520px) {
+  .celestialLogoMain { top: 31%; width: 126vw; opacity: .07; }
+  .premiumShell[data-home="true"] .celestialLogoMain { opacity: .09; }
+  .celestialOrbitOuter { top: 31%; width: 128vw; }
+  .celestialAmbientGlow { top: 31%; width: 136vw; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .celestialLogoMain,
+  .celestialLogoGhost,
+  .celestialOrbitOuter,
+  .celestialOrbitInner,
+  .celestialAmbientGlow,
+  .celestialLightSweep {
+    animation: none !important;
+  }
+}
