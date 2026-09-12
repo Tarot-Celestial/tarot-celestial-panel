@@ -7,6 +7,7 @@ import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Spark
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import styles from "./ClientePremium.module.css";
+import LeoCelestialGuide from "./LeoCelestialGuide";
 
 const sb = supabaseClienteBrowser();
 
@@ -299,7 +300,8 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
 
         {children}
       </div>
+
+      <LeoCelestialGuide promoActive={promoActive} />
     </div>
   );
 }
-

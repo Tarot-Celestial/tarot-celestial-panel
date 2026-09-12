@@ -157,7 +157,7 @@ export default function PreciosOfertasPage() {
         </section>
 
         {promotion ? (
-          <section className={styles.promoSection}>
+          <section className={styles.promoSection} data-leo-anchor="active-promotion">
             <div className={styles.promoAura} aria-hidden="true" />
             <div className={styles.promoHeader}>
               <div>
@@ -323,4 +323,3 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
     </article>
   );
 }
-

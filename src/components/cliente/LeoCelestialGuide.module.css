@@ -1,0 +1,169 @@
+.guide {
+  position: fixed;
+  right: clamp(12px, 2vw, 30px);
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 90;
+  display: grid;
+  grid-template-columns: minmax(220px, 292px) 172px;
+  align-items: end;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(0, 24px, 0) scale(.97);
+  transition: opacity .35s ease, transform .55s cubic-bezier(.18,.82,.2,1);
+}
+
+.ready { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+
+.bubble {
+  position: relative;
+  margin-bottom: 82px;
+  padding: 15px 16px 14px;
+  border: 1px solid rgba(244, 207, 132, .27);
+  border-radius: 19px 19px 6px 19px;
+  color: #fff9eb;
+  background:
+    linear-gradient(145deg, rgba(255,255,255,.075), transparent 38%),
+    linear-gradient(155deg, rgba(28,19,36,.96), rgba(9,8,14,.97));
+  box-shadow: 0 22px 52px rgba(0,0,0,.48), inset 0 1px rgba(255,255,255,.08), 0 0 28px rgba(173,111,255,.07);
+  backdrop-filter: blur(18px) saturate(115%);
+  pointer-events: auto;
+  animation: bubbleIn .42s cubic-bezier(.2,.8,.2,1) both;
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  right: -9px;
+  bottom: 18px;
+  width: 18px;
+  height: 18px;
+  border-right: 1px solid rgba(244,207,132,.22);
+  border-bottom: 1px solid rgba(244,207,132,.22);
+  background: #100c17;
+  transform: rotate(-45deg);
+}
+
+.bubbleTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 9px; }
+.bubbleTop > span { display: inline-flex; align-items: center; gap: 6px; color: #e8c675; font-size: 9px; font-weight: 950; letter-spacing: .13em; }
+.bubble > strong { display: block; color: #fff2c8; font: 700 18px/1.15 Georgia, "Times New Roman", serif; }
+.bubble p { margin: 7px 0 0; color: rgba(255,255,255,.68); font-size: 12px; line-height: 1.5; }
+.bubble > a,
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  margin-top: 11px;
+  padding: 0 12px;
+  border: 1px solid rgba(255,224,143,.54);
+  border-radius: 10px;
+  color: #1a1003;
+  background: linear-gradient(135deg,#ffe5a0,#ce9730);
+  box-shadow: 0 8px 20px rgba(173,117,24,.20), inset 0 1px rgba(255,255,255,.42);
+  font-size: 10px;
+  font-weight: 950;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform .16s ease, filter .16s ease;
+}
+.bubble > a:hover,
+.action:hover { transform: translateY(-1px); filter: brightness(1.05); }
+
+.controls,
+.silentControls { display: flex; gap: 4px; }
+.controls button,
+.silentControls button {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 9px;
+  color: rgba(255,255,255,.58);
+  background: rgba(255,255,255,.035);
+  cursor: pointer;
+  transition: color .16s ease, background .16s ease, border-color .16s ease;
+}
+.controls button:hover,
+.silentControls button:hover { color: #ffe5a0; border-color: rgba(244,207,132,.24); background: rgba(244,207,132,.08); }
+.silentControls { align-self: end; justify-self: end; margin: 0 -154px 222px 0; padding: 5px; border: 1px solid rgba(244,207,132,.18); border-radius: 12px; background: rgba(11,8,16,.82); backdrop-filter: blur(12px); pointer-events: auto; }
+
+.character { position: relative; width: 172px; pointer-events: none; filter: drop-shadow(0 22px 24px rgba(0,0,0,.52)); }
+.character::after { content: ""; position: absolute; left: 16%; right: 9%; bottom: 2px; height: 16px; border-radius: 50%; background: rgba(0,0,0,.56); filter: blur(8px); }
+.lionBody { position: relative; z-index: 2; transform-origin: 52% 82%; animation: leoBreathe 5.2s ease-in-out infinite; }
+.lion { display: block; width: 100%; height: auto; object-fit: contain; }
+.aura { position: absolute; z-index: 0; inset: 18% -5% 7%; border: 1px solid rgba(230,184,83,.13); border-radius: 50%; background: radial-gradient(circle at 55% 40%, rgba(238,194,99,.13), rgba(131,70,194,.055) 47%, transparent 68%); box-shadow: 0 0 38px rgba(218,165,64,.10), inset 0 0 25px rgba(137,77,203,.06); animation: auraPulse 4.6s ease-in-out infinite; }
+.spark { position: absolute; z-index: 3; width: 3px; height: 3px; border-radius: 50%; background: #ffe8a9; box-shadow: 0 0 9px #e7b94f; animation: sparkPulse 3s ease-in-out infinite; }
+.sparkOne { left: 4%; top: 31%; }
+.sparkTwo { right: 2%; top: 19%; animation-delay: -1s; }
+.sparkThree { right: 9%; bottom: 22%; animation-delay: -2s; }
+.eyeGlint { position: absolute; z-index: 3; top: 19.2%; width: 3px; height: 3px; border-radius: 50%; background: rgba(255,249,218,.9); box-shadow: 0 0 5px rgba(255,222,127,.8); animation: eyeLook 4.8s ease-in-out infinite; }
+.eyeGlintLeft { left: 35.8%; }
+.eyeGlintRight { left: 50.2%; animation-delay: -.05s; }
+
+.guide[data-mood="promo"] .aura { border-color: rgba(255,212,98,.28); box-shadow: 0 0 48px rgba(233,176,47,.18), inset 0 0 28px rgba(137,77,203,.08); }
+.guide[data-mood="oracle"] .aura { border-color: rgba(176,112,255,.22); background: radial-gradient(circle,rgba(145,80,211,.15),transparent 68%); }
+.guide[data-mood="reward"] .spark { animation-duration: 1.9s; }
+.guide[data-attention="true"] .lionBody { animation: leoAttention 2.35s cubic-bezier(.2,.7,.2,1) both; }
+
+.minimized {
+  position: fixed;
+  right: clamp(12px, 2vw, 28px);
+  bottom: max(14px, env(safe-area-inset-bottom));
+  z-index: 90;
+  width: 68px;
+  height: 68px;
+  overflow: hidden;
+  border: 1px solid rgba(244,207,132,.36);
+  border-radius: 22px;
+  opacity: 0;
+  color: #ffe7a6;
+  background: linear-gradient(145deg,rgba(57,38,68,.96),rgba(10,8,15,.98));
+  box-shadow: 0 18px 38px rgba(0,0,0,.46), inset 0 1px rgba(255,255,255,.08), 0 0 22px rgba(216,162,55,.11);
+  cursor: pointer;
+  transform: translateY(15px) scale(.9);
+  transition: opacity .3s ease, transform .3s ease, border-color .2s ease;
+}
+.minimized.ready { opacity: 1; transform: none; }
+.minimized:hover { border-color: rgba(255,222,138,.66); transform: translateY(-2px); }
+.miniLion { position: absolute; width: 58px; height: auto; left: 3px; top: -7px; object-fit: contain; }
+.minimized > svg { position: absolute; z-index: 2; right: 5px; bottom: 5px; padding: 2px; border-radius: 6px; color: #211302; background: #e3b658; box-sizing: content-box; }
+.miniAura { position: absolute; inset: 8px; border-radius: 50%; background: rgba(226,175,68,.14); box-shadow: 0 0 18px rgba(226,175,68,.18); animation: auraPulse 3.6s ease-in-out infinite; }
+
+@keyframes bubbleIn { from { opacity: 0; transform: translate(10px,8px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes leoBreathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.012); } }
+@keyframes leoAttention { 0%,100% { transform: none; } 18% { transform: translateY(-8px) rotate(-1.6deg) scale(1.02); } 50% { transform: translateX(-5px) rotate(1.1deg) scale(1.018); } 72% { transform: translateX(-5px) rotate(1.1deg) scale(1.018); } }
+@keyframes auraPulse { 0%,100% { opacity: .56; transform: scale(.97); } 50% { opacity: 1; transform: scale(1.03); } }
+@keyframes sparkPulse { 0%,100% { opacity: .16; transform: scale(.6); } 50% { opacity: .85; transform: scale(1.25); } }
+@keyframes eyeLook { 0%,38%,100% { opacity: .25; transform: translateX(0); } 43%,58% { opacity: 1; transform: translateX(-1.5px); } 63% { opacity: .4; transform: translateX(0); } }
+
+@media (max-width: 760px) {
+  .guide { right: 8px; grid-template-columns: minmax(190px, 242px) 132px; }
+  .character { width: 132px; }
+  .bubble { margin-bottom: 62px; padding: 13px 14px; }
+  .bubble > strong { font-size: 16px; }
+  .bubble p { font-size: 11px; }
+  .silentControls { margin-right: -116px; margin-bottom: 176px; }
+}
+
+@media (max-width: 480px) {
+  .guide { grid-template-columns: 1fr; justify-items: end; gap: 0; max-width: calc(100vw - 16px); }
+  .bubble { width: min(278px, calc(100vw - 32px)); margin: 0 8px -10px 0; border-radius: 17px 17px 5px 17px; }
+  .bubble::after { right: 24px; bottom: -9px; transform: rotate(45deg); }
+  .character { width: 112px; margin-right: 2px; }
+  .silentControls { margin: 0 5px -4px 0; }
+  .controls button { width: 30px; height: 30px; }
+  .eyeGlint { width: 2px; height: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guide,
+  .minimized,
+  .bubble,
+  .lionBody,
+  .aura,
+  .spark,
+  .eyeGlint,
+  .miniAura { animation: none !important; transition: none !important; }
+}
