@@ -413,7 +413,7 @@ a{ color: inherit; text-decoration: none; }
 
 .tc-dashboard-grid{
   display:grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(330px, .8fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 @media (max-width: 980px){ .tc-dashboard-grid{ grid-template-columns: 1fr; } }
