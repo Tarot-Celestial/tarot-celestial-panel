@@ -12,7 +12,7 @@
   opacity: 0;
   pointer-events: none;
   transform: translate3d(0, 24px, 0) scale(.97);
-  will-change: transform, left, top;
+  will-change: auto;
   transition:
     opacity .35s ease,
     transform .55s cubic-bezier(.18,.82,.2,1),
@@ -21,6 +21,9 @@
 }
 
 .ready { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+.guide[data-journey="departing"],
+.guide[data-journey="travelling"],
+.guide[data-journey="arrived"] { will-change: transform, left, top; }
 .guide[data-anchored="true"] {
   top: var(--leo-top);
   left: var(--leo-left);
@@ -109,6 +112,16 @@
 }
 .bubble > a:hover,
 .action:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.bubble > a:active,
+.action:active { transform: translateY(1px) scale(.985); }
+.bubble > a:focus-visible,
+.action:focus-visible,
+.controls button:focus-visible,
+.silentControls button:focus-visible,
+.minimized:focus-visible {
+  outline: 2px solid #ffe19a;
+  outline-offset: 3px;
+}
 
 .controls,
 .silentControls { display: flex; gap: 4px; }
@@ -127,6 +140,8 @@
 }
 .controls button:hover,
 .silentControls button:hover { color: #ffe5a0; border-color: rgba(244,207,132,.24); background: rgba(244,207,132,.08); }
+.controls button:active,
+.silentControls button:active { transform: scale(.94); }
 .silentControls { align-self: end; justify-self: end; margin: 0 -154px 222px 0; padding: 5px; border: 1px solid rgba(244,207,132,.18); border-radius: 12px; background: rgba(11,8,16,.82); backdrop-filter: blur(12px); pointer-events: auto; }
 
 .character { position: relative; width: 172px; pointer-events: none; filter: drop-shadow(0 22px 24px rgba(0,0,0,.52)); }
@@ -194,6 +209,7 @@
 .guide[data-reaction="oracle"] .lionBody { animation: leoOracle 2.4s ease-in-out both; }
 .guide[data-reaction]:not([data-reaction="none"]) .aura { animation: reactionAura 1.25s ease-in-out 2; }
 .guide[data-reaction]:not([data-reaction="none"]) .spark { width: 4px; height: 4px; animation-duration: 1.1s; }
+.guide[data-paused="true"] :is(.lionBody, .aura, .spark, .eyeGlint, .travelTrail) { animation-play-state: paused !important; }
 
 .minimized {
   position: fixed;
@@ -216,9 +232,11 @@
 .minimized.ready { opacity: 1; transform: none; }
 .minimized:hover { border-color: rgba(255,222,138,.66); transform: translateY(-2px); }
 .minimized[data-reaction]:not([data-reaction="none"]) { animation: miniReaction 1.15s ease-in-out 3; }
+.minimized[data-paused="true"] :is(.miniLion, .miniAura) { animation-play-state: paused !important; }
 .miniLion { position: absolute; width: 58px; height: auto; left: 3px; top: -7px; object-fit: contain; }
 .minimized > svg { position: absolute; z-index: 2; right: 5px; bottom: 5px; padding: 2px; border-radius: 6px; color: #211302; background: #e3b658; box-sizing: content-box; }
 .miniAura { position: absolute; inset: 8px; border-radius: 50%; background: rgba(226,175,68,.14); box-shadow: 0 0 18px rgba(226,175,68,.18); animation: auraPulse 3.6s ease-in-out infinite; }
+.miniEventDot { position: absolute; z-index: 3; top: 7px; right: 7px; width: 9px; height: 9px; border: 2px solid #160f1b; border-radius: 50%; background: #ffe18a; box-shadow: 0 0 12px rgba(255,210,101,.88); }
 
 @keyframes bubbleIn { from { opacity: 0; transform: translate(10px,8px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes bubbleSleep { to { opacity: 0; transform: translate(10px,10px) scale(.96); visibility: hidden; } }
@@ -273,6 +291,34 @@
   .silentControls { margin: 0 5px -4px 0; }
   .controls button { width: 30px; height: 30px; }
   .eyeGlint { width: 2px; height: 2px; }
+  .guide[data-compact="true"] .bubble { width: min(250px, calc(100vw - 28px)); padding: 11px 12px; }
+  .guide[data-compact="true"] .bubble > strong { font-size: 15px; }
+  .guide[data-compact="true"] .bubble p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+  .guide[data-compact="true"] .character { width: 96px; }
+  .guide[data-compact="true"] .controls button { width: 32px; height: 32px; }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .guide { grid-template-columns: minmax(190px, 246px) 92px; }
+  .bubble { margin-bottom: 18px; padding: 11px 12px; }
+  .bubble > strong { font-size: 15px; }
+  .bubble p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .character { width: 92px; }
+  .silentControls { margin: 0 -80px 112px 0; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bubble,
+  .silentControls { background: #100c17; backdrop-filter: none; }
+}
+
+@media (forced-colors: active) {
+  .bubble,
+  .minimized,
+  .controls button,
+  .silentControls button { border: 1px solid ButtonText; }
+  .bubble > a,
+  .action { border: 1px solid ButtonText; color: ButtonText; background: Canvas; }
 }
 
 @media (prefers-reduced-motion: reduce) {

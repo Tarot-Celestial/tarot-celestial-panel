@@ -86,6 +86,10 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   const [contextTip, setContextTip] = useState<LeoPersonalityMessage | null>(null);
   const [routeGuide, setRouteGuide] = useState<LeoPersonalityMessage>(() => getLeoMessageVariants(pathname, promoActive)[0]);
   const [expression, setExpression] = useState<"neutral" | "survey" | "curious">("neutral");
+  const [pageVisible, setPageVisible] = useState(true);
+  const [motionEnabled, setMotionEnabled] = useState(false);
+  const [finePointer, setFinePointer] = useState(false);
+  const [compactViewport, setCompactViewport] = useState(false);
   const guideRef = useRef<HTMLElement>(null);
   const movementTimers = useRef<number[]>([]);
   const eventTimer = useRef<number | null>(null);
@@ -135,7 +139,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       return next;
     });
 
-    if (!animate) {
+    if (!animate || !motionEnabled) {
       place();
       return;
     }
@@ -148,7 +152,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
     }, 170));
     movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 850));
     movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 1_500));
-  }, [clearMovementTimers, pathname, promoActive]);
+  }, [clearMovementTimers, motionEnabled, pathname, promoActive]);
 
   useEffect(() => {
     try {
@@ -159,6 +163,32 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       // Si el almacenamiento está bloqueado, Leo mantiene la configuración inicial.
     }
     setReady(true);
+  }, []);
+
+  useEffect(() => {
+    const motionQuery = window.matchMedia("(prefers-reduced-motion: no-preference)");
+    const pointerQuery = window.matchMedia("(pointer: fine)");
+    const compactQuery = window.matchMedia("(max-width: 480px), (max-height: 560px)");
+    const syncPreferences = () => {
+      setMotionEnabled(motionQuery.matches);
+      setFinePointer(pointerQuery.matches);
+      setCompactViewport(compactQuery.matches);
+    };
+    const syncVisibility = () => setPageVisible(document.visibilityState === "visible");
+
+    syncPreferences();
+    syncVisibility();
+    motionQuery.addEventListener("change", syncPreferences);
+    pointerQuery.addEventListener("change", syncPreferences);
+    compactQuery.addEventListener("change", syncPreferences);
+    document.addEventListener("visibilitychange", syncVisibility);
+
+    return () => {
+      motionQuery.removeEventListener("change", syncPreferences);
+      pointerQuery.removeEventListener("change", syncPreferences);
+      compactQuery.removeEventListener("change", syncPreferences);
+      document.removeEventListener("visibilitychange", syncVisibility);
+    };
   }, []);
 
   useEffect(() => {
@@ -200,7 +230,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   }, []);
 
   useEffect(() => {
-    if (activeEvent || sleeping || muted || minimized) return;
+    if (activeEvent || sleeping || muted || minimized || !pageVisible) return;
     const tips = getLeoContextTips(pathname, promoActive);
     if (!tips.length) return;
 
@@ -218,10 +248,10 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       window.clearTimeout(attentionTimer);
       window.clearTimeout(dismissTimer);
     };
-  }, [activeEvent, minimized, muted, pathname, promoActive, sleeping]);
+  }, [activeEvent, minimized, muted, pageVisible, pathname, promoActive, sleeping]);
 
   useEffect(() => {
-    if (activeEvent || sleeping || journey !== "idle") {
+    if (activeEvent || sleeping || journey !== "idle" || !motionEnabled || !pageVisible) {
       setExpression("neutral");
       return;
     }
@@ -245,9 +275,14 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       window.clearTimeout(expressionTimer);
       window.clearTimeout(resetTimer);
     };
-  }, [activeEvent, journey, pathname, sleeping]);
+  }, [activeEvent, journey, motionEnabled, pageVisible, pathname, sleeping]);
 
   useEffect(() => {
+    if (!pageVisible) {
+      clearMovementTimers();
+      setJourney("idle");
+      return;
+    }
     const initialTimer = window.setTimeout(() => locatePromotion(false, true), 260);
     let frame = 0;
     const refresh = () => {
@@ -271,9 +306,13 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       window.removeEventListener("resize", refresh);
       clearMovementTimers();
     };
-  }, [clearMovementTimers, locatePromotion]);
+  }, [clearMovementTimers, locatePromotion, pageVisible]);
 
   useEffect(() => {
+    if (!pageVisible) {
+      setSleeping(true);
+      return;
+    }
     let idleTimer = 0;
     const wake = () => {
       setSleeping(false);
@@ -287,9 +326,10 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       window.clearTimeout(idleTimer);
       activityEvents.forEach((eventName) => window.removeEventListener(eventName, wake));
     };
-  }, [pathname]);
+  }, [pageVisible, pathname]);
 
   useEffect(() => {
+    if (!pageVisible || !motionEnabled || !finePointer || minimized) return;
     let frame = 0;
     let pointerX = 0;
     let pointerY = 0;
@@ -313,7 +353,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       if (frame) window.cancelAnimationFrame(frame);
       window.removeEventListener("pointermove", followPointer);
     };
-  }, []);
+  }, [finePointer, minimized, motionEnabled, pageVisible]);
 
   function saveState(next: { minimized: boolean; muted: boolean }) {
     try {
@@ -339,7 +379,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
     const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
     if (!target) return;
     setSleeping(false);
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.scrollIntoView({ behavior: motionEnabled ? "smooth" : "auto", block: "center" });
     window.setTimeout(() => locatePromotion(true, true), 650);
   }
 
@@ -349,11 +389,13 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
         type="button"
         className={`${styles.minimized} ${ready ? styles.ready : ""}`}
         data-reaction={activeEvent?.reaction || "none"}
+        data-paused={!pageVisible || !motionEnabled ? "true" : "false"}
         onClick={toggleMinimized}
-        aria-label="Abrir a Leo Celestial"
+        aria-label={activeEvent ? `Abrir a Leo Celestial: ${activeEvent.title}` : "Abrir a Leo Celestial"}
       >
         <span className={styles.miniAura} aria-hidden="true" />
-        <Image src="/leo-celestial.webp" alt="" width={76} height={114} className={styles.miniLion} />
+        <Image src="/leo-celestial.webp" alt="" width={76} height={114} sizes="58px" className={styles.miniLion} />
+        {activeEvent ? <span className={styles.miniEventDot} aria-hidden="true" /> : null}
         <Maximize2 size={15} aria-hidden="true" />
       </button>
     );
@@ -371,15 +413,17 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       data-reaction={activeEvent?.reaction || "none"}
       data-pose={guide.pose}
       data-expression={expression}
+      data-compact={compactViewport ? "true" : "false"}
+      data-paused={!pageVisible || !motionEnabled ? "true" : "false"}
       style={anchor ? ({ "--leo-left": `${anchor.left}px`, "--leo-top": `${anchor.top}px` } as CSSProperties) : undefined}
       aria-label="Leo Celestial, guía del panel"
     >
       {!muted ? (
-        <div className={styles.bubble} aria-live="polite">
+        <div className={styles.bubble} aria-live="polite" aria-atomic="true">
           <div className={styles.bubbleTop}>
             <span><Sparkles size={12} /> LEO CELESTIAL</span>
             <div className={styles.controls}>
-              <button type="button" onClick={toggleMuted} aria-label="Silenciar mensajes de Leo" title="Silenciar mensajes"><Volume2 size={15} /></button>
+              <button type="button" onClick={toggleMuted} aria-label="Silenciar mensajes de Leo" title="Silenciar mensajes" aria-pressed={false}><Volume2 size={15} /></button>
               <button type="button" onClick={toggleMinimized} aria-label="Minimizar a Leo Celestial" title="Minimizar"><Minus size={16} /></button>
             </div>
           </div>
@@ -392,7 +436,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
         </div>
       ) : (
         <div className={styles.silentControls}>
-          <button type="button" onClick={toggleMuted} aria-label="Activar mensajes de Leo" title="Activar mensajes"><VolumeX size={15} /></button>
+          <button type="button" onClick={toggleMuted} aria-label="Activar mensajes de Leo" title="Activar mensajes" aria-pressed={true}><VolumeX size={15} /></button>
           <button type="button" onClick={toggleMinimized} aria-label="Minimizar a Leo Celestial" title="Minimizar"><Minus size={16} /></button>
         </div>
       )}
