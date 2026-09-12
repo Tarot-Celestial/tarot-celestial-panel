@@ -80,7 +80,10 @@ async function loadOwnedAssignments(admin: ReturnType<typeof adminClient>, worke
   for (let from = 0; ; from += 1000) {
     const { data, error } = await admin.from("crm_client_capture_assignments")
       .select("client_id,status,business,captured_by_worker_id,responsible_worker_id,captured_at,first_contact_at,created_at,updated_at")
-      .in("responsible_worker_id", identities).order("updated_at", { ascending: false, nullsFirst: false }).range(from, from + 999);
+      .in("responsible_worker_id", identities)
+      .eq("status", "confirmed")
+      .order("updated_at", { ascending: false, nullsFirst: false })
+      .range(from, from + 999);
     if (error) throw error; rows.push(...(data || [])); if ((data || []).length < 1000) break;
   }
   return rows;

@@ -179,32 +179,39 @@ export async function GET(req: Request) {
     const admin = adminClient();
     const [clientResult, ruleResult, eventsResult, assignmentResult] = await Promise.all([
       admin.from("crm_clientes").select("id").eq("id", clienteId).maybeSingle(),
-      admin.from("worker_xp_rules").select("action_key,xp_reward,enabled,frequency").eq("action_key", "client_capture").maybeSingle(),
-      admin.from("worker_xp_events").select("id,reference_id,metadata,status").eq("worker_id", me.id).eq("action_key", "client_capture").eq("status", "applied"),
+      admin.from("worker_xp_rules").select("action_key,xp_reward,enabled,frequency,integration_status").eq("action_key", "client_capture").maybeSingle(),
+      admin.from("worker_xp_events").select("id,worker_id,reference_id,metadata,status").eq("action_key", "client_capture").eq("reference_id", `crm_client:${clienteId}`).eq("status", "applied"),
       admin.from("crm_client_capture_assignments").select("candidate_worker_id,captured_by_worker_id,status").eq("client_id", clienteId).maybeSingle(),
     ]);
     if (clientResult.error || !clientResult.data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     if (ruleResult.error) throw ruleResult.error;
     if (eventsResult.error) throw eventsResult.error;
     if (assignmentResult.error) throw assignmentResult.error;
-    const alreadyAwarded = (eventsResult.data || []).some((event: any) => {
-      const metadata = event.metadata && typeof event.metadata === "object" ? event.metadata : {};
-      return [event.reference_id, metadata.client_id, metadata.cliente_id]
-        .map((value) => String(value || "").replace(/^cliente:/, ""))
-        .includes(clienteId);
-    });
+    const alreadyAwarded = (eventsResult.data || []).length > 0;
+    const ownerWorkerId = String(
+      assignmentResult.data?.captured_by_worker_id
+      || assignmentResult.data?.candidate_worker_id
+      || "",
+    );
+    const { data: ownerWorker, error: ownerError } = ownerWorkerId
+      ? await admin.from("workers").select("id,display_name,email").eq("id", ownerWorkerId).maybeSingle()
+      : { data: null, error: null };
+    if (ownerError) throw ownerError;
     return NextResponse.json({
       ok: true,
       capture_xp: {
-        enabled: ruleResult.data?.enabled === true,
+        enabled: ruleResult.data?.enabled === true && ruleResult.data?.integration_status === "connected",
         xp: Number(ruleResult.data?.xp_reward) || 0,
         frequency: String(ruleResult.data?.frequency || ""),
         eligible: ruleResult.data?.enabled === true
+          && ruleResult.data?.integration_status === "connected"
           && !alreadyAwarded
           && assignmentResult.data?.status !== "confirmed"
-          && String(assignmentResult.data?.candidate_worker_id || "") === String(me.id),
+          && Boolean(ownerWorkerId),
         already_awarded: alreadyAwarded,
-        candidate_is_current_worker: String(assignmentResult.data?.candidate_worker_id || "") === String(me.id),
+        owner_worker_id: ownerWorkerId || null,
+        owner_name: ownerWorker?.display_name || ownerWorker?.email || null,
+        current_worker_is_owner: ownerWorkerId === String(me.id),
         status: assignmentResult.data?.status || "pending",
       },
     });
@@ -542,7 +549,9 @@ export async function POST(req: Request) {
     const economicPayment = result?.payment || null;
     let captureAssignment: any = null;
     const registeredCallId = String(result?.rendimiento?.id || "");
-    if (registeredCallId && (usoTipo === "7free" || captado)) {
+    // Toda gestión válida participa en la atribución histórica. La RPC decide la
+    // primera gestora real y solo confirma la captación cuando existe una compra.
+    if (registeredCallId) {
       const { data: captureResult, error: captureError } = await admin.rpc("register_client_capture_contact", {
         p_client_id: clienteId,
         p_worker_id: me.id,
@@ -553,7 +562,7 @@ export async function POST(req: Request) {
       });
       if (captureError) throw captureError;
       captureAssignment = captureResult;
-      if (captado) {
+      if (captado && captureResult?.status === "confirmed") {
         const { error: classificationError } = await admin.from("rendimiento_llamadas").update({ captado: true }).eq("id", registeredCallId);
         if (classificationError) throw classificationError;
         if (result?.rendimiento) result.rendimiento.captado = true;

@@ -118,6 +118,7 @@ export async function POST(req: Request) {
     if (worker.role === "central" && lead.assigned_worker_id && String(lead.assigned_worker_id) !== String(worker.id)) {
       return NextResponse.json({ ok: false, error: "LEAD_NOT_ASSIGNED_TO_YOU" }, { status: 403 });
     }
+    const clienteId = String(lead.cliente_id || "").trim();
 
     const nowIso = new Date().toISOString();
     const currentAttempt = Math.max(1, Number(lead.intento_actual || 1));
@@ -131,6 +132,40 @@ export async function POST(req: Request) {
 
     let crmPatch: Record<string, any> = { updated_at: nowIso };
     let message = "Lead actualizado";
+    let captureAssignment: Record<string, any> | null = null;
+
+    if (action === "captado") {
+      const { count: completedPayments, error: paymentCheckError } = await admin
+        .from("crm_cliente_pagos")
+        .select("id", { count: "exact", head: true })
+        .eq("cliente_id", clienteId)
+        .eq("estado", "completed")
+        .gt("importe", 0);
+      if (paymentCheckError) throw paymentCheckError;
+      if (!completedPayments) {
+        return NextResponse.json(
+          { ok: false, error: "CAPTURE_REQUIRES_COMPLETED_PURCHASE" },
+          { status: 409 },
+        );
+      }
+
+      const { data: captureResult, error: captureError } = await admin.rpc("register_client_capture_contact", {
+        p_client_id: clienteId,
+        p_worker_id: worker.id,
+        p_call_id: null,
+        p_used_initial_free: false,
+        p_classification: "captado",
+        p_business: "celestial",
+      });
+      if (captureError) throw captureError;
+      captureAssignment = captureResult && typeof captureResult === "object" ? captureResult : null;
+      if (captureAssignment?.status !== "confirmed") {
+        return NextResponse.json(
+          { ok: false, error: "CAPTURE_FIRST_MANAGER_NOT_FOUND", capture_assignment: captureAssignment },
+          { status: 409 },
+        );
+      }
+    }
 
     if (action === "no_contesta") {
       const nextAttempt = currentAttempt + 1;
@@ -227,7 +262,6 @@ if (updErr || !updatedLead) {
   throw new Error("NO_SE_GUARDO_EL_ESTADO");
 }
 
-    const clienteId = String(lead.cliente_id || "").trim();
     if (clienteId) {
       try {
         const { error: crmErr } = await admin.from("crm_clientes").update(crmPatch).eq("id", clienteId);
@@ -251,35 +285,24 @@ if (updErr || !updatedLead) {
 
     const finalState = String(updatedLead?.estado || patch.estado || lead.estado || "nuevo");
 
-    await admin.from("captacion_state_events").insert({
-      lead_id: updatedLead.id,
-      cliente_id: clienteId || null,
-      actor_worker_id: worker.id,
-      previous_state: String(lead.estado || "nuevo"),
-      next_state: finalState,
-      action,
-      source: "captacion_panel",
-      metadata: {
-        previous_next_contact_at: lead.next_contact_at || null,
-        next_contact_at: updatedLead?.next_contact_at || patch.next_contact_at || null,
-      },
-    }).then(({ error }) => {
-      if (error) console.error("CAPTACION_AUDIT_FAILED", { leadId: updatedLead.id, error: error.message });
-    });
-
-    if (action === "captado" && worker?.id) {
-      try {
-        await admin.rpc("award_worker_xp", {
-          p_worker_id: worker.id,
-          p_action_key: "client_capture",
-          p_reference_id: `captacion:${String(updatedLead.id)}`,
-          p_reference_label: clienteId ? `Cliente ${clienteId}` : `Lead ${String(updatedLead.id)}`,
-          p_origin: "captacion",
-          p_metadata: { lead_id: updatedLead.id, client_id: clienteId || null },
-        });
-      } catch (xpError) {
-        console.error("XP capture hook failed", xpError);
-      }
+    // La RPC de captación ya registra su transición atómica. Evitamos duplicar
+    // el historial cuando el panel confirma a la clienta.
+    if (action !== "captado") {
+      await admin.from("captacion_state_events").insert({
+        lead_id: updatedLead.id,
+        cliente_id: clienteId || null,
+        actor_worker_id: worker.id,
+        previous_state: String(lead.estado || "nuevo"),
+        next_state: finalState,
+        action,
+        source: "captacion_panel",
+        metadata: {
+          previous_next_contact_at: lead.next_contact_at || null,
+          next_contact_at: updatedLead?.next_contact_at || patch.next_contact_at || null,
+        },
+      }).then(({ error }) => {
+        if (error) console.error("CAPTACION_AUDIT_FAILED", { leadId: updatedLead.id, error: error.message });
+      });
     }
 
     return NextResponse.json({
@@ -289,6 +312,7 @@ if (updErr || !updatedLead) {
       intento_actual: updatedLead?.intento_actual ?? patch.intento_actual ?? currentAttempt,
       next_contact_at: updatedLead?.next_contact_at ?? patch.next_contact_at ?? lead.next_contact_at,
       closed: ["captado", "no_interesado", "numero_invalido", "perdido"].includes(finalState),
+      capture_assignment: captureAssignment,
     });
   } catch (error: any) {
     return NextResponse.json({ ok: false, error: error?.message || "ERR" }, { status: 500 });

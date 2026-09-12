@@ -240,7 +240,15 @@ type Props = {
   onSuccess?: (message?: string) => Promise<void> | void;
 };
 
-type CaptureXpPreview = { enabled: boolean; xp: number; eligible: boolean; already_awarded: boolean };
+type CaptureXpPreview = {
+  enabled: boolean;
+  xp: number;
+  eligible: boolean;
+  already_awarded: boolean;
+  owner_name?: string | null;
+  current_worker_is_owner?: boolean;
+  status?: string;
+};
 
 async function safeJson(res: Response) {
   const txt = await res.text();
@@ -289,6 +297,9 @@ function friendlySubmitError(error: unknown) {
   }
   if (message === "INSUFFICIENT_MINUTES") {
     return "La clienta no dispone de minutos free ni normales suficientes para registrar esta llamada.";
+  }
+  if (message === "CAPTURE_REQUIRES_COMPLETED_PURCHASE") {
+    return "No se puede confirmar la captación sin una primera compra real completada.";
   }
   return message || "Error registrando llamada";
 }
@@ -828,7 +839,7 @@ export default function RegistrarLlamadaModal({
                 {CLASIF_OPTIONS.map((opt) => (
                   <button key={opt.value} type="button" className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
                     <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : "•"}</span>
-                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `Puede otorgar +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Puede otorgar XP"}</small> : null}</span>
+                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"}</small> : null}</span>
                     {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
                   </button>
                 ))}
@@ -878,8 +889,12 @@ export default function RegistrarLlamadaModal({
                     <span className={styles.captureAchievementIcon} aria-hidden="true">★</span>
                     <div>
                       <small>LOGRO DE CAPTACIÓN</small>
-                      <strong>{captureXp?.eligible ? "Nueva clienta captada" : "Captación ya premiada"}</strong>
-                      <p>{captureXp?.eligible ? `+${captureXp.xp.toLocaleString("es-ES")} XP al registrar` : "La llamada se guardará, pero esta clienta no volverá a dar XP."}</p>
+                      <strong>{captureXp?.eligible ? "Nueva clienta captada" : captureXp?.already_awarded ? "Captación ya premiada" : "Captación pendiente de validar"}</strong>
+                      <p>{captureXp?.eligible
+                        ? `+${captureXp.xp.toLocaleString("es-ES")} XP para ${captureXp.owner_name || "la primera gestora"}. La compra en tu cargo se premia por separado.`
+                        : captureXp?.already_awarded
+                          ? "La llamada se guardará, pero esta clienta no volverá a dar XP de captación."
+                          : "Supabase comprobará la primera gestión y la primera compra real antes de conceder XP."}</p>
                     </div>
                   </div>
                 ) : null}
