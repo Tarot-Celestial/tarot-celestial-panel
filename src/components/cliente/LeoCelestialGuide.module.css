@@ -6,7 +6,7 @@
   bottom: max(14px, env(safe-area-inset-bottom));
   z-index: 90;
   display: grid;
-  grid-template-columns: minmax(220px, 292px) 172px;
+  grid-template-columns: minmax(190px, 248px) 118px;
   align-items: end;
   gap: 6px;
   opacity: 0;
@@ -24,7 +24,8 @@
 .guide[data-journey="departing"],
 .guide[data-journey="travelling"],
 .guide[data-journey="arrived"] { will-change: transform, left, top; }
-.guide[data-anchored="true"] {
+.guide[data-anchored="true"],
+.guide[data-roaming="true"] {
   top: var(--leo-top);
   left: var(--leo-left);
   right: auto;
@@ -33,8 +34,8 @@
 
 .bubble {
   position: relative;
-  margin-bottom: 82px;
-  padding: 15px 16px 14px;
+  margin-bottom: 52px;
+  padding: 13px 14px 12px;
   border: 1px solid rgba(244, 207, 132, .27);
   border-radius: 19px 19px 6px 19px;
   color: #fff9eb;
@@ -75,7 +76,8 @@
   font-weight: 950;
   letter-spacing: .12em;
 }
-.tipBadge {
+.tipBadge,
+.memoryBadge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -89,8 +91,9 @@
   font-weight: 950;
   letter-spacing: .11em;
 }
-.bubble > strong { display: block; color: #fff2c8; font: 700 18px/1.15 Georgia, "Times New Roman", serif; }
-.bubble p { margin: 7px 0 0; color: rgba(255,255,255,.68); font-size: 12px; line-height: 1.5; }
+.memoryBadge { border-color: rgba(244,207,132,.24); color: #f2d58d; background: rgba(210,157,51,.08); }
+.bubble > strong { display: block; color: #fff2c8; font: 700 16px/1.15 Georgia, "Times New Roman", serif; }
+.bubble p { margin: 7px 0 0; color: rgba(255,255,255,.68); font-size: 11.5px; line-height: 1.48; }
 .bubble > a,
 .action {
   display: inline-flex;
@@ -118,7 +121,7 @@
 .action:focus-visible,
 .controls button:focus-visible,
 .silentControls button:focus-visible,
-.minimized:focus-visible {
+.restore:focus-visible {
   outline: 2px solid #ffe19a;
   outline-offset: 3px;
 }
@@ -138,13 +141,24 @@
   cursor: pointer;
   transition: color .16s ease, background .16s ease, border-color .16s ease;
 }
+.controls .hideButton,
+.silentControls .hideButton {
+  width: auto;
+  min-width: 72px;
+  padding: 0 8px;
+  display: inline-flex;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .02em;
+}
 .controls button:hover,
 .silentControls button:hover { color: #ffe5a0; border-color: rgba(244,207,132,.24); background: rgba(244,207,132,.08); }
 .controls button:active,
 .silentControls button:active { transform: scale(.94); }
-.silentControls { align-self: end; justify-self: end; margin: 0 -154px 222px 0; padding: 5px; border: 1px solid rgba(244,207,132,.18); border-radius: 12px; background: rgba(11,8,16,.82); backdrop-filter: blur(12px); pointer-events: auto; }
+.silentControls { align-self: end; justify-self: end; margin: 0 -108px 158px 0; padding: 5px; border: 1px solid rgba(244,207,132,.18); border-radius: 12px; background: rgba(11,8,16,.82); backdrop-filter: blur(12px); pointer-events: auto; }
 
-.character { position: relative; width: 172px; pointer-events: none; filter: drop-shadow(0 22px 24px rgba(0,0,0,.52)); }
+.character { position: relative; width: 118px; pointer-events: none; filter: drop-shadow(0 18px 20px rgba(0,0,0,.52)); }
 .character::after { content: ""; position: absolute; left: 16%; right: 9%; bottom: 2px; height: 16px; border-radius: 50%; background: rgba(0,0,0,.56); filter: blur(8px); }
 .lionBody { position: relative; z-index: 2; transform-origin: 52% 82%; animation: leoBreathe 5.2s ease-in-out infinite; }
 .lion { display: block; width: 100%; height: auto; object-fit: contain; }
@@ -211,16 +225,16 @@
 .guide[data-reaction]:not([data-reaction="none"]) .spark { width: 4px; height: 4px; animation-duration: 1.1s; }
 .guide[data-paused="true"] :is(.lionBody, .aura, .spark, .eyeGlint, .travelTrail) { animation-play-state: paused !important; }
 
-.minimized {
+.restore {
   position: fixed;
   right: clamp(12px, 2vw, 28px);
   bottom: max(14px, env(safe-area-inset-bottom));
   z-index: 90;
-  width: 68px;
-  height: 68px;
+  width: 116px;
+  height: 46px;
   overflow: hidden;
   border: 1px solid rgba(244,207,132,.36);
-  border-radius: 22px;
+  border-radius: 15px;
   opacity: 0;
   color: #ffe7a6;
   background: linear-gradient(145deg,rgba(57,38,68,.96),rgba(10,8,15,.98));
@@ -229,12 +243,13 @@
   transform: translateY(15px) scale(.9);
   transition: opacity .3s ease, transform .3s ease, border-color .2s ease;
 }
-.minimized.ready { opacity: 1; transform: none; }
-.minimized:hover { border-color: rgba(255,222,138,.66); transform: translateY(-2px); }
-.minimized[data-reaction]:not([data-reaction="none"]) { animation: miniReaction 1.15s ease-in-out 3; }
-.minimized[data-paused="true"] :is(.miniLion, .miniAura) { animation-play-state: paused !important; }
-.miniLion { position: absolute; width: 58px; height: auto; left: 3px; top: -7px; object-fit: contain; }
-.minimized > svg { position: absolute; z-index: 2; right: 5px; bottom: 5px; padding: 2px; border-radius: 6px; color: #211302; background: #e3b658; box-sizing: content-box; }
+.restore.ready { opacity: 1; transform: none; }
+.restore:hover { border-color: rgba(255,222,138,.66); transform: translateY(-2px); }
+.restore[data-reaction]:not([data-reaction="none"]) { animation: miniReaction 1.15s ease-in-out 3; }
+.restore[data-paused="true"] :is(.miniLion, .miniAura) { animation-play-state: paused !important; }
+.restore > span:not(.miniAura, .miniEventDot) { position: relative; z-index: 2; margin-left: 34px; color: #f7d98c; font-size: 9px; font-weight: 900; letter-spacing: .03em; }
+.miniLion { position: absolute; z-index: 2; width: 38px; height: auto; left: 3px; top: -3px; object-fit: contain; }
+.restore > svg { position: absolute; z-index: 2; right: 6px; bottom: 5px; color: #e3b658; }
 .miniAura { position: absolute; inset: 8px; border-radius: 50%; background: rgba(226,175,68,.14); box-shadow: 0 0 18px rgba(226,175,68,.18); animation: auraPulse 3.6s ease-in-out infinite; }
 .miniEventDot { position: absolute; z-index: 3; top: 7px; right: 7px; width: 9px; height: 9px; border: 2px solid #160f1b; border-radius: 50%; background: #ffe18a; box-shadow: 0 0 12px rgba(255,210,101,.88); }
 
@@ -275,36 +290,36 @@
 }
 
 @media (max-width: 760px) {
-  .guide { right: 8px; grid-template-columns: minmax(190px, 242px) 132px; }
-  .character { width: 132px; }
-  .bubble { margin-bottom: 62px; padding: 13px 14px; }
+  .guide { right: 8px; grid-template-columns: minmax(180px, 230px) 102px; }
+  .character { width: 102px; }
+  .bubble { margin-bottom: 42px; padding: 12px 13px; }
   .bubble > strong { font-size: 16px; }
   .bubble p { font-size: 11px; }
-  .silentControls { margin-right: -116px; margin-bottom: 176px; }
+  .silentControls { margin-right: -92px; margin-bottom: 136px; }
 }
 
 @media (max-width: 480px) {
   .guide { grid-template-columns: 1fr; justify-items: end; gap: 0; max-width: calc(100vw - 16px); }
   .bubble { width: min(278px, calc(100vw - 32px)); margin: 0 8px -10px 0; border-radius: 17px 17px 5px 17px; }
   .bubble::after { right: 24px; bottom: -9px; transform: rotate(45deg); }
-  .character { width: 112px; margin-right: 2px; }
+  .character { width: 84px; margin-right: 2px; }
   .silentControls { margin: 0 5px -4px 0; }
   .controls button { width: 30px; height: 30px; }
   .eyeGlint { width: 2px; height: 2px; }
   .guide[data-compact="true"] .bubble { width: min(250px, calc(100vw - 28px)); padding: 11px 12px; }
   .guide[data-compact="true"] .bubble > strong { font-size: 15px; }
   .guide[data-compact="true"] .bubble p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-  .guide[data-compact="true"] .character { width: 96px; }
+  .guide[data-compact="true"] .character { width: 76px; }
   .guide[data-compact="true"] .controls button { width: 32px; height: 32px; }
 }
 
 @media (max-height: 560px) and (orientation: landscape) {
-  .guide { grid-template-columns: minmax(190px, 246px) 92px; }
+  .guide { grid-template-columns: minmax(180px, 230px) 78px; }
   .bubble { margin-bottom: 18px; padding: 11px 12px; }
   .bubble > strong { font-size: 15px; }
   .bubble p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-  .character { width: 92px; }
-  .silentControls { margin: 0 -80px 112px 0; }
+  .character { width: 78px; }
+  .silentControls { margin: 0 -70px 102px 0; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
@@ -314,7 +329,7 @@
 
 @media (forced-colors: active) {
   .bubble,
-  .minimized,
+  .restore,
   .controls button,
   .silentControls button { border: 1px solid ButtonText; }
   .bubble > a,
@@ -323,7 +338,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .guide,
-  .minimized,
+  .restore,
   .bubble,
   .lionBody,
   .aura,
