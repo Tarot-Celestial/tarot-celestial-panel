@@ -11,20 +11,20 @@ import {
   type LeoCelestialEventDetail,
   type LeoCelestialReaction,
 } from "@/lib/leo-celestial-events";
+import {
+  getLeoContextTips,
+  getLeoMessageVariants,
+  type LeoPersonalityMessage,
+  type LeoPose,
+} from "@/lib/leo-celestial-personality";
 import styles from "./LeoCelestialGuide.module.css";
 
 const STORAGE_KEY = "tc-leo-celestial-v1";
+const MESSAGE_ROTATION_KEY = "tc-leo-message-rotation-v1";
+const TIP_ROTATION_KEY = "tc-leo-tip-rotation-v1";
 
 type Props = {
   promoActive: boolean;
-};
-
-type GuideState = {
-  title: string;
-  message: string;
-  mood: "welcome" | "promo" | "oracle" | "reward" | "calm";
-  href?: string;
-  actionLabel?: string;
 };
 
 type AnchorPosition = {
@@ -47,27 +47,30 @@ const REACTION_LABELS: Record<LeoCelestialReaction, string> = {
   promotion: "NOVEDAD ACTIVA",
 };
 
-function reactionMood(reaction: LeoCelestialReaction): GuideState["mood"] {
+function reactionMood(reaction: LeoCelestialReaction): LeoPersonalityMessage["mood"] {
   if (reaction === "oracle") return "oracle";
   if (reaction === "promotion") return "promo";
   return "reward";
 }
 
-function getGuideState(pathname: string, promoActive: boolean): GuideState {
-  if (pathname === "/cliente/precios-ofertas") {
-    return promoActive
-      ? { title: "Hay magia activa", message: "Mira la promoción de hoy. He venido a enseñarte dónde está.", mood: "promo", actionLabel: "Ver promoción" }
-      : { title: "Precios claros", message: "Aquí encontrarás tus opciones de compra y las próximas promociones.", mood: "calm" };
+function reactionPose(reaction: LeoCelestialReaction): LeoPose {
+  if (reaction === "oracle") return "oracle";
+  if (reaction === "promotion") return "guide";
+  return "proud";
+}
+
+function nextSessionIndex(storageKey: string, itemKey: string, length: number) {
+  if (length <= 1) return 0;
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) || "{}") as Record<string, number>;
+    const previous = Number(stored[itemKey]);
+    const next = Number.isInteger(previous) ? (previous + 1) % length : 0;
+    stored[itemKey] = next;
+    window.sessionStorage.setItem(storageKey, JSON.stringify(stored));
+    return next;
+  } catch {
+    return 0;
   }
-  if (pathname === "/cliente/oraculo") return { title: "Escucha tu intuición", message: "El Oráculo está preparado. Tómate un momento y elige tu pregunta con calma.", mood: "oracle" };
-  if (pathname === "/cliente/ruleta") return { title: "Tu premio te espera", message: "Cada giro disponible tiene recompensa. Yo me quedaré cerca mientras descubres la tuya.", mood: "reward" };
-  if (pathname === "/cliente/sorteo") return { title: "Destino y fortuna", message: "Aquí puedes consultar los sorteos activos y tus oportunidades.", mood: "reward" };
-  if (pathname === "/cliente/notificaciones") return { title: "Nada se te escapa", message: "Revisa aquí tus novedades, regalos y movimientos importantes.", mood: "calm" };
-  if (pathname === "/cliente/perfil") return { title: "Tu espacio", message: "Puedes mantener tus datos y preferencias al día desde esta sección.", mood: "calm" };
-  if (pathname === "/cliente/tarotistas") return { title: "Elige con confianza", message: "Conoce a las profesionales y encuentra la energía que mejor conecte contigo.", mood: "oracle" };
-  if (pathname === "/cliente/resenas") return { title: "Experiencias reales", message: "Las reseñas te ayudan a descubrir cómo viven otras personas Tarot Celestial.", mood: "calm" };
-  if (promoActive) return { title: "Tengo algo que mostrarte", message: "Hoy hay una promoción activa. ¿Quieres que te acompañe a verla?", mood: "promo", href: "/cliente/precios-ofertas", actionLabel: "Ver la promo" };
-  return { title: "Bienvenida a tu viaje", message: "Soy Leo Celestial. Estaré aquí para ayudarte a descubrir tu panel paso a paso.", mood: "welcome" };
 }
 
 export default function LeoCelestialGuide({ promoActive }: Props) {
@@ -80,18 +83,22 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   const [anchor, setAnchor] = useState<AnchorPosition | null>(null);
   const [journey, setJourney] = useState<JourneyPhase>("idle");
   const [activeEvent, setActiveEvent] = useState<LeoCelestialEventDetail | null>(null);
+  const [contextTip, setContextTip] = useState<LeoPersonalityMessage | null>(null);
+  const [routeGuide, setRouteGuide] = useState<LeoPersonalityMessage>(() => getLeoMessageVariants(pathname, promoActive)[0]);
+  const [expression, setExpression] = useState<"neutral" | "survey" | "curious">("neutral");
   const guideRef = useRef<HTMLElement>(null);
   const movementTimers = useRef<number[]>([]);
   const eventTimer = useRef<number | null>(null);
   const eventAttentionTimer = useRef<number | null>(null);
   const lastEventId = useRef("");
-  const guide = useMemo<GuideState>(() => activeEvent ? {
+  const guide = useMemo<LeoPersonalityMessage>(() => activeEvent ? {
     title: activeEvent.title,
     message: activeEvent.message,
     mood: reactionMood(activeEvent.reaction),
+    pose: reactionPose(activeEvent.reaction),
     href: activeEvent.href,
     actionLabel: activeEvent.actionLabel,
-  } : getGuideState(pathname, promoActive), [activeEvent, pathname, promoActive]);
+  } : contextTip || routeGuide, [activeEvent, contextTip, routeGuide]);
 
   const clearMovementTimers = useCallback(() => {
     movementTimers.current.forEach(window.clearTimeout);
@@ -155,6 +162,14 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   }, []);
 
   useEffect(() => {
+    const variants = getLeoMessageVariants(pathname, promoActive, new Date().getHours());
+    const key = `${pathname}:${promoActive ? "promo" : "standard"}`;
+    const index = nextSessionIndex(MESSAGE_ROTATION_KEY, key, variants.length);
+    setRouteGuide(variants[index]);
+    setContextTip(null);
+  }, [pathname, promoActive]);
+
+  useEffect(() => {
     setAttention(true);
     const timer = window.setTimeout(() => setAttention(false), 2400);
     return () => window.clearTimeout(timer);
@@ -169,6 +184,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       if (eventTimer.current) window.clearTimeout(eventTimer.current);
       if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
       setSleeping(false);
+      setContextTip(null);
       setActiveEvent(detail);
       setAttention(true);
       eventAttentionTimer.current = window.setTimeout(() => setAttention(false), 2_400);
@@ -182,6 +198,54 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (activeEvent || sleeping || muted || minimized) return;
+    const tips = getLeoContextTips(pathname, promoActive);
+    if (!tips.length) return;
+
+    const routeKey = `${pathname}:${promoActive ? "promo" : "standard"}`;
+    const timer = window.setTimeout(() => {
+      const index = nextSessionIndex(TIP_ROTATION_KEY, routeKey, tips.length);
+      setContextTip(tips[index]);
+      setAttention(true);
+    }, 12_000);
+    const attentionTimer = window.setTimeout(() => setAttention(false), 14_400);
+    const dismissTimer = window.setTimeout(() => setContextTip(null), 20_000);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(attentionTimer);
+      window.clearTimeout(dismissTimer);
+    };
+  }, [activeEvent, minimized, muted, pathname, promoActive, sleeping]);
+
+  useEffect(() => {
+    if (activeEvent || sleeping || journey !== "idle") {
+      setExpression("neutral");
+      return;
+    }
+
+    let expressionTimer = 0;
+    let resetTimer = 0;
+    let nextExpression: "survey" | "curious" = "survey";
+    const schedule = () => {
+      expressionTimer = window.setTimeout(() => {
+        setExpression(nextExpression);
+        nextExpression = nextExpression === "survey" ? "curious" : "survey";
+        resetTimer = window.setTimeout(() => {
+          setExpression("neutral");
+          schedule();
+        }, 2_200);
+      }, 8_800);
+    };
+    schedule();
+
+    return () => {
+      window.clearTimeout(expressionTimer);
+      window.clearTimeout(resetTimer);
+    };
+  }, [activeEvent, journey, pathname, sleeping]);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => locatePromotion(false, true), 260);
@@ -305,6 +369,8 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       data-journey={journey}
       data-sleeping={sleeping ? "true" : "false"}
       data-reaction={activeEvent?.reaction || "none"}
+      data-pose={guide.pose}
+      data-expression={expression}
       style={anchor ? ({ "--leo-left": `${anchor.left}px`, "--leo-top": `${anchor.top}px` } as CSSProperties) : undefined}
       aria-label="Leo Celestial, guía del panel"
     >
@@ -318,6 +384,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
             </div>
           </div>
           {activeEvent ? <span className={styles.reactionBadge}>{REACTION_LABELS[activeEvent.reaction]}</span> : null}
+          {!activeEvent && contextTip ? <span className={styles.tipBadge}><Sparkles size={9} /> SUGERENCIA DEL GUÍA</span> : null}
           <strong>{guide.title}</strong>
           <p>{guide.message}</p>
           {guide.href && guide.actionLabel ? <Link href={guide.href}>{guide.actionLabel}</Link> : null}

@@ -72,6 +72,20 @@
   font-weight: 950;
   letter-spacing: .12em;
 }
+.tipBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 7px;
+  padding: 4px 7px;
+  border: 1px solid rgba(190,137,255,.22);
+  border-radius: 999px;
+  color: #dcc1ff;
+  background: rgba(143,79,201,.09);
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .11em;
+}
 .bubble > strong { display: block; color: #fff2c8; font: 700 18px/1.15 Georgia, "Times New Roman", serif; }
 .bubble p { margin: 7px 0 0; color: rgba(255,255,255,.68); font-size: 12px; line-height: 1.5; }
 .bubble > a,
@@ -145,6 +159,15 @@
 .guide[data-mood="promo"] .aura { border-color: rgba(255,212,98,.28); box-shadow: 0 0 48px rgba(233,176,47,.18), inset 0 0 28px rgba(137,77,203,.08); }
 .guide[data-mood="oracle"] .aura { border-color: rgba(176,112,255,.22); background: radial-gradient(circle,rgba(145,80,211,.15),transparent 68%); }
 .guide[data-mood="reward"] .spark { animation-duration: 1.9s; }
+.guide[data-reaction="none"][data-pose="guide"] .lionBody { animation: leoGuide 5.4s ease-in-out infinite; }
+.guide[data-reaction="none"][data-pose="curious"] .lionBody { animation: leoCurious 5.8s ease-in-out infinite; }
+.guide[data-reaction="none"][data-pose="oracle"] .lionBody { animation: leoOracleCalm 6.2s ease-in-out infinite; }
+.guide[data-reaction="none"][data-pose="proud"] .lionBody { animation: leoProud 5.2s ease-in-out infinite; }
+.guide[data-reaction="none"][data-pose="calm"] .lionBody { animation-duration: 6.8s; }
+.guide[data-reaction="none"][data-expression="survey"] .lionBody { animation: leoSurvey 2.2s ease-in-out both; }
+.guide[data-reaction="none"][data-expression="curious"] .lionBody { animation: leoObserve 2.2s ease-in-out both; }
+.guide[data-expression="survey"] .eyeGlint { filter: brightness(1.35); }
+.guide[data-expression="curious"] .aura { opacity: .92; }
 .guide[data-attention="true"] .lionBody { animation: leoAttention 2.35s cubic-bezier(.2,.7,.2,1) both; }
 .guide[data-anchored="true"] .bubble {
   border-color: rgba(244,207,132,.4);
@@ -200,6 +223,12 @@
 @keyframes bubbleIn { from { opacity: 0; transform: translate(10px,8px) scale(.97); } to { opacity: 1; transform: none; } }
 @keyframes bubbleSleep { to { opacity: 0; transform: translate(10px,10px) scale(.96); visibility: hidden; } }
 @keyframes leoBreathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.012); } }
+@keyframes leoGuide { 0%,100% { transform: translateY(0) rotate(0); } 46%,60% { transform: translate(-3px,-4px) rotate(-1.2deg) scale(1.012); } }
+@keyframes leoCurious { 0%,100% { transform: translateY(0) rotate(0); } 42%,58% { transform: translateY(-3px) rotate(1.35deg) scale(1.01); } }
+@keyframes leoOracleCalm { 0%,100% { transform: translateY(0); filter: none; } 50% { transform: translateY(-4px); filter: drop-shadow(0 0 9px rgba(171,104,232,.18)); } }
+@keyframes leoProud { 0%,100% { transform: translateY(0) scale(1); } 48%,62% { transform: translateY(-5px) scale(1.018); filter: drop-shadow(0 0 7px rgba(232,183,72,.18)); } }
+@keyframes leoSurvey { 0%,100% { transform: none; } 34%,66% { transform: translateX(-4px) rotate(-1.1deg) scale(1.008); } }
+@keyframes leoObserve { 0%,100% { transform: none; } 34%,66% { transform: translateY(-3px) rotate(1.5deg) scale(1.012); } }
 @keyframes leoAttention { 0%,100% { transform: none; } 18% { transform: translateY(-8px) rotate(-1.6deg) scale(1.02); } 50% { transform: translateX(-5px) rotate(1.1deg) scale(1.018); } 72% { transform: translateX(-5px) rotate(1.1deg) scale(1.018); } }
 @keyframes leoCrouch { to { transform: translateY(5px) scale(1.03,.95); } }
 @keyframes leoLeap { 0% { transform: translateY(5px) scale(1.03,.95); } 46% { transform: translate(-8px,-22px) rotate(-2deg) scale(.98,1.04); } 100% { transform: translateY(-3px) scale(1); } }
