@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BellRing,
   Crown,
   Gift,
-  PhoneCall,
   ShieldAlert,
   Sparkles,
   Star,
@@ -50,14 +48,6 @@ type Cliente = {
   minutos_normales_pendientes?: number | null;
   minutos_totales?: number | null;
   onboarding_completado?: boolean | null;
-};
-
-type Historial = {
-  id: string;
-  tipo?: string | null;
-  puntos?: number | null;
-  descripcion?: string | null;
-  created_at?: string | null;
 };
 
 type Recompensa = {
@@ -123,13 +113,6 @@ type OraclePack = {
   credits: number;
 };
 
-type CallTarget = {
-  market: string;
-  label: string;
-  displayNumber: string;
-  telHref: string;
-};
-
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -153,7 +136,6 @@ function urlBase64ToUint8Array(base64String: string) {
 
 export default function ClienteDashboardPage() {
   const [cliente, setCliente] = useState<Cliente | null>(null);
-  const [historial, setHistorial] = useState<Historial[]>([]);
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
   const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
@@ -170,7 +152,6 @@ export default function ClienteDashboardPage() {
   const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
   const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
   const [buyingMinutePackId, setBuyingMinutePackId] = useState("");
-  const [callTarget, setCallTarget] = useState<CallTarget | null>(null);
   const [showWelcomeGift, setShowWelcomeGift] = useState(false);
   const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
   const [loading, setLoading] = useState(true);
@@ -219,14 +200,12 @@ export default function ClienteDashboardPage() {
     }
 
     setCliente(json.cliente || null);
-    setHistorial(Array.isArray(json.historial) ? json.historial : []);
     setRecompensas(Array.isArray(json.recompensas) ? json.recompensas : []);
     setRankInfo(json.rank_info || null);
     setRankProgress(json.rank_progress || null);
     setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
     setPacks(Array.isArray(json.packs) ? json.packs : []);
     setPaymentProvider(json.payment_provider === "redsys" ? "redsys" : "stripe");
-    setCallTarget(json.call_target || null);
     if (json.welcome_gift?.granted) {
       setWelcomeGiftMinutes(Number(json.welcome_gift?.minutes || 10));
       setShowWelcomeGift(true);
@@ -640,41 +619,6 @@ export default function ClienteDashboardPage() {
     }
   }
 
-  async function trackCallAndOpen() {
-    if (!callTarget) return;
-    try {
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (token) {
-        await fetch("/api/cliente/call-click", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ destino: callTarget.displayNumber, mercado: callTarget.market }),
-        }).catch(() => null);
-      }
-    } finally {
-      window.location.href = callTarget.telHref;
-    }
-  }
-
-  async function markNotifRead(id?: string) {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    await fetch("/api/cliente/notificaciones/read", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(id ? { id } : {}),
-    }).catch(() => null);
-    setNotificaciones((prev) => prev.map((n) => (!id || n.id === id ? { ...n, leida: true } : n)));
-  }
-
   async function enablePushNotifications() {
     try {
       if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
@@ -740,6 +684,16 @@ export default function ClienteDashboardPage() {
         summaryItems={summaryItems}
       >
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <a
+            className="tc-btn tc-btn-gold"
+            href="/cliente/oraculo"
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 12px" }}
+          >
+            <WandSparkles size={15} /> Abrir Oráculo <ChevronRight size={14} />
+          </a>
+        </div>
 
         <div className="tc-dashboard-grid">
           <div className="tc-stack">
@@ -922,89 +876,6 @@ export default function ClienteDashboardPage() {
             <CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} />
           </div>
 
-          <div className="tc-stack">
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Llamar ahora</div>
-                <div className="tc-panel-sub">Tu acceso directo cambia según el país del teléfono de tu cuenta.</div>
-              </div>
-              <div className="tc-callout-box">
-                <div>
-                  <div className="tc-list-item-title">{callTarget?.label || "Soporte"}</div>
-                  <div className="tc-list-item-sub">{callTarget?.displayNumber || "Sin número disponible"}</div>
-                </div>
-                <button className="tc-btn tc-btn-gold" onClick={trackCallAndOpen}>
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><PhoneCall size={16} /> Abrir llamada</span>
-                </button>
-              </div>
-            </section>
-
-            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="tc-panel-title">Tus notificaciones</div>
-                  <div className="tc-panel-sub">Ideas, avisos y movimientos importantes de tu cuenta.</div>
-                </div>
-                {unreadNotifs > 0 ? <button className="tc-btn" onClick={() => markNotifRead()}>Marcar todo leído</button> : null}
-              </div>
-              {notificaciones.length === 0 ? (
-                <div className="tc-empty-state">Aún no tienes notificaciones internas.</div>
-              ) : (
-                <div className="tc-list-card">
-                  {notificaciones.slice(0, 6).map((item) => (
-                    <button key={item.id} className={`tc-notif-card ${item.leida ? "" : "tc-notif-card-unread"}`} onClick={() => markNotifRead(item.id)}>
-                      <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, alignItems: "flex-start" }}>
-                        <div>
-                          <div className="tc-list-item-title">{item.titulo || "Notificación"}</div>
-                          <div className="tc-list-item-sub">{item.mensaje || ""}</div>
-                        </div>
-                        {!item.leida ? <BellRing size={15} style={{ color: "var(--tc-gold-2)" }} /> : null}
-                      </div>
-                      <div className="tc-list-item-sub" style={{ marginTop: 8 }}>{formatDate(item.created_at)}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Historial de Coins</div>
-                <div className="tc-panel-sub">Compras y canjes recientes de tu cuenta.</div>
-              </div>
-              {historial.length === 0 ? (
-                <div className="tc-empty-state">Todavía no tienes movimientos de Coins registrados.</div>
-              ) : (
-                <div className="tc-list-card">
-                  {historial.map((item) => (
-                    <div key={item.id} className="tc-list-item">
-                      <div className="tc-list-item-title">{item.descripcion || item.tipo || "Movimiento"}</div>
-                      <div className="tc-list-item-sub">
-                        {item.tipo === "canjeado" ? "-" : "+"}{Number(item.puntos || 0)} Coins · {formatDate(item.created_at)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="tc-card tc-oracle-cta" style={{ display: "grid", gap: 10 }}>
-              <div className="tc-row" style={{ gap: 10, alignItems: "flex-start" }}>
-                <WandSparkles size={18} style={{ color: "var(--tc-gold-2)", marginTop: 2 }} />
-                <div>
-                  <div className="tc-list-item-title">Nuevo: Oráculo diario con chat</div>
-                  <div className="tc-list-item-sub" style={{ marginTop: 4 }}>
-                    Escoge amor, dinero, energía o general y recibe una lectura del día con la opción de preguntar más.
-                  </div>
-                </div>
-              </div>
-              <a className="tc-btn tc-btn-gold" href="/cliente/oraculo">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  Abrir oráculo <ChevronRight size={16} />
-                </span>
-              </a>
-            </section>
-          </div>
         </div>
       </ClienteLayout>
 
