@@ -5,13 +5,10 @@ import {
   BellRing,
   Crown,
   Gift,
-  Mail,
-  Phone,
   PhoneCall,
   ShieldAlert,
   Sparkles,
   Star,
-  TimerReset,
   WandSparkles,
   ShoppingBag,
   ChevronRight,
@@ -68,11 +65,6 @@ type Recompensa = {
   nombre: string;
   puntos_coste: number;
   minutos_otorgados: number;
-};
-
-type LastTarotista = {
-  nombre: string;
-  fecha_hora?: string | null;
 };
 
 type RankInfo = {
@@ -163,7 +155,6 @@ export default function ClienteDashboardPage() {
   const [cliente, setCliente] = useState<Cliente | null>(null);
   const [historial, setHistorial] = useState<Historial[]>([]);
   const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
-  const [lastTarotistas, setLastTarotistas] = useState<LastTarotista[]>([]);
   const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
   const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
   const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
@@ -230,7 +221,6 @@ export default function ClienteDashboardPage() {
     setCliente(json.cliente || null);
     setHistorial(Array.isArray(json.historial) ? json.historial : []);
     setRecompensas(Array.isArray(json.recompensas) ? json.recompensas : []);
-    setLastTarotistas(Array.isArray(json.last_tarotistas) ? json.last_tarotistas : []);
     setRankInfo(json.rank_info || null);
     setRankProgress(json.rank_progress || null);
     setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
@@ -972,50 +962,6 @@ export default function ClienteDashboardPage() {
                       </div>
                       <div className="tc-list-item-sub" style={{ marginTop: 8 }}>{formatDate(item.created_at)}</div>
                     </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="tc-card" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Tu perfil rápido</div>
-                <div className="tc-panel-sub">Tus datos clave y el estado de tu cuenta cliente.</div>
-              </div>
-              <div className="tc-list-card">
-                <div className="tc-list-item">
-                  <div className="tc-row"><Phone size={16} /> <span className="tc-list-item-title">{cliente?.telefono || cliente?.telefono_normalizado || "—"}</span></div>
-                  <div className="tc-list-item-sub">Teléfono de acceso al panel</div>
-                </div>
-                <div className="tc-list-item">
-                  <div className="tc-row"><Mail size={16} /> <span className="tc-list-item-title">{cliente?.email || "No añadido"}</span></div>
-                  <div className="tc-list-item-sub">Email para promociones y novedades</div>
-                </div>
-                <div className="tc-list-item">
-                  <div className="tc-row"><Gift size={16} /> <span className="tc-list-item-title">{cliente?.fecha_nacimiento || "Sin fecha de nacimiento"}</span></div>
-                  <div className="tc-list-item-sub">Tu regalo de cumpleaños depende de este dato</div>
-                </div>
-                <div className="tc-list-item">
-                  <div className="tc-row"><TimerReset size={16} /> <span className="tc-list-item-title">{cliente?.onboarding_completado ? "Perfil verificado" : "Pendiente de completar"}</span></div>
-                  <div className="tc-list-item-sub">Puedes actualizar estos datos desde tu perfil</div>
-                </div>
-              </div>
-            </section>
-
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 12 }}>
-              <div style={{ display: "grid", gap: 6 }}>
-                <div className="tc-panel-title">Tus 3 últimas tarotistas</div>
-                <div className="tc-panel-sub">Consultas recientes registradas en el sistema.</div>
-              </div>
-              {lastTarotistas.length === 0 ? (
-                <div className="tc-empty-state">Todavía no tenemos consultas registradas en rendimiento para mostrarte aquí.</div>
-              ) : (
-                <div className="tc-list-card">
-                  {lastTarotistas.map((item, index) => (
-                    <div key={`${item.nombre}-${index}`} className="tc-list-item">
-                      <div className="tc-list-item-title">{item.nombre}</div>
-                      <div className="tc-list-item-sub">Último contacto: {formatDate(item.fecha_hora)}</div>
-                    </div>
                   ))}
                 </div>
               )}
