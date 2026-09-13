@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { Eye, EyeOff, Sparkles, Volume2, VolumeX } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -23,6 +22,7 @@ const TIP_ROTATION_KEY = "tc-leo-tip-rotation-v1";
 const PROMOTION_ANCHOR = "[data-leo-anchor='promotion-featured'], [data-leo-anchor='active-promotion']";
 const DESKTOP_QUERY = "(min-width: 900px)";
 const IDLE_DELAY = 45_000;
+const BUBBLE_VISIBLE_MS = 7_000;
 
 type Props = { promoActive: boolean };
 type AnchorPosition = { left: number; top: number };
@@ -65,6 +65,27 @@ function nextSessionIndex(storageKey: string, itemKey: string, length: number) {
   } catch { return 0; }
 }
 
+function LeoHologram() {
+  return (
+    <svg className={styles.hologramLion} viewBox="0 0 96 96" role="img" aria-label="Leo Celestial">
+      <g className={styles.holoBody}>
+        <path className={styles.holoTail} d="M68 55c13-4 16 7 9 13-3 3-7 2-8-1" />
+        <path d="M31 52c5-9 28-11 38 0 5 6 3 17-3 21H34c-8-5-9-14-3-21Z" />
+        <path className={styles.holoLegBack} d="M38 68v14m-5 0h10" />
+        <path className={styles.holoLegFront} d="M61 68v14m-5 0h10" />
+      </g>
+      <g className={styles.holoHead}>
+        <path className={styles.holoMane} d="M27 30c-1-10 8-19 21-19s23 9 22 20c5 5 4 14-2 18-2 9-10 15-20 15S30 58 28 49c-7-4-7-14-1-19Z" />
+        <path className={styles.holoEar} d="M33 24 27 15c8-1 12 3 13 8m23 1 6-9c-8-1-12 3-13 8" />
+        <path className={styles.holoFace} d="M37 28c5-5 17-5 22 0 5 5 4 18-1 23-5 5-15 5-20 0-6-6-6-17-1-23Z" />
+        <path className={styles.holoEyes} d="M40 36h4m8 0h4" />
+        <path className={styles.holoMuzzle} d="m45 43 3 2 3-2m-3 2v5m-5 0c3 3 7 3 10 0" />
+      </g>
+      <path className={styles.holoScan} d="M17 39h62M22 50h54M27 61h44" />
+    </svg>
+  );
+}
+
 export default function LeoCelestialGuide({ promoActive }: Props) {
   const pathname = usePathname();
   const [hidden, setHidden] = useState(false);
@@ -78,6 +99,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   const [activeEvent, setActiveEvent] = useState<LeoCelestialEventDetail | null>(null);
   const [contextTip, setContextTip] = useState<LeoPersonalityMessage | null>(null);
   const [personalizedGuide, setPersonalizedGuide] = useState<LeoPersonalizedRecommendation | null>(null);
+  const [bubbleOpen, setBubbleOpen] = useState(true);
   const [routeGuide, setRouteGuide] = useState<LeoPersonalityMessage>(() => getLeoMessageVariants(pathname, promoActive)[0]);
   const [expression, setExpression] = useState<"neutral" | "survey" | "curious">("neutral");
   const [pageVisible, setPageVisible] = useState(true);
@@ -125,19 +147,17 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
     const rect = target.getBoundingClientRect();
     const visible = rect.bottom > 96 && rect.top < window.innerHeight - 72;
     if (!visible && !force) { setAnchor(null); setJourney("idle"); return; }
-    const guideWidth = Math.min(374, window.innerWidth - 24);
-    const lionCenterOffset = guideWidth - 58;
     const next = {
-      left: Math.round(Math.min(Math.max(12, rect.left + rect.width / 2 - lionCenterOffset), window.innerWidth - guideWidth - 12)),
-      top: Math.round(Math.min(Math.max(12, rect.top - 170), window.innerHeight - 238)),
+      left: Math.round(Math.min(Math.max(238, rect.left + rect.width / 2 - 32), window.innerWidth - 76)),
+      top: Math.round(Math.min(Math.max(90, rect.top - 78), window.innerHeight - 96)),
     };
     const place = () => setAnchor((current) => current && Math.abs(current.left - next.left) < 2 && Math.abs(current.top - next.top) < 2 ? current : next);
     if (!animate || !motionEnabled) { place(); return; }
     clearMovementTimers();
     setJourney("departing");
     movementTimers.current.push(window.setTimeout(() => { setJourney("travelling"); place(); }, 170));
-    movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 850));
-    movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 1_500));
+    movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 1_850));
+    movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 2_450));
   }, [clearMovementTimers, motionEnabled, pathname, promoActive]);
 
   useEffect(() => {
@@ -195,8 +215,10 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
 
   useEffect(() => {
     setAttention(true);
+    setBubbleOpen(true);
     const timer = window.setTimeout(() => setAttention(false), 2_400);
-    return () => window.clearTimeout(timer);
+    const bubbleTimer = window.setTimeout(() => setBubbleOpen(false), BUBBLE_VISIBLE_MS);
+    return () => { window.clearTimeout(timer); window.clearTimeout(bubbleTimer); };
   }, [pathname, promoActive]);
 
   useEffect(() => {
@@ -206,9 +228,9 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       lastEventId.current = detail.id || "";
       if (eventTimer.current) window.clearTimeout(eventTimer.current);
       if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
-      setSleeping(false); setContextTip(null); setActiveEvent(detail); setAttention(true);
+      setSleeping(false); setContextTip(null); setActiveEvent(detail); setAttention(true); setBubbleOpen(true);
       eventAttentionTimer.current = window.setTimeout(() => setAttention(false), 2_400);
-      eventTimer.current = window.setTimeout(() => setActiveEvent(null), Math.min(12_000, Math.max(4_000, Number(detail.duration) || 7_000)));
+      eventTimer.current = window.setTimeout(() => { setActiveEvent(null); setBubbleOpen(false); }, Math.min(12_000, Math.max(4_000, Number(detail.duration) || 7_000)));
     };
     window.addEventListener(LEO_CELESTIAL_EVENT, react);
     return () => {
@@ -226,9 +248,10 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
     const timer = window.setTimeout(() => {
       setContextTip(tips[nextSessionIndex(TIP_ROTATION_KEY, routeKey, tips.length)]);
       setAttention(true);
+      setBubbleOpen(true);
     }, 12_000);
     const attentionTimer = window.setTimeout(() => setAttention(false), 14_400);
-    const dismissTimer = window.setTimeout(() => setContextTip(null), 20_000);
+    const dismissTimer = window.setTimeout(() => { setContextTip(null); setBubbleOpen(false); }, 20_000);
     return () => { window.clearTimeout(timer); window.clearTimeout(attentionTimer); window.clearTimeout(dismissTimer); };
   }, [activeEvent, hidden, muted, pageVisible, pathname, promoActive, sleeping]);
 
@@ -272,23 +295,24 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
   }, [clearMovementTimers, locatePromotion, pageVisible]);
 
   useEffect(() => {
-    if (!motionEnabled || !finePointer || !pageVisible || hidden || activeEvent || pathname === "/cliente/precios-ofertas") { setRoamPosition(null); return; }
+    if (!motionEnabled || !finePointer || !pageVisible || hidden || activeEvent) { setRoamPosition(null); return; }
     let point = 0;
     const move = () => {
-      const width = Math.min(374, window.innerWidth - 24);
       const points = [
-        { left: 12, top: Math.max(96, window.innerHeight - 270) },
-        { left: Math.max(12, window.innerWidth - width - 12), top: Math.max(96, window.innerHeight - 250) },
+        { left: Math.max(238, window.innerWidth - 82), top: Math.max(92, window.innerHeight - 104) },
+        { left: Math.max(238, Math.round(window.innerWidth * .58)), top: Math.max(110, Math.round(window.innerHeight * .62)) },
+        { left: Math.max(238, window.innerWidth - 104), top: 112 },
+        { left: Math.max(238, Math.round(window.innerWidth * .4)), top: Math.max(130, Math.round(window.innerHeight * .38)) },
       ];
       const next = points[point % points.length];
       point += 1;
-      clearMovementTimers(); setJourney("departing");
+      clearMovementTimers(); setAnchor(null); setBubbleOpen(false); setJourney("departing");
       movementTimers.current.push(window.setTimeout(() => { setJourney("travelling"); setRoamPosition(next); }, 170));
-      movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 900));
-      movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 1_550));
+      movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 1_850));
+      movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 2_450));
     };
-    const initial = window.setTimeout(move, 15_000);
-    const interval = window.setInterval(move, 22_000);
+    const initial = window.setTimeout(move, 3_500);
+    const interval = window.setInterval(move, 9_000);
     return () => { window.clearTimeout(initial); window.clearInterval(interval); clearMovementTimers(); };
   }, [activeEvent, clearMovementTimers, finePointer, hidden, motionEnabled, pageVisible, pathname]);
 
@@ -360,14 +384,13 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
         data-reaction={activeEvent?.reaction || "none"} data-paused={!pageVisible || !motionEnabled ? "true" : "false"}
         onClick={() => setVisibility(false)} aria-label="Mostrar a Leo Celestial">
         <span className={styles.miniAura} aria-hidden="true" />
-        <Image src="/leo-celestial.webp" alt="" width={76} height={114} sizes="38px" className={styles.miniLion} />
+        <span className={styles.miniLion} aria-hidden="true"><LeoHologram /></span>
         {activeEvent ? <span className={styles.miniEventDot} aria-hidden="true" /> : null}
         <span>Mostrar Leo</span><Eye size={14} aria-hidden="true" />
       </button>
     );
   }
 
-  const isPersonalized = !activeEvent && !contextTip && Boolean(personalizedGuide);
   return (
     <aside ref={guideRef} className={`${styles.guide} ${ready ? styles.ready : ""}`}
       data-mood={guide.mood} data-attention={attention ? "true" : "false"}
@@ -377,7 +400,7 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
       data-compact={compactViewport ? "true" : "false"} data-paused={!pageVisible || !motionEnabled ? "true" : "false"}
       style={effectivePosition ? ({ "--leo-left": `${effectivePosition.left}px`, "--leo-top": `${effectivePosition.top}px` } as CSSProperties) : undefined}
       aria-label="Leo Celestial, guía inteligente del panel">
-      {!muted ? (
+      {bubbleOpen && !muted ? (
         <div className={styles.bubble} aria-live="polite" aria-atomic="true">
           <div className={styles.bubbleTop}>
             <span><Sparkles size={12} /> LEO CELESTIAL</span>
@@ -388,25 +411,23 @@ export default function LeoCelestialGuide({ promoActive }: Props) {
           </div>
           {activeEvent ? <span className={styles.reactionBadge}>{REACTION_LABELS[activeEvent.reaction]}</span> : null}
           {!activeEvent && contextTip ? <span className={styles.tipBadge}><Sparkles size={9} /> SUGERENCIA DEL GUÍA</span> : null}
-          {isPersonalized ? <span className={styles.memoryBadge}><Sparkles size={9} /> PARA TI · DATOS REALES</span> : null}
           <strong>{guide.title}</strong><p>{guide.message}</p>
           {guide.href && guide.actionLabel ? <Link href={guide.href} onClick={() => registerGuideInteraction(guide.href!)}>{guide.actionLabel}</Link> : null}
           {!guide.href && guide.actionLabel ? <button type="button" className={styles.action} onClick={focusPromotion}>{guide.actionLabel}</button> : null}
         </div>
-      ) : (
+      ) : bubbleOpen ? (
         <div className={styles.silentControls}>
           <button type="button" onClick={toggleMuted} aria-label="Activar mensajes de Leo" title="Activar mensajes" aria-pressed={true}><VolumeX size={14} /></button>
           <button type="button" className={styles.hideButton} onClick={() => setVisibility(true)} aria-label="Ocultar a Leo Celestial"><EyeOff size={13} /> Ocultar</button>
         </div>
-      )}
-      <div className={styles.character} aria-hidden="true">
+      ) : null}
+      <button type="button" className={styles.character} onClick={() => { registerGuideInteraction(); setBubbleOpen((current) => !current); }} aria-label={bubbleOpen ? "Cerrar mensaje de Leo" : "Hablar con Leo Celestial"}>
         <span className={styles.travelTrail} /><span className={styles.aura} />
         <span className={`${styles.spark} ${styles.sparkOne}`} /><span className={`${styles.spark} ${styles.sparkTwo}`} /><span className={`${styles.spark} ${styles.sparkThree}`} />
-        <div className={styles.lionBody}>
-          <Image src="/leo-celestial.webp" alt="" width={640} height={960} sizes="(max-width: 480px) 84px, 118px" className={styles.lion} priority={pathname === "/cliente/dashboard"} />
-          <span className={`${styles.eyeGlint} ${styles.eyeGlintLeft}`} /><span className={`${styles.eyeGlint} ${styles.eyeGlintRight}`} />
+        <div className={styles.lionBody} aria-hidden="true">
+          <LeoHologram />
         </div>
-      </div>
+      </button>
     </aside>
   );
 }
