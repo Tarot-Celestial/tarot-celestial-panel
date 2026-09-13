@@ -43,7 +43,7 @@ async function requireAdmin(req: Request) {
   if (error) throw error;
   if (!me || me.role !== "admin") return { ok: false as const, error: "FORBIDDEN" as const };
 
-  return { ok: true as const, admin };
+  return { ok: true as const, admin, actorId: me.id };
 }
 
 function roundMoney(n: any) {
@@ -72,7 +72,10 @@ function normalizeLineInput(body: any, currentMeta: any = {}) {
   const label = cleanText(body?.label);
   const sourceMeta = body?.meta && typeof body.meta === "object" ? body.meta : currentMeta || {};
   const meta = { ...sourceMeta };
-  let amount = roundMoney(body?.amount || 0);
+  const rawAmount = Number(body?.amount ?? 0);
+  if (!Number.isFinite(rawAmount)) throw new Error("Indica un importe válido.");
+  if (kind === "incident" && !label) throw new Error("Indica el motivo de la incidencia.");
+  let amount = roundMoney(rawAmount);
 
   if (kind === "bonus") {
     if (!label) throw new Error("El bonus necesita un nombre.");
@@ -143,180 +146,36 @@ export async function GET(req: Request) {
   }
 }
 
-// POST: acciones de edición
-// body: { action: 'add_line'|'update_line'|'delete_line'|'set_status'|'set_notes', ... }
+// All mutations lock the invoice and persist its lines, total and notification together.
 export async function POST(req: Request) {
   try {
     const gate = await requireAdmin(req);
     if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: 403 });
-
-    const { admin } = gate;
-
-    const body = await req.json().catch(() => ({}));
-    const action = String(body?.action || "");
-    const invoice_id = String(body?.invoice_id || "");
-
-    if (!invoice_id) {
-      return NextResponse.json({ ok: false, error: "MISSING_INVOICE_ID" }, { status: 400 });
-    }
-
+    const body = await req.json();
+    const invoiceId = String(body.invoice_id || "");
+    const action = String(body.action || "");
+    let lineId = body.line_id || null;
+    let data: any = body;
     if (action === "add_line") {
-      const editable = await getEditableInvoice(admin, invoice_id);
-      if (!editable.ok) return NextResponse.json({ ok: false, error: editable.error }, { status: editable.status });
-      const { kind, label, amount, meta } = normalizeLineInput(body);
-
-      const { error } = await admin.from("invoice_lines").insert({
-        invoice_id,
-        kind,
-        label,
-        amount,
-        meta,
-      });
-
-      if (error) throw error;
-
-      const { data: total, error: er } = await admin.rpc("recalc_invoice_total", { p_invoice_id: invoice_id });
-      if (er) throw er;
-
-      return NextResponse.json({ ok: true, total });
+      if (!/^[0-9a-f-]{36}$/i.test(body.request_id || "")) throw new Error("Vuelve a abrir la factura antes de añadir el concepto.");
+      lineId = body.request_id;
+      data = normalizeLineInput(body);
+    } else if (action === "update_line") {
+      const { data: current, error } = await gate.admin.from("invoice_lines").select("*").eq("invoice_id", invoiceId).eq("id", lineId).maybeSingle();
+      if (error || !current) throw new Error("No se ha encontrado el concepto.");
+      data = normalizeLineInput({ ...current, ...body, kind: current.kind, meta: { ...current.meta, ...body.meta } });
+      if (data.meta.minutes != null && data.meta.rate != null && current.kind !== "incident") {
+        const minutes = Number(data.meta.minutes), rate = Number(data.meta.rate);
+        if (!Number.isFinite(minutes) || !Number.isFinite(rate) || minutes < 0 || rate < 0) throw new Error("Minutos o tarifa no válidos.");
+        data.amount = roundMoney(minutes * rate);
+      }
     }
-
-    if (action === "update_line") {
-      const line_id = String(body?.line_id || "");
-      if (!line_id) {
-        return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
-      }
-
-      const { data: currentLine, error: currentErr } = await admin
-        .from("invoice_lines")
-        .select("id, invoice_id, kind, meta, amount")
-        .eq("id", line_id)
-        .eq("invoice_id", invoice_id)
-        .maybeSingle();
-
-      if (currentErr) throw currentErr;
-      if (!currentLine) {
-        return NextResponse.json({ ok: false, error: "LINE_NOT_FOUND" }, { status: 404 });
-      }
-
-      const isProtectedSalary =
-        String(currentLine.kind || "") === "salary_base" ||
-        currentLine?.meta?.locked === true ||
-        currentLine?.meta?.protected === true;
-
-      if (isProtectedSalary) {
-        return NextResponse.json(
-          { ok: false, error: "El sueldo fijo está protegido y no se puede modificar." },
-          { status: 400 }
-        );
-      }
-
-      const editable = await getEditableInvoice(admin, invoice_id);
-      if (!editable.ok) return NextResponse.json({ ok: false, error: editable.error }, { status: editable.status });
-
-      const patch: any = {};
-
-      if (body?.label !== undefined) patch.label = cleanText(body.label);
-      if (body?.kind !== undefined) patch.kind = cleanText(body.kind);
-
-      let nextMeta: any = currentLine.meta ?? {};
-
-      if (body?.meta !== undefined) {
-        nextMeta = body.meta ?? {};
-        patch.meta = nextMeta;
-      }
-
-      const hasMinutesRate =
-        nextMeta &&
-        nextMeta.minutes !== undefined &&
-        nextMeta.rate !== undefined &&
-        !Number.isNaN(Number(nextMeta.minutes)) &&
-        !Number.isNaN(Number(nextMeta.rate));
-
-      if (hasMinutesRate) {
-        patch.amount = roundMoney(Number(nextMeta.minutes || 0) * Number(nextMeta.rate || 0));
-      } else if (String(body?.kind || currentLine.kind) === "bonus") {
-        const normalized = normalizeLineInput({ ...body, kind: "bonus", amount: body?.amount ?? currentLine.amount, meta: nextMeta }, nextMeta);
-        patch.label = normalized.label;
-        patch.kind = normalized.kind;
-        patch.amount = normalized.amount;
-        patch.meta = normalized.meta;
-      } else if (body?.amount !== undefined) {
-        patch.amount = roundMoney(body.amount);
-      }
-
-      const { error } = await admin.from("invoice_lines").update(patch).eq("id", line_id);
-      if (error) throw error;
-
-      const { data: total, error: er } = await admin.rpc("recalc_invoice_total", { p_invoice_id: invoice_id });
-      if (er) throw er;
-
-      return NextResponse.json({ ok: true, total });
-    }
-
-    if (action === "delete_line") {
-      const line_id = String(body?.line_id || "");
-      if (!line_id) {
-        return NextResponse.json({ ok: false, error: "MISSING_LINE_ID" }, { status: 400 });
-      }
-
-      const { data: currentLine, error: currentErr } = await admin
-        .from("invoice_lines")
-        .select("id, invoice_id, kind, meta")
-        .eq("id", line_id)
-        .eq("invoice_id", invoice_id)
-        .maybeSingle();
-
-      if (currentErr) throw currentErr;
-      if (!currentLine) {
-        return NextResponse.json({ ok: false, error: "LINE_NOT_FOUND" }, { status: 404 });
-      }
-
-      const isProtectedSalary =
-        String(currentLine.kind || "") === "salary_base" ||
-        currentLine?.meta?.locked === true ||
-        currentLine?.meta?.protected === true;
-
-      if (isProtectedSalary) {
-        return NextResponse.json(
-          { ok: false, error: "El sueldo fijo está protegido y no se puede borrar." },
-          { status: 400 }
-        );
-      }
-
-      const editable = await getEditableInvoice(admin, invoice_id);
-      if (!editable.ok) return NextResponse.json({ ok: false, error: editable.error }, { status: editable.status });
-
-      const { error } = await admin.from("invoice_lines").delete().eq("id", line_id);
-      if (error) throw error;
-
-      const { data: total, error: er } = await admin.rpc("recalc_invoice_total", { p_invoice_id: invoice_id });
-      if (er) throw er;
-
-      return NextResponse.json({ ok: true, total });
-    }
-
-    if (action === "set_status") {
-      const status = String(body?.status || "draft");
-      if (!ALLOWED_STATUSES.has(status)) {
-        return NextResponse.json({ ok: false, error: "INVALID_STATUS" }, { status: 400 });
-      }
-      const { error } = await admin.from("invoices").update({ status }).eq("id", invoice_id);
-      if (error) throw error;
-
-      return NextResponse.json({ ok: true });
-    }
-
-    if (action === "set_notes") {
-      const notes = String(body?.notes || "");
-      const { error } = await admin.from("invoices").update({ notes }).eq("id", invoice_id);
-      if (error) throw error;
-
-      return NextResponse.json({ ok: true });
-    }
-
-    return NextResponse.json({ ok: false, error: "UNKNOWN_ACTION" }, { status: 400 });
+    const { data: result, error } = await gate.admin.rpc("invoice_edit_atomic", {
+      p_invoice_id: invoiceId, p_actor_id: gate.actorId, p_action: action, p_line_id: lineId, p_data: data,
+    });
+    if (error) throw error;
+    return NextResponse.json({ ok: true, ...result });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || "No se pudo guardar la factura." }, { status: 400 });
   }
 }

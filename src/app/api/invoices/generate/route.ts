@@ -166,71 +166,6 @@ function emptyLine(invoice_id: string, month: string) {
   } satisfies InvoiceLinePayload;
 }
 
-async function upsertInvoice(admin: any, workerId: string, month: string, total: number, snapshot: Record<string, number>) {
-  const { data: existingRows, error: existingError } = await admin
-    .from("invoices")
-    .select("id, created_at, status")
-    .eq("worker_id", workerId)
-    .eq("month_key", month)
-    .order("created_at", { ascending: true });
-
-  if (existingError) throw existingError;
-
-  // Never regenerate a closed snapshot, including duplicate historical invoices.
-  if ((existingRows || []).some((row: any) => !["draft", "pending", "review"].includes(String(row.status || "")))) return null;
-  const existing = Array.isArray(existingRows) && existingRows.length ? existingRows[0] : null;
-  const duplicates = Array.isArray(existingRows) ? existingRows.slice(1) : [];
-
-  if (duplicates.length) {
-    const duplicateIds = duplicates.map((row: any) => String(row.id)).filter(Boolean);
-    if (duplicateIds.length) {
-      const delLines = await admin.from("invoice_lines").delete().in("invoice_id", duplicateIds);
-      if (delLines.error) throw delLines.error;
-      const delInvoices = await admin.from("invoices").delete().in("id", duplicateIds);
-      if (delInvoices.error) throw delInvoices.error;
-    }
-  }
-
-  if (existing?.id) {
-    const { data, error } = await admin
-      .from("invoices")
-      .update({
-        total,
-        total_calc: total,
-        ...snapshot,
-        status: "draft",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id)
-      .in("status", ["draft", "pending", "review"])
-      .select("id")
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data?.id) return null;
-    return { id: String(data.id), created: false };
-  }
-
-  const { data, error } = await admin
-    .from("invoices")
-    .insert({
-      worker_id: workerId,
-      month_key: month,
-      status: "draft",
-      total,
-      total_calc: total,
-      ...snapshot,
-      notes: null,
-    })
-    .select("id")
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data?.id) throw new Error("INVOICE_INSERT_WITHOUT_ID");
-
-  return { id: String(data.id), created: true };
-}
-
 export async function POST(req: Request) {
   try {
     const gate = await requireAdmin(req);
@@ -280,37 +215,10 @@ export async function POST(req: Request) {
       if (!workerId) continue;
 
       const fixedSalary = fixedSalaryForWorker(workersById.get(workerId));
-      let existingBonus = 0;
-
-      if (fixedSalary > 0) {
-        const { data: previousInvoices, error: previousInvoicesError } = await admin
-          .from("invoices")
-          .select("id")
-          .eq("worker_id", workerId)
-          .eq("month_key", month)
-          .order("created_at", { ascending: true })
-          .limit(1);
-
-        if (previousInvoicesError) throw previousInvoicesError;
-
-        const previousInvoiceId = previousInvoices?.[0]?.id;
-        if (previousInvoiceId) {
-          const { data: bonusRows, error: bonusRowsError } = await admin
-            .from("invoice_lines")
-            .select("amount")
-            .eq("invoice_id", previousInvoiceId)
-            .eq("kind", "salary_bonus")
-            .limit(1);
-
-          if (bonusRowsError) throw bonusRowsError;
-          existingBonus = roundMoney(bonusRows?.[0]?.amount || 0);
-        }
-      }
-
       const preliminaryLines = fixedSalary > 0
         ? [
             salaryBaseLine("__pending__", fixedSalary),
-            fixedBonusLine("__pending__", existingBonus),
+            fixedBonusLine("__pending__", 0),
           ]
         : [
             minuteLine({ invoice_id: "__pending__", kind: "minutes_free", label: "Minutos Free", code: "free", minutes: Number(row.minutes_free || 0) }),
@@ -323,34 +231,23 @@ export async function POST(req: Request) {
             bonusRepiteGoalLine("__pending__", Number(row.minutes_repite || 0)),
           ].filter(Boolean) as InvoiceLinePayload[];
 
-      const total = roundMoney(preliminaryLines.reduce((acc, line) => acc + Number(line.amount || 0), 0));
-      const invoice = await upsertInvoice(admin, workerId, month, total, {
-        minutes_total: roundMoney(Number(row.minutes_total || 0)),
-        pay_minutes: fixedSalary > 0 ? 0 : roundMoney(Number(row.pay_minutes || 0)),
-        captadas_total: Math.max(0, Math.round(Number(row.captadas_total || 0))),
-        bonus_captadas: fixedSalary > 0 ? 0 : roundMoney(Number(row.bonus_captadas || 0)),
-        salary_base: fixedSalary,
+      const lines = preliminaryLines.length ? preliminaryLines : [emptyLine("__pending__", month)];
+      const { data: invoice, error: regenerationError } = await admin.rpc("invoice_regenerate_preserving_manual", {
+        p_worker_id: workerId, p_month: month, p_lines: lines,
+        p_snapshot: {
+          minutes_total: roundMoney(Number(row.minutes_total || 0)),
+          pay_minutes: fixedSalary > 0 ? 0 : roundMoney(Number(row.pay_minutes || 0)),
+          captadas_total: Math.max(0, Math.round(Number(row.captadas_total || 0))),
+          bonus_captadas: fixedSalary > 0 ? 0 : roundMoney(Number(row.bonus_captadas || 0)),
+          salary_base: fixedSalary,
+        },
       });
-      if (!invoice) continue;
-      if (invoice.created) created += 1;
-      else updated += 1;
-
-      const delLines = await admin.from("invoice_lines").delete().eq("invoice_id", invoice.id);
-      if (delLines.error) throw delLines.error;
-
-      const lines = preliminaryLines.length
-        ? preliminaryLines.map((line) => ({ ...line, invoice_id: invoice.id }))
-        : [emptyLine(invoice.id, month)];
-
-      const insLines = await admin.from("invoice_lines").insert(lines);
-      if (insLines.error) throw insLines.error;
-      lineCount += lines.length;
-
-      const finalTotal = roundMoney(lines.reduce((acc, line) => acc + Number(line.amount || 0), 0));
-      if (finalTotal !== total) {
-        const updTotal = await admin.from("invoices").update({ total: finalTotal, updated_at: new Date().toISOString() }).eq("id", invoice.id);
-        if (updTotal.error) throw updTotal.error;
-      }
+      if (regenerationError) throw regenerationError;
+      if (invoice?.skipped) continue;
+      if (!invoice?.id) throw new Error("No se pudo actualizar la factura.");
+      if (invoice.created) created += 1; else updated += 1;
+      lineCount += Number(invoice.line_count || 0);
+      const finalTotal = Number(invoice.total || 0);
 
       generated.push({
         invoice_id: invoice.id,

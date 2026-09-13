@@ -1,0 +1,20 @@
+.editor { padding:24px; border:1px solid #c9ac7055; border-radius:22px; background:linear-gradient(130deg,#17141f,#101017); color:#eee9df; box-shadow:0 16px 40px #0004; }
+.editor :global(.tc-row) { flex-wrap:wrap; }
+.editor :global(.tc-sub) { color:#beb8c9; line-height:1.5; }
+.editor :global(.tc-input),.editor :global(.tc-select) { background:#111019; border:1px solid #ffffff25; min-height:42px; max-width:100%; color:#f5eee0; }
+.editor :global(.tc-btn) { min-height:42px; }
+.editor :global(input):focus-visible,.editor :global(textarea):focus-visible,.editor :global(select):focus-visible,.editor :global(button):focus-visible { outline:2px solid #dfc181; outline-offset:3px; }
+.section { margin:22px 0; display:grid; gap:12px; }
+.section h3 { margin:0; color:#e7cea0; font-size:15px; }
+.form { padding:18px; border-radius:16px; border:1px solid #c7a56844; background:#cfad6510; }
+.fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:14px 0; }
+.fields label { display:grid; gap:7px; font-size:12px; color:#cbc4d4; }
+.fields input,.fields textarea,.fields select { width:100%; min-width:0; }
+.wide { grid-column:1/-1; }
+.notice { margin:12px 0; font-size:13px; line-height:1.6; color:#cfc2df; }
+.line { border:1px solid #ffffff20; border-radius:14px; padding:16px; background:#ffffff03; }
+.incident { border-left:3px solid #e48b91; }
+.summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.summary>div { padding:16px; background:#d1b16910; border:1px solid #d1b16930; border-radius:14px; }
+.summary b { display:block; margin-top:6px; font-size:22px; }
+@media(max-width:650px) { .editor { padding:14px; } .fields,.summary { grid-template-columns:1fr; } .editor :global(.tc-btn) { white-space:normal; } }

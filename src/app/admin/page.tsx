@@ -22,6 +22,13 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy, Sparkles } from "lucide-react";
 import adminStyles from "./AdminPremium.module.css";
+import invoiceStyles from "./InvoiceEditor.module.css";
+
+function invoiceLocalDate(value?: string) {
+  const date = value ? new Date(value) : new Date();
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+}
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -347,6 +354,12 @@ function AdminPage() {
   const [newLabel, setNewLabel] = useState("Ajuste");
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
+  const [incidentClient, setIncidentClient] = useState("");
+  const [incidentSituation, setIncidentSituation] = useState("");
+  const [incidentDate, setIncidentDate] = useState(() => invoiceLocalDate());
+  const [addingLine, setAddingLine] = useState(false);
+  const addLineLock = useRef(false);
+  const lineRequest = useRef("");
 
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsMsg, setStatsMsg] = useState("");
@@ -889,22 +902,31 @@ function AdminPage() {
   }
 
   async function addLine() {
-    if (!selId) return;
+    if (!selId || addLineLock.current) return;
+    addLineLock.current = true;
+    setAddingLine(true);
     try {
+      lineRequest.current ||= crypto.randomUUID();
+      if (newKind === "incident" && (!newLabel.trim() || !incidentDate || (!incidentClient.trim() && !incidentSituation.trim()))) throw new Error("Completa motivo, fecha y hora, y clienta o situación.");
       const amt = Number(String(newAmount).replace(",", "."));
       await postEdit({
         action: "add_line",
         invoice_id: selId,
+        request_id: lineRequest.current,
         kind: newKind,
         label: newLabel,
         amount: isFinite(amt) ? amt : 0,
-        meta: {},
+        meta: newKind === "incident" ? { client_name: incidentClient.trim(), situation: incidentSituation.trim(), occurred_at: new Date(incidentDate).toISOString(), business: getActiveBrand() } : {},
       });
+      lineRequest.current = "";
       await loadInvoice(selId);
       await listInvoices(true);
-      setSelMsg("✅ Línea añadida.");
+      setSelMsg(newKind === "incident" ? "Incidencia guardada y notificación enviada a su panel." : "Línea añadida.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
+    } finally {
+      addLineLock.current = false;
+      setAddingLine(false);
     }
   }
 
@@ -2039,18 +2061,18 @@ function AdminPage() {
                 onBack={() => setTab("facturas")}
               />
             ) : (
-            <div className="tc-card">
+            <div className={invoiceStyles.editor}>
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
-                  <div className="tc-title">✏️ Editor de factura</div>
-                  <div className="tc-sub">Líneas con desglose automático (minutos x tarifa)</div>
+                  <div className="tc-title">Editor de factura</div>
+                  <div className="tc-sub">Conceptos, ajustes e incidencias del período</div>
                 </div>
 
                 {selId && (
                   <div className="tc-row">
                     <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
                     <button className="tc-btn tc-btn-gold" onClick={() => downloadInvoicePdf(selId)}>Descargar PDF</button>
-                    <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
+                    <button className="tc-btn" onClick={() => setStatus("draft")}>Borrador</button>
                     <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
                   </div>
                 )}
@@ -2080,74 +2102,38 @@ function AdminPage() {
 
                   <div className="tc-hr" />
 
-                  {(selLines || []).some((line: any) => String(line?.kind || "") === "salary_base") && (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-                        gap: 10,
-                        padding: 14,
-                        marginBottom: 12,
-                        borderRadius: 16,
-                        background: "linear-gradient(135deg, rgba(181,156,255,.14), rgba(255,215,130,.08))",
-                        border: "1px solid rgba(181,156,255,.28)",
-                      }}
-                    >
-                      <div>
-                        <div className="tc-sub">Sueldo fijo protegido</div>
-                        <div className="tc-title" style={{ marginTop: 4 }}>
-                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_base")?.amount || 0)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="tc-sub">Bonus opcional</div>
-                        <div className="tc-title" style={{ marginTop: 4 }}>
-                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_bonus")?.amount || 0)}
-                        </div>
-                      </div>
-                      <div>
-                        <div className="tc-sub">Total de la factura</div>
-                        <div className="tc-title" style={{ marginTop: 4 }}>
-                          {eur(selInvoice?.total || 0)}
-                        </div>
-                      </div>
+                  <div className={invoiceStyles.notice}>Al generar la factura se actualizan los conceptos automáticos. Los bonus, ajustes e incidencias guardados se conservan.</div>
+                  <div className={invoiceStyles.summary}>
+                    <div><span>Conceptos positivos</span><b>{eur(selLines.reduce((sum: number, l: any) => sum + Math.max(0, Number(l.amount)), 0))}</b></div>
+                    <div><span>Descuentos e incidencias</span><b>{eur(selLines.reduce((sum: number, l: any) => sum + Math.min(0, Number(l.amount)), 0))}</b></div>
+                    <div><span>Total a pagar</span><b>{eur(selInvoice?.total || 0)}</b></div>
+                  </div>
+                  {[
+                    { title: "Producción y sueldo", accepts: (l: any) => l.kind !== "incident" && ["auto_generate", "fixed_salary"].includes(l.meta?.source) },
+                    { title: "Bonus y ajustes manuales", accepts: (l: any) => l.kind !== "incident" && !["auto_generate", "fixed_salary"].includes(l.meta?.source) },
+                    { title: "Incidencias y descuentos", accepts: (l: any) => l.kind === "incident" },
+                  ].map(group => <section className={invoiceStyles.section} key={group.title}>
+                    <h3>{group.title}</h3>
+                    {selLines.filter(group.accepts).map((l: any) => <LineEditor key={l.id} line={l} onSave={payload => updateLine(l.id, payload)} onDelete={() => deleteLine(l.id)} />)}
+                    {!selLines.some(group.accepts) && <div className="tc-sub">Sin conceptos en esta sección.</div>}
+                  </section>)}
+                  <section className={invoiceStyles.form}>
+                    <h3>Añadir concepto</h3>
+                    <div className={invoiceStyles.fields}>
+                      <label>Tipo<select className="tc-select" value={newKind} onChange={e => { setNewKind(e.target.value); setNewLabel(""); }}>
+                        <option value="adjustment">Ajuste manual</option><option value="incident">Incidencia / multa</option><option value="bonus">Bonus adicional</option><option value="salary_bonus">Bonus de sueldo</option>
+                      </select></label>
+                      <label>{newKind === "incident" ? "Importe a descontar (€)" : "Importe (€)"}<input className="tc-input" inputMode="decimal" value={newAmount} onChange={e => setNewAmount(e.target.value)} /></label>
+                      <label className={invoiceStyles.wide}>{newKind === "incident" ? "Motivo de la incidencia" : "Concepto"}<input className="tc-input" value={newLabel} onChange={e => setNewLabel(e.target.value)} /></label>
+                      {newKind === "incident" && <>
+                        <label>Fecha y hora de la incidencia<input className="tc-input" type="datetime-local" value={incidentDate} onChange={e => setIncidentDate(e.target.value)} /></label>
+                        <label>Clienta relacionada (si corresponde)<input className="tc-input" value={incidentClient} onChange={e => setIncidentClient(e.target.value)} /></label>
+                        <label className={invoiceStyles.wide}>¿Qué ocurrió?<textarea className="tc-input" rows={3} value={incidentSituation} onChange={e => setIncidentSituation(e.target.value)} /></label>
+                        <p className={invoiceStyles.wide}>El importe se descontará y la trabajadora recibirá una notificación con estos datos.</p>
+                      </>}
                     </div>
-                  )}
-
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {(selLines || []).map((l: any) => (
-                      <LineEditor
-                        key={l.id}
-                        line={l}
-                        onSave={(payload) => updateLine(l.id, payload)}
-                        onDelete={() => deleteLine(l.id)}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
-
-                  <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
-                    <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
-                      <option value="adjustment">adjustment</option>
-                      <option value="incident">incident</option>
-                      <option value="bonus_ranking">bonus_ranking</option>
-                      <option value="bonus_captadas">bonus_captadas</option>
-                      <option value="minutes_free">minutes_free</option>
-                      <option value="minutes_rueda">minutes_rueda</option>
-                      <option value="minutes_cliente">minutes_cliente</option>
-                      <option value="minutes_repite">minutes_repite</option>
-                      <option value="salary_base">salary_base</option>
-                      <option value="salary_bonus">salary_bonus</option>
-                    </select>
-
-                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
-                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 140 }} />
-
-                    <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
-                  </div>
+                    <button className="tc-btn tc-btn-gold" disabled={addingLine || !["draft","pending","review"].includes(selInvoice?.status)} onClick={() => void addLine()}>{addingLine ? "Guardando…" : newKind === "incident" ? "Guardar incidencia y notificar" : "Añadir concepto"}</button>
+                  </section>
 
                   <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
                 </>
@@ -3169,6 +3155,10 @@ function LineEditor({
   const [amount, setAmount] = useState<string>(String(line.amount ?? "0"));
 
   const meta = line?.meta || {};
+  const isIncident = line.kind === "incident";
+  const [clientName, setClientName] = useState(String(meta.client_name || ""));
+  const [situation, setSituation] = useState(String(meta.situation || ""));
+  const [occurredAt, setOccurredAt] = useState(invoiceLocalDate(meta.occurred_at || line.created_at));
   const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
   const isProtectedSalary =
     String(line?.kind || "") === "salary_base" ||
@@ -3180,6 +3170,9 @@ function LineEditor({
   const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
 
   useEffect(() => {
+    setClientName(String(line.meta?.client_name || ""));
+    setSituation(String(line.meta?.situation || ""));
+    setOccurredAt(invoiceLocalDate(line.meta?.occurred_at || line.created_at));
     setLabel(String(line.label || ""));
     setAmount(String(line.amount ?? "0"));
     setMinutes(String(line?.meta?.minutes ?? ""));
@@ -3213,19 +3206,17 @@ function LineEditor({
     onSave({
       label,
       amount: Number(String(amount).replace(",", ".")) || 0,
-      meta,
+      meta: isIncident ? { ...meta, client_name: clientName, situation, occurred_at: occurredAt ? new Date(occurredAt).toISOString() : null } : meta,
     });
   }
 
   return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.03)",
-      }}
-    >
+    <div className={`${invoiceStyles.line} ${isIncident ? invoiceStyles.incident : ""}`}>
+      {isIncident && <div className={invoiceStyles.fields}>
+        <label>Fecha y hora<input className="tc-input" type="datetime-local" value={occurredAt} onChange={e => setOccurredAt(e.target.value)} /></label>
+        <label>Clienta<input className="tc-input" value={clientName} onChange={e => setClientName(e.target.value)} /></label>
+        <label className={invoiceStyles.wide}>Situación<textarea className="tc-input" rows={2} value={situation} onChange={e => setSituation(e.target.value)} /></label>
+      </div>}
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 220 }}>
           <div style={{ fontWeight: 900 }}>{label}</div>

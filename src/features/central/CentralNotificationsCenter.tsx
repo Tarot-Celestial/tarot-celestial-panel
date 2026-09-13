@@ -295,7 +295,7 @@ export default function CentralNotificationsCenter({ feed }: CentralNotification
               <div className={styles.itemBody}>
                 <div className={styles.itemTop}>
                   <div>
-                    <span className={styles.type}>{item.type.replaceAll("_", " ")}</span>
+                    <span className={styles.type}>{item.type === "invoice_incident" ? "Incidencia de factura" : item.type.replaceAll("_", " ")}</span>
                     <h3>{item.title}</h3>
                   </div>
                   <span className={styles.state}>{item.state === "pending" ? "Pendiente" : item.state === "read" ? "Leída" : "Resuelta"}</span>
