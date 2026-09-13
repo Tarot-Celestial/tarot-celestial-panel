@@ -4,9 +4,11 @@ import { CALL_CODE_OPTIONS as CODIGO_OPTIONS } from "@/lib/activity-codes";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./RegistrarLlamadaModal.module.css";
+import FreePassBenefits, { type FreePassStatus } from "./FreePassBenefits";
 import { tcToast } from "@/lib/tc-toast";
 
 type ClienteLite = {
+  free_passes?: FreePassStatus | null;
   id: string;
   nombre?: string | null;
   apellido?: string | null;
@@ -237,6 +239,7 @@ type Props = {
   tarotistas: TarotistaOpt[];
   onClose: () => void;
   getToken: () => Promise<string>;
+  onBenefitsChanged?: () => Promise<void>;
   onSuccess?: (message?: string) => Promise<void> | void;
 };
 
@@ -328,6 +331,7 @@ export default function RegistrarLlamadaModal({
   onClose,
   getToken,
   onSuccess,
+  onBenefitsChanged,
 }: Props) {
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -711,6 +715,7 @@ export default function RegistrarLlamadaModal({
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
                 <button type="button" className={`${styles.choiceButton} ${clienteCompra === "si" ? styles.choiceSelected : ""}`} onClick={() => setClienteCompra("si")} style={{ padding: 16, border: clienteCompra === "si" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "si" ? "rgba(215,181,109,.14)" : undefined }}>Sí, compra minutos</button>
                 <button type="button" className={`${styles.choiceButton} ${clienteCompra === "no" ? styles.choiceSelected : ""}`} onClick={() => setClienteCompra("no")} style={{ padding: 16, border: clienteCompra === "no" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "no" ? "rgba(215,181,109,.14)" : undefined }}>No compra minutos</button>
+                <FreePassBenefits key={cliente.id} benefits={cliente.free_passes} clienteId={cliente.id} getToken={getToken} onRefresh={onBenefitsChanged} />
               </div>
             )}
 

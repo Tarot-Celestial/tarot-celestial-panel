@@ -1,4 +1,5 @@
 "use client";
+import { useState, useEffect } from "react";
 
 type TimelineItem = {
   id: string;
@@ -63,6 +64,8 @@ function toneStyle(tone: TimelineItem["tone"]) {
 }
 
 export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadingPagos = false, loadingNotas = false }: ClienteTimelineProps) {
+  const [visible, setVisible] = useState(12);
+  useEffect(() => setVisible(12), [cliente?.id]);
   const items: TimelineItem[] = [];
 
   if (cliente?.id) {
@@ -70,7 +73,7 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
       id: `client-${cliente.id}`,
       type: "client",
       icon: "👤",
-      title: "Ficha abierta en CRM",
+      title: "Ficha actualizada en CRM",
       subtitle: [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") || `Cliente #${cliente.id}`,
       body: cliente?.origen ? `Origen: ${cliente.origen}` : undefined,
       date: cliente?.updated_at || cliente?.created_at || null,
@@ -123,12 +126,12 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
     items.push({
       id: `note-${nota?.id || index}`,
       type: "note",
-      icon: nota?.event_type === "ruleta_reward" ? "🎡" : nota?.is_pinned ? "📌" : isWebPurchaseNote ? "🟣" : "📝",
-      title: nota?.event_type === "ruleta_reward" ? "Premio Ruleta Celestial · Solo lectura" : nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
+      icon: nota?.event_type === "system_free_pass" ? "🎁" : nota?.event_type === "ruleta_reward" ? "🎡" : nota?.is_pinned ? "📌" : isWebPurchaseNote ? "🟣" : "📝",
+      title: nota?.event_type === "system_free_pass" ? "Pase FREE utilizado" : nota?.event_type === "ruleta_reward" ? "Premio Ruleta Celestial · Solo lectura" : nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
       subtitle: nota?.author_name || nota?.author_email || "Usuario",
       body,
       date: getNoteDate(nota),
-      tone: nota?.event_type === "ruleta_reward" ? "gold" : nota?.is_pinned ? "gold" : isWebPurchaseNote ? "purple" : "muted",
+      tone: nota?.event_type === "system_free_pass" ? "gold" : nota?.event_type === "ruleta_reward" ? "purple" : nota?.is_pinned ? "gold" : isWebPurchaseNote ? "blue" : "purple",
     });
   });
 
@@ -161,7 +164,7 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
       ) : null}
 
       <div style={{ display: "grid", gap: 10 }}>
-        {items.slice(0, 12).map((item) => {
+        {items.slice(0, visible).map((item) => {
           const style = toneStyle(item.tone);
           return (
             <div
@@ -205,6 +208,7 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
           );
         })}
       </div>
+      {visible < items.length && <button type="button" className="tc-btn" style={{ marginTop: 14 }} onClick={() => setVisible(value => value + 12)}>Ver más actividad</button>}
     </div>
   );
 }

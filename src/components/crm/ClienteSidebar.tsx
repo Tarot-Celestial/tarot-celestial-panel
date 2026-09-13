@@ -1,4 +1,6 @@
 "use client";
+import FreePassBenefits from "./FreePassBenefits";
+import styles from "./CRMNuevaEra.module.css";
 
 type ClienteSidebarProps = {
   cliente?: any;
@@ -55,15 +57,19 @@ export default function ClienteSidebar({
   onGoToReservation,
   dialDisabled = false,
 }: ClienteSidebarProps) {
-  const totalPagado = pagos.reduce((sum, pago) => sum + paymentAmount(pago), 0);
-  const status = activityScore(cliente, pagos, notas);
+  const confirmedPayments = pagos.filter(p => String(p.estado || p.status || "").toLowerCase() === "completed");
+  const totalPagado = confirmedPayments.reduce((sum, pago) => sum + paymentAmount(pago), 0);
+  const status = activityScore(cliente, confirmedPayments, notas);
   const fullName = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") || "Cliente sin nombre";
   const free = Number(cliente?.minutos_free_pendientes || 0);
   const normales = Number(cliente?.minutos_normales_pendientes || 0);
-  const lastNote = notas?.[0]?.created_at || notas?.[0]?.updated_at || null;
+  const latestActivity = [cliente?.updated_at, ...notas.map(n => n.created_at || n.updated_at), ...pagos.map(p => p.created_at)]
+    .filter((date): date is string => typeof date === "string" && Number.isFinite(Date.parse(date)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null;
 
   return (
     <div className="tc-card" style={{ borderRadius: 20, padding: 16, background: "linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03))", position: "sticky", top: 16 }}>
+      <div className={styles.eyebrow}>Resumen operativo</div>
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
           <div className="tc-title" style={{ fontSize: 18 }}>{fullName}</div>
@@ -76,17 +82,21 @@ export default function ClienteSidebar({
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
         <MiniMetric label="Pagado" value={eur(totalPagado)} />
-        <MiniMetric label="Pagos" value={String(pagos.length)} />
+        <MiniMetric label="Pagos" value={String(confirmedPayments.length)} />
         <MiniMetric label="Min free" value={String(free)} />
         <MiniMetric label="Min normales" value={String(normales)} />
+        <MiniMetric label="Coins disponibles" value={Number(cliente?.puntos || 0).toLocaleString("es-ES")} />
+        <MiniMetric label="Deuda pendiente" value={eur(cliente?.deuda_pendiente)} />
       </div>
 
       <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
         <InfoRow label="Rango" value={cliente?.rango_actual || "Sin rango"} />
         <InfoRow label="Origen" value={cliente?.origen || "—"} />
-        <InfoRow label="Última nota" value={dateLabel(lastNote)} />
+        <InfoRow label="Última interacción" value={dateLabel(latestActivity)} />
         <InfoRow label="Web" value={cliente?.onboarding_completado ? "Activa" : cliente?.total_accesos ? "Pendiente" : "No registrado"} />
       </div>
+
+      <FreePassBenefits benefits={cliente?.free_passes} />
 
       {etiquetas.length ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>

@@ -106,7 +106,7 @@ export function currentRankBenefits(rank: string | null | undefined) {
       "12 minutos GRATIS cuando se incorpora una nueva tarotista",
       "+12 minutos GRATIS permanentes en cada compra a precio regular",
       "Participación automática en sorteos activos (1 número por sorteo)",
-      "3 pases GRATIS cada mes de 7 minutos",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
       "Seguimiento energético durante 1 mes post rituales",
     ];
   }
@@ -114,11 +114,11 @@ export function currentRankBenefits(rank: string | null | undefined) {
     return [
       "10 minutos GRATIS cuando se incorpora una nueva tarotista",
       "+10 minutos GRATIS permanentes en cada compra a precio regular",
-      "3 pases GRATIS cada mes de 7 minutos",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
       "Seguimiento energético durante 1 mes post rituales",
     ];
   }
-  return ["3 pases GRATIS cada mes de 7 minutos"];
+  return ["3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses"];
 }
 
 

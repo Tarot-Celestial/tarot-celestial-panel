@@ -12,6 +12,7 @@ import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 import { tcToast } from "@/lib/tc-toast";
 import reservationStyles from "./CRMReservation.module.css";
+import era from "./CRMNuevaEra.module.css";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { backgroundFetch } from "@/lib/background-fetch";
 
@@ -139,7 +140,7 @@ function rankMeta(rank: string | null | undefined) {
       perks: [
         "12 min GRATIS con cada nueva tarotista",
         "+12 min permanentes en compras a precio regular",
-        "3 pases gratis al mes de 7 minutos",
+        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
         "Participación automática en sorteos activos",
         "Seguimiento energético 1 mes post rituales",
       ],
@@ -156,7 +157,7 @@ function rankMeta(rank: string | null | undefined) {
       perks: [
         "10 min GRATIS con cada nueva tarotista",
         "+10 min permanentes en compras a precio regular",
-        "3 pases gratis al mes de 7 minutos",
+        "3 pases de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
         "Seguimiento energético 1 mes post rituales",
       ],
     };
@@ -169,7 +170,7 @@ function rankMeta(rank: string | null | undefined) {
       chipBorder: "1px solid rgba(214,156,110,.30)",
       cardBg: "linear-gradient(135deg, rgba(214,156,110,.16), rgba(255,255,255,.03))",
       cardBorder: "1px solid rgba(214,156,110,.26)",
-      perks: ["3 pases gratis al mes de 7 minutos"],
+      perks: ["3 pases de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses"],
     };
   }
   return {
@@ -1339,7 +1340,9 @@ export default function CRMClientesPanel({
     }
   }
 
-  useRouletteSignal(sb, crmClienteFicha?.id, async () => {
+  const liveCrmBalance = useRef({ cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales });
+  liveCrmBalance.current = { cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales };
+  async function refreshCrmBenefits() {
     const clientId = String(crmClienteFicha?.id || "");
     const token = await getTokenOrLogin();
     if (!clientId || !token) return;
@@ -1350,23 +1353,44 @@ export default function CRMClientesPanel({
     if (!json?.ok || visibleClientRef.current !== clientId) return;
     const current = json.cliente;
     if (!current) return;
-    const beforeFree = Number(crmClienteFicha.minutos_free_pendientes || 0);
-    const beforeNormal = Number(crmClienteFicha.minutos_normales_pendientes || 0);
+    const latest = liveCrmBalance.current;
+    const beforeFree = Number(latest.cliente?.minutos_free_pendientes || 0);
+    const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
     const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
-    const dirty = Number(crmEditMinFree.replace(",", ".")) !== beforeFree || Number(crmEditMinNormales.replace(",", ".")) !== beforeNormal;
+    const dirty = Number(latest.free.replace(",", ".")) !== beforeFree || Number(latest.normal.replace(",", ".")) !== beforeNormal;
     if (changed && dirty) {
       balanceConflict.current = true;
-      setCrmFichaMsg("Hay un premio nuevo en el saldo. Tus cambios no se han borrado: vuelve a abrir la ficha antes de guardar los minutos.");
+      setCrmFichaMsg("El saldo ha cambiado. Tus cambios no se han borrado: vuelve a abrir la ficha antes de guardar los minutos.");
     } else if (changed) {
       setCrmEditMinFree(String(current.minutos_free_pendientes || 0));
       setCrmEditMinNormales(String(current.minutos_normales_pendientes || 0));
     }
     setCrmClienteFicha((previous: any) => previous?.id === clientId ? { ...previous,
-      puntos: current.puntos, minutos_free_pendientes: current.minutos_free_pendientes,
+      free_passes: current.free_passes, puntos: current.puntos, minutos_free_pendientes: current.minutos_free_pendientes,
       minutos_normales_pendientes: current.minutos_normales_pendientes, updated_at: current.updated_at,
     } : previous);
     await loadNotasCliente(clientId);
-  });
+  }
+  useRouletteSignal(sb, crmClienteFicha?.id, refreshCrmBenefits);
+  const refreshBenefitsRef = useRef(refreshCrmBenefits);
+  refreshBenefitsRef.current = refreshCrmBenefits;
+  useEffect(() => {
+    const renewal = crmClienteFicha?.free_passes?.renews_at;
+    if (!renewal) return;
+    const expiry = crmClienteFicha?.free_passes?.eligible ? crmClienteFicha?.free_passes?.eligible_until : null;
+    const target = Math.min(Date.parse(renewal), expiry ? Date.parse(expiry) : Infinity);
+    let timer: ReturnType<typeof setTimeout>;
+    // Browsers cap timers at ~24 days; re-arm until the 30-day renewal.
+    const arm = () => {
+      timer = setTimeout(() => {
+        if (Date.now() >= target) void refreshBenefitsRef.current();
+        else arm();
+      }, Math.min(2147483647, Math.max(1000, target - Date.now() + 1000)));
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, [crmClienteFicha?.id, crmClienteFicha?.free_passes?.renews_at, crmClienteFicha?.free_passes?.eligible_until, crmClienteFicha?.free_passes?.eligible]);
+
 
   async function openCRMFicha(id: string) {
     if (!id) return;
@@ -1850,7 +1874,7 @@ export default function CRMClientesPanel({
   }
 
   return (
-    <div style={{ display: "grid", gap: 18 }}>
+    <div className={era.root}>
       <div
         className="tc-card"
         style={{
@@ -1862,7 +1886,7 @@ export default function CRMClientesPanel({
       >
         <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
           <div>
-            <div className="tc-title" style={{ fontSize: 24 }}>👥 CRM Operativo</div>
+            <div className="tc-title" style={{ fontSize: 24 }}>CRM · Centro de operaciones</div>
             <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
               Búsqueda, ficha, pagos, reservas, notas y etiquetas en una vista de trabajo premium.
             </div>
@@ -2134,15 +2158,7 @@ export default function CRMClientesPanel({
             <div className="tc-sub">Cargando ficha...</div>
           ) : (
             <>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(260px, 340px) minmax(0, 1fr)",
-                  gap: 14,
-                  alignItems: "start",
-                  marginBottom: 14,
-                }}
-              >
+              <div className={era.overview}>
                 <ClienteSidebar
                   cliente={crmClienteFicha}
                   pagos={crmPagos}
@@ -2666,11 +2682,13 @@ export default function CRMClientesPanel({
           nombre: crmClienteFicha?.nombre,
           apellido: crmClienteFicha?.apellido,
           telefono: crmClienteFicha?.telefono,
+          free_passes: crmClienteFicha?.free_passes,
           minutos_free_pendientes: crmClienteFicha?.minutos_free_pendientes,
           minutos_normales_pendientes: crmClienteFicha?.minutos_normales_pendientes,
         } : null}
         tarotistas={crmTarotistasOpts}
         getToken={getTokenOrLogin}
+        onBenefitsChanged={refreshCrmBenefits}
         onSuccess={async (message?: string) => {
           const targetId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);

@@ -92,10 +92,14 @@ export async function GET(req: Request) {
     const totals30d = await loadRolling30ClientTotals(admin, [data], sinceIso, new Date().toISOString());
     const rankInfo = totals30d.get(String(data.id)) || { total: 0, compras: 0 };
 
-    const effectiveRank = await loadEffectiveClientRank(admin, id, rankInfo.total);
+    const [effectiveRank, passResult] = await Promise.all([
+      loadEffectiveClientRank(admin, id, rankInfo.total),
+      admin.rpc("crm_free_pass_status", { p_cliente_id: id }),
+    ]);
 
     const cliente = {
       ...data,
+      free_passes: passResult.error ? null : passResult.data,
       etiquetas: mapEtiquetasFromRelations(data),
       rango_automatico: effectiveRank.automatic,
       rango_efectivo: effectiveRank.effective,
