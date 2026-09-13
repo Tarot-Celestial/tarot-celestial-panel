@@ -109,3 +109,107 @@
 @media (prefers-reduced-motion: reduce) {
   .holoButton, .stateButton, .logout { transition: none; }
 }
+
+/* International clocks for Central operators */
+.internationalClocks {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.clockCard {
+  position: relative;
+  min-width: 148px;
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: 1fr 1fr;
+  align-items: center;
+  column-gap: 9px;
+  padding: 6px 28px 6px 9px;
+  overflow: hidden;
+  border: 1px solid rgba(228, 193, 112, .19);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 8% 0, rgba(232, 190, 96, .11), transparent 54%),
+    linear-gradient(155deg, rgba(255,255,255,.055), rgba(255,255,255,.018));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 8px 22px rgba(0,0,0,.14);
+}
+.clockCard::after {
+  content: "";
+  position: absolute;
+  inset: auto 12px 0 12px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(229, 190, 101, .32), transparent);
+  pointer-events: none;
+}
+.clockFlag {
+  grid-row: 1 / 3;
+  width: 29px;
+  height: 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 9px;
+  background: rgba(0,0,0,.23);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  font-size: 17px;
+  line-height: 1;
+}
+.clockCopy {
+  min-width: 0;
+  display: contents;
+}
+.clockCountry {
+  align-self: end;
+  overflow: hidden;
+  color: rgba(255,255,255,.63);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .055em;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clockTime {
+  align-self: start;
+  color: #f8e3ad;
+  font: 900 13px/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .02em;
+  text-shadow: 0 0 12px rgba(227, 185, 92, .14);
+  white-space: nowrap;
+}
+.clockZone {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: rgba(209, 190, 224, .43);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.clockIcon {
+  position: absolute;
+  right: 8px;
+  top: 7px;
+  color: rgba(229, 191, 103, .34);
+  pointer-events: none;
+}
+
+@media (max-width: 1460px) {
+  .clockCard { min-width: 132px; }
+  .clockZone { display: none; }
+}
+@media (max-width: 1120px) {
+  .internationalClocks { order: -1; width: 100%; }
+  .clockCard { min-width: 0; flex: 1 1 150px; max-width: 220px; }
+}
+@media (max-width: 620px) {
+  .internationalClocks { gap: 6px; }
+  .clockCard { min-height: 39px; padding: 5px 25px 5px 7px; border-radius: 11px; }
+  .clockFlag { width: 27px; height: 27px; font-size: 16px; }
+  .clockCountry { font-size: 8px; }
+  .clockTime { font-size: 12px; }
+  .clockIcon { width: 13px; height: 13px; right: 7px; top: 6px; }
+}

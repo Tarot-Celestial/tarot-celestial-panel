@@ -8,7 +8,7 @@ import TCToaster from "@/components/ui/TCToaster";
 import BrandSwitcher from "@/components/global/BrandSwitcher";
 import { tcToast } from "@/lib/tc-toast";
 import { useAttendance } from "@/hooks/useAttendance";
-import { ArrowLeft, Network } from "lucide-react";
+import { ArrowLeft, Clock3, Network } from "lucide-react";
 import styles from "./AppHeader.module.css";
 import { backgroundFetch } from "@/lib/background-fetch";
 
@@ -63,6 +63,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   const [elapsed, setElapsed] = useState(0);
   const lastLeadToastIdRef = useRef("");
   const [leadPopup, setLeadPopup] = useState<HeaderNotif | null>(null);
+  const [clockNow, setClockNow] = useState<Date | null>(null);
 
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
@@ -300,6 +301,37 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
     return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
   }
 
+  useEffect(() => {
+    setClockNow(new Date());
+    const intervalId = window.setInterval(() => setClockNow(new Date()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const internationalClocks = useMemo(() => {
+    const zones = [
+      { key: "pr", flag: "🇵🇷", label: "Puerto Rico", timeZone: "America/Puerto_Rico" },
+      { key: "es", flag: "🇪🇸", label: "España", timeZone: "Europe/Madrid" },
+    ] as const;
+
+    return zones.map((zone) => {
+      if (!clockNow) return { ...zone, time: "--:--:--", zoneName: "" };
+      const parts = new Intl.DateTimeFormat("es-ES", {
+        timeZone: zone.timeZone,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZoneName: "short",
+      }).formatToParts(clockNow);
+      const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
+      return {
+        ...zone,
+        time: `${part("hour")}:${part("minute")}:${part("second")}`,
+        zoneName: part("timeZoneName"),
+      };
+    });
+  }, [clockNow]);
+
   const roleText = useMemo(() => {
     if (role === "admin") return "Admin";
     if (role === "central") return "Central";
@@ -375,6 +407,21 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
             </div>
 
             <div className={`tc-row ${styles.controls}`} style={{ gap: 10, flexWrap: "wrap", position: "relative" }}>
+              {role === "central" ? (
+                <div className={styles.internationalClocks} aria-label="Horas internacionales">
+                  {internationalClocks.map((clock) => (
+                    <div className={styles.clockCard} key={clock.key}>
+                      <span className={styles.clockFlag} aria-hidden="true">{clock.flag}</span>
+                      <span className={styles.clockCopy}>
+                        <span className={styles.clockCountry}>{clock.label}</span>
+                        <strong className={styles.clockTime}>{clock.time}</strong>
+                      </span>
+                      <span className={styles.clockZone}>{clock.zoneName}</span>
+                      <Clock3 className={styles.clockIcon} size={15} aria-hidden="true" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <BrandSwitcher />
               <div className={styles.notificationWrap} style={{ position: "relative" }}>
                 <button className={styles.holoButton} onClick={() => setNotifOpen((v) => !v)} aria-label="Abrir notificaciones" aria-expanded={notifOpen}>
