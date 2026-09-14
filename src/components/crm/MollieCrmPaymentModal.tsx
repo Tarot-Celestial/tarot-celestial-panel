@@ -287,13 +287,16 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
 
     const whatsappNombre = String(cliente?.nombre || "").trim() || nombre;
     const text = [
-      `Hola ${whatsappNombre}`,
+      `Hola ${whatsappNombre} ✨`,
       "",
-      `Te envío tu enlace seguro de pago seguro de Tarot Celestial por ${money(payment.amount)} (tu pago).`,
+      `Aquí tienes tu enlace de pago seguro de *Tarot Celestial* por *${money(payment.amount)}* 💳`,
       "",
-      payment.url,
+      `🔐 ${payment.url}`,
       "",
-      "Gracias por confiar en Tarot Celestial",
+      "En cuanto completes el pago, lo veremos reflejado automáticamente.",
+      "",
+      "Gracias por confiar en nosotros 💜",
+      "*Tarot Celestial* 🔮",
     ].join("\n");
     const url = `https://web.whatsapp.com/send?phone=${encodeURIComponent(whatsappPhone)}&text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
