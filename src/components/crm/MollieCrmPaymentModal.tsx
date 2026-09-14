@@ -82,6 +82,13 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
   const [message, setMessage] = useState("");
   const [payment, setPayment] = useState<PaymentState | null>(null);
   const notifiedPaid = useRef(false);
+  const getTokenRef = useRef(getToken);
+
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  const paymentStorageKey = cliente?.id ? `tc:crm:mollie:pending:${cliente.id}` : "";
 
   const nombre = useMemo(
     () => [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Clienta",
@@ -101,17 +108,32 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
   }, [cliente?.pais, cliente?.telefono, cliente?.telefono_normalizado]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !cliente?.id) return;
     setMode("pack");
     setManualAmount("");
     setNotes("");
-    setPayment(null);
     setMessage("");
     notifiedPaid.current = false;
 
+    let restoredPayment: PaymentState | null = null;
+    if (paymentStorageKey) {
+      try {
+        const raw = window.sessionStorage.getItem(paymentStorageKey);
+        if (raw) {
+          const parsed = JSON.parse(raw) as PaymentState;
+          if (parsed?.attempt_id && parsed?.url && ["pending", "processing"].includes(parsed.status)) {
+            restoredPayment = parsed;
+          }
+        }
+      } catch {
+        // Si el navegador bloquea sessionStorage, el cobrador sigue funcionando con estado React.
+      }
+    }
+    setPayment(restoredPayment);
+
     void (async () => {
       try {
-        const token = await getToken();
+        const token = await getTokenRef.current();
         if (!token) return;
         const response = await fetch("/api/crm/pagos/mollie", {
           headers: { Authorization: `Bearer ${token}` },
@@ -126,7 +148,20 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
         setMessage(error?.message || "No se pudieron cargar los packs.");
       }
     })();
-  }, [open, getToken]);
+  }, [open, cliente?.id, paymentStorageKey]);
+
+  useEffect(() => {
+    if (!open || !paymentStorageKey || !payment) return;
+    try {
+      if (["pending", "processing"].includes(payment.status)) {
+        window.sessionStorage.setItem(paymentStorageKey, JSON.stringify(payment));
+      } else {
+        window.sessionStorage.removeItem(paymentStorageKey);
+      }
+    } catch {
+      // sessionStorage es solo una capa extra de recuperación; no bloquea el cobro.
+    }
+  }, [open, payment, paymentStorageKey]);
 
   async function refreshStatus(silent = false) {
     if (!payment?.attempt_id) return;
@@ -231,15 +266,24 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
       setMessage("⚠️ La ficha no tiene un teléfono válido para abrir WhatsApp.");
       return;
     }
-    const concept = payment.pack?.nombre || "tu pago";
+
+    if (paymentStorageKey) {
+      try {
+        window.sessionStorage.setItem(paymentStorageKey, JSON.stringify(payment));
+      } catch {
+        // No bloqueamos la apertura de WhatsApp si sessionStorage no está disponible.
+      }
+    }
+
+    const whatsappNombre = String(cliente?.nombre || "").trim() || nombre;
     const text = [
-      `Hola ${nombre} ✨`,
+      `Hola ${whatsappNombre}`,
       "",
-      `Te envío tu enlace seguro de pago de Tarot Celestial por ${money(payment.amount)} (${concept}).`,
+      `Te envío tu enlace seguro de pago seguro de Tarot Celestial por ${money(payment.amount)} (tu pago).`,
       "",
       payment.url,
       "",
-      "Cuando completes el pago, Mollie lo confirmará automáticamente y actualizaremos tu cuenta.",
+      "Gracias por confiar en Tarot Celestial",
     ].join("\n");
     const url = `https://web.whatsapp.com/send?phone=${encodeURIComponent(whatsappPhone)}&text=${encodeURIComponent(text)}`;
     window.open(url, "_blank", "noopener,noreferrer");
