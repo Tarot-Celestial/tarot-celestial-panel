@@ -285,14 +285,14 @@ function CentralPage() {
   }, []);
 
   const centralProgress: CentralOperatorProgress = {
-    totalXp: xpProgress?.total_xp || 0,
+    availableXp: xpData?.coin_exchange.available ? xpData.coin_exchange.available_xp : null,
     activeStreakDays: Number(xpData?.stats.streak) || 0,
     loyaltyIndex: fidelityFeed.average,
     loyaltyClientCount: fidelityFeed.clientCount,
   };
 
   const centralStats: CentralStatsData = {
-    totalXp: xpProgress?.total_xp || 0,
+    availableXp: xpData?.coin_exchange.available ? xpData.coin_exchange.available_xp : null,
     xpToday: xpData?.daily_activity.total_xp || 0,
     xpDateLabel: selectedDate === todayKey ? "hoy" : `el ${new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${selectedDate}T12:00:00Z`))}`,
     currentLevel: xpProgress ? `Nivel ${xpProgress.level} · ${currentTierName}` : currentTierName,

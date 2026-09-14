@@ -1,3 +1,4 @@
+import { storeAccess } from "@/lib/server/store-access";
 import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
 import { configuredXpProgress } from "@/lib/xp-levels";
@@ -139,7 +140,7 @@ async function rewardSummary(admin: ReturnType<typeof getAdminClient>, workerId:
 
 export async function GET(req: Request) {
   try {
-    const me = await workerFromRequest(req);
+    const me = (await storeAccess(req)).me;
     if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     if (me.role !== "central" && me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
@@ -365,7 +366,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const me = await workerFromRequest(req);
+    const me = (await storeAccess(req)).me;
     if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     if (me.role !== "central" && me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 

@@ -26,7 +26,7 @@ export default function XpSystemAdminPanel(){
   <header className={styles.hero}><div><span><Sparkles size={14}/> PROGRESIÓN DE TELEFONISTAS</span><h1>Sistema de XP</h1><p>Centro administrativo de reglas, experiencia, niveles e historial real.</p></div><button onClick={()=>load()} disabled={busy}><RefreshCw size={16}/> Refrescar</button></header>
   {error?<div className={styles.error}>{error}</div>:null}
   <AdminXpCoinConfig value={data.coin_exchange} busy={busy} save={saveExchange}/>
-  <AdminRewardStore/>
+  <details><summary style={{cursor:"pointer",padding:"16px",fontWeight:800}}>Tienda de recompensas</summary><AdminRewardStore/></details>
   <div className={styles.metrics}>{[[Bolt,"XP este mes",fmt(data.summary.xp_month)],[Star,"XP hoy",fmt(data.summary.xp_today)],[Trophy,"Nivel medio",Number(data.summary.average_level||0).toFixed(1)],[Award,"Líder del mes",data.summary.top_worker?.name||"Sin datos"],[Coins,"Coins generadas",data.summary.coins_generated??"Sin datos"],[Medal,"Bonos reclamados",data.summary.rewards_claimed??"Sin datos"],[ShieldCheck,"Acciones activas",fmt(data.summary.active_rules)]].map(([I,l,v]:any)=><article key={l}><I size={18}/><small>{l}</small><strong>{v}</strong></article>)}</div>
   <div className={styles.sectionHead}><div><span>CONFIGURACIÓN</span><h2>Acciones que dan experiencia</h2></div><button onClick={()=>setNewOpen(true)}><Plus size={16}/> Añadir acción XP</button></div>
   <div className={styles.rules}>{(data.rules||[]).map((r:Rule)=><RuleCard key={r.action_key} rule={r} save={saveRule} remove={deleteRule} busy={busy}/>)}</div>

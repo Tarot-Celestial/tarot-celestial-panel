@@ -229,6 +229,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
       if (document.visibilityState === "visible") void load(true);
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("tc-worker-wallet-changed", onVisible);
     const onLocalXp = refreshSoon;
     window.addEventListener("tc-xp-recorded", onLocalXp);
 
@@ -260,6 +261,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
         refreshDebounceRef.current = null;
       }
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("tc-worker-wallet-changed", onVisible);
       window.removeEventListener("tc-xp-recorded", onLocalXp);
       void sb.removeChannel(channel);
     };

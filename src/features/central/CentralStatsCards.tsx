@@ -13,7 +13,7 @@ import styles from "./CentralStatsCards.module.css";
 export type CentralLevel = string;
 
 export type CentralStatsData = {
-  totalXp: number;
+  availableXp: number | null;
   xpToday: number;
   xpDateLabel?: string;
   currentLevel: CentralLevel;
@@ -107,8 +107,8 @@ export default function CentralStatsCards({
       <article className={`${styles.card} ${styles.xpCard}`}>
         <div className={styles.cardTop}>
           <div>
-            <div className={styles.eyebrow}>XP TOTAL</div>
-            <div className={styles.value}>{formatNumber(data.totalXp)} XP</div>
+            <div className={styles.eyebrow}>XP DISPONIBLE</div>
+            <div className={styles.value}>{data.availableXp == null ? "—" : formatNumber(data.availableXp)} XP</div>
             <div className={styles.positive}>+{formatNumber(data.xpToday)} XP {data.xpDateLabel || "hoy"}</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">

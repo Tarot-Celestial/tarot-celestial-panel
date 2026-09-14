@@ -9,7 +9,7 @@ import { centralThemeStyle } from "@/lib/central-profile-theme";
 import styles from "./CentralProgressHeader.module.css";
 
 export type CentralOperatorProgress = {
-  totalXp: number;
+  availableXp: number | null;
   activeStreakDays: number;
   loyaltyIndex: number | null;
   loyaltyClientCount: number;
@@ -103,8 +103,8 @@ export default function CentralProgressHeader({
             <Sparkles size={17} />
           </div>
           <div>
-            <div className={styles.metricLabel}>XP TOTAL</div>
-            <div className={styles.metricValue}>{formatXp(progress.totalXp)} XP</div>
+            <div className={styles.metricLabel}>XP DISPONIBLE</div>
+            <div className={styles.metricValue}>{progress.availableXp == null ? "—" : formatXp(progress.availableXp)} XP</div>
           </div>
         </article>
 
