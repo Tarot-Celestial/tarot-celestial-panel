@@ -5,6 +5,7 @@ import { getMolliePayment } from "@/lib/server/mollie";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 import { applyPromotionMinutePurchase, type PromotionPackageSnapshot } from "@/lib/server/client-promotions";
+import { pointsFromAmount } from "@/lib/server/cliente-platform";
 
 export const runtime = "nodejs";
 
@@ -123,15 +124,19 @@ export async function POST(req: Request) {
     if (promotionSnapshot && promotionSnapshot.kind !== "promotion_minute_pack") {
       throw new Error("PROMOTION_SNAPSHOT_INVALID");
     }
-    const minutePack = promotionSnapshot ? null : getConfiguredMinutePack(locked.pack_id);
-    const oraclePack = promotionSnapshot ? null : getOraclePack(locked.pack_id);
-    const questionPack = promotionSnapshot ? null : getOracleQuestionPack(locked.pack_id);
+    const crmManualAmount = String(locked.pack_id || "") === "crm_manual_amount" && String(metadata.source || "") === "crm_cobrador";
+    const minutePack = promotionSnapshot || crmManualAmount ? null : getConfiguredMinutePack(locked.pack_id);
+    const oraclePack = promotionSnapshot || crmManualAmount ? null : getOraclePack(locked.pack_id);
+    const questionPack = promotionSnapshot || crmManualAmount ? null : getOracleQuestionPack(locked.pack_id);
     const pack = promotionSnapshot
       ? { nombre: `${promotionSnapshot.promotion_name} · ${promotionSnapshot.package_name}` }
+      : crmManualAmount
+      ? { nombre: `Cobro personalizado ${paymentAmount.toFixed(2)} ${paymentCurrency}` }
       : minutePack || oraclePack || questionPack;
     if (!pack) throw new Error("PACK_MOLLIE_NO_ENCONTRADO");
 
     let duplicated = false;
+    let completedPaymentId = "";
     if (promotionSnapshot?.kind === "promotion_minute_pack") {
       const purchase = await applyPromotionMinutePurchase(admin, {
         attemptId: String(locked.id),
@@ -142,6 +147,26 @@ export async function POST(req: Request) {
         currency: paymentCurrency === "USD" ? "USD" : "EUR",
       });
       duplicated = Boolean(purchase.duplicated);
+      completedPaymentId = String((purchase as any)?.payment?.id || "");
+    } else if (crmManualAmount) {
+      const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
+        p: {
+          cliente_id: locked.cliente_id,
+          payment_ref: `mollie:${paymentId}`,
+          amount: paymentAmount,
+          currency: paymentCurrency === "USD" ? "USD" : "EUR",
+          metodo: "mollie_crm_manual",
+          free: 0,
+          normal: 0,
+          points: pointsFromAmount(paymentAmount),
+          notas: String(metadata.notes || "Cobro personalizado iniciado desde CRM"),
+          created_by_user_id: metadata.initiated_by_worker_id || null,
+          created_by_role: metadata.initiated_by_role || "central",
+        },
+      });
+      if (transactionError) throw transactionError;
+      duplicated = Boolean(transaction?.duplicated);
+      completedPaymentId = String(transaction?.payment?.id || "");
     } else if (questionPack) {
       await grantOracleQuestions(admin, {
         clienteId: locked.cliente_id,
@@ -168,12 +193,26 @@ export async function POST(req: Request) {
         stripeSessionId: null,
         amount: paymentAmount,
         currency: paymentCurrency === "USD" ? "USD" : "EUR",
-        metodo: "mollie_checkout",
-        notas: `Mollie completado · ${minutePack!.nombre}`,
+        metodo: String(metadata.source || "") === "crm_cobrador" ? "mollie_crm" : "mollie_checkout",
+        notas: String(metadata.source || "") === "crm_cobrador"
+          ? `Mollie CRM completado · ${minutePack!.nombre} · iniciado por ${String(metadata.initiated_by_name || "Central")}`
+          : `Mollie completado · ${minutePack!.nombre}`,
       });
       duplicated = purchase.duplicated;
+      completedPaymentId = String((purchase as any)?.payment?.id || "");
     }
 
+    if (String(metadata.source || "") === "crm_cobrador" && completedPaymentId && metadata.initiated_by_worker_id) {
+      await admin
+        .from("crm_cliente_pagos")
+        .update({
+          created_by_user_id: metadata.initiated_by_worker_id,
+          created_by_role: metadata.initiated_by_role || "central",
+        })
+        .eq("id", completedPaymentId);
+    }
+
+    const crmSource = String(metadata.source || "") === "crm_cobrador";
     await Promise.allSettled([
       admin
         .from("cliente_payment_attempts")
@@ -192,7 +231,9 @@ export async function POST(req: Request) {
         ? Promise.resolve()
         : admin.from("crm_client_notes").insert({
             cliente_id: locked.cliente_id,
-            texto: `🟣 Compra web: ha comprado ${pack.nombre} (${paymentAmount.toFixed(2)} ${paymentCurrency}) mediante Mollie`,
+            texto: crmSource
+              ? `🟣 Cobro Mollie CRM: ${pack.nombre} (${paymentAmount.toFixed(2)} ${paymentCurrency}) · iniciado por ${String(metadata.initiated_by_name || "Central")}`
+              : `🟣 Compra web: ha comprado ${pack.nombre} (${paymentAmount.toFixed(2)} ${paymentCurrency}) mediante Mollie`,
             author_user_id: null,
             author_name: "Sistema",
             author_email: null,

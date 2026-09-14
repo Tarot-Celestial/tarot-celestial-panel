@@ -8,6 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
+import MollieCrmPaymentModal from "@/components/crm/MollieCrmPaymentModal";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 import { tcToast } from "@/lib/tc-toast";
@@ -404,6 +405,7 @@ export default function CRMClientesPanel({
   const [crmUpdatingNote, setCrmUpdatingNote] = useState(false);
   const [crmPinningNoteId, setCrmPinningNoteId] = useState("");
   const [crmRegistrarOpen, setCrmRegistrarOpen] = useState(false);
+  const [crmMollieOpen, setCrmMollieOpen] = useState(false);
   const [crmNotesExpanded, setCrmNotesExpanded] = useState(false);
 
   async function getTokenOrLogin() {
@@ -2149,7 +2151,12 @@ export default function CRMClientesPanel({
               </div>
             </div>
 
-            {!crmFichaLoading && <button className="tc-btn" onClick={closeCRMFicha}>Cerrar ficha</button>}
+            {!crmFichaLoading ? (
+              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
+                <button className="tc-btn tc-btn-gold" onClick={() => setCrmMollieOpen(true)}>💳 Realizar pago</button>
+                <button className="tc-btn" onClick={closeCRMFicha}>Cerrar ficha</button>
+              </div>
+            ) : null}
           </div>
 
           <div className="tc-hr" />
@@ -2673,6 +2680,29 @@ export default function CRMClientesPanel({
             document.body
           )
         : null}
+
+
+      <MollieCrmPaymentModal
+        open={crmMollieOpen}
+        onClose={() => setCrmMollieOpen(false)}
+        cliente={crmClienteFicha ? {
+          id: String(crmClienteFicha?.id || crmClienteSelId || ""),
+          nombre: crmClienteFicha?.nombre,
+          apellido: crmClienteFicha?.apellido,
+          telefono: crmClienteFicha?.telefono || crmEditTelefono,
+          telefono_normalizado: crmClienteFicha?.telefono_normalizado,
+          pais: crmClienteFicha?.pais || crmEditPais,
+        } : null}
+        getToken={getTokenOrLogin}
+        onPaid={async () => {
+          const targetId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+          if (targetId) {
+            await loadPagosCliente(targetId);
+            await openCRMFicha(targetId);
+          }
+          setCrmFichaMsg("✅ Pago Mollie confirmado y CRM actualizado.");
+        }}
+      />
 
       <RegistrarLlamadaModal
         open={crmRegistrarOpen}
