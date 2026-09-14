@@ -13,3 +13,27 @@
 @media(max-width:720px){.modal{padding:20px 15px;border-radius:20px}.header{grid-template-columns:auto 1fr}.secure{display:none}.packGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.actions{grid-template-columns:1fr 1fr}.whatsapp{grid-column:1/3}.status{grid-template-columns:auto 1fr}.status>b{grid-column:2}.modeSwitch{grid-template-columns:1fr}}
 @media(max-width:430px){.packGrid{grid-template-columns:1fr}.actions{grid-template-columns:1fr}.whatsapp{grid-column:auto}.header h2{font-size:22px}}
 @media(prefers-reduced-motion:reduce){.pack,.spinIcon{transition:none;animation:none}}
+
+/* Estado visual principal del cobrador Mollie */
+.paymentStateHero{position:relative;isolation:isolate;overflow:hidden;min-height:250px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 22px 26px;border:1px solid rgba(233,197,104,.3);border-radius:22px;background:radial-gradient(circle at 50% 14%,rgba(235,198,99,.12),transparent 36%),linear-gradient(145deg,rgba(230,188,79,.08),rgba(128,77,196,.05));box-shadow:inset 0 1px rgba(255,255,255,.045),0 20px 55px rgba(0,0,0,.22)}
+.paymentStateGlow{position:absolute;z-index:-1;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(232,193,91,.16),rgba(129,79,195,.06) 42%,transparent 70%);filter:blur(7px);pointer-events:none}
+.paymentStateIcon{width:72px;height:72px;display:grid;place-items:center;margin-bottom:14px;border:1px solid rgba(236,201,111,.4);border-radius:50%;background:rgba(225,185,78,.09);color:#f0d37d;box-shadow:0 0 0 8px rgba(227,188,84,.035),0 0 42px rgba(226,181,67,.13)}
+.paymentStateIcon svg{width:34px;height:34px;stroke-width:2}
+.paymentStateEyebrow{position:relative;font-size:9px;line-height:1.2;letter-spacing:.18em;font-weight:950;color:rgba(241,211,125,.78)}
+.paymentStateTitle{position:relative;max-width:680px;margin-top:8px;font-size:clamp(27px,4.3vw,46px);line-height:1.04;letter-spacing:.015em;font-weight:1000;color:#f6dda0;text-shadow:0 4px 25px rgba(224,182,75,.12)}
+.paymentStateText{position:relative;max-width:570px;margin:10px 0 0;color:rgba(255,255,255,.58);font-size:12px;line-height:1.55}
+.paymentStateAmount{position:relative;margin-top:14px;padding:8px 15px;border:1px solid rgba(232,195,99,.2);border-radius:999px;background:rgba(0,0,0,.2);font-size:20px;color:#f1d37e}
+.paymentWaitingDots{position:relative;display:flex;align-items:center;gap:7px;height:18px;margin-top:13px}
+.paymentWaitingDots i{width:7px;height:7px;border-radius:50%;background:#e9c96f;box-shadow:0 0 13px rgba(233,201,111,.55);animation:paymentDot 1.25s ease-in-out infinite}
+.paymentWaitingDots i:nth-child(2){animation-delay:.16s}.paymentWaitingDots i:nth-child(3){animation-delay:.32s}
+.paymentStateHero[data-state=success]{border-color:rgba(74,222,128,.38);background:radial-gradient(circle at 50% 15%,rgba(74,222,128,.15),transparent 38%),linear-gradient(145deg,rgba(34,197,94,.1),rgba(7,74,48,.08))}
+.paymentStateHero[data-state=success] .paymentStateGlow{background:radial-gradient(circle,rgba(74,222,128,.18),rgba(31,137,88,.05) 45%,transparent 72%)}
+.paymentStateHero[data-state=success] .paymentStateIcon{border-color:rgba(74,222,128,.45);background:rgba(34,197,94,.11);color:#7ff0aa;box-shadow:0 0 0 8px rgba(34,197,94,.04),0 0 44px rgba(34,197,94,.16)}
+.paymentStateHero[data-state=success] .paymentStateEyebrow{color:#8ceeb1}.paymentStateHero[data-state=success] .paymentStateTitle{color:#c8f8d8;text-shadow:0 4px 26px rgba(34,197,94,.12)}.paymentStateHero[data-state=success] .paymentStateAmount{border-color:rgba(74,222,128,.22);color:#aaf3c4}
+.paymentStateHero[data-state=rejected]{border-color:rgba(248,113,113,.4);background:radial-gradient(circle at 50% 15%,rgba(248,113,113,.14),transparent 38%),linear-gradient(145deg,rgba(127,29,29,.13),rgba(69,10,10,.07))}
+.paymentStateHero[data-state=rejected] .paymentStateGlow{background:radial-gradient(circle,rgba(248,113,113,.17),rgba(127,29,29,.05) 45%,transparent 72%)}
+.paymentStateHero[data-state=rejected] .paymentStateIcon{border-color:rgba(248,113,113,.5);background:rgba(239,68,68,.1);color:#ff9b9b;box-shadow:0 0 0 8px rgba(239,68,68,.035),0 0 44px rgba(239,68,68,.15)}
+.paymentStateHero[data-state=rejected] .paymentStateEyebrow{color:#ff9d9d}.paymentStateHero[data-state=rejected] .paymentStateTitle{color:#ffd0d0;text-shadow:0 4px 26px rgba(239,68,68,.12)}.paymentStateHero[data-state=rejected] .paymentStateAmount{border-color:rgba(248,113,113,.23);color:#ffb3b3}
+@keyframes paymentDot{0%,75%,100%{opacity:.28;transform:translateY(0) scale(.86)}35%{opacity:1;transform:translateY(-4px) scale(1)}}
+@media(max-width:720px){.paymentStateHero{min-height:220px;padding:26px 16px 22px}.paymentStateIcon{width:62px;height:62px}.paymentStateIcon svg{width:29px;height:29px}.paymentStateTitle{font-size:clamp(25px,8vw,35px)}.paymentStateText{font-size:11px}.paymentStateAmount{font-size:18px}}
+@media(prefers-reduced-motion:reduce){.paymentWaitingDots i{animation:none;opacity:.8}}

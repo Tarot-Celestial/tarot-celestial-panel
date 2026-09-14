@@ -64,12 +64,19 @@ function money(value: number) {
   return Number(value || 0).toLocaleString("es-ES", { style: "currency", currency: "EUR" });
 }
 
-function statusLabel(status: string, remote?: string | null) {
-  if (status === "completed") return "Pago confirmado";
-  if (status === "processing" || remote === "paid") return "Pago recibido · acreditando";
-  if (status === "failed") return "Pago fallido";
-  if (status === "cancelled") return "Pago cancelado";
-  return "Esperando pago";
+type PaymentVisualState = "waiting" | "success" | "rejected";
+
+function paymentVisualState(status: string, remote?: string | null): PaymentVisualState {
+  const localStatus = String(status || "").toLowerCase();
+  const remoteStatus = String(remote || "").toLowerCase();
+
+  if (localStatus === "completed") return "success";
+  if (
+    ["failed", "cancelled", "canceled"].includes(localStatus) ||
+    ["failed", "expired", "cancelled", "canceled"].includes(remoteStatus)
+  ) return "rejected";
+
+  return "waiting";
 }
 
 export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose, onPaid }: Props) {
@@ -99,6 +106,9 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
   const requestedAmount = mode === "pack"
     ? Number(selectedPack?.amount || 0)
     : Number(String(manualAmount || "").replace(",", ".")) || 0;
+  const visualPaymentState = payment
+    ? paymentVisualState(payment.status, payment.remote_status)
+    : "waiting";
 
   const whatsappPhone = useMemo(() => {
     const raw = String(cliente?.telefono_normalizado || cliente?.telefono || "").trim();
@@ -348,10 +358,54 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
           </>
         ) : (
           <div className={styles.paymentView}>
-            <div className={styles.status} data-status={payment.status}>
-              {payment.status === "completed" ? <CheckCircle2 /> : <Clock3 />}
-              <div><span>ESTADO DEL COBRO</span><strong>{statusLabel(payment.status, payment.remote_status)}</strong></div>
-              <b>{money(payment.amount)}</b>
+            <div
+              className={styles.paymentStateHero}
+              data-state={visualPaymentState}
+              role="status"
+              aria-live="polite"
+            >
+              <div className={styles.paymentStateGlow} aria-hidden="true" />
+              <div className={styles.paymentStateIcon} aria-hidden="true">
+                {visualPaymentState === "success" ? (
+                  <CheckCircle2 />
+                ) : visualPaymentState === "rejected" ? (
+                  <X />
+                ) : (
+                  <Clock3 />
+                )}
+              </div>
+
+              <span className={styles.paymentStateEyebrow}>
+                {visualPaymentState === "success"
+                  ? "MOLLIE · PAGO CONFIRMADO"
+                  : visualPaymentState === "rejected"
+                    ? "MOLLIE · COBRO NO COMPLETADO"
+                    : "MOLLIE · COBRO EN CURSO"}
+              </span>
+
+              <strong className={styles.paymentStateTitle}>
+                {visualPaymentState === "success"
+                  ? "PAGO REALIZADO CORRECTAMENTE"
+                  : visualPaymentState === "rejected"
+                    ? "PAGO RECHAZADO"
+                    : "ESPERANDO PAGO…"}
+              </strong>
+
+              <p className={styles.paymentStateText}>
+                {visualPaymentState === "success"
+                  ? `Mollie ha confirmado correctamente el pago de ${money(payment.amount)}.`
+                  : visualPaymentState === "rejected"
+                    ? `El pago de ${money(payment.amount)} no ha podido completarse.`
+                    : `Esperando la confirmación de Mollie para el cobro de ${money(payment.amount)}.`}
+              </p>
+
+              <b className={styles.paymentStateAmount}>{money(payment.amount)}</b>
+
+              {visualPaymentState === "waiting" ? (
+                <div className={styles.paymentWaitingDots} aria-hidden="true">
+                  <i /><i /><i />
+                </div>
+              ) : null}
             </div>
 
             <div className={styles.linkBox}><span>Enlace seguro Mollie</span><code>{payment.url}</code></div>
