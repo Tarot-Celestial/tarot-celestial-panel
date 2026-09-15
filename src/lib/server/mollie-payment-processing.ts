@@ -1,3 +1,4 @@
+import { savePaymentLinkNote } from "@/lib/server/payment-link-note";
 import { adminClient } from "@/lib/server/auth-cliente";
 import { applyConfiguredMinutePurchase } from "@/lib/server/client-minute-purchase";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
@@ -5,7 +6,7 @@ import { getMolliePayment } from "@/lib/server/mollie";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 import { applyPromotionMinutePurchase, type PromotionPackageSnapshot } from "@/lib/server/client-promotions";
-import { pointsFromAmount } from "@/lib/server/cliente-platform";
+import { pointsFromAmount, splitMinutes } from "@/lib/server/cliente-platform";
 
 
 
@@ -149,6 +150,7 @@ export async function processMolliePayment(paymentId: string) {
 
     let duplicated = false;
     let completedPaymentId = "";
+    let creditedMinutes = { normal: 0, free: 0 };
     if (promotionSnapshot?.kind === "promotion_minute_pack") {
       const purchase = await applyPromotionMinutePurchase(admin, {
         attemptId: String(locked.id),
@@ -212,6 +214,7 @@ export async function processMolliePayment(paymentId: string) {
           ? `Mollie CRM completado · ${minutePack!.nombre} · iniciado por ${String(metadata.initiated_by_name || "Central")}`
           : `Mollie completado · ${minutePack!.nombre}`,
       });
+      creditedMinutes = purchase.creditedMinutes || splitMinutes(Number((purchase as any)?.payment?.paid_minutes ?? minutePack!.totalMinutes));
       duplicated = purchase.duplicated;
       completedPaymentId = String((purchase as any)?.payment?.id || "");
     }
@@ -227,6 +230,17 @@ export async function processMolliePayment(paymentId: string) {
       if (attributionError) throw attributionError;
     }
 
+    // The purchase RPC is already idempotent. If saving its note fails, retry the
+    // same reference: no extra balance is granted and the stable note ID prevents duplicates.
+    if (metadata.source === "crm_cobrador" && !promotionSnapshot && completedPaymentId) {
+      await savePaymentLinkNote(admin, {
+        paymentId, clienteId: locked.cliente_id, packName: pack.nombre,
+        amount: paymentAmount, currency: paymentCurrency,
+        ...creditedMinutes, paidAt: payment.paidAt,
+        initiatedBy: metadata.initiated_by_name, manual: crmManualAmount,
+      });
+    }
+
     // Persist completion explicitly: a resolved Supabase Promise can still contain an error.
     const { data: completed, error: completionError } = await admin.from("cliente_payment_attempts").update({
       status: "completed", completed_at: new Date().toISOString(), order_id: paymentId,
@@ -234,7 +248,7 @@ export async function processMolliePayment(paymentId: string) {
     }).eq("id", locked.id).eq("updated_at", processingVersion).select("id").maybeSingle();
     if (completionError) throw completionError;
     if (!completed) throw new Error("PAYMENT_COMPLETION_RETRY");
-    if (!promotionSnapshot && !duplicated) {
+    if (!promotionSnapshot && !duplicated && metadata.source !== "crm_cobrador") {
       const { error: noteError } = await admin.from("crm_client_notes").insert({
         cliente_id: locked.cliente_id, texto: `🟣 Compra ${metadata.source === "crm_cobrador" ? "por enlace CRM" : "web"}: ${pack.nombre} (${paymentAmount.toFixed(2)} ${paymentCurrency}) mediante Mollie`,
         author_user_id: null, author_name: "Sistema", author_email: null, is_pinned: false,

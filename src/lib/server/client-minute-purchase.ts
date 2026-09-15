@@ -54,7 +54,7 @@ export async function applyConfiguredMinutePurchase(
   const pago = transaction.payment;
   const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
   const { data: grantedSpins } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", pago.id).order("created_at", { ascending: true });
-  if (transaction.duplicated) return { ok: true, ...transaction, spins: grantedSpins || [] };
+  if (transaction.duplicated) return { ok: true, ...transaction, creditedMinutes: splitMinutes(Number(pago.paid_minutes ?? totalMinutes)), spins: grantedSpins || [] };
 
   const { start, end } = monthRange(new Date());
   const { data: monthPayments, error: monthPaymentsError } = await admin
@@ -117,6 +117,7 @@ export async function applyConfiguredMinutePurchase(
     ok: true,
     duplicated: false,
     payment: pago,
+    creditedMinutes: minutesSplit,
     rank: nextRank,
     monthlySpend,
     monthlyPurchases,
