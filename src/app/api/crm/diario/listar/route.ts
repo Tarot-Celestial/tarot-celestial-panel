@@ -1,3 +1,4 @@
+import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { brandFromRequest, filterRowsByBrand } from "@/lib/server/brand-filter";
@@ -16,7 +17,7 @@ type DailyRow = {
   id: string;
   payment_id: string;
   source_rendimiento_id: string | null;
-  source: "operador" | "web";
+  source: "operador" | "web" | "enlace";
   cliente_id: string | null;
   client_key: string;
   nombre: string;
@@ -138,6 +139,7 @@ async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, paym
     const rendimiento = rendimientoMap.get(String(payment.source_rendimiento_id || ""));
     const worker = workerMap.get(String(payment.created_by_user_id || ""));
     const role = String(payment.created_by_role || "").toLowerCase();
+    const isLink = ["mollie_crm", "mollie_crm_manual"].includes(payment.metodo);
     const isWeb = !payment.created_by_user_id || role.includes("web") || role.includes("cliente");
     const nombre = cleanName(rendimiento?.cliente_nombre || [client?.nombre, client?.apellido].filter(Boolean).join(" "), "Cliente");
     const telefono = String(client?.telefono || "").trim() || null;
@@ -145,7 +147,7 @@ async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, paym
       id: `pago-${payment.id}`,
       payment_id: String(payment.id),
       source_rendimiento_id: isUuid(payment.source_rendimiento_id) ? String(payment.source_rendimiento_id) : null,
-      source: isWeb ? "web" : "operador",
+      source: isLink ? "enlace" : isWeb ? "web" : "operador",
       cliente_id: clientId || null,
       client_key: clientId || `${nombre.toLowerCase()}|${telefono || ""}`,
       nombre,
@@ -153,7 +155,10 @@ async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, paym
       fecha_pago: payment.created_at,
       importe: Number(payment.importe || 0),
       metodo: cleanName(payment.metodo || rendimiento?.forma_pago, "Pago"),
-      central: isWeb ? "Web automática" : cleanName(rendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
+      moneda: payment.moneda,
+      referencia_externa: payment.referencia_externa,
+      central_generadora: worker?.display_name || null,
+      central: isLink ? "Central automática · Enlace" : isWeb ? "Web automática" : cleanName(rendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
       tarotista: rendimiento ? cleanName(rendimiento.tarotista_nombre || rendimiento.tarotista_manual_call, "—") : null,
       estado: String(payment.estado || "completed").trim().toLowerCase(),
     } as DailyRow;
@@ -182,6 +187,7 @@ function mergePrevious(current: GeneratedRow[], previous: GeneratedRow[]) {
 
 export async function GET(req: Request) {
   try {
+    await rouletteStaff(req);
     const { searchParams } = new URL(req.url); const mode = String(searchParams.get("mode") || "hoy");
     const selectedDay = selectedDateKey(mode, searchParams.get("date")); const comparisonDay = previousMonthEquivalentKey(selectedDay);
     const selectedMonth = selectedDay.slice(0, 7); const comparisonMonth = previousMonthKey(selectedMonth);
@@ -219,7 +225,7 @@ export async function GET(req: Request) {
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate"); return response;
   } catch (error: any) {
     console.error("[Diario] Error cargando datos", error);
-    const response = NextResponse.json({ ok: false, error: error?.message || "Error cargando diario" }, { status: 500 });
+    const response = NextResponse.json({ ok: false, error: error?.message || "Error cargando diario" }, { status: error.status || 500 });
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate"); return response;
   }
 }

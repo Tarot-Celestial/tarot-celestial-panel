@@ -1,6 +1,7 @@
 export type MolliePayment = {
   id: string;
   status: string;
+  paidAt?: string;
   amount: { currency: string; value: string };
   description?: string;
   metadata?: Record<string, any> | string | null;
@@ -24,6 +25,7 @@ async function mollieRequest<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {}),
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(15000),
   });
 
   const json = await response.json().catch(() => null);
@@ -45,9 +47,11 @@ export async function createMolliePayment(params: {
   redirectUrl: string;
   webhookUrl: string;
   metadata: Record<string, any>;
+  idempotencyKey?: string;
 }) {
   const payment = await mollieRequest<MolliePayment>("/payments", {
     method: "POST",
+    headers: params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : {},
     body: JSON.stringify({
       amount: {
         currency: params.currency,

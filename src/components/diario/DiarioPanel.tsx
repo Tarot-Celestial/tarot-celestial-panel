@@ -45,7 +45,10 @@ type DiarioRow = {
   id: string;
   payment_id: string;
   source_rendimiento_id?: string | null;
-  source: "operador" | "web";
+  source: "operador" | "web" | "enlace";
+  moneda?: string;
+  referencia_externa?: string;
+  central_generadora?: string | null;
   cliente_id?: string | null;
   nombre: string;
   telefono?: string | null;
@@ -821,14 +824,14 @@ export default function DiarioPanel({ embedded = false }: DiarioPanelProps) {
                         <div><strong>{row.nombre || "—"}</strong><small>{row.telefono || "Sin teléfono"}</small></div>
                       </div>
                     </td>
-                    <td><span className={`${styles.sourceBadge} ${row.source === "web" ? styles.sourceWeb : styles.sourceOperator}`}>{row.source === "web" ? <Globe2 size={13} /> : <Headphones size={13} />}{row.source === "web" ? "Web auto" : "Operador"}</span></td>
-                    <td>{row.central || "—"}</td>
+                    <td><span className={`${styles.sourceBadge} ${row.source === "web" ? styles.sourceWeb : styles.sourceOperator}`}>{row.source === "web" ? <Globe2 size={13} /> : <Headphones size={13} />}{row.source === "enlace" ? "Enlace" : row.source === "web" ? "Web auto" : "Operador"}</span></td>
+                    <td title={[row.central_generadora && `Generado por ${row.central_generadora}`, row.referencia_externa].filter(Boolean).join(" · ")}>{row.central || "—"}</td>
                     <td>{row.tarotista || "—"}</td>
                     <td><span className={`${styles.methodBadge} ${styles[`method_${method}`]}`}>{row.metodo || "—"}</span></td>
                     <td><span className={`${styles.stateBadge} ${styles[`state_${state}`]}`}>{row.estado || "—"}</span></td>
                     <td>
                       <div className={styles.amountActionCell}>
-                        <strong className={styles.amountCell}>{eur(row.importe || 0)}</strong>
+                        <strong className={styles.amountCell}>{Number(row.importe || 0).toLocaleString("es-ES", { style: "currency", currency: row.moneda || "EUR" })}</strong>
                         <button
                           type="button"
                           className={styles.deleteMovementButton}

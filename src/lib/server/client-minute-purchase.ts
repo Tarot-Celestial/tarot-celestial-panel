@@ -23,6 +23,8 @@ export async function applyConfiguredMinutePurchase(
     currency: ClientPurchaseCurrency;
     metodo?: string;
     notas?: string;
+    createdByUserId?: string | null;
+    createdByRole?: string | null;
   },
 ) {
   const pack = getConfiguredMinutePack(params.packId);
@@ -40,6 +42,8 @@ export async function applyConfiguredMinutePurchase(
   const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v3", {
     p: { cliente_id: params.clienteId, payment_ref: params.paymentRef,
       stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
+      created_by_user_id: params.createdByUserId || null,
+      created_by_role: params.createdByRole || "cliente_webhook",
       amount, currency, metodo, pack_id: pack.id, pack_name: pack.nombre,
       free: minutesSplit.free, normal: minutesSplit.normal, points: puntosGanados,
       oracle_credits: pack.oracleCredits || 0,
