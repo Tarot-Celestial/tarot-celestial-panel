@@ -33,6 +33,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 import { useAttendance } from "@/hooks/useAttendance";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
+import FirstTarotistReservationsPanel from "@/features/central/FirstTarotistReservationsPanel";
 import HabitualesPanel from "@/components/habituales/HabitualesPanel";
 import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
@@ -65,6 +66,7 @@ const TABS = [
   "sorteo",
   "chat",
   "reservas",
+  "primera-tarotista",
   "diario",
   "captacion",
   "incidencias",
@@ -98,6 +100,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "tienda", label: "Tienda", icon: ShoppingBag, kicker: "Bóveda de recompensas" },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
   { key: "reservas", label: "Reservas", icon: CalendarDays, kicker: "Agenda y orden de atención" },
+  { key: "primera-tarotista", label: "Primera tarotista", icon: Sparkles, kicker: "Consulta gratis y orden" },
   {
     key: "equipo",
     label: "Equipo",
@@ -1564,6 +1567,7 @@ function CentralPage() {
           )}
           {tab === "rendimiento" && <RendimientoPanel mode="central" />}
           {tab === "reservas" && <ReservasPanel mode="central" />}
+          {tab === "primera-tarotista" && <FirstTarotistReservationsPanel />}
           {tab === "habituales" && <HabitualesPanel mode="central" />}
 
           {/* ✅ OUTBOUND LLAMADAS */}

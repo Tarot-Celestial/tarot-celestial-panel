@@ -36,6 +36,7 @@ const NAV_TONES: Record<string, NavTone> = {
   equipo: { rgb: "129, 140, 248" },
   crm: { rgb: "168, 85, 247" },
   reservas: { rgb: "217, 185, 110" },
+  "primera-tarotista": { rgb: "238, 197, 92" },
   captacion: { rgb: "245, 158, 11" },
   incidencias: { rgb: "239, 106, 106" },
   checklist: { rgb: "93, 214, 167" },
