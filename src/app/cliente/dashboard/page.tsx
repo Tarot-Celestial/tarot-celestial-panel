@@ -278,7 +278,7 @@ export default function ClienteDashboardPage() {
     const checkout = params.get("checkout");
     const oracleCheckout = params.get("oracle_checkout");
     if (checkout === "ok") {
-      setMsg("✅ Pago completado. En unos segundos verás tus minutos y puntos actualizados.");
+      setMsg("Estamos comprobando tu pago. Tus minutos y beneficios se actualizarán cuando se confirme.");
       window.history.replaceState({}, "", "/cliente/dashboard");
       window.setTimeout(() => {
         loadData();
@@ -290,7 +290,7 @@ export default function ClienteDashboardPage() {
       window.history.replaceState({}, "", "/cliente/dashboard");
     }
     if (oracleCheckout === "ok") {
-      setMsg("🔮 Pago confirmado. Tus tiradas se actualizarán en unos segundos.");
+      setMsg("Estamos comprobando tu pago. Tus tiradas se actualizarán cuando se confirme.");
       window.history.replaceState({}, "", "/cliente/dashboard#comprar-tiradas");
       window.setTimeout(() => loadOracle(), 1200);
     }

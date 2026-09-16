@@ -3,12 +3,12 @@ import { createHash } from "crypto";
 /** Stable note identity makes retries safe without adding a second ledger or schema. */
 export async function savePaymentLinkNote(admin: any, input: {
   paymentId: string; clienteId: string; packName: string; amount: number; currency: string;
-  normal: number; free: number; paidAt?: string; initiatedBy?: string; manual: boolean;
+  normal: number; free: number; paidAt?: string; initiatedBy?: string; manual: boolean; source?: "web" | "link";
 }) {
   const hash = createHash("sha256").update(`tarot:crm-payment-note:mollie:${input.paymentId}`).digest("hex");
   const id = `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;
   const texto = [
-    "Compra mediante enlace de pago · Tarot Celestial",
+    input.source === "web" ? "Compra web · Tarot Celestial" : "Compra mediante enlace de pago · Tarot Celestial",
     `Compra: ${input.packName}`,
     `Importe: ${input.amount.toFixed(2)} ${input.currency}`,
     `Minutos normales acreditados: ${input.normal}`,

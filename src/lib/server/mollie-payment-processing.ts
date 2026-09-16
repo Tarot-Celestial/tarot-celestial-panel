@@ -162,6 +162,14 @@ export async function processMolliePayment(paymentId: string) {
       });
       duplicated = Boolean(purchase.duplicated);
       completedPaymentId = String((purchase as any)?.payment?.id || "");
+      // The promotion RPC commits benefits, CRM note and attempt completion
+      // atomically, changing updated_at. Do not close it again with the old lease.
+      const { data: committed, error: committedError } = await admin
+        .from("cliente_payment_attempts").select("status")
+        .eq("id", locked.id).eq("order_id", paymentId).maybeSingle();
+      if (committedError) throw committedError;
+      if (committed?.status !== "completed") throw new Error("PROMOTION_COMPLETION_RETRY");
+      return okResponse();
     } else if (crmManualAmount) {
       const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
         p: {
@@ -232,12 +240,13 @@ export async function processMolliePayment(paymentId: string) {
 
     // The purchase RPC is already idempotent. If saving its note fails, retry the
     // same reference: no extra balance is granted and the stable note ID prevents duplicates.
-    if (metadata.source === "crm_cobrador" && !promotionSnapshot && completedPaymentId) {
+    if (!promotionSnapshot) {
       await savePaymentLinkNote(admin, {
         paymentId, clienteId: locked.cliente_id, packName: pack.nombre,
         amount: paymentAmount, currency: paymentCurrency,
         ...creditedMinutes, paidAt: payment.paidAt,
         initiatedBy: metadata.initiated_by_name, manual: crmManualAmount,
+        source: metadata.source === "crm_cobrador" ? "link" : "web",
       });
     }
 
@@ -248,13 +257,6 @@ export async function processMolliePayment(paymentId: string) {
     }).eq("id", locked.id).eq("updated_at", processingVersion).select("id").maybeSingle();
     if (completionError) throw completionError;
     if (!completed) throw new Error("PAYMENT_COMPLETION_RETRY");
-    if (!promotionSnapshot && !duplicated && metadata.source !== "crm_cobrador") {
-      const { error: noteError } = await admin.from("crm_client_notes").insert({
-        cliente_id: locked.cliente_id, texto: `🟣 Compra ${metadata.source === "crm_cobrador" ? "por enlace CRM" : "web"}: ${pack.nombre} (${paymentAmount.toFixed(2)} ${paymentCurrency}) mediante Mollie`,
-        author_user_id: null, author_name: "Sistema", author_email: null, is_pinned: false,
-      });
-      if (noteError) console.error("[mollie] Non-financial note failed", noteError.code);
-    }
 
     return okResponse();
   } catch (error: any) {
