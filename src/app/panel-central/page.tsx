@@ -97,6 +97,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   },
   { key: "tienda", label: "Tienda", icon: ShoppingBag, kicker: "Bóveda de recompensas" },
   { key: "panel", label: "Panel", icon: Headphones, kicker: "Extensiones y llamadas" },
+  { key: "reservas", label: "Reservas", icon: CalendarDays, kicker: "Agenda y orden de atención" },
   {
     key: "equipo",
     label: "Equipo",
@@ -108,7 +109,6 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   },
   { key: "crm", label: "CRM", icon: Users },
   { key: "sorteo", label: "Sorteo", icon: Gift },
-  { key: "reservas", label: "Reservas", icon: CalendarDays },
   { key: "captacion", label: "Captación", icon: Megaphone },
   { key: "incidencias", label: "Incidencias", icon: ShieldCheck },
   { key: "checklist", label: "Checklist", icon: CheckSquare },

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+
 
 export const runtime = "nodejs";
 
@@ -24,8 +24,8 @@ async function uidFromBearer(req: Request) {
     }
   );
 
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error) throw error;
+  const { data, error } = await userClient.auth.getUser(token);
+  if (error) return { uid: null as string | null };
   return { uid: data.user?.id || null };
 }
 
@@ -77,12 +77,12 @@ export async function POST(req: Request) {
 
     const { data: me, error: meErr } = await db
       .from("workers")
-      .select("id, role")
+      .select("id, role, is_active")
       .eq("user_id", uid)
       .maybeSingle();
 
     if (meErr) throw meErr;
-    if (!me || (me.role !== "admin" && me.role !== "central")) {
+    if (!me || me.is_active === false || (me.role !== "admin" && me.role !== "central")) {
       return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
     }
 
@@ -100,6 +100,9 @@ export async function POST(req: Request) {
     }
     if (!fecha_reserva) {
       return NextResponse.json({ ok: false, error: "FECHA_REQUIRED" }, { status: 400 });
+    }
+    if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(fecha_reserva) || !Number.isFinite(Date.parse(fecha_reserva)) || Date.parse(fecha_reserva) <= Date.now()) {
+      return NextResponse.json({ ok: false, error: "Selecciona una fecha y hora futuras." }, { status: 400 });
     }
     if (!tarotista_id && !tarotista_nombre_manual) {
       return NextResponse.json({ ok: false, error: "TAROTISTA_REQUIRED" }, { status: 400 });

@@ -1,541 +1,119 @@
 "use client";
-
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
-import { tcToast } from "@/lib/tc-toast";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
-
+import { reservaClosed, reservaDate } from "@/lib/reservas";
+import styles from "./ReservasPanel.module.css";
 const sb = supabaseBrowser();
-
-async function safeJson(res: Response) {
-  const txt = await res.text();
-  if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
-  try {
-    const j = JSON.parse(txt);
-    return { ...j, _raw: txt, _status: res.status, _ok: res.ok };
-  } catch {
-    return { _raw: txt.slice(0, 800), _status: res.status, _ok: res.ok };
-  }
-}
-
-type ReservasPanelProps = {
-  mode?: "admin" | "central";
-  embedded?: boolean;
-};
-
-function normalizeEstado(v: any) {
-  const s = String(v || "").trim().toLowerCase();
-  if (s === "finalizada" || s === "completada") return "finalizada";
-  if (s === "confirmada") return "confirmada";
-  if (s === "cancelada") return "cancelada";
-  return "pendiente";
-}
-
-function isClosedEstado(v: any) {
-  return normalizeEstado(v) === "finalizada";
-}
-
-function estadoLabel(v: any) {
-  const s = normalizeEstado(v);
-  if (s === "finalizada") return "✅ Finalizada";
-  if (s === "confirmada") return "🟢 Confirmada";
-  if (s === "cancelada") return "❌ Cancelada";
-  return "⏳ Pendiente";
-}
-
-function estadoStyles(v: any) {
-  const s = normalizeEstado(v);
-
-  if (s === "finalizada") {
-    return {
-      border: "1px solid rgba(120,255,190,.20)",
-      background: "linear-gradient(180deg, rgba(120,255,190,.06), rgba(255,255,255,.02))",
-      boxShadow: "0 12px 32px rgba(0,0,0,.18)",
-      chipBg: "rgba(120,255,190,.10)",
-      chipBorder: "1px solid rgba(120,255,190,.22)",
-    };
-  }
-
-  if (s === "cancelada") {
-    return {
-      border: "1px solid rgba(255,80,80,.20)",
-      background: "linear-gradient(180deg, rgba(255,80,80,.06), rgba(255,255,255,.02))",
-      boxShadow: "0 12px 32px rgba(0,0,0,.18)",
-      chipBg: "rgba(255,80,80,.10)",
-      chipBorder: "1px solid rgba(255,80,80,.22)",
-    };
-  }
-
-  if (s === "confirmada") {
-    return {
-      border: "1px solid rgba(120,255,190,.16)",
-      background: "linear-gradient(180deg, rgba(120,255,190,.04), rgba(255,255,255,.02))",
-      boxShadow: "0 12px 32px rgba(0,0,0,.18)",
-      chipBg: "rgba(120,255,190,.08)",
-      chipBorder: "1px solid rgba(120,255,190,.18)",
-    };
-  }
-
-  return {
-    border: "1px solid rgba(215,181,109,.22)",
-    background: "linear-gradient(180deg, rgba(215,181,109,.08), rgba(255,255,255,.02))",
-    boxShadow: "0 14px 36px rgba(0,0,0,.22), 0 0 0 1px rgba(215,181,109,.06) inset",
-    chipBg: "rgba(215,181,109,.12)",
-    chipBorder: "1px solid rgba(215,181,109,.24)",
-  };
-}
-
-function formatFecha(value: any) {
-  if (!value) return "—";
-  try {
-    const d = parseReservaDate(value);
-    return d ? d.toLocaleString("es-ES") : String(value);
-  } catch {
-    return String(value);
-  }
-}
-
-function parseReservaDate(value: any) {
-  if (!value) return null;
-  try {
-    const s = String(value);
-    return new Date(/z$/i.test(s) ? s : `${s}Z`);
-  } catch {
-    return null;
-  }
-}
-
-export default function ReservasPanel({
-  mode = "admin",
-  embedded = false,
-}: ReservasPanelProps) {
-  const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState("");
-  const [q, setQ] = useState("");
-  const [filtro, setFiltro] = useState<"proximas" | "hoy" | "todas" | "finalizadas">("proximas");
-  const [finalizandoId, setFinalizandoId] = useState("");
-
-  const [focusReservaId, setFocusReservaId] = useState<string>("");
-
-
-  async function getTokenOrLogin() {
+type Row = { id: string; numero_reserva?: number; cliente_id: string; cliente_nombre: string; telefono_normalizado: string; tarotista_id: string; tarotista_nombre: string; tarotista_nombre_manual: string; fecha_reserva: string; estado: string; nota: string; updated_at: string | null };
+const labels: Record<string,string> = { pendiente: "Pendiente", confirmada: "Confirmada", completada: "Cumplida", finalizada: "Cumplida", cancelada: "Cancelada" };
+const tarotista = (r: Row) => r.tarotista_nombre || r.tarotista_nombre_manual || "Sin asignar";
+const fecha = (value: string) => reservaDate(value).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" });
+export default function ReservasPanel({ mode = "admin", embedded = false }: { mode?: "admin" | "central"; embedded?: boolean }) {
+  const [brand,setBrand] = useState("celestial");
+  const [rows,setRows] = useState<Row[]>([]);
+  const [busy,setBusy] = useState(false);
+  const [error,setError] = useState("");
+  const [notice,setNotice] = useState("");
+  const [q,setQ] = useState("");
+  const [filter,setFilter] = useState("pendientes");
+  const [reader,setReader] = useState("");
+  const [day,setDay] = useState("");
+  const [edit,setEdit] = useState<{row:Row;action:string} | null>(null);
+  const [newDate,setNewDate] = useState("");
+  const [reason,setReason] = useState("");
+  const [saving,setSaving] = useState(false);
+  const [focusId,setFocusId] = useState("");
+  const [zone,setZone] = useState("");
+  const serial = useRef(0), savingRef = useRef(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  async function token() {
     const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) {
-      window.location.href = "/login";
-      return "";
-    }
-    return token;
+    if (!data.session?.access_token) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
+    return data.session.access_token;
   }
-
-  useEffect(() => {
-    setActiveBrand(getActiveBrand());
-    const onBrand = (event: any) => setActiveBrand(String(event?.detail?.brand || "celestial") === "orion" ? "orion" : "celestial");
-    window.addEventListener("tc-brand-changed", onBrand as EventListener);
-    return () => window.removeEventListener("tc-brand-changed", onBrand as EventListener);
-  }, []);
-
-  async function loadReservas(silent = false) {
+  const load = useCallback(async (silent = false) => {
+    const id = ++serial.current;
+    if (!silent) setBusy(true);
     try {
-      if (!silent) {
-        setLoading(true);
-        setMsg("");
-      }
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch(`/api/crm/reservas/listar?brand=${activeBrand}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
-
-      const nextRows = Array.isArray(j.reservas) ? j.reservas : [];
-      setRows(nextRows);
-
-      if (!silent) {
-        setMsg(`✅ Reservas cargadas: ${nextRows.length}`);
-      }
-    } catch (e: any) {
-      if (!silent) setMsg(`❌ ${e?.message || "Error cargando reservas"}`);
-      setRows([]);
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }
-
-  async function finalizarReserva(id: string) {
-    if (!id) return;
-
+      const res = await fetch(`/api/crm/reservas/listar?brand=${brand}`, { headers: { Authorization: `Bearer ${await token()}` }, cache: "no-store" });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "No se pudieron cargar las reservas.");
+      if (id === serial.current) { setRows(result.reservas || []); setError(""); }
+    } catch (e: any) { if (id === serial.current) setError(e.message); }
+    finally { if (id === serial.current) setBusy(false); }
+  },[brand]);
+  useEffect(() => {
+    setZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    setBrand(getActiveBrand());
+    const change = () => setBrand(getActiveBrand());
+    window.addEventListener("tc-brand-changed",change);
+    return () => window.removeEventListener("tc-brand-changed",change);
+  },[]);
+  useEffect(() => {
+    void load();
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => { clearTimeout(timer); timer = setTimeout(() => void load(true),250); };
+    const visible = () => { if (document.visibilityState === "visible") refresh(); };
+    const channel = sb.channel(`reservas-panel-${mode}-${brand}`).on("postgres_changes", { event:"*",schema:"public",table:"reservas" },refresh).subscribe(status => { if (status === "SUBSCRIBED") refresh(); });
+    const fallback = setInterval(visible,60000);
+    window.addEventListener("focus",visible); window.addEventListener("online",visible); document.addEventListener("visibilitychange",visible);
+    const open = (event: Event) => { const id=String((event as CustomEvent).detail?.id || ""); setFilter("todas"); setQ(""); setReader(""); setDay(""); setFocusId(id); refresh(); };
+    window.addEventListener("reservas-open-item",open);
+    return () => { serial.current++; clearTimeout(timer); clearInterval(fallback); void sb.removeChannel(channel); window.removeEventListener("focus",visible); window.removeEventListener("online",visible); document.removeEventListener("visibilitychange",visible); window.removeEventListener("reservas-open-item",open); };
+  },[load,mode,brand]);
+  useEffect(() => { if (focusId) document.getElementById(`reserva-${focusId}`)?.scrollIntoView({block:"center",behavior:"smooth"}); },[focusId,rows]);
+  useEffect(() => { if (edit) dialog.current?.showModal(); else dialog.current?.close(); },[edit]);
+  const ordered = useMemo(() => [...rows].sort((a,b) => reservaDate(a.fecha_reserva).getTime()-reservaDate(b.fecha_reserva).getTime() || a.id.localeCompare(b.id)),[rows]);
+  const queue = useMemo(() => {
+    const counters = new Map<string,number>(), result = new Map<string,number>();
+    ordered.filter(r=>!reservaClosed(r.estado)).forEach(r=>{const key=r.tarotista_id || tarotista(r);const n=(counters.get(key)||0)+1;counters.set(key,n);result.set(r.id,n);});
+    return result;
+  },[ordered]);
+  const filtered = ordered.filter(r=>{
+    if (filter === "pendientes" && reservaClosed(r.estado)) return false;
+    if (filter === "cumplidas" && !["completada","finalizada"].includes(r.estado)) return false;
+    if (filter === "canceladas" && r.estado !== "cancelada") return false;
+    if (reader && tarotista(r)!==reader) return false;
+    if (day) {const d=reservaDate(r.fecha_reserva);if (`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`!==day)return false;}
+    return `${r.numero_reserva || ""} ${r.id} ${r.cliente_nombre} ${r.telefono_normalizado} ${tarotista(r)}`.toLowerCase().includes(q.trim().toLowerCase());
+  });
+  function openAction(row:Row,action:string) {setEdit({row,action});setNewDate("");setReason("");setNotice("");setError("");}
+  async function save(event:React.FormEvent) {
+    event.preventDefault(); if (!edit || savingRef.current) return;
+    savingRef.current=true;setSaving(true);setError("");
     try {
-      setFinalizandoId(id);
-      setMsg("");
-
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const r = await fetch("/api/crm/reservas/finalizar", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ id }),
-      });
-
-      const j = await safeJson(r);
-      if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
-
-      setRows((prev) =>
-        prev.map((row) =>
-          String(row?.id) === String(id)
-            ? { ...row, estado: "finalizada" }
-            : row
-        )
-      );
-
-      setMsg("✅ Reserva finalizada");
-      tcToast({
-        title: "Reserva finalizada",
-        description: "Todo correcto",
-        tone: "success",
-      });
-
-      await loadReservas(true);
-    } catch (e: any) {
-      setMsg(`❌ ${e?.message || "Error finalizando reserva"}`);
-      tcToast({
-        title: "Error finalizando reserva",
-        description: e?.message || "Inténtalo de nuevo",
-        tone: "error",
-      });
-    } finally {
-      setFinalizandoId("");
-    }
+      const res=await fetch("/api/crm/reservas/actualizar",{method:"POST",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({id:edit.row.id,version:edit.row.updated_at,action:edit.action,motivo:reason,fecha_reserva:newDate?new Date(newDate).toISOString():undefined})});
+      const result=await res.json();if(!res.ok)throw new Error(result.error || "No se pudo guardar.");
+      setRows(prev=>prev.map(r=>r.id===result.reserva.id?result.reserva:r));setEdit(null);setNotice("Reserva actualizada correctamente.");void load(true);
+    }catch(e:any){setError(e.message);}finally{savingRef.current=false;setSaving(false);}
   }
-
-  useEffect(() => {
-    function onOpenReserva(ev: Event) {
-      const detail = (ev as CustomEvent).detail || {};
-      const reservaId = String(detail.id || "");
-      if (!reservaId) return;
-      setFiltro("todas");
-      setFocusReservaId(reservaId);
-      loadReservas(true).finally(() => {
-        window.setTimeout(() => {
-          const el = document.querySelector(`[data-reserva-id="${reservaId}"]`);
-          if (el instanceof HTMLElement) {
-            el.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        }, 250);
-      });
-    }
-
-    window.addEventListener("reservas-open-item", onOpenReserva as EventListener);
-    return () => window.removeEventListener("reservas-open-item", onOpenReserva as EventListener);
-  }, []);
-
-  useEffect(() => {
-    if (!focusReservaId) return;
-    const t = window.setTimeout(() => setFocusReservaId(""), 6000);
-    return () => window.clearTimeout(t);
-  }, [focusReservaId]);
-
-  useEffect(() => {
-    function onOpenReserva(ev: Event) {
-      const detail = (ev as CustomEvent).detail || {};
-      const reservaId = String(detail.id || "");
-      if (!reservaId) return;
-      setFiltro("todas");
-      setFocusReservaId(reservaId);
-      loadReservas(true).finally(() => {
-        window.setTimeout(() => {
-          const el = document.querySelector(`[data-reserva-id="${reservaId}"]`);
-          if (el instanceof HTMLElement) el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }, 250);
-      });
-    }
-
-    window.addEventListener("reservas-open-item", onOpenReserva as EventListener);
-    return () => window.removeEventListener("reservas-open-item", onOpenReserva as EventListener);
-  }, []);
-
-  useEffect(() => {
-    if (!focusReservaId) return;
-    const t = window.setTimeout(() => setFocusReservaId(""), 6000);
-    return () => window.clearTimeout(t);
-  }, [focusReservaId]);
-
-  useEffect(() => {
-    loadReservas(false);
-    const channel = sb
-      .channel(`reservas-panel-${mode}-${activeBrand}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "reservas" }, () => void loadReservas(true))
-      .subscribe();
-    const t = setInterval(() => {
-      if (document.visibilityState === "visible") void loadReservas(true);
-    }, 120000);
-    return () => {
-      clearInterval(t);
-      void sb.removeChannel(channel);
-    };
-  }, [activeBrand, mode]);
-
-  const filtered = useMemo(() => {
-    const now = new Date();
-    const end2h = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-    const startDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-    const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-
-    let list = [...(rows || [])];
-
-    list = list.filter((r: any) => {
-      const fecha = r?.fecha_reserva ? parseReservaDate(r.fecha_reserva) : null;
-      const closed = isClosedEstado(r?.estado);
-
-      if (filtro === "finalizadas") return closed;
-      if (filtro === "todas") return true;
-      if (!fecha || Number.isNaN(fecha.getTime())) return true;
-
-      if (filtro === "hoy") {
-        return fecha >= startDay && fecha <= endDay;
-      }
-
-      return !closed && fecha >= now && fecha <= end2h;
-    });
-
-    const qq = q.trim().toLowerCase();
-    if (qq) {
-      list = list.filter((r: any) => {
-        const text = [
-          r?.cliente_nombre,
-          r?.cliente_telefono,
-          r?.tarotista_display_name,
-          r?.tarotista_nombre_manual,
-          r?.tarotista_worker_id,
-          r?.cliente_id,
-          r?.nota,
-          r?.estado,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
-        return text.includes(qq);
-      });
-    }
-
-    list.sort((a: any, b: any) => {
-      const ae = isClosedEstado(a?.estado) ? 1 : 0;
-      const be = isClosedEstado(b?.estado) ? 1 : 0;
-      if (ae !== be) return ae - be;
-
-      const at = a?.fecha_reserva ? (parseReservaDate(a.fecha_reserva)?.getTime() || 0) : 0;
-      const bt = b?.fecha_reserva ? (parseReservaDate(b.fecha_reserva)?.getTime() || 0) : 0;
-
-      if (ae === 0) return at - bt;
-      return bt - at;
-    });
-
-    return list;
-  }, [rows, q, filtro]);
-
-  const pendientes = (rows || []).filter((x: any) => !isClosedEstado(x?.estado)).length;
-  const finalizadas = (rows || []).filter((x: any) => isClosedEstado(x?.estado)).length;
-
-  const wrapProps = embedded ? {} : { className: "tc-card" };
-
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div
-        className="tc-card"
-        style={{
-          padding: 22,
-          borderRadius: 24,
-          background:
-            "radial-gradient(circle at top right, rgba(215,181,109,.18), transparent 26%), radial-gradient(circle at top left, rgba(181,156,255,.12), transparent 22%), linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.03))",
-        }}
-      >
-        <div
-          className="tc-row"
-          style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}
-        >
-          <div>
-            <div className="tc-title" style={{ fontSize: 24 }}>🗓️ Reservas premium</div>
-            <div className="tc-sub" style={{ marginTop: 8, maxWidth: 760 }}>
-              Vista operativa en tiempo real para {mode === "admin" ? "admin" : "centrales"}, con prioridades claras y foco en próximas acciones.
-            </div>
-          </div>
-
-          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <span className="tc-chip">Pendientes: {pendientes}</span>
-            <span className="tc-chip">Finalizadas: {finalizadas}</span>
-            <span className="tc-chip">Total: {(rows || []).length}</span>
-          </div>
-        </div>
-      </div>
-
-      <div {...wrapProps}>
-        <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <div>
-            <div className="tc-title">🗓️ Reservas</div>
-            <div className="tc-sub" style={{ marginTop: 6 }}>
-              Gestión pro de reservas para {mode === "admin" ? "admin" : "centrales"}.
-            </div>
-          </div>
-
-          <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-            <input
-              className="tc-input"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar clienta, tarotista, nota..."
-              style={{ width: 280, maxWidth: "100%" }}
-            />
-
-            <button className={`tc-btn ${filtro === "proximas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("proximas")}>
-              Próximas 2h
-            </button>
-            <button className={`tc-btn ${filtro === "hoy" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("hoy")}>
-              Hoy
-            </button>
-            <button className={`tc-btn ${filtro === "todas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("todas")}>
-              Todas
-            </button>
-            <button className={`tc-btn ${filtro === "finalizadas" ? "tc-btn-gold" : ""}`} onClick={() => setFiltro("finalizadas")}>
-              Finalizadas
-            </button>
-
-            <button className="tc-btn" onClick={() => loadReservas(false)} disabled={loading}>
-              {loading ? "Cargando..." : "Actualizar"}
-            </button>
-          </div>
-        </div>
-
-        <div className="tc-sub" style={{ marginTop: 10 }}>
-          {msg || " "}
-        </div>
-
-        <div className="tc-hr" />
-
-        <div style={{ display: "grid", gap: 14 }}>
-          {(filtered || []).map((r: any) => {
-            const clienteNombre =
-              r?.cliente_nombre || (r?.cliente_id ? `Cliente ${String(r.cliente_id).slice(0, 8)}` : "Cliente");
-
-            const tarotistaNombre =
-              r?.tarotista_display_name ||
-              r?.tarotista_nombre ||
-              r?.tarotista_nombre_manual ||
-              (r?.tarotista_worker_id ? `Worker ${String(r.tarotista_worker_id).slice(0, 8)}` : "—");
-
-            const st = estadoStyles(r?.estado);
-
-            return (
-              <div
-                key={r.id}
-                data-reserva-id={String(r.id)}
-                style={{
-                  border: focusReservaId === String(r.id) ? "1px solid rgba(181,156,255,.50)" : st.border,
-                  borderRadius: 18,
-                  padding: 16,
-                  background: focusReservaId === String(r.id)
-                    ? "linear-gradient(180deg, rgba(181,156,255,.16), rgba(255,255,255,.04))"
-                    : st.background,
-                  boxShadow: focusReservaId === String(r.id)
-                    ? "0 0 0 2px rgba(181,156,255,.18), 0 18px 46px rgba(0,0,0,.24)"
-                    : st.boxShadow,
-                  transition: "transform .18s ease, box-shadow .18s ease",
-                }}
-              >
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-                  <div style={{ minWidth: 280, flex: 1 }}>
-                    <div className="tc-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 16 }}>
-                        {clienteNombre}
-                      </div>
-
-                      {r?.cliente_telefono ? <span className="tc-chip">{r.cliente_telefono}</span> : null}
-
-                      <span
-                        className="tc-chip"
-                        style={{
-                          background: st.chipBg,
-                          border: st.chipBorder,
-                        }}
-                      >
-                        {estadoLabel(r?.estado)}
-                      </span>
-                    </div>
-
-                    <div className="tc-sub" style={{ marginTop: 10 }}>
-                      Tarotista: <b>{tarotistaNombre}</b>
-                    </div>
-
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Reserva: <b>{formatFecha(r?.fecha_reserva)}</b>
-                    </div>
-
-                    {!!r?.nota && (
-                      <div
-                        style={{
-                          marginTop: 10,
-                          padding: "10px 12px",
-                          borderRadius: 12,
-                          border: "1px solid rgba(255,255,255,.08)",
-                          background: "rgba(255,255,255,.03)",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        <div className="tc-sub" style={{ marginBottom: 4 }}>Observación</div>
-                        <div>{r.nota}</div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8, minWidth: 160 }}>
-                    {!isClosedEstado(r?.estado) ? (
-                      <button
-                        className="tc-btn tc-btn-ok"
-                        onClick={() => finalizarReserva(String(r.id))}
-                        disabled={finalizandoId === String(r.id)}
-                      >
-                        {finalizandoId === String(r.id) ? "Guardando..." : "Finalizado"}
-                      </button>
-                    ) : (
-                      <button className="tc-btn" disabled>
-                        Cerrada
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {(!filtered || filtered.length === 0) && (
-            <div
-              style={{
-                border: "1px solid rgba(255,255,255,.08)",
-                borderRadius: 18,
-                padding: 24,
-                background: "rgba(255,255,255,.02)",
-              }}
-            >
-              <div className="tc-title" style={{ fontSize: 16 }}>No hay reservas en este filtro</div>
-              <div className="tc-sub" style={{ marginTop: 8 }}>
-                Prueba con “Todas” o “Hoy” para ver más resultados.
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
+  return <section className={`${styles.panel} ${embedded?"":"tc-card"}`}>
+    <header className={styles.header}><div><span className={styles.eyebrow}>AGENDA DE ATENCIÓN</span><h2>Reservas</h2><p>Ordenadas por horario. Cada tarotista tiene su propia cola de atención.</p></div><div className={styles.actions}>
+      {mode==="central" && <a className="tc-btn tc-btn-gold" href="/panel-central?tab=crm">Nueva reserva en CRM</a>}
+      <button className="tc-btn" disabled={busy} onClick={()=>void load()}>{busy?"Actualizando…":"Actualizar"}</button></div></header>
+    <div className={styles.summary}><span><b>{rows.filter(r=>!reservaClosed(r.estado)).length}</b> pendientes</span><span><b>{rows.filter(r=>["completada","finalizada"].includes(r.estado)).length}</b> cumplidas</span><span>Horarios: <b>{zone || "hora local"}</b></span></div>
+    <div className={styles.filters}>
+      <label>Cliente, teléfono o referencia<input className="tc-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar reserva…" /></label>
+      <label>Tarotista<select className="tc-select" value={reader} onChange={e=>setReader(e.target.value)}><option value="">Todas</option>{Array.from(new Set(rows.map(tarotista))).sort().map(n=><option key={n}>{n}</option>)}</select></label>
+      <label>Estado<select className="tc-select" value={filter} onChange={e=>setFilter(e.target.value)}><option value="pendientes">Pendientes</option><option value="cumplidas">Cumplidas</option><option value="canceladas">Canceladas</option><option value="todas">Todas</option></select></label>
+      <label>Fecha<input className="tc-input" type="date" value={day} onChange={e=>setDay(e.target.value)} /></label>
     </div>
-  );
+    {error && !edit && <p role="alert" className={styles.error}>{error}</p>}{notice && <p role="status">{notice}</p>}
+    <div className={styles.list}>{filtered.map(r=><article className={styles.card} key={r.id} id={`reserva-${r.id}`} data-focused={focusId===r.id}>
+      <div className={styles.cardTop}><div><span className={styles.eyebrow}>{queue.has(r.id)?`TURNO ${queue.get(r.id)} · ${tarotista(r)}`:tarotista(r)}</span><h3>{r.cliente_nombre || "Cliente sin nombre"}</h3>{r.telefono_normalizado && <a href={`tel:${r.telefono_normalizado.replace(/[^+\d]/g,"")}`}>{r.telefono_normalizado}</a>}</div><span className={styles.status}>{labels[r.estado] || r.estado}</span></div>
+      <p className={styles.time}>{fecha(r.fecha_reserva)}</p><div className={styles.reference}>N.º de reserva: <span title={r.id}>{r.numero_reserva ? `R-${String(r.numero_reserva).padStart(5,"0")}` : r.id}</span></div>
+      {r.nota && <details><summary>Notas e historial</summary><p className={styles.notes}>{r.nota}</p></details>}
+      {!reservaClosed(r.estado) && <div className={styles.actions}><button className="tc-btn tc-btn-ok" onClick={()=>openAction(r,"completar")}>Cumplió reserva</button><button className="tc-btn tc-btn-gold" onClick={()=>openAction(r,"aplazar")}>Aplazar reserva</button><button className="tc-btn" onClick={()=>openAction(r,"cancelar")}>Cancelar</button></div>}
+    </article>)}</div>
+    {!busy && !filtered.length && <p className={styles.empty}>No hay reservas con estos filtros.</p>}
+    <dialog ref={dialog} className={styles.dialog} onCancel={e=>{if(saving)e.preventDefault();else setEdit(null);}} onClose={()=>{if(!saving)setEdit(null);}}>
+      {edit && <form onSubmit={save}><h3>{edit.action==="aplazar"?"Aplazar reserva":edit.action==="completar"?"Confirmar reserva cumplida":"Cancelar reserva"}</h3><p>{edit.row.cliente_nombre} · {tarotista(edit.row)}</p><p>Horario actual: {fecha(edit.row.fecha_reserva)}</p>
+        {edit.action==="aplazar" && <label>Nuevo horario · {zone}<input autoFocus required type="datetime-local" className="tc-input" value={newDate} onChange={e=>setNewDate(e.target.value)} /></label>}
+        <label>{edit.action==="aplazar"?"Motivo del aplazamiento":"Observación (opcional)"}<textarea className="tc-input" required={edit.action==="aplazar"} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} /></label>
+        {error && <p role="alert" className={styles.error}>{error}</p>}
+        <div className={styles.actions}><button type="button" className="tc-btn" disabled={saving} onClick={()=>setEdit(null)}>Volver</button><button className="tc-btn tc-btn-gold" disabled={saving}>{saving?"Guardando…":"Confirmar"}</button></div>
+      </form>}
+    </dialog>
+  </section>;
 }
