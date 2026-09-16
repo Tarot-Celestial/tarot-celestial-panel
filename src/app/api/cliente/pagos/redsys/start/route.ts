@@ -1,3 +1,4 @@
+import { clientPaymentMaintenanceResponse } from "@/lib/server/client-payment-maintenance";
 import { adminClient } from "@/lib/server/auth-cliente";
 import { getOraclePack } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack } from "@/lib/server/oracle-questions";
@@ -32,6 +33,8 @@ function esc(value: string) {
 }
 
 export async function GET(req: Request) {
+  const maintenance = await clientPaymentMaintenanceResponse();
+  if (maintenance) return maintenance;
   try {
     const token = String(new URL(req.url).searchParams.get("token") || "").trim();
     if (!token) return new Response("Operación no válida", { status: 400 });

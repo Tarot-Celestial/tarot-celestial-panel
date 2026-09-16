@@ -7,6 +7,8 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 const sb = supabaseBrowser();
 
 export default function PaymentGatewayAdminPanel() {
+  const [enabled, setEnabled] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -23,6 +25,7 @@ export default function PaymentGatewayAdminPanel() {
       const headers = await authHeaders();
       const res = await fetch("/api/admin/payment-settings", { headers, cache: "no-store" });
       const json = await res.json().catch(() => null);
+      setEnabled(json?.web_payments_enabled === true);
       if (!json?.ok) throw new Error(json?.error || "No se pudo cargar la pasarela");
     } catch (error: any) {
       setMessage(error?.message || "No se pudo cargar la configuración");
@@ -32,6 +35,19 @@ export default function PaymentGatewayAdminPanel() {
   }, [authHeaders]);
 
   useEffect(() => { void load(); }, [load]);
+
+  async function toggle() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const response = await fetch("/api/admin/payment-settings", { method: "PUT", headers: await authHeaders(), body: JSON.stringify({ provider: "mollie", web_payments_enabled: !enabled }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo guardar.");
+      setEnabled(data.web_payments_enabled === true);
+      setMessage(data.web_payments_enabled ? "Pagos web habilitados." : "Mantenimiento activado. Las compras por teléfono siguen disponibles.");
+    } catch (error: any) { setMessage(error.message); }
+    finally { setSaving(false); }
+  }
 
   return (
     <section
@@ -56,10 +72,11 @@ export default function PaymentGatewayAdminPanel() {
           </p>
         </div>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 800 }}>
-          <ShieldCheck size={16} /> Activa: Mollie
+          <ShieldCheck size={16} /> {enabled ? "Pagos web habilitados" : "Pagos web en mantenimiento"}
         </span>
       </div>
 
+      <button type="button" className="tc-btn tc-btn-gold" disabled={loading || saving} onClick={toggle}>{saving ? "Guardando…" : enabled ? "Activar mantenimiento" : "Habilitar pagos web"}</button>
       {message ? (
         <div style={{ padding: 11, borderRadius: 12, background: "rgba(255,255,255,.045)" }}>
           {message}
@@ -77,7 +94,7 @@ export default function PaymentGatewayAdminPanel() {
         }}
       >
         <CreditCard size={22} />
-        <strong style={{ display: "block", marginTop: 10 }}>Mollie · ACTIVA</strong>
+        <strong style={{ display: "block", marginTop: 10 }}>{enabled ? "Compras online disponibles" : "Compras online pausadas · Código CLIENTE"}</strong>
         <small style={{ display: "block", marginTop: 5, opacity: .65 }}>
           Checkout seguro alojado por Mollie · confirmación por webhook antes de acreditar saldo.
         </small>

@@ -1,4 +1,5 @@
 "use client";
+import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
@@ -186,7 +187,7 @@ export default function PreciosOfertasPage() {
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
                     {pack.extra_benefit ? <span>✦ {pack.extra_benefit}</span> : null}
                   </div>
-                  <button className={styles.promoBuy} disabled={busy === `promo:${pack.id}`} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button>
+                  <ClientPurchaseAction className={styles.promoBuy}><button className={styles.promoBuy} disabled={busy === `promo:${pack.id}`} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
                 </article>
               ))}
             </div>
@@ -267,7 +268,7 @@ export default function PreciosOfertasPage() {
 
           <div className={styles.maintenanceNote}>
             <PhoneCall />
-            <span>Pago seguro mediante <b>Mollie</b>. El saldo se acredita únicamente cuando Mollie confirma la operación.</span>
+            <span>Elige tu pack y disfruta de sus minutos y beneficios en tu cuenta.</span>
           </div>
         </section>
 
@@ -282,7 +283,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.serviceTop}><div className={styles.icon}>{index === 0 ? "🔮" : "✨"}</div><span className={styles.badge}>{pack.credits} TIRADAS</span></div>
                 <h3>{pack.nombre}</h3><p>{pack.descripcion}</p>
                 <strong className={styles.price}>${pack.priceEur.toFixed(2).replace(".", ",")}</strong>
-                <button className={styles.buyButton} disabled={busy === pack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button>
+                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === pack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
               </article>
             ))}
             {questionPack ? (
@@ -290,7 +291,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.serviceTop}><div className={styles.icon}>💬</div><span className={styles.badge}>{questionPack.questions} PREGUNTAS</span></div>
                 <h3>{questionPack.nombre}</h3><p>{questionPack.descripcion}</p>
                 <strong className={styles.price}>${questionPack.priceEur.toFixed(2).replace(".", ",")}</strong>
-                <button className={styles.buyButton} disabled={busy === questionPack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button>
+                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === questionPack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
               </article>
             ) : null}
           </div>
@@ -323,7 +324,7 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
       <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins ?? Math.round(pack.priceUsd * 10)} oracleCredits={pack.oracleCredits} />
-      <button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button>
+      <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
     </article>
   );
 }

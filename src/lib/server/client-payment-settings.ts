@@ -14,3 +14,11 @@ export async function getActiveClientPaymentProvider(admin: any): Promise<Client
 
   return String(data?.provider || "mollie").toLowerCase() === "mollie" ? "mollie" : "mollie";
 }
+
+/** Missing/unavailable configuration must never reopen checkout. */
+export async function getClientWebPaymentsEnabled(admin: any): Promise<boolean> {
+  const { data, error } = await admin.from("cliente_payment_settings")
+    .select("web_payments_enabled").eq("id", "default").maybeSingle();
+  if (error) return false;
+  return data?.web_payments_enabled === true;
+}

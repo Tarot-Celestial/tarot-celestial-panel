@@ -11,7 +11,7 @@ type ManualPurchaseButtonProps = {
   className?: string;
 };
 
-export default function ManualPurchaseButton({ children = "COMPRAR", className }: ManualPurchaseButtonProps) {
+export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL", className }: ManualPurchaseButtonProps) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const titleId = useId();
@@ -51,6 +51,7 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
 
   return (
     <>
+      <p className={styles.maintenanceNotice}>Pagos web temporalmente en mantenimiento<br /><span>Para realizar tu compra, llama a nuestra central e indica el código <strong>CLIENTE</strong>.</span></p>
       <button ref={triggerRef} type="button" className={className} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {children}
       </button>
@@ -71,18 +72,18 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
                 </button>
 
                 <div className={styles.alertIcon}><BadgeAlert /></div>
-                <span className={styles.eyebrow}>AVISO IMPORTANTE</span>
-                <h2 id={titleId}>Compra web temporalmente en mantenimiento</h2>
+                <span className={styles.eyebrow}>COMPRA POR TELÉFONO</span>
+                <h2 id={titleId}>Pagos web temporalmente en mantenimiento</h2>
                 <p className={styles.intro}>
-                  Mientras solucionamos el servicio de pago, los cobros se realizarán manualmente por teléfono.
+                  Para realizar tu compra, llama a nuestra central e indica el código “CLIENTE”.
                 </p>
 
                 <div className={styles.codeBox}>
                   <Tag />
                   <div>
-                    <span>CÓDIGO PARA CONSERVAR EL PRECIO DE LA WEB</span>
+                    <span>CÓDIGO</span>
                     <strong>{CLIENT_WEB_PURCHASE_CODE}</strong>
-                    <p>Indícalo al comenzar la llamada para que te apliquen las tarifas más bajas publicadas en el panel.</p>
+                    <p>Indícalo al comenzar la llamada para registrar tu compra.</p>
                   </div>
                 </div>
 
@@ -99,7 +100,7 @@ export default function ManualPurchaseButton({ children = "COMPRAR", className }
                   </div>
                 </div>
 
-                <p className={styles.footerNote}>El cobro y la activación de la tarifa se completarán manualmente durante la llamada.</p>
+                <p className={styles.footerNote}>Nuestro equipo registrará tu compra y tus beneficios directamente en tu cuenta.</p>
               </section>
             </div>,
             document.body

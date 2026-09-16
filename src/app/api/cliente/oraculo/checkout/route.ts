@@ -1,3 +1,4 @@
+import { clientPaymentMaintenanceResponse } from "@/lib/server/client-payment-maintenance";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
@@ -17,6 +18,8 @@ function baseUrl(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const maintenance = await clientPaymentMaintenanceResponse();
+  if (maintenance) return maintenance;
   let attemptId = "";
   try {
     const gate = await clientFromRequest(req);

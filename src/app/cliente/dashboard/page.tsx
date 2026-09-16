@@ -1,4 +1,5 @@
 "use client";
+import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -776,7 +777,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">Pago seguro mediante Redsys / CaixaBank. Tus minutos se acreditan solo después de la confirmación bancaria.</div>
+                  <div className="tc-panel-sub">Consulta los packs disponibles y elige los minutos que necesitas.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <ShoppingBag size={14} /> Precio app
@@ -795,9 +796,9 @@ export default function ClienteDashboardPage() {
                     <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
                     <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits}/>
-                    <button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
+                    <ClientPurchaseAction className="tc-btn tc-btn-gold"><button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
                       {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
-                    </button>
+                    </button></ClientPurchaseAction>
                   </div>
                 ))}
               </div>
@@ -808,7 +809,7 @@ export default function ClienteDashboardPage() {
               <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                   <div className="tc-panel-title">Comprar tiradas de cartas</div>
-                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. El saldo se añade únicamente cuando {paymentProvider === "redsys" ? "Redsys" : "Stripe"} confirma el pago.</div>
+                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. Consulta los packs disponibles y sus beneficios.</div>
                 </div>
                 <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   <WandSparkles size={14} /> Tiradas disponibles: {oracleCredits}
@@ -826,9 +827,9 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">${pack.priceEur.toFixed(2).replace(".", ",")}</div>
                     <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
-                    <button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
-                      {buyingOraclePackId === pack.id ? `Conectando con ${paymentProvider === "redsys" ? "Redsys" : "Stripe"}...` : "COMPRAR"}
-                    </button>
+                    <ClientPurchaseAction className="tc-btn tc-btn-gold"><button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
+                      {buyingOraclePackId === pack.id ? "Conectando…" : "COMPRAR"}
+                    </button></ClientPurchaseAction>
                   </div>
                 ))}
               </div>
