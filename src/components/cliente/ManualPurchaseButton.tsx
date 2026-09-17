@@ -51,7 +51,6 @@ export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL",
 
   return (
     <>
-      <p className={styles.maintenanceNotice}>Pagos web temporalmente en mantenimiento<br /><span>Para realizar tu compra, llama a nuestra central e indica el código <strong>CLIENTE</strong>.</span></p>
       <button ref={triggerRef} type="button" className={className} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {children}
       </button>
@@ -73,9 +72,9 @@ export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL",
 
                 <div className={styles.alertIcon}><BadgeAlert /></div>
                 <span className={styles.eyebrow}>COMPRA POR TELÉFONO</span>
-                <h2 id={titleId}>Pagos web temporalmente en mantenimiento</h2>
+                <h2 id={titleId}>Compras desde la app en mantenimiento</h2>
                 <p className={styles.intro}>
-                  Para realizar tu compra, llama a nuestra central e indica el código “CLIENTE”.
+                  Estamos realizando mejoras en el sistema de pagos. Mientras tanto, puedes realizar tu compra llamando a nuestra central desde tu país e indicando el código “CLIENTE”.
                 </p>
 
                 <div className={styles.codeBox}>
@@ -88,7 +87,7 @@ export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL",
                 </div>
 
                 <div className={styles.callArea}>
-                  <strong>Elige tu país para llamar a Tarot Celestial</strong>
+                  <strong>Elige tu país y toca el número para llamar</strong>
                   <div className={styles.callGrid}>
                     {CLIENT_PURCHASE_CALL_OPTIONS.map((option) => (
                       <a key={option.country} href={option.href} className={styles.callButton}>
