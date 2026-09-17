@@ -16,6 +16,7 @@ export async function GET(req: Request) {
       .from('incidents')
       .select('id, worker_id, month_key, amount, reason, kind, status, meta, evidence_note, decided_at, created_at')
       .eq('worker_id', me.id)
+      .or('kind.is.null,kind.neq.attendance_info')
       .eq('month_key', month)
       .order('created_at', { ascending: false });
     if (error) throw error;

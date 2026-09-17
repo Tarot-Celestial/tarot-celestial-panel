@@ -2,6 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
+import AttendanceHours from "@/components/attendance/AttendanceHours";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
@@ -2084,6 +2085,7 @@ function AdminPage() {
                 <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
               ) : (
                 <>
+                  {selWorker?.role === "tarotista" && selInvoice?.worker_id && <AttendanceHours month={selInvoice.month_key} workerId={selInvoice.worker_id} readOnly />}
                   <div style={{ marginTop: 10 }} className="tc-sub">
                     <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
                     <br />

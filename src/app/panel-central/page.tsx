@@ -27,6 +27,7 @@ import { useChat } from "@/hooks/useChat";
 import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import AttendanceHours from "@/components/attendance/AttendanceHours";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
@@ -1778,7 +1779,9 @@ function CentralPage() {
 
           {/* Incidencias */}
           {tab === "incidencias" && (
-            <div className="tc-card">
+            <div><AttendanceHours />
+            <details className="tc-card"><summary className="tc-title">Incidencias económicas</summary>
+            <div>
               <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
                   <div className="tc-title">⚠️ Incidencias</div>
@@ -1859,7 +1862,7 @@ function CentralPage() {
               <div className="tc-sub" style={{ marginTop: 8 }}>
                 Nota: para que se refleje en facturas, en Admin vuelves a generar facturas del mes.
               </div>
-            </div>
+            </div></details></div>
           )}
 
           {/* Ranking */}
@@ -1979,3 +1982,4 @@ export default function Page() {
     </Suspense>
   );
 }
+
