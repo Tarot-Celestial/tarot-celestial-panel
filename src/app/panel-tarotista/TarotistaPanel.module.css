@@ -1,30 +1,664 @@
-.overview { display: grid; grid-template-columns: minmax(0, 2.25fr) minmax(260px, .85fr); gap: 16px; align-items: start; }
-.rail { display: grid; gap: 13px; }
-.railCard { padding: 16px; border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: radial-gradient(circle at 100% 0%, rgba(139,92,246,.12), transparent 38%), rgba(17,12,27,.92); box-shadow: 0 20px 60px rgba(0,0,0,.28), inset 0 1px rgba(255,255,255,.05); }
-.railKicker { color: #e5bd6d; font-size: 9px; font-weight: 950; letter-spacing: .14em; text-transform: uppercase; }
-.railCard h3 { margin: 7px 0 3px; font-size: 17px; }
-.railCard > p { margin: 0; color: rgba(255,255,255,.53); font-size: 11px; line-height: 1.45; }
-.statGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 13px; }
-.stat { min-height: 78px; padding: 11px; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: rgba(255,255,255,.032); }
-.stat span { display: block; color: rgba(255,255,255,.45); font-size: 9px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
-.stat strong { display: block; margin-top: 7px; font-size: 19px; }
-.progressRow { display: grid; gap: 6px; margin-top: 14px; }
-.progressMeta { display: flex; justify-content: space-between; gap: 8px; color: rgba(255,255,255,.64); font-size: 10px; }
-.track { height: 7px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.08); }
-.track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8955ef, #f1cd78); box-shadow: 0 0 16px rgba(174,112,255,.45); }
-.quickList { display: grid; gap: 8px; margin-top: 13px; }
-.quickItem { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 11px; border: 1px solid rgba(255,255,255,.075); border-radius: 12px; background: rgba(255,255,255,.025); font-size: 11px; }
-.quickItem span { color: rgba(255,255,255,.55); }
-.quickItem strong { font-size: 11px; text-align: right; }
-.railButton { width: 100%; min-height: 38px; margin-top: 12px; border: 1px solid rgba(226,187,105,.28); border-radius: 11px; color: #f3d58b; background: rgba(226,187,105,.075); cursor: pointer; font-weight: 850; }
-.navMain { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.navIcon { width: 32px; height: 32px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(255,255,255,.09); border-radius: 11px; color: rgba(255,255,255,.68); background: rgba(255,255,255,.035); }
-.navCopy { min-width: 0; }
-.navBadge { min-width: 22px; height: 22px; display: grid; place-items: center; padding: 0 6px; border-radius: 999px; color: #fff; background: #d92f54; box-shadow: 0 0 18px rgba(217,47,84,.35); font-size: 10px; font-weight: 950; }
-.navBadge[data-tone="amber"] { color: #1b1207; background: #e8bd5f; box-shadow: 0 0 18px rgba(232,189,95,.3); }
-.loadingShell { min-height: 360px; display: grid; place-items: center; color: rgba(255,255,255,.55); }
-.loadingPulse { width: min(520px, 86%); height: 180px; border-radius: 24px; background: linear-gradient(100deg, rgba(255,255,255,.035), rgba(255,255,255,.09), rgba(255,255,255,.035)); background-size: 200% 100%; animation: loading 1.25s ease-in-out infinite; }
-@keyframes loading { to { background-position: -200% 0; } }
-@media (max-width: 1080px) { .overview { grid-template-columns: 1fr; } .rail { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 680px) { .rail { grid-template-columns: 1fr; } .statGrid { grid-template-columns: 1fr 1fr; } }
-@media (prefers-reduced-motion: reduce) { .loadingPulse { animation: none; } }
+.summaryPage {
+  display: grid;
+  gap: 18px;
+}
+
+.commandDeck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(300px, 0.95fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.heroCard,
+.focusCard,
+.railCard,
+.notificationsHero,
+.notificationsList,
+.notificationsAside {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top right, rgba(140, 96, 255, 0.13), transparent 32%),
+    linear-gradient(180deg, rgba(18, 12, 30, 0.96), rgba(9, 6, 18, 0.94));
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.heroCard {
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.heroCard::before,
+.focusCard::before,
+.notificationsHero::before {
+  content: "";
+  position: absolute;
+  inset: auto -10% -45% auto;
+  width: 240px;
+  height: 240px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(234, 195, 104, 0.22), transparent 65%);
+  pointer-events: none;
+  filter: blur(6px);
+}
+
+.heroTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.heroKicker {
+  color: #e4bf72;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.heroTop h2,
+.notificationsHero h2 {
+  margin: 8px 0 6px;
+  font-size: 38px;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+}
+
+.heroTop p,
+.notificationsHero p {
+  margin: 0;
+  max-width: 700px;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.heroButton,
+.softButton,
+.notificationAction,
+.railButton {
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.heroButton {
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(231, 195, 110, 0.34);
+  color: #1b1308;
+  font-weight: 900;
+  background: linear-gradient(135deg, #f0d184, #d3a84a);
+  box-shadow: 0 14px 30px rgba(211, 168, 74, 0.25);
+  cursor: pointer;
+}
+
+.heroButton:hover,
+.softButton:hover,
+.notificationAction:hover,
+.railButton:hover {
+  transform: translateY(-1px);
+}
+
+.heroMetrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.heroMetric {
+  padding: 15px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  min-height: 114px;
+}
+
+.heroMetric span {
+  display: block;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.heroMetric strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 31px;
+  line-height: 1;
+}
+
+.heroMetric small {
+  display: block;
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.heroMetric[data-tone="gold"] {
+  background: linear-gradient(180deg, rgba(226, 189, 95, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.heroMetric[data-tone="violet"] {
+  background: linear-gradient(180deg, rgba(142, 91, 255, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.heroMetric[data-tone="blue"] {
+  background: linear-gradient(180deg, rgba(68, 163, 255, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.heroMetric[data-tone="green"] {
+  background: linear-gradient(180deg, rgba(52, 211, 153, 0.16), rgba(255, 255, 255, 0.03));
+}
+
+.heroFooter {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.softButton {
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.focusCard {
+  padding: 20px;
+  display: grid;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.focusCard h3,
+.railCard h3,
+.notificationCard h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.focusList,
+.actionColumn {
+  display: grid;
+  gap: 10px;
+}
+
+.focusItem {
+  padding: 14px 15px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 6px;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.focusItem div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.focusItem span {
+  color: rgba(255, 255, 255, 0.67);
+  font-size: 13px;
+}
+
+.focusItem strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.focusItem small {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 13px;
+}
+
+.focusItem[data-tone="gold"] {
+  background: linear-gradient(180deg, rgba(225, 186, 97, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.focusItem[data-tone="violet"] {
+  background: linear-gradient(180deg, rgba(143, 94, 255, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.focusItem[data-tone="blue"] {
+  background: linear-gradient(180deg, rgba(87, 155, 255, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.focusItem[data-tone="red"] {
+  background: linear-gradient(180deg, rgba(255, 76, 117, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.overview {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) minmax(290px, 0.95fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.coreBoard {
+  min-width: 0;
+}
+
+.rail {
+  display: grid;
+  gap: 13px;
+}
+
+.railCard {
+  padding: 18px;
+}
+
+.railKicker {
+  color: #e5bd6d;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.railCard h3 {
+  margin: 8px 0 4px;
+  font-size: 23px;
+}
+
+.railCard > p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 13px;
+  line-height: 1.48;
+}
+
+.statGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.stat {
+  min-height: 86px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.stat span {
+  display: block;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 24px;
+  line-height: 1.05;
+}
+
+.progressRow {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.progressMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+.track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8955ef, #f1cd78);
+  box-shadow: 0 0 16px rgba(174, 112, 255, 0.45);
+}
+
+.quickList {
+  display: grid;
+  gap: 8px;
+  margin-top: 13px;
+}
+
+.quickItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 13px;
+}
+
+.quickItem span {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.quickItem strong {
+  font-size: 13px;
+  text-align: right;
+}
+
+.railButton {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  border: 1px solid rgba(226, 187, 105, 0.28);
+  border-radius: 13px;
+  color: #f3d58b;
+  background: rgba(226, 187, 105, 0.075);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.notificationsPage {
+  display: grid;
+  gap: 16px;
+}
+
+.notificationsHero {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  position: relative;
+  overflow: hidden;
+}
+
+.notificationStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(100px, 1fr));
+  gap: 10px;
+  min-width: min(100%, 360px);
+}
+
+.notificationStat {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.notificationStat span {
+  display: block;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.notificationStat strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 28px;
+}
+
+.notificationsGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.notificationsList {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.notificationCard {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.notificationCard[data-tone="gold"] {
+  background: linear-gradient(180deg, rgba(225, 186, 97, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.notificationCard[data-tone="violet"] {
+  background: linear-gradient(180deg, rgba(143, 94, 255, 0.13), rgba(255, 255, 255, 0.03));
+}
+
+.notificationCard[data-tone="blue"] {
+  background: linear-gradient(180deg, rgba(90, 165, 255, 0.13), rgba(255, 255, 255, 0.03));
+}
+
+.notificationCard[data-tone="red"] {
+  background: linear-gradient(180deg, rgba(255, 89, 122, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.notificationCard[data-tone="green"] {
+  background: linear-gradient(180deg, rgba(65, 214, 156, 0.14), rgba(255, 255, 255, 0.03));
+}
+
+.notificationMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.notificationMeta span {
+  color: #e3c277;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.notificationMeta strong {
+  color: rgba(255, 255, 255, 0.65);
+  font-size: 12px;
+}
+
+.notificationCard h3 {
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.08;
+}
+
+.notificationCard p {
+  margin: 8px 0 0;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.notificationAction {
+  margin-top: 14px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(6, 9, 16, 0.32);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.notificationsAside {
+  display: grid;
+  gap: 16px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.actionColumn .railButton {
+  margin-top: 0;
+}
+
+.navMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.navIcon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 11px;
+  color: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.navCopy {
+  min-width: 0;
+}
+
+.navBadge {
+  min-width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #d92f54;
+  box-shadow: 0 0 18px rgba(217, 47, 84, 0.35);
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.navBadge[data-tone="amber"] {
+  color: #1b1207;
+  background: #e8bd5f;
+  box-shadow: 0 0 18px rgba(232, 189, 95, 0.3);
+}
+
+.loadingShell {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.loadingPulse {
+  width: min(520px, 86%);
+  height: 180px;
+  border-radius: 24px;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.035));
+  background-size: 200% 100%;
+  animation: loading 1.25s ease-in-out infinite;
+}
+
+@keyframes loading {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .commandDeck,
+  .overview,
+  .notificationsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroMetrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .heroTop h2,
+  .notificationsHero h2 {
+    font-size: 31px;
+  }
+
+  .notificationStats {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .heroMetrics,
+  .statGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .heroMetrics,
+  .statGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroTop p,
+  .notificationsHero p,
+  .notificationCard p,
+  .railCard > p,
+  .focusItem small {
+    font-size: 13px;
+  }
+
+  .heroMetric strong,
+  .notificationStat strong {
+    font-size: 24px;
+  }
+
+  .focusCard h3,
+  .railCard h3,
+  .notificationCard h3 {
+    font-size: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingPulse {
+    animation: none;
+  }
+
+  .heroButton,
+  .softButton,
+  .notificationAction,
+  .railButton {
+    transition: none;
+  }
+}

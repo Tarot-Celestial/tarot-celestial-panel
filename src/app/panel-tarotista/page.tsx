@@ -9,13 +9,14 @@ import { useAttendance } from "@/hooks/useAttendance";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
-import { BadgeEuro, ClipboardCheck, Flame, LayoutDashboard, MessageSquare, ReceiptText, Send, Star, Trophy, type LucideIcon } from "lucide-react";
+import { BadgeEuro, BellRing, ClipboardCheck, Flame, LayoutDashboard, MessageSquare, ReceiptText, Send, Star, Trophy, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
 const sb = supabaseBrowser();
 
 type TabKey =
   | "resumen"
+  | "notificaciones"
   | "clientes"
   | "bonos"
   | "rangos"
@@ -27,7 +28,8 @@ type TabKey =
 
 const TAROTISTA_NAV: ReadonlyArray<{ key: TabKey; label: string; kicker: string; icon: LucideIcon }> = [
   { key: "resumen", label: "Resumen", kicker: "Centro de turno", icon: LayoutDashboard },
-  { key: "clientes", label: "Clientes", kicker: "Listas enviadas", icon: Send },
+  { key: "notificaciones", label: "Notificaciones", kicker: "Avisos y seguimiento", icon: BellRing },
+  { key: "clientes", label: "Clientes", kicker: "Listas y seguimiento", icon: Send },
   { key: "chat", label: "Chat", kicker: "Central en directo", icon: MessageSquare },
   { key: "bonos", label: "Bonos", kicker: "Captadas y tramos", icon: BadgeEuro },
   { key: "rangos", label: "Rangos", kicker: "Categoría y progreso", icon: Star },
@@ -303,6 +305,120 @@ export default function Tarotista() {
     const pct = total ? Math.round((completed / total) * 100) : 0;
     return { total, completed, pct };
   }, [clRows]);
+
+  const pendingChecklist = Math.max(0, clProgress.total - clProgress.completed);
+  const outboundPending = (obItems || []).filter((it: any) => String(it.current_status || "pending").toLowerCase() !== "done").length;
+
+  const summaryFocus: Array<{
+    id: string;
+    label: string;
+    value: string;
+    hint: string;
+    tone: "violet" | "gold" | "blue" | "red";
+    actionTab: TabKey;
+  }> = [
+    { id: "notif-clients", label: "Seguimiento clientes", value: String(outboundPending), hint: outboundPending ? "Casos por revisar" : "Sin casos pendientes", tone: "violet", actionTab: "clientes" },
+    { id: "notif-checklist", label: "Checklist", value: pendingChecklist ? String(pendingChecklist) : "OK", hint: pendingChecklist ? "Tareas aún abiertas" : "Todo al día", tone: "gold", actionTab: "checklist" },
+    { id: "notif-chat", label: "Chat central", value: String(chatUnread || 0), hint: chatUnread ? "Mensajes sin leer" : "Bandeja tranquila", tone: "blue", actionTab: "chat" },
+    { id: "notif-incidents", label: "Avisos", value: String(incidents.length || 0), hint: incidents.length ? "Incidencias del mes" : "Sin incidencias", tone: "red", actionTab: "facturas" },
+  ];
+
+  const notificationItems = useMemo(() => {
+    const rows: Array<{
+      id: string;
+      tone: "gold" | "violet" | "blue" | "red" | "green";
+      section: string;
+      title: string;
+      detail: string;
+      actionLabel: string;
+      actionTab: TabKey;
+      meta?: string;
+    }> = [];
+
+    rows.push({
+      id: "attendance",
+      tone: attOnline ? "green" : "gold",
+      section: "Estado del turno",
+      title: attOnline ? "Estás lista para recibir actividad" : "Conéctate para recibir actividad",
+      detail: attOnline ? `Estado actual: ${String(attStatus || "connected")}.` : "Si no te conectas, no podrás recibir llamadas ni seguimiento de central.",
+      actionLabel: "Ver resumen",
+      actionTab: "resumen",
+      meta: attOnline ? "Operativa activa" : "Acción recomendada",
+    });
+
+    if (chatUnread > 0) {
+      rows.push({
+        id: "chat",
+        tone: "blue",
+        section: "Comunicación",
+        title: `Tienes ${chatUnread} mensaje${chatUnread === 1 ? "" : "s"} sin leer`,
+        detail: "Revisa el chat con Central para no perder instrucciones o cambios.",
+        actionLabel: "Abrir chat",
+        actionTab: "chat",
+        meta: "En tiempo real",
+      });
+    }
+
+    if (pendingChecklist > 0) {
+      rows.push({
+        id: "checklist",
+        tone: "gold",
+        section: "Checklist",
+        title: `${pendingChecklist} tarea${pendingChecklist === 1 ? "" : "s"} del turno pendiente${pendingChecklist === 1 ? "" : "s"}`,
+        detail: "Completa el checklist para llevar el control del turno sin olvidos.",
+        actionLabel: "Ir al checklist",
+        actionTab: "checklist",
+        meta: `${clProgress.completed}/${clProgress.total} completadas`,
+      });
+    }
+
+    (obItems || []).slice(0, 4).forEach((it: any, idx: number) => {
+      const name = String(it.customer_name || "Cliente");
+      const status = String(it.current_status || "pending");
+      const note = String(it.last_note || "").trim();
+      rows.push({
+        id: `client-${it.id || idx}`,
+        tone: note ? "violet" : "blue",
+        section: "Seguimiento cliente",
+        title: `${name} · ${status}`,
+        detail: note || "Todavía no hay apunte del central. Revisa si necesitas hacer seguimiento.",
+        actionLabel: "Abrir clientes",
+        actionTab: "clientes",
+        meta: it.phone ? `📱 ${it.phone}` : "Lista del día",
+      });
+    });
+
+    (incidents || []).slice(0, 3).forEach((inc: any, idx: number) => {
+      rows.push({
+        id: `incident-${inc.id || idx}`,
+        tone: "red",
+        section: "Incidencias",
+        title: String(inc.title || inc.reason || "Incidencia del mes"),
+        detail: String(inc.reason || "Revisión recomendada desde el resumen de factura."),
+        actionLabel: "Ver incidencias",
+        actionTab: "facturas",
+        meta: canSeeMoney ? `Impacto ${eur(Number(inc.amount || 0))}` : "Impacto oculto",
+      });
+    });
+
+    if (!rows.length) {
+      rows.push({
+        id: "all-clear",
+        tone: "green",
+        section: "Todo bajo control",
+        title: "No tienes avisos urgentes ahora mismo",
+        detail: "Tu panel está limpio. Puedes dedicarte a atender y revisar objetivos del mes.",
+        actionLabel: "Volver al resumen",
+        actionTab: "resumen",
+        meta: "Panel tranquilo",
+      });
+    }
+
+    return rows;
+  }, [attOnline, attStatus, chatUnread, pendingChecklist, clProgress.completed, clProgress.total, obItems, incidents, canSeeMoney]);
+
+  const notificationsCount = notificationItems.filter((item) => item.id !== "attendance" && item.id !== "all-clear").length + (attOnline ? 0 : 1);
+  const urgentNotificationsCount = notificationItems.filter((item) => item.tone === "red" || item.tone === "gold").length;
 
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
@@ -871,16 +987,17 @@ export default function Tarotista() {
     refresh();
     loadChecklist();
     loadAttendanceMe(true);
+    loadMyOutbound(true);
   }, [ok]);
 
   useEffect(() => {
     if (!ok) return;
-    if (tab === "checklist") loadChecklist();
+    if (tab === "checklist" || tab === "notificaciones") loadChecklist();
   }, [tab, ok]);
 
   useEffect(() => {
     if (!ok) return;
-    if (tab === "clientes") loadMyOutbound(false);
+    if (tab === "clientes" || tab === "notificaciones") loadMyOutbound(false);
   }, [tab, ok, obDate]);
 
   useEffect(() => {
@@ -1408,9 +1525,11 @@ export default function Tarotista() {
                   const Icon = item.icon;
                   const badge = item.key === "chat"
                     ? chatUnread
-                    : item.key === "checklist"
-                      ? Math.max(0, clProgress.total - clProgress.completed)
-                      : item.key === "facturas" ? incidents.length : 0;
+                    : item.key === "notificaciones"
+                      ? notificationsCount
+                      : item.key === "checklist"
+                        ? Math.max(0, clProgress.total - clProgress.completed)
+                        : item.key === "facturas" ? incidents.length : 0;
                   return (
                     <button key={item.key} className={`tc-sidebtn ${tab === item.key ? "tc-sidebtn-active" : ""}`} onClick={() => setTab(item.key)}>
                       <div className={panelStyles.navMain}>
@@ -1554,54 +1673,172 @@ export default function Tarotista() {
             )}
 
             {tab === "resumen" && (
-              <div className={panelStyles.overview}>
-                <OperationalInbox
-                  mode="tarotista"
-                  compact
-                  externalChatUnread={chatUnread}
-                  onAction={(action) => {
-                    if (action === "chat") setTab("chat");
-                    if (action === "calls") setTab("clientes");
-                    if (action === "incidents") setTab("facturas");
-                    if (action === "attendance") void changeAttendanceStatus("connected");
-                  }}
-                />
+              <div className={panelStyles.summaryPage}>
+                <section className={panelStyles.commandDeck}>
+                  <div className={panelStyles.heroCard}>
+                    <div className={panelStyles.heroTop}>
+                      <div>
+                        <div className={panelStyles.heroKicker}>Centro operativo · tarotista</div>
+                        <h2>Tu panel de control, claro y rápido</h2>
+                        <p>Una vista moderna, tipo videojuego premium, pero fácil de leer para gestionar el turno sin agobios.</p>
+                      </div>
+                      <button className={panelStyles.heroButton} type="button" onClick={() => setTab("notificaciones")}>Ver notificaciones</button>
+                    </div>
 
-                <aside className={panelStyles.rail} aria-label="Rendimiento del mes">
-                  <section className={panelStyles.railCard}>
-                    <div className={panelStyles.railKicker}>Rendimiento real · {month}</div>
-                    <h3>Tu mes, de un vistazo</h3>
-                    <p>Solo datos registrados en rendimiento.</p>
-                    <div className={panelStyles.statGrid}>
-                      <div className={panelStyles.stat}><span>Llamadas</span><strong>{Number(s?.calls_total || 0)}</strong></div>
-                      <div className={panelStyles.stat}><span>Minutos</span><strong>{n2(s?.minutes_total || 0)}</strong></div>
-                      <div className={panelStyles.stat}><span>Captadas</span><strong>{captadas}</strong></div>
-                      <div className={panelStyles.stat}><span>Rango</span><strong>{myPublicRange}</strong></div>
+                    <div className={panelStyles.heroMetrics}>
+                      <div className={panelStyles.heroMetric} data-tone={attOnline ? "green" : "gold"}>
+                        <span>Estado</span>
+                        <strong>{attOnline ? "Conectada" : "Desconectada"}</strong>
+                        <small>{attOnline ? "Lista para recibir actividad" : "Pulsa Conectarme cuando empieces"}</small>
+                      </div>
+                      <div className={panelStyles.heroMetric} data-tone="blue">
+                        <span>Llamadas</span>
+                        <strong>{Number(s?.calls_total || 0)}</strong>
+                        <small>Total del mes registrado</small>
+                      </div>
+                      <div className={panelStyles.heroMetric} data-tone="violet">
+                        <span>Minutos</span>
+                        <strong>{n2(s?.minutes_total || 0)}</strong>
+                        <small>Minutos acumulados</small>
+                      </div>
+                      <div className={panelStyles.heroMetric} data-tone="gold">
+                        <span>Captadas</span>
+                        <strong>{captadas}</strong>
+                        <small>{tier.label}</small>
+                      </div>
                     </div>
-                    <div className={panelStyles.progressRow}>
-                      <div className={panelStyles.progressMeta}><span>Cliente</span><strong>{pct(s?.pct_cliente || 0)}</strong></div>
-                      <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_cliente || 0))}%` }} /></div>
+
+                    <div className={panelStyles.heroFooter}>
+                      <button className={panelStyles.softButton} type="button" onClick={() => setTab("clientes")}>Abrir clientes</button>
+                      <button className={panelStyles.softButton} type="button" onClick={() => setTab("checklist")}>Checklist del turno</button>
+                      <button className={panelStyles.softButton} type="button" onClick={() => setTab("chat")}>Chat con central</button>
                     </div>
-                    <div className={panelStyles.progressRow}>
-                      <div className={panelStyles.progressMeta}><span>Repite</span><strong>{pct(s?.pct_repite || 0)}</strong></div>
-                      <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_repite || 0))}%` }} /></div>
+                  </div>
+
+                  <aside className={panelStyles.focusCard}>
+                    <div className={panelStyles.heroKicker}>Radar rápido</div>
+                    <h3>Lo siguiente que debes mirar</h3>
+                    <div className={panelStyles.focusList}>
+                      {summaryFocus.map((item) => (
+                        <button key={item.id} type="button" className={panelStyles.focusItem} data-tone={item.tone} onClick={() => setTab(item.actionTab)}>
+                          <div>
+                            <span>{item.label}</span>
+                            <strong>{item.value}</strong>
+                          </div>
+                          <small>{item.hint}</small>
+                        </button>
+                      ))}
                     </div>
-                    <button className={panelStyles.railButton} type="button" onClick={() => setTab("ranking")}>Ver estadísticas completas</button>
+                  </aside>
+                </section>
+
+                <div className={panelStyles.overview}>
+                  <div className={panelStyles.coreBoard}>
+                    <OperationalInbox
+                      mode="tarotista"
+                      compact
+                      externalChatUnread={chatUnread}
+                      onAction={(action) => {
+                        if (action === "chat") setTab("chat");
+                        if (action === "calls") setTab("clientes");
+                        if (action === "incidents") setTab("facturas");
+                        if (action === "attendance") void changeAttendanceStatus("connected");
+                      }}
+                    />
+                  </div>
+
+                  <aside className={panelStyles.rail} aria-label="Rendimiento del mes">
+                    <section className={panelStyles.railCard}>
+                      <div className={panelStyles.railKicker}>Rendimiento real · {month}</div>
+                      <h3>Tu mes, de un vistazo</h3>
+                      <p>Todo resumido para entenderlo sin esfuerzo.</p>
+                      <div className={panelStyles.statGrid}>
+                        <div className={panelStyles.stat}><span>Llamadas</span><strong>{Number(s?.calls_total || 0)}</strong></div>
+                        <div className={panelStyles.stat}><span>Minutos</span><strong>{n2(s?.minutes_total || 0)}</strong></div>
+                        <div className={panelStyles.stat}><span>Captadas</span><strong>{captadas}</strong></div>
+                        <div className={panelStyles.stat}><span>Rango</span><strong>{myPublicRange}</strong></div>
+                      </div>
+                      <div className={panelStyles.progressRow}>
+                        <div className={panelStyles.progressMeta}><span>Cliente</span><strong>{pct(s?.pct_cliente || 0)}</strong></div>
+                        <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_cliente || 0))}%` }} /></div>
+                      </div>
+                      <div className={panelStyles.progressRow}>
+                        <div className={panelStyles.progressMeta}><span>Repite</span><strong>{pct(s?.pct_repite || 0)}</strong></div>
+                        <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_repite || 0))}%` }} /></div>
+                      </div>
+                      <button className={panelStyles.railButton} type="button" onClick={() => setTab("ranking")}>Ver estadísticas completas</button>
+                    </section>
+
+                    <section className={panelStyles.railCard}>
+                      <div className={panelStyles.railKicker}>Progreso operativo</div>
+                      <h3>Objetivos y cierre</h3>
+                      <p>Visión simple para cerrar el turno sin perder nada.</p>
+                      <div className={panelStyles.quickList}>
+                        <div className={panelStyles.quickItem}><span>Checklist</span><strong>{clProgress.total ? `${clProgress.completed}/${clProgress.total}` : "Sin tareas"}</strong></div>
+                        <div className={panelStyles.quickItem}><span>Ranking Cliente</span><strong>{posCliente ? `#${posCliente}` : "Sin posición"}</strong></div>
+                        <div className={panelStyles.quickItem}><span>Notificaciones</span><strong>{notificationsCount}</strong></div>
+                        <div className={panelStyles.quickItem}><span>Total estimado</span><strong>{money(totalPreview)}</strong></div>
+                      </div>
+                      <button className={panelStyles.railButton} type="button" onClick={() => setTab("facturas")}>Abrir factura</button>
+                    </section>
+                  </aside>
+                </div>
+              </div>
+            )}
+
+            {tab === "notificaciones" && (
+              <div className={panelStyles.notificationsPage}>
+                <section className={panelStyles.notificationsHero}>
+                  <div>
+                    <div className={panelStyles.heroKicker}>Centro de avisos</div>
+                    <h2>Notificaciones y recordatorios</h2>
+                    <p>Todo lo importante del turno reunido en un solo lugar, fácil de entender y priorizar.</p>
+                  </div>
+                  <div className={panelStyles.notificationStats}>
+                    <div className={panelStyles.notificationStat}><span>Total</span><strong>{notificationsCount}</strong></div>
+                    <div className={panelStyles.notificationStat}><span>Prioridad</span><strong>{urgentNotificationsCount}</strong></div>
+                    <div className={panelStyles.notificationStat}><span>Clientes</span><strong>{outboundPending}</strong></div>
+                  </div>
+                </section>
+
+                <div className={panelStyles.notificationsGrid}>
+                  <section className={panelStyles.notificationsList}>
+                    {notificationItems.map((item) => (
+                      <article key={item.id} className={panelStyles.notificationCard} data-tone={item.tone}>
+                        <div className={panelStyles.notificationMeta}>
+                          <span>{item.section}</span>
+                          {item.meta ? <strong>{item.meta}</strong> : null}
+                        </div>
+                        <h3>{item.title}</h3>
+                        <p>{item.detail}</p>
+                        <button type="button" className={panelStyles.notificationAction} onClick={() => setTab(item.actionTab)}>
+                          {item.actionLabel}
+                        </button>
+                      </article>
+                    ))}
                   </section>
 
-                  <section className={panelStyles.railCard}>
-                    <div className={panelStyles.railKicker}>Progreso operativo</div>
-                    <h3>Objetivos y cierre</h3>
-                    <p>Resumen conectado con tus módulos actuales.</p>
-                    <div className={panelStyles.quickList}>
-                      <div className={panelStyles.quickItem}><span>Checklist</span><strong>{clProgress.total ? `${clProgress.completed}/${clProgress.total}` : "Sin tareas"}</strong></div>
-                      <div className={panelStyles.quickItem}><span>Ranking Cliente</span><strong>{posCliente ? `#${posCliente}` : "Sin posición"}</strong></div>
-                      <div className={panelStyles.quickItem}><span>Factura</span><strong>{invoice ? getInvoiceVisibleStatus(invoice) : "Pendiente"}</strong></div>
-                      <div className={panelStyles.quickItem}><span>Total estimado</span><strong>{money(totalPreview)}</strong></div>
-                    </div>
-                    <button className={panelStyles.railButton} type="button" onClick={() => setTab("facturas")}>Abrir factura</button>
-                  </section>
-                </aside>
+                  <aside className={panelStyles.notificationsAside}>
+                    <section className={panelStyles.railCard}>
+                      <div className={panelStyles.railKicker}>Cómo usar este panel</div>
+                      <h3>Orden recomendado</h3>
+                      <div className={panelStyles.quickList}>
+                        <div className={panelStyles.quickItem}><span>1. Revisar avisos</span><strong>Primero</strong></div>
+                        <div className={panelStyles.quickItem}><span>2. Seguir clientes</span><strong>Después</strong></div>
+                        <div className={panelStyles.quickItem}><span>3. Completar checklist</span><strong>Antes de cerrar</strong></div>
+                      </div>
+                    </section>
+                    <section className={panelStyles.railCard}>
+                      <div className={panelStyles.railKicker}>Acciones rápidas</div>
+                      <h3>Accesos directos</h3>
+                      <div className={panelStyles.actionColumn}>
+                        <button type="button" className={panelStyles.railButton} onClick={() => setTab("clientes")}>Abrir clientes</button>
+                        <button type="button" className={panelStyles.railButton} onClick={() => setTab("chat")}>Abrir chat</button>
+                        <button type="button" className={panelStyles.railButton} onClick={() => setTab("checklist")}>Ver checklist</button>
+                      </div>
+                    </section>
+                  </aside>
+                </div>
               </div>
             )}
 
