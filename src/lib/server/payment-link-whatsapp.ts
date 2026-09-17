@@ -16,7 +16,7 @@ export async function sendPaymentLink(admin: any, attempt: any, cliente: any) {
     return result;
   }
   if (["sending", "accepted", "queued", "sent", "delivered", "read", "unknown"].includes(attempt.whatsapp?.status)) return attempt.whatsapp;
-  if (attempt.status !== "pending" || !["open", "pending"].includes(attempt.provider_response?.status)) return { status: "unavailable" };
+  if (attempt.status !== "pending" || !["open", "pending", "waiting_for_customer"].includes(attempt.provider_response?.status)) return { status: "unavailable" };
   const to = buildInternationalPhone(cliente.pais, cliente.telefono_normalizado || cliente.telefono || "");
   if (!/^\+[1-9]\d{7,14}$/.test(to)) return { status: "invalid_phone" };
   const deliveryToken = randomUUID();
@@ -29,7 +29,7 @@ export async function sendPaymentLink(admin: any, attempt: any, cliente: any) {
   const params = new URLSearchParams({
     From: process.env.TWILIO_WHATSAPP_FROM!, To: `whatsapp:${to}`,
     ContentSid: process.env.TWILIO_WHATSAPP_PAYMENT_CONTENT_SID!,
-    ContentVariables: JSON.stringify({ "1": [cliente.nombre, cliente.apellido].filter(Boolean).join(" ") || "Clienta", "2": `${Number(attempt.amount).toFixed(2)} ${attempt.currency}`, "3": attempt.provider_response._links.checkout.href }),
+    ContentVariables: JSON.stringify({ "1": [cliente.nombre, cliente.apellido].filter(Boolean).join(" ") || "Clienta", "2": `${Number(attempt.amount).toFixed(2)} ${attempt.currency}`, "3": attempt.provider_response?._links?.paymentLink?.href || attempt.provider_response?._links?.checkout?.href }),
     StatusCallback: `${process.env.MOLLIE_PUBLIC_BASE_URL!.replace(/\/$/, "")}/api/webhooks/payment-whatsapp?attempt_id=${attempt.id}&delivery_token=${deliveryToken}`,
   });
   let result: any;

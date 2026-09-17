@@ -44,6 +44,7 @@ type Pack = {
 type PaymentState = {
   attempt_id: string;
   payment_id?: string | null;
+  payment_link_id?: string | null;
   url: string;
   amount: number;
   currency: string;
@@ -223,6 +224,7 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
         last_error: attempt.last_error || null,
         whatsapp: attempt.whatsapp || current.whatsapp,
         payment_id: attempt.payment_id || current.payment_id || null,
+        payment_link_id: attempt.payment_link_id || current.payment_link_id || null,
         url: attempt.checkout_url || current.url,
       } : current);
 
@@ -249,7 +251,7 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
       .subscribe(status => { if (status === "SUBSCRIBED") refresh(); });
     refresh();
     // Safety recovery for a missed webhook or disconnected realtime, only in a visible tab.
-    const timer = window.setInterval(refresh, 60000);
+    const timer = window.setInterval(refresh, 3000);
     window.addEventListener("focus", refresh);
     window.addEventListener("online", refresh);
     document.addEventListener("visibilitychange", refresh);
@@ -317,6 +319,7 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
       setPayment({
         attempt_id: String(json.attempt_id),
         payment_id: json.payment_id || null,
+        payment_link_id: json.payment_link_id || null,
         url: String(json.url),
         amount: Number(json.amount || requestedAmount),
         currency: String(json.currency || "EUR"),
@@ -465,7 +468,7 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
                 {visualPaymentState === "success"
                   ? "PAGO REALIZADO CORRECTAMENTE"
                   : visualPaymentState === "rejected"
-                    ? (payment.remote_status === "expired" ? "PAGO CADUCADO" : ["canceled", "cancelled"].includes(payment.remote_status || "") ? "PAGO CANCELADO" : "PAGO FALLIDO")
+                    ? (payment.remote_status === "expired" ? "PAGO CADUCADO" : ["canceled", "cancelled"].includes(payment.remote_status || "") ? "PAGO CANCELADO" : "PAGO RECHAZADO")
                     : visualPaymentState === "review" ? "PAGO RECIBIDO · PROCESAMIENTO PENDIENTE"
                     : visualPaymentState === "processing" ? "PAGO CONFIRMADO · PROCESANDO COMPRA"
                     : "ESPERANDO PAGO…"}
@@ -475,7 +478,7 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
                 {visualPaymentState === "success"
                   ? `Mollie ha confirmado correctamente el pago de ${money(payment.amount)}.`
                   : visualPaymentState === "rejected"
-                    ? `El pago de ${money(payment.amount)} no ha podido completarse.`
+                    ? `${payment.last_error || `El pago de ${money(payment.amount)} no ha podido completarse.`}`
                     : ["review", "processing"].includes(visualPaymentState) ? "El dinero ya se ha recibido. No solicites otro pago. Estamos comprobando el registro y los beneficios."
                     : `Esperando la confirmación de Mollie para el cobro de ${money(payment.amount)}.`}
               </p>

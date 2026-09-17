@@ -2,7 +2,7 @@ import { savePaymentLinkNote } from "@/lib/server/payment-link-note";
 import { adminClient } from "@/lib/server/auth-cliente";
 import { applyConfiguredMinutePurchase } from "@/lib/server/client-minute-purchase";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { getMolliePayment } from "@/lib/server/mollie";
+import { getMolliePayment, getMolliePaymentLinkPayments } from "@/lib/server/mollie";
 import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 import { applyPromotionMinutePurchase, type PromotionPackageSnapshot } from "@/lib/server/client-promotions";
@@ -36,7 +36,7 @@ export async function processMolliePayment(paymentId: string) {
     // La notificación no se considera una confirmación de pago por sí sola.
     // Consultamos siempre el estado real directamente a Mollie.
     const payment = await getMolliePayment(paymentId);
-    const metadata = metadataObject(payment.metadata);
+    let metadata = metadataObject(payment.metadata);
 
     let attempt: any = null;
     const metadataAttemptId = String(metadata.attempt_id || "").trim();
@@ -64,6 +64,15 @@ export async function processMolliePayment(paymentId: string) {
 
     if (!attempt) return new Response("MOLLIE_PAYMENT_NOT_FOUND", { status: 404 });
     attemptId = String(attempt.id || "");
+    if (!Object.keys(metadata).length) metadata = metadataObject(attempt.provider_response?.metadata);
+    const paymentLinkId = String(attempt.provider_response?.payment_link_id || "").trim();
+    const paymentLinkUrl = String(attempt.provider_response?.payment_link_url || "").trim();
+    const providerSnapshot = {
+      ...payment,
+      metadata,
+      ...(paymentLinkId ? { payment_link_id: paymentLinkId } : {}),
+      ...(paymentLinkUrl ? { payment_link_url: paymentLinkUrl } : {}),
+    };
 
     const paymentAmount = Number(payment.amount?.value || 0);
     const paymentCurrency = String(payment.amount?.currency || "").toUpperCase();
@@ -81,11 +90,24 @@ export async function processMolliePayment(paymentId: string) {
 
     const status = String(payment.status || "").toLowerCase();
     if (["failed", "expired", "canceled", "cancelled"].includes(status)) {
+      const rawReason = String(
+        (payment as any)?.failureReason ||
+        (payment as any)?.details?.failureReason ||
+        (payment as any)?.details?.failureMessage ||
+        (payment as any)?.details?.reason ||
+        ""
+      ).trim();
+      const statusReason = status === "expired"
+        ? "El enlace o intento de pago ha caducado."
+        : status.startsWith("cancel")
+          ? "La operación fue cancelada antes de completarse."
+          : "Mollie ha marcado el intento de pago como rechazado o fallido.";
       const { error: persistError } = await admin
         .from("cliente_payment_attempts")
         .update({
           status: status.startsWith("cancel") ? "cancelled" : "failed",
-          provider_response: payment,
+          provider_response: providerSnapshot,
+          last_error: rawReason || statusReason,
           updated_at: new Date().toISOString(),
         })
         .eq("id", attempt.id).eq("updated_at", attempt.updated_at);
@@ -96,7 +118,7 @@ export async function processMolliePayment(paymentId: string) {
     if (status !== "paid") {
       const { error: persistError } = await admin
         .from("cliente_payment_attempts")
-        .update({ provider_response: payment, updated_at: new Date().toISOString() })
+        .update({ provider_response: providerSnapshot, updated_at: new Date().toISOString() })
         .eq("id", attempt.id).eq("updated_at", attempt.updated_at);
       if (persistError) throw persistError;
       return okResponse();
@@ -106,7 +128,7 @@ export async function processMolliePayment(paymentId: string) {
     if (attempt.status === "processing" && Date.now() - Date.parse(attempt.updated_at) < 120000) return new Response("PROCESSING_RETRY", { status: 503 });
     processingVersion = new Date().toISOString();
     const { data: locked, error: lockError } = await admin.from("cliente_payment_attempts")
-      .update({ status: "processing", order_id: paymentId, provider_response: payment, last_error: null, updated_at: processingVersion })
+      .update({ status: "processing", order_id: paymentId, provider_response: providerSnapshot, last_error: null, updated_at: processingVersion })
       .eq("id", attempt.id).eq("updated_at", attempt.updated_at).neq("status", "completed")
       .select("*").maybeSingle();
     if (lockError) throw lockError;
@@ -253,7 +275,7 @@ export async function processMolliePayment(paymentId: string) {
     // Persist completion explicitly: a resolved Supabase Promise can still contain an error.
     const { data: completed, error: completionError } = await admin.from("cliente_payment_attempts").update({
       status: "completed", completed_at: new Date().toISOString(), order_id: paymentId,
-      provider_response: payment, last_error: null, updated_at: new Date().toISOString(),
+      provider_response: providerSnapshot, last_error: null, updated_at: new Date().toISOString(),
     }).eq("id", locked.id).eq("updated_at", processingVersion).select("id").maybeSingle();
     if (completionError) throw completionError;
     if (!completed) throw new Error("PAYMENT_COMPLETION_RETRY");
@@ -287,3 +309,91 @@ export async function processMolliePayment(paymentId: string) {
     return new Response(error?.message || "ERR_MOLLIE_WEBHOOK", { status: 500 });
   }
 }
+
+export async function processMolliePaymentLink(paymentLinkId: string, preferredAttemptId?: string) {
+  const admin = adminClient();
+  const linkId = String(paymentLinkId || "").trim();
+  if (!/^pl_[a-zA-Z0-9]+$/.test(linkId)) return new Response("MOLLIE_PAYMENT_LINK_ID_REQUIRED", { status: 400 });
+
+  try {
+    let attempt: any = null;
+    if (preferredAttemptId) {
+      const { data, error } = await admin
+        .from("cliente_payment_attempts")
+        .select("*")
+        .eq("id", preferredAttemptId)
+        .eq("provider", "mollie")
+        .maybeSingle();
+      if (error) throw error;
+      attempt = data;
+    }
+
+    if (!attempt) {
+      const { data: byOrder, error: byOrderError } = await admin
+        .from("cliente_payment_attempts")
+        .select("*")
+        .eq("provider", "mollie")
+        .eq("order_id", linkId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (byOrderError) throw byOrderError;
+      attempt = byOrder?.[0] || null;
+    }
+
+    if (!attempt) {
+      const { data: byResponse, error: byResponseError } = await admin
+        .from("cliente_payment_attempts")
+        .select("*")
+        .eq("provider", "mollie")
+        .contains("provider_response", { payment_link_id: linkId })
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (byResponseError) throw byResponseError;
+      attempt = byResponse?.[0] || null;
+    }
+
+    if (!attempt) return new Response("MOLLIE_PAYMENT_LINK_ATTEMPT_NOT_FOUND", { status: 404 });
+    if (attempt.status === "completed") return okResponse();
+
+    const payments = await getMolliePaymentLinkPayments(linkId);
+    const latest = payments[0] || null;
+    if (!latest?.id) {
+      const previous = attempt.provider_response && typeof attempt.provider_response === "object" ? attempt.provider_response : {};
+      const { error } = await admin
+        .from("cliente_payment_attempts")
+        .update({
+          status: "pending",
+          provider_response: { ...previous, payment_link_id: linkId, status: "waiting_for_customer" },
+          last_error: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", attempt.id);
+      if (error) throw error;
+      return okResponse();
+    }
+
+    const localMetadata = metadataObject(attempt.provider_response?.metadata);
+    const paymentLinkUrl = String(attempt.provider_response?.payment_link_url || attempt.provider_response?._links?.paymentLink?.href || "").trim();
+    const paymentSnapshot = {
+      ...latest,
+      metadata: localMetadata,
+      payment_link_id: linkId,
+      ...(paymentLinkUrl ? { payment_link_url: paymentLinkUrl } : {}),
+    };
+    const { error: associateError } = await admin
+      .from("cliente_payment_attempts")
+      .update({
+        order_id: latest.id,
+        provider_response: paymentSnapshot,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", attempt.id);
+    if (associateError) throw associateError;
+
+    return processMolliePayment(latest.id);
+  } catch (error: any) {
+    console.error("[mollie/payment-link]", error);
+    return new Response(error?.message || "ERR_MOLLIE_PAYMENT_LINK", { status: 500 });
+  }
+}
+

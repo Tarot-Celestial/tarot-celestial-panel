@@ -2,8 +2,8 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { createMolliePayment } from "@/lib/server/mollie";
-import { processMolliePayment } from "@/lib/server/mollie-payment-processing";
+import { createMolliePaymentLink } from "@/lib/server/mollie";
+import { processMolliePayment, processMolliePaymentLink } from "@/lib/server/mollie-payment-processing";
 import { paymentWhatsappConfig, sendPaymentLink } from "@/lib/server/payment-link-whatsapp";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,11 +19,13 @@ function allowed(attempt: any, worker: any) {
   return meta?.source === "crm_cobrador" && (worker.role === "admin" || meta.initiated_by_worker_id === worker.id);
 }
 function publicAttempt(a: any) {
+  const paymentLinkId = String(a.provider_response?.payment_link_id || (String(a.order_id || "").startsWith("pl_") ? a.order_id : "") || "").trim();
   return { id: a.id, cliente_id: a.cliente_id, pack_id: a.pack_id, amount: Number(a.amount), currency: a.currency,
     total_minutes: a.total_minutes, status: a.status, remote_status: a.provider_response?.status || null,
     payment_id: a.order_id?.startsWith("tr_") ? a.order_id : null,
-    checkout_url: a.provider_response?._links?.checkout?.href || null, last_error: a.last_error,
-    completed_at: a.completed_at, created_at: a.created_at, whatsapp: a.whatsapp || {} };
+    payment_link_id: paymentLinkId || null,
+    checkout_url: a.provider_response?.payment_link_url || a.provider_response?._links?.paymentLink?.href || a.provider_response?._links?.checkout?.href || null,
+    last_error: a.last_error, completed_at: a.completed_at, created_at: a.created_at, whatsapp: a.whatsapp || {} };
 }
 export async function GET(req: Request) {
   try {
@@ -45,9 +47,11 @@ export async function GET(req: Request) {
     const { data: initial, error } = await admin.from("cliente_payment_attempts").select("*").eq("id", id).eq("provider", "mollie").maybeSingle();
     if (error) throw error;
     if (!initial || !allowed(initial, worker)) return NextResponse.json({ ok: false, error: "COBRO_NO_ENCONTRADO" }, { status: 404, headers });
-    // Realtime notifications only read persisted state. Reconnect/manual checks also reconcile the provider.
-    if (params.get("reconcile") === "1" && initial.status !== "completed" && initial.order_id?.startsWith("tr_") && !initial.last_error?.includes("REQUIRES_REVIEW")) {
-      await processMolliePayment(initial.order_id);
+    // Realtime notifications only read persisted state. Reconnect/manual checks also reconcile Mollie.
+    if (params.get("reconcile") === "1" && initial.status !== "completed" && !initial.last_error?.includes("REQUIRES_REVIEW")) {
+      const paymentLinkId = String(initial.provider_response?.payment_link_id || (String(initial.order_id || "").startsWith("pl_") ? initial.order_id : "") || "").trim();
+      if (paymentLinkId) await processMolliePaymentLink(paymentLinkId, initial.id);
+      else if (initial.order_id?.startsWith("tr_")) await processMolliePayment(initial.order_id);
     }
     const { data: current, error: readError } = await admin.from("cliente_payment_attempts").select("*").eq("id", id).single();
     if (readError) throw readError;
@@ -88,22 +92,56 @@ export async function POST(req: Request) {
     if (existingError) throw existingError;
     if (!allowed(existing, worker) || existing.cliente_id !== cliente.id || Number(existing.amount) !== amount || existing.pack_id !== metadata.pack_id) return NextResponse.json({ ok: false, error: "La operación ya pertenece a otro cobro." }, { status: 409, headers });
     let attempt = existing;
-    if (!existing.order_id.startsWith("tr_")) {
+    const existingLinkUrl = String(existing.provider_response?.payment_link_url || existing.provider_response?._links?.paymentLink?.href || "").trim();
+    const existingLinkId = String(existing.provider_response?.payment_link_id || (String(existing.order_id || "").startsWith("pl_") ? existing.order_id : "") || "").trim();
+
+    if (!existingLinkId || !existingLinkUrl) {
       if (Date.now() - Date.parse(existing.created_at) > 55 * 60000) throw new Error("El intento antiguo necesita revisión antes de crear otro enlace.");
       const creationBase = existing.provider_response.creation_base_url;
-      const { payment, checkoutUrl } = await createMolliePayment({ amount, currency: "EUR", description: pack ? `Tarot Celestial · ${pack.nombre}` : `Tarot Celestial · Cobro personalizado ${amount.toFixed(2)} €`, redirectUrl: `${creationBase}/pago-confirmado`, webhookUrl: `${creationBase}/api/webhooks/mollie`, metadata: existing.provider_response.metadata, idempotencyKey: `crm-${id}` });
+      const { paymentLink, paymentLinkUrl } = await createMolliePaymentLink({
+        amount,
+        currency: "EUR",
+        description: pack ? `Tarot Celestial · ${pack.nombre}` : `Tarot Celestial · Cobro personalizado ${amount.toFixed(2)} €`,
+        redirectUrl: `${creationBase}/pago-confirmado`,
+        webhookUrl: `${creationBase}/api/webhooks/mollie`,
+        idempotencyKey: `crm-link-${id}`,
+      });
+      const providerResponse = {
+        ...paymentLink,
+        metadata: existing.provider_response.metadata,
+        creation_base_url: creationBase,
+        payment_link_id: paymentLink.id,
+        payment_link_url: paymentLinkUrl,
+        status: "waiting_for_customer",
+      };
       const { data: updated, error: updateError } = await admin
         .from("cliente_payment_attempts")
-        .update({ order_id: payment.id, provider_response: payment, updated_at: new Date().toISOString() })
+        .update({ order_id: paymentLink.id, provider_response: providerResponse, last_error: null, updated_at: new Date().toISOString() })
         .eq("id", id)
         .select("*")
         .single();
       if (updateError) throw updateError;
       attempt = updated;
-      if (!checkoutUrl) throw new Error("MOLLIE_CHECKOUT_NO_DISPONIBLE");
+      if (!paymentLinkUrl) throw new Error("MOLLIE_PAYMENT_LINK_NO_DISPONIBLE");
     }
-    const checkoutUrl = String(attempt.provider_response?._links?.checkout?.href || "").trim();
-    if (!checkoutUrl) throw new Error("Mollie creó el intento pero no devolvió el enlace de checkout. Reintenta el mismo cobro.");
-    return NextResponse.json({ ok: true, attempt_id: id, payment_id: attempt.order_id, url: checkoutUrl, amount, currency: "EUR", status: attempt.status, remote_status: attempt.provider_response?.status, pack: pack ? publicPack(pack) : null, manual: !pack, whatsapp: attempt.whatsapp, whatsapp_config: paymentWhatsappConfig() }, { headers });
+
+    const paymentLinkUrl = String(attempt.provider_response?.payment_link_url || attempt.provider_response?._links?.paymentLink?.href || "").trim();
+    const paymentLinkId = String(attempt.provider_response?.payment_link_id || (String(attempt.order_id || "").startsWith("pl_") ? attempt.order_id : "") || "").trim();
+    if (!paymentLinkUrl || !paymentLinkId) throw new Error("Mollie creó el intento pero no devolvió el enlace de pago. Reintenta el mismo cobro.");
+    return NextResponse.json({
+      ok: true,
+      attempt_id: id,
+      payment_id: attempt.order_id?.startsWith("tr_") ? attempt.order_id : null,
+      payment_link_id: paymentLinkId,
+      url: paymentLinkUrl,
+      amount,
+      currency: "EUR",
+      status: attempt.status,
+      remote_status: attempt.provider_response?.status,
+      pack: pack ? publicPack(pack) : null,
+      manual: !pack,
+      whatsapp: attempt.whatsapp,
+      whatsapp_config: paymentWhatsappConfig(),
+    }, { headers });
   } catch (error: any) { return NextResponse.json({ ok: false, error: error.message || "No se pudo generar el enlace. Reintenta la misma operación." }, { status: error.status || 500, headers }); }
 }
