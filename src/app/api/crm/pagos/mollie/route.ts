@@ -5,7 +5,6 @@ import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/clie
 import { createMolliePayment } from "@/lib/server/mollie";
 import { processMolliePayment } from "@/lib/server/mollie-payment-processing";
 import { paymentWhatsappConfig, sendPaymentLink } from "@/lib/server/payment-link-whatsapp";
-import { buildInternationalPhone } from "@/lib/countries";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -74,8 +73,8 @@ export async function POST(req: Request) {
     if (!Number.isFinite(amount) || amount <= 0 || amount > 5000) return NextResponse.json({ ok: false, error: "Importe no válido." }, { status: 400, headers });
     const { data: cliente, error: clientError } = await admin.from("crm_clientes").select("id,nombre,apellido,telefono,telefono_normalizado,pais").eq("id", body.cliente_id).single();
     if (clientError) throw clientError;
-    const phone = buildInternationalPhone(cliente.pais, cliente.telefono_normalizado || cliente.telefono || "");
-    if (!/^\+[1-9]\d{7,14}$/.test(phone)) return NextResponse.json({ ok: false, error: "Revisa el teléfono internacional de la clienta antes de crear el enlace." }, { status: 400, headers });
+    // El pago Mollie no depende del teléfono. El número solo se valida en el cliente al abrir WhatsApp Web.
+    // Así una ficha con teléfono incompleto o mal formateado nunca bloquea la creación del enlace de cobro.
     // Explicit server override, otherwise the active deployment origin; never the unrelated legacy APP_URL.
     const base = new URL(process.env.MOLLIE_PUBLIC_BASE_URL || new URL(req.url).origin).origin;
     if (!base.startsWith("https://")) throw new Error("Configura MOLLIE_PUBLIC_BASE_URL con el dominio HTTPS público.");
@@ -92,13 +91,19 @@ export async function POST(req: Request) {
     if (!existing.order_id.startsWith("tr_")) {
       if (Date.now() - Date.parse(existing.created_at) > 55 * 60000) throw new Error("El intento antiguo necesita revisión antes de crear otro enlace.");
       const creationBase = existing.provider_response.creation_base_url;
-      const { payment } = await createMolliePayment({ amount, currency: "EUR", description: pack ? `Tarot Celestial · ${pack.nombre}` : `Tarot Celestial · Cobro personalizado ${amount.toFixed(2)} €`, redirectUrl: `${creationBase}/pago-confirmado`, webhookUrl: `${creationBase}/api/webhooks/mollie`, metadata: existing.provider_response.metadata, idempotencyKey: `crm-${id}` });
-      const { error: updateError } = await admin.from("cliente_payment_attempts").update({ order_id: payment.id, provider_response: payment, updated_at: new Date().toISOString() }).eq("id", id).eq("updated_at", existing.updated_at);
+      const { payment, checkoutUrl } = await createMolliePayment({ amount, currency: "EUR", description: pack ? `Tarot Celestial · ${pack.nombre}` : `Tarot Celestial · Cobro personalizado ${amount.toFixed(2)} €`, redirectUrl: `${creationBase}/pago-confirmado`, webhookUrl: `${creationBase}/api/webhooks/mollie`, metadata: existing.provider_response.metadata, idempotencyKey: `crm-${id}` });
+      const { data: updated, error: updateError } = await admin
+        .from("cliente_payment_attempts")
+        .update({ order_id: payment.id, provider_response: payment, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .select("*")
+        .single();
       if (updateError) throw updateError;
-      const { data, error } = await admin.from("cliente_payment_attempts").select("*").eq("id", id).single();
-      if (error) throw error;
-      attempt = data;
+      attempt = updated;
+      if (!checkoutUrl) throw new Error("MOLLIE_CHECKOUT_NO_DISPONIBLE");
     }
-    return NextResponse.json({ ok: true, attempt_id: id, payment_id: attempt.order_id, url: attempt.provider_response?._links?.checkout?.href, amount, currency: "EUR", status: attempt.status, remote_status: attempt.provider_response?.status, pack: pack ? publicPack(pack) : null, manual: !pack, whatsapp: attempt.whatsapp, whatsapp_config: paymentWhatsappConfig() }, { headers });
+    const checkoutUrl = String(attempt.provider_response?._links?.checkout?.href || "").trim();
+    if (!checkoutUrl) throw new Error("Mollie creó el intento pero no devolvió el enlace de checkout. Reintenta el mismo cobro.");
+    return NextResponse.json({ ok: true, attempt_id: id, payment_id: attempt.order_id, url: checkoutUrl, amount, currency: "EUR", status: attempt.status, remote_status: attempt.provider_response?.status, pack: pack ? publicPack(pack) : null, manual: !pack, whatsapp: attempt.whatsapp, whatsapp_config: paymentWhatsappConfig() }, { headers });
   } catch (error: any) { return NextResponse.json({ ok: false, error: error.message || "No se pudo generar el enlace. Reintenta la misma operación." }, { status: error.status || 500, headers }); }
 }

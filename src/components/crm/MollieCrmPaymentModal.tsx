@@ -326,8 +326,7 @@ export default function MollieCrmPaymentModal({ open, cliente, getToken, onClose
         pack: json.pack || null,
         manual: Boolean(json.manual),
       });
-      setMessage("Enlace generado. El pago y el envío se comprueban por separado.");
-      await sendWhatsApp(String(json.attempt_id));
+      setMessage("✅ Enlace Mollie generado. Ahora puedes abrir WhatsApp Web o copiar el enlace.");
     } catch (error: any) {
       setMessage(`❌ ${error?.message || "No se pudo generar el cobro Mollie."}`);
     } finally {
