@@ -1,6 +1,10 @@
+import { rankingBonuses, rankingPositions, sortRanking } from "@/lib/bonuses/engine";
+import { loadBonusRules } from "@/lib/server/tarotista-bonuses";
+import { getAdminClient } from "@/lib/server/auth-worker";
+import { fullMonthComparison } from "@/lib/server/madrid-reporting-period";
 import { NextResponse } from 'next/server';
-import { monthRange, normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
-import { aggregateRendimientoByTarotista, listRendimientoRows, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
+import { aggregateRendimientoByTarotista, listRendimientoRowsByIso, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
 
 export const runtime = 'nodejs';
 
@@ -15,19 +19,18 @@ export async function GET(req: Request) {
 
     const url = new URL(req.url);
     const month = normalizeMonthKey(url.searchParams.get('month'));
-    const { start, endExclusive } = monthRange(month);
 
     const [workers, rendimientoRows] = await Promise.all([
       listTarotistaWorkers(),
-      listRendimientoRows(start, endExclusive),
+      listRendimientoRowsByIso(fullMonthComparison(month).currentStartIso, fullMonthComparison(month).currentEndExclusiveIso),
     ]);
 
     const rows = aggregateRendimientoByTarotista(rendimientoRows, workers);
 
     const top = {
-      captadas: [...rows].sort((a, b) => Number(b.captadas_total || 0) - Number(a.captadas_total || 0)).slice(0, 10),
-      cliente: [...rows].sort((a, b) => Number(b.pct_cliente || 0) - Number(a.pct_cliente || 0)).slice(0, 10),
-      repite: [...rows].sort((a, b) => Number(b.pct_repite || 0) - Number(a.pct_repite || 0)).slice(0, 10),
+      captadas: sortRanking(rows, "captadas_total").slice(0, 10),
+      cliente: sortRanking(rows, "pct_cliente").slice(0, 10),
+      repite: sortRanking(rows, "pct_repite").slice(0, 10),
     };
 
     const teams = ['fuego', 'agua'].reduce((acc: any, team) => {
@@ -46,17 +49,10 @@ export async function GET(req: Request) {
     teams.winner = fw === aw ? 'empate' : fw > aw ? 'fuego' : 'agua';
 
     const my = rows.find((r) => String(r.worker_id) === String(me.id)) || null;
-    const bonusForPos = (pos: number) => (pos === 1 ? 6 : pos === 2 ? 4 : pos === 3 ? 2 : 0);
-    const pos = {
-      captadas: top.captadas.findIndex((r) => String(r.worker_id) === String(me.id)) + 1 || null,
-      cliente: top.cliente.findIndex((r) => String(r.worker_id) === String(me.id)) + 1 || null,
-      repite: top.repite.findIndex((r) => String(r.worker_id) === String(me.id)) + 1 || null,
-    };
-    const bonus_ranking_breakdown = {
-      captadas: pos.captadas ? bonusForPos(pos.captadas) : 0,
-      cliente: pos.cliente ? bonusForPos(pos.cliente) : 0,
-      repite: pos.repite ? bonusForPos(pos.repite) : 0,
-    };
+    const rules = await loadBonusRules(getAdminClient());
+    const pos = rankingPositions(rows, me.id);
+    const bonus_ranking_breakdown = rankingBonuses(rules, pos, month, my);
+
 
     return NextResponse.json({
       ok: true,
@@ -73,3 +69,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: e?.message || 'ERR' }, { status: 500 });
   }
 }
+

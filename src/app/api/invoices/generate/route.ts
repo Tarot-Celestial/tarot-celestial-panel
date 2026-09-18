@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
 import {
-  captadasTier,
-  monthRange,
   normalizeMonthKey,
   rateForCode,
   roundMoney,
   normalizeText,
 } from "@/lib/server/auth-worker";
-import { requireAdmin } from "@/lib/admin/require-admin";
+import { bonusAccess, bonusCandidates, loadBonusReport } from "@/lib/server/tarotista-bonuses";
+import { validateMonth } from "@/lib/bonuses/engine";
+import { fullMonthComparison } from "@/lib/server/madrid-reporting-period";
 import {
   aggregateRendimientoByTarotista,
-  listRendimientoRows,
+  listRendimientoRowsByIso,
   listTarotistaWorkers,
 } from "@/lib/server/rendimiento-metrics";
 
@@ -105,52 +105,6 @@ function minuteLine(args: {
   };
 }
 
-function bonusCaptadasLine(invoice_id: string, captadas: number) {
-  const safeCaptadas = Math.max(0, Number(captadas || 0));
-  if (safeCaptadas <= 0) return null;
-
-  const rate = captadasTier(safeCaptadas);
-  const amount = roundMoney(safeCaptadas * rate);
-  if (amount <= 0) return null;
-
-  return {
-    invoice_id,
-    kind: "bonus_captadas",
-    label: `Bonus captadas · ${safeCaptadas} x ${rate.toLocaleString("es-ES", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}€`,
-    amount,
-    meta: {
-      code: "bonus_captadas",
-      captadas: safeCaptadas,
-      rate,
-      source: "auto_generate",
-    },
-  } satisfies InvoiceLinePayload;
-}
-
-function bonusRepiteGoalLine(invoice_id: string, minutesRepite: number) {
-  const target = 8000;
-  const minutes = Math.max(0, Number(minutesRepite || 0));
-  if (minutes < target) return null;
-
-  return {
-    invoice_id,
-    kind: "bonus_repite_goal",
-    label: "Bonus objetivo Repite · 8.000 minutos",
-    amount: 7,
-    meta: {
-      code: "bonus_repite_goal",
-      minutes,
-      target,
-      reward: 7,
-      source: "auto_generate",
-      unique_goal: "repite_8000_monthly",
-    },
-  } satisfies InvoiceLinePayload;
-}
-
 function emptyLine(invoice_id: string, month: string) {
   return {
     invoice_id,
@@ -168,20 +122,17 @@ function emptyLine(invoice_id: string, month: string) {
 
 export async function POST(req: Request) {
   try {
-    const gate = await requireAdmin(req);
-    if (!gate.ok) {
-      const status = gate.error === "NO_AUTH" ? 401 : 403;
-      return NextResponse.json({ ok: false, error: gate.error }, { status });
-    }
-
+    const gate = await bonusAccess(req, true);
+    if (gate.response) return gate.response;
     const body = await req.json().catch(() => ({}));
-    const month = normalizeMonthKey(body?.month);
-    const { start, endExclusive } = monthRange(month);
-    const admin = gate.admin;
+    const month = validateMonth(normalizeMonthKey(body?.month));
+    const admin = gate.db;
+    const bonusReport = await loadBonusReport(admin, month);
+    const reportingPeriod = fullMonthComparison(month);
 
     const [tarotistaWorkers, rendimientoRows, activeWorkersResult] = await Promise.all([
       listTarotistaWorkers(),
-      listRendimientoRows(start, endExclusive),
+      listRendimientoRowsByIso(reportingPeriod.currentStartIso, reportingPeriod.currentEndExclusiveIso),
       admin
         .from("workers")
         .select("id, display_name, role, team, is_active, salary_base")
@@ -200,11 +151,9 @@ export async function POST(req: Request) {
     }
     const workers = Array.from(workersById.values());
 
-    const aggregatedRows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row: any) => ({
-      ...row,
-      bonus_captadas: roundMoney(Number(row.captadas_total || 0) * captadasTier(Number(row.captadas_total || 0))),
-    }));
+    const aggregatedRows = aggregateRendimientoByTarotista(rendimientoRows, workers);
 
+    let historicalSkipped = 0;
     let created = 0;
     let updated = 0;
     let lineCount = 0;
@@ -214,6 +163,7 @@ export async function POST(req: Request) {
       const workerId = String(row.worker_id || "").trim();
       if (!workerId) continue;
 
+      if (workersById.get(workerId)?.role === 'tarotista' && month < bonusReport.activation_month) { historicalSkipped++; continue; }
       const fixedSalary = fixedSalaryForWorker(workersById.get(workerId));
       const preliminaryLines = fixedSalary > 0
         ? [
@@ -227,8 +177,6 @@ export async function POST(req: Request) {
             minuteLine({ invoice_id: "__pending__", kind: "minutes_repite", label: "Minutos Repite", code: "repite", minutes: Number(row.minutes_repite || 0) }),
             minuteLine({ invoice_id: "__pending__", kind: "minutes_call", label: "Minutos CALL", code: "CALL", minutes: Number(row.minutes_call_fixed || 0), specialCall: true }),
             minuteLine({ invoice_id: "__pending__", kind: "minutes_otros", label: "Minutos otros / no facturables", code: "otros", minutes: Number(row.minutes_otros || 0) }),
-            bonusCaptadasLine("__pending__", Number(row.captadas_total || 0)),
-            bonusRepiteGoalLine("__pending__", Number(row.minutes_repite || 0)),
           ].filter(Boolean) as InvoiceLinePayload[];
 
       const lines = preliminaryLines.length ? preliminaryLines : [emptyLine("__pending__", month)];
@@ -240,6 +188,11 @@ export async function POST(req: Request) {
           captadas_total: Math.max(0, Math.round(Number(row.captadas_total || 0))),
           bonus_captadas: fixedSalary > 0 ? 0 : roundMoney(Number(row.bonus_captadas || 0)),
           salary_base: fixedSalary,
+          bonus_engine: workersById.get(workerId)?.role === 'tarotista',
+          close_bonuses: workersById.get(workerId)?.role === 'tarotista' && bonusReport.closed,
+          bonus_versions: bonusReport.versions,
+          bonus_candidates: bonusCandidates(bonusReport, workerId),
+          actor_id: gate.worker.id,
         },
       });
       if (regenerationError) throw regenerationError;
@@ -261,6 +214,7 @@ export async function POST(req: Request) {
       ok: true,
       month,
       created,
+      historical_skipped: historicalSkipped,
       updated,
       lines: lineCount,
       generated,
@@ -271,3 +225,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: e?.message || "INVOICE_GENERATE_ERROR" }, { status: 500 });
   }
 }
+

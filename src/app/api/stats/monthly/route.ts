@@ -1,6 +1,7 @@
+import { applicable, captureTier, captureAmount, rankingBonuses, rankingPositions, sortRanking, type BonusRule } from "@/lib/bonuses/engine";
+import { loadBonusRules } from "@/lib/server/tarotista-bonuses";
 import { NextResponse } from 'next/server';
 import {
-  captadasTier,
   normalizeMonthKey,
   roundMoney,
   workerFromRequest,
@@ -56,9 +57,9 @@ function buildTarotistaRanges(rows: any[]) {
   return byWorker;
 }
 
-function buildSnapshot(month: string, rendimientoRows: any[], workers: any[]) {
+function buildSnapshot(month: string, rendimientoRows: any[], workers: any[], rules: BonusRule[]) {
   const rows = aggregateRendimientoByTarotista(rendimientoRows, workers).map((row) => {
-    const bonusCaptadas = roundMoney(Number(row.captadas_total || 0) * captadasTier(Number(row.captadas_total || 0)));
+    const bonusCaptadas = captureAmount(rules, Number(row.captadas_total || 0), month);
     return {
       ...row,
       bonus_captadas: bonusCaptadas,
@@ -100,6 +101,7 @@ export async function GET(req: Request) {
     const includePrevious = me.role === 'admin' || me.role === 'central';
     const brand = brandFromRequest(req);
     const admin = getAdminClient();
+    const rules = await loadBonusRules(admin);
 
     const [workers, currentRowsRaw, previousRowsRaw, currentPayments, previousPayments] = await Promise.all([
       listTarotistaWorkers(),
@@ -118,10 +120,10 @@ export async function GET(req: Request) {
       includePrevious ? filterRowsByBrand(admin, previousRowsRaw, brand) : Promise.resolve([]),
     ]);
 
-    const current = buildSnapshot(month, currentFilteredRows, workers);
+    const current = buildSnapshot(month, currentFilteredRows, workers, rules);
     current.totals.revenue_total = totalOfficialRevenue(currentPayments);
     current.totals.revenue_payment_count = currentPayments.length;
-    const previous = includePrevious ? buildSnapshot(previousMonth, previousFilteredRows, workers) : null;
+    const previous = includePrevious ? buildSnapshot(previousMonth, previousFilteredRows, workers, rules) : null;
     if (previous) {
       previous.totals.revenue_total = totalOfficialRevenue(previousPayments);
       previous.totals.revenue_payment_count = previousPayments.length;
@@ -130,9 +132,9 @@ export async function GET(req: Request) {
     const totals = current.totals;
 
     const tarotistaRanges = buildTarotistaRanges(rows);
-    const topCaptadas = [...rows].sort((a, b) => Number(b.captadas_total || 0) - Number(a.captadas_total || 0));
-    const topCliente = [...rows].sort((a, b) => Number(b.pct_cliente || 0) - Number(a.pct_cliente || 0));
-    const topRepite = [...rows].sort((a, b) => Number(b.pct_repite || 0) - Number(a.pct_repite || 0));
+    const topCaptadas = sortRanking(rows, "captadas_total");
+    const topCliente = sortRanking(rows, "pct_cliente");
+    const topRepite = sortRanking(rows, "pct_repite");
 
     if (includePrevious) {
       return NextResponse.json({
@@ -153,7 +155,6 @@ export async function GET(req: Request) {
       }, { headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0' } });
     }
 
-    const bonusForPos = (pos: number) => (pos === 1 ? 6 : pos === 2 ? 4 : pos === 3 ? 2 : 0);
     const mine = rows.find((r) => String(r.worker_id) === String(me.id)) || {
       worker_id: me.id,
       display_name: me.display_name || '—',
@@ -176,13 +177,12 @@ export async function GET(req: Request) {
     const posCaptadas = topCaptadas.findIndex((r) => String(r.worker_id) === String(me.id)) + 1 || null;
     const posCliente = topCliente.findIndex((r) => String(r.worker_id) === String(me.id)) + 1 || null;
     const posRepite = topRepite.findIndex((r) => String(r.worker_id) === String(me.id)) + 1 || null;
-    const bonus_ranking_breakdown = {
-      captadas: posCaptadas ? bonusForPos(posCaptadas) : 0,
-      cliente: posCliente ? bonusForPos(posCliente) : 0,
-      repite: posRepite ? bonusForPos(posRepite) : 0,
-    };
+    const bonus_ranking_breakdown = rankingBonuses(rules, rankingPositions(rows, me.id), month, mine);
 
     const tarotistaLevel = Number(me.tarotista_level || 1);
+    const tier = captureTier(rules, Number(mine.captadas_total || 0), month);
+    const nextTier = rules.filter(r => r.kind === 'tier' && applicable(r,month) && r.minimum > Number(mine.captadas_total || 0)).sort((a,b) => a.minimum-b.minimum)[0];
+
     const myRange = tarotistaRanges.get(String(me.id)) || { rango: 'B', score: 0, puntuacion: 0, position: null, total_compared: tarotistaRanges.size };
     const moneyPatch = tarotistaLevel === 2
       ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
@@ -195,6 +195,8 @@ export async function GET(req: Request) {
       stats: {
         ...mine,
         ...moneyPatch,
+        capture_tier: { label: tier ? (tarotistaLevel === 2 ? tier.name : `${tier.reward.toLocaleString('es-ES',{minimumFractionDigits:2})} € / captada`) : 'Sin tramo activo', nextAt: nextTier?.minimum || null },
+        capture_progress: { pct: nextTier ? Math.min(100,Number(mine.captadas_total || 0)/nextTier.minimum*100) : tier ? 100 : 0, text: nextTier ? `Te faltan ${Math.max(0,nextTier.minimum-Number(mine.captadas_total || 0))} captadas para el siguiente tramo` : 'Consulta la configuración de tramos en Bonos' },
         tarotista_rango: myRange.rango,
         tarotista_rango_score: myRange.score,
         tarotista_rango_media: myRange.puntuacion,
@@ -208,3 +210,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: e?.message || 'ERR' }, { status: 500 });
   }
 }
+

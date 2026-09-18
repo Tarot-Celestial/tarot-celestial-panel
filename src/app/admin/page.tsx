@@ -48,6 +48,7 @@ const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/C
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
+const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
 const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
@@ -69,6 +70,7 @@ const ADMIN_NAV = [
   { key: "precios-hoy", icon: Sparkles, label: "Precios de hoy", kicker: "Promociones y packs", tone: "goldPurple" },
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
+  { key: "bonos-tarotistas", icon: Trophy, label: "Bonos tarotistas", kicker: "Retos y premios económicos", tone: "goldPurple" },
   { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
   { key: "sorteo", icon: Trophy, label: "Sorteo", kicker: "Selección de ganadores", tone: "goldPurple" },
   { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago", tone: "indigo" },
@@ -166,6 +168,7 @@ type TabKey =
   | "precios-hoy"
   | "rangos-clientes"
   | "clientes-web"
+  | "bonos-tarotistas"
   | "sistema-xp"
   | "sistema-xp-niveles"
   | "crm"
@@ -2937,6 +2940,7 @@ function AdminPage() {
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
 
+          {tab === "bonos-tarotistas" && <BonusAdminPanel />}
           {tab === "sistema-xp" && <XpSystemAdminPanel />}
           {tab === "sistema-xp-niveles" && <XpLevelsAdminPanel />}
 
@@ -3167,6 +3171,7 @@ function LineEditor({
     meta?.locked === true ||
     meta?.protected === true;
   const isSalaryBonus = String(line?.kind || "") === "salary_bonus";
+  const isConfirmedBonus = Boolean(meta?.bonus_award_id);
 
   const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
   const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
@@ -3244,7 +3249,7 @@ function LineEditor({
           />
           {isProtectedSalary && (
             <span className="tc-chip" style={{ padding: "5px 9px" }}>
-              🔒 Importe fijo protegido
+              🔒 {isConfirmedBonus ? "Bono confirmado · gestionar desde Bonos tarotistas" : "Importe fijo protegido"}
             </span>
           )}
           {isSalaryBonus && (
@@ -3296,7 +3301,7 @@ function LineEditor({
           <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
             <div>
               <div className="tc-sub">
-                {isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
+                {isConfirmedBonus ? "Bono confirmado" : isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
               </div>
               <input
                 className="tc-input"
@@ -3417,3 +3422,4 @@ export default function Page() {
     </Suspense>
   );
 }
+

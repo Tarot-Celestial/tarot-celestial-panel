@@ -1,0 +1,352 @@
+.shell {
+  min-width: 0;
+  color: #f5f0e7;
+  display: grid;
+  gap: 22px;
+}
+.hero {
+  border: 1px solid #d9b86d35;
+  border-radius: 22px;
+  padding: 26px;
+  background: linear-gradient(120deg, #231c2e, #111015 70%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #d8bc80;
+}
+.shell h1 {
+  font-size: 28px;
+  margin: 7px 0;
+}
+.shell h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.shell h3 {
+  font-size: 17px;
+  margin: 0;
+}
+.muted {
+  font-size: 12px;
+  color: #b1a7bd;
+  line-height: 1.7;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.shell button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid #ffffff25;
+  background: #ffffff06;
+  color: #e5ddec;
+  padding: 10px 13px;
+  border-radius: 10px;
+}
+.shell button:hover {
+  border-color: #d9b86d88;
+}
+.shell button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.shell .primary {
+  background: linear-gradient(120deg, #ebd098, #c6a262);
+  color: #21190d;
+  font-weight: 700;
+  border-color: #d9b86d;
+}
+.shell .danger {
+  border-color: #d06c7855;
+  color: #f0adb6;
+}
+.shell input,
+.shell select,
+.shell textarea {
+  font: inherit;
+  font-size: 13px;
+  color: #f4efe7;
+  background: #0c0a10;
+  border: 1px solid #ffffff25;
+  border-radius: 10px;
+  padding: 11px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  color-scheme: dark;
+}
+.shell textarea {
+  min-height: 85px;
+  resize: vertical;
+}
+.shell label {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: #c9bfd5;
+  min-width: 0;
+}
+.shell input[type="checkbox"] {
+  width: 17px;
+  accent-color: #d9b86d;
+}
+.shell :is(input, select, textarea, button):focus-visible {
+  outline: 2px solid #e5c57d;
+  outline-offset: 3px;
+}
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.metric,
+.card,
+.section {
+  border: 1px solid #ffffff16;
+  background: linear-gradient(130deg, #19151f, #110f16);
+  border-radius: 16px;
+  padding: 20px;
+  min-width: 0;
+}
+.metric > span {
+  display: block;
+  color: #aea3bd;
+  font-size: 12px;
+}
+.metric > strong {
+  display: block;
+  font-size: 30px;
+  color: #eed49b;
+  margin: 10px 0;
+  font-variant-numeric: tabular-nums;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 14px;
+}
+.section {
+  display: grid;
+  gap: 18px;
+}
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+.card p {
+  margin: 0;
+}
+.card strong {
+  color: #edd19b;
+}
+.card img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+.badge {
+  font-size: 10px;
+  display: inline-flex;
+  align-self: flex-start;
+  color: #cebbeb;
+  background: #8f6bb51a;
+  border: 1px solid #ad8ec238;
+  border-radius: 20px;
+  padding: 5px 9px;
+}
+.progress {
+  height: 7px;
+  border-radius: 8px;
+  background: #ffffff0c;
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #a583cb, #e6c780);
+  border-radius: 8px;
+}
+.prize {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+.prize strong {
+  font-size: 24px;
+}
+.tableWrap {
+  overflow: auto;
+}
+.shell table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+.shell th,
+.shell td {
+  text-align: left;
+  padding: 12px;
+  border-bottom: 1px solid #ffffff13;
+  white-space: nowrap;
+}
+.shell th {
+  font-weight: 500;
+  color: #c5b293;
+}
+.shell td small {
+  display: block;
+  color: #a89ab6;
+  margin-top: 5px;
+  white-space: normal;
+  max-width: 280px;
+}
+.editorLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(280px, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.list {
+  display: grid;
+  gap: 10px;
+}
+.rule {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px;
+  border: 1px solid #ffffff18;
+  border-radius: 12px;
+  background: #141019;
+}
+.rule > div {
+  min-width: 0;
+}
+.rule strong {
+  display: block;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.rule small {
+  display: block;
+  margin-top: 6px;
+  color: #ad9dbc;
+  font-size: 11px;
+}
+.form {
+  display: grid;
+  gap: 16px;
+}
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+.error {
+  color: #f2b0b9;
+  border: 1px solid #bd526a55;
+  background: #bd526a0c;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.success {
+  color: #a9dcc6;
+  border: 1px solid #6bc5a144;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 13px;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.shell .active {
+  border-color: #d9b86d;
+  color: #eed49b;
+  background: #d9b86d0c;
+}
+.history {
+  display: grid;
+  gap: 12px;
+}
+.historyItem {
+  padding: 14px;
+  border: 1px solid #ffffff16;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+.historyItem strong {
+  font-size: 13px;
+}
+.historyItem small {
+  display: block;
+  font-size: 11px;
+  color: #a89ab6;
+  margin-top: 6px;
+}
+@media (max-width: 900px) {
+  .editorLayout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 600px) {
+  .hero {
+    padding: 20px;
+  }
+  .shell h1 {
+    font-size: 23px;
+  }
+  .summary {
+    grid-template-columns: 1fr;
+  }
+  .metric {
+    padding: 16px;
+  }
+  .metric > strong {
+    font-size: 27px;
+  }
+  .fields {
+    grid-template-columns: 1fr;
+  }
+  .section {
+    padding: 16px;
+  }
+  .historyItem {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -81,10 +81,7 @@ export async function GET(req: Request) {
       current: monthSnapshot(invoice, lines),
       previous: monthSnapshot(previousInvoice, previousLines),
       previous_month: previousMonth,
-      goals: {
-        captaciones: { target: 10, reward: canSeeMoney ? 10 : null },
-        repite: { target: 8000, reward: canSeeMoney ? 7 : null },
-      },
+
     };
 
     if (!canSeeMoney) {
@@ -116,3 +113,4 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: e?.message || 'ERR' }, { status: 500 });
   }
 }
+

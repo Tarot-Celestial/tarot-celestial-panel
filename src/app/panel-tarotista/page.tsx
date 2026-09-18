@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import TarotistaBonuses from "@/components/bonuses/TarotistaBonuses";
 import AppHeader from "@/components/AppHeader";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
@@ -84,24 +85,6 @@ function formatDuration(totalSeconds: number) {
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
-function capTier(captadas: number) {
-  if (captadas >= 30) return { rate: 2.0, label: "2,00€ / captada (30+)", nextAt: null as any };
-  if (captadas >= 20) return { rate: 1.5, label: "1,50€ / captada (20+)", nextAt: 30 };
-  if (captadas >= 10) return { rate: 1.0, label: "1,00€ / captada (10+)", nextAt: 20 };
-  return { rate: 0.5, label: "0,50€ / captada (0-9)", nextAt: 10 };
-}
-
-function progressToNext(captadas: number) {
-  const t = capTier(captadas);
-  if (!t.nextAt) return { pct: 100, text: "Tramo máximo alcanzado 🔥" };
-  const prev = t.nextAt === 10 ? 0 : t.nextAt === 20 ? 10 : 20;
-  const span = t.nextAt - prev;
-  const cur = Math.min(Math.max(captadas - prev, 0), span);
-  const p = Math.round((cur / span) * 100);
-  const faltan = Math.max(t.nextAt - captadas, 0);
-  return { pct: p, text: `Te faltan ${faltan} captadas para subir a ${t.nextAt}+` };
-}
-
 async function safeJson(res: Response) {
   const txt = await res.text();
   if (!txt) return { _raw: "", _status: res.status, _ok: res.ok };
@@ -113,12 +96,6 @@ async function safeJson(res: Response) {
   }
 }
 
-function bonusForPos(pos: number | null) {
-  if (pos === 1) return 6;
-  if (pos === 2) return 4;
-  if (pos === 3) return 2;
-  return 0;
-}
 
 function medalForPos(pos: number | null) {
   if (pos === 1) return "🥇";
@@ -247,8 +224,8 @@ export default function Tarotista() {
 
   const s = stats?.stats || {};
   const captadas = Number(s?.captadas_total || 0);
-  const tier = capTier(captadas);
-  const prog = progressToNext(captadas);
+  const tier = s?.capture_tier || { label: "Sin tramo activo", nextAt: null };
+  const prog = s?.capture_progress || { pct: 0, text: "Consulta tus tramos en Bonos" };
 
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
@@ -1944,127 +1921,7 @@ export default function Tarotista() {
               </div>
             )}
 
-            {tab === "bonos" && (
-              <div className="tc-grid-2">
-                <div className="tc-card">
-                  <div className="tc-title">💰 Bono captadas</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Tu tramo actual: <b>{canSeeMoney ? tier.label : `${captadas} captadas`}</b>
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                    <div className="tc-sub">
-                      Captadas: <b>{captadas}</b>
-                    </div>
-                    <div className="tc-chip">{prog.text}</div>
-                  </div>
-
-                  <div style={{ marginTop: 10 }}>
-                    <div
-                      style={{
-                        height: 12,
-                        borderRadius: 999,
-                        background: "rgba(255,255,255,0.10)",
-                        overflow: "hidden",
-                        border: "1px solid rgba(255,255,255,0.10)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          width: `${prog.pct}%`,
-                          background: "linear-gradient(90deg, rgba(181,156,255,0.95), rgba(215,181,109,0.95))",
-                        }}
-                      />
-                    </div>
-                    <div className="tc-sub" style={{ marginTop: 8 }}>
-                      Bono actual del mes: <b>{money(bonusCaptadas)}</b>
-                    </div>
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-sub">
-                    Tramos:
-                    <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>0–9 captadas</span>
-                        <b>{canSeeMoney ? "0,50€" : "—"}</b>
-                      </div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>10–19 captadas</span>
-                        <b>{canSeeMoney ? "1,00€" : "—"}</b>
-                      </div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>20–29 captadas</span>
-                        <b>{canSeeMoney ? "1,50€" : "—"}</b>
-                      </div>
-                      <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                        <span>30+ captadas</span>
-                        <b>{canSeeMoney ? "2,00€" : "—"}</b>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="tc-card">
-                  <div className="tc-title">🏆 Bono ranking (en vivo)</div>
-                  <div className="tc-sub" style={{ marginTop: 6 }}>
-                    Esto es lo que llevas ganado <b>hoy</b> por tu posición del mes. Si mañana bajas, también baja (y al revés).
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div
-                    style={{
-                      border: "1px solid rgba(255,255,255,0.10)",
-                      borderRadius: 14,
-                      padding: 12,
-                      background: "rgba(181,156,255,0.08)",
-                    }}
-                  >
-                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
-                      <div>
-                        <div className="tc-sub">Bono ranking acumulado (según posición actual)</div>
-                        <div style={{ fontWeight: 900, fontSize: 26, marginTop: 6 }}>{money(bonusRanking)}</div>
-                      </div>
-
-                      <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                        <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                          Captadas: <b>{money(brCaptadas)}</b>
-                        </span>
-                        <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                          Cliente: <b>{money(brCliente)}</b>
-                        </span>
-                        <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                          Repite: <b>{money(brRepite)}</b>
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="tc-hr" style={{ margin: "12px 0" }} />
-
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <RankLiveRow label="🏆 Captadas" pos={posCaptadas} amount={canSeeMoney ? brCaptadas : 0} hideMoney={!canSeeMoney} />
-                      <RankLiveRow label="👑 Cliente" pos={posCliente} amount={canSeeMoney ? brCliente : 0} hideMoney={!canSeeMoney} />
-                      <RankLiveRow label="🔁 Repite" pos={posRepite} amount={canSeeMoney ? brRepite : 0} hideMoney={!canSeeMoney} />
-                    </div>
-
-                    <div className="tc-sub" style={{ marginTop: 10, opacity: 0.9 }}>
-                      Premio: {canSeeMoney ? "🥇 6€ · 🥈 4€ · 🥉 2€ · fuera del top 3 = 0€" : "oculto para nivel 2"}
-                    </div>
-                  </div>
-
-                  <div className="tc-hr" />
-
-                  <div className="tc-sub">
-                    Consejo: céntrate en <b>% Repite</b> y <b>% Cliente</b> para mejorar tu posición y además ayudar a tu equipo.
-                  </div>
-                </div>
-              </div>
-            )}
+            {tab === "bonos" && <TarotistaBonuses month={month} />}
 
             {tab === "rangos" && (
               <div style={{ display: "grid", gap: 16 }}>
@@ -2570,33 +2427,3 @@ function TeamCard({
   );
 }
 
-function RankLiveRow({ label, pos, amount, hideMoney }: { label: string; pos: number | null; amount: number; hideMoney?: boolean }) {
-  const p = pos ?? null;
-  const medal = medalForPos(p);
-  const note = p ? `Posición actual: ${p}º` : "Fuera del Top 3";
-  const expected = bonusForPos(p);
-
-  return (
-    <div
-      style={{
-        border: "1px solid rgba(255,255,255,0.10)",
-        borderRadius: 14,
-        padding: 12,
-        background: "rgba(255,255,255,0.03)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        flexWrap: "wrap",
-      }}
-    >
-      <div>
-        <div style={{ fontWeight: 900 }}>{label}</div>
-        <div className="tc-sub" style={{ marginTop: 4 }}>
-          {medal} {note} · Premio: <b>{hideMoney ? "Oculto nivel 2" : eur(expected)}</b>
-        </div>
-      </div>
-      <div style={{ fontWeight: 900, fontSize: 18 }}>{hideMoney ? "Oculto nivel 2" : eur(amount)}</div>
-    </div>
-  );
-}

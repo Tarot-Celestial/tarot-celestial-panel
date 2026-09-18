@@ -85,14 +85,19 @@ export default function TarotistaInvoiceDashboard(props: Props) {
     captadas: Number(previous?.captadas || 0),
   };
   const maxMinutes = Math.max(current.cliente, current.repite, previousValues.cliente, previousValues.repite, 1);
-  const captureGoal = insights?.goals?.captaciones || { target: 10, reward: canSeeMoney ? 10 : null };
-  const repeatGoal = insights?.goals?.repite || { target: 8000, reward: canSeeMoney ? 7 : null };
-  const minuteEarnings = Number(liveStats?.pay_minutes || 0);
-  const captureBonus = Number(liveStats?.bonus_captadas || 0);
-  const rankingBonus = Number(liveStats?.bonus_ranking || 0);
-  const repeatBonus = current.repite >= Number(repeatGoal.target || 8000) ? Number(repeatGoal.reward || 0) : 0;
-  const incidentsTotal = (incidents || []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
-  const earnedToday = Math.round((minuteEarnings + captureBonus + rankingBonus + repeatBonus - incidentsTotal) * 100) / 100;
+
+
+  const minuteEarnings = invoice
+    ? (lines || []).filter(l => String(l.kind).startsWith("minutes_") || l.kind === "salary_base").reduce((n,l) => n + Number(l.amount || 0),0)
+    : Number(liveStats?.pay_minutes || 0);
+  const captureBonus = (lines || []).filter(l => l.kind === "bonus_captadas").reduce((n,l) => n + Number(l.amount || 0),0);
+  const rankingBonus = (lines || []).filter(l => l.kind === "bonus_ranking").reduce((n,l) => n + Number(l.amount || 0),0);
+  const repeatBonus = (lines || []).filter(l => ["bonus_challenge","bonus_repite_goal"].includes(l.kind)).reduce((n,l) => n + Number(l.amount || 0),0);
+  const manualBonuses = (lines || []).filter(l => ["bonus","salary_bonus"].includes(l.kind)).reduce((n,l) => n + Number(l.amount || 0),0);
+  const allBonuses = captureBonus + rankingBonus + repeatBonus + manualBonuses;
+  const incidentsTotal = invoice ? -(lines || []).filter(l => l.kind === "incident").reduce((n,l) => n + Number(l.amount || 0),0) : (incidents || []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
+  const adjustments = (lines || []).filter(l => !String(l.kind).startsWith("minutes_") && !["salary_base","bonus_captadas","bonus_ranking","bonus_challenge","bonus_repite_goal","bonus","salary_bonus","incident"].includes(l.kind)).reduce((n,l) => n + Number(l.amount || 0),0);
+  const earnedToday = Math.round((minuteEarnings + allBonuses + adjustments - incidentsTotal) * 100) / 100;
   const officialTotal = invoice ? Number(invoice.total || 0) : null;
   const officialDifference = officialTotal === null ? null : Math.round((officialTotal - earnedToday) * 100) / 100;
 
@@ -110,9 +115,9 @@ export default function TarotistaInvoiceDashboard(props: Props) {
 
       <div className={styles.summaryGrid}>
         <article className={styles.totalCard}>
-          <span><CircleDollarSign size={16} /> Ganado hasta hoy · {monthLabel(month)}</span>
+          <span><CircleDollarSign size={16} /> Producción y bonos confirmados · {monthLabel(month)}</span>
           <strong>{canSeeMoney ? euro(earnedToday) : "Importe protegido"}</strong>
-          <small className={styles.liveLabel}><i /> Calculado con tu producción real</small>
+          <small className={styles.liveLabel}><i /> {invoice ? "Calculado con las líneas de tu factura" : "Producción provisional del periodo"}</small>
           <div className={styles.officialMini}>
             <span><WalletCards size={14} /> Factura oficial</span>
             <b>{invoice ? (canSeeMoney ? euro(invoice.total) : "Protegida") : "Pendiente de cierre"}</b>
@@ -134,14 +139,17 @@ export default function TarotistaInvoiceDashboard(props: Props) {
 
       <article className={styles.earningsPanel}>
         <div className={styles.sectionHeading}>
-          <div><span className={styles.eyebrow}>Cálculo transparente</span><h2>Así se forma lo que llevas ganado</h2></div>
-          <span className={styles.livePill}><Clock3 size={14} /> Datos del mes en curso</span>
+          <div><span className={styles.eyebrow}>Cálculo transparente</span><h2>Base y bonos confirmados</h2></div>
+          <span className={styles.livePill}><Clock3 size={14} /> Periodo seleccionado</span>
         </div>
         <div className={styles.earningsGrid}>
-          <div><span>Producción por minutos</span><strong>{canSeeMoney ? euro(minuteEarnings) : "Protegido"}</strong></div>
-          <div><span>Bonus captaciones</span><strong>{canSeeMoney ? `+${euro(captureBonus)}` : "Protegido"}</strong></div>
-          <div><span>Bonus de ranking</span><strong>{canSeeMoney ? `+${euro(rankingBonus)}` : "Protegido"}</strong></div>
-          <div><span>Objetivo Repite</span><strong>{canSeeMoney ? `+${euro(repeatBonus)}` : "Protegido"}</strong></div>
+          <div><span>Base {invoice ? "de la factura" : "provisional"}</span><strong>{canSeeMoney ? euro(minuteEarnings) : "Protegido"}</strong></div>
+          <div><span>Captadas confirmadas</span><strong>{canSeeMoney ? `+${euro(captureBonus)}` : "Protegido"}</strong></div>
+          <div><span>Ranking confirmado</span><strong>{canSeeMoney ? `+${euro(rankingBonus)}` : "Protegido"}</strong></div>
+          <div><span>Retos confirmados</span><strong>{canSeeMoney ? `+${euro(repeatBonus)}` : "Protegido"}</strong></div>
+          {manualBonuses !== 0 && <div><span>Bonos adicionales</span><strong>{canSeeMoney ? euro(manualBonuses) : "Protegido"}</strong></div>}
+          <div><span>Bonos totales</span><strong>{canSeeMoney ? euro(allBonuses) : "Protegido"}</strong></div>
+          {adjustments !== 0 && <div><span>Ajustes</span><strong>{canSeeMoney ? euro(adjustments) : "Protegido"}</strong></div>}
           <div className={styles.deduction}><span>Incidencias</span><strong>{canSeeMoney ? `-${euro(incidentsTotal)}` : "Protegido"}</strong></div>
           <div className={styles.earnedTotal}><span>Total acumulado</span><strong>{canSeeMoney ? euro(earnedToday) : "Protegido"}</strong></div>
         </div>
@@ -173,9 +181,12 @@ export default function TarotistaInvoiceDashboard(props: Props) {
         </article>
 
         <div className={styles.goals}>
-          <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>Retos del mes</span><h2>Bonos por desbloquear</h2></div><Trophy size={22} /></div>
-          <GoalCard icon={<Star size={20} />} title="10 nuevas captaciones" current={current.captadas} target={Number(captureGoal.target)} reward={captureGoal.reward} unit="captaciones" tone="gold" />
-          <GoalCard icon={<Target size={20} />} title="8.000 minutos Repite" current={current.repite} target={Number(repeatGoal.target)} reward={repeatGoal.reward} unit="minutos Repite" tone="violet" />
+          <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>Incentivos económicos</span><h2>Bonos de la factura</h2></div><Trophy size={22} /></div>
+          <p>Captadas: {canSeeMoney ? euro(captureBonus) : "Protegido"}</p>
+          <p>Ranking: {canSeeMoney ? euro(rankingBonus) : "Protegido"}</p>
+          <p>Retos: {canSeeMoney ? euro(repeatBonus) : "Protegido"}</p>
+          <strong>Total bonos: {canSeeMoney ? euro(captureBonus + rankingBonus + repeatBonus) : "Protegido"}</strong>
+          <p>Consulta los objetivos y los premios provisionales en la pestaña Bonos. Solo los confirmados se incluyen en esta factura.</p>
         </div>
       </div>
 
@@ -210,3 +221,4 @@ export default function TarotistaInvoiceDashboard(props: Props) {
     </section>
   );
 }
+
