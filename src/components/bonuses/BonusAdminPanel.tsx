@@ -40,7 +40,7 @@ export default function BonusAdminPanel() {
     error: loadError,
     loading,
     load,
-  } = useBonuses(`/api/admin/bonuses?month=${month}`);
+  } = useBonuses(`/api/bonuses?month=${month}`);
   const rules = (data?.rules || []).filter(
       (r: BonusRule) =>
         (kind === "all" || r.kind === kind) &&
@@ -56,7 +56,7 @@ export default function BonusAdminPanel() {
     setError("");
     setMessage("");
     try {
-      await bonusRequest("/api/admin/bonuses", body);
+      await bonusRequest("/api/bonuses", body);
       setMessage("Guardado correctamente.");
       setDraft(null);
       setVoiding(null);
@@ -77,7 +77,7 @@ export default function BonusAdminPanel() {
     setMessage("");
     try {
       const nextActive = !rule.active;
-      await bonusRequest("/api/admin/bonuses", {
+      await bonusRequest("/api/bonuses", {
         action: "toggle_active",
         id: rule.id,
         active: nextActive,

@@ -75,13 +75,13 @@ export function useBonuses(path: string) {
       if (document.visibilityState === "visible") void load(true);
     };
 
-    // Respaldo fiable entre dispositivos/navegadores aunque Realtime no esté
-    // publicado para alguna tabla. Solo existe mientras el panel de bonos está montado.
+    // Respaldo ligero si Realtime pierde un evento. Realtime sigue siendo la vía
+    // principal; este refetch evita que una sesión abierta quede obsoleta.
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      if (Date.now() - lastLoadedAt.current < 4000) return;
+      if (Date.now() - lastLoadedAt.current < 12000) return;
       void load(true);
-    }, 5000);
+    }, 15000);
 
     const sb = supabaseBrowser();
     const channel = sb

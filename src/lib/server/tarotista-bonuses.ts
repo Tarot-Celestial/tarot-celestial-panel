@@ -75,32 +75,10 @@ export async function loadBonusReport(db: SupabaseClient, month: string) {
   const rows = aggregateRendimientoByTarotista(events, workers),
     today = madridTodayKey();
 
-  // Protección contra reglas antiguas duplicadas. Si por una migración/RPC histórico
-  // existen varias filas activas con el mismo nombre + tipo + métrica para el mismo
-  // periodo, Tarotista debe ver una sola: la versión más reciente.
-  const rawApplicableRules = rules.filter((r) => applicable(r, month));
-  const logicalRules = new Map<string, BonusRule>();
-  for (const rule of rawApplicableRules) {
-    const key = [
-      rule.kind,
-      rule.metric,
-      String(rule.name || "").trim().toLocaleLowerCase("es"),
-    ].join("::");
-    const previous = logicalRules.get(key);
-    if (!previous) {
-      logicalRules.set(key, rule);
-      continue;
-    }
-    const currentVersion = Number(rule.version || 0);
-    const previousVersion = Number(previous.version || 0);
-    if (
-      currentVersion > previousVersion ||
-      (currentVersion === previousVersion && String(rule.id).localeCompare(String(previous.id)) > 0)
-    ) {
-      logicalRules.set(key, rule);
-    }
-  }
-  const applicableRules = [...logicalRules.values()];
+  // Fuente única: cada fila de Supabase es un reto independiente por su ID.
+  // No deduplicamos por nombre/métrica, porque Administración permite crear y
+  // duplicar reglas reales. Tarotista solo recibe las que están activas y vigentes.
+  const applicableRules = rules.filter((rule) => applicable(rule, month));
   const grouped = new Map<string, any[]>();
   const progress = new Map<string, ReturnType<typeof evaluateRule>[]>();
   for (const worker of workers) {
@@ -164,6 +142,7 @@ export async function loadBonusReport(db: SupabaseClient, month: string) {
   return {
     month,
     rules,
+    applicable_rules: applicableRules,
     activation_month: rules.reduce(
       (earliest, r) => {
         const created = String((r as any).created_at || today).slice(0, 7);
