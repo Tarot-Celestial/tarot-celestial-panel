@@ -10,6 +10,7 @@ import { useAttendance } from "@/hooks/useAttendance";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
+import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
 import { BadgeEuro, BellRing, ClipboardCheck, Flame, LayoutDashboard, MessageSquare, ReceiptText, Send, Star, Trophy, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
@@ -229,13 +230,8 @@ export default function Tarotista() {
 
   const payMinutes = Number(s?.pay_minutes || 0);
   const bonusCaptadas = Number(s?.bonus_captadas || 0);
-  const myPublicRange = String(s?.tarotista_rango || "B").toUpperCase() === "A" ? "A" : "B";
-  const myPublicRangeScore = Number(s?.tarotista_rango_puntuacion ?? s?.tarotista_rango_media ?? 0);
-  const myPublicRangePosition = s?.tarotista_rango_position ? Number(s.tarotista_rango_position) : null;
-  const myPublicRangeTotal = Number(s?.tarotista_rango_total || 0);
-  const clientePctForRange = Math.max(0, Number(s?.pct_cliente || 0));
-  const rangeProgress = myPublicRange === "A" ? 100 : Math.min(99, Math.round((clientePctForRange / 25.01) * 100));
-  const rangeMissing = Math.max(0, Math.round((25.01 - clientePctForRange) * 100) / 100);
+  const myPublicRangeRaw = String(s?.tarotista_rango || "B").toUpperCase();
+  const myPublicRange = (["C", "B", "A", "S"] as const).includes(myPublicRangeRaw as any) ? myPublicRangeRaw : "B";
 
   const bonusRanking = Number(s?.bonus_ranking || 0);
   const br = s?.bonus_ranking_breakdown || {};
@@ -976,6 +972,14 @@ export default function Tarotista() {
     if (!ok) return;
     if (tab === "clientes" || tab === "notificaciones") loadMyOutbound(false);
   }, [tab, ok, obDate]);
+
+  useEffect(() => {
+    if (!ok || tab !== "rangos") return;
+    void refresh(month);
+    const onFocus = () => void refresh(month);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [ok, tab, month]);
 
   useEffect(() => {
     if (!ok) return;
@@ -1924,99 +1928,11 @@ export default function Tarotista() {
             {tab === "bonos" && <TarotistaBonuses month={month} />}
 
             {tab === "rangos" && (
-              <div style={{ display: "grid", gap: 16 }}>
-                <section
-                  className="tc-card"
-                  style={{
-                    position: "relative",
-                    overflow: "hidden",
-                    borderRadius: 24,
-                    padding: 24,
-                    background: "radial-gradient(circle at 88% 12%, rgba(215,181,109,.18), transparent 30%), linear-gradient(135deg, rgba(38,27,45,.98), rgba(14,11,23,.98))",
-                    border: "1px solid rgba(215,181,109,.28)",
-                  }}
-                >
-                  <div className="tc-row" style={{ justifyContent: "space-between", gap: 18, flexWrap: "wrap", alignItems: "flex-start" }}>
-                    <div>
-                      <div className="tc-sub" style={{ color: "#e9c86f", fontWeight: 900, letterSpacing: ".12em", textTransform: "uppercase" }}>
-                        ⭐ Tu categoría profesional
-                      </div>
-                      <div style={{ fontWeight: 950, fontSize: "clamp(30px, 4vw, 48px)", marginTop: 8 }}>
-                        Rango {myPublicRange}
-                      </div>
-                      <div className="tc-sub" style={{ marginTop: 7, maxWidth: 620 }}>
-                        Tu rango se calcula con datos reales del código Cliente durante el mes seleccionado.
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        placeItems: "center",
-                        width: 92,
-                        height: 92,
-                        borderRadius: 26,
-                        color: "#171009",
-                        fontSize: 42,
-                        fontWeight: 950,
-                        background: "linear-gradient(145deg, #ffe293, #b97b20)",
-                        boxShadow: "0 18px 45px rgba(215,181,109,.23)",
-                      }}
-                    >
-                      {myPublicRange}
-                    </div>
-                  </div>
-
-                  <div style={{ marginTop: 24 }}>
-                    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                      <span className="tc-sub">Progreso hacia Rango A</span>
-                      <b>{clientePctForRange.toFixed(2)}% Cliente</b>
-                    </div>
-                    <div style={{ height: 12, borderRadius: 999, overflow: "hidden", marginTop: 9, background: "rgba(255,255,255,.09)", border: "1px solid rgba(255,255,255,.08)" }}>
-                      <div style={{ width: `${rangeProgress}%`, height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #8045ed, #f1cc72)", boxShadow: "0 0 20px rgba(185,126,255,.34)", transition: "width .45s ease" }} />
-                    </div>
-                    <div className="tc-sub" style={{ marginTop: 9 }}>
-                      {myPublicRange === "A"
-                        ? "Has alcanzado el rango superior este mes."
-                        : `Te faltan ${rangeMissing.toFixed(2)} puntos de porcentaje Cliente para llegar al Rango A.`}
-                    </div>
-                  </div>
-                </section>
-
-                <div className="tc-grid-3">
-                  <article className="tc-card" style={{ borderRadius: 20, border: myPublicRange === "B" ? "1px solid rgba(181,156,255,.5)" : undefined }}>
-                    <div className="tc-sub" style={{ fontWeight: 900, letterSpacing: ".1em" }}>RANGO B</div>
-                    <div className="tc-title" style={{ marginTop: 8 }}>Base profesional</div>
-                    <div className="tc-sub" style={{ marginTop: 8 }}>Hasta 25% de minutos con código Cliente.</div>
-                    {myPublicRange === "B" && <div className="tc-chip" style={{ marginTop: 14, width: "fit-content" }}>Tu rango actual</div>}
-                  </article>
-
-                  <article className="tc-card" style={{ borderRadius: 20, border: myPublicRange === "A" ? "1px solid rgba(215,181,109,.55)" : undefined }}>
-                    <div className="tc-sub" style={{ color: "#e9c86f", fontWeight: 900, letterSpacing: ".1em" }}>RANGO A</div>
-                    <div className="tc-title" style={{ marginTop: 8 }}>Rendimiento destacado</div>
-                    <div className="tc-sub" style={{ marginTop: 8 }}>Más de 25% de minutos con código Cliente.</div>
-                    {myPublicRange === "A" && <div className="tc-chip" style={{ marginTop: 14, width: "fit-content", borderColor: "rgba(215,181,109,.5)" }}>Tu rango actual</div>}
-                  </article>
-
-                  <article className="tc-card" style={{ borderRadius: 20 }}>
-                    <div className="tc-sub" style={{ fontWeight: 900, letterSpacing: ".1em" }}>POSICIÓN ACTUAL</div>
-                    <div className="tc-title" style={{ fontSize: 30, marginTop: 8 }}>
-                      {myPublicRangePosition ? `#${myPublicRangePosition}` : "Sin posición"}
-                    </div>
-                    <div className="tc-sub" style={{ marginTop: 8 }}>
-                      {myPublicRangeTotal > 0 ? `Entre ${myPublicRangeTotal} tarotistas comparadas.` : "Aún no hay suficiente actividad para comparar."}
-                    </div>
-                  </article>
-                </div>
-
-                <section className="tc-card" style={{ borderRadius: 20 }}>
-                  <div className="tc-title">Cómo mejorar tu rango</div>
-                  <div className="tc-grid-3" style={{ marginTop: 14 }}>
-                    <div><b>1. Cliente real</b><div className="tc-sub" style={{ marginTop: 5 }}>Registra correctamente los minutos Cliente.</div></div>
-                    <div><b>2. Calidad constante</b><div className="tc-sub" style={{ marginTop: 5 }}>El porcentaje se recalcula con la actividad real del mes.</div></div>
-                    <div><b>3. Sin datos inventados</b><div className="tc-sub" style={{ marginTop: 5 }}>Solo cuentan registros válidos sincronizados.</div></div>
-                  </div>
-                </section>
-              </div>
+              <TarotistaRanksPanel
+                stats={s}
+                month={month}
+                onOpenRanking={() => setTab("ranking")}
+              />
             )}
 
             {tab === "ranking" && (

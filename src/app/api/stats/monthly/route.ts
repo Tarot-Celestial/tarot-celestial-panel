@@ -11,6 +11,7 @@ import { brandFromRequest, filterRowsByBrand } from '@/lib/server/brand-filter';
 import { getAdminClient } from '@/lib/server/auth-worker';
 import { loadOfficialPayments, totalOfficialRevenue } from '@/lib/server/economic-payments';
 import { fullMonthComparison, madridTodayKey, monthToDateComparison } from '@/lib/server/madrid-reporting-period';
+import { loadTarotistaRankConfig, resolveTarotistaRankState, type TarotistaRankConfig } from '@/lib/server/tarotista-ranks';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,19 +37,18 @@ function tarotistaPublicScore(row: any) {
   return Math.max(7, Math.min(9.9, Math.round(score * 10) / 10));
 }
 
-function tarotistaRangeByClientePct(row: any): 'A' | 'B' {
-  const pctCliente = Math.max(0, Math.min(100, Number(row?.pct_cliente || 0)));
-  return pctCliente > 25 ? 'A' : 'B';
-}
-
-function buildTarotistaRanges(rows: any[]) {
+function buildTarotistaRanges(rows: any[], rankConfig: TarotistaRankConfig[]) {
   const sorted = (rows || [])
-    .map((row) => ({
-      worker_id: String(row.worker_id),
-      score: tarotistaPublicScore(row),
-      puntuacion: tarotistaPublicScore(row),
-      rango: tarotistaRangeByClientePct(row),
-    }))
+    .map((row) => {
+      const rankState = resolveTarotistaRankState(row?.pct_cliente, rankConfig);
+      return {
+        worker_id: String(row.worker_id),
+        score: tarotistaPublicScore(row),
+        puntuacion: tarotistaPublicScore(row),
+        rango: rankState.current.code,
+        rank_state: rankState,
+      };
+    })
     .sort((a, b) => b.score - a.score);
   const byWorker = new Map<string, any>();
   sorted.forEach((row, index) => {
@@ -101,7 +101,10 @@ export async function GET(req: Request) {
     const includePrevious = me.role === 'admin' || me.role === 'central';
     const brand = brandFromRequest(req);
     const admin = getAdminClient();
-    const rules = await loadBonusRules(admin);
+    const [rules, rankConfig] = await Promise.all([
+      loadBonusRules(admin),
+      loadTarotistaRankConfig(admin),
+    ]);
 
     const [workers, currentRowsRaw, previousRowsRaw, currentPayments, previousPayments] = await Promise.all([
       listTarotistaWorkers(),
@@ -131,7 +134,7 @@ export async function GET(req: Request) {
     const rows = current.rows;
     const totals = current.totals;
 
-    const tarotistaRanges = buildTarotistaRanges(rows);
+    const tarotistaRanges = buildTarotistaRanges(rows, rankConfig);
     const topCaptadas = sortRanking(rows, "captadas_total");
     const topCliente = sortRanking(rows, "pct_cliente");
     const topRepite = sortRanking(rows, "pct_repite");
@@ -183,7 +186,8 @@ export async function GET(req: Request) {
     const tier = captureTier(rules, Number(mine.captadas_total || 0), month);
     const nextTier = rules.filter(r => r.kind === 'tier' && applicable(r,month) && r.minimum > Number(mine.captadas_total || 0)).sort((a,b) => a.minimum-b.minimum)[0];
 
-    const myRange = tarotistaRanges.get(String(me.id)) || { rango: 'B', score: 0, puntuacion: 0, position: null, total_compared: tarotistaRanges.size };
+    const fallbackRankState = resolveTarotistaRankState(mine?.pct_cliente, rankConfig);
+    const myRange = tarotistaRanges.get(String(me.id)) || { rango: fallbackRankState.current.code, score: 0, puntuacion: 0, position: null, total_compared: tarotistaRanges.size, rank_state: fallbackRankState };
     const moneyPatch = tarotistaLevel === 2
       ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
       : { bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0), bonus_ranking_breakdown };
@@ -203,6 +207,8 @@ export async function GET(req: Request) {
         tarotista_rango_puntuacion: myRange.puntuacion,
         tarotista_rango_position: myRange.position,
         tarotista_rango_total: myRange.total_compared,
+        tarotista_rango_state: myRange.rank_state || fallbackRankState,
+        tarotista_rangos_config: rankConfig,
       },
       totals,
     });
