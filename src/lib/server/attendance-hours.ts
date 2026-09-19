@@ -2,6 +2,122 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { adminClient } from '@/lib/server/auth-cliente';
 import { addDay, calculateDay, classifyDay, hoursLabel, localTime, monthDays, REPORT_TZ, validDay, type AttendanceEvent, type Schedule } from '@/lib/attendance/hours';
 
+
+type AttendanceDisconnect = {
+  worker_id: string;
+  display_name: string;
+  day: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_minutes: number;
+  ongoing: boolean;
+  reason: string;
+  justification: 'justified' | 'unjustified' | 'pending';
+};
+
+function scheduleIntervalsForDay(day: string, schedules: Schedule[]) {
+  const start = localTime(day, '00:00', REPORT_TZ);
+  const end = localTime(addDay(day), '00:00', REPORT_TZ);
+  const intervals: Array<[number, number]> = [];
+  for (let offset = -2; offset <= 1; offset++) {
+    const sourceDay = addDay(day, offset);
+    const dow = new Date(`${sourceDay}T12:00:00Z`).getUTCDay();
+    for (const schedule of schedules.filter(item => item.active && Number(item.day_of_week) === dow)) {
+      const timezone = schedule.timezone || REPORT_TZ;
+      const a = localTime(sourceDay, schedule.start_time, timezone);
+      const b = localTime(schedule.end_time <= schedule.start_time ? addDay(sourceDay) : sourceDay, schedule.end_time, timezone);
+      if (b > start && a < end) intervals.push([Math.max(a, start), Math.min(b, end)]);
+    }
+  }
+  return intervals.sort((a, b) => a[0] - b[0]);
+}
+
+function dayReviewStatus(row: ReturnType<typeof classifyDay>): AttendanceDisconnect['justification'] {
+  if (row.needs_review || row.pending_minutes > 0) return 'pending';
+  if (row.unjustified_minutes > 0 && row.justified_minutes === 0) return 'unjustified';
+  if (row.justified_minutes > 0 && row.unjustified_minutes === 0) return 'justified';
+  // A mixed daily review cannot be assigned safely to a specific disconnect interval.
+  return 'pending';
+}
+
+function buildDisconnects(
+  workers: Array<{ id: string; display_name: string }>,
+  schedules: Schedule[],
+  events: AttendanceEvent[],
+  rows: Array<ReturnType<typeof classifyDay> & { worker_id: string; display_name: string }>,
+  from: string,
+  to: string,
+  now = Date.now(),
+): AttendanceDisconnect[] {
+  const result: AttendanceDisconnect[] = [];
+  const reportStart = localTime(from, '00:00', REPORT_TZ);
+  const reportEnd = Math.min(now, localTime(addDay(to), '00:00', REPORT_TZ));
+
+  for (const worker of workers) {
+    const workerEvents = events
+      .filter(event => event.worker_id === worker.id)
+      .slice()
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+
+    let offlineStart: number | null = null;
+    let offlineMeta: Record<string, any> = {};
+    const rawIntervals: Array<{ start: number; end: number; ongoing: boolean; meta: Record<string, any> }> = [];
+
+    for (const event of workerEvents) {
+      const at = Date.parse(event.at);
+      if (!Number.isFinite(at)) continue;
+      if (event.event_type === 'offline') {
+        if (offlineStart == null) {
+          offlineStart = at;
+          offlineMeta = (event.meta || {}) as Record<string, any>;
+        }
+        continue;
+      }
+      if (offlineStart != null && (event.event_type === 'online' || event.event_type === 'heartbeat')) {
+        if (at > offlineStart) rawIntervals.push({ start: offlineStart, end: at, ongoing: false, meta: offlineMeta });
+        offlineStart = null;
+        offlineMeta = {};
+      }
+    }
+
+    if (offlineStart != null && offlineStart < reportEnd) {
+      rawIntervals.push({ start: offlineStart, end: reportEnd, ongoing: reportEnd === now, meta: offlineMeta });
+    }
+
+    const workerSchedules = schedules.filter(schedule => schedule.worker_id === worker.id);
+    for (let day = from; day <= to; day = addDay(day)) {
+      const dayRow = rows.find(row => row.worker_id === worker.id && row.day === day);
+      if (!dayRow) continue;
+      const reviewStatus = dayReviewStatus(dayRow);
+      const reviewReason = String(dayRow.note || '').trim();
+      const daySchedules = scheduleIntervalsForDay(day, workerSchedules);
+      if (!daySchedules.length) continue;
+
+      for (const raw of rawIntervals) {
+        for (const [shiftStart, shiftEnd] of daySchedules) {
+          const start = Math.max(raw.start, shiftStart, reportStart);
+          const end = Math.min(raw.end, shiftEnd, reportEnd);
+          if (end <= start) continue;
+          const rawReason = String(raw.meta?.reason || raw.meta?.motivo || raw.meta?.note || '').trim();
+          result.push({
+            worker_id: worker.id,
+            display_name: worker.display_name,
+            day,
+            started_at: new Date(start).toISOString(),
+            ended_at: raw.ongoing && end === reportEnd ? null : new Date(end).toISOString(),
+            duration_minutes: Math.max(1, Math.round((end - start) / 60000)),
+            ongoing: raw.ongoing && end === reportEnd,
+            reason: reviewReason || rawReason || 'Sin motivo indicado',
+            justification: reviewStatus,
+          });
+        }
+      }
+    }
+  }
+
+  return result.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+}
+
 export async function attendanceAccess(req: Request) {
   const token = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '');
   if (!token) return { response: Response.json({ error: 'Inicia sesión de nuevo.' }, { status: 401 }) };
@@ -30,7 +146,8 @@ export async function attendanceReport(db: SupabaseClient, from: string, to: str
   if (schedulesResult.error) throw schedulesResult.error;
   if (reviewsResult.error) throw reviewsResult.error;
   const now = Date.now(), events: AttendanceEvent[] = [];
-  const start = new Date(localTime(from, '00:00', REPORT_TZ) - 90000).toISOString();
+  // Read enough history to reconstruct an explicit offline interval that began before midnight during an overnight shift.
+  const start = new Date(localTime(addDay(from, -2), '00:00', REPORT_TZ)).toISOString();
   const end = new Date(Math.min(now, localTime(addDay(to), '00:00', REPORT_TZ))).toISOString();
   if (start < end) {
     for (let offset = 0; ; offset += 1000) {
@@ -50,7 +167,8 @@ export async function attendanceReport(db: SupabaseClient, from: string, to: str
       rows.push({ ...classifyDay(calculateDay(day, workerSchedules, workerEvents, now), reviews.get(`${worker.id}:${day}`)), worker_id: worker.id, display_name: worker.display_name, role: worker.role, team: worker.team, has_schedule: workerSchedules.length > 0 });
     }
   }
-  return { rows, schedules, workers: workers.data || [] };
+  const disconnects = buildDisconnects((workers.data || []) as Array<{ id: string; display_name: string }>, schedules, events, rows as Array<ReturnType<typeof classifyDay> & { worker_id: string; display_name: string }>, from, to, now);
+  return { rows, schedules, workers: workers.data || [], disconnects };
 }
 export async function invoiceHoursNote(db: SupabaseClient, workerId: string, month: string) {
   const { from, to } = monthDays(month);
