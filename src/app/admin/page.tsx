@@ -45,6 +45,7 @@ const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPan
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
+const WelldoneAdminPanel = nextDynamic(() => import("@/components/admin/WelldoneAdminPanel"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
@@ -62,6 +63,7 @@ const ADMIN_NAV = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
   { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
+  { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
@@ -160,6 +162,7 @@ type TabKey =
   | "dashboard"
   | "panel"
   | "facturas"
+  | "welldone"
   | "editor"
   | "estadisticas"
   | "asistencia"
@@ -2951,6 +2954,8 @@ function AdminPage() {
             </div>
           )}
 
+
+          {tab === "welldone" && <WelldoneAdminPanel />}
 
           {tab === "clientes" && (
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
