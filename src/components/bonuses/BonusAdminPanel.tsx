@@ -26,6 +26,7 @@ export default function BonusAdminPanel() {
   const [month, setMonth] = useState(monthNow),
     [tab, setTab] = useState("rules"),
     [kind, setKind] = useState("all"),
+    [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all"),
     [draft, setDraft] = useState<any>(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState(""),
@@ -41,7 +42,9 @@ export default function BonusAdminPanel() {
     load,
   } = useBonuses(`/api/admin/bonuses?month=${month}`);
   const rules = (data?.rules || []).filter(
-      (r: BonusRule) => kind === "all" || r.kind === kind,
+      (r: BonusRule) =>
+        (kind === "all" || r.kind === kind) &&
+        (statusFilter === "all" || (statusFilter === "active" ? r.active : !r.active)),
     ),
     workers = data?.workers || [];
   const set = (key: string, value: any) =>
@@ -66,6 +69,31 @@ export default function BonusAdminPanel() {
       setBusy(false);
     }
   }
+  async function toggleRule(rule: BonusRule) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const nextActive = !rule.active;
+      await bonusRequest("/api/admin/bonuses", {
+        action: "toggle_active",
+        id: rule.id,
+        active: nextActive,
+      });
+      setMessage(nextActive ? `«${rule.name}» activado.` : `«${rule.name}» desactivado.`);
+      if (draft?.id === rule.id) setDraft((old: any) => old ? { ...old, active: nextActive } : old);
+      await load();
+      window.dispatchEvent(new Event("tc-counters-refresh"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cambiar el estado del reto.");
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+
   async function closeMonth() {
     if (lock.current) return;
     lock.current = true;
@@ -147,21 +175,38 @@ export default function BonusAdminPanel() {
       {tab === "rules" ? (
         <>
           <div className={styles.sectionHeader}>
-            <div className={styles.tabs}>
-              {[
-                ["all", "Todas"],
-                ["tier", "Tramos captadas"],
-                ["ranking", "Ranking"],
-                ["challenge", "Retos"],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  className={kind === key ? styles.active : ""}
-                  onClick={() => setKind(key)}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className={styles.filterGroups}>
+              <div className={styles.tabs}>
+                {[
+                  ["all", "Todas"],
+                  ["tier", "Tramos captadas"],
+                  ["ranking", "Ranking"],
+                  ["challenge", "Retos"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={kind === key ? styles.active : ""}
+                    onClick={() => setKind(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.tabs} aria-label="Filtrar por estado">
+                {[
+                  ["all", "Todos"],
+                  ["active", "Activos"],
+                  ["inactive", "Desactivados"],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={statusFilter === key ? styles.active : ""}
+                    onClick={() => setStatusFilter(key as "all" | "active" | "inactive")}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
             <button
               className={styles.primary}
@@ -174,13 +219,17 @@ export default function BonusAdminPanel() {
           <div className={styles.editorLayout}>
             <div className={styles.list}>
               {rules.map((r: BonusRule) => (
-                <article className={styles.rule} key={r.id}>
+                <article className={`${styles.rule} ${!r.active ? styles.ruleInactive : ""}`} key={r.id}>
                   <div>
-                    <strong>{r.name}</strong>
+                    <div className={styles.ruleTitleRow}>
+                      <strong>{r.name}</strong>
+                      <span className={`${styles.stateBadge} ${r.active ? styles.stateActive : styles.stateInactive}`}>
+                        {r.active ? "● ACTIVO" : "● DESACTIVADO"}
+                      </span>
+                    </div>
                     <small>
                       {METRICS[r.metric]} · {euro(r.reward)}
-                      {r.kind === "tier" ? " / captada" : ""} ·{" "}
-                      {r.active ? "Activo" : "Archivado / inactivo"}
+                      {r.kind === "tier" ? " / captada" : ""}
                     </small>
                     <small>
                       Desde {r.start_date}
@@ -204,6 +253,13 @@ export default function BonusAdminPanel() {
                       }
                     >
                       Duplicar
+                    </button>
+                    <button
+                      disabled={busy}
+                      className={r.active ? styles.deactivateButton : styles.activateButton}
+                      onClick={() => void toggleRule(r)}
+                    >
+                      {r.active ? "Desactivar" : "Activar"}
                     </button>
                   </div>
                 </article>
@@ -445,9 +501,8 @@ export default function BonusAdminPanel() {
                     Regla activa
                   </label>
                   <p className={styles.muted}>
-                    Desactivar archiva la regla sin borrar premios históricos.
-                    Los cambios afectan a periodos todavía no confirmados.
-                    Tramos y rankings utilizan meses completos.
+                    Desactivar retira temporalmente la regla del panel Tarotista sin borrar el reto ni su histórico.
+                    Al reactivarla, vuelve a calcular el progreso real del periodo vigente. Los premios ya confirmados no se modifican.
                   </p>
                   <div className={styles.toolbar}>
                     <button

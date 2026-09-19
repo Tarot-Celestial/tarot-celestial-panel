@@ -350,3 +350,49 @@
     flex-direction: column;
   }
 }
+
+.filterGroups {
+  display: grid;
+  gap: 8px;
+}
+.ruleTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+.stateBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .07em;
+}
+.stateActive {
+  color: #9ce1bf;
+  border: 1px solid #55c98b55;
+  background: #55c98b12;
+}
+.stateInactive {
+  color: #a9a2b0;
+  border: 1px solid #ffffff1c;
+  background: #ffffff08;
+}
+.ruleInactive {
+  opacity: .72;
+  border-style: dashed;
+  background: #100d14;
+}
+.shell .activateButton {
+  color: #9ce1bf;
+  border-color: #55c98b55;
+  background: #55c98b0c;
+}
+.shell .deactivateButton {
+  color: #d5c9dc;
+  border-color: #ffffff24;
+  background: #ffffff05;
+}

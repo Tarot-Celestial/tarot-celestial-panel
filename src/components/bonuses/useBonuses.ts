@@ -79,9 +79,9 @@ export function useBonuses(path: string) {
     // publicado para alguna tabla. Solo existe mientras el panel de bonos está montado.
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      if (Date.now() - lastLoadedAt.current < 6500) return;
+      if (Date.now() - lastLoadedAt.current < 4000) return;
       void load(true);
-    }, 8000);
+    }, 5000);
 
     const sb = supabaseBrowser();
     const channel = sb

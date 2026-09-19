@@ -66,32 +66,6 @@ export async function POST(req: Request) {
         saved = insert.data;
       }
 
-      // Si existen copias antiguas activas del mismo reto (mismo nombre + métrica),
-      // se archivan. Es justo el caso que provoca que Administración muestre 800
-      // mientras Tarotista sigue leyendo otra fila con 8000.
-      if (saved?.id && saved?.kind === "challenge" && saved?.active) {
-        const duplicates = await gate.db
-          .from("tarotista_bonus_rules")
-          .select("id,name,metric,active")
-          .eq("kind", "challenge")
-          .eq("metric", saved.metric)
-          .eq("active", true)
-          .neq("id", saved.id);
-        if (duplicates.error) throw duplicates.error;
-
-        const sameNameIds = (duplicates.data || [])
-          .filter((row: any) => String(row.name || "").trim().toLocaleLowerCase("es") === String(saved.name || "").trim().toLocaleLowerCase("es"))
-          .map((row: any) => row.id);
-
-        if (sameNameIds.length) {
-          const archive = await gate.db
-            .from("tarotista_bonus_rules")
-            .update({ active: false })
-            .in("id", sameNameIds);
-          if (archive.error) throw archive.error;
-        }
-      }
-
       // Verificación real: devolvemos lo que está persistido en DB, no el borrador.
       const verify = await gate.db
         .from("tarotista_bonus_rules")
@@ -108,6 +82,27 @@ export async function POST(req: Request) {
         { headers: { "Cache-Control": "no-store" } },
       );
     }
+    if (body.action === "toggle_active") {
+      const id = String(body?.id || "").trim();
+      if (!id) return Response.json({ error: "Falta el identificador de la regla." }, { status: 400 });
+      if (typeof body?.active !== "boolean")
+        return Response.json({ error: "Estado de regla no válido." }, { status: 400 });
+
+      // Cambio reversible: nunca se hace DELETE ni se toca el histórico.
+      const result = await gate.db
+        .from("tarotista_bonus_rules")
+        .update({ active: body.active })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (result.error) throw result.error;
+
+      return Response.json(
+        { ok: true, rule: result.data },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     if (body.action === "void") {
       const reason = String(body.reason || "").trim();
       if (reason.length < 3 || reason.length > 2000)
