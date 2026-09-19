@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowDownRight, ArrowUpRight, Check, CircleDollarSign, Clock3, RotateCw, Sparkles, Star, Target, Trophy, WalletCards } from "lucide-react";
-import AttendanceHours from "@/components/attendance/AttendanceHours";
 import styles from "./TarotistaInvoiceDashboard.module.css";
 
 type Props = {
@@ -103,7 +102,6 @@ export default function TarotistaInvoiceDashboard(props: Props) {
 
   return (
     <section className={styles.shell}>
-      <AttendanceHours month={month} workerId={invoice?.worker_id} readOnly />
       <header className={styles.hero}>
         <div>
           <span className={styles.eyebrow}><Sparkles size={14} /> Rendimiento y nómina</span>
