@@ -31,48 +31,80 @@ export async function POST(req: Request) {
     const body = await req.json();
     if (body.action === "save") {
       const rule = validateRule(body.rule);
-      const ruleId = body?.rule?.id ? String(body.rule.id) : null;
+      const requestedId = String(body?.rule?.id || "").trim();
 
-      // IMPORTANTE: una edición debe modificar la MISMA fila que consumen
-      // /api/bonuses y el panel Tarotista. El RPC histórico podía conservar
-      // una versión anterior y dejar el target visible en Administración pero
-      // no en el reporte del tarotista.
-      if (ruleId) {
+      let saved: any = null;
+
+      if (requestedId) {
+        // Editar significa editar ESA fila. No crear otra versión paralela.
         const current = await gate.db
           .from("tarotista_bonus_rules")
           .select("id,version")
-          .eq("id", ruleId)
+          .eq("id", requestedId)
           .maybeSingle();
         if (current.error) throw current.error;
         if (!current.data) throw new Error("La regla que intentas editar ya no existe.");
 
-        const nextVersion = Math.max(1, Number(current.data.version || body?.rule?.version || 1) + 1);
-        const updated = await gate.db
+        const update = await gate.db
           .from("tarotista_bonus_rules")
-          .update({ ...rule, version: nextVersion })
-          .eq("id", ruleId)
+          .update({
+            ...rule,
+            version: Number(current.data.version || 1) + 1,
+          })
+          .eq("id", requestedId)
           .select("*")
           .single();
-        if (updated.error) throw updated.error;
-
-        // Verificación fuerte: no damos por guardado un objetivo distinto.
-        if (Number(updated.data?.target) !== Number(rule.target)) {
-          throw new Error("El objetivo no se guardó correctamente en la base de datos.");
-        }
-        return Response.json(
-          { ok: true, rule: updated.data },
-          { headers: { "Cache-Control": "no-store" } },
-        );
+        if (update.error) throw update.error;
+        saved = update.data;
+      } else {
+        const insert = await gate.db
+          .from("tarotista_bonus_rules")
+          .insert({ ...rule, version: 1 })
+          .select("*")
+          .single();
+        if (insert.error) throw insert.error;
+        saved = insert.data;
       }
 
-      const inserted = await gate.db
+      // Si existen copias antiguas activas del mismo reto (mismo nombre + métrica),
+      // se archivan. Es justo el caso que provoca que Administración muestre 800
+      // mientras Tarotista sigue leyendo otra fila con 8000.
+      if (saved?.id && saved?.kind === "challenge" && saved?.active) {
+        const duplicates = await gate.db
+          .from("tarotista_bonus_rules")
+          .select("id,name,metric,active")
+          .eq("kind", "challenge")
+          .eq("metric", saved.metric)
+          .eq("active", true)
+          .neq("id", saved.id);
+        if (duplicates.error) throw duplicates.error;
+
+        const sameNameIds = (duplicates.data || [])
+          .filter((row: any) => String(row.name || "").trim().toLocaleLowerCase("es") === String(saved.name || "").trim().toLocaleLowerCase("es"))
+          .map((row: any) => row.id);
+
+        if (sameNameIds.length) {
+          const archive = await gate.db
+            .from("tarotista_bonus_rules")
+            .update({ active: false })
+            .in("id", sameNameIds);
+          if (archive.error) throw archive.error;
+        }
+      }
+
+      // Verificación real: devolvemos lo que está persistido en DB, no el borrador.
+      const verify = await gate.db
         .from("tarotista_bonus_rules")
-        .insert({ ...rule, version: 1 })
         .select("*")
+        .eq("id", saved.id)
         .single();
-      if (inserted.error) throw inserted.error;
+      if (verify.error) throw verify.error;
+      if (Number(verify.data.target) !== Number(rule.target)) {
+        throw new Error(`La base de datos no guardó el objetivo solicitado (${rule.target}). Valor persistido: ${verify.data.target}.`);
+      }
+
       return Response.json(
-        { ok: true, rule: inserted.data },
+        { ok: true, rule: verify.data },
         { headers: { "Cache-Control": "no-store" } },
       );
     }

@@ -74,7 +74,33 @@ export async function loadBonusReport(db: SupabaseClient, month: string) {
   ]);
   const rows = aggregateRendimientoByTarotista(events, workers),
     today = madridTodayKey();
-  const applicableRules = rules.filter((r) => applicable(r, month));
+
+  // Protección contra reglas antiguas duplicadas. Si por una migración/RPC histórico
+  // existen varias filas activas con el mismo nombre + tipo + métrica para el mismo
+  // periodo, Tarotista debe ver una sola: la versión más reciente.
+  const rawApplicableRules = rules.filter((r) => applicable(r, month));
+  const logicalRules = new Map<string, BonusRule>();
+  for (const rule of rawApplicableRules) {
+    const key = [
+      rule.kind,
+      rule.metric,
+      String(rule.name || "").trim().toLocaleLowerCase("es"),
+    ].join("::");
+    const previous = logicalRules.get(key);
+    if (!previous) {
+      logicalRules.set(key, rule);
+      continue;
+    }
+    const currentVersion = Number(rule.version || 0);
+    const previousVersion = Number(previous.version || 0);
+    if (
+      currentVersion > previousVersion ||
+      (currentVersion === previousVersion && String(rule.id).localeCompare(String(previous.id)) > 0)
+    ) {
+      logicalRules.set(key, rule);
+    }
+  }
+  const applicableRules = [...logicalRules.values()];
   const grouped = new Map<string, any[]>();
   const progress = new Map<string, ReturnType<typeof evaluateRule>[]>();
   for (const worker of workers) {
