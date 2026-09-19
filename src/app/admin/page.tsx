@@ -49,6 +49,7 @@ const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/Clien
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
+const TarotistaRanksAdminPanel = nextDynamic(() => import("@/components/admin/TarotistaRanksAdminPanel"), { ssr:false });
 const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
 const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
 const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
@@ -169,6 +170,7 @@ type TabKey =
   | "rangos-clientes"
   | "clientes-web"
   | "bonos-tarotistas"
+  | "rangos-tarotistas"
   | "sistema-xp"
   | "sistema-xp-niveles"
   | "crm"
@@ -299,6 +301,7 @@ function AdminPage() {
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
   const [xpMenuOpen, setXpMenuOpen] = useState(false);
+  const [bonusesMenuOpen, setBonusesMenuOpen] = useState(false);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -1792,12 +1795,15 @@ function AdminPage() {
                 const Icon = item.icon;
                 const rankGroup = item.key === "rangos-clientes";
                 const xpGroup = item.key === "sistema-xp";
+                const bonusesGroup = item.key === "bonos-tarotistas";
                 const active = rankGroup
                   ? (tab === "rangos-clientes" || tab === "clientes-web")
                   : xpGroup
                     ? (tab === "sistema-xp" || tab === "sistema-xp-niveles")
-                    : tab === item.key;
-                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : false;
+                    : bonusesGroup
+                      ? (tab === "bonos-tarotistas" || tab === "rangos-tarotistas")
+                      : tab === item.key;
+                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : bonusesGroup ? bonusesMenuOpen : false;
                 return (
                   <div key={item.key} style={{ display: "grid", gap: 6 }}>
                     <button
@@ -1807,6 +1813,7 @@ function AdminPage() {
                         setTab(item.key as TabKey);
                         if (rankGroup) setRanksMenuOpen(true);
                         if (xpGroup) setXpMenuOpen(true);
+                        if (bonusesGroup) setBonusesMenuOpen(true);
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
@@ -1816,15 +1823,16 @@ function AdminPage() {
                           <div className="tc-sidebtn-kicker">{item.kicker}</div>
                         </div>
                       </div>
-                      {rankGroup || xpGroup ? (
+                      {rankGroup || xpGroup || bonusesGroup ? (
                         <span
                           onClick={(event) => {
                             event.stopPropagation();
                             if (rankGroup) setRanksMenuOpen((value) => !value);
                             if (xpGroup) setXpMenuOpen((value) => !value);
+                            if (bonusesGroup) setBonusesMenuOpen((value) => !value);
                           }}
                           className={`${adminStyles.navChevron} ${groupOpen ? adminStyles.navChevronOpen : ""}`}
-                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : "Desplegar Sistema de XP"}
+                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : xpGroup ? "Desplegar Sistema de XP" : "Desplegar Bonos tarotistas"}
                         >
                           <ChevronDown size={15} />
                         </span>
@@ -1847,6 +1855,16 @@ function AdminPage() {
                         </button>
                         <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp-niveles" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp-niveles")}>
                           <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Sistema de niveles telefonista</div><div className="tc-sidebtn-kicker">Niveles y recompensas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                      </div>
+                    ) : null}
+                    {bonusesGroup && bonusesMenuOpen ? (
+                      <div className={adminStyles.submenu}>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "bonos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("bonos-tarotistas")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Bonos y retos</div><div className="tc-sidebtn-kicker">Premios económicos</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-tarotistas")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Rangos tarotistas</div><div className="tc-sidebtn-kicker">C · B · A · S</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
                         </button>
                       </div>
                     ) : null}
@@ -2941,6 +2959,7 @@ function AdminPage() {
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
 
           {tab === "bonos-tarotistas" && <BonusAdminPanel />}
+          {tab === "rangos-tarotistas" && <TarotistaRanksAdminPanel />}
           {tab === "sistema-xp" && <XpSystemAdminPanel />}
           {tab === "sistema-xp-niveles" && <XpLevelsAdminPanel />}
 
