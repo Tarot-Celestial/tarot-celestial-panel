@@ -12,10 +12,7 @@
 
 .heroCard,
 .focusCard,
-.railCard,
-.notificationsHero,
-.notificationsList,
-.notificationsAside {
+.railCard {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 24px;
   background:
@@ -31,8 +28,7 @@
 }
 
 .heroCard::before,
-.focusCard::before,
-.notificationsHero::before {
+.focusCard::before {
   content: "";
   position: absolute;
   inset: auto -10% -45% auto;
@@ -387,147 +383,629 @@
   font-weight: 850;
 }
 
+
 .notificationsPage {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  position: relative;
 }
 
 .notificationsHero {
-  padding: 20px;
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-  flex-wrap: wrap;
   position: relative;
   overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, .65fr);
+  gap: 24px;
+  align-items: center;
+  padding: 26px;
+  border: 1px solid rgba(162, 109, 255, 0.2);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(155, 92, 246, 0.2), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(230, 187, 92, 0.09), transparent 30%),
+    linear-gradient(145deg, rgba(22, 13, 38, 0.98), rgba(7, 5, 14, 0.99));
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(116, 64, 190, 0.04);
+}
+
+.notificationsHero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: .18;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,.25) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 74% 58%, rgba(255,255,255,.2) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 43% 82%, rgba(255,255,255,.16) 0 1px, transparent 1.5px);
+  background-size: 110px 110px, 145px 145px, 170px 170px;
+}
+
+.notificationsHeroGlow {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 999px;
+  right: -170px;
+  top: -230px;
+  background: radial-gradient(circle, rgba(158, 92, 255, .2), transparent 68%);
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.notificationsHeroCopy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.notificationsEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #f0cd7a;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.notificationsHeroIcon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(239, 203, 119, .28);
+  border-radius: 11px;
+  color: #f5d988;
+  background: radial-gradient(circle at 35% 25%, rgba(255, 225, 145, .16), rgba(226, 180, 74, .05));
+  box-shadow: 0 0 24px rgba(218, 170, 68, .12);
+}
+
+.notificationsHero h2 {
+  margin: 12px 0 8px;
+  max-width: 780px;
+  font-size: clamp(31px, 3.3vw, 48px);
+  line-height: .98;
+  letter-spacing: -.045em;
+  background: linear-gradient(110deg, #fff 12%, #f5e8bf 54%, #d9b5ff 96%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.notificationsHero p {
+  margin: 0;
+  max-width: 690px;
+  color: rgba(255, 255, 255, .67);
+  font-size: 15px;
+  line-height: 1.6;
 }
 
 .notificationStats {
+  position: relative;
+  z-index: 1;
   display: grid;
-  grid-template-columns: repeat(3, minmax(100px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
-  min-width: min(100%, 360px);
 }
 
 .notificationStat {
+  min-height: 104px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 14px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 18px;
+  background: linear-gradient(155deg, rgba(255,255,255,.06), rgba(255,255,255,.02));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 16px 38px rgba(0,0,0,.17);
 }
 
-.notificationStat span {
-  display: block;
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 12px;
+.notificationStat[data-tone="violet"] { border-color: rgba(166,108,255,.2); }
+.notificationStat[data-tone="red"] { border-color: rgba(255,71,111,.2); }
+.notificationStat[data-tone="blue"] { border-color: rgba(75,167,255,.2); }
+
+.notificationStatIcon {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.035);
+}
+
+.notificationStat[data-tone="violet"] .notificationStatIcon { color: #c39cff; box-shadow: 0 0 24px rgba(139,92,246,.16); }
+.notificationStat[data-tone="red"] .notificationStatIcon { color: #ff7191; box-shadow: 0 0 24px rgba(255,71,111,.13); }
+.notificationStat[data-tone="blue"] .notificationStatIcon { color: #73bcff; box-shadow: 0 0 24px rgba(75,167,255,.13); }
+
+.notificationStat div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.notificationStat small {
+  color: rgba(255, 255, 255, .47);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .13em;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
 
 .notificationStat strong {
-  display: block;
-  margin-top: 6px;
   font-size: 28px;
+  line-height: 1;
 }
 
 .notificationsGrid {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(300px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.85fr) minmax(300px, .78fr);
+  gap: 18px;
   align-items: start;
 }
 
+.notificationsMain {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.turnStatusCard {
+  --status-rgb: 46,220,145;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid rgba(var(--status-rgb), .22);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 5% 0%, rgba(var(--status-rgb), .12), transparent 36%),
+    linear-gradient(145deg, rgba(13,18,20,.96), rgba(7,8,13,.99));
+  box-shadow: 0 22px 55px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.035);
+}
+
+.turnStatusCard[data-tone="gold"] { --status-rgb: 240,202,115; }
+
+.turnStatusIcon {
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: rgb(var(--status-rgb));
+  background: rgba(var(--status-rgb), .08);
+  border: 1px solid rgba(var(--status-rgb), .2);
+  box-shadow: 0 0 28px rgba(var(--status-rgb), .12), inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+.turnStatusCopy { min-width: 0; }
+
+.turnStatusTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: rgba(255,255,255,.46);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
+.turnStatusTopline strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgb(var(--status-rgb));
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+
+.turnStatusTopline i {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(var(--status-rgb));
+  box-shadow: 0 0 12px rgba(var(--status-rgb), .75);
+}
+
+.turnStatusCard h3 {
+  margin: 7px 0 4px;
+  font-size: 23px;
+  line-height: 1.08;
+}
+
+.turnStatusCard p {
+  margin: 0;
+  color: rgba(255,255,255,.6);
+  font-size: 13px;
+}
+
+.turnStatusAction,
+.notificationAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 13px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  color: #fff;
+  background: rgba(255,255,255,.04);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease, box-shadow .2s ease;
+}
+
+.turnStatusAction:hover,
+.notificationAction:hover {
+  transform: translateY(-2px);
+  border-color: rgba(234, 198, 112, .28);
+  background: rgba(234,198,112,.07);
+  box-shadow: 0 10px 28px rgba(0,0,0,.2);
+}
+
+.notificationsSectionHead {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 6px 4px 2px;
+}
+
+.notificationsSectionHead > div { min-width: 0; }
+.notificationsSectionHead span {
+  color: #d9b76b;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+.notificationsSectionHead h3 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+.notificationsSectionHead > strong {
+  padding: 7px 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 999px;
+  color: rgba(255,255,255,.6);
+  background: rgba(255,255,255,.03);
+  font-size: 10px;
+}
+
 .notificationsList {
-  padding: 16px;
   display: grid;
   gap: 12px;
 }
 
 .notificationCard {
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  --tone-rgb: 139,92,246;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  gap: 15px;
+  align-items: center;
+  padding: 17px 18px;
+  border: 1px solid rgba(var(--tone-rgb), .18);
+  border-radius: 21px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(var(--tone-rgb), .1), transparent 34%),
+    linear-gradient(145deg, rgba(18,13,28,.96), rgba(8,7,14,.985));
+  box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.035);
+  transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
 }
 
-.notificationCard[data-tone="gold"] {
-  background: linear-gradient(180deg, rgba(225, 186, 97, 0.12), rgba(255, 255, 255, 0.03));
+.notificationCard:hover {
+  transform: translateY(-3px);
+  border-color: rgba(var(--tone-rgb), .34);
+  box-shadow: 0 24px 58px rgba(0,0,0,.28), 0 0 30px rgba(var(--tone-rgb), .07);
 }
 
-.notificationCard[data-tone="violet"] {
-  background: linear-gradient(180deg, rgba(143, 94, 255, 0.13), rgba(255, 255, 255, 0.03));
+.notificationCard[data-tone="gold"] { --tone-rgb: 240,202,115; }
+.notificationCard[data-tone="violet"] { --tone-rgb: 166,108,255; }
+.notificationCard[data-tone="blue"] { --tone-rgb: 75,167,255; }
+.notificationCard[data-tone="red"] { --tone-rgb: 255,71,111; }
+.notificationCard[data-tone="green"] { --tone-rgb: 46,220,145; }
+
+.notificationCardAccent {
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  background: rgb(var(--tone-rgb));
+  box-shadow: 0 0 16px rgba(var(--tone-rgb), .5);
 }
 
-.notificationCard[data-tone="blue"] {
-  background: linear-gradient(180deg, rgba(90, 165, 255, 0.13), rgba(255, 255, 255, 0.03));
+.notificationCardIcon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(var(--tone-rgb), .2);
+  border-radius: 16px;
+  color: rgb(var(--tone-rgb));
+  background: rgba(var(--tone-rgb), .075);
+  box-shadow: 0 0 24px rgba(var(--tone-rgb), .1);
+  transition: transform .22s ease;
 }
 
-.notificationCard[data-tone="red"] {
-  background: linear-gradient(180deg, rgba(255, 89, 122, 0.14), rgba(255, 255, 255, 0.03));
-}
-
-.notificationCard[data-tone="green"] {
-  background: linear-gradient(180deg, rgba(65, 214, 156, 0.14), rgba(255, 255, 255, 0.03));
-}
+.notificationCard:hover .notificationCardIcon { transform: scale(1.045); }
+.notificationCardBody { min-width: 0; }
 
 .notificationMeta {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .notificationMeta span {
-  color: #e3c277;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.14em;
+  color: rgb(var(--tone-rgb));
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .14em;
   text-transform: uppercase;
 }
 
 .notificationMeta strong {
-  color: rgba(255, 255, 255, 0.65);
-  font-size: 12px;
+  color: rgba(255,255,255,.48);
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .notificationCard h3 {
   margin: 0;
-  font-size: 25px;
-  line-height: 1.08;
+  font-size: 20px;
+  line-height: 1.12;
 }
 
 .notificationCard p {
-  margin: 8px 0 0;
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 14px;
+  margin: 7px 0 0;
+  color: rgba(255,255,255,.67);
+  font-size: 13px;
   line-height: 1.5;
 }
 
-.notificationAction {
-  margin-top: 14px;
-  min-height: 40px;
-  padding: 0 14px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(6, 9, 16, 0.32);
-  color: #fff;
-  font-weight: 800;
-  cursor: pointer;
+.notificationProgress {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
 }
+.notificationProgress > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: rgba(255,255,255,.5);
+  font-size: 10px;
+}
+.notificationProgress > div:first-child strong { color: #f0ce7b; }
+.notificationProgressTrack,
+.shiftPulseTrack {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+}
+.notificationProgressTrack i,
+.shiftPulseTrack i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #9c66ff, #f0ca73);
+  box-shadow: 0 0 18px rgba(208,164,255,.25);
+  transition: width .45s ease;
+}
+
+.notificationSignal {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,71,111,.18);
+  border-radius: 9px;
+  color: #ff839e;
+  background: rgba(255,71,111,.06);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.notificationsEmpty {
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+  border: 1px dashed rgba(83,225,164,.18);
+  border-radius: 22px;
+  background: radial-gradient(circle at 50% 0%, rgba(46,220,145,.08), transparent 48%), rgba(255,255,255,.018);
+}
+.notificationsEmpty > span {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 19px;
+  color: #55e6a9;
+  background: rgba(46,220,145,.08);
+  border: 1px solid rgba(46,220,145,.18);
+  box-shadow: 0 0 28px rgba(46,220,145,.1);
+}
+.notificationsEmpty strong { font-size: 18px; }
+.notificationsEmpty p { margin: 5px 0 0; color: rgba(255,255,255,.55); font-size: 12px; }
 
 .notificationsAside {
   display: grid;
-  gap: 16px;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
+  gap: 14px;
 }
 
-.actionColumn .railButton {
-  margin-top: 0;
+.missionCard,
+.quickActionsCard,
+.shiftPulseCard {
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(143,94,255,.09), transparent 36%),
+    linear-gradient(155deg, rgba(18,13,27,.96), rgba(8,6,14,.99));
+  box-shadow: 0 20px 54px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.035);
 }
+
+.missionCard,
+.quickActionsCard { padding: 16px; }
+
+.sideCardHeading {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.sideCardIcon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.035);
+}
+.sideCardIcon[data-tone="gold"] { color: #efd07d; box-shadow: 0 0 22px rgba(236,191,89,.1); }
+.sideCardIcon[data-tone="violet"] { color: #bb91ff; box-shadow: 0 0 22px rgba(139,92,246,.1); }
+.sideCardHeading small {
+  display: block;
+  color: #d8b76d;
+  font-size: 8px;
+  font-weight: 950;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.sideCardHeading h3 { margin: 3px 0 0; font-size: 18px; }
+
+.missionPath {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  margin-top: 15px;
+}
+.missionPath::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 22px;
+  bottom: 22px;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(239,204,121,.45), rgba(157,96,255,.15));
+}
+.missionStep {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr);
+  gap: 11px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  cursor: pointer;
+  transition: background .2s ease, border-color .2s ease, transform .2s ease;
+}
+.missionStep:hover { transform: translateX(2px); background: rgba(255,255,255,.03); }
+.missionStep[data-state="current"] { border-color: rgba(239,204,121,.13); background: rgba(239,204,121,.045); }
+.missionStep > span {
+  width: 33px;
+  height: 33px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: #ead080;
+  background: #171020;
+  border: 1px solid rgba(239,204,121,.18);
+  font-size: 11px;
+  font-weight: 950;
+  box-shadow: 0 0 14px rgba(220,178,77,.08);
+}
+.missionStep div { min-width: 0; display: grid; gap: 2px; }
+.missionStep strong { font-size: 11px; }
+.missionStep small { color: rgba(255,255,255,.43); font-size: 9px; }
+
+.quickActionGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 15px;
+}
+.quickAction {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0,1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 14px;
+  color: #fff;
+  background: rgba(255,255,255,.024);
+  text-align: left;
+  cursor: pointer;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+.quickAction:hover { transform: translateY(-2px); border-color: rgba(177,125,255,.2); background: rgba(255,255,255,.04); }
+.quickAction > span {
+  width: 35px;
+  height: 35px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.07);
+}
+.quickAction > span[data-tone="violet"] { color: #be96ff; }
+.quickAction > span[data-tone="blue"] { color: #73bcff; }
+.quickAction > span[data-tone="gold"] { color: #efd07d; }
+.quickAction div { min-width: 0; display: grid; gap: 2px; }
+.quickAction strong { font-size: 11px; }
+.quickAction small { color: rgba(255,255,255,.43); font-size: 9px; }
+.quickAction > svg { color: rgba(255,255,255,.32); }
+
+.shiftPulseCard { padding: 14px; }
+.shiftPulseTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.shiftPulseTop span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: rgba(255,255,255,.58);
+  font-size: 10px;
+  font-weight: 850;
+}
+.shiftPulseTop strong { color: #e7ca7b; font-size: 10px; }
+.shiftPulseCard p { margin: 9px 0 0; color: rgba(255,255,255,.43); font-size: 9px; }
 
 .navMain {
   display: flex;
@@ -597,6 +1075,7 @@
 @media (max-width: 1180px) {
   .commandDeck,
   .overview,
+  .notificationsHero,
   .notificationsGrid {
     grid-template-columns: 1fr;
   }
@@ -612,9 +1091,33 @@
     font-size: 31px;
   }
 
+  .notificationsHero {
+    padding: 20px;
+  }
+
   .notificationStats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     min-width: 0;
+    width: 100%;
+  }
+
+  .notificationStat {
+    min-height: 88px;
+    padding: 11px;
+  }
+
+  .notificationStatIcon {
+    display: none;
+  }
+
+  .turnStatusCard,
+  .notificationCard {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .turnStatusAction,
+  .notificationAction {
+    grid-column: 1 / -1;
     width: 100%;
   }
 
@@ -630,6 +1133,41 @@
     grid-template-columns: 1fr;
   }
 
+  .notificationStats {
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 7px;
+  }
+
+  .notificationStat {
+    min-height: 76px;
+    padding: 9px;
+  }
+
+  .notificationStat strong {
+    font-size: 22px;
+  }
+
+  .turnStatusCard,
+  .notificationCard {
+    grid-template-columns: 1fr;
+  }
+
+  .turnStatusIcon,
+  .notificationCardIcon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .notificationsSectionHead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .notificationsEmpty {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .heroTop p,
   .notificationsHero p,
   .notificationCard p,
@@ -638,8 +1176,7 @@
     font-size: 13px;
   }
 
-  .heroMetric strong,
-  .notificationStat strong {
+  .heroMetric strong {
     font-size: 24px;
   }
 
@@ -657,7 +1194,11 @@
 
   .heroButton,
   .softButton,
+  .turnStatusAction,
   .notificationAction,
+  .notificationCard,
+  .quickAction,
+  .missionStep,
   .railButton {
     transition: none;
   }

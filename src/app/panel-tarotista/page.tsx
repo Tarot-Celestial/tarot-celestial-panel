@@ -11,7 +11,7 @@ import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
 import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
-import { BadgeEuro, BellRing, ClipboardCheck, Flame, LayoutDashboard, MessageSquare, ReceiptText, Send, Star, Trophy, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowRight, BadgeEuro, BellRing, CheckCircle2, ClipboardCheck, Clock3, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, Radio, ReceiptText, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
 const sb = supabaseBrowser();
@@ -114,6 +114,23 @@ function getInvoiceVisibleStatus(invoice: any) {
   const ack = String(invoice?.worker_ack || "").trim().toLowerCase();
   if (ack === "accepted" || ack === "rejected" || ack === "review") return ack;
   return String(invoice?.status || "pending");
+}
+
+function attendanceStatusLabel(status: string, online: boolean) {
+  if (!online) return "Desconectada";
+  const value = String(status || "working").toLowerCase();
+  if (value === "break") return "En descanso";
+  if (value === "bathroom") return "Pausa breve";
+  return "Disponible";
+}
+
+function NotificationGlyph({ id }: { id: string }) {
+  if (id === "attendance") return <Radio size={21} />;
+  if (id === "chat") return <MessagesSquare size={21} />;
+  if (id === "checklist") return <ListChecks size={21} />;
+  if (id.startsWith("client-")) return <UserRound size={21} />;
+  if (id.startsWith("incident-")) return <ShieldAlert size={21} />;
+  return <BellRing size={21} />;
 }
 
 async function getTokenSafe(): Promise<string | null> {
@@ -392,6 +409,13 @@ export default function Tarotista() {
 
   const notificationsCount = notificationItems.filter((item) => item.id !== "attendance" && item.id !== "all-clear").length + (attOnline ? 0 : 1);
   const urgentNotificationsCount = notificationItems.filter((item) => item.tone === "red" || item.tone === "gold").length;
+  const notificationMainItems = notificationItems
+    .filter((item) => item.id !== "attendance" && item.id !== "all-clear")
+    .slice()
+    .sort((a, b) => {
+      const weight = { red: 0, gold: 1, violet: 2, blue: 3, green: 4 } as const;
+      return weight[a.tone] - weight[b.tone];
+    });
 
   useEffect(() => {
     const { data: sub } = sb.auth.onAuthStateChange((_event, session) => {
@@ -1770,53 +1794,151 @@ export default function Tarotista() {
             {tab === "notificaciones" && (
               <div className={panelStyles.notificationsPage}>
                 <section className={panelStyles.notificationsHero}>
-                  <div>
-                    <div className={panelStyles.heroKicker}>Centro de avisos</div>
+                  <div className={panelStyles.notificationsHeroGlow} aria-hidden="true" />
+                  <div className={panelStyles.notificationsHeroCopy}>
+                    <div className={panelStyles.notificationsEyebrow}>
+                      <span className={panelStyles.notificationsHeroIcon}><BellRing size={17} /></span>
+                      Centro de avisos
+                    </div>
                     <h2>Notificaciones y recordatorios</h2>
                     <p>Todo lo importante del turno reunido en un solo lugar, fácil de entender y priorizar.</p>
                   </div>
+
                   <div className={panelStyles.notificationStats}>
-                    <div className={panelStyles.notificationStat}><span>Total</span><strong>{notificationsCount}</strong></div>
-                    <div className={panelStyles.notificationStat}><span>Prioridad</span><strong>{urgentNotificationsCount}</strong></div>
-                    <div className={panelStyles.notificationStat}><span>Clientes</span><strong>{outboundPending}</strong></div>
+                    <div className={panelStyles.notificationStat} data-tone="violet">
+                      <span className={panelStyles.notificationStatIcon}><BellRing size={16} /></span>
+                      <div><small>Total</small><strong>{notificationsCount}</strong></div>
+                    </div>
+                    <div className={panelStyles.notificationStat} data-tone="red">
+                      <span className={panelStyles.notificationStatIcon}><AlertTriangle size={16} /></span>
+                      <div><small>Prioridad</small><strong>{urgentNotificationsCount}</strong></div>
+                    </div>
+                    <div className={panelStyles.notificationStat} data-tone="blue">
+                      <span className={panelStyles.notificationStatIcon}><UsersRound size={16} /></span>
+                      <div><small>Clientes</small><strong>{outboundPending}</strong></div>
+                    </div>
                   </div>
                 </section>
 
                 <div className={panelStyles.notificationsGrid}>
-                  <section className={panelStyles.notificationsList}>
-                    {notificationItems.map((item) => (
-                      <article key={item.id} className={panelStyles.notificationCard} data-tone={item.tone}>
-                        <div className={panelStyles.notificationMeta}>
-                          <span>{item.section}</span>
-                          {item.meta ? <strong>{item.meta}</strong> : null}
+                  <section className={panelStyles.notificationsMain}>
+                    <article className={panelStyles.turnStatusCard} data-tone={attOnline ? "green" : "gold"}>
+                      <div className={panelStyles.turnStatusIcon}><Radio size={25} /></div>
+                      <div className={panelStyles.turnStatusCopy}>
+                        <div className={panelStyles.turnStatusTopline}>
+                          <span>Estado del turno</span>
+                          <strong><i /> {attOnline ? "Operativa activa" : "Acción recomendada"}</strong>
                         </div>
-                        <h3>{item.title}</h3>
-                        <p>{item.detail}</p>
-                        <button type="button" className={panelStyles.notificationAction} onClick={() => setTab(item.actionTab)}>
-                          {item.actionLabel}
-                        </button>
-                      </article>
-                    ))}
+                        <h3>{attOnline ? "Estás lista para recibir actividad" : "Conéctate para recibir actividad"}</h3>
+                        <p>Estado actual: <b>{attendanceStatusLabel(attStatus, attOnline)}</b></p>
+                      </div>
+                      <button type="button" className={panelStyles.turnStatusAction} onClick={() => setTab("resumen")}>
+                        Ver resumen <ArrowRight size={15} />
+                      </button>
+                    </article>
+
+                    <div className={panelStyles.notificationsSectionHead}>
+                      <div>
+                        <span>Actividad importante</span>
+                        <h3>{notificationMainItems.length ? "Tus avisos del turno" : "Todo bajo control"}</h3>
+                      </div>
+                      <strong>{notificationMainItems.length} pendiente{notificationMainItems.length === 1 ? "" : "s"}</strong>
+                    </div>
+
+                    {notificationMainItems.length ? (
+                      <div className={panelStyles.notificationsList}>
+                        {notificationMainItems.map((item) => {
+                          const isChecklist = item.id === "checklist";
+                          const isIncident = item.id.startsWith("incident-");
+                          return (
+                            <article key={item.id} className={panelStyles.notificationCard} data-tone={item.tone}>
+                              <div className={panelStyles.notificationCardAccent} aria-hidden="true" />
+                              <div className={panelStyles.notificationCardIcon}><NotificationGlyph id={item.id} /></div>
+                              <div className={panelStyles.notificationCardBody}>
+                                <div className={panelStyles.notificationMeta}>
+                                  <span>{item.section}</span>
+                                  {item.meta ? <strong>{item.meta}</strong> : null}
+                                </div>
+                                <h3>{item.title}</h3>
+                                <p>{item.detail}</p>
+                                {isChecklist ? (
+                                  <div className={panelStyles.notificationProgress}>
+                                    <div><span>Progreso del turno</span><strong>{clProgress.completed}/{clProgress.total}</strong></div>
+                                    <div className={panelStyles.notificationProgressTrack}><i style={{ width: `${clProgress.pct}%` }} /></div>
+                                  </div>
+                                ) : null}
+                                {isIncident ? (
+                                  <div className={panelStyles.notificationSignal}><AlertTriangle size={14} /> Revisión recomendada</div>
+                                ) : null}
+                              </div>
+                              <button type="button" className={panelStyles.notificationAction} onClick={() => setTab(item.actionTab)}>
+                                {item.actionLabel} <ArrowRight size={15} />
+                              </button>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className={panelStyles.notificationsEmpty}>
+                        <span><CheckCircle2 size={30} /></span>
+                        <div>
+                          <strong>Todo bajo control</strong>
+                          <p>No tienes avisos pendientes. Puedes continuar con tu turno con tranquilidad.</p>
+                        </div>
+                      </div>
+                    )}
                   </section>
 
                   <aside className={panelStyles.notificationsAside}>
-                    <section className={panelStyles.railCard}>
-                      <div className={panelStyles.railKicker}>Cómo usar este panel</div>
-                      <h3>Orden recomendado</h3>
-                      <div className={panelStyles.quickList}>
-                        <div className={panelStyles.quickItem}><span>1. Revisar avisos</span><strong>Primero</strong></div>
-                        <div className={panelStyles.quickItem}><span>2. Seguir clientes</span><strong>Después</strong></div>
-                        <div className={panelStyles.quickItem}><span>3. Completar checklist</span><strong>Antes de cerrar</strong></div>
+                    <section className={panelStyles.missionCard}>
+                      <div className={panelStyles.sideCardHeading}>
+                        <span className={panelStyles.sideCardIcon} data-tone="gold"><Sparkles size={18} /></span>
+                        <div><small>Cómo usar este panel</small><h3>Orden recomendado</h3></div>
+                      </div>
+                      <div className={panelStyles.missionPath}>
+                        <button type="button" onClick={() => setTab("notificaciones")} className={panelStyles.missionStep} data-state="current">
+                          <span>1</span><div><strong>Revisar avisos</strong><small>Ahora</small></div>
+                        </button>
+                        <button type="button" onClick={() => setTab("clientes")} className={panelStyles.missionStep}>
+                          <span>2</span><div><strong>Seguir clientes</strong><small>Después</small></div>
+                        </button>
+                        <button type="button" onClick={() => setTab("checklist")} className={panelStyles.missionStep}>
+                          <span>3</span><div><strong>Completar checklist</strong><small>Antes de cerrar</small></div>
+                        </button>
                       </div>
                     </section>
-                    <section className={panelStyles.railCard}>
-                      <div className={panelStyles.railKicker}>Acciones rápidas</div>
-                      <h3>Accesos directos</h3>
-                      <div className={panelStyles.actionColumn}>
-                        <button type="button" className={panelStyles.railButton} onClick={() => setTab("clientes")}>Abrir clientes</button>
-                        <button type="button" className={panelStyles.railButton} onClick={() => setTab("chat")}>Abrir chat</button>
-                        <button type="button" className={panelStyles.railButton} onClick={() => setTab("checklist")}>Ver checklist</button>
+
+                    <section className={panelStyles.quickActionsCard}>
+                      <div className={panelStyles.sideCardHeading}>
+                        <span className={panelStyles.sideCardIcon} data-tone="violet"><Sparkles size={18} /></span>
+                        <div><small>Acciones rápidas</small><h3>Accesos directos</h3></div>
                       </div>
+                      <div className={panelStyles.quickActionGrid}>
+                        <button type="button" onClick={() => setTab("clientes")} className={panelStyles.quickAction}>
+                          <span data-tone="violet"><UsersRound size={18} /></span>
+                          <div><strong>Clientes</strong><small>Gestionar seguimientos</small></div>
+                          <ArrowRight size={15} />
+                        </button>
+                        <button type="button" onClick={() => setTab("chat")} className={panelStyles.quickAction}>
+                          <span data-tone="blue"><MessageSquare size={18} /></span>
+                          <div><strong>Chat</strong><small>Central en directo</small></div>
+                          <ArrowRight size={15} />
+                        </button>
+                        <button type="button" onClick={() => setTab("checklist")} className={panelStyles.quickAction}>
+                          <span data-tone="gold"><ClipboardCheck size={18} /></span>
+                          <div><strong>Checklist</strong><small>{clProgress.total ? `${clProgress.completed}/${clProgress.total} completadas` : "Sin tareas"}</small></div>
+                          <ArrowRight size={15} />
+                        </button>
+                      </div>
+                    </section>
+
+                    <section className={panelStyles.shiftPulseCard}>
+                      <div className={panelStyles.shiftPulseTop}>
+                        <span><Clock3 size={17} /> Turno actual</span>
+                        <strong>{pendingChecklist ? `${pendingChecklist} tareas` : "En orden"}</strong>
+                      </div>
+                      <div className={panelStyles.shiftPulseTrack}><i style={{ width: `${clProgress.pct}%` }} /></div>
+                      <p>{clProgress.total ? `${clProgress.completed} de ${clProgress.total} tareas completadas.` : "No hay tareas de checklist asignadas."}</p>
                     </section>
                   </aside>
                 </div>
