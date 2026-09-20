@@ -11,7 +11,7 @@ import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
 import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
-import { AlertTriangle, ArrowRight, BadgeEuro, BellRing, CheckCircle2, ClipboardCheck, Clock3, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, Radio, ReceiptText, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, BadgeEuro, BellRing, CalendarDays, CheckCircle2, CircleAlert, ClipboardCheck, Clock3, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, PhoneCall, PhoneForwarded, PhoneOff, Radio, ReceiptText, RefreshCw, Search, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
 const sb = supabaseBrowser();
@@ -84,6 +84,65 @@ function formatDuration(totalSeconds: number) {
   const mm = Math.floor((value % 3600) / 60);
   const ss = value % 60;
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+type OutboundFilter = "all" | "pending" | "progress" | "done";
+type OutboundTone = "violet" | "gold" | "blue" | "green" | "red";
+
+function outboundStatusInfo(value: unknown): { label: string; group: Exclude<OutboundFilter, "all">; tone: OutboundTone; Icon: LucideIcon } {
+  const status = String(value || "pending").toLowerCase();
+  switch (status) {
+    case "done":
+      return { label: "Completada", group: "done", tone: "green", Icon: CheckCircle2 };
+    case "calling":
+      return { label: "En curso", group: "progress", tone: "blue", Icon: PhoneCall };
+    case "answered":
+      return { label: "Contestó", group: "progress", tone: "blue", Icon: PhoneCall };
+    case "callback":
+      return { label: "Llamar después", group: "pending", tone: "gold", Icon: PhoneForwarded };
+    case "no_answer":
+      return { label: "No contesta", group: "pending", tone: "red", Icon: PhoneOff };
+    case "busy":
+      return { label: "Ocupado", group: "pending", tone: "gold", Icon: PhoneOff };
+    case "wrong_number":
+      return { label: "Número incorrecto", group: "pending", tone: "red", Icon: CircleAlert };
+    case "pending":
+      return { label: "Pendiente", group: "pending", tone: "gold", Icon: Clock3 };
+    default:
+      return { label: status || "Pendiente", group: "pending", tone: "violet", Icon: Activity };
+  }
+}
+
+function clientInitials(value: unknown) {
+  const parts = String(value || "Cliente").trim().split(/\s+/).filter(Boolean);
+  return (parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "CL").slice(0, 2);
+}
+
+function formatOutboundDate(value: string) {
+  if (!value) return "—";
+  const parsed = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const text = new Intl.DateTimeFormat("es-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(parsed);
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function formatOutboundTime(value: unknown) {
+  const parsed = value ? new Date(String(value)) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("es-ES", { hour: "2-digit", minute: "2-digit" }).format(parsed);
+}
+
+function relativeOutboundTime(value: unknown) {
+  const parsed = value ? new Date(String(value)) : null;
+  if (!parsed || Number.isNaN(parsed.getTime())) return "";
+  const diff = Math.max(0, Date.now() - parsed.getTime());
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "ahora";
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `hace ${days} d`;
 }
 
 async function safeJson(res: Response) {
@@ -208,6 +267,8 @@ export default function Tarotista() {
   const obChannelRef = useRef<any>(null);
   const [obDraft, setObDraft] = useState<string>("");
   const [obSending, setObSending] = useState(false);
+  const [obSearch, setObSearch] = useState("");
+  const [obFilter, setObFilter] = useState<OutboundFilter>("all");
 
   const [chatLoading, setChatLoading] = useState(false);
   const [chatMsg, setChatMsg] = useState("");
@@ -298,6 +359,36 @@ export default function Tarotista() {
 
   const pendingChecklist = Math.max(0, clProgress.total - clProgress.completed);
   const outboundPending = (obItems || []).filter((it: any) => String(it.current_status || "pending").toLowerCase() !== "done").length;
+
+  const outboundDashboard = useMemo(() => {
+    const rows = obItems || [];
+    const total = rows.length;
+    const completed = rows.filter((it: any) => outboundStatusInfo(it.current_status).group === "done").length;
+    const inProgress = rows.filter((it: any) => outboundStatusInfo(it.current_status).group === "progress").length;
+    const pending = Math.max(0, total - completed - inProgress);
+    const progress = total ? Math.round((completed / total) * 100) : 0;
+    return { total, completed, inProgress, pending, progress };
+  }, [obItems]);
+
+  const outboundVisibleItems = useMemo(() => {
+    const query = obSearch.trim().toLowerCase();
+    return (obItems || []).filter((it: any) => {
+      const info = outboundStatusInfo(it.current_status);
+      if (obFilter !== "all" && info.group !== obFilter) return false;
+      if (!query) return true;
+      return [it.customer_name, it.phone, it.last_note, info.label]
+        .map((value) => String(value || "").toLowerCase())
+        .some((value) => value.includes(query));
+    });
+  }, [obItems, obSearch, obFilter]);
+
+  const outboundRecentActivity = useMemo(() => {
+    return (obItems || [])
+      .filter((it: any) => !!it.last_call_at)
+      .slice()
+      .sort((a: any, b: any) => new Date(String(b.last_call_at)).getTime() - new Date(String(a.last_call_at)).getTime())
+      .slice(0, 5);
+  }, [obItems]);
 
   const summaryFocus: Array<{
     id: string;
@@ -1946,104 +2037,223 @@ export default function Tarotista() {
             )}
 
             {tab === "clientes" && (
-              <div className="tc-card">
-                <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                  <div>
-                    <div className="tc-title">📤 Clientes enviados</div>
-                    <div className="tc-sub" style={{ marginTop: 6 }}>
-                      Aquí ves el estado y el apunte del central en tiempo real
-                      {obMsg ? ` · ${obMsg}` : ""}
+              <div className={panelStyles.clientsHub}>
+                <section className={panelStyles.clientsHero}>
+                  <div className={panelStyles.clientsHeroCopy}>
+                    <span className={panelStyles.clientsHeroIcon}><UsersRound size={24} /></span>
+                    <div>
+                      <small>Centro operativo · seguimiento diario</small>
+                      <h2>Clientes · Centro de seguimiento</h2>
+                      <p>Organiza, envía y controla las clientas de tu jornada desde una única vista.</p>
                     </div>
                   </div>
 
-                  <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                    <span className="tc-chip">Día</span>
-                    <input
-                      className="tc-input"
-                      value={obDate}
-                      onChange={(e) => setObDate(e.target.value)}
-                      style={{ width: 140 }}
-                      placeholder="YYYY-MM-DD"
-                    />
-                    <button className="tc-btn tc-btn-gold" onClick={() => loadMyOutbound(false)} disabled={obLoading}>
-                      {obLoading ? "Cargando…" : "Actualizar"}
+                  <div className={panelStyles.clientsHeroControls}>
+                    <label className={panelStyles.clientsDateControl}>
+                      <span><CalendarDays size={15} /> Día de trabajo</span>
+                      <input type="date" value={obDate} onChange={(e) => setObDate(e.target.value)} />
+                    </label>
+                    <button type="button" className={panelStyles.clientsRefreshButton} onClick={() => loadMyOutbound(false)} disabled={obLoading}>
+                      <RefreshCw size={16} className={obLoading ? panelStyles.spin : ""} />
+                      {obLoading ? "Actualizando" : "Actualizar"}
                     </button>
-                  </div>
-                </div>
-
-                <div className="tc-hr" />
-
-                {!obBatch ? (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div className="tc-sub">No hay lista enviada para este día. Escribe nombres (1 por línea) y envía.</div>
-                    <textarea
-                      className="tc-input"
-                      value={obDraft}
-                      onChange={(e) => setObDraft(e.target.value)}
-                      placeholder={"Ej:\nAna Pérez\nLuis Gómez\nMaría…"}
-                      style={{ width: "100%", minHeight: 160, resize: "vertical" }}
-                    />
-                    <div className="tc-row" style={{ gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                      <button className="tc-btn tc-btn-ok" onClick={submitOutboundDraft} disabled={obSending}>
-                        {obSending ? "Enviando…" : "📤 Enviar lista"}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                      <div className="tc-chip">
-                        Estado: <b>{String(obBatch.status || "submitted")}</b>
+                    {obBatch?.id ? (
+                      <div className={panelStyles.clientsSyncBadge} title="Los cambios de Central se reciben mediante Supabase Realtime">
+                        <Radio size={14} />
+                        <div><strong>Sincronizado</strong><small>Actualización en vivo</small></div>
                       </div>
-                      {obBatch.note ? (
-                        <div className="tc-sub">
-                          Nota: <b>{obBatch.note}</b>
+                    ) : null}
+                  </div>
+                </section>
+
+                {obMsg ? <div className={panelStyles.clientsMessage}>{obMsg}</div> : null}
+
+                <section className={panelStyles.clientsKpis} aria-label="Resumen de seguimiento">
+                  <article className={panelStyles.clientsKpi} data-tone="violet">
+                    <span><UsersRound size={20} /></span>
+                    <div><small>Clientas del día</small><strong>{outboundDashboard.total}</strong><p>{formatOutboundDate(obDate)}</p></div>
+                  </article>
+                  <article className={panelStyles.clientsKpi} data-tone="gold">
+                    <span><Clock3 size={20} /></span>
+                    <div><small>Pendientes</small><strong>{outboundDashboard.pending}</strong><p>Requieren seguimiento</p></div>
+                  </article>
+                  <article className={panelStyles.clientsKpi} data-tone="blue">
+                    <span><Activity size={20} /></span>
+                    <div><small>En curso</small><strong>{outboundDashboard.inProgress}</strong><p>Gestión activa</p></div>
+                  </article>
+                  <article className={panelStyles.clientsKpi} data-tone="green">
+                    <span><CheckCircle2 size={20} /></span>
+                    <div><small>Completadas</small><strong>{outboundDashboard.completed}</strong><p>Marcadas como Done</p></div>
+                  </article>
+                </section>
+
+                <section className={panelStyles.clientsProgressCard}>
+                  <div className={panelStyles.clientsProgressTop}>
+                    <div>
+                      <small>Progreso del día</small>
+                      <h3>{outboundDashboard.completed} de {outboundDashboard.total} clientas completadas</h3>
+                    </div>
+                    <strong>{outboundDashboard.progress}%</strong>
+                  </div>
+                  <div className={panelStyles.clientsProgressTrack} aria-label={`${outboundDashboard.progress}% completado`}>
+                    <span style={{ width: `${outboundDashboard.progress}%` }} />
+                  </div>
+                  <p>{outboundDashboard.total ? `${Math.max(0, outboundDashboard.total - outboundDashboard.completed)} clientas siguen abiertas en la jornada.` : "Cuando envíes una lista, aquí verás el avance real del día."}</p>
+                </section>
+
+                <div className={panelStyles.clientsWorkspace}>
+                  <main className={panelStyles.clientsMainColumn}>
+                    <section className={panelStyles.clientsListCard}>
+                      <header className={panelStyles.clientsSectionHeader}>
+                        <div>
+                          <small>Seguimiento operativo</small>
+                          <h3>Clientas de hoy</h3>
+                          <p>{obBatch?.note ? `Nota del envío: ${obBatch.note}` : "Estados y apuntes actualizados por Central."}</p>
                         </div>
-                      ) : null}
-                    </div>
+                        <span className={panelStyles.clientsCountChip}>{outboundDashboard.total} total</span>
+                      </header>
 
-                    {(obItems || []).length === 0 ? (
-                      <div className="tc-sub">La lista está vacía.</div>
-                    ) : (
-                      <div style={{ display: "grid", gap: 10 }}>
-                        {(obItems || []).map((it: any) => (
-                          <div
-                            key={it.id}
-                            style={{
-                              border: "1px solid rgba(255,255,255,0.10)",
-                              borderRadius: 14,
-                              padding: 12,
-                              background: "rgba(255,255,255,0.03)",
-                            }}
-                          >
-                            <div className="tc-row" style={{ justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                              <div style={{ minWidth: 240 }}>
-                                <div style={{ fontWeight: 900 }}>{it.customer_name || "—"}</div>
-                                {it.phone ? <div className="tc-sub" style={{ marginTop: 6 }}>📱 {it.phone}</div> : null}
-                              </div>
-
-                              <div className="tc-row" style={{ gap: 8, flexWrap: "wrap" }}>
-                                <span className="tc-chip" style={{ border: "1px solid rgba(215,181,109,0.35)" }}>
-                                  {String(it.current_status || "pending")}
-                                </span>
-                              </div>
-                            </div>
-
-                            {it.last_note ? (
-                              <div className="tc-sub" style={{ marginTop: 10 }}>
-                                📝 <b>Apunte central:</b> {it.last_note}
-                              </div>
-                            ) : (
-                              <div className="tc-sub" style={{ marginTop: 10, opacity: 0.85 }}>
-                                Aún sin apunte del central.
-                              </div>
-                            )}
-                          </div>
-                        ))}
+                      <div className={panelStyles.clientsToolbar}>
+                        <label className={panelStyles.clientsSearch}>
+                          <Search size={17} />
+                          <input
+                            value={obSearch}
+                            onChange={(e) => setObSearch(e.target.value)}
+                            placeholder="Buscar por nombre, teléfono, estado o apunte..."
+                            aria-label="Buscar clientas"
+                          />
+                        </label>
+                        <div className={panelStyles.clientsFilters} aria-label="Filtrar clientas">
+                          {([
+                            ["all", "Todas"],
+                            ["pending", "Pendientes"],
+                            ["progress", "En curso"],
+                            ["done", "Completadas"],
+                          ] as Array<[OutboundFilter, string]>).map(([key, label]) => (
+                            <button
+                              type="button"
+                              key={key}
+                              className={obFilter === key ? panelStyles.clientsFilterActive : ""}
+                              onClick={() => setObFilter(key)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )}
+
+                      {obLoading && !obBatch ? (
+                        <div className={panelStyles.clientsSkeletonList} aria-label="Cargando clientas">
+                          {[0, 1, 2].map((item) => <span key={item} />)}
+                        </div>
+                      ) : !obBatch ? (
+                        <div className={panelStyles.clientsEmptyState}>
+                          <span><UsersRound size={30} /></span>
+                          <div><strong>No hay clientas asignadas este día</strong><p>Cuando envíes una nueva lista aparecerá aquí y sus cambios se actualizarán automáticamente.</p></div>
+                        </div>
+                      ) : outboundVisibleItems.length === 0 ? (
+                        <div className={panelStyles.clientsEmptyState}>
+                          <span><Search size={28} /></span>
+                          <div><strong>No hay resultados con este filtro</strong><p>Cambia el filtro o la búsqueda para volver a ver la lista.</p></div>
+                        </div>
+                      ) : (
+                        <div className={panelStyles.clientsCards}>
+                          {outboundVisibleItems.map((it: any) => {
+                            const info = outboundStatusInfo(it.current_status);
+                            const StatusIcon = info.Icon;
+                            const eventTime = it.last_call_at || obBatch?.created_at || null;
+                            return (
+                              <article key={it.id} className={panelStyles.clientCard} data-tone={info.tone}>
+                                <div className={panelStyles.clientStatusRail} />
+                                <div className={panelStyles.clientAvatar} data-tone={info.tone}>{clientInitials(it.customer_name)}</div>
+                                <div className={panelStyles.clientCardBody}>
+                                  <div className={panelStyles.clientCardTop}>
+                                    <div>
+                                      <h4>{it.customer_name || "Clienta sin nombre"}</h4>
+                                      {it.phone ? <span className={panelStyles.clientPhone}>📱 {it.phone}</span> : <span className={panelStyles.clientMuted}>Sin teléfono registrado</span>}
+                                    </div>
+                                    <span className={panelStyles.clientStatus} data-tone={info.tone}><StatusIcon size={14} /> {info.label}</span>
+                                  </div>
+
+                                  <div className={panelStyles.clientMetaRow}>
+                                    {eventTime ? <span><Clock3 size={13} /> {formatOutboundTime(eventTime)} {relativeOutboundTime(eventTime) ? `· ${relativeOutboundTime(eventTime)}` : ""}</span> : null}
+                                    {it.last_called_by?.display_name ? <span><UserRound size={13} /> {it.last_called_by.display_name}</span> : null}
+                                  </div>
+
+                                  {it.last_note ? (
+                                    <div className={panelStyles.clientNote}><MessageSquare size={15} /><div><small>Apunte de Central</small><p>{it.last_note}</p></div></div>
+                                  ) : (
+                                    <div className={panelStyles.clientNoteMuted}><MessageSquare size={14} /> Aún sin apunte de Central.</div>
+                                  )}
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  </main>
+
+                  <aside className={panelStyles.clientsSideColumn}>
+                    <section className={panelStyles.clientsAddCard}>
+                      <div className={panelStyles.clientsSideHeading}>
+                        <span data-tone="violet"><Send size={18} /></span>
+                        <div><small>Herramienta secundaria</small><h3>Añadir clientas</h3></div>
+                      </div>
+
+                      {!obBatch ? (
+                        <>
+                          <p>Escribe una lista de nombres, uno por línea, para enviarla al seguimiento de <strong>{formatOutboundDate(obDate)}</strong>.</p>
+                          <textarea
+                            value={obDraft}
+                            onChange={(e) => setObDraft(e.target.value)}
+                            placeholder={"Ana Pérez\nLuis Gómez\nMaría Sánchez"}
+                            aria-label="Lista de clientas"
+                          />
+                          <button type="button" className={panelStyles.clientsSendButton} onClick={submitOutboundDraft} disabled={obSending}>
+                            <Send size={16} /> {obSending ? "Enviando…" : "Enviar lista"}
+                          </button>
+                        </>
+                      ) : (
+                        <div className={panelStyles.clientsListSent}>
+                          <span><CheckCircle2 size={22} /></span>
+                          <div><strong>Lista del día enviada</strong><p>La lista ya está activa. Para conservar el flujo actual, el envío queda bloqueado una vez creada.</p></div>
+                          <small>Estado: {String(obBatch.status || "submitted")}</small>
+                        </div>
+                      )}
+                    </section>
+
+                    <section className={panelStyles.clientsActivityCard}>
+                      <div className={panelStyles.clientsSideHeading}>
+                        <span data-tone="blue"><Activity size={18} /></span>
+                        <div><small>Últimos cambios reales</small><h3>Actividad reciente</h3></div>
+                      </div>
+
+                      {outboundRecentActivity.length ? (
+                        <div className={panelStyles.clientsTimeline}>
+                          {outboundRecentActivity.map((it: any) => {
+                            const info = outboundStatusInfo(it.current_status);
+                            const StatusIcon = info.Icon;
+                            return (
+                              <div key={`activity-${it.id}`} className={panelStyles.clientsTimelineItem} data-tone={info.tone}>
+                                <span><StatusIcon size={13} /></span>
+                                <div>
+                                  <strong>{it.customer_name || "Clienta"}</strong>
+                                  <p>{info.label}{it.last_note ? ` · ${it.last_note}` : ""}</p>
+                                  <small>{formatOutboundTime(it.last_call_at)} · {relativeOutboundTime(it.last_call_at)}</small>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className={panelStyles.clientsActivityEmpty}>Aún no hay actividad registrada por Central para este día.</div>
+                      )}
+                    </section>
+
+                    <div className={panelStyles.clientsAmbientLine}>Conecta · acompaña · haz seguimiento</div>
+                  </aside>
+                </div>
               </div>
             )}
 
