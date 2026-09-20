@@ -137,19 +137,19 @@ function round(value: number, digits = 2) {
 
 function decimalUnits(value: unknown, scale = 6): bigint {
   const raw = String(value ?? "0").trim().replace(",", ".");
-  const sign = raw.startsWith("-") ? -1n : 1n;
+  const sign = raw.startsWith("-") ? -BigInt(1) : BigInt(1);
   const clean = raw.replace(/^[+-]/, "");
   const [wholeRaw, fracRaw = ""] = clean.split(".");
   const whole = /^\d+$/.test(wholeRaw || "") ? wholeRaw : "0";
   const frac = (fracRaw.replace(/\D/g, "") + "0".repeat(scale)).slice(0, scale);
-  return sign * (BigInt(whole) * (10n ** BigInt(scale)) + BigInt(frac || "0"));
+  return sign * (BigInt(whole) * (BigInt(10) ** BigInt(scale)) + BigInt(frac || "0"));
 }
 
 function moneyFromMinutes(minutes: unknown, rate: unknown) {
-  const scale = 1_000_000n;
+  const scale = BigInt(1_000_000);
   const minuteUnits = decimalUnits(minutes, 6);
   const rateUnits = decimalUnits(rate, 6);
-  const micros = (minuteUnits * rateUnits + scale / 2n) / scale;
+  const micros = (minuteUnits * rateUnits + scale / BigInt(2)) / scale;
   return round(Number(micros) / 1_000_000, 2);
 }
 
