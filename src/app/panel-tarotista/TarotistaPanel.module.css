@@ -248,7 +248,7 @@
   display: grid;
   grid-template-columns: minmax(0, 2.2fr) minmax(290px, 0.95fr);
   gap: 16px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .coreBoard {
@@ -546,7 +546,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1.85fr) minmax(300px, .78fr);
   gap: 18px;
-  align-items: start;
+  align-items: flex-start;
 }
 
 .notificationsMain {
@@ -658,7 +658,7 @@
 
 .notificationsSectionHead {
   display: flex;
-  align-items: end;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 14px;
   padding: 6px 4px 2px;
