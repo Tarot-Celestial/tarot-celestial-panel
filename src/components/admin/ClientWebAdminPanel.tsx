@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Ban, CheckCircle2, Coins, ExternalLink, Eye, Globe2, KeyRound, LockKeyhole, Search, ShieldCheck, Sparkles, LockKeyholeOpen, UserRoundCheck, WandSparkles } from "lucide-react";
+import { Ban, CheckCircle2, Coins, ExternalLink, Eye, Globe2, KeyRound, LockKeyhole, Search, ShieldCheck, Sparkles, LockKeyholeOpen, UserRoundCheck, WandSparkles, X } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./ClientWebAdminPanel.module.css";
 import PaymentGatewayAdminPanel from "@/components/admin/PaymentGatewayAdminPanel";
@@ -34,6 +34,8 @@ type ClientWebRow = {
   oracle_credits: number;
   oracle_premium_credits: number;
   oracle_free_today: number;
+  duplicate_count: number;
+  duplicate_reasons: Array<"phone" | "email">;
 };
 
 type Props = {
@@ -79,6 +81,9 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
   const [blockReason, setBlockReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ClientWebRow | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const token = useCallback(async () => (await sb.auth.getSession()).data.session?.access_token || "", []);
 
@@ -151,6 +156,29 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
     }
   };
 
+  const deleteDuplicate = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      const t = await token();
+      const response = await fetch("/api/admin/client-web", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: deleteTarget.id, action: "delete_duplicate" }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo eliminar la ficha duplicada.");
+      if (selected?.id === deleteTarget.id) setSelected(null);
+      setDeleteTarget(null);
+      await load();
+    } catch (e: any) {
+      setDeleteError(e?.message || "No se pudo eliminar la ficha duplicada.");
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   return <section className={styles.root}>
     <div className={styles.hero}>
       <div className={styles.heroIcon}><Globe2 size={26}/></div>
@@ -182,7 +210,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
           <td><div className={`${styles.rank} ${styles[`rank_${row.effective_rank || "none"}`] || ""}`}>{rankLabel(row.effective_rank)}</div>{row.rank_override ? <small className={styles.override}>{row.rank_override.intervention_type === "permanent" ? "Administrativo" : "Temporal"}</small> : <small>Automático</small>}</td>
           <td><div className={styles.resources}><span><Coins size={14}/>{row.coins.toLocaleString("es-ES")} Coins</span><span><ShieldCheck size={14}/>{row.minutes_total} min</span><span><WandSparkles size={14}/>{row.oracle_credits} tiradas</span></div></td>
           <td><strong>{formatDate(row.last_sign_in_at)}</strong><small>{row.total_accesses} accesos registrados</small></td>
-          <td><button className={styles.detailButton} onClick={() => { setSelected(row); setMessage(""); }}><Eye size={15}/> Ver detalle</button></td>
+          <td><div className={styles.rowActions}><button className={styles.detailButton} onClick={() => { setSelected(row); setMessage(""); }}><Eye size={15}/> Ver detalle</button>{row.duplicate_count > 0 && !row.web_access ? <button className={styles.deleteButton} title={`Eliminar ficha duplicada · ${row.duplicate_count} coincidencia${row.duplicate_count === 1 ? "" : "s"}`} aria-label={`Eliminar ficha duplicada de ${row.name}`} onClick={() => { setDeleteTarget(row); setDeleteError(""); }}><X size={16}/></button> : null}</div></td>
         </tr>)}</tbody></table></div>
         <div className={styles.footer}><span>{pagination.total} clientes · Página {pagination.page} de {pagination.total_pages}</span><div><button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Anterior</button><button disabled={page >= pagination.total_pages} onClick={() => setPage((p) => p + 1)}>Siguiente</button></div></div>
       </>}
@@ -205,6 +233,17 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
         {selected.web_access && selected.account_status !== "blocked" ? <button className={styles.dangerButton} onClick={() => { setBlockOpen(true); setMessage(""); }}><Ban size={15}/> Bloquear acceso</button> : null}
         {selected.web_access && selected.account_status === "blocked" ? <button className={styles.successButton} disabled={busy} onClick={() => void runAction({ action: "unblock" })}><LockKeyholeOpen size={15}/> Desbloquear cuenta</button> : null}
       </div>
+    </div></div> : null}
+
+
+    {deleteTarget ? <div className={styles.backdropTop} onMouseDown={(e) => { if (e.target === e.currentTarget && !deleteBusy) setDeleteTarget(null); }}><div className={`${styles.smallModal} ${styles.deleteModal}`}>
+      <div className={styles.deleteIcon}><X size={24}/></div>
+      <div className={styles.modalHeader}><div><div className={styles.eyebrow}>DUPLICADO DETECTADO</div><h2>Eliminar ficha duplicada</h2></div><button className={styles.close} disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>×</button></div>
+      <p>Se ha detectado otra ficha con el mismo {deleteTarget.duplicate_reasons.includes("phone") && deleteTarget.duplicate_reasons.includes("email") ? "teléfono o email" : deleteTarget.duplicate_reasons.includes("phone") ? "teléfono" : "email"}. Esta acción elimina únicamente la ficha seleccionada del CRM.</p>
+      <div className={styles.deleteIdentity}><strong>{deleteTarget.name}</strong><span>{deleteTarget.phone || "Sin teléfono"} · {deleteTarget.email || deleteTarget.auth_email || "Sin email"}</span><span>{deleteTarget.coins.toLocaleString("es-ES")} Coins · {deleteTarget.minutes_total} min · {deleteTarget.oracle_credits} tiradas</span></div>
+      <div className={styles.preserveNotice}><ShieldCheck size={17}/><span><strong>La otra ficha duplicada se conserva.</strong><br/>No se fusionan automáticamente Coins, minutos, tiradas, compras, notas ni historial. Revisa que esta sea la ficha que quieres borrar.</span></div>
+      {deleteError ? <div className={`${styles.message} ${styles.deleteError}`}>{deleteError}</div> : null}
+      <div className={styles.dialogActions}><button disabled={deleteBusy} onClick={() => setDeleteTarget(null)}>Cancelar</button><button className={styles.confirmDeleteButton} disabled={deleteBusy} onClick={() => void deleteDuplicate()}>{deleteBusy ? "Eliminando…" : "Eliminar duplicado"}</button></div>
     </div></div> : null}
 
     {selected && passwordOpen ? <div className={styles.backdropTop}><div className={styles.smallModal}><div className={styles.modalHeader}><div><div className={styles.eyebrow}>ACCESO SEGURO</div><h2>{selected.web_access ? "Restablecer contraseña" : "Crear acceso web"}</h2></div><button className={styles.close} onClick={() => setPasswordOpen(false)}>×</button></div><p>{selected.web_access ? "La contraseña actual nunca se muestra ni se recupera. Solo se establecerá una nueva." : "Se creará o enlazará de forma segura la cuenta web de esta clienta sin duplicar su ficha CRM."}</p><label>Nueva contraseña<input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)}/></label><label>Confirmar contraseña<input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)}/></label>{message ? <div className={styles.message}>{message}</div> : null}<div className={styles.dialogActions}><button onClick={() => setPasswordOpen(false)}>Cancelar</button><button className={styles.primaryButton} disabled={busy || password.length < 8 || password !== confirm} onClick={() => void runAction({ action: selected.web_access ? "password" : "create_access", password, confirm })}>{busy ? (selected.web_access ? "Cambiando…" : "Creando…") : (selected.web_access ? "Cambiar contraseña" : "Crear acceso web")}</button></div></div></div> : null}

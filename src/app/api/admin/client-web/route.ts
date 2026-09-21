@@ -106,6 +106,67 @@ async function loadClients(admin: any) {
   return rows;
 }
 
+
+type DuplicateMeta = {
+  count: number;
+  reasons: Array<"phone" | "email">;
+};
+
+async function loadDuplicateMeta(admin: any, pageClients: any[]) {
+  const result = new Map<string, DuplicateMeta>();
+  if (!pageClients.length) return result;
+
+  const phoneKeys = Array.from(new Set(pageClients
+    .map((client) => authPhoneKey(client.telefono_normalizado || client.telefono))
+    .filter(Boolean)));
+  const rawPhones = Array.from(new Set(pageClients.flatMap((client) => {
+    const raw = String(client.telefono || "").trim();
+    const normalized = authPhoneKey(client.telefono_normalizado || client.telefono);
+    return [raw, normalized, normalized ? `+${normalized}` : ""].filter(Boolean);
+  })));
+  const emails = Array.from(new Set(pageClients.map((client) => String(client.email || "").trim()).filter(Boolean)));
+
+  const queries: PromiseLike<{ data: any[] | null; error: any }>[] = [];
+  if (phoneKeys.length) {
+    const variants = Array.from(new Set(phoneKeys.flatMap((phone) => [phone, `+${phone}`])));
+    queries.push(admin.from("crm_clientes").select("id,email,telefono,telefono_normalizado").in("telefono_normalizado", variants));
+  }
+  if (rawPhones.length) queries.push(admin.from("crm_clientes").select("id,email,telefono,telefono_normalizado").in("telefono", rawPhones));
+  if (emails.length) queries.push(admin.from("crm_clientes").select("id,email,telefono,telefono_normalizado").in("email", emails));
+
+  const candidates = new Map<string, any>();
+  for (const batch of await Promise.all(queries)) {
+    if (batch.error) throw batch.error;
+    for (const row of batch.data || []) candidates.set(String(row.id), row);
+  }
+
+  for (const client of pageClients) {
+    const clientId = String(client.id);
+    const phone = authPhoneKey(client.telefono_normalizado || client.telefono);
+    const email = authEmailKey(client.email);
+    let count = 0;
+    let phoneMatch = false;
+    let emailMatch = false;
+
+    for (const candidate of candidates.values()) {
+      if (String(candidate.id) === clientId) continue;
+      const samePhone = Boolean(phone) && authPhoneKey(candidate.telefono_normalizado || candidate.telefono) === phone;
+      const sameEmail = Boolean(email) && authEmailKey(candidate.email) === email;
+      if (!samePhone && !sameEmail) continue;
+      count += 1;
+      phoneMatch = phoneMatch || samePhone;
+      emailMatch = emailMatch || sameEmail;
+    }
+
+    result.set(clientId, {
+      count,
+      reasons: [phoneMatch ? "phone" : null, emailMatch ? "email" : null].filter(Boolean) as Array<"phone" | "email">,
+    });
+  }
+
+  return result;
+}
+
 async function loadWorkerAuthUserIds(admin: any) {
   const { data, error } = await admin.from("workers").select("user_id").not("user_id", "is", null);
   if (error) throw error;
@@ -308,6 +369,7 @@ export async function GET(req: Request) {
     const pageRows = ranked.slice((safePage - 1) * pageSize, safePage * pageSize);
 
     const todayMadrid = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const duplicateMeta = await loadDuplicateMeta(gate.admin, pageRows.map(({ client }) => client));
     const pageClientIds = pageRows.map(({ client }) => String(client.id));
     const freeUsed = new Set<string>();
     if (pageClientIds.length) {
@@ -371,6 +433,8 @@ export async function GET(req: Request) {
         oracle_credits: creditBalance + (freeUsed.has(String(client.id)) ? 0 : 1),
         oracle_premium_credits: creditBalance,
         oracle_free_today: freeUsed.has(String(client.id)) ? 0 : 1,
+        duplicate_count: duplicateMeta.get(String(client.id))?.count || 0,
+        duplicate_reasons: duplicateMeta.get(String(client.id))?.reasons || [],
       };
     }));
 
@@ -403,11 +467,65 @@ export async function POST(req: Request) {
 
     const { data: client, error: clientError } = await gate.admin
       .from("crm_clientes")
-      .select("id,nombre,apellido,email,telefono,auth_user_id,puntos,origen")
+      .select("id,nombre,apellido,email,telefono,telefono_normalizado,auth_user_id,puntos,minutos_free_pendientes,minutos_normales_pendientes,origen")
       .eq("id", clientId)
       .maybeSingle();
     if (clientError) throw clientError;
     if (!client) return NextResponse.json({ ok: false, error: "CLIENT_NOT_FOUND" }, { status: 404 });
+
+    if (action === "delete_duplicate") {
+      if (client.auth_user_id) {
+        return NextResponse.json({ ok: false, error: "Esta ficha tiene un acceso web enlazado. Por seguridad, elimina o revisa primero ese acceso antes de borrar la ficha duplicada." }, { status: 409 });
+      }
+
+      const [allClients, authUsers] = await Promise.all([
+        loadClients(gate.admin),
+        listAllAuthUsers(gate.admin, true),
+      ]);
+      const phone = authPhoneKey(client.telefono_normalizado || client.telefono);
+      const email = authEmailKey(client.email);
+      const explicitAuthLink = authUsers.some((user) => String((user.user_metadata || {}).crm_cliente_id || "").trim() === clientId);
+      if (explicitAuthLink) {
+        return NextResponse.json({ ok: false, error: "Esta ficha está identificada explícitamente por una cuenta web. Por seguridad no se puede borrar como duplicado desde esta lista." }, { status: 409 });
+      }
+
+      const duplicates = allClients.filter((candidate: any) => {
+        if (String(candidate.id) === clientId) return false;
+        const samePhone = Boolean(phone) && authPhoneKey(candidate.telefono_normalizado || candidate.telefono) === phone;
+        const sameEmail = Boolean(email) && authEmailKey(candidate.email) === email;
+        return samePhone || sameEmail;
+      });
+
+      if (!duplicates.length) {
+        return NextResponse.json({ ok: false, error: "La ficha ya no aparece como duplicada. Actualiza la lista antes de volver a intentarlo." }, { status: 409 });
+      }
+
+      const { data: deleted, error: deleteError } = await gate.admin
+        .from("crm_clientes")
+        .delete()
+        .eq("id", clientId)
+        .select("id")
+        .maybeSingle();
+
+      if (deleteError) {
+        const fkLike = String(deleteError.code || "") === "23503" || String(deleteError.message || "").toLowerCase().includes("foreign key");
+        if (fkLike) {
+          return NextResponse.json({
+            ok: false,
+            error: "No se puede borrar automáticamente esta ficha porque tiene historial relacionado. No se ha eliminado nada; habrá que fusionar o reasignar ese historial antes de borrar el duplicado.",
+          }, { status: 409 });
+        }
+        throw deleteError;
+      }
+      if (!deleted?.id) return NextResponse.json({ ok: false, error: "No se pudo eliminar la ficha duplicada." }, { status: 409 });
+
+      return NextResponse.json({
+        ok: true,
+        deleted_client_id: clientId,
+        duplicate_matches_before_delete: duplicates.length,
+        preserved_other_duplicates: duplicates.map((row: any) => String(row.id)),
+      });
+    }
 
     if (action === "gift_coins") {
       const amount = Number(body.amount);
