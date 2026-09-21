@@ -56,9 +56,29 @@ function monthLabel(value: string) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function initials(value: unknown) {
-  const parts = String(value || "Tarotista").trim().split(/\s+/).filter(Boolean);
-  return (parts.slice(0, 2).map((part) => part[0]?.toUpperCase() || "").join("") || "TC").slice(0, 2);
+function avatarIndex(value: unknown) {
+  const text = String(value || "Tarotista");
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return (hash % 8) + 1;
+}
+
+function avatarSrc(value: unknown) {
+  return `/images/ranking-tarotistas/tarotista-${avatarIndex(value)}.svg`;
+}
+
+function categoryClass(key: RankingKey) {
+  if (key === "captadas") return styles.tabCaptadas;
+  if (key === "cliente") return styles.tabCliente;
+  return styles.tabRepite;
+}
+
+function TarotistPortrait({ name, compact = false }: { name?: string | null; compact?: boolean }) {
+  return (
+    <span className={compact ? styles.portraitCompact : styles.portrait}>
+      <img src={avatarSrc(name)} alt="" aria-hidden="true" />
+    </span>
+  );
 }
 
 function num(value: unknown) {
@@ -176,15 +196,20 @@ export default function TarotistaRankingArena({ data, month, myWorkerId, refresh
       </div>
 
       <nav className={styles.tabs} aria-label="Categorías del ranking">
-        {CATEGORIES.map(({ key, label, Icon }) => (
+        {CATEGORIES.map(({ key, label, Icon }, index) => (
           <button
             key={key}
             type="button"
-            className={activeKey === key ? styles.tabActive : ""}
+            className={`${styles.tabButton} ${categoryClass(key)} ${activeKey === key ? styles.tabActive : ""}`}
             onClick={() => setActiveKey(key)}
+            aria-pressed={activeKey === key}
           >
-            <Icon size={17} />
-            <span>{label}</span>
+            <TarotistPortrait name={`categoria-${index + 1}`} compact />
+            <span className={styles.tabIcon}><Icon size={18} /></span>
+            <span className={styles.tabCopy}>
+              <strong>{label}</strong>
+              <small>{key === "captadas" ? "Nuevas conexiones" : key === "cliente" ? "Mejor rendimiento" : "Clientes que vuelven"}</small>
+            </span>
             {data?.positions?.[key] ? <b>#{data.positions[key]}</b> : null}
           </button>
         ))}
@@ -225,7 +250,7 @@ export default function TarotistaRankingArena({ data, month, myWorkerId, refresh
                     <span className={styles.podiumPosition}>#{position}</span>
                     {row ? (
                       <>
-                        <div className={styles.avatar}>{initials(row.display_name)}</div>
+                        <TarotistPortrait name={row.display_name} />
                         <strong>{row.display_name || "Tarotista"}</strong>
                         {isMe ? <span className={styles.youBadge}>TÚ</span> : null}
                         <b>{formatValue(activeKey, activeMetricValue(row))}</b>
@@ -258,10 +283,10 @@ export default function TarotistaRankingArena({ data, month, myWorkerId, refresh
                 {topTen.map((row, index) => {
                   const isMe = String(row.worker_id) === String(myWorkerId || myRow?.worker_id || "");
                   return (
-                    <article key={String(row.worker_id || `${row.display_name}-${index}`)} className={`${styles.rankingRow} ${isMe ? styles.myRow : ""}`}>
+                    <article key={String(row.worker_id || `${row.display_name}-${index}`)} className={`${styles.rankingRow} ${index === 0 ? styles.rowGold : index === 1 ? styles.rowSilver : index === 2 ? styles.rowBronze : ""} ${isMe ? styles.myRow : ""}`}>
                       <div className={`${styles.positionBadge} ${rankClass(index)}`}>{index + 1}</div>
                       <div className={styles.rowIdentity}>
-                        <div className={styles.rowAvatar}>{initials(row.display_name)}</div>
+                        <TarotistPortrait name={row.display_name} compact />
                         <div>
                           <strong>{row.display_name || "Tarotista"}</strong>
                           <small>{index === 0 ? "Lidera esta categoría" : isMe ? "Tu posición actual" : `Puesto #${index + 1}`}</small>
@@ -279,7 +304,7 @@ export default function TarotistaRankingArena({ data, month, myWorkerId, refresh
                   <span>Tu posición</span>
                   <div className={styles.rowIdentity}>
                     <div className={styles.positionBadge}>{myPosition}</div>
-                    <div className={styles.rowAvatar}>{initials(myRow.display_name)}</div>
+                    <TarotistPortrait name={myRow.display_name} compact />
                     <div><strong>{myRow.display_name || "Tarotista"}</strong><small>Fuera del Top 10, pero dentro de la carrera.</small></div>
                     <span className={styles.youBadge}>TÚ</span>
                   </div>
@@ -335,6 +360,7 @@ export default function TarotistaRankingArena({ data, month, myWorkerId, refresh
                     return (
                       <div key={`zone-${row.worker_id}`} className={isMe ? styles.zoneMe : ""}>
                         <span>#{index + 1}</span>
+                        <TarotistPortrait name={row.display_name} compact />
                         <strong>{row.display_name || "Tarotista"}</strong>
                         {isMe ? <b>TÚ</b> : null}
                         <em>{formatValue(activeKey, activeMetricValue(row))}</em>

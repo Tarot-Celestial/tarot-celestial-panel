@@ -515,3 +515,267 @@
   .progressTrack span { transition: none; }
   .spin { animation: none; }
 }
+
+/* ==========================================================
+   Ranking V2 · Color, personajes y affordance de interacción
+   ========================================================== */
+
+.hero {
+  border-color: rgba(245, 197, 91, .18);
+  background:
+    radial-gradient(circle at 92% 18%, rgba(236, 76, 165, .16), transparent 25%),
+    radial-gradient(circle at 74% 110%, rgba(43, 206, 218, .12), transparent 34%),
+    radial-gradient(circle at 16% 16%, rgba(246, 191, 75, .12), transparent 24%),
+    linear-gradient(118deg, rgba(31, 18, 48, .98), rgba(14, 8, 29, .99) 47%, rgba(23, 10, 39, .99));
+  box-shadow: 0 26px 60px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.035), 0 0 54px rgba(125,78,220,.08);
+}
+
+.summaryStrip article:nth-child(1) {
+  background: radial-gradient(circle at 90% 10%, rgba(246,190,73,.18), transparent 45%), linear-gradient(145deg, rgba(36,23,42,.97), rgba(13,8,22,.99));
+  border-color: rgba(241,190,76,.16);
+}
+.summaryStrip article:nth-child(2) {
+  background: radial-gradient(circle at 90% 10%, rgba(62,198,210,.17), transparent 45%), linear-gradient(145deg, rgba(17,28,42,.97), rgba(9,9,22,.99));
+  border-color: rgba(67,211,224,.15);
+}
+.summaryStrip article:nth-child(3) {
+  background: radial-gradient(circle at 90% 10%, rgba(222,68,158,.18), transparent 45%), linear-gradient(145deg, rgba(41,18,43,.97), rgba(12,8,22,.99));
+  border-color: rgba(238,91,170,.15);
+}
+.summaryStrip article:nth-child(4) {
+  background: radial-gradient(circle at 90% 10%, rgba(140,86,245,.2), transparent 45%), linear-gradient(145deg, rgba(29,18,50,.97), rgba(10,8,21,.99));
+  border-color: rgba(162,106,255,.16);
+}
+
+.tabs {
+  padding: 8px;
+  gap: 9px;
+  overflow: visible;
+  border-color: rgba(255,255,255,.08);
+  background:
+    radial-gradient(circle at 50% 100%, rgba(129,82,231,.08), transparent 45%),
+    rgba(7, 5, 14, .9);
+}
+
+.tabs .tabButton {
+  min-height: 68px;
+  position: relative;
+  overflow: hidden;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 8px 13px 8px 9px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  isolation: isolate;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 10px 24px rgba(0,0,0,.16);
+}
+.tabs .tabButton::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: .45;
+  z-index: -1;
+  transition: opacity .2s ease, transform .2s ease;
+}
+.tabs .tabButton::after {
+  content: "";
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  right: -26px;
+  top: -38px;
+  border-radius: 50%;
+  opacity: .25;
+  filter: blur(4px);
+  z-index: -1;
+}
+.tabs .tabButton:hover {
+  transform: translateY(-2px);
+  color: #fff;
+  filter: brightness(1.08);
+}
+.tabs .tabButton:hover::before,
+.tabs .tabActive::before { opacity: .88; }
+
+.tabCaptadas {
+  color: #ffe5a2 !important;
+  border-color: rgba(240,182,60,.3) !important;
+  background: linear-gradient(135deg, rgba(85,52,17,.88), rgba(31,20,28,.95)) !important;
+}
+.tabCaptadas::before { background: linear-gradient(120deg, rgba(244,183,52,.35), rgba(236,91,145,.08)); }
+.tabCaptadas::after { background: #f2b63d; }
+
+.tabCliente {
+  color: #ffd3eb !important;
+  border-color: rgba(234,74,158,.32) !important;
+  background: linear-gradient(135deg, rgba(82,24,61,.9), rgba(35,14,42,.96)) !important;
+}
+.tabCliente::before { background: linear-gradient(120deg, rgba(239,73,159,.35), rgba(153,83,242,.12)); }
+.tabCliente::after { background: #ed4da2; }
+
+.tabRepite {
+  color: #c7fff4 !important;
+  border-color: rgba(44,204,188,.3) !important;
+  background: linear-gradient(135deg, rgba(12,70,69,.9), rgba(16,23,43,.96)) !important;
+}
+.tabRepite::before { background: linear-gradient(120deg, rgba(38,211,190,.34), rgba(76,119,246,.1)); }
+.tabRepite::after { background: #31d9c1; }
+
+.tabs .tabActive {
+  transform: translateY(-2px);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,.08),
+    0 10px 28px rgba(0,0,0,.22),
+    inset 0 0 30px rgba(255,255,255,.035);
+}
+.tabCaptadas.tabActive { box-shadow: 0 0 0 1px rgba(245,194,73,.42), 0 0 30px rgba(236,171,46,.16), inset 0 0 30px rgba(244,191,68,.08); }
+.tabCliente.tabActive { box-shadow: 0 0 0 1px rgba(244,95,174,.42), 0 0 30px rgba(235,69,156,.18), inset 0 0 30px rgba(236,82,165,.08); }
+.tabRepite.tabActive { box-shadow: 0 0 0 1px rgba(64,225,205,.42), 0 0 30px rgba(49,209,191,.17), inset 0 0 30px rgba(63,214,199,.08); }
+
+.tabIcon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(7,6,13,.28);
+  border: 1px solid rgba(255,255,255,.1);
+}
+.tabCopy { min-width: 0; display: grid; gap: 2px; text-align: left; }
+.tabCopy strong { color: currentColor; font-size: 11px; line-height: 1.1; }
+.tabCopy small { color: rgba(255,255,255,.57); font-size: 7.5px; font-weight: 650; white-space: nowrap; }
+.tabs .tabButton > b { margin-left: auto; color: #fff; background: rgba(8,6,15,.38); border: 1px solid rgba(255,255,255,.1); }
+
+.portrait,
+.portraitCompact {
+  display: block;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #160d27;
+  border: 2px solid rgba(255,255,255,.14);
+  box-shadow: 0 0 0 3px rgba(113,72,190,.12), 0 9px 24px rgba(0,0,0,.2);
+}
+.portrait img,
+.portraitCompact img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.portrait { width: 78px; height: 78px; margin: 10px 0 8px; }
+.portraitCompact { width: 38px; height: 38px; flex: 0 0 38px; }
+.tabs .portraitCompact {
+  width: 48px;
+  height: 48px;
+  flex-basis: 48px;
+  border-color: rgba(255,255,255,.28);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.05), 0 0 26px rgba(180,99,236,.15);
+}
+
+.podiumStage {
+  border-color: rgba(188,117,255,.24);
+  background:
+    radial-gradient(circle at 50% 21%, rgba(241,183,57,.16), transparent 17%),
+    radial-gradient(circle at 18% 30%, rgba(96,152,255,.21), transparent 25%),
+    radial-gradient(circle at 83% 31%, rgba(239,83,163,.22), transparent 25%),
+    radial-gradient(circle at 50% 92%, rgba(133,68,244,.21), transparent 34%),
+    linear-gradient(180deg, #0a0a1b 0%, #160d2b 52%, #090611 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 30px 60px rgba(0,0,0,.22), 0 0 55px rgba(112,67,212,.08);
+}
+
+.rankGold .portrait { border-color: #f7cf68; box-shadow: 0 0 0 4px rgba(246,193,57,.1), 0 0 36px rgba(246,185,50,.28); }
+.rankSilver .portrait { border-color: #acd9ff; box-shadow: 0 0 0 4px rgba(98,169,239,.1), 0 0 36px rgba(87,161,236,.22); }
+.rankBronze .portrait { border-color: #ffab89; box-shadow: 0 0 0 4px rgba(230,103,86,.1), 0 0 36px rgba(236,88,133,.2); }
+
+.leaderboardCard {
+  border-color: rgba(184,116,255,.14);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(160,83,244,.09), transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(236,168,54,.06), transparent 28%),
+    linear-gradient(145deg, rgba(18,11,31,.98), rgba(8,6,15,.99));
+}
+
+.rankingRow {
+  background:
+    linear-gradient(90deg, rgba(125,75,202,.06), rgba(255,255,255,.018) 45%, rgba(224,158,56,.025));
+  border-color: rgba(182,129,248,.08);
+}
+.rankingRow:hover {
+  border-color: rgba(199,139,255,.26);
+  background: linear-gradient(90deg, rgba(151,85,232,.14), rgba(238,78,160,.045) 56%, rgba(242,188,72,.055));
+}
+.rowGold {
+  border-color: rgba(246,193,68,.22);
+  background: linear-gradient(90deg, rgba(235,174,43,.13), rgba(255,255,255,.018) 45%, rgba(241,191,77,.04));
+}
+.rowSilver {
+  border-color: rgba(114,185,242,.19);
+  background: linear-gradient(90deg, rgba(75,145,219,.12), rgba(255,255,255,.018) 45%, rgba(150,205,255,.035));
+}
+.rowBronze {
+  border-color: rgba(236,109,117,.19);
+  background: linear-gradient(90deg, rgba(219,83,111,.11), rgba(255,255,255,.018) 45%, rgba(231,122,78,.035));
+}
+.myRow {
+  border-color: rgba(208,102,255,.48) !important;
+  background: linear-gradient(90deg, rgba(133,60,218,.27), rgba(219,60,156,.10) 58%, rgba(246,190,71,.08)) !important;
+  box-shadow: inset 3px 0 0 #c36cff, 0 0 24px rgba(145,69,232,.11);
+}
+.rowIdentity .portraitCompact {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  border-width: 1.5px;
+  border-color: rgba(234,194,255,.28);
+  box-shadow: 0 0 16px rgba(156,87,225,.11);
+}
+.rowGold .rowIdentity .portraitCompact { border-color: rgba(248,202,95,.7); }
+.rowSilver .rowIdentity .portraitCompact { border-color: rgba(164,215,255,.65); }
+.rowBronze .rowIdentity .portraitCompact { border-color: rgba(247,146,128,.65); }
+
+.targetCard {
+  border-color: rgba(240,175,57,.17);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(241,174,45,.12), transparent 34%),
+    radial-gradient(circle at 0 100%, rgba(137,76,236,.11), transparent 35%),
+    linear-gradient(145deg, rgba(28,15,39,.98), rgba(10,7,18,.99));
+}
+.zoneCard {
+  border-color: rgba(69,206,198,.14);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(51,207,198,.08), transparent 34%),
+    linear-gradient(145deg, rgba(16,16,34,.98), rgba(8,6,16,.99));
+}
+.zoneList > div {
+  grid-template-columns: 30px 30px minmax(0,1fr) auto auto;
+  background: linear-gradient(90deg, rgba(115,75,179,.05), rgba(255,255,255,.018));
+}
+.zoneList .portraitCompact {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+  border-width: 1px;
+}
+.zoneMe {
+  border-color: rgba(199,93,255,.34) !important;
+  background: linear-gradient(90deg, rgba(144,70,229,.18), rgba(233,76,158,.07)) !important;
+  box-shadow: inset 2px 0 0 #bb66ff;
+}
+
+.progressTrack span {
+  background: linear-gradient(90deg, #764de8, #e24fa0 54%, #f2c554);
+  box-shadow: 0 0 18px rgba(218,75,164,.26), 0 0 18px rgba(231,184,67,.16);
+}
+
+@media (max-width: 700px) {
+  .tabs .tabButton { min-height: 60px; }
+  .tabs .portraitCompact { width: 42px; height: 42px; flex-basis: 42px; }
+  .tabCopy small { white-space: normal; }
+}
+
+@media (max-width: 470px) {
+  .rowIdentity .portraitCompact { display: block; }
+  .zoneList > div { grid-template-columns: 28px 28px minmax(0,1fr) auto; }
+  .zoneList b { display: none; }
+}
