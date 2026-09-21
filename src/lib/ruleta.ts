@@ -1,4 +1,4 @@
-export type RouletteLevel = 1 | 2 | 3;
+export type RouletteLevel = 1 | 2 | 3 | 4;
 export type RouletteRarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "ultra" | "diamond" | "jackpot";
 export type RouletteRewardType = "minutes" | "coins" | "rank" | "ritual" | "streak_minutes" | "perk";
 export type RouletteFulfillmentMode = "immediate" | "temporary" | "manual" | "claim" | "scheduled";
@@ -65,9 +65,11 @@ export type RouletteSummary = {
   level_1_spins: number;
   level_2_spins: number;
   level_3_spins: number;
+  level_4_spins: number;
   next_spin_1: string | null;
   next_spin_2: string | null;
   next_spin_3: string | null;
+  next_spin_4: string | null;
   next_level: RouletteLevel;
   level_2_from: number;
   level_3_from: number;

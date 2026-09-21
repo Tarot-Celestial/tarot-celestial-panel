@@ -422,7 +422,7 @@ export default function ClienteDashboardPage() {
       {
         label: "Giros disponibles",
         value: rouletteSpins === null ? "—" : String(rouletteSpins),
-        meta: rouletteSummary ? `Nivel 1: ${rouletteSummary.level_1_spins} · Nivel 2: ${rouletteSummary.level_2_spins} · Nivel 3: ${rouletteSummary.level_3_spins}` : "Consulta tus giros en Ruleta",
+        meta: rouletteSummary ? `Nivel 1: ${rouletteSummary.level_1_spins} · Nivel 2: ${rouletteSummary.level_2_spins} · Nivel 3: ${rouletteSummary.level_3_spins}${rouletteSummary.level_4_spins ? ` · Especial: ${rouletteSummary.level_4_spins}` : ""}` : "Consulta tus giros en Ruleta",
         href: "/cliente/ruleta",
         tone: "oracle" as const,
       },

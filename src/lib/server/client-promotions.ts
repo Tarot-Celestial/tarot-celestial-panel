@@ -19,7 +19,7 @@ export type PromotionPackageSnapshot = {
   price: number;
   regular_price: number | null;
   currency: "EUR" | "USD";
-  roulette_level: 1 | 2 | 3 | null;
+  roulette_level: 1 | 2 | 3 | 4 | null;
   roulette_spins: number;
   coins: number;
   oracle_credits: number;
@@ -131,7 +131,7 @@ export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPa
     price: Number(pack.price || 0),
     regular_price: pack.regular_price == null ? null : Number(pack.regular_price),
     currency: String(pack.currency || "EUR").toUpperCase() === "USD" ? "USD" : "EUR",
-    roulette_level: [1, 2, 3].includes(Number(pack.roulette_level)) ? Number(pack.roulette_level) as 1 | 2 | 3 : null,
+    roulette_level: [1, 2, 3, 4].includes(Number(pack.roulette_level)) ? Number(pack.roulette_level) as 1 | 2 | 3 | 4 : null,
     roulette_spins: Math.max(0, Math.floor(Number(pack.roulette_spins || 0))),
     coins: Math.max(0, Math.floor(Number(pack.coins || 0))),
     oracle_credits: Math.max(0, Math.floor(Number(pack.oracle_credits || 0))),
@@ -189,7 +189,7 @@ export async function applyPromotionMinutePurchase(
     `${snap.paid_minutes} min`,
     snap.free_minutes ? `+${snap.free_minutes} min GRATIS` : null,
     snap.coins ? `+${snap.coins} Coins` : null,
-    snap.roulette_spins && snap.roulette_level ? `+${snap.roulette_spins} giro${snap.roulette_spins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${snap.roulette_level}` : null,
+    snap.roulette_spins && snap.roulette_level ? `+${snap.roulette_spins} giro${snap.roulette_spins === 1 ? "" : "s"} ${snap.roulette_level === 4 ? "Super Ruleta · Nivel Especial" : `Ultra Sorpresas · Nivel ${snap.roulette_level}`}` : null,
     snap.oracle_credits ? `+${snap.oracle_credits} tirada${snap.oracle_credits === 1 ? "" : "s"} de Oráculo` : null,
   ].filter(Boolean).join(" · ");
 

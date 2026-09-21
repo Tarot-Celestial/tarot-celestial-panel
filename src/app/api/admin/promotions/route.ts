@@ -250,7 +250,7 @@ export async function POST(req: Request) {
         price,
         regular_price: body?.regular_price === "" || body?.regular_price == null ? null : Number(body.regular_price),
         currency,
-        roulette_level: [1, 2, 3].includes(Number(body?.roulette_level)) ? Number(body.roulette_level) : null,
+        roulette_level: [1, 2, 3, 4].includes(Number(body?.roulette_level)) ? Number(body.roulette_level) : null,
         roulette_spins: Math.max(0, Math.floor(Number(body?.roulette_spins || 0))),
         coins: Math.max(0, Math.floor(Number(body?.coins || 0))),
         oracle_credits: Math.max(0, Math.floor(Number(body?.oracle_credits || 0))),

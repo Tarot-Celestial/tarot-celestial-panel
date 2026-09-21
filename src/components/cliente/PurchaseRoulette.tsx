@@ -31,7 +31,7 @@ function wheelValue(prize: RoulettePrize) {
   if (prize.reward_type === "minutes") return { main: String(prize.reward_value), sub: "MIN" };
   if (prize.reward_type === "rank") return { main: String(prize.meta?.rank || "RANGO").toUpperCase(), sub: "RANGO" };
   if (prize.reward_type === "ritual") return { main: "RITUAL", sub: "PREMIO" };
-  if (prize.reward_type === "streak_minutes") return { main: String(prize.meta?.days_total || 7), sub: "DÍAS" };
+  if (prize.reward_type === "streak_minutes") return { main: `${Number(prize.meta?.daily_minutes || prize.reward_value || 10)} MIN`, sub: `×${Number(prize.meta?.days_total || 7)} DÍAS` };
   return { main: "EXTRA", sub: "PREMIO" };
 }
 export default function PurchaseRoulette({ onReward }: { onReward?: () => void | Promise<void> }) {
@@ -68,7 +68,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       setSummary(json);
       try {
         const saved = JSON.parse(sessionStorage.getItem(storageKey(json.cliente_id)) || "null");
-        if (saved?.spin_id && [1, 2, 3].includes(saved.level)) {
+        if (saved?.spin_id && [1, 2, 3, 4].includes(saved.level)) {
           pendingRef.current = saved; setPending(saved); setLevel(saved.level);
           setMessage("Hay un giro pendiente de comprobar. Recupera su resultado sin gastar otro giro.");
         }
@@ -80,7 +80,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   useEffect(() => {
     mounted.current = true;
     const requestedLevel = Number(new URLSearchParams(window.location.search).get("nivel"));
-    if ([1, 2, 3].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
+    if ([1, 2, 3, 4].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
     void load();
     return () => { mounted.current = false; if (animation.current) clearTimeout(animation.current); };
   }, [load]);
@@ -88,12 +88,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
 
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
   const levelMeta = useMemo(() => ({
-    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "Comunes → Jackpot" },
-    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "Raros · Épicos · Legendarios" },
-    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "Premios Ultra · Diamante · Jackpot" },
+    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "2 · 3 · 4 · 5 · 60 min · 400 Coins" },
+    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "6 · 8 · 10 · 12 · 14 · 16 · 80 min · 1.000 Coins" },
+    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "12 · 20 · 25 · 28 · 35 · 100 min · 2.000 Coins" },
+    4: { name: "Super Ruleta", icon: Gem, tone: "special", cap: "Todos los premios especiales · Solo con promo activa" },
   } as const), []);
-  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins } : null;
-  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3 } : null;
+  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins, 4: summary.level_4_spins } : null;
+  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3, 4: summary.next_spin_4 } : null;
   const available = spinsByLevel?.[level] ?? null;
   const selectedMeta = levelMeta[level];
   const SelectedLevelIcon = selectedMeta.icon;
@@ -220,7 +221,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       </header>
 
       <div className={styles.levels} aria-label="Elige el nivel de tu giro">
-        {([1, 2, 3] as const).map(n => {
+        {([1, 2, 3, 4] as const).map(n => {
           const meta = levelMeta[n];
           const LevelIcon = meta.icon;
           const count = spinsByLevel?.[n] ?? null;
@@ -237,11 +238,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           >
             <div className={styles.levelTop}>
               <span className={styles.levelIcon}><LevelIcon size={19}/></span>
-              <span className={styles.levelStatus}>{Number(count || 0) > 0 ? "DISPONIBLE" : level === n ? "EXPLORANDO" : "SIN GIROS"}</span>
+              <span className={styles.levelStatus}>{n === 4 ? (Number(count || 0) > 0 ? "PROMO ACTIVA" : "SOLO PROMO") : Number(count || 0) > 0 ? "DISPONIBLE" : level === n ? "EXPLORANDO" : "SIN GIROS"}</span>
             </div>
             <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
-            <div className={styles.levelMain}><strong>Nivel {n}</strong><b>{count ?? "—"} <small>giros</small></b></div>
-            <span>{n === 1 ? "Nivel base asignado por la promoción" : n === 2 ? "Nivel mejorado asignado por la promoción" : "Nivel premium asignado por la promoción"}</span>
+            <div className={styles.levelMain}><strong>{n === 4 ? "Nivel Especial" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
+            <span>{n === 1 ? "Nivel base de la ruleta clásica" : n === 2 ? "Nivel mejorado de la ruleta clásica" : n === 3 ? "Nivel premium de la ruleta clásica" : "Disponible exclusivamente con la promoción que active Administración"}</span>
             <small className={styles.levelCap}>{meta.cap}</small>
           </button>;
         })}
@@ -250,9 +251,9 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
 
       {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div className={styles.arena}>
-        <div className={styles.stage}>
+        <div className={styles.stage} data-special={level === 4 ? "true" : "false"}>
           <div className={styles.stageHead}>
-            <span className={styles.stageLabel}>RULETA NIVEL {level} · {prizes.length} PREMIOS</span>
+            <span className={styles.stageLabel}>{level === 4 ? `RULETA ESPECIAL · TODOS LOS PREMIOS · ${prizes.length}` : `RULETA NIVEL ${level} · ${prizes.length} PREMIOS`}</span>
             <small>{selectedMeta.name}</small>
           </div>
           <div className={styles.wheelBox} data-level={level}>
@@ -262,8 +263,9 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               {prizes.map((p, i) => {
                 const angle = (i + .5) * 2 * Math.PI / prizes.length;
                 const visual = wheelValue(p);
+                const radius = level === 4 ? 37 : 34;
                 return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id} data-special={p.special} data-rarity={p.rarity || "common"}
-                  style={{ left: (50 + 34 * Math.sin(angle)) + "%", top: (50 - 34 * Math.cos(angle)) + "%", transform: "translate(-50%,-50%) rotate(" + (-rotation) + "deg)" }}>
+                  style={{ left: (50 + radius * Math.sin(angle)) + "%", top: (50 - radius * Math.cos(angle)) + "%", transform: "translate(-50%,-50%) rotate(" + (-rotation) + "deg)" }}>
                   <RewardGlyph type={p.reward_type} size={18}/><b>{visual.main}</b><small>{visual.sub}</small>
                 </span>;
               })}
@@ -273,33 +275,33 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               className={styles.core}
               disabled={busy || prizes.length === 0 || (!pending && !available)}
               onClick={() => void spin()}
-              aria-label={prizes.length === 0 ? "No hay premios configurados para este nivel" : pending ? "Comprobar giro pendiente" : available ? `Girar ruleta Nivel ${level}` : "No hay giros disponibles"}
+              aria-label={prizes.length === 0 ? "No hay premios configurados para este nivel" : pending ? "Comprobar giro pendiente" : available ? (level === 4 ? "Girar Super Ruleta Nivel Especial" : `Girar ruleta Nivel ${level}`) : "No hay giros disponibles"}
             >
               <RotateCw size={25}/>
               <strong>{busy ? "…" : prizes.length === 0 ? "SIN PREMIOS" : pending ? "COMPROBAR" : available ? "GIRAR" : "SIN GIROS"}</strong>
-              <small>NIVEL {level}</small>
+              <small>{level === 4 ? "NIVEL ESPECIAL" : `NIVEL ${level}`}</small>
             </button>
           </div>
           <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina y acredita de forma segura antes de mostrar el resultado.</small>
         </div>
 
-        <aside className={styles.controls}>
+        <aside className={styles.controls} data-special={level === 4 ? "true" : "false"}>
           <div className={styles.controlsHead}>
             <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
-            <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> Nivel {level}</span>
+            <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> {level === 4 ? "Nivel Especial" : `Nivel ${level}`}</span>
           </div>
           <h3>{available ? "Tu próximo premio te espera" : "Desbloquea tu próximo giro"}</h3>
           <p>Cada paquete acredita los giros indicados al confirmar el pago. Puedes acumularlos y cada premio consume solo uno.</p>
-          <div className={styles.prizeTitle}><Gift size={16}/><span>Premios de este nivel</span><b>{prizes.length}</b></div>
+          <div className={styles.prizeTitle}><Gift size={16}/><span>{level === 4 ? "Premios del Nivel Especial · todos incluidos" : "Premios de este nivel"}</span><b>{prizes.length}</b></div>
           <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special} data-rarity={p.rarity || "common"}>
             <span className={styles.prizeIcon}><RewardGlyph type={p.reward_type} size={18}/></span>
             <span>{prizeLabel(p)}<small>{rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel]}{p.special ? " · PREMIO FUERTE" : ""}</small></span>
             {p.special && <Star size={14} className={styles.specialStar}/>} 
           </li>)}</ul>
-          <button type="button" className={styles.spin} disabled={busy || prizes.length === 0 || (!pending && !available)} onClick={() => void spin()}>
-            <RotateCw size={20}/>{busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : "Girar · Nivel " + level}
+          <button type="button" className={styles.spin} data-special={level === 4 ? "true" : "false"} disabled={busy || prizes.length === 0 || (!pending && !available)} onClick={() => void spin()}>
+            <RotateCw size={20}/>{busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : level === 4 ? "GIRAR · NIVEL ESPECIAL" : "Girar · Nivel " + level}
           </button>
-          {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">Ver consultas · Desbloquear un giro <ArrowRight size={17}/></Link>}
+          {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">{level === 4 ? "Ver promo activa · Desbloquear Nivel Especial" : "Ver consultas · Desbloquear un giro"} <ArrowRight size={17}/></Link>}
           <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
         </aside>
       </div>}
@@ -361,7 +363,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         <div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIAL</span><h3>Tus últimos premios</h3></div><Gift size={18}/></div>
         <div className={styles.historyList}>{summary.history.slice(0,8).map((item)=><article key={item.spin_id} data-rarity={item.rarity || "common"}>
           <span className={styles.historyIcon}><RewardGlyph type={item.reward_type} size={17}/></span>
-          <div><strong>{item.reward_label}</strong><small>Nivel {item.level} · {new Date(item.used_at || item.created_at).toLocaleString("es-ES")}</small></div>
+          <div><strong>{item.reward_label}</strong><small>{item.level === 4 ? "Nivel Especial" : `Nivel ${item.level}`} · {new Date(item.used_at || item.created_at).toLocaleString("es-ES")}</small></div>
           <span className={styles.historyRarity}>{rarityLabel[(item.rarity || "common") as keyof typeof rarityLabel]}</span>
         </article>)}</div>
       </section> : null}

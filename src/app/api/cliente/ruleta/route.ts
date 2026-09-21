@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   try {
     const gate = await rouletteClient(req);
     const body = await req.json().catch(() => null);
-    if (![1, 2, 3].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
+    if (![1, 2, 3, 4].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
       return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
 

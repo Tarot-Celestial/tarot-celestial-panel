@@ -208,7 +208,7 @@ export async function POST(req: Request) {
       const name = cleanText(body?.name, 140);
       const weight = Number(body?.weight || 0);
       const rewardValue = Number(body?.reward_value || 0);
-      if (!campaignId || ![1,2,3].includes(level) || !name || !rewardTypes.has(rewardType) || !rarities.has(rarity) || !fulfillmentModes.has(fulfillmentMode) || !Number.isFinite(weight) || weight < 0 || !Number.isFinite(rewardValue) || rewardValue < 0) {
+      if (!campaignId || ![1,2,3,4].includes(level) || !name || !rewardTypes.has(rewardType) || !rarities.has(rarity) || !fulfillmentModes.has(fulfillmentMode) || !Number.isFinite(weight) || weight < 0 || !Number.isFinite(rewardValue) || rewardValue < 0) {
         return NextResponse.json({ ok: false, error: "PREMIO_INVALIDO" }, { status: 400 });
       }
       const row = {

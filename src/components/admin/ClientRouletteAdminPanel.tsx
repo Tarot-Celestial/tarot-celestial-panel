@@ -37,7 +37,7 @@ export default function ClientRouletteAdminPanel() {
   const [busy,setBusy] = useState("");
   const [message,setMessage] = useState("");
   const [selectedCampaignId,setSelectedCampaignId] = useState("");
-  const [level,setLevel] = useState<1|2|3>(1);
+  const [level,setLevel] = useState<1|2|3|4>(1);
   const [view,setView] = useState<"rewards"|"history"|"benefits">("rewards");
   const [campaignForm,setCampaignForm] = useState<any>(null);
   const [editingReward,setEditingReward] = useState<any>(null);
@@ -157,7 +157,7 @@ export default function ClientRouletteAdminPanel() {
         <div><span className={styles.eyebrow}>CATÁLOGO CONFIGURABLE</span><h2>Premios de la Ruleta Ultra</h2></div>
         <button className={styles.gold} disabled={!selectedCampaignId} onClick={()=>setEditingReward(blankReward())}><Plus/> Añadir premio</button>
       </div>
-      <div className={styles.levelTabs}>{([1,2,3] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>NIVEL {n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
+      <div className={styles.levelTabs}>{([1,2,3,4] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===4?"NIVEL ESPECIAL":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
       <div className={styles.levelSummary}><span>Peso activo total <b>{totalWeight.toFixed(2)}</b></span><span>Probabilidad mostrada = peso / total</span></div>
       <div className={styles.rewardList}>{rewards.length?rewards.map((r:any)=><article className={styles.reward} key={r.id} data-rarity={r.rarity} data-disabled={!r.is_active}>
         <div className={styles.rewardRarity}><span>{rarityNames[r.rarity]||r.rarity}</span>{r.special?<b>PREMIO FUERTE</b>:null}</div>
@@ -192,7 +192,7 @@ function RewardModal({reward,busy,onClose,onSave}:{reward:any;busy:string;onClos
       <label>Rareza<select value={form.rarity} onChange={e=>setForm({...form,rarity:e.target.value})}>{rarityOrder.map(r=><option value={r} key={r}>{rarityNames[r]}</option>)}</select></label>
       <label>Valor<input type="number" min="0" step="1" value={form.reward_value} onChange={e=>setForm({...form,reward_value:Number(e.target.value)})}/></label>
       <label>Peso<input type="number" min="0" step="0.1" value={form.weight} onChange={e=>setForm({...form,weight:Number(e.target.value)})}/></label>
-      <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option></select></label>
+      <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Nivel Especial</option></select></label>
       <label>Entrega<select value={form.fulfillment_mode} onChange={e=>setForm({...form,fulfillment_mode:e.target.value})}><option value="immediate">Inmediata</option><option value="temporary">Temporal</option><option value="manual">Manual supervisada</option><option value="claim">Reclamación</option><option value="scheduled">Programada</option></select></label>
       <label className={styles.span2}>Descripción<textarea rows={2} value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
       {form.reward_type==="rank"?<><label>Rango<select value={metadata.rank||"plata"} onChange={e=>setForm({...form,metadata:{...metadata,rank:e.target.value}})}><option value="plata">Plata</option><option value="oro">Oro</option></select></label><label>Duración días <small>(0 = permanente)</small><input type="number" min="0" value={metadata.duration_days??30} onChange={e=>setForm({...form,metadata:{...metadata,duration_days:Number(e.target.value)}})}/></label></>:null}

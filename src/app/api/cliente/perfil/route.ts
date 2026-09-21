@@ -45,7 +45,7 @@ function rouletteTotal(payload: any): number {
   const source = payload?.wallet || payload?.summary || payload || {};
   const explicit = Number(source.available_spins);
   if (Number.isFinite(explicit)) return Math.max(0, explicit);
-  return [1, 2, 3].reduce((total, level) => total + Math.max(0, Number(source[`level_${level}_spins`] || 0)), 0);
+  return [1, 2, 3, 4].reduce((total, level) => total + Math.max(0, Number(source[`level_${level}_spins`] || 0)), 0);
 }
 
 export async function GET(req: Request) {
