@@ -396,3 +396,500 @@
   border-color: #ffffff24;
   background: #ffffff05;
 }
+
+/* ========================================================================== */
+/* Panel Tarotista · Centro de recompensas                                    */
+/* ========================================================================== */
+.rewardCenter {
+  --reward-bg: #08060f;
+  --reward-panel: rgba(18, 13, 28, 0.93);
+  --reward-panel-2: rgba(24, 16, 38, 0.94);
+  --reward-violet: #9868ff;
+  --reward-violet-soft: #c1a5ff;
+  --reward-gold: #f0c96f;
+  --reward-gold-strong: #ffd786;
+  --reward-green: #52e3a1;
+  --reward-magenta: #ef5aa1;
+  --reward-blue: #69a9ff;
+  --reward-line: rgba(218, 187, 255, 0.14);
+  position: relative;
+  isolation: isolate;
+  gap: 18px;
+}
+.rewardCenter::before,
+.rewardCenter::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+  z-index: -1;
+  filter: blur(14px);
+  opacity: 0.72;
+}
+.rewardCenter::before {
+  width: 520px;
+  height: 520px;
+  right: -130px;
+  top: 150px;
+  background: radial-gradient(circle, rgba(113, 55, 211, 0.16), transparent 67%);
+}
+.rewardCenter::after {
+  width: 430px;
+  height: 430px;
+  left: 22%;
+  bottom: -220px;
+  background: radial-gradient(circle, rgba(219, 170, 86, 0.1), transparent 68%);
+}
+.rewardCenter h1,
+.rewardCenter h2,
+.rewardCenter h3,
+.rewardCenter p {
+  margin-top: 0;
+}
+.rewardHero {
+  position: relative;
+  min-height: 214px;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  align-items: center;
+  gap: 28px;
+  padding: 30px 34px;
+  border: 1px solid rgba(230, 194, 119, 0.22);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 81% 42%, rgba(134, 73, 245, 0.2), transparent 30%),
+    radial-gradient(circle at 7% 0%, rgba(226, 179, 86, 0.14), transparent 34%),
+    linear-gradient(122deg, rgba(30, 20, 39, 0.98), rgba(10, 8, 18, 0.98) 58%, rgba(20, 11, 36, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.035), 0 22px 52px rgba(0,0,0,.24);
+}
+.rewardHero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .21;
+  background-image:
+    radial-gradient(circle at 12% 22%, rgba(255,255,255,.62) 0 1px, transparent 1.3px),
+    radial-gradient(circle at 72% 18%, rgba(255,214,130,.65) 0 1px, transparent 1.3px),
+    radial-gradient(circle at 56% 73%, rgba(187,147,255,.55) 0 1px, transparent 1.2px),
+    radial-gradient(circle at 91% 78%, rgba(255,255,255,.48) 0 1px, transparent 1.2px);
+  background-size: 170px 150px, 210px 190px, 160px 210px, 230px 170px;
+}
+.rewardHeroCopy {
+  position: relative;
+  z-index: 2;
+  max-width: 710px;
+}
+.rewardEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--reward-gold);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+.rewardHero h1 {
+  margin: 9px 0 7px;
+  font-size: clamp(29px, 3vw, 43px);
+  line-height: 1.02;
+  letter-spacing: -.035em;
+  color: #fffaf3;
+  text-shadow: 0 0 30px rgba(165, 107, 255, .11);
+}
+.rewardHeroCopy > p {
+  max-width: 650px;
+  margin-bottom: 18px;
+  color: #c7bdcf;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.periodPill {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(240, 201, 111, .23);
+  border-radius: 999px;
+  background: rgba(240, 201, 111, .065);
+  color: #c9bed0;
+  font-size: 10px;
+}
+.periodPill strong {
+  color: #f6d88f;
+  font-size: 11px;
+}
+.heroRewardArt {
+  position: relative;
+  z-index: 2;
+  align-self: stretch;
+  min-height: 150px;
+  display: grid;
+  place-items: center;
+}
+.heroRewardArt::before {
+  content: "";
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(151, 93, 255, .3), rgba(104, 48, 190, .08) 42%, transparent 68%);
+  filter: blur(4px);
+}
+.heroOrbitOne,
+.heroOrbitTwo {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid rgba(242, 205, 126, .25);
+  transform: rotate(-19deg);
+}
+.heroOrbitOne { width: 190px; height: 72px; }
+.heroOrbitTwo { width: 145px; height: 196px; transform: rotate(39deg); border-color: rgba(173, 123, 255, .22); }
+.heroGem,
+.heroCoin,
+.heroStar {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 220, 148, .3);
+  color: var(--reward-gold-strong);
+  background: linear-gradient(145deg, rgba(85, 50, 137, .88), rgba(25, 14, 42, .95));
+  box-shadow: 0 0 30px rgba(158, 92, 255, .24), inset 0 0 22px rgba(255, 214, 132, .07);
+}
+.heroGem { width: 90px; height: 90px; border-radius: 28px; transform: rotate(-8deg); }
+.heroGem svg { transform: rotate(8deg); }
+.heroCoin { width: 54px; height: 54px; border-radius: 50%; right: 30px; top: 33px; color: #ffe49f; }
+.heroStar { width: 42px; height: 42px; border-radius: 15px; left: 35px; bottom: 29px; color: #d9b8ff; }
+.heroRewardArt small {
+  position: absolute;
+  bottom: 4px;
+  width: 100%;
+  text-align: center;
+  color: rgba(220, 207, 231, .62);
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+.rewardRefresh {
+  position: absolute;
+  z-index: 5;
+  top: 18px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-color: rgba(255,255,255,.14) !important;
+  background: rgba(10,8,16,.5) !important;
+  backdrop-filter: blur(8px);
+}
+.rewardRefresh:hover { border-color: rgba(240, 201, 111, .52) !important; color: #f3d58e !important; }
+.spinning { animation: rewardSpin .85s linear infinite; }
+@keyframes rewardSpin { to { transform: rotate(360deg); } }
+.rewardLoading {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+.rewardLoading span {
+  height: 132px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,.08);
+  background: linear-gradient(100deg, rgba(255,255,255,.035), rgba(255,255,255,.075), rgba(255,255,255,.035));
+  background-size: 220% 100%;
+  animation: rewardShimmer 1.2s linear infinite;
+}
+@keyframes rewardShimmer { to { background-position: -220% 0; } }
+.rewardSummary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.rewardKpi {
+  position: relative;
+  overflow: hidden;
+  min-height: 128px;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+  border: 1px solid var(--reward-line);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(20, 15, 29, .98), rgba(11, 9, 17, .98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 15px 36px rgba(0,0,0,.14);
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.rewardKpi::after {
+  content: "";
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  right: -68px;
+  top: -76px;
+  opacity: .52;
+  filter: blur(3px);
+}
+.rewardKpi:hover { transform: translateY(-2px); }
+.rewardKpiGold { border-color: rgba(240, 201, 111, .23); }
+.rewardKpiGold::after { background: radial-gradient(circle, rgba(236, 188, 82, .2), transparent 67%); }
+.rewardKpiViolet { border-color: rgba(152, 104, 255, .23); }
+.rewardKpiViolet::after { background: radial-gradient(circle, rgba(142, 80, 255, .23), transparent 67%); }
+.rewardKpiMagenta { border-color: rgba(239, 90, 161, .22); }
+.rewardKpiMagenta::after { background: radial-gradient(circle, rgba(239, 90, 161, .19), transparent 67%); }
+.rewardKpiIcon {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  color: #f4d27d;
+  border: 1px solid rgba(240,201,111,.24);
+  background: radial-gradient(circle at 35% 25%, rgba(255,226,153,.15), rgba(92,62,35,.09) 58%, rgba(255,255,255,.02));
+  box-shadow: 0 0 24px rgba(240,201,111,.08);
+}
+.rewardKpiViolet .rewardKpiIcon { color: #bd9aff; border-color: rgba(152,104,255,.3); background: rgba(121,71,210,.12); box-shadow: 0 0 25px rgba(137,79,245,.12); }
+.rewardKpiMagenta .rewardKpiIcon { color: #ff8dbe; border-color: rgba(239,90,161,.28); background: rgba(207,56,128,.1); box-shadow: 0 0 25px rgba(239,90,161,.1); }
+.rewardKpi span,
+.rewardKpi small { display: block; }
+.rewardKpi span { color: #bdb2c8; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.rewardKpi strong { display: block; margin: 5px 0 3px; color: #fff7e7; font-size: clamp(27px, 2.2vw, 35px); line-height: 1; font-variant-numeric: tabular-nums; }
+.rewardKpi small { color: #968aa1; font-size: 10px; line-height: 1.45; }
+.economicPanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(250px, .65fr);
+  gap: 14px;
+}
+.economicMain,
+.rankingPanel,
+.challengesSection,
+.capturePanel,
+.currentRankingPanel,
+.unlockSection,
+.confirmedSection {
+  border: 1px solid var(--reward-line);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(120,70,207,.09), transparent 38%),
+    linear-gradient(145deg, rgba(19,14,29,.98), rgba(10,8,16,.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 18px 42px rgba(0,0,0,.14);
+}
+.economicMain { padding: 22px; }
+.sectionTitleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.sectionTitleRow h2 { margin: 5px 0 0; color: #faf5ff; font-size: 20px; letter-spacing: -.02em; }
+.sectionTitleRow p { margin: 6px 0 0; color: #a99db5; font-size: 11px; line-height: 1.55; }
+.progressPercent {
+  min-width: 66px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(240,201,111,.22);
+  background: rgba(240,201,111,.07);
+  color: #f3d380;
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.moneyProgressCopy {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 24px 0 12px;
+  flex-wrap: wrap;
+}
+.moneyProgressCopy strong { color: #fff4d6; font-size: 30px; font-variant-numeric: tabular-nums; }
+.moneyProgressCopy span { color: #a99db5; font-size: 11px; }
+.bigRewardProgress,
+.challengeProgress {
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(255,255,255,.065);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.45);
+}
+.bigRewardProgress { height: 12px; }
+.challengeProgress { height: 8px; }
+.bigRewardProgress > span,
+.challengeProgress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8752ef 0%, #c58dff 46%, #f1c86d 100%);
+  box-shadow: 0 0 16px rgba(197,141,255,.38), 0 0 18px rgba(241,200,109,.2);
+  transition: width .65s cubic-bezier(.2,.7,.2,1);
+}
+.progressFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 11px;
+}
+.progressFooter > span { color: #e7d7fa; font-size: 11px; font-weight: 700; }
+.progressFooter small { max-width: 440px; text-align: right; color: #786f82; font-size: 9px; line-height: 1.5; }
+.rankingPanel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 20px;
+}
+.rankingPanel::before {
+  content: "";
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  top: -105px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(238,187,77,.18), transparent 68%);
+}
+.rankingIcon {
+  position: relative;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  color: #f6cf6d;
+  border: 1px solid rgba(240,201,111,.25);
+  background: rgba(240,201,111,.07);
+  box-shadow: 0 0 24px rgba(240,201,111,.1);
+}
+.rankingPanel > span { margin-top: 11px; color: #9f94aa; font-size: 9px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.rankingPanel > strong { margin-top: 5px; color: #fff5d6; font-size: 42px; line-height: 1; }
+.rankingPanel > p { margin: 5px 0 14px; color: #b7abba; font-size: 10px; }
+.rankingPanel > small { margin-top: 11px; color: #776f80; font-size: 9px; line-height: 1.45; }
+.rankMiniList { width: 100%; display: grid; gap: 6px; }
+.rankMiniList > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 28px; padding: 0 9px; border: 1px solid rgba(255,255,255,.065); border-radius: 8px; background: rgba(255,255,255,.022); }
+.rankMiniList span { color: #968a9f; font-size: 9px; }
+.rankMiniList b { color: #e7d5ff; font-size: 10px; }
+.challengesSection { padding: 22px; }
+.challengeCount { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 0 10px; border: 1px solid rgba(152,104,255,.25); border-radius: 999px; color: #d7c1ff; background: rgba(134,77,230,.08); font-size: 10px; font-weight: 700; }
+.challengeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.challengeCard {
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 274px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 17px;
+  border: 1px solid rgba(152,104,255,.17);
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 96% 0%, rgba(139,84,235,.12), transparent 34%),
+    linear-gradient(145deg, rgba(21,15,33,.98), rgba(10,8,17,.98));
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.challengeCard:hover { transform: translateY(-2px); border-color: rgba(176,126,255,.35); box-shadow: 0 17px 35px rgba(0,0,0,.18), 0 0 24px rgba(137,79,245,.07); }
+.challengeActive { --challenge-accent: #9868ff; }
+.challengeAlmost { --challenge-accent: #f0c96f; border-color: rgba(240,201,111,.32); box-shadow: 0 0 28px rgba(240,201,111,.07); }
+.challengeComplete { --challenge-accent: #52e3a1; border-color: rgba(82,227,161,.29); background: radial-gradient(circle at 100% 0%, rgba(82,227,161,.12), transparent 34%), linear-gradient(145deg, rgba(16,29,26,.98), rgba(9,14,14,.98)); }
+.challengeSuppressed { --challenge-accent: #807589; opacity: .74; border-style: dashed; }
+.challengeTopRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.challengeIcon { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 13px; color: var(--challenge-accent); border: 1px solid color-mix(in srgb, var(--challenge-accent) 35%, transparent); background: color-mix(in srgb, var(--challenge-accent) 9%, transparent); box-shadow: 0 0 20px color-mix(in srgb, var(--challenge-accent) 10%, transparent); }
+.challengeStatus { max-width: 72%; padding: 5px 8px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--challenge-accent) 28%, transparent); background: color-mix(in srgb, var(--challenge-accent) 7%, transparent); color: var(--challenge-accent); font-size: 8px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.challengeCopy { min-height: 58px; }
+.challengeCopy h3 { margin-bottom: 5px; color: #faf5ff; font-size: 15px; }
+.challengeCopy p { color: #94899f; font-size: 10px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.challengeNumbers { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
+.challengeNumbers > div:first-child strong { color: #fff7e7; font-size: 25px; }
+.challengeNumbers > div:first-child > span { color: #8f8399; font-size: 13px; }
+.challengeNumbers small { display: block; margin-top: 3px; color: #766d7f; font-size: 8px; line-height: 1.3; }
+.challengeReward { text-align: right; }
+.challengeReward > span { display: block; color: #9c90a7; font-size: 8px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
+.challengeReward > strong { display: block; margin-top: 3px; color: #f5d27d; font-size: 18px; white-space: nowrap; }
+.challengeFooter { margin-top: auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.challengeFooter > strong { color: var(--challenge-accent); font-size: 9px; line-height: 1.4; }
+.challengeFooter > span { display: inline-flex; align-items: center; gap: 4px; color: #756c7d; font-size: 8px; white-space: nowrap; }
+.emptyRewards { min-height: 100px; display: flex; align-items: center; gap: 14px; margin-top: 17px; padding: 20px; border: 1px dashed rgba(255,255,255,.11); border-radius: 15px; color: #8f6bc8; background: rgba(255,255,255,.018); }
+.emptyRewards strong { display: block; color: #e7def0; font-size: 13px; }
+.emptyRewards p { margin: 4px 0 0; color: #867b90; font-size: 10px; }
+.secondaryRewardsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.capturePanel,
+.currentRankingPanel { padding: 21px; }
+.captureMedal { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 14px; color: #f1c766; border: 1px solid rgba(240,201,111,.22); background: rgba(240,201,111,.065); }
+.captureValue { display: flex; align-items: baseline; gap: 8px; margin: 21px 0 13px; }
+.captureValue strong { color: #fff5d8; font-size: 38px; line-height: 1; }
+.captureValue span { color: #93889c; font-size: 10px; }
+.captureRate,
+.captureNext { display: flex; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid rgba(255,255,255,.075); border-radius: 11px; background: rgba(255,255,255,.025); }
+.captureRate { margin-bottom: 8px; }
+.captureNext { margin: 8px 0 12px; }
+.captureRate span,
+.captureNext span { color: #8e8298; font-size: 9px; }
+.captureRate strong,
+.captureNext strong { text-align: right; color: #ead29b; font-size: 10px; }
+.capturePanel > small { display: block; margin-top: 10px; color: #756c7f; font-size: 9px; }
+.currentRankingPanel > p { margin: 13px 0 17px; color: #918598; font-size: 10px; }
+.rankingRows { display: grid; gap: 7px; }
+.rankingRows > div { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; min-height: 38px; padding: 0 11px; border: 1px solid rgba(255,255,255,.07); border-radius: 10px; background: rgba(255,255,255,.022); }
+.rankingRows span { color: #9d91a7; font-size: 10px; }
+.rankingRows b { color: #d7c2ff; font-size: 10px; }
+.rankingRows strong { min-width: 66px; text-align: right; color: #efd28b; font-size: 11px; }
+.currentRankingPanel > small { display: block; margin-top: 12px; color: #746b7c; font-size: 9px; }
+.unlockSection { padding: 21px; }
+.unlockGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.unlockCard { position: relative; min-width: 0; display: grid; grid-template-columns: 36px minmax(0,1fr); gap: 10px; align-items: start; padding: 13px; border: 1px solid rgba(255,255,255,.085); border-radius: 14px; background: linear-gradient(145deg, rgba(255,255,255,.027), rgba(255,255,255,.012)); opacity: .8; }
+.unlockIcon { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; color: #af98ce; border: 1px solid rgba(174,143,220,.2); background: rgba(137,91,197,.07); }
+.unlockCard span { display: block; color: #776e80; font-size: 7px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.unlockCard h3 { margin: 3px 0; color: #d9d0df; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unlockCard p { margin: 0; color: #837989; font-size: 8px; line-height: 1.4; }
+.unlockCard > strong { grid-column: 1 / -1; color: #dec68e; font-size: 11px; }
+.unlockLock { position: absolute; right: 10px; bottom: 10px; color: #665d6e; }
+.confirmedSection { padding: 21px; }
+.confirmedAmount { text-align: right; }
+.confirmedAmount span { display: block; color: #897e92; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.confirmedAmount strong { display: block; margin-top: 4px; color: #f2d181; font-size: 20px; }
+.confirmedList { display: grid; gap: 7px; margin-top: 17px; }
+.confirmedRow { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 10px; min-height: 54px; padding: 9px 11px; border: 1px solid rgba(255,255,255,.07); border-radius: 11px; background: rgba(255,255,255,.019); }
+.confirmedIcon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 10px; color: #62d9a3; border: 1px solid rgba(82,227,161,.18); background: rgba(82,227,161,.055); }
+.confirmedRow strong { color: #e7dfea; font-size: 10px; }
+.confirmedRow > strong { color: #efd18a; font-size: 12px; }
+.confirmedRow small { display: block; margin-top: 3px; color: #776e80; font-size: 8px; }
+
+@media (max-width: 1180px) {
+  .rewardHero { grid-template-columns: minmax(0,1fr) 250px; }
+  .challengeGrid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .unlockGrid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+}
+@media (max-width: 900px) {
+  .rewardHero { grid-template-columns: minmax(0,1fr); min-height: 0; }
+  .heroRewardArt { display: none; }
+  .rewardSummary { grid-template-columns: 1fr; }
+  .economicPanel,
+  .secondaryRewardsGrid { grid-template-columns: 1fr; }
+  .progressFooter { flex-direction: column; }
+  .progressFooter small { text-align: left; }
+}
+@media (max-width: 700px) {
+  .rewardHero { padding: 24px 20px; }
+  .rewardRefresh { position: static; width: fit-content; margin-top: 4px; }
+  .challengeGrid,
+  .unlockGrid { grid-template-columns: 1fr; }
+  .challengesSection,
+  .economicMain,
+  .capturePanel,
+  .currentRankingPanel,
+  .unlockSection,
+  .confirmedSection { padding: 17px; }
+  .sectionTitleRow { align-items: flex-start; }
+  .challengeNumbers,
+  .challengeFooter { align-items: flex-start; flex-direction: column; }
+  .challengeReward { text-align: left; }
+  .confirmedRow { grid-template-columns: 34px minmax(0,1fr); }
+  .confirmedRow > strong { grid-column: 2; }
+}
