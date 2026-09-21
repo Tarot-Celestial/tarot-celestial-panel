@@ -27,10 +27,16 @@ export async function GET(req: Request) {
 
     const rows = aggregateRendimientoByTarotista(rendimientoRows, workers);
 
+    const leaderboards = {
+      captadas: sortRanking(rows, "captadas_total"),
+      cliente: sortRanking(rows, "pct_cliente"),
+      repite: sortRanking(rows, "pct_repite"),
+    };
+
     const top = {
-      captadas: sortRanking(rows, "captadas_total").slice(0, 10),
-      cliente: sortRanking(rows, "pct_cliente").slice(0, 10),
-      repite: sortRanking(rows, "pct_repite").slice(0, 10),
+      captadas: leaderboards.captadas.slice(0, 10),
+      cliente: leaderboards.cliente.slice(0, 10),
+      repite: leaderboards.repite.slice(0, 10),
     };
 
     const teams = ['fuego', 'agua'].reduce((acc: any, team) => {
@@ -58,6 +64,7 @@ export async function GET(req: Request) {
       ok: true,
       month,
       top,
+      leaderboards,
       teams,
       my,
       positions: pos,

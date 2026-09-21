@@ -11,6 +11,7 @@ import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDashboard";
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
 import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
+import TarotistaRankingArena from "@/components/tarotista/TarotistaRankingArena";
 import { Activity, AlertTriangle, ArrowRight, BadgeEuro, BellRing, CalendarDays, CheckCircle2, CircleAlert, ClipboardCheck, Clock3, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, PhoneCall, PhoneForwarded, PhoneOff, Radio, ReceiptText, RefreshCw, Search, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
@@ -248,6 +249,7 @@ export default function Tarotista() {
   const [rank, setRank] = useState<any>(null);
   const [msg, setMsg] = useState<string>("");
   const [dataRefreshing, setDataRefreshing] = useState(false);
+  const [rankingRefreshing, setRankingRefreshing] = useState(false);
 
   const [incidents, setIncidents] = useState<any[]>([]);
   const [invoice, setInvoice] = useState<any>(null);
@@ -735,6 +737,29 @@ export default function Tarotista() {
     }
   }
 
+  async function refreshRanking(forMonth?: string, silent = false) {
+    if (!silent) setRankingRefreshing(true);
+    try {
+      const token = await getTokenSafe();
+      if (!token) return;
+      const m = forMonth || month;
+      const res = await fetch(`/api/rankings/monthly?month=${encodeURIComponent(m)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await safeJson(res);
+      if (!json?._ok || !json?.ok) {
+        if (!silent) setMsg(`⚠️ Ranking: ${json?.error || `HTTP ${json?._status}`}`);
+        return;
+      }
+      setRank(json);
+    } catch (error: any) {
+      if (!silent) setMsg(`⚠️ Ranking: ${error?.message || "Error al actualizar"}`);
+    } finally {
+      if (!silent) setRankingRefreshing(false);
+    }
+  }
+
   async function changeAttendanceStatus(action: "connected" | "break" | "bathroom" | "offline") {
     if (action === "offline") {
       await postAttendanceEvent("offline", { action: "check_out" });
@@ -1104,6 +1129,18 @@ export default function Tarotista() {
     const onFocus = () => void refresh(month);
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
+  }, [ok, tab, month]);
+
+  useEffect(() => {
+    if (!ok || tab !== "ranking") return;
+    void refreshRanking(month, true);
+    const onFocus = () => void refreshRanking(month, true);
+    const intervalId = window.setInterval(() => void refreshRanking(month, true), 45_000);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [ok, tab, month]);
 
   useEffect(() => {
@@ -2286,20 +2323,13 @@ export default function Tarotista() {
             )}
 
             {tab === "ranking" && (
-              <div className="tc-card">
-                <div className="tc-title">🏆 Top 3 del mes</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  (Si falta algo, revisamos el endpoint /api/rankings/monthly)
-                </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-grid-3">
-                  <TopCard title="Captadas" items={topCaptadas.map((x: any) => `${x.display_name} (${x.captadas_total})`)} />
-                  <TopCard title="Cliente" items={topCliente.map((x: any) => `${x.display_name} (${Number(x.pct_cliente).toFixed(2)}%)`)} />
-                  <TopCard title="Repite" items={topRepite.map((x: any) => `${x.display_name} (${Number(x.pct_repite).toFixed(2)}%)`)} />
-                </div>
-              </div>
+              <TarotistaRankingArena
+                data={rank}
+                month={month}
+                myWorkerId={myWorkerId}
+                refreshing={rankingRefreshing}
+                onRefresh={() => void refreshRanking(month)}
+              />
             )}
 
             {tab === "equipos" && (
