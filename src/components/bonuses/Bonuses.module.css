@@ -893,3 +893,500 @@
   .confirmedRow { grid-template-columns: 34px minmax(0,1fr); }
   .confirmedRow > strong { grid-column: 2; }
 }
+
+/* =========================================================
+   CENTRO DE RECOMPENSAS V2 · composición más compacta y
+   gamificada. Solo presentación; no altera lógica ni datos.
+   ========================================================= */
+.rewardCenter {
+  gap: 16px;
+}
+
+.rewardSummary {
+  gap: 12px;
+}
+
+.rewardKpi {
+  min-height: 118px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: 19px;
+}
+
+.rewardKpi::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, rgba(255,255,255,.035), transparent 34%, transparent 72%, rgba(255,255,255,.018));
+}
+
+.rewardKpiGold {
+  background:
+    radial-gradient(circle at 10% 50%, rgba(242, 197, 91, .14), transparent 32%),
+    radial-gradient(circle at 96% 0%, rgba(242, 197, 91, .10), transparent 34%),
+    linear-gradient(145deg, rgba(25, 18, 27, .99), rgba(10, 8, 16, .99));
+}
+
+.rewardKpiViolet {
+  background:
+    radial-gradient(circle at 10% 50%, rgba(137, 82, 239, .17), transparent 32%),
+    radial-gradient(circle at 96% 0%, rgba(159, 104, 255, .12), transparent 34%),
+    linear-gradient(145deg, rgba(22, 15, 34, .99), rgba(10, 8, 17, .99));
+}
+
+.rewardKpiMagenta {
+  background:
+    radial-gradient(circle at 10% 50%, rgba(239, 90, 161, .15), transparent 32%),
+    radial-gradient(circle at 96% 0%, rgba(239, 90, 161, .10), transparent 34%),
+    linear-gradient(145deg, rgba(25, 14, 31, .99), rgba(10, 8, 17, .99));
+}
+
+.rewardKpiIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  box-shadow: 0 0 30px rgba(240,201,111,.11), inset 0 0 18px rgba(255,255,255,.025);
+}
+
+.rewardKpi strong {
+  margin: 7px 0 4px;
+  font-size: clamp(31px, 2.55vw, 40px);
+  text-shadow: 0 0 28px rgba(255, 218, 133, .10);
+}
+
+.rewardKpi span {
+  letter-spacing: .11em;
+}
+
+.economicPanel {
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 12px;
+}
+
+.economicMain {
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 95%, rgba(143, 80, 248, .13), transparent 38%),
+    radial-gradient(circle at 92% 0%, rgba(240, 201, 111, .09), transparent 34%),
+    linear-gradient(145deg, rgba(18, 13, 29, .99), rgba(9, 7, 15, .99));
+}
+
+.economicMain::after {
+  content: "";
+  position: absolute;
+  width: 360px;
+  height: 190px;
+  left: -80px;
+  bottom: -125px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(148, 81, 255, .13), transparent 69%);
+}
+
+.progressPercent {
+  min-width: 82px;
+  height: 48px;
+  border-radius: 15px;
+  font-size: 22px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 219, 132, .15), transparent 70%),
+    rgba(240,201,111,.06);
+  box-shadow: 0 0 28px rgba(240,201,111,.07);
+}
+
+.moneyProgressCopy {
+  margin: 26px 0 13px;
+}
+
+.moneyProgressCopy strong {
+  font-size: clamp(34px, 3vw, 44px);
+  line-height: 1;
+}
+
+.moneyProgressCopy span {
+  max-width: 430px;
+  line-height: 1.55;
+}
+
+.bigRewardProgress {
+  height: 16px;
+  border: 1px solid rgba(255,255,255,.035);
+  background: rgba(255,255,255,.052);
+}
+
+.bigRewardProgress > span {
+  position: relative;
+}
+
+.bigRewardProgress > span::after {
+  content: "";
+  position: absolute;
+  inset: 1px 5px auto 5px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.35);
+  filter: blur(.3px);
+}
+
+.progressFooter {
+  position: relative;
+  z-index: 1;
+  margin-top: 14px;
+}
+
+.progressFooter > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(152,104,255,.20);
+  border-radius: 999px;
+  background: rgba(137, 79, 245, .075);
+  color: #e8d8ff;
+}
+
+.rankingPanel {
+  min-height: 100%;
+  padding: 22px 19px;
+  border-color: rgba(240,201,111,.18);
+  background:
+    radial-gradient(circle at 50% 8%, rgba(240,201,111,.15), transparent 30%),
+    radial-gradient(circle at 100% 100%, rgba(127,72,219,.11), transparent 35%),
+    linear-gradient(155deg, rgba(22,16,28,.99), rgba(10,8,16,.99));
+}
+
+.rankingIcon {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 8px;
+  border-radius: 18px;
+  color: #ffd97d;
+  border: 1px solid rgba(240,201,111,.3);
+  background: radial-gradient(circle at 35% 25%, rgba(255,226,153,.18), rgba(240,201,111,.045));
+  box-shadow: 0 0 34px rgba(240,201,111,.11);
+}
+
+.rankingPanel > strong {
+  margin-top: 8px;
+  font-size: 52px;
+  text-shadow: 0 0 24px rgba(240,201,111,.12);
+}
+
+.rankMiniList {
+  margin-top: 4px;
+  gap: 7px;
+}
+
+.rankMiniList > div {
+  min-height: 34px;
+  padding: 0 11px;
+  border-color: rgba(255,255,255,.08);
+  background: linear-gradient(90deg, rgba(255,255,255,.024), rgba(143,80,248,.025));
+}
+
+.rankMiniList b {
+  color: #f4d486;
+  font-size: 11px;
+}
+
+.challengesSection {
+  position: relative;
+  overflow: hidden;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 82%, rgba(132, 72, 231, .14), transparent 34%),
+    radial-gradient(circle at 88% 20%, rgba(240,201,111,.065), transparent 28%),
+    linear-gradient(145deg, rgba(18,13,29,.99), rgba(9,7,15,.99));
+}
+
+.challengesSection::after {
+  content: "";
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  right: -300px;
+  bottom: -330px;
+  border-radius: 50%;
+  border: 1px solid rgba(154,104,255,.08);
+  box-shadow: 0 0 0 46px rgba(154,104,255,.018), 0 0 0 92px rgba(154,104,255,.012);
+  pointer-events: none;
+}
+
+.challengeCount {
+  position: relative;
+  z-index: 2;
+  min-height: 34px;
+  padding: 0 12px;
+  box-shadow: 0 0 22px rgba(137,79,245,.07);
+}
+
+.challengeGrid {
+  position: relative;
+  z-index: 1;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+  margin-top: 20px;
+}
+
+.challengeGridSingle {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.challengeGridDouble {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.challengeCard {
+  min-height: 255px;
+  gap: 14px;
+  padding: 19px;
+  border-radius: 19px;
+  background:
+    radial-gradient(circle at 8% 5%, color-mix(in srgb, var(--challenge-accent, #9868ff) 11%, transparent), transparent 30%),
+    radial-gradient(circle at 96% 0%, rgba(139,84,235,.13), transparent 34%),
+    linear-gradient(145deg, rgba(22,15,34,.99), rgba(9,7,16,.99));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.03), 0 18px 42px rgba(0,0,0,.15);
+}
+
+.challengeGridSingle .challengeCard {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr);
+  grid-template-areas:
+    "top top"
+    "copy numbers"
+    "progress progress"
+    "footer footer";
+  column-gap: 34px;
+  row-gap: 16px;
+  padding: 24px 25px;
+}
+
+.challengeGridSingle .challengeTopRow { grid-area: top; }
+.challengeGridSingle .challengeCopy { grid-area: copy; min-height: 0; align-self: center; }
+.challengeGridSingle .challengeNumbers { grid-area: numbers; align-self: center; }
+.challengeGridSingle .challengeProgressWrap { grid-area: progress; }
+.challengeGridSingle .challengeFooter { grid-area: footer; }
+
+.challengeGridSingle .challengeCopy h3 {
+  margin-bottom: 7px;
+  font-size: clamp(20px, 2vw, 27px);
+  line-height: 1.05;
+}
+
+.challengeGridSingle .challengeCopy p {
+  max-width: 650px;
+  font-size: 11px;
+  -webkit-line-clamp: 3;
+}
+
+.challengeGridSingle .challengeNumbers {
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255,255,255,.07);
+  border-radius: 15px;
+  background: rgba(255,255,255,.024);
+}
+
+.challengeGridSingle .challengeNumbers > div:first-child strong {
+  font-size: 34px;
+}
+
+.challengeGridSingle .challengeReward > strong {
+  font-size: 25px;
+}
+
+.challengeTopRow {
+  min-height: 42px;
+}
+
+.challengeMissionIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.challengeMissionLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #bfa2ef;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+
+.challengeIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 15px;
+}
+
+.challengeStatus {
+  padding: 6px 10px;
+  font-size: 8px;
+}
+
+.challengeCopy {
+  min-height: 52px;
+}
+
+.challengeCopy h3 {
+  color: #fffaf3;
+  font-size: 17px;
+}
+
+.challengeNumbers > div:first-child strong {
+  font-size: 29px;
+}
+
+.challengeReward > strong {
+  font-size: 21px;
+  text-shadow: 0 0 20px rgba(240,201,111,.10);
+}
+
+.challengeProgressWrap {
+  display: grid;
+  grid-template-columns: minmax(0,1fr) 48px;
+  align-items: center;
+  gap: 10px;
+}
+
+.challengeProgress {
+  height: 11px;
+  border: 1px solid rgba(255,255,255,.035);
+}
+
+.challengePct {
+  text-align: right;
+  color: var(--challenge-accent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.challengeFooter {
+  padding-top: 2px;
+}
+
+.challengeFooter > strong {
+  font-size: 10px;
+}
+
+.unlockSection {
+  position: relative;
+  overflow: hidden;
+  padding: 22px 23px;
+  border-color: rgba(240,201,111,.13);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(240,201,111,.08), transparent 32%),
+    radial-gradient(circle at 0% 100%, rgba(131,75,226,.10), transparent 32%),
+    linear-gradient(145deg, rgba(17,13,26,.99), rgba(9,7,14,.99));
+}
+
+.unlockGrid {
+  gap: 12px;
+  margin-top: 17px;
+}
+
+.unlockCard {
+  min-height: 112px;
+  grid-template-columns: 44px minmax(0,1fr);
+  gap: 12px;
+  padding: 15px;
+  border-color: rgba(218,187,255,.11);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(137,79,245,.08), transparent 40%),
+    linear-gradient(145deg, rgba(255,255,255,.031), rgba(255,255,255,.012));
+  opacity: .9;
+  transition: transform .2s ease, border-color .2s ease, opacity .2s ease;
+}
+
+.unlockCard:hover {
+  transform: translateY(-2px);
+  opacity: 1;
+  border-color: rgba(240,201,111,.22);
+}
+
+.unlockIcon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  color: #d7b7ff;
+  box-shadow: 0 0 22px rgba(137,79,245,.07);
+}
+
+.unlockCard h3 {
+  margin: 4px 0 5px;
+  font-size: 12px;
+}
+
+.unlockCard > strong {
+  padding-top: 3px;
+  color: #f0d28c;
+  font-size: 13px;
+}
+
+.secondaryRewardsGrid {
+  gap: 12px;
+}
+
+.capturePanel,
+.currentRankingPanel {
+  padding: 18px;
+}
+
+.captureValue {
+  margin: 15px 0 10px;
+}
+
+.captureValue strong {
+  font-size: 32px;
+}
+
+.confirmedSection {
+  padding: 20px 22px;
+}
+
+@media (max-width: 1180px) {
+  .challengeGridSingle .challengeCard {
+    grid-template-columns: minmax(0, 1fr) minmax(235px, .72fr);
+    column-gap: 20px;
+  }
+}
+
+@media (max-width: 900px) {
+  .economicPanel {
+    grid-template-columns: 1fr;
+  }
+  .rankingPanel {
+    min-height: 0;
+  }
+  .challengeGridSingle .challengeCard {
+    display: flex;
+    min-height: 250px;
+  }
+}
+
+@media (max-width: 700px) {
+  .rewardKpi {
+    grid-template-columns: 50px minmax(0,1fr);
+    min-height: 104px;
+  }
+  .rewardKpiIcon {
+    width: 48px;
+    height: 48px;
+  }
+  .challengeGridDouble {
+    grid-template-columns: 1fr;
+  }
+  .challengeProgressWrap {
+    grid-template-columns: minmax(0,1fr) 42px;
+  }
+}

@@ -391,7 +391,15 @@ export default function TarotistaBonuses({
             </div>
 
             {challenges.length ? (
-              <div className={styles.challengeGrid}>
+              <div
+                className={`${styles.challengeGrid} ${
+                  challenges.length === 1
+                    ? styles.challengeGridSingle
+                    : challenges.length === 2
+                      ? styles.challengeGridDouble
+                      : ""
+                }`}
+              >
                 {challenges.map((item: any) => {
                   const rule = ruleById.get(String(item.rule_id));
                   const maxClaims = Math.max(1, Number(rule?.max_claims || 1));
@@ -430,8 +438,13 @@ export default function TarotistaBonuses({
                   return (
                     <article className={`${styles.challengeCard} ${stateClass}`} key={item.rule_id}>
                       <div className={styles.challengeTopRow}>
-                        <div className={styles.challengeIcon}>
-                          {fullyReached ? <CheckCircle2 size={23} /> : <Target size={23} />}
+                        <div className={styles.challengeMissionIdentity}>
+                          <div className={styles.challengeIcon}>
+                            {fullyReached ? <CheckCircle2 size={23} /> : <Target size={23} />}
+                          </div>
+                          <span className={styles.challengeMissionLabel}>
+                            <Sparkles size={12} /> Misión activa
+                          </span>
                         </div>
                         <span className={styles.challengeStatus}>{status}</span>
                       </div>
@@ -454,15 +467,18 @@ export default function TarotistaBonuses({
                         </div>
                       </div>
 
-                      <div
-                        className={styles.challengeProgress}
-                        role="progressbar"
+                      <div className={styles.challengeProgressWrap}>
+                        <div
+                          className={styles.challengeProgress}
+                          role="progressbar"
                         aria-label={item.name}
                         aria-valuenow={Math.round(visualProgress)}
                         aria-valuemin={0}
-                        aria-valuemax={100}
-                      >
-                        <span style={{ width: `${visualProgress}%` }} />
+                          aria-valuemax={100}
+                        >
+                          <span style={{ width: `${visualProgress}%` }} />
+                        </div>
+                        <strong className={styles.challengePct}>{Math.round(visualProgress)}%</strong>
                       </div>
 
                       <div className={styles.challengeFooter}>
@@ -491,6 +507,35 @@ export default function TarotistaBonuses({
               </div>
             )}
           </section>
+
+          {unlocks.length > 0 && (
+            <section className={styles.unlockSection}>
+              <div className={styles.sectionTitleRow}>
+                <div>
+                  <span className={styles.rewardEyebrow}>Próximas metas</span>
+                  <h2>Lo que puedes desbloquear</h2>
+                  <p>Recompensas reales que ya están configuradas para este periodo.</p>
+                </div>
+                <Lock size={21} />
+              </div>
+              <div className={styles.unlockGrid}>
+                {unlocks.slice(0, 4).map((unlock) => (
+                  <article className={styles.unlockCard} key={unlock.id}>
+                    <div className={styles.unlockIcon}>
+                      {unlock.kind === "tier" ? <Crown size={21} /> : <Trophy size={21} />}
+                    </div>
+                    <div>
+                      <span>{unlock.kind === "tier" ? "Siguiente tramo" : "Premio de ranking"}</span>
+                      <h3>{unlock.title}</h3>
+                      <p>{unlock.condition}</p>
+                    </div>
+                    <strong>{unlock.reward}</strong>
+                    <Lock size={15} className={styles.unlockLock} />
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
 
           <div className={styles.secondaryRewardsGrid}>
             <section className={styles.capturePanel}>
@@ -554,34 +599,7 @@ export default function TarotistaBonuses({
             </section>
           </div>
 
-          {unlocks.length > 0 && (
-            <section className={styles.unlockSection}>
-              <div className={styles.sectionTitleRow}>
-                <div>
-                  <span className={styles.rewardEyebrow}>Próximas metas</span>
-                  <h2>Lo que puedes desbloquear</h2>
-                  <p>Recompensas reales que ya están configuradas para este periodo.</p>
-                </div>
-                <Lock size={21} />
-              </div>
-              <div className={styles.unlockGrid}>
-                {unlocks.slice(0, 4).map((unlock) => (
-                  <article className={styles.unlockCard} key={unlock.id}>
-                    <div className={styles.unlockIcon}>
-                      {unlock.kind === "tier" ? <Crown size={21} /> : <Trophy size={21} />}
-                    </div>
-                    <div>
-                      <span>{unlock.kind === "tier" ? "Siguiente tramo" : "Premio de ranking"}</span>
-                      <h3>{unlock.title}</h3>
-                      <p>{unlock.condition}</p>
-                    </div>
-                    <strong>{unlock.reward}</strong>
-                    <Lock size={15} className={styles.unlockLock} />
-                  </article>
-                ))}
-              </div>
-            </section>
-          )}
+
 
           <section className={styles.confirmedSection}>
             <div className={styles.sectionTitleRow}>
