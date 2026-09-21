@@ -1825,3 +1825,438 @@
   .clientsSkeletonList span,
   .spin { animation: none; }
 }
+
+.teamArenaBoard {
+  display: grid;
+  gap: 18px;
+}
+
+.teamArenaHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.9fr);
+  gap: 18px;
+  padding: 24px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 225, 150, 0.18);
+  background:
+    radial-gradient(circle at top left, rgba(255, 166, 78, 0.18), transparent 30%),
+    radial-gradient(circle at top right, rgba(138, 92, 255, 0.22), transparent 34%),
+    linear-gradient(135deg, rgba(12, 6, 30, 0.96), rgba(30, 18, 64, 0.94));
+  box-shadow: 0 20px 50px rgba(4, 0, 18, 0.44), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.teamArenaCopy {
+  display: grid;
+  gap: 10px;
+}
+
+.teamArenaEyebrow {
+  font-size: 0.76rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #e8c878;
+  font-weight: 800;
+}
+
+.teamArenaCopy h2 {
+  margin: 0;
+  font-size: clamp(1.8rem, 3vw, 2.5rem);
+  line-height: 1.02;
+  color: #fff7ec;
+}
+
+.teamArenaCopy p {
+  margin: 0;
+  color: rgba(242, 233, 255, 0.82);
+  line-height: 1.65;
+  max-width: 62ch;
+}
+
+.teamArenaSummary {
+  display: grid;
+  gap: 12px;
+  align-content: center;
+}
+
+.teamMiniStat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 225, 150, 0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+}
+
+.teamMiniStat span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  color: #ffe6a9;
+  background: linear-gradient(180deg, rgba(255, 221, 139, 0.22), rgba(146, 99, 255, 0.14));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.teamMiniStat small {
+  display: block;
+  color: rgba(224, 214, 242, 0.72);
+  font-size: 0.76rem;
+}
+
+.teamMiniStat strong {
+  color: #fff8ee;
+  font-size: 1rem;
+}
+
+.teamBattleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.teamBattleCard {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 16px;
+  padding: 22px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 225, 150, 0.16);
+  background: linear-gradient(180deg, rgba(16, 10, 33, 0.96), rgba(10, 6, 24, 0.98));
+  box-shadow: 0 22px 50px rgba(5, 0, 16, 0.42), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.teamBattleCard::before {
+  content: "";
+  position: absolute;
+  inset: auto auto -32% -10%;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  filter: blur(22px);
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.teamBattleCard[data-tone="fuego"]::before {
+  background: radial-gradient(circle, rgba(255, 128, 59, 0.65), rgba(255, 128, 59, 0));
+}
+
+.teamBattleCard[data-tone="agua"]::before {
+  background: radial-gradient(circle, rgba(61, 180, 255, 0.55), rgba(61, 180, 255, 0));
+}
+
+.teamBattleCard[data-winner="true"] {
+  border-color: rgba(255, 215, 123, 0.38);
+  box-shadow: 0 26px 60px rgba(8, 0, 24, 0.5), 0 0 0 1px rgba(255,215,123,0.12), inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.teamBattleHead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.teamBattleTitleWrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.teamBattleTitleWrap small {
+  display: block;
+  color: rgba(224, 214, 242, 0.72);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.teamBattleTitleWrap h3 {
+  margin: 4px 0 0;
+  color: #fff7ec;
+  font-size: 1.5rem;
+}
+
+.teamBattleBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  color: #ffe6a9;
+}
+
+.teamLeaderPill {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 218, 140, 0.26);
+  background: rgba(255, 215, 123, 0.16);
+  color: #fff1cd;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.teamLeaderPill[data-passive="true"] {
+  background: rgba(132, 103, 255, 0.14);
+  border-color: rgba(167, 140, 255, 0.22);
+  color: #ddd1ff;
+}
+
+.teamScoreRow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.teamScoreRow small,
+.teamMetricTile small,
+.teamProgressMeta span,
+.teamDuelLegend,
+.teamRuleList,
+.teamMissionList {
+  color: rgba(225, 216, 241, 0.72);
+}
+
+.teamScoreRow strong {
+  display: block;
+  margin-top: 4px;
+  font-size: clamp(2rem, 3.2vw, 2.7rem);
+  color: #fff4df;
+  line-height: 1;
+}
+
+.teamAuraRing {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+  color: #fff3d7;
+}
+
+.teamAuraRing[data-tone="fuego"] {
+  box-shadow: inset 0 0 0 1px rgba(255, 152, 86, 0.12), 0 0 30px rgba(255, 118, 63, 0.18);
+}
+
+.teamAuraRing[data-tone="agua"] {
+  box-shadow: inset 0 0 0 1px rgba(116, 204, 255, 0.12), 0 0 30px rgba(70, 171, 255, 0.16);
+}
+
+.teamProgressWrap {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 8px;
+}
+
+.teamProgressMeta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.86rem;
+}
+
+.teamProgressMeta b {
+  color: #fff0ce;
+}
+
+.teamProgressTrack,
+.teamDuelTrack {
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.45);
+}
+
+.teamProgressTrack span,
+.teamDuelTrack span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.teamProgressTrack span[data-tone="fuego"],
+.teamDuelTrack span[data-tone="fuego"] {
+  background: linear-gradient(90deg, #ff8c45, #ffc468);
+}
+
+.teamProgressTrack span[data-tone="agua"],
+.teamDuelTrack span[data-tone="agua"] {
+  background: linear-gradient(90deg, #4dc7ff, #79f0ff);
+}
+
+.teamStatsGrid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.teamMetricTile {
+  padding: 14px 15px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+}
+
+.teamMetricTile strong {
+  display: block;
+  margin-top: 6px;
+  color: #ffffff;
+  font-size: 1.25rem;
+}
+
+.teamBottomGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.teamInsightCard {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 225, 150, 0.12);
+  background: linear-gradient(180deg, rgba(18, 12, 38, 0.96), rgba(11, 7, 26, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.teamInsightHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.teamInsightHead span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 14px;
+  color: #ffe6a9;
+  background: linear-gradient(180deg, rgba(255, 221, 139, 0.2), rgba(155, 110, 255, 0.12));
+}
+
+.teamInsightHead small {
+  display: block;
+  color: rgba(224, 214, 242, 0.7);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.teamInsightHead h3 {
+  margin: 4px 0 0;
+  color: #fff8ee;
+  font-size: 1.08rem;
+}
+
+.teamInsightCard p {
+  margin: 0;
+  color: rgba(244, 235, 255, 0.84);
+  line-height: 1.6;
+}
+
+.teamDuelTrack {
+  min-height: 14px;
+}
+
+.teamDuelTrack span + span {
+  margin-left: 4px;
+}
+
+.teamDuelLegend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.92rem;
+}
+
+.teamDuelLegend strong {
+  color: #fff6e7;
+}
+
+.teamRuleList,
+.teamMissionList {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 10px;
+  line-height: 1.55;
+}
+
+.teamRuleList li::marker,
+.teamMissionList li::marker {
+  color: #ffd36c;
+}
+
+.teamMissionList b {
+  color: #fff1c8;
+}
+
+@media (max-width: 1100px) {
+  .teamArenaHero,
+  .teamBottomGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  .teamBattleGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .teamArenaHero,
+  .teamBattleCard,
+  .teamInsightCard {
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .teamStatsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .teamArenaCopy h2 {
+    font-size: 1.65rem;
+  }
+
+  .teamBattleTitleWrap h3 {
+    font-size: 1.24rem;
+  }
+
+  .teamScoreRow {
+    align-items: flex-start;
+  }
+
+  .teamAuraRing {
+    width: 56px;
+    height: 56px;
+  }
+}

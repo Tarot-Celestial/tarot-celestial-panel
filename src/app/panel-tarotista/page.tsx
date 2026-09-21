@@ -12,7 +12,7 @@ import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDa
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
 import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
 import TarotistaRankingArena from "@/components/tarotista/TarotistaRankingArena";
-import { Activity, AlertTriangle, ArrowRight, BadgeEuro, BellRing, CalendarDays, CheckCircle2, CircleAlert, ClipboardCheck, Clock3, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, PhoneCall, PhoneForwarded, PhoneOff, Radio, ReceiptText, RefreshCw, Search, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, ArrowRight, BadgeEuro, BellRing, CalendarDays, CheckCircle2, CircleAlert, ClipboardCheck, Clock3, Crown, Droplets, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, PhoneCall, PhoneForwarded, PhoneOff, Radio, ReceiptText, RefreshCw, Search, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
 const sb = supabaseBrowser();
@@ -2332,40 +2332,134 @@ export default function Tarotista() {
               />
             )}
 
-            {tab === "equipos" && (
-              <div className="tc-card">
-                <div className="tc-title">🔥💧 Competición por equipos</div>
-                <div className="tc-sub" style={{ marginTop: 6 }}>
-                  Score = media %Cliente + media %Repite (por equipo). Ganador: central {canSeeMoney ? "+40€" : ""}.
+            {tab === "equipos" && (() => {
+              const fireScore = Number(rank?.teams?.fuego?.score ?? 0);
+              const waterScore = Number(rank?.teams?.agua?.score ?? 0);
+              const fireCliente = Number(rank?.teams?.fuego?.avg_cliente ?? 0);
+              const waterCliente = Number(rank?.teams?.agua?.avg_cliente ?? 0);
+              const fireRepite = Number(rank?.teams?.fuego?.avg_repite ?? 0);
+              const waterRepite = Number(rank?.teams?.agua?.avg_repite ?? 0);
+              const maxScore = Math.max(fireScore, waterScore, 1);
+              const winnerRaw = String(rank?.teams?.winner || "").toLowerCase();
+              const winnerKey = winnerRaw.includes("fuego") ? "fuego" : winnerRaw.includes("agua") ? "agua" : (fireScore === waterScore ? "empate" : fireScore > waterScore ? "fuego" : "agua");
+              const winnerLabel = winnerKey === "fuego" ? "Equipo Fuego" : winnerKey === "agua" ? "Equipo Agua" : "Empate técnico";
+              const diffScore = Math.abs(fireScore - waterScore);
+              const diffLeader = fireScore === waterScore ? "empate" : fireScore > waterScore ? "fuego" : "agua";
+              return (
+                <div className={panelStyles.teamArenaBoard}>
+                  <section className={panelStyles.teamArenaHero}>
+                    <div className={panelStyles.teamArenaCopy}>
+                      <div className={panelStyles.teamArenaEyebrow}>🔥💧 Arena de equipos · Tarot Celestial</div>
+                      <h2>Compite con tu equipo y siente el ritmo del mes</h2>
+                      <p>
+                        Una vista más divertida y motivadora para seguir la batalla entre <strong>Fuego</strong> y <strong>Agua</strong>.
+                        El score combina el porcentaje medio de <strong>Cliente</strong> y <strong>Repite</strong> de cada equipo.
+                      </p>
+                    </div>
+
+                    <div className={panelStyles.teamArenaSummary}>
+                      <div className={panelStyles.teamMiniStat}>
+                        <span><Trophy size={15} /></span>
+                        <div>
+                          <small>Ganador actual</small>
+                          <strong>{winnerLabel}</strong>
+                        </div>
+                      </div>
+                      <div className={panelStyles.teamMiniStat}>
+                        <span><Sparkles size={15} /></span>
+                        <div>
+                          <small>Premio del mes</small>
+                          <strong>{canSeeMoney ? "+40 € central" : "Bonus del equipo"}</strong>
+                        </div>
+                      </div>
+                      <div className={panelStyles.teamMiniStat}>
+                        <span><CalendarDays size={15} /></span>
+                        <div>
+                          <small>Periodo</small>
+                          <strong>{formatMonthLabel(month)}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className={panelStyles.teamBattleGrid}>
+                    <TeamCard
+                      title="Equipo Fuego"
+                      tone="fuego"
+                      score={fireScore}
+                      avgCliente={fireCliente}
+                      avgRepite={fireRepite}
+                      scoreRatio={(fireScore / maxScore) * 100}
+                      isWinner={winnerKey === "fuego"}
+                    />
+                    <TeamCard
+                      title="Equipo Agua"
+                      tone="agua"
+                      score={waterScore}
+                      avgCliente={waterCliente}
+                      avgRepite={waterRepite}
+                      scoreRatio={(waterScore / maxScore) * 100}
+                      isWinner={winnerKey === "agua"}
+                    />
+                  </section>
+
+                  <section className={panelStyles.teamBottomGrid}>
+                    <article className={panelStyles.teamInsightCard}>
+                      <div className={panelStyles.teamInsightHead}>
+                        <span><Crown size={16} /></span>
+                        <div>
+                          <small>Lectura del marcador</small>
+                          <h3>Pulso actual de la batalla</h3>
+                        </div>
+                      </div>
+                      <p>
+                        {fireScore === waterScore
+                          ? "Ahora mismo hay empate técnico. Cualquier mejora en Cliente o Repite puede romper la igualdad."
+                          : `${diffLeader === "fuego" ? "Fuego" : "Agua"} lidera por ${n2(diffScore)} puntos.`}
+                      </p>
+                      <div className={panelStyles.teamDuelTrack}>
+                        <span style={{ width: `${(fireScore / (fireScore + waterScore || 1)) * 100}%` }} data-tone="fuego" />
+                        <span style={{ width: `${(waterScore / (fireScore + waterScore || 1)) * 100}%` }} data-tone="agua" />
+                      </div>
+                      <div className={panelStyles.teamDuelLegend}>
+                        <strong>Fuego {n2(fireScore)}</strong>
+                        <strong>Agua {n2(waterScore)}</strong>
+                      </div>
+                    </article>
+
+                    <article className={panelStyles.teamInsightCard}>
+                      <div className={panelStyles.teamInsightHead}>
+                        <span><UsersRound size={16} /></span>
+                        <div>
+                          <small>Cómo se gana</small>
+                          <h3>Reglas claras para todo el equipo</h3>
+                        </div>
+                      </div>
+                      <ul className={panelStyles.teamRuleList}>
+                        <li>El score del equipo = media %Cliente + media %Repite.</li>
+                        <li>Cuanto más constantes sean las tarotistas, más fuerte sube el equipo.</li>
+                        <li>La clasificación se recalcula cada vez que se actualizan los datos del mes.</li>
+                      </ul>
+                    </article>
+
+                    <article className={panelStyles.teamInsightCard}>
+                      <div className={panelStyles.teamInsightHead}>
+                        <span><ArrowRight size={16} /></span>
+                        <div>
+                          <small>Tu misión</small>
+                          <h3>Qué hacer para empujar a tu equipo</h3>
+                        </div>
+                      </div>
+                      <ul className={panelStyles.teamMissionList}>
+                        <li><b>Cliente:</b> mejora el porcentaje de minutos cliente válidos.</li>
+                        <li><b>Repite:</b> cuida la recurrencia y calidad para elevar el promedio.</li>
+                        <li><b>Ritmo:</b> mantener constancia durante el mes es lo que gana la batalla.</li>
+                      </ul>
+                    </article>
+                  </section>
                 </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-grid-2">
-                  <TeamCard
-                    title="🔥 Fuego"
-                    score={rank?.teams?.fuego?.score ?? 0}
-                    avgCliente={rank?.teams?.fuego?.avg_cliente ?? 0}
-                    avgRepite={rank?.teams?.fuego?.avg_repite ?? 0}
-                  />
-                  <TeamCard
-                    title="💧 Agua"
-                    score={rank?.teams?.agua?.score ?? 0}
-                    avgCliente={rank?.teams?.agua?.avg_cliente ?? 0}
-                    avgRepite={rank?.teams?.agua?.avg_repite ?? 0}
-                  />
-                </div>
-
-                <div className="tc-hr" />
-
-                <div className="tc-row" style={{ justifyContent: "space-between" }}>
-                  <div className="tc-sub">Ganador actual:</div>
-                  <div className="tc-chip">
-                    <b>{rank?.teams?.winner || "—"}</b>
-                  </div>
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             {tab === "checklist" && (
               <div className="tc-card">
@@ -2689,37 +2783,68 @@ function TopCard({ title, items }: { title: string; items: string[] }) {
 
 function TeamCard({
   title,
+  tone,
   score,
   avgCliente,
   avgRepite,
+  scoreRatio,
+  isWinner,
 }: {
   title: string;
+  tone: "fuego" | "agua";
   score: any;
   avgCliente: any;
   avgRepite: any;
+  scoreRatio: number;
+  isWinner: boolean;
 }) {
   const s = Number(score || 0);
+  const toneLabel = tone === "fuego" ? "fuego" : "agua";
+  const ToneIcon = tone === "fuego" ? Flame : Droplets;
   return (
-    <div className="tc-card" style={{ boxShadow: "none", padding: 14 }}>
-      <div className="tc-title" style={{ fontSize: 14 }}>
-        {title}
+    <article className={panelStyles.teamBattleCard} data-tone={toneLabel} data-winner={isWinner ? "true" : "false"}>
+      <div className={panelStyles.teamBattleHead}>
+        <div className={panelStyles.teamBattleTitleWrap}>
+          <span className={panelStyles.teamBattleBadge}><ToneIcon size={18} /></span>
+          <div>
+            <small>{isWinner ? "Marcando el ritmo" : "En persecución"}</small>
+            <h3>{title}</h3>
+          </div>
+        </div>
+        {isWinner ? <span className={panelStyles.teamLeaderPill}>Líder</span> : <span className={panelStyles.teamLeaderPill} data-passive="true">Objetivo</span>}
       </div>
-      <div className="tc-hr" />
-      <div className="tc-kpis">
-        <div className="tc-row" style={{ justifyContent: "space-between" }}>
-          <span className="tc-sub">Score</span>
-          <b>{s.toFixed(2)}</b>
+
+      <div className={panelStyles.teamScoreRow}>
+        <div>
+          <small>Score total</small>
+          <strong>{s.toFixed(2)}</strong>
         </div>
-        <div className="tc-row" style={{ justifyContent: "space-between" }}>
-          <span className="tc-sub">Media % Cliente</span>
-          <b>{Number(avgCliente || 0).toFixed(2)}%</b>
-        </div>
-        <div className="tc-row" style={{ justifyContent: "space-between" }}>
-          <span className="tc-sub">Media % Repite</span>
-          <b>{Number(avgRepite || 0).toFixed(2)}%</b>
+        <div className={panelStyles.teamAuraRing} data-tone={toneLabel}>
+          <ToneIcon size={22} />
         </div>
       </div>
-    </div>
+
+      <div className={panelStyles.teamProgressWrap}>
+        <div className={panelStyles.teamProgressMeta}>
+          <span>Poder del equipo</span>
+          <b>{Math.max(0, Math.min(100, Number(scoreRatio || 0))).toFixed(0)}%</b>
+        </div>
+        <div className={panelStyles.teamProgressTrack}>
+          <span style={{ width: `${Math.max(6, Math.min(100, Number(scoreRatio || 0)))}%` }} data-tone={toneLabel} />
+        </div>
+      </div>
+
+      <div className={panelStyles.teamStatsGrid}>
+        <div className={panelStyles.teamMetricTile}>
+          <small>Cliente</small>
+          <strong>{Number(avgCliente || 0).toFixed(2)}%</strong>
+        </div>
+        <div className={panelStyles.teamMetricTile}>
+          <small>Repite</small>
+          <strong>{Number(avgRepite || 0).toFixed(2)}%</strong>
+        </div>
+      </div>
+    </article>
   );
 }
 
