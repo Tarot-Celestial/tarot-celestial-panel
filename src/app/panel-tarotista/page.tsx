@@ -46,6 +46,17 @@ function monthKeyNow() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function formatMonthLabel(value: string) {
+  const match = /^(\d{4})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return value || "Periodo actual";
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!year || month < 1 || month > 12) return value || "Periodo actual";
+  const label = new Intl.DateTimeFormat("es-ES", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, 1)));
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function getMonthFromUrl() {
   try {
     const u = new URL(window.location.href);
@@ -395,13 +406,12 @@ export default function Tarotista() {
     label: string;
     value: string;
     hint: string;
-    tone: "violet" | "gold" | "blue" | "red";
+    tone: "violet" | "gold" | "red";
     actionTab: TabKey;
   }> = [
+    { id: "notif-incidents", label: "Avisos pendientes", value: String(incidents.length || 0), hint: incidents.length ? "Revisa la incidencia" : "Sin avisos críticos", tone: "red", actionTab: "notificaciones" },
+    { id: "notif-checklist", label: "Tareas del checklist", value: String(pendingChecklist), hint: pendingChecklist ? "Aún abiertas" : "Todo al día", tone: "gold", actionTab: "checklist" },
     { id: "notif-clients", label: "Seguimiento clientes", value: String(outboundPending), hint: outboundPending ? "Casos por revisar" : "Sin casos pendientes", tone: "violet", actionTab: "clientes" },
-    { id: "notif-checklist", label: "Checklist", value: pendingChecklist ? String(pendingChecklist) : "OK", hint: pendingChecklist ? "Tareas aún abiertas" : "Todo al día", tone: "gold", actionTab: "checklist" },
-    { id: "notif-chat", label: "Chat central", value: String(chatUnread || 0), hint: chatUnread ? "Mensajes sin leer" : "Bandeja tranquila", tone: "blue", actionTab: "chat" },
-    { id: "notif-incidents", label: "Avisos", value: String(incidents.length || 0), hint: incidents.length ? "Incidencias del mes" : "Sin incidencias", tone: "red", actionTab: "facturas" },
   ];
 
   const notificationItems = useMemo(() => {
@@ -1770,80 +1780,101 @@ export default function Tarotista() {
 
             {tab === "resumen" && (
               <div className={panelStyles.summaryPage}>
-                <section className={panelStyles.commandDeck}>
-                  <div className={panelStyles.heroCard}>
-                    <div className={panelStyles.heroTop}>
-                      <div>
-                        <div className={panelStyles.heroKicker}>Centro operativo · tarotista</div>
-                        <h2>Tu panel de control, claro y rápido</h2>
-                        <p>Una vista moderna, tipo videojuego premium, pero fácil de leer para gestionar el turno sin agobios.</p>
-                      </div>
-                      <button className={panelStyles.heroButton} type="button" onClick={() => setTab("notificaciones")}>Ver notificaciones</button>
+                <section className={panelStyles.summaryHero}>
+                  <div className={panelStyles.summaryHeroGlow} aria-hidden="true" />
+                  <div className={panelStyles.summaryHeroCopy}>
+                    <div className={panelStyles.summaryEyebrow}>
+                      <span className={panelStyles.summaryHeroIcon}><Sparkles size={17} /></span>
+                      Centro operativo · tarotista
                     </div>
-
-                    <div className={panelStyles.heroMetrics}>
-                      <div className={panelStyles.heroMetric} data-tone={attOnline ? "green" : "gold"}>
-                        <span>Estado</span>
-                        <strong>{attOnline ? "Conectada" : "Desconectada"}</strong>
-                        <small>{attOnline ? "Lista para recibir actividad" : "Pulsa Conectarme cuando empieces"}</small>
-                      </div>
-                      <div className={panelStyles.heroMetric} data-tone="blue">
-                        <span>Llamadas</span>
-                        <strong>{Number(s?.calls_total || 0)}</strong>
-                        <small>Total del mes registrado</small>
-                      </div>
-                      <div className={panelStyles.heroMetric} data-tone="violet">
-                        <span>Minutos</span>
-                        <strong>{n2(s?.minutes_total || 0)}</strong>
-                        <small>Minutos acumulados</small>
-                      </div>
-                      <div className={panelStyles.heroMetric} data-tone="gold">
-                        <span>Captadas</span>
-                        <strong>{captadas}</strong>
-                        <small>{tier.label}</small>
-                      </div>
-                    </div>
-
-                    <div className={panelStyles.heroFooter}>
-                      <button className={panelStyles.softButton} type="button" onClick={() => setTab("clientes")}>Abrir clientes</button>
-                      <button className={panelStyles.softButton} type="button" onClick={() => setTab("checklist")}>Checklist del turno</button>
-                      <button className={panelStyles.softButton} type="button" onClick={() => setTab("chat")}>Chat con central</button>
+                    <h2>Hola, {String(stats?.worker?.display_name || "Tarotista").trim().split(/\s+/)[0] || "Tarotista"}</h2>
+                    <h3>Tu centro de control</h3>
+                    <p>Todo lo importante de tu turno, en un solo lugar.</p>
+                  </div>
+                  <div className={panelStyles.summaryPeriod}>
+                    <CalendarDays size={17} />
+                    <div>
+                      <small>Periodo seleccionado</small>
+                      <strong>{formatMonthLabel(month)}</strong>
                     </div>
                   </div>
-
-                  <aside className={panelStyles.focusCard}>
-                    <div className={panelStyles.heroKicker}>Radar rápido</div>
-                    <h3>Lo siguiente que debes mirar</h3>
-                    <div className={panelStyles.focusList}>
-                      {summaryFocus.map((item) => (
-                        <button key={item.id} type="button" className={panelStyles.focusItem} data-tone={item.tone} onClick={() => setTab(item.actionTab)}>
-                          <div>
-                            <span>{item.label}</span>
-                            <strong>{item.value}</strong>
-                          </div>
-                          <small>{item.hint}</small>
-                        </button>
-                      ))}
-                    </div>
-                  </aside>
                 </section>
 
-                <div className={panelStyles.overview}>
+                <section className={panelStyles.summaryKpis} aria-label="Indicadores esenciales del turno">
+                  <article className={panelStyles.summaryKpi} data-tone={!attOnline ? "red" : (attStatus === "break" || attStatus === "bathroom") ? "blue" : "green"}>
+                    <div className={panelStyles.summaryKpiTop}>
+                      <span className={panelStyles.summaryKpiIcon}><Radio size={20} /></span>
+                      <span className={panelStyles.summaryKpiLabel}>Estado</span>
+                    </div>
+                    <strong>{attendanceStatusLabel(attStatus, attOnline)}</strong>
+                    <small>{attOnline ? "Estado real del turno" : "Conéctate cuando empieces"}</small>
+                    {!attOnline ? (
+                      <button className={panelStyles.summaryKpiAction} type="button" onClick={() => void changeAttendanceStatus("connected")}>Conectarme</button>
+                    ) : null}
+                  </article>
+
+                  <article className={panelStyles.summaryKpi} data-tone="blue">
+                    <div className={panelStyles.summaryKpiTop}>
+                      <span className={panelStyles.summaryKpiIcon}><PhoneCall size={20} /></span>
+                      <span className={panelStyles.summaryKpiLabel}>Llamadas</span>
+                    </div>
+                    <strong>{Number(s?.calls_total || 0)}</strong>
+                    <small>Total real del mes registrado</small>
+                  </article>
+
+                  <article className={panelStyles.summaryKpi} data-tone="violet">
+                    <div className={panelStyles.summaryKpiTop}>
+                      <span className={panelStyles.summaryKpiIcon}><Clock3 size={20} /></span>
+                      <span className={panelStyles.summaryKpiLabel}>Minutos</span>
+                    </div>
+                    <strong>{n2(s?.minutes_total || 0)}</strong>
+                    <small>Minutos acumulados del periodo</small>
+                  </article>
+
+                  <article className={panelStyles.summaryKpi} data-tone="teal">
+                    <div className={panelStyles.summaryKpiTop}>
+                      <span className={panelStyles.summaryKpiIcon}><UserRound size={20} /></span>
+                      <span className={panelStyles.summaryKpiLabel}>Captadas</span>
+                    </div>
+                    <strong>{captadas}</strong>
+                    <small>{tier.label}</small>
+                  </article>
+                </section>
+
+                <div className={panelStyles.summaryWorkspace}>
                   <div className={panelStyles.coreBoard}>
                     <OperationalInbox
                       mode="tarotista"
                       compact
+                      showSections={false}
                       externalChatUnread={chatUnread}
                       onAction={(action) => {
                         if (action === "chat") setTab("chat");
                         if (action === "calls") setTab("clientes");
-                        if (action === "incidents") setTab("facturas");
+                        if (action === "incidents") setTab("notificaciones");
                         if (action === "attendance") void changeAttendanceStatus("connected");
                       }}
                     />
                   </div>
 
-                  <aside className={panelStyles.rail} aria-label="Rendimiento del mes">
+                  <aside className={panelStyles.summaryRail} aria-label="Resumen operativo">
+                    <section className={panelStyles.focusCard}>
+                      <div className={panelStyles.heroKicker}>Radar operativo</div>
+                      <h3>Lo siguiente que debes mirar</h3>
+                      <p className={panelStyles.focusIntro}>Solo lo que requiere tu atención ahora.</p>
+                      <div className={panelStyles.focusList}>
+                        {summaryFocus.map((item) => (
+                          <button key={item.id} type="button" className={panelStyles.focusItem} data-tone={item.tone} onClick={() => setTab(item.actionTab)}>
+                            <div>
+                              <span>{item.label}</span>
+                              <strong>{item.value}</strong>
+                            </div>
+                            <small>{item.hint}</small>
+                          </button>
+                        ))}
+                      </div>
+                    </section>
+
                     <section className={panelStyles.railCard}>
                       <div className={panelStyles.railKicker}>Rendimiento real · {month}</div>
                       <h3>Tu mes, de un vistazo</h3>
@@ -1863,19 +1894,6 @@ export default function Tarotista() {
                         <div className={panelStyles.track}><span style={{ width: `${clampPct(Number(s?.pct_repite || 0))}%` }} /></div>
                       </div>
                       <button className={panelStyles.railButton} type="button" onClick={() => setTab("ranking")}>Ver estadísticas completas</button>
-                    </section>
-
-                    <section className={panelStyles.railCard}>
-                      <div className={panelStyles.railKicker}>Progreso operativo</div>
-                      <h3>Objetivos y cierre</h3>
-                      <p>Visión simple para cerrar el turno sin perder nada.</p>
-                      <div className={panelStyles.quickList}>
-                        <div className={panelStyles.quickItem}><span>Checklist</span><strong>{clProgress.total ? `${clProgress.completed}/${clProgress.total}` : "Sin tareas"}</strong></div>
-                        <div className={panelStyles.quickItem}><span>Ranking Cliente</span><strong>{posCliente ? `#${posCliente}` : "Sin posición"}</strong></div>
-                        <div className={panelStyles.quickItem}><span>Notificaciones</span><strong>{notificationsCount}</strong></div>
-                        <div className={panelStyles.quickItem}><span>Total estimado</span><strong>{money(totalPreview)}</strong></div>
-                      </div>
-                      <button className={panelStyles.railButton} type="button" onClick={() => setTab("facturas")}>Abrir factura</button>
                     </section>
                   </aside>
                 </div>

@@ -32,6 +32,7 @@ type OperationalInboxProps = {
   onAction?: (action: InboxAction) => void;
   compact?: boolean;
   externalChatUnread?: number;
+  showSections?: boolean;
 };
 
 export type InboxItem = {
@@ -297,7 +298,7 @@ function withSla<T extends InboxItem>(item: T): T {
   };
 }
 
-export default function OperationalInbox({ mode, onAction, compact = false, externalChatUnread = 0 }: OperationalInboxProps) {
+export default function OperationalInbox({ mode, onAction, compact = false, externalChatUnread = 0, showSections = true }: OperationalInboxProps) {
   const ops = useOps();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -831,10 +832,12 @@ const nextSuggestion = nextBestItem
           </article>
         </div>
 
-        <div className={styles.sections}>
-          {renderSection(callsSection, <Phone size={16} />)}
-          {renderSection(incidentsSection, <AlertTriangle size={16} />)}
-        </div>
+        {showSections ? (
+          <div className={styles.sections}>
+            {renderSection(callsSection, <Phone size={16} />)}
+            {renderSection(incidentsSection, <AlertTriangle size={16} />)}
+          </div>
+        ) : null}
         {error ? <div className={styles.error}>{error}</div> : null}
       </section>
     );
