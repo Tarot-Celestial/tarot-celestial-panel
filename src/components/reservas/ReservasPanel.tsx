@@ -56,11 +56,38 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
     const refresh = () => { clearTimeout(timer); timer = setTimeout(() => void load(true),250); };
     const visible = () => { if (document.visibilityState === "visible") refresh(); };
     const channel = sb.channel(`reservas-panel-${mode}-${brand}`).on("postgres_changes", { event:"*",schema:"public",table:"reservas" },refresh).subscribe(status => { if (status === "SUBSCRIBED") refresh(); });
-    const fallback = setInterval(visible,60000);
+    const fallback = setInterval(visible,15000);
     window.addEventListener("focus",visible); window.addEventListener("online",visible); document.addEventListener("visibilitychange",visible);
     const open = (event: Event) => { const id=String((event as CustomEvent).detail?.id || ""); setFilter("todas"); setQ(""); setReader(""); setDay(""); setFocusId(id); refresh(); };
+    const changed = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const id = String(detail?.id || detail?.reserva?.id || "");
+      const reserva = detail?.reserva as Row | undefined;
+      if (reserva?.id) {
+        setRows((prev) => {
+          const index = prev.findIndex((row) => row.id === reserva.id);
+          if (index < 0) return [reserva, ...prev];
+          const next = [...prev];
+          next[index] = { ...next[index], ...reserva };
+          return next;
+        });
+      }
+      if (id) {
+        setFilter("pendientes");
+        setQ("");
+        setReader("");
+        setDay("");
+        setFocusId(id);
+      }
+      refresh();
+    };
     window.addEventListener("reservas-open-item",open);
-    return () => { serial.current++; clearTimeout(timer); clearInterval(fallback); void sb.removeChannel(channel); window.removeEventListener("focus",visible); window.removeEventListener("online",visible); document.removeEventListener("visibilitychange",visible); window.removeEventListener("reservas-open-item",open); };
+    window.addEventListener("tc-reservation-changed", changed as EventListener);
+    const requestedId = new URLSearchParams(window.location.search).get("reserva");
+    if (requestedId) {
+      setFilter("todas"); setQ(""); setReader(""); setDay(""); setFocusId(requestedId);
+    }
+    return () => { serial.current++; clearTimeout(timer); clearInterval(fallback); void sb.removeChannel(channel); window.removeEventListener("focus",visible); window.removeEventListener("online",visible); document.removeEventListener("visibilitychange",visible); window.removeEventListener("reservas-open-item",open); window.removeEventListener("tc-reservation-changed", changed as EventListener); };
   },[load,mode,brand]);
   useEffect(() => { if (focusId) document.getElementById(`reserva-${focusId}`)?.scrollIntoView({block:"center",behavior:"smooth"}); },[focusId,rows]);
   useEffect(() => { if (edit) dialog.current?.showModal(); else dialog.current?.close(); },[edit]);

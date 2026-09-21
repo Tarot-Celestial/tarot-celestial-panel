@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
-import { normalizeBrand, originMatchesBrand, type BrandKey } from "@/lib/server/brand-filter";
+import { filterRowsByBrand, normalizeBrand, originMatchesBrand, type BrandKey } from "@/lib/server/brand-filter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +33,21 @@ type FollowUpRow = {
   workers?: { display_name?: string | null } | Array<{ display_name?: string | null }> | null;
   crm_clientes?: ClientRef | ClientRef[] | null;
 };
+type ReservationRow = {
+  id: string;
+  cliente_id?: string | null;
+  cliente_nombre?: string | null;
+  telefono_normalizado?: string | null;
+  tarotista_id?: string | null;
+  tarotista_nombre?: string | null;
+  tarotista_nombre_manual?: string | null;
+  fecha_reserva: string;
+  estado?: string | null;
+  nota?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 type StoredNotification = {
   id: string;
   business: string;
@@ -173,6 +188,105 @@ function followUpToNotification(row: FollowUpRow, persisted: StoredNotification 
   };
 }
 
+function reservationClosed(value: unknown) {
+  return ["finalizada", "completada", "cancelada", "anulada"].includes(normalized(value));
+}
+
+function classifyReservation(row: ReservationRow, now: number): NotificationPriority {
+  const due = new Date(row.fecha_reserva).getTime();
+  if (!Number.isFinite(due)) return "info";
+  if (due <= now) return "urgent";
+  if (due - now <= 60 * 60 * 1000) return "attention";
+  return "info";
+}
+
+function reservationToNotification(row: ReservationRow, persisted: StoredNotification | undefined, now: number): NotificationItem {
+  const due = new Date(row.fecha_reserva).getTime();
+  const isClosed = reservationClosed(row.estado);
+  const priority = classifyReservation(row, now);
+  const tarotista = String(row.tarotista_nombre || row.tarotista_nombre_manual || "Sin asignar").trim();
+  const clientName = String(row.cliente_nombre || "Cliente").trim() || "Cliente";
+  const state: NotificationState = isClosed ? "resolved" : persisted?.state === "resolved" ? "resolved" : persisted?.state === "read" ? "read" : "pending";
+  return {
+    id: `reservation:${row.id}`,
+    business: persisted?.business || "celestial",
+    recipient_worker_id: null,
+    client_id: row.cliente_id || null,
+    type: "reservation",
+    priority,
+    title: due <= now ? "Reserva pendiente de atención" : "Reserva programada",
+    description: `${clientName} · ${tarotista}${row.nota ? ` · ${row.nota}` : ""}`,
+    action_label: "Abrir reserva",
+    action_path: `/panel-central?tab=reservas&reserva=${encodeURIComponent(row.id)}`,
+    state,
+    scheduled_at: row.fecha_reserva,
+    read_at: persisted?.read_at || null,
+    resolved_at: isClosed ? row.updated_at || null : persisted?.resolved_at || null,
+    created_at: row.created_at || row.updated_at || row.fecha_reserva || new Date(now).toISOString(),
+    metadata: {
+      reservation_id: row.id,
+      reservation_status: row.estado || "pendiente",
+      client_name: clientName,
+      phone: row.telefono_normalizado || null,
+      tarotista_id: row.tarotista_id || null,
+      tarotista_name: tarotista,
+      reservation_date: row.fecha_reserva,
+    },
+    crm_clientes: row.cliente_id ? { id: row.cliente_id, nombre: clientName, telefono: row.telefono_normalizado || null } : null,
+  };
+}
+
+async function loadReservations(admin: SupabaseClient, brand: BrandKey) {
+  const now = Date.now();
+  const from = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  const until = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin
+    .from("reservas")
+    .select("id, cliente_id, cliente_nombre, telefono_normalizado, tarotista_id, tarotista_nombre, tarotista_nombre_manual, fecha_reserva, estado, nota, created_at, updated_at")
+    .gte("fecha_reserva", from)
+    .lte("fecha_reserva", until)
+    .order("fecha_reserva", { ascending: true })
+    .limit(1000);
+  if (error) throw error;
+  const filtered = await filterRowsByBrand(admin, (data || []) as ReservationRow[], brand);
+  return filtered.filter((row) => !["cancelada", "anulada"].includes(normalized(row.estado)));
+}
+
+async function persistReservationState(
+  admin: SupabaseClient,
+  item: NotificationItem,
+  existing: StoredNotification | undefined,
+  authUserId: string
+) {
+  const metadata = item.metadata || {};
+  const payload = {
+    business: item.business,
+    recipient_worker_id: null,
+    client_id: item.client_id || null,
+    type: "reservation",
+    priority: item.priority,
+    title: item.title,
+    description: item.description || null,
+    action_label: item.action_label || null,
+    action_path: item.action_path || null,
+    state: item.state,
+    scheduled_at: item.scheduled_at || null,
+    read_at: item.read_at || null,
+    resolved_at: item.resolved_at || null,
+    deduplication_key: `reservation:${String(metadata.reservation_id || "")}`,
+    metadata,
+    created_by: authUserId,
+    updated_at: new Date().toISOString(),
+  };
+  if (existing?.id) {
+    const { error } = await admin.from("central_notifications").update(payload).eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await admin.from("central_notifications").upsert(payload, { onConflict: "deduplication_key" });
+    if (error) throw error;
+  }
+}
+
 async function loadFollowUps(admin: SupabaseClient, worker: Worker, brand: BrandKey) {
   let query = admin
     .from("crm_client_followups")
@@ -257,23 +371,37 @@ export async function GET(req: Request) {
     const pageSize = Math.min(50, Math.max(10, Number(url.searchParams.get("page_size") || 20)));
     const now = Date.now();
 
-    const [followUps, stored] = await Promise.all([
+    const [followUps, reservations, stored] = await Promise.all([
       loadFollowUps(admin, worker, brand),
+      loadReservations(admin, brand),
       loadStoredNotifications(admin, worker, brand),
     ]);
 
     const storedFollowUps = new Map<string, StoredNotification>();
+    const storedReservations = new Map<string, StoredNotification>();
     for (const row of stored) {
       if (row.deduplication_key?.startsWith("followup:")) storedFollowUps.set(row.deduplication_key, row);
+      if (row.deduplication_key?.startsWith("reservation:")) storedReservations.set(row.deduplication_key, row);
     }
 
     const followUpItems = followUps.map((row) => followUpToNotification(row, storedFollowUps.get(`followup:${row.id}`), now));
+    const reservationItems = reservations.map((row) => {
+      const persisted = storedReservations.get(`reservation:${row.id}`);
+      const item = reservationToNotification(row, persisted, now);
+      item.business = brand;
+      return item;
+    });
 
     const otherItems: NotificationItem[] = stored
-      .filter((row) => row.type !== "followup" && !row.deduplication_key?.startsWith("followup:"))
+      .filter((row) =>
+        row.type !== "followup" &&
+        row.type !== "reservation" &&
+        !row.deduplication_key?.startsWith("followup:") &&
+        !row.deduplication_key?.startsWith("reservation:")
+      )
       .map(({ deduplication_key: _key, ...row }) => row);
 
-    let items = [...followUpItems, ...otherItems].sort((a, b) => {
+    let items = [...followUpItems, ...reservationItems, ...otherItems].sort((a, b) => {
       const aTime = new Date(a.scheduled_at || a.created_at).getTime();
       const bTime = new Date(b.scheduled_at || b.created_at).getTime();
       return bTime - aTime;
@@ -282,7 +410,7 @@ export async function GET(req: Request) {
     if (stateFilter !== "all") items = items.filter((item) => item.state === stateFilter);
     if (priorityFilter !== "all") items = items.filter((item) => item.priority === priorityFilter);
 
-    const unresolved = [...followUpItems, ...otherItems].filter((item) => item.state !== "resolved");
+    const unresolved = [...followUpItems, ...reservationItems, ...otherItems].filter((item) => item.state !== "resolved");
     const todayKey = madridDayKey(now);
     const active = unresolved.filter((item) => {
       if (!item.scheduled_at) return item.state === "pending";
@@ -295,15 +423,15 @@ export async function GET(req: Request) {
       return Number.isFinite(due) && (madridDayKey(due) === todayKey || due < now);
     });
 
-    const allRows = [...followUpItems, ...otherItems];
+    const allRows = [...followUpItems, ...reservationItems, ...otherItems];
     const summary = {
       urgent: allRows.filter((item) => item.state !== "resolved" && item.priority === "urgent").length,
       risk: allRows.filter((item) => item.state !== "resolved" && item.priority === "attention").length,
-      reminders: allRows.filter((item) => item.state !== "resolved" && ["followup", "reminder", "important_date"].includes(item.type)).length,
+      reminders: allRows.filter((item) => item.state !== "resolved" && ["followup", "reminder", "important_date", "reservation"].includes(item.type)).length,
       information: allRows.filter((item) =>
         item.state !== "resolved" &&
         item.priority === "info" &&
-        !["followup", "reminder", "important_date"].includes(item.type)
+        !["followup", "reminder", "important_date", "reservation"].includes(item.type)
       ).length,
       pending: unresolved.length,
       resolved: allRows.filter((item) => item.state === "resolved").length,
@@ -382,6 +510,44 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ ok: false, error: "INVALID_ACTION" }, { status: 400 });
       }
       await persistFollowUpState(admin, item, existing as StoredNotification | undefined, authUserId);
+      return NextResponse.json({ ok: true, data: { id, state: item.state } });
+    }
+
+    if (id.startsWith("reservation:")) {
+      const reservationId = id.slice("reservation:".length);
+      const { data: reservation, error: reservationError } = await admin
+        .from("reservas")
+        .select("id, cliente_id, cliente_nombre, telefono_normalizado, tarotista_id, tarotista_nombre, tarotista_nombre_manual, fecha_reserva, estado, nota, created_at, updated_at")
+        .eq("id", reservationId)
+        .maybeSingle();
+      if (reservationError) throw reservationError;
+      if (!reservation) return NextResponse.json({ ok: false, error: "RESERVATION_NOT_FOUND" }, { status: 404 });
+
+      const key = `reservation:${reservationId}`;
+      const { data: existing, error: existingError } = await admin
+        .from("central_notifications")
+        .select("id, business, recipient_worker_id, client_id, type, priority, title, description, action_label, action_path, state, scheduled_at, read_at, resolved_at, created_at, metadata, deduplication_key")
+        .eq("deduplication_key", key)
+        .maybeSingle();
+      if (existingError) throw existingError;
+
+      const item = reservationToNotification(reservation as ReservationRow, existing as StoredNotification | undefined, Date.now());
+      const now = new Date().toISOString();
+      if (body.action === "read") {
+        item.state = "read";
+        item.read_at = now;
+      } else if (body.action === "resolve") {
+        item.state = "resolved";
+        item.read_at = now;
+        item.resolved_at = now;
+      } else if (body.action === "reopen") {
+        item.state = "pending";
+        item.read_at = null;
+        item.resolved_at = null;
+      } else {
+        return NextResponse.json({ ok: false, error: "INVALID_ACTION" }, { status: 400 });
+      }
+      await persistReservationState(admin, item, existing as StoredNotification | undefined, authUserId);
       return NextResponse.json({ ok: true, data: { id, state: item.state } });
     }
 

@@ -1564,7 +1564,12 @@ export default function CRMClientesPanel({
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status || r.status}`);
 
-      setCrmReservaMsg("✅ Reserva creada correctamente");
+      const createdReserva = j?.reserva || (j?.id ? { id: j.id } : null);
+      setCrmReservaMsg("✅ Reserva creada y sincronizada con la agenda");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("tc-reservation-changed", { detail: { id: String(createdReserva?.id || ""), reserva: createdReserva } }));
+        window.dispatchEvent(new Event("tc-notifications-refresh"));
+      }
       setCrmReservaTarotistaId("");
       setCrmReservaTarotistaManual("");
       setCrmReservaFecha("");

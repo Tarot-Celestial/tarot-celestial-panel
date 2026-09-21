@@ -143,11 +143,15 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
     };
     const onBrand = () => scheduleReload();
     const onFollowUp = () => scheduleReload();
+    const onReservation = () => scheduleReload();
     window.addEventListener("tc-brand-changed", onBrand);
     window.addEventListener("tc-followup-changed", onFollowUp);
+    window.addEventListener("tc-reservation-changed", onReservation);
+    window.addEventListener("tc-notifications-refresh", onReservation);
     const channel = sb
       .channel("central-notifications-shared")
       .on("postgres_changes", { event: "*", schema: "public", table: "central_notifications" }, scheduleReload)
+      .on("postgres_changes", { event: "*", schema: "public", table: "reservas" }, scheduleReload)
       .subscribe();
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
@@ -166,6 +170,8 @@ export function useCentralNotificationsFeed(): CentralNotificationsFeed {
     return () => {
       window.removeEventListener("tc-brand-changed", onBrand);
       window.removeEventListener("tc-followup-changed", onFollowUp);
+      window.removeEventListener("tc-reservation-changed", onReservation);
+      window.removeEventListener("tc-notifications-refresh", onReservation);
       if (reloadTimerRef.current != null) window.clearTimeout(reloadTimerRef.current);
       window.clearInterval(timer);
       window.removeEventListener("focus", refreshVisible);
@@ -194,7 +200,7 @@ export default function CentralNotificationsCenter({ feed }: CentralNotification
   const items = useMemo(() => {
     if (filter === "urgent") return allItems.filter((item) => item.priority === "urgent" && item.state !== "resolved");
     if (filter === "attention") return allItems.filter((item) => item.priority === "attention" && item.state !== "resolved");
-    if (filter === "reminders") return allItems.filter((item) => ["followup", "reminder", "important_date"].includes(item.type) && item.state !== "resolved");
+    if (filter === "reminders") return allItems.filter((item) => ["followup", "reminder", "important_date", "reservation"].includes(item.type) && item.state !== "resolved");
     if (filter === "resolved") return allItems.filter((item) => item.state === "resolved");
     return allItems;
   }, [allItems, filter]);

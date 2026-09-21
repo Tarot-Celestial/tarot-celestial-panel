@@ -129,7 +129,13 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
       void loadSchedule();
       checkDueLocally();
     };
+    const refreshReservation = () => {
+      void loadSchedule();
+      void checkReady();
+      window.setTimeout(checkDueLocally, 250);
+    };
     window.addEventListener("focus", refreshVisible);
+    window.addEventListener("tc-reservation-changed", refreshReservation);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       cancelled = true;
@@ -137,6 +143,7 @@ export default function ReservasGlobalWatcher({ enabled = true, onGoToReserva }:
       window.clearInterval(readyInterval);
       window.clearInterval(scheduleInterval);
       window.removeEventListener("focus", refreshVisible);
+      window.removeEventListener("tc-reservation-changed", refreshReservation);
       document.removeEventListener("visibilitychange", refreshVisible);
       void sb.removeChannel(channel);
     };

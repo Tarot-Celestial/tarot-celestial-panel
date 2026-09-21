@@ -43,19 +43,26 @@ async function getClienteById(db: ReturnType<typeof adminDb>, clienteId: string)
   for (const table of candidates) {
     const { data, error } = await db
       .from(table)
-      .select("id, nombre, apellido, telefono")
+      .select("*")
       .eq("id", clienteId)
       .maybeSingle();
 
     if (!error && data) {
-      return data;
+      const row: any = data;
+      return {
+        id: row.id,
+        nombre: row.nombre || row.name || row.cliente_nombre || "",
+        apellido: row.apellido || row.apellidos || row.last_name || "",
+        telefono: row.telefono_normalizado || row.telefono || row.phone || "",
+      };
     }
 
-    const msg = String(error?.message || "");
+    const msg = String(error?.message || "").toLowerCase();
     if (
       msg.includes("schema cache") ||
       msg.includes("relation") ||
-      msg.includes("does not exist")
+      msg.includes("does not exist") ||
+      msg.includes("could not find the table")
     ) {
       continue;
     }
@@ -145,12 +152,12 @@ export async function POST(req: Request) {
     const { data: inserted, error } = await db
       .from("reservas")
       .insert(payload)
-      .select("id")
+      .select("*")
       .single();
 
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, id: inserted.id });
+    return NextResponse.json({ ok: true, id: inserted.id, reserva: inserted });
   } catch (err: any) {
     return NextResponse.json(
       { ok: false, error: err?.message || "ERR" },
