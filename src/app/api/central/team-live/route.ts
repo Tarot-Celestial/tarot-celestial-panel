@@ -4,6 +4,7 @@ import {
   aggregateRendimientoByTarotista,
   listRendimientoRows,
 } from "@/lib/server/rendimiento-metrics";
+import { memberCompetitionPoints } from "@/lib/server/team-competition";
 
 export const runtime = "nodejs";
 
@@ -58,7 +59,9 @@ function summarizeTeams(rows: any[]) {
       minutes_repite: Math.round(minutesRepite * 100) / 100,
       pct_cliente: Math.round(pctCliente * 100) / 100,
       pct_repite: Math.round(pctRepite * 100) / 100,
-      score: Math.round((pctCliente + pctRepite) * 100) / 100,
+      score: members.length
+        ? Math.round((members.reduce((sum, row) => sum + memberCompetitionPoints(row), 0) / members.length) * 100) / 100
+        : 0,
     };
   }
 
@@ -157,7 +160,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       month,
-      formula: "porcentaje_cliente_mas_porcentaje_repite",
+      formula: "porcentaje_cliente_mas_porcentaje_repite_mas_4_puntos_por_captada_media",
       active_total: workers.length,
       connected_total: liveMembers.filter((member) => member.status === "connected").length,
       break_total: liveMembers.filter((member) => member.status !== "connected").length,

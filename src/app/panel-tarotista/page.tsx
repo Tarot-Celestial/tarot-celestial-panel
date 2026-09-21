@@ -12,6 +12,7 @@ import TarotistaInvoiceDashboard from "@/components/tarotista/TarotistaInvoiceDa
 import TarotistaStatusHeader from "@/components/tarotista/TarotistaStatusHeader";
 import TarotistaRanksPanel from "@/components/tarotista/TarotistaRanksPanel";
 import TarotistaRankingArena from "@/components/tarotista/TarotistaRankingArena";
+import TeamCompetitionArena from "@/components/teams/TeamCompetitionArena";
 import { Activity, AlertTriangle, ArrowRight, BadgeEuro, BellRing, CalendarDays, CheckCircle2, CircleAlert, ClipboardCheck, Clock3, Crown, Droplets, Flame, LayoutDashboard, ListChecks, MessageSquare, MessagesSquare, PhoneCall, PhoneForwarded, PhoneOff, Radio, ReceiptText, RefreshCw, Search, Send, ShieldAlert, Sparkles, Star, Trophy, UserRound, UsersRound, type LucideIcon } from "lucide-react";
 import panelStyles from "./TarotistaPanel.module.css";
 
@@ -2332,134 +2333,7 @@ export default function Tarotista() {
               />
             )}
 
-            {tab === "equipos" && (() => {
-              const fireScore = Number(rank?.teams?.fuego?.score ?? 0);
-              const waterScore = Number(rank?.teams?.agua?.score ?? 0);
-              const fireCliente = Number(rank?.teams?.fuego?.avg_cliente ?? 0);
-              const waterCliente = Number(rank?.teams?.agua?.avg_cliente ?? 0);
-              const fireRepite = Number(rank?.teams?.fuego?.avg_repite ?? 0);
-              const waterRepite = Number(rank?.teams?.agua?.avg_repite ?? 0);
-              const maxScore = Math.max(fireScore, waterScore, 1);
-              const winnerRaw = String(rank?.teams?.winner || "").toLowerCase();
-              const winnerKey = winnerRaw.includes("fuego") ? "fuego" : winnerRaw.includes("agua") ? "agua" : (fireScore === waterScore ? "empate" : fireScore > waterScore ? "fuego" : "agua");
-              const winnerLabel = winnerKey === "fuego" ? "Equipo Fuego" : winnerKey === "agua" ? "Equipo Agua" : "Empate técnico";
-              const diffScore = Math.abs(fireScore - waterScore);
-              const diffLeader = fireScore === waterScore ? "empate" : fireScore > waterScore ? "fuego" : "agua";
-              return (
-                <div className={panelStyles.teamArenaBoard}>
-                  <section className={panelStyles.teamArenaHero}>
-                    <div className={panelStyles.teamArenaCopy}>
-                      <div className={panelStyles.teamArenaEyebrow}>🔥💧 Arena de equipos · Tarot Celestial</div>
-                      <h2>Compite con tu equipo y siente el ritmo del mes</h2>
-                      <p>
-                        Una vista más divertida y motivadora para seguir la batalla entre <strong>Fuego</strong> y <strong>Agua</strong>.
-                        El score combina el porcentaje medio de <strong>Cliente</strong> y <strong>Repite</strong> de cada equipo.
-                      </p>
-                    </div>
-
-                    <div className={panelStyles.teamArenaSummary}>
-                      <div className={panelStyles.teamMiniStat}>
-                        <span><Trophy size={15} /></span>
-                        <div>
-                          <small>Ganador actual</small>
-                          <strong>{winnerLabel}</strong>
-                        </div>
-                      </div>
-                      <div className={panelStyles.teamMiniStat}>
-                        <span><Sparkles size={15} /></span>
-                        <div>
-                          <small>Premio del mes</small>
-                          <strong>{canSeeMoney ? "+40 € central" : "Bonus del equipo"}</strong>
-                        </div>
-                      </div>
-                      <div className={panelStyles.teamMiniStat}>
-                        <span><CalendarDays size={15} /></span>
-                        <div>
-                          <small>Periodo</small>
-                          <strong>{formatMonthLabel(month)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className={panelStyles.teamBattleGrid}>
-                    <TeamCard
-                      title="Equipo Fuego"
-                      tone="fuego"
-                      score={fireScore}
-                      avgCliente={fireCliente}
-                      avgRepite={fireRepite}
-                      scoreRatio={(fireScore / maxScore) * 100}
-                      isWinner={winnerKey === "fuego"}
-                    />
-                    <TeamCard
-                      title="Equipo Agua"
-                      tone="agua"
-                      score={waterScore}
-                      avgCliente={waterCliente}
-                      avgRepite={waterRepite}
-                      scoreRatio={(waterScore / maxScore) * 100}
-                      isWinner={winnerKey === "agua"}
-                    />
-                  </section>
-
-                  <section className={panelStyles.teamBottomGrid}>
-                    <article className={panelStyles.teamInsightCard}>
-                      <div className={panelStyles.teamInsightHead}>
-                        <span><Crown size={16} /></span>
-                        <div>
-                          <small>Lectura del marcador</small>
-                          <h3>Pulso actual de la batalla</h3>
-                        </div>
-                      </div>
-                      <p>
-                        {fireScore === waterScore
-                          ? "Ahora mismo hay empate técnico. Cualquier mejora en Cliente o Repite puede romper la igualdad."
-                          : `${diffLeader === "fuego" ? "Fuego" : "Agua"} lidera por ${n2(diffScore)} puntos.`}
-                      </p>
-                      <div className={panelStyles.teamDuelTrack}>
-                        <span style={{ width: `${(fireScore / (fireScore + waterScore || 1)) * 100}%` }} data-tone="fuego" />
-                        <span style={{ width: `${(waterScore / (fireScore + waterScore || 1)) * 100}%` }} data-tone="agua" />
-                      </div>
-                      <div className={panelStyles.teamDuelLegend}>
-                        <strong>Fuego {n2(fireScore)}</strong>
-                        <strong>Agua {n2(waterScore)}</strong>
-                      </div>
-                    </article>
-
-                    <article className={panelStyles.teamInsightCard}>
-                      <div className={panelStyles.teamInsightHead}>
-                        <span><UsersRound size={16} /></span>
-                        <div>
-                          <small>Cómo se gana</small>
-                          <h3>Reglas claras para todo el equipo</h3>
-                        </div>
-                      </div>
-                      <ul className={panelStyles.teamRuleList}>
-                        <li>El score del equipo = media %Cliente + media %Repite.</li>
-                        <li>Cuanto más constantes sean las tarotistas, más fuerte sube el equipo.</li>
-                        <li>La clasificación se recalcula cada vez que se actualizan los datos del mes.</li>
-                      </ul>
-                    </article>
-
-                    <article className={panelStyles.teamInsightCard}>
-                      <div className={panelStyles.teamInsightHead}>
-                        <span><ArrowRight size={16} /></span>
-                        <div>
-                          <small>Tu misión</small>
-                          <h3>Qué hacer para empujar a tu equipo</h3>
-                        </div>
-                      </div>
-                      <ul className={panelStyles.teamMissionList}>
-                        <li><b>Cliente:</b> mejora el porcentaje de minutos cliente válidos.</li>
-                        <li><b>Repite:</b> cuida la recurrencia y calidad para elevar el promedio.</li>
-                        <li><b>Ritmo:</b> mantener constancia durante el mes es lo que gana la batalla.</li>
-                      </ul>
-                    </article>
-                  </section>
-                </div>
-              );
-            })()}
+            {tab === "equipos" && <TeamCompetitionArena month={month} mode="tarotista" />}
 
             {tab === "checklist" && (
               <div className="tc-card">

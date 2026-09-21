@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bath, Coffee, Crown, Droplets, Flame, Globe2, RefreshCw, UsersRound, Wifi } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./CentralTeamLivePanel.module.css";
+import TeamCompetitionArena from "@/components/teams/TeamCompetitionArena";
 
 type LiveMember = {
   worker_id: string;
@@ -175,7 +176,7 @@ export default function CentralTeamLivePanel({ month }: { month: string }) {
         <div>
           <div className={styles.eyebrow}><Wifi size={14} /> Centro operativo</div>
           <h2>Equipo en vivo</h2>
-          <p>Presencia real y competición CLIENTE + REPITE del mes seleccionado.</p>
+          <p>Presencia real y competición con Cliente, Repite y captadas del mes seleccionado.</p>
         </div>
         <div className={styles.toolbar}>
           <span className={`${styles.liveBadge} ${styles[liveState]}`}>
@@ -227,46 +228,7 @@ export default function CentralTeamLivePanel({ month }: { month: string }) {
         <div className={styles.stateBox}>No hay tarotistas conectadas que coincidan con la búsqueda.</div>
       )}
 
-      <div className={styles.competitionHeader}>
-        <div>
-          <span>Temporada {month}</span>
-          <h3>Competición de equipos</h3>
-          <p>Puntuación = % de minutos CLIENTE + % de minutos REPITE.</p>
-        </div>
-        {data?.leader ? <div className={styles.leaderPill}><Crown size={16} /> Lidera {TEAM_META[data.leader].label}</div> : null}
-      </div>
-
-      <div className={styles.teamGrid}>
-        {TEAM_ORDER.map((key) => {
-          const metric = data?.teams?.[key];
-          const meta = TEAM_META[key];
-          const Icon = meta.Icon;
-          const isLeader = data?.leader === key;
-          const score = Number(metric?.score || 0);
-          const delta = Number(metric?.delta_score || 0);
-          return (
-            <article key={`${key}-${isLeader ? "leader" : "team"}`} className={`${styles.teamCard} ${styles[key]} ${isLeader ? styles.teamLeader : ""}`}>
-              <div className={styles.teamTop}>
-                <div className={styles.teamIcon}><Icon size={22} /></div>
-                <div><span>Equipo</span><h4>{meta.label}</h4></div>
-                {isLeader ? <Crown className={styles.crown} size={20} /> : null}
-              </div>
-              <div className={styles.scoreRow}>
-                <strong>{score.toFixed(2)}</strong>
-                <span className={delta > 0 ? styles.up : delta < 0 ? styles.down : ""}>
-                  {delta > 0 ? "↑" : delta < 0 ? "↓" : "•"} {Math.abs(delta).toFixed(2)}
-                </span>
-              </div>
-              <div className={styles.progress}><i style={{ width: `${Math.max(0, Math.min(100, (score / maxScore) * 100))}%` }} /></div>
-              <div className={styles.metrics}>
-                <div><span>CLIENTE</span><strong>{Number(metric?.pct_cliente || 0).toFixed(2)}%</strong></div>
-                <div><span>REPITE</span><strong>{Number(metric?.pct_repite || 0).toFixed(2)}%</strong></div>
-                <div><span>Activas</span><strong>{metric?.members || 0}</strong></div>
-              </div>
-            </article>
-          );
-        })}
-      </div>
+      <TeamCompetitionArena month={month} mode="central" />
 
       <footer className={styles.footerNote}>
         Datos persistidos · actualización Realtime con respaldo cada minuto

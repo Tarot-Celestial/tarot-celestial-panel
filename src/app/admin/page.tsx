@@ -21,7 +21,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy, Sparkles } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy, Sparkles } from "lucide-react";
 import adminStyles from "./AdminPremium.module.css";
 import invoiceStyles from "./InvoiceEditor.module.css";
 
@@ -57,6 +57,7 @@ const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/Pa
 const PromotionsAdminPanel = nextDynamic(() => import("@/components/admin/PromotionsAdminPanel"), { ssr:false });
 const RaffleWinnerAdmin = nextDynamic(() => import("@/features/central/RaffleWinnerAdmin"), { ssr:false });
 const CentralReviewsAdminPanel = nextDynamic(() => import("@/components/admin/CentralReviewsAdminPanel"), { ssr:false });
+const TeamScoreboardAdminPanel = nextDynamic(() => import("@/components/admin/TeamScoreboardAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -66,6 +67,7 @@ const ADMIN_NAV = [
   { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
+  { key: "equipos-marcador", icon: Flame, label: "Equipos marcador", kicker: "Fuego vs Agua", tone: "goldPurple" },
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
@@ -165,6 +167,7 @@ type TabKey =
   | "welldone"
   | "editor"
   | "estadisticas"
+  | "equipos-marcador"
   | "asistencia"
   | "trabajadores"
   | "clientes"
@@ -2187,6 +2190,8 @@ function AdminPage() {
               onRefresh={() => void loadAdminStats(false, "manual")}
             />
           )}
+
+          {tab === "equipos-marcador" && <TeamScoreboardAdminPanel month={month} />}
 
 
           {tab === "trabajadores" && (

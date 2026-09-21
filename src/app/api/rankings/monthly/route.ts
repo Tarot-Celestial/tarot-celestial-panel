@@ -5,12 +5,10 @@ import { fullMonthComparison } from "@/lib/server/madrid-reporting-period";
 import { NextResponse } from 'next/server';
 import { normalizeMonthKey, workerFromRequest } from '@/lib/server/auth-worker';
 import { aggregateRendimientoByTarotista, listRendimientoRowsByIso, listTarotistaWorkers } from '@/lib/server/rendimiento-metrics';
+import { summarizeCompetitionTeams } from '@/lib/server/team-competition';
 
 export const runtime = 'nodejs';
 
-function score(row: any) {
-  return Number(row.captadas_total || 0) * 10 + Number(row.pct_cliente || 0) + Number(row.pct_repite || 0);
-}
 
 export async function GET(req: Request) {
   try {
@@ -39,20 +37,14 @@ export async function GET(req: Request) {
       repite: leaderboards.repite.slice(0, 10),
     };
 
-    const teams = ['fuego', 'agua'].reduce((acc: any, team) => {
-      const members = rows.filter((r) => String(r.team || '').toLowerCase() === team);
-      acc[team] = {
-        members: members.length,
-        score: members.reduce((a, r) => a + score(r), 0),
-        captadas_total: members.reduce((a, r) => a + Number(r.captadas_total || 0), 0),
-        minutes_total: members.reduce((a, r) => a + Number(r.minutes_total || 0), 0),
-      };
-      return acc;
-    }, {} as any);
-
-    const fw = Number(teams.fuego?.score || 0);
-    const aw = Number(teams.agua?.score || 0);
-    teams.winner = fw === aw ? 'empate' : fw > aw ? 'fuego' : 'agua';
+    const teamSummary = summarizeCompetitionTeams(rows);
+    const teams: any = {
+      fuego: teamSummary.teams.fuego,
+      agua: teamSummary.teams.agua,
+      winner: teamSummary.leader,
+      difference: teamSummary.difference,
+      formula: '%Cliente + %Repite + 4 puntos por captada (media por integrante)',
+    };
 
     const my = rows.find((r) => String(r.worker_id) === String(me.id)) || null;
     const rules = await loadBonusRules(getAdminClient());

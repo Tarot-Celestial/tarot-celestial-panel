@@ -304,7 +304,7 @@ function TeamBattle({ teams, rows, invoiceByWorker }: { teams: any; rows: any[];
     return {
       key: team,
       score: safeNumber(teams?.[team]?.score),
-      members: safeNumber(teams?.[team]?.members),
+      members: safeNumber(teams?.[team]?.members_count ?? teams?.[team]?.members),
       minutes: members.reduce((sum, row) => sum + safeNumber(row?.minutes_total), 0),
       calls: members.reduce((sum, row) => sum + safeNumber(row?.calls_total), 0),
       captadas: members.reduce((sum, row) => sum + safeNumber(row?.captadas_total), 0),
@@ -351,7 +351,7 @@ function TeamBattle({ teams, rows, invoiceByWorker }: { teams: any; rows: any[];
           <div>
             <span className={styles.sectionKicker}>Arena de equipos</span>
             <h3>Fuego vs Agua</h3>
-            <p>La puntuación conserva exactamente la fórmula actual del sistema.</p>
+            <p>Puntuación oficial: %Cliente + %Repite + 4 puntos por captada, calculada con datos reales.</p>
           </div>
         </div>
         <span className={styles.gameChip}>Diferencia: {numES(difference, 2)} pts</span>
