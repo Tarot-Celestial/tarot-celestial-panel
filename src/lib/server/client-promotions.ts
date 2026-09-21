@@ -189,7 +189,7 @@ export async function applyPromotionMinutePurchase(
     `${snap.paid_minutes} min`,
     snap.free_minutes ? `+${snap.free_minutes} min GRATIS` : null,
     snap.coins ? `+${snap.coins} Coins` : null,
-    snap.roulette_spins && snap.roulette_level ? `+${snap.roulette_spins} giro${snap.roulette_spins === 1 ? "" : "s"} Nivel ${snap.roulette_level}` : null,
+    snap.roulette_spins && snap.roulette_level ? `+${snap.roulette_spins} giro${snap.roulette_spins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${snap.roulette_level}` : null,
     snap.oracle_credits ? `+${snap.oracle_credits} tirada${snap.oracle_credits === 1 ? "" : "s"} de Oráculo` : null,
   ].filter(Boolean).join(" · ");
 

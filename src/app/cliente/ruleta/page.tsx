@@ -27,8 +27,8 @@ export default function ClienteRuletaPage() {
 
   return (
     <ClienteLayout
-      title="Ruleta Celestial"
-      subtitle="Tus compras desbloquean giros. Descubre tus premios de minutos FREE y Coins."
+      title="Ruleta Ultra Sorpresas"
+      subtitle="Compra una promo, consigue tu giro y descubre minutos, Coins, rangos, rituales y premios especiales."
       eyebrow="Experiencia Celestial"
     >
       <div style={{ marginTop: 18 }}>
@@ -36,7 +36,7 @@ export default function ClienteRuletaPage() {
           <PurchaseRoulette />
         ) : (
           <section className="tc-card" style={{ minHeight: 260, display: "grid", placeItems: "center" }}>
-            Preparando tu Ruleta Celestial…
+            Preparando tu Ruleta Ultra Sorpresas…
           </section>
         )}
       </div>

@@ -1,25 +1,48 @@
 import { NextResponse } from "next/server";
 import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
+
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
+
 function failure(error: unknown) {
-  if (error instanceof RouletteAccessError) return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers });
-  const message = error && typeof error === "object" && "message" in error ? String(error.message) : "";
-  if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].some(code => message.includes(code))) {
+  if (error instanceof RouletteAccessError) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers });
+  }
+  const message = error && typeof error === "object" && "message" in error ? String((error as any).message) : "";
+  if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].some((code) => message.includes(code))) {
     return NextResponse.json({ ok: false, error: "Este giro ya no está disponible. Actualiza para ver tus giros actuales." }, { status: 409, headers });
   }
-  console.error("[ruleta]", error);
+  if (message.includes("ROULETTE_NO_ACTIVE_CAMPAIGN")) {
+    return NextResponse.json({ ok: false, error: "La Ruleta Ultra Sorpresas está temporalmente pausada." }, { status: 409, headers });
+  }
+  if (message.includes("ROULETTE_NO_REWARDS")) {
+    return NextResponse.json({ ok: false, error: "Este nivel todavía no tiene premios activos configurados." }, { status: 409, headers });
+  }
+  console.error("[ruleta-ultra]", error);
   return NextResponse.json({ ok: false, error: "No hemos podido confirmar la operación. Puedes reintentar con seguridad." }, { status: 503, headers });
 }
+
+async function loadSummary(gate: Awaited<ReturnType<typeof rouletteClient>>) {
+  const modern = await gate.admin.rpc("cliente_ruleta_resumen_ultra_v1", { p_cliente_id: gate.cliente.id });
+  if (!modern.error) return modern.data;
+
+  // Fallback temporal para despliegues donde el código llegue antes que el SQL.
+  const legacy = await gate.admin.rpc("cliente_ruleta_resumen_v4", { p_cliente_id: gate.cliente.id });
+  if (legacy.error) throw modern.error;
+  return { ...legacy.data, campaign: null, history: [], entitlements: [] };
+}
+
 export async function GET(req: Request) {
   try {
     const gate = await rouletteClient(req);
-    const { data, error } = await gate.admin.rpc("cliente_ruleta_resumen_v4", { p_cliente_id: gate.cliente.id });
-    if (error) throw error;
+    const data = await loadSummary(gate);
     return NextResponse.json({ ok: true, ...data }, { headers });
-  } catch (error) { return failure(error); }
+  } catch (error) {
+    return failure(error);
+  }
 }
+
 export async function POST(req: Request) {
   try {
     const gate = await rouletteClient(req);
@@ -27,10 +50,24 @@ export async function POST(req: Request) {
     if (![1, 2, 3].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
       return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
-    const { data, error } = await gate.admin.rpc("cliente_girar_ruleta_v4", {
-      p_cliente_id: gate.cliente.id, p_spin_id: body.spin_id, p_level: body.level,
+
+    const modern = await gate.admin.rpc("cliente_girar_ruleta_ultra_v1", {
+      p_cliente_id: gate.cliente.id,
+      p_spin_id: body.spin_id,
+      p_level: body.level,
     });
-    if (error) throw error;
-    return NextResponse.json({ ok: true, ...data }, { headers });
-  } catch (error) { return failure(error); }
+    if (!modern.error) return NextResponse.json({ ok: true, ...modern.data }, { headers });
+
+    // Solo usamos el fallback si la función nueva todavía no existe.
+    if (modern.error.code !== "42883") throw modern.error;
+    const legacy = await gate.admin.rpc("cliente_girar_ruleta_v4", {
+      p_cliente_id: gate.cliente.id,
+      p_spin_id: body.spin_id,
+      p_level: body.level,
+    });
+    if (legacy.error) throw legacy.error;
+    return NextResponse.json({ ok: true, ...legacy.data, campaign: null, history: [], entitlements: [] }, { headers });
+  } catch (error) {
+    return failure(error);
+  }
 }

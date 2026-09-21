@@ -527,3 +527,31 @@
   .footer{align-items:flex-start}
 }
 @media(prefers-reduced-motion:reduce){.brand img,.result{animation:none}.wheel,.sector{transition:none}.level,.spin{transition:none}}
+
+/* ULTRA SORPRESAS · rarezas y premios especiales */
+.prizes li[data-rarity="uncommon"]{border-color:rgba(80,220,170,.24);background:linear-gradient(180deg,rgba(40,137,104,.10),rgba(255,255,255,.018))}
+.prizes li[data-rarity="rare"]{border-color:rgba(83,190,255,.28);background:linear-gradient(180deg,rgba(42,111,164,.12),rgba(255,255,255,.018))}
+.prizes li[data-rarity="epic"]{border-color:rgba(185,94,255,.32);background:linear-gradient(180deg,rgba(111,56,157,.15),rgba(255,255,255,.018))}
+.prizes li[data-rarity="legendary"]{border-color:rgba(246,196,77,.44);background:linear-gradient(180deg,rgba(173,126,31,.15),rgba(255,255,255,.018));box-shadow:inset 0 0 18px rgba(244,195,75,.04)}
+.prizes li[data-rarity="ultra"]{border-color:rgba(255,82,118,.46);background:linear-gradient(180deg,rgba(146,31,67,.18),rgba(255,255,255,.018));box-shadow:0 0 18px rgba(255,56,104,.05)}
+.prizes li[data-rarity="diamond"]{border-color:rgba(104,236,255,.52);background:linear-gradient(180deg,rgba(26,126,143,.18),rgba(255,255,255,.018));box-shadow:0 0 18px rgba(90,226,244,.06)}
+.prizes li[data-rarity="jackpot"]{border-color:rgba(255,82,54,.58);background:linear-gradient(180deg,rgba(142,41,28,.23),rgba(85,20,27,.07));box-shadow:0 0 22px rgba(255,74,47,.08)}
+.prizes li[data-rarity="jackpot"] small,.prizes li[data-rarity="ultra"] small{color:#ff9a88}
+.prizes li[data-rarity="diamond"] small{color:#8bf1ff}
+.prizes li[data-rarity="legendary"] small{color:#ffda78}
+
+.sector[data-rarity="legendary"],.sector[data-rarity="ultra"],.sector[data-rarity="diamond"],.sector[data-rarity="jackpot"]{filter:drop-shadow(0 0 7px rgba(255,255,255,.17))}
+.sector[data-rarity="jackpot"]{color:#fff0d3}
+
+.result[data-rarity="legendary"]{border-color:#d6a632;box-shadow:0 0 55px rgba(221,165,45,.24)}
+.result[data-rarity="ultra"]{border-color:#ff5976;box-shadow:0 0 55px rgba(255,57,102,.20);background:radial-gradient(ellipse at top,rgba(111,29,49,.78),#291637 52%,#170e23)}
+.result[data-rarity="diamond"]{border-color:#6feaff;box-shadow:0 0 55px rgba(86,223,243,.20);background:radial-gradient(ellipse at top,rgba(25,104,118,.62),#241738 52%,#120d1f)}
+.result[data-rarity="jackpot"]{border-color:#ff744e;box-shadow:0 0 65px rgba(255,68,40,.27);background:radial-gradient(ellipse at top,rgba(118,35,25,.78),#34142b 52%,#160a17)}
+.specialResult{display:flex;align-items:center;gap:9px;margin-top:12px;padding:11px 14px;border-radius:999px;border:1px solid rgba(242,210,139,.24);background:rgba(242,210,139,.06);color:#f8e2aa;font-size:11px;font-weight:800}
+
+.benefitsPanel,.historyPanel{margin-top:22px;padding:20px;border:1px solid rgba(255,255,255,.07);border-radius:23px;background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,.012))}
+.sectionHead{display:flex;align-items:center;justify-content:space-between;gap:12px}.sectionHead h3{margin:5px 0 0;font-size:20px}.sectionCount{display:grid;place-items:center;min-width:34px;height:34px;padding:0 10px;border-radius:999px;border:1px solid rgba(242,210,139,.2);background:rgba(242,210,139,.06);color:#f3d486;font-weight:900}
+.benefitGrid{display:grid;gap:9px;margin-top:14px}.benefitCard{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;padding:13px;border-radius:15px;border:1px solid rgba(255,255,255,.07);background:#100b18}.benefitIcon,.historyIcon{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;color:#efd078;background:rgba(239,208,120,.06);border:1px solid rgba(239,208,120,.15)}.benefitCard strong,.historyList strong{display:block}.benefitCard small,.historyList small{display:block;margin-top:4px;color:#9e91ad;font-size:10px}.benefitCard button{min-width:120px;border:1px solid rgba(239,208,120,.42);border-radius:10px;padding:9px 11px;background:linear-gradient(120deg,#ecd08b,#bd8b32);color:#20130b;cursor:pointer;font-size:10px;font-weight:900}.benefitCard button:disabled{opacity:.42;cursor:not-allowed}.benefitStatus{padding:6px 9px;border-radius:999px;background:#291a38;color:#d9cae5;font-size:9px;text-transform:uppercase}
+.historyList{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}.historyList article{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.065);background:#100b18;overflow:hidden}.historyList article::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:#64526f}.historyList article[data-rarity="uncommon"]::before{background:#43d5a1}.historyList article[data-rarity="rare"]::before{background:#43c3ff}.historyList article[data-rarity="epic"]::before{background:#b65fff}.historyList article[data-rarity="legendary"]::before{background:#ffd05d}.historyList article[data-rarity="ultra"]::before{background:#ff5474}.historyList article[data-rarity="diamond"]::before{background:#6aeeff}.historyList article[data-rarity="jackpot"]::before{background:#ff573c;box-shadow:0 0 14px #ff573c}.historyRarity{font-size:8px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#d9c7e5}
+
+@media(max-width:720px){.historyList{grid-template-columns:1fr}.benefitCard{grid-template-columns:auto 1fr}.benefitCard button,.benefitStatus{grid-column:2;justify-self:start}.hero h2 em{margin-top:4px}}

@@ -79,7 +79,7 @@ export async function applyConfiguredMinutePurchase(
     cliente_id: params.clienteId,
     tipo: "purchase_completed",
     titulo: "Pago confirmado",
-    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} Coins${pack.oracleCredits ? `, +${pack.oracleCredits} tirada${pack.oracleCredits === 1 ? "" : "s"} de Oráculo` : ""} y ${pack.rouletteSpins} giro${pack.rouletteSpins === 1 ? "" : "s"} Nivel ${pack.rouletteLevel}.`,
+    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} Coins${pack.oracleCredits ? `, +${pack.oracleCredits} tirada${pack.oracleCredits === 1 ? "" : "s"} de Oráculo` : ""} y ${pack.rouletteSpins} giro${pack.rouletteSpins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${pack.rouletteLevel}.`,
     meta: {
       pack_id: pack.id,
       pack_name: pack.nombre,

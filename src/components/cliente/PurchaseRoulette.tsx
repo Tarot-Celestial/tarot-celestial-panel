@@ -3,16 +3,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2 } from "lucide-react";
+import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2, Gem, CalendarCheck2, Flame, Award } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
-import { prizeLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward } from "@/lib/ruleta";
+import { prizeLabel, rarityLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward, type RoulettePrize, type RouletteRewardType } from "@/lib/ruleta";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import styles from "./PurchaseRoulette.module.css";
 
 const sb = supabaseClienteBrowser();
 type Pending = { spin_id: string; level: RouletteLevel };
 const storageKey = (id: string) => "tc-ruleta-pending:" + id;
+
+const rarityColors: Record<string,string> = {
+  common: "#4a315f", uncommon: "#257b67", rare: "#276d9e", epic: "#6d3a9b",
+  legendary: "#b4872a", ultra: "#9e294b", diamond: "#248a99", jackpot: "#b83a2d",
+};
+function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: number }) {
+  if (type === "coins") return <Coins size={size}/>;
+  if (type === "rank") return <Crown size={size}/>;
+  if (type === "ritual") return <ShieldCheck size={size}/>;
+  if (type === "streak_minutes") return <CalendarCheck2 size={size}/>;
+  if (type === "perk") return <Gem size={size}/>;
+  return <Clock3 size={size}/>;
+}
+function wheelValue(prize: RoulettePrize) {
+  if (prize.reward_type === "coins") return { main: String(prize.reward_value), sub: "COINS" };
+  if (prize.reward_type === "minutes") return { main: String(prize.reward_value), sub: "MIN" };
+  if (prize.reward_type === "rank") return { main: String(prize.meta?.rank || "RANGO").toUpperCase(), sub: "RANGO" };
+  if (prize.reward_type === "ritual") return { main: "RITUAL", sub: "PREMIO" };
+  if (prize.reward_type === "streak_minutes") return { main: String(prize.meta?.days_total || 7), sub: "DÍAS" };
+  return { main: "EXTRA", sub: "PREMIO" };
+}
 export default function PurchaseRoulette({ onReward }: { onReward?: () => void | Promise<void> }) {
   const router = useRouter();
   const [summary, setSummary] = useState<RouletteSummary | null>(null);
@@ -67,9 +88,9 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
 
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
   const levelMeta = useMemo(() => ({
-    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "Hasta 60 min · 400 Coins" },
-    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "Hasta 80 min · 1000 Coins" },
-    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "Hasta 100 min · 2000 Coins" },
+    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "Comunes → Jackpot" },
+    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "Raros · Épicos · Legendarios" },
+    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "Premios Ultra · Diamante · Jackpot" },
   } as const), []);
   const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins } : null;
   const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3 } : null;
@@ -79,12 +100,19 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const selectedMaxMinutes = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedMaxCoins = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedSpecial = useMemo(() => prizes.find(p => p.special) || null, [prizes]);
-  const gradient = useMemo(() => "conic-gradient(" + prizes.map((p, i) => {
-    const color = p.special ? "#b58a30" : p.reward_type === "coins" ? "#247b74" : i % 2 ? "#362050" : "#70409b";
-    return color + " " + i * 360 / prizes.length + "deg " + (i + 1) * 360 / prizes.length + "deg";
-  }).join(",") + ")", [prizes]);
+  const gradient = useMemo(() => {
+    if (!prizes.length) return "conic-gradient(#24172d 0deg 360deg)";
+    return "conic-gradient(" + prizes.map((p, i) => {
+      const base = rarityColors[String(p.rarity || "common")] || (i % 2 ? "#362050" : "#70409b");
+      const color = p.special && !p.rarity ? "#b58a30" : base;
+      return color + " " + i * 360 / prizes.length + "deg " + (i + 1) * 360 / prizes.length + "deg";
+    }).join(",") + ")";
+  }, [prizes]);
   const goToBalance = useCallback(() => {
-    if (result) router.push("/cliente/dashboard?reward=" + result.reward_type + "&spin=" + encodeURIComponent(result.spin_id) + "#saldo-" + result.reward_type);
+    if (!result) return;
+    if (result.reward_type === "coins" || result.reward_type === "minutes") {
+      router.push("/cliente/dashboard?reward=" + result.reward_type + "&spin=" + encodeURIComponent(result.spin_id) + "#saldo-" + result.reward_type);
+    }
   }, [router, result]);
   useEffect(() => {
     if (countdown === null) return;
@@ -128,13 +156,14 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         setResult(json); setBusy(false); inFlight.current = false;
         setPending(null); pendingRef.current = null;
         try { sessionStorage.removeItem(storageKey(summary.cliente_id)); } catch {}
+        const instant = json.reward_type === "coins" || json.reward_type === "minutes";
         announceLeoCelestial({
           id: `roulette:${json.spin_id}`,
           reaction: "roulette",
-          title: json.special ? "¡Premio especial celestial!" : "¡Tu premio ya es tuyo!",
-          message: `${prizeLabel(json)} ya se ha añadido a tus ${json.reward_type === "coins" ? "Coins" : "minutos FREE"}.`,
-          href: `/cliente/dashboard?reward=${json.reward_type}&spin=${encodeURIComponent(json.spin_id)}#saldo-${json.reward_type}`,
-          actionLabel: "Ver mi nuevo saldo",
+          title: ["legendary","ultra","diamond","jackpot"].includes(String(json.reward_rarity || "")) ? "¡Premio extraordinario!" : "¡Tu premio ya es tuyo!",
+          message: instant ? `${prizeLabel(json)} ya está acreditado en tu cuenta.` : `${prizeLabel(json)} ha quedado activado y registrado en tu cuenta.`,
+          href: instant ? `/cliente/dashboard?reward=${json.reward_type}&spin=${encodeURIComponent(json.spin_id)}#saldo-${json.reward_type}` : "/cliente/ruleta",
+          actionLabel: instant ? "Ver mi nuevo saldo" : "Ver mi premio",
           duration: 9_000,
         });
         void Promise.resolve(onReward?.()).catch(() => {});
@@ -149,15 +178,35 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       inFlight.current = false;
     }
   }
+
+  async function claimBenefit(entitlementId: string) {
+    setMessage("");
+    try {
+      const { data } = await sb.auth.getSession();
+      if (!data.session) throw new Error("Tu sesión ha caducado.");
+      const response = await fetch("/api/cliente/ruleta/claim", {
+        method: "POST", headers: { Authorization: "Bearer " + data.session.access_token, "Content-Type": "application/json" },
+        body: JSON.stringify({ entitlement_id: entitlementId }),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok) throw new Error(json.error || "No se ha podido reclamar el premio.");
+      setMessage(`¡Hecho! +${json.minutes} minutos FREE acreditados.`);
+      await Promise.resolve(onReward?.()).catch(() => {});
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "No se ha podido reclamar el premio.");
+    }
+  }
+
   return (
-    <section className={styles.wrap} aria-label="Ruleta Celestial" aria-busy={loading}>
+    <section className={styles.wrap} aria-label="Ruleta Ultra Sorpresas" aria-busy={loading}>
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>EXPERIENCIA CELESTIAL · RECOMPENSAS</span>
-          <h2>Tu compra <em>tiene premio.</em></h2>
-          <p>Una compra confirmada puede desbloquear giros. Cada giro acredita Minutos FREE o Coins directamente en tu saldo real.</p>
-          <div className={styles.steps} aria-label="Cómo funciona la Ruleta Celestial">
-            <span><b>01</b> Compra</span><ArrowRight size={14}/><span><b>02</b> Gira</span><ArrowRight size={14}/><span><b>03</b> Disfruta</span>
+          <span className={styles.eyebrow}>ULTRA SORPRESAS · EDICIÓN PROMOCIONAL</span>
+          <h2>{summary?.campaign?.title || "Ruleta Ultra Sorpresas"}<em>Tu compra tiene premio.</em></h2>
+          <p>{summary?.campaign?.subtitle || "Compra una promo, consigue tu giro y descubre premios reales: minutos, Coins, rangos, rituales y sorpresas especiales."}</p>
+          <div className={styles.steps} aria-label="Cómo funciona la Ruleta Ultra Sorpresas">
+            <span><b>01</b> Compra promo</span><ArrowRight size={14}/><span><b>02</b> Gira</span><ArrowRight size={14}/><span><b>03</b> Gana</span>
           </div>
         </div>
         <div className={styles.heroSide}>
@@ -192,7 +241,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             </div>
             <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
             <div className={styles.levelMain}><strong>Nivel {n}</strong><b>{count ?? "—"} <small>giros</small></b></div>
-            <span>{n === 1 ? `Compras inferiores a $${summary?.level_2_from ?? "…"}` : n === 2 ? `Compras desde $${summary?.level_2_from ?? "…"} hasta menos de $${summary?.level_3_from ?? "…"}` : `Compras premium desde $${summary?.level_3_from ?? "…"}`}</span>
+            <span>{n === 1 ? "Nivel base asignado por la promoción" : n === 2 ? "Nivel mejorado asignado por la promoción" : "Nivel premium asignado por la promoción"}</span>
             <small className={styles.levelCap}>{meta.cap}</small>
           </button>;
         })}
@@ -212,21 +261,22 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             <div className={styles.wheel} style={{ background: gradient, transform: "rotate(" + rotation + "deg)" }} aria-hidden="true">
               {prizes.map((p, i) => {
                 const angle = (i + .5) * 2 * Math.PI / prizes.length;
-                return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id} data-special={p.special}
+                const visual = wheelValue(p);
+                return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id} data-special={p.special} data-rarity={p.rarity || "common"}
                   style={{ left: (50 + 34 * Math.sin(angle)) + "%", top: (50 - 34 * Math.cos(angle)) + "%", transform: "translate(-50%,-50%) rotate(" + (-rotation) + "deg)" }}>
-                  {p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}<b>{p.reward_value}</b><small>{p.reward_type === "coins" ? "COINS" : "MIN"}</small>
+                  <RewardGlyph type={p.reward_type} size={18}/><b>{visual.main}</b><small>{visual.sub}</small>
                 </span>;
               })}
             </div>
             <button
               type="button"
               className={styles.core}
-              disabled={busy || (!pending && !available)}
+              disabled={busy || prizes.length === 0 || (!pending && !available)}
               onClick={() => void spin()}
-              aria-label={pending ? "Comprobar giro pendiente" : available ? `Girar ruleta Nivel ${level}` : "No hay giros disponibles"}
+              aria-label={prizes.length === 0 ? "No hay premios configurados para este nivel" : pending ? "Comprobar giro pendiente" : available ? `Girar ruleta Nivel ${level}` : "No hay giros disponibles"}
             >
               <RotateCw size={25}/>
-              <strong>{busy ? "…" : pending ? "COMPROBAR" : available ? "GIRAR" : "SIN GIROS"}</strong>
+              <strong>{busy ? "…" : prizes.length === 0 ? "SIN PREMIOS" : pending ? "COMPROBAR" : available ? "GIRAR" : "SIN GIROS"}</strong>
               <small>NIVEL {level}</small>
             </button>
           </div>
@@ -241,38 +291,35 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <h3>{available ? "Tu próximo premio te espera" : "Desbloquea tu próximo giro"}</h3>
           <p>Cada paquete acredita los giros indicados al confirmar el pago. Puedes acumularlos y cada premio consume solo uno.</p>
           <div className={styles.prizeTitle}><Gift size={16}/><span>Premios de este nivel</span><b>{prizes.length}</b></div>
-          <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special}>
-            <span className={styles.prizeIcon}>{p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}</span>
-            <span>{prizeLabel(p)}{p.special && <small>PREMIO ESPECIAL</small>}</span>
+          <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special} data-rarity={p.rarity || "common"}>
+            <span className={styles.prizeIcon}><RewardGlyph type={p.reward_type} size={18}/></span>
+            <span>{prizeLabel(p)}<small>{rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel]}{p.special ? " · PREMIO FUERTE" : ""}</small></span>
             {p.special && <Star size={14} className={styles.specialStar}/>} 
           </li>)}</ul>
-          <button type="button" className={styles.spin} disabled={busy || (!pending && !available)} onClick={() => void spin()}>
-            <RotateCw size={20}/>{busy ? "Descubriendo tu premio…" : pending ? "Comprobar mi giro pendiente" : "Girar · Nivel " + level}
+          <button type="button" className={styles.spin} disabled={busy || prizes.length === 0 || (!pending && !available)} onClick={() => void spin()}>
+            <RotateCw size={20}/>{busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : "Girar · Nivel " + level}
           </button>
           {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">Ver consultas · Desbloquear un giro <ArrowRight size={17}/></Link>}
           <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
         </aside>
       </div>}
 
-      {result && <section ref={resultRef} className={styles.result} data-special={result.special} data-level={result.spin_level} role="status" aria-live="polite">
-        <div className={styles.rewardIcon}>{result.reward_type === "coins" ? <Coins size={38}/> : <Clock3 size={38}/>}</div>
-        <span className={styles.eyebrow}>{result.special ? "¡PREMIO ESPECIAL CELESTIAL!" : "¡TU PREMIO YA ES TUYO!"}</span>
+      {result && <section ref={resultRef} className={styles.result} data-special={result.special} data-level={result.spin_level} data-rarity={result.reward_rarity || "common"} role="status" aria-live="polite">
+        <div className={styles.rewardIcon}><RewardGlyph type={result.reward_type} size={38}/></div>
+        <span className={styles.eyebrow}>{["legendary","ultra","diamond","jackpot"].includes(String(result.reward_rarity || "")) ? "¡PREMIO EXTRAORDINARIO!" : result.special ? "¡PREMIO ESPECIAL CELESTIAL!" : "¡TU PREMIO YA ES TUYO!"}</span>
         <h3>{prizeLabel(result)}</h3>
-        <p>Abono confirmado en tus {result.reward_type === "coins" ? "Coins" : "minutos FREE"}.</p>
-        <div className={styles.balance}><span>Antes <b>{result.balance_before}</b></span><ArrowRight/><span>Después <b>{result.balance_after}</b></span></div>
-        <button type="button" className={styles.spin} onClick={goToBalance}>Ver mis {result.reward_type === "coins" ? "Coins" : "minutos"} <ArrowRight size={18}/></button>
-        {countdown === null ? <button className={styles.subtle} type="button" onClick={() => setCountdown(4)}>Ir a mi saldo en 4 segundos</button>
-          : <p>Volviendo a tu saldo en {countdown}… <button type="button" className={styles.subtle} onClick={() => setCountdown(null)}>Permanecer aquí</button></p>}
+        <p>{result.reward_type === "coins" || result.reward_type === "minutes" ? "Premio acreditado automáticamente en tu saldo real." : result.reward_type === "streak_minutes" ? "Tu premio diario ya está activo. Vuelve cada día para reclamarlo." : "Premio registrado en tu cuenta. Puedes seguir su estado aquí mismo."}</p>
+        {(result.reward_type === "coins" || result.reward_type === "minutes") ? <><div className={styles.balance}><span>Antes <b>{result.balance_before}</b></span><ArrowRight/><span>Después <b>{result.balance_after}</b></span></div><button type="button" className={styles.spin} onClick={goToBalance}>Ver mi nuevo saldo <ArrowRight size={18}/></button></> : <div className={styles.specialResult}><Award size={18}/><span>{result.reward_rarity ? rarityLabel[result.reward_rarity] : "Premio especial"} · {result.fulfillment_mode || "registrado"}</span></div>}
       </section>}
 
-      {summary && <section className={styles.infoGrid} aria-label="Información de la Ruleta Celestial">
+      {summary && <section className={styles.infoGrid} aria-label="Información de la Ruleta Ultra Sorpresas">
         <article className={styles.infoCard}>
           <span className={styles.infoIcon}><RotateCw size={18}/></span>
-          <div><span className={styles.eyebrow}>CÓMO FUNCIONA</span><h4>Tres pasos, sin sorpresas</h4></div>
+          <div><span className={styles.eyebrow}>CÓMO FUNCIONA</span><h4>Compra, gira y descubre</h4></div>
           <ol>
-            <li><b>1</b><span><strong>Compra</strong><small>Una compra confirmada puede generar giros.</small></span></li>
+            <li><b>1</b><span><strong>Compra promo</strong><small>La promoción elegible acredita tu giro.</small></span></li>
             <li><b>2</b><span><strong>Gira</strong><small>Utiliza un giro del nivel disponible.</small></span></li>
-            <li><b>3</b><span><strong>Disfruta</strong><small>El premio llega directamente a tu saldo.</small></span></li>
+            <li><b>3</b><span><strong>Gana</strong><small>El servidor acredita o registra el premio antes de mostrarlo.</small></span></li>
           </ol>
         </article>
 
@@ -298,7 +345,28 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         </article>
       </section>}
 
-      <footer className={styles.footer}><Sparkles size={16}/> Tus giros de Ruleta son independientes de las tiradas del Oráculo. Siempre sabes qué has ganado.</footer>
+      {summary?.entitlements?.length ? <section className={styles.benefitsPanel}>
+        <div className={styles.sectionHead}><div><span className={styles.eyebrow}>PREMIOS ACTIVOS</span><h3>Tus sorpresas especiales</h3></div><span className={styles.sectionCount}>{summary.entitlements.length}</span></div>
+        <div className={styles.benefitGrid}>{summary.entitlements.map((e) => {
+          const ready = e.reward_type === "streak_minutes" && e.status === "active" && (!e.next_claim_at || new Date(e.next_claim_at).getTime() <= Date.now());
+          return <article key={e.id} className={styles.benefitCard}>
+            <span className={styles.benefitIcon}><RewardGlyph type={e.reward_type} size={20}/></span>
+            <div><strong>{e.reward_name}</strong><small>{e.status === "active" ? "Activo" : "Pendiente de gestión"}{e.total_claims ? ` · ${e.claims_used || 0}/${e.total_claims} reclamados` : ""}</small></div>
+            {e.reward_type === "streak_minutes" ? <button type="button" disabled={!ready} onClick={()=>void claimBenefit(e.id)}>{ready ? "Reclamar hoy" : "Próximo en breve"}</button> : <span className={styles.benefitStatus}>{e.status}</span>}
+          </article>;
+        })}</div>
+      </section> : null}
+
+      {summary?.history?.length ? <section className={styles.historyPanel}>
+        <div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIAL</span><h3>Tus últimos premios</h3></div><Gift size={18}/></div>
+        <div className={styles.historyList}>{summary.history.slice(0,8).map((item)=><article key={item.spin_id} data-rarity={item.rarity || "common"}>
+          <span className={styles.historyIcon}><RewardGlyph type={item.reward_type} size={17}/></span>
+          <div><strong>{item.reward_label}</strong><small>Nivel {item.level} · {new Date(item.used_at || item.created_at).toLocaleString("es-ES")}</small></div>
+          <span className={styles.historyRarity}>{rarityLabel[(item.rarity || "common") as keyof typeof rarityLabel]}</span>
+        </article>)}</div>
+      </section> : null}
+
+      <footer className={styles.footer}><Sparkles size={16}/> Tus giros de Ruleta Ultra Sorpresas son independientes del Oráculo. Cada premio queda registrado y verificable.</footer>
     </section>
   );
 }

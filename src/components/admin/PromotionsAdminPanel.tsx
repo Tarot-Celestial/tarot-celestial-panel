@@ -294,8 +294,8 @@ function PackageEditor({ pack, busy, onMutate }: { pack: PromoPackage; busy: str
         <label>Precio<input type="number" min="0.01" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}/></label>
         <label>Precio normal<input type="number" min="0" step="0.01" value={form.regular_price as any} onChange={(e) => setForm({ ...form, regular_price: e.target.value as any })}/></label>
         <label>Coins<input type="number" min="0" value={form.coins} onChange={(e) => setForm({ ...form, coins: Number(e.target.value) })}/></label>
-        <label>Nivel ruleta<select value={form.roulette_level as any} onChange={(e) => setForm({ ...form, roulette_level: e.target.value ? Number(e.target.value) as any : "" as any })}><option value="">Sin giro</option><option value="1">Nivel 1</option><option value="2">Nivel 2</option><option value="3">Nivel 3</option></select></label>
-        <label>Giros<input type="number" min="0" value={form.roulette_spins} onChange={(e) => setForm({ ...form, roulette_spins: Number(e.target.value) })}/></label>
+        <label>Nivel Ruleta Ultra<select value={form.roulette_level as any} onChange={(e) => setForm({ ...form, roulette_level: e.target.value ? Number(e.target.value) as any : "" as any })}><option value="">Sin giro</option><option value="1">Nivel 1</option><option value="2">Nivel 2</option><option value="3">Nivel 3</option></select></label>
+        <label>Giros Ultra Sorpresas<input type="number" min="0" value={form.roulette_spins} onChange={(e) => setForm({ ...form, roulette_spins: Number(e.target.value) })}/></label>
         <label>Tiradas Oráculo<input type="number" min="0" value={form.oracle_credits} onChange={(e) => setForm({ ...form, oracle_credits: Number(e.target.value) })}/></label>
         <label>Orden<input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}/></label>
         <label className={styles.span2}>Descripción<input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })}/></label>

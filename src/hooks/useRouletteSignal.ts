@@ -34,12 +34,15 @@ export function useRouletteSignal(sb: SupabaseClient, clienteId: string | null |
       else { connect(); schedule(); }
     };
     connect();
+    // Respaldo ligero por si Realtime se interrumpe: solo refresca con la pestaña visible.
+    const fallback = window.setInterval(() => { if (!document.hidden) schedule(); }, 45_000);
     window.addEventListener("focus", schedule);
     window.addEventListener("online", schedule);
     document.addEventListener("visibilitychange", visibility);
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
+      window.clearInterval(fallback);
       if (channel) void sb.removeChannel(channel);
       window.removeEventListener("focus", schedule);
       window.removeEventListener("online", schedule);
