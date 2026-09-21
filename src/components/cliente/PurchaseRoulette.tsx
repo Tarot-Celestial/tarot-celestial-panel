@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw } from "lucide-react";
+import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2 } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { prizeLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward } from "@/lib/ruleta";
@@ -66,9 +66,19 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   useRouletteSignal(sb, summary?.cliente_id, load);
 
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
+  const levelMeta = useMemo(() => ({
+    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "Hasta 60 min · 400 Coins" },
+    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "Hasta 80 min · 1000 Coins" },
+    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "Hasta 100 min · 2000 Coins" },
+  } as const), []);
   const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins } : null;
   const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3 } : null;
   const available = spinsByLevel?.[level] ?? null;
+  const selectedMeta = levelMeta[level];
+  const SelectedLevelIcon = selectedMeta.icon;
+  const selectedMaxMinutes = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => Number(p.reward_value || 0))), [prizes]);
+  const selectedMaxCoins = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => Number(p.reward_value || 0))), [prizes]);
+  const selectedSpecial = useMemo(() => prizes.find(p => p.special) || null, [prizes]);
   const gradient = useMemo(() => "conic-gradient(" + prizes.map((p, i) => {
     const color = p.special ? "#b58a30" : p.reward_type === "coins" ? "#247b74" : i % 2 ? "#362050" : "#70409b";
     return color + " " + i * 360 / prizes.length + "deg " + (i + 1) * 360 / prizes.length + "deg";
@@ -142,31 +152,67 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   return (
     <section className={styles.wrap} aria-label="Ruleta Celestial" aria-busy={loading}>
       <header className={styles.hero}>
-        <div><span className={styles.eyebrow}>EL DESTINO TAMBIÉN TE PREMIA</span>
+        <div className={styles.heroCopy}>
+          <span className={styles.eyebrow}>EXPERIENCIA CELESTIAL · RECOMPENSAS</span>
           <h2>Tu compra <em>tiene premio.</em></h2>
-          <p>Una compra confirmada. Un giro. Minutos FREE o Coins que llegan a tu saldo real.</p>
-          <div className={styles.steps}><span>01 · Compra</span><ArrowRight size={14}/><span>02 · Gira</span><ArrowRight size={14}/><span>03 · Disfruta</span></div>
+          <p>Una compra confirmada puede desbloquear giros. Cada giro acredita Minutos FREE o Coins directamente en tu saldo real.</p>
+          <div className={styles.steps} aria-label="Cómo funciona la Ruleta Celestial">
+            <span><b>01</b> Compra</span><ArrowRight size={14}/><span><b>02</b> Gira</span><ArrowRight size={14}/><span><b>03</b> Disfruta</span>
+          </div>
         </div>
-        <div className={styles.brand}><Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={130} height={130} priority/><span aria-hidden="true"/></div>
+        <div className={styles.heroSide}>
+          <div className={styles.brand} aria-hidden="true"><Image src="/Nuevo-logo-tarot.png" alt="" width={126} height={126} priority/><span/></div>
+          <div className={styles.heroBalance}>
+            <small>GIROS DISPONIBLES</small>
+            <strong>{summary?.available_spins ?? "—"}</strong>
+            <span>Saldo real de giros</span>
+          </div>
+        </div>
       </header>
+
       <div className={styles.levels} aria-label="Elige el nivel de tu giro">
-        {([1, 2, 3] as const).map(n => <button type="button" key={n} aria-pressed={level === n} disabled={busy || !!pending} onClick={() => { setLevel(n); setRotation(0); setResult(null); setCountdown(null); }} className={styles.level} data-selected={level === n} data-level={n}>
-          <span className={styles.eyebrow}>{n === 1 ? "DESTELLO CELESTIAL" : n === 2 ? "CONSTELACIÓN DORADA" : "CORONA ASTRAL PREMIUM"}</span>
-          <div><strong>Nivel {n}</strong><b>{spinsByLevel?.[n] ?? "—"} <small>giros</small></b></div>
-          <span>{n === 1 ? `Compras inferiores a $${summary?.level_2_from ?? "…"}` : n === 2 ? `Compras desde $${summary?.level_2_from ?? "…"} hasta menos de $${summary?.level_3_from ?? "…"}` : `Compras premium desde $${summary?.level_3_from ?? "…"}`}</span>
-          <small>{n === 1 ? "Hasta 60 min · 400 Coins" : n === 2 ? "Hasta 80 min · 1000 Coins" : "Hasta 100 min · 2000 Coins"}</small>
-        </button>)}
+        {([1, 2, 3] as const).map(n => {
+          const meta = levelMeta[n];
+          const LevelIcon = meta.icon;
+          const count = spinsByLevel?.[n] ?? null;
+          return <button
+            type="button"
+            key={n}
+            aria-pressed={level === n}
+            disabled={busy || !!pending}
+            onClick={() => { setLevel(n); setRotation(0); setResult(null); setCountdown(null); }}
+            className={styles.level}
+            data-selected={level === n}
+            data-level={n}
+            data-tone={meta.tone}
+          >
+            <div className={styles.levelTop}>
+              <span className={styles.levelIcon}><LevelIcon size={19}/></span>
+              <span className={styles.levelStatus}>{Number(count || 0) > 0 ? "DISPONIBLE" : level === n ? "EXPLORANDO" : "SIN GIROS"}</span>
+            </div>
+            <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
+            <div className={styles.levelMain}><strong>Nivel {n}</strong><b>{count ?? "—"} <small>giros</small></b></div>
+            <span>{n === 1 ? `Compras inferiores a $${summary?.level_2_from ?? "…"}` : n === 2 ? `Compras desde $${summary?.level_2_from ?? "…"} hasta menos de $${summary?.level_3_from ?? "…"}` : `Compras premium desde $${summary?.level_3_from ?? "…"}`}</span>
+            <small className={styles.levelCap}>{meta.cap}</small>
+          </button>;
+        })}
       </div>
+
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
+
       {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div className={styles.arena}>
         <div className={styles.stage}>
-          <span className={styles.stageLabel}>RULETA NIVEL {level} · {prizes.length} PREMIOS</span>
-          <div className={styles.wheelBox}>
+          <div className={styles.stageHead}>
+            <span className={styles.stageLabel}>RULETA NIVEL {level} · {prizes.length} PREMIOS</span>
+            <small>{selectedMeta.name}</small>
+          </div>
+          <div className={styles.wheelBox} data-level={level}>
+            <div className={styles.orbitRing} aria-hidden="true"/>
             <div className={styles.pointer} aria-hidden="true"/>
             <div className={styles.wheel} style={{ background: gradient, transform: "rotate(" + rotation + "deg)" }} aria-hidden="true">
               {prizes.map((p, i) => {
                 const angle = (i + .5) * 2 * Math.PI / prizes.length;
-                return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id}
+                return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id} data-special={p.special}
                   style={{ left: (50 + 34 * Math.sin(angle)) + "%", top: (50 - 34 * Math.cos(angle)) + "%", transform: "translate(-50%,-50%) rotate(" + (-rotation) + "deg)" }}>
                   {p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}<b>{p.reward_value}</b><small>{p.reward_type === "coins" ? "COINS" : "MIN"}</small>
                 </span>;
@@ -179,28 +225,35 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               onClick={() => void spin()}
               aria-label={pending ? "Comprobar giro pendiente" : available ? `Girar ruleta Nivel ${level}` : "No hay giros disponibles"}
             >
-              <RotateCw size={24}/>
+              <RotateCw size={25}/>
               <strong>{busy ? "…" : pending ? "COMPROBAR" : available ? "GIRAR" : "SIN GIROS"}</strong>
               <small>NIVEL {level}</small>
             </button>
           </div>
-          <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina de forma segura al confirmar el giro.</small>
+          <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina y acredita de forma segura antes de mostrar el resultado.</small>
         </div>
-        <div className={styles.controls}>
-          <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
+
+        <aside className={styles.controls}>
+          <div className={styles.controlsHead}>
+            <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
+            <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> Nivel {level}</span>
+          </div>
           <h3>{available ? "Tu próximo premio te espera" : "Desbloquea tu próximo giro"}</h3>
           <p>Cada paquete acredita los giros indicados al confirmar el pago. Puedes acumularlos y cada premio consume solo uno.</p>
+          <div className={styles.prizeTitle}><Gift size={16}/><span>Premios de este nivel</span><b>{prizes.length}</b></div>
           <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special}>
-            {p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}
+            <span className={styles.prizeIcon}>{p.reward_type === "coins" ? <Coins size={18}/> : <Clock3 size={18}/>}</span>
             <span>{prizeLabel(p)}{p.special && <small>PREMIO ESPECIAL</small>}</span>
+            {p.special && <Star size={14} className={styles.specialStar}/>} 
           </li>)}</ul>
           <button type="button" className={styles.spin} disabled={busy || (!pending && !available)} onClick={() => void spin()}>
             <RotateCw size={20}/>{busy ? "Descubriendo tu premio…" : pending ? "Comprobar mi giro pendiente" : "Girar · Nivel " + level}
           </button>
           {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">Ver consultas · Desbloquear un giro <ArrowRight size={17}/></Link>}
           <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
-        </div>
+        </aside>
       </div>}
+
       {result && <section ref={resultRef} className={styles.result} data-special={result.special} data-level={result.spin_level} role="status" aria-live="polite">
         <div className={styles.rewardIcon}>{result.reward_type === "coins" ? <Coins size={38}/> : <Clock3 size={38}/>}</div>
         <span className={styles.eyebrow}>{result.special ? "¡PREMIO ESPECIAL CELESTIAL!" : "¡TU PREMIO YA ES TUYO!"}</span>
@@ -211,6 +264,40 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         {countdown === null ? <button className={styles.subtle} type="button" onClick={() => setCountdown(4)}>Ir a mi saldo en 4 segundos</button>
           : <p>Volviendo a tu saldo en {countdown}… <button type="button" className={styles.subtle} onClick={() => setCountdown(null)}>Permanecer aquí</button></p>}
       </section>}
+
+      {summary && <section className={styles.infoGrid} aria-label="Información de la Ruleta Celestial">
+        <article className={styles.infoCard}>
+          <span className={styles.infoIcon}><RotateCw size={18}/></span>
+          <div><span className={styles.eyebrow}>CÓMO FUNCIONA</span><h4>Tres pasos, sin sorpresas</h4></div>
+          <ol>
+            <li><b>1</b><span><strong>Compra</strong><small>Una compra confirmada puede generar giros.</small></span></li>
+            <li><b>2</b><span><strong>Gira</strong><small>Utiliza un giro del nivel disponible.</small></span></li>
+            <li><b>3</b><span><strong>Disfruta</strong><small>El premio llega directamente a tu saldo.</small></span></li>
+          </ol>
+        </article>
+
+        <article className={styles.infoCard}>
+          <span className={styles.infoIcon}><Gift size={18}/></span>
+          <div><span className={styles.eyebrow}>NIVEL SELECCIONADO</span><h4>{selectedMeta.name}</h4></div>
+          <div className={styles.realStats}>
+            <div><small>Giros disponibles</small><strong>{available ?? 0}</strong></div>
+            <div><small>Hasta minutos FREE</small><strong>{selectedMaxMinutes}</strong></div>
+            <div><small>Hasta Coins</small><strong>{selectedMaxCoins}</strong></div>
+          </div>
+          {selectedSpecial && <div className={styles.specialHint}><Star size={15}/><span>Este nivel contiene al menos un premio especial.</span></div>}
+        </article>
+
+        <article className={styles.infoCard}>
+          <span className={styles.infoIcon}><ShieldCheck size={18}/></span>
+          <div><span className={styles.eyebrow}>PREMIO REAL</span><h4>Seguro, acreditado y verificable</h4></div>
+          <ul className={styles.securityList}>
+            <li><CheckCircle2 size={15}/> El giro se valida en servidor.</li>
+            <li><CheckCircle2 size={15}/> Un giro solo puede consumirse una vez.</li>
+            <li><CheckCircle2 size={15}/> El saldo se actualiza antes de mostrar el premio.</li>
+          </ul>
+        </article>
+      </section>}
+
       <footer className={styles.footer}><Sparkles size={16}/> Tus giros de Ruleta son independientes de las tiradas del Oráculo. Siempre sabes qué has ganado.</footer>
     </section>
   );
