@@ -584,7 +584,30 @@ export async function POST(req: Request) {
           if (clearError) throw clearError;
         }
       }
-      const linked = await ensureClienteAuthUser({ phone: String(client.telefono), password });
+      let linked: Awaited<ReturnType<typeof ensureClienteAuthUser>>;
+      try {
+        linked = await ensureClienteAuthUser({
+          clienteId: clientId,
+          phone: String(client.telefono),
+          password,
+        });
+      } catch (accessError: any) {
+        const code = String(accessError?.message || "");
+        if (code === "TELEFONO_DUPLICADO_REQUIERE_REVISION") {
+          return NextResponse.json({
+            ok: false,
+            error: "Hay varias fichas CRM con este teléfono. Esta ficha ya está identificada por su ID, pero no se pudo resolver de forma segura el acceso web. Revisa los duplicados y conserva una sola ficha antes de continuar.",
+          }, { status: 409 });
+        }
+        if (code.startsWith("ACCESO_WEB_YA_ASOCIADO_A_OTRA_FICHA")) {
+          const otherName = code.includes(":") ? code.split(":").slice(1).join(":").trim() : "otra ficha";
+          return NextResponse.json({
+            ok: false,
+            error: `Este teléfono ya tiene un acceso web asociado a ${otherName || "otra ficha"}. No se ha creado una segunda cuenta. Revisa o elimina el duplicado antes de continuar.`,
+          }, { status: 409 });
+        }
+        throw accessError;
+      }
       invalidateAuthUsersCache();
       await writeAudit(gate.admin, gate.me, clientId, linked.auth_user_id, "admin_cliente_web_crear_acceso", { created: linked.created });
       return NextResponse.json({ ok: true, auth_user_id: linked.auth_user_id, created: linked.created });

@@ -251,6 +251,30 @@ async function resolveClienteAuthUser(admin: ReturnType<typeof adminSupabase>, c
   return match;
 }
 
+async function assertAuthUserNotLinkedToAnotherCliente(
+  admin: ReturnType<typeof adminSupabase>,
+  authUserId: string,
+  clienteId: string,
+) {
+  const { data, error } = await admin
+    .from("crm_clientes")
+    .select("id, nombre, apellido, telefono")
+    .eq("auth_user_id", authUserId)
+    .neq("id", clienteId)
+    .limit(1);
+
+  if (error) throw error;
+  const other = (data || [])[0];
+  if (other?.id) {
+    const name = [other.nombre, other.apellido].filter(Boolean).join(" ").trim();
+    throw new Error(
+      name
+        ? `ACCESO_WEB_YA_ASOCIADO_A_OTRA_FICHA:${name}`
+        : "ACCESO_WEB_YA_ASOCIADO_A_OTRA_FICHA",
+    );
+  }
+}
+
 function loginIdentity(user: any, aliasEmail: string) {
   const email = String(user?.email || "").trim();
   const phone = String(user?.phone || "").trim();
@@ -265,22 +289,49 @@ function loginIdentity(user: any, aliasEmail: string) {
 export async function ensureClienteAuthUser(params: {
   phone: string;
   password?: string;
+  clienteId?: string;
 }) {
   const sb = adminSupabase();
-  const phoneDigits = normalizePhoneDigits(params.phone);
+  let phoneDigits = normalizePhoneDigits(params.phone);
 
   if (!phoneDigits) throw new Error("PHONE_REQUIRED");
 
-  const aliasEmail = buildClienteAliasEmail(phoneDigits);
-  const cliente = await findClienteByPhone(phoneDigits);
+  // En operaciones administrativas podemos conocer exactamente qué ficha CRM
+  // se está editando. En ese caso NO debemos volver a resolverla únicamente
+  // por teléfono: si existen dos fichas históricas con el mismo número, esa
+  // búsqueda es ambigua y terminaba en TELEFONO_DUPLICADO_REQUIERE_REVISION.
+  // El id explícito mantiene una única ficha objetivo sin relajar la protección
+  // para los flujos públicos de login/reset, que siguen resolviendo por teléfono.
+  let cliente: any = null;
+  const explicitClienteId = String(params.clienteId || "").trim();
+  if (explicitClienteId) {
+    const { data, error } = await sb
+      .from("crm_clientes")
+      .select("id, nombre, apellido, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
+      .eq("id", explicitClienteId)
+      .maybeSingle();
+    if (error) throw error;
+    cliente = data || null;
+    if (!cliente?.id) throw new Error("CLIENTE_NOT_FOUND");
+
+    const selectedPhone = normalizePhoneDigits(cliente.telefono_normalizado || cliente.telefono || params.phone);
+    if (!selectedPhone) throw new Error("PHONE_REQUIRED");
+    phoneDigits = selectedPhone;
+  } else {
+    cliente = await findClienteByPhone(phoneDigits);
+  }
 
   if (!cliente?.id) {
     throw new Error("CLIENTE_NOT_FOUND");
   }
 
+  const aliasEmail = buildClienteAliasEmail(phoneDigits);
+
   const resolvedUser = await resolveClienteAuthUser(sb, cliente, phoneDigits, aliasEmail);
 
   if (resolvedUser) {
+    await assertAuthUserNotLinkedToAnotherCliente(sb, resolvedUser.id, cliente.id);
+
     if (params.password) {
       const { error } = await sb.auth.admin.updateUserById(resolvedUser.id, {
         password: params.password,
@@ -311,6 +362,7 @@ export async function ensureClienteAuthUser(params: {
   const existingUser = await findAuthUserByAliasEmail(aliasEmail);
 
   if (existingUser) {
+    await assertAuthUserNotLinkedToAnotherCliente(sb, existingUser.id, cliente.id);
     await linkClienteAuthUser(sb, cliente.id, existingUser.id);
 
     if (params.password) {
