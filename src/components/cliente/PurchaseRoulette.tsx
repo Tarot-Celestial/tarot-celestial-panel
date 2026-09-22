@@ -18,6 +18,35 @@ const rarityColors: Record<string,string> = {
   common: "#4a315f", uncommon: "#257b67", rare: "#276d9e", epic: "#6d3a9b",
   legendary: "#b4872a", ultra: "#9e294b", diamond: "#248a99", jackpot: "#b83a2d",
 };
+
+const rarityPower: Record<string, number> = {
+  common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, ultra: 5, diamond: 6, jackpot: 7,
+};
+
+function arrangeWheelPrizes(input: RoulettePrize[], level: RouletteLevel) {
+  const prizes = [...input].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  if (level !== 4 || prizes.length < 4) return prizes;
+
+  // La Super Ruleta reparte visualmente los premios fuertes entre premios normales.
+  // Esto NO altera probabilidades: el backend sigue decidiendo el premio por weight.
+  const strong = prizes
+    .filter((p) => Boolean(p.special) || (rarityPower[String(p.rarity || "common")] || 0) >= 4)
+    .sort((a, b) => (rarityPower[String(b.rarity || "common")] || 0) - (rarityPower[String(a.rarity || "common")] || 0) || Number(a.sort_order || 0) - Number(b.sort_order || 0));
+  const regular = prizes.filter((p) => !strong.some((candidate) => candidate.id === p.id));
+  const arranged: RoulettePrize[] = [];
+  let si = 0;
+  let ri = 0;
+  const startStrong = strong.length > regular.length;
+
+  while (si < strong.length || ri < regular.length) {
+    const wantsStrong = (arranged.length % 2 === 0) === startStrong;
+    if (wantsStrong && si < strong.length) arranged.push(strong[si++]);
+    else if (!wantsStrong && ri < regular.length) arranged.push(regular[ri++]);
+    else if (ri < regular.length) arranged.push(regular[ri++]);
+    else if (si < strong.length) arranged.push(strong[si++]);
+  }
+  return arranged;
+}
 function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: number }) {
   if (type === "coins") return <Coins size={size}/>;
   if (type === "rank") return <Crown size={size}/>;
@@ -87,6 +116,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   useRouletteSignal(sb, summary?.cliente_id, load);
 
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
+  const wheelPrizes = useMemo(() => arrangeWheelPrizes(prizes, level), [prizes, level]);
   const levelMeta = useMemo(() => ({
     1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "2 · 3 · 4 · 5 · 60 min · 400 Coins" },
     2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "6 · 8 · 10 · 12 · 14 · 16 · 80 min · 1.000 Coins" },
@@ -102,13 +132,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const selectedMaxCoins = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedSpecial = useMemo(() => prizes.find(p => p.special) || null, [prizes]);
   const gradient = useMemo(() => {
-    if (!prizes.length) return "conic-gradient(#24172d 0deg 360deg)";
-    return "conic-gradient(" + prizes.map((p, i) => {
+    if (!wheelPrizes.length) return "conic-gradient(#24172d 0deg 360deg)";
+    return "conic-gradient(" + wheelPrizes.map((p, i) => {
       const base = rarityColors[String(p.rarity || "common")] || (i % 2 ? "#362050" : "#70409b");
       const color = p.special && !p.rarity ? "#b58a30" : base;
-      return color + " " + i * 360 / prizes.length + "deg " + (i + 1) * 360 / prizes.length + "deg";
+      return color + " " + i * 360 / wheelPrizes.length + "deg " + (i + 1) * 360 / wheelPrizes.length + "deg";
     }).join(",") + ")";
-  }, [prizes]);
+  }, [wheelPrizes]);
   const goToBalance = useCallback(() => {
     if (!result) return;
     if (result.reward_type === "coins" || result.reward_type === "minutes") {
@@ -147,8 +177,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         throw new Error(json.error || "No se ha podido confirmar el giro.");
       }
       if (!mounted.current) return;
-      const awardedPrizes = json.catalogue.filter((p: { nivel: number }) => p.nivel === request.level);
-      const index = awardedPrizes.findIndex((p: { id: string }) => p.id === json.reward_id);
+      const awardedPrizes = arrangeWheelPrizes(
+        (json.catalogue || []).filter((p: RoulettePrize) => p.nivel === request.level),
+        request.level,
+      );
+      const index = awardedPrizes.findIndex((p: RoulettePrize) => p.id === json.reward_id);
       setSummary(json); setLevel(request.level);
       if (index >= 0) setRotation(previous => winningRotation(previous, index, awardedPrizes.length));
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -253,15 +286,15 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div className={styles.arena}>
         <div className={styles.stage} data-special={level === 4 ? "true" : "false"}>
           <div className={styles.stageHead}>
-            <span className={styles.stageLabel}>{level === 4 ? `RULETA ESPECIAL · TODOS LOS PREMIOS · ${prizes.length}` : `RULETA NIVEL ${level} · ${prizes.length} PREMIOS`}</span>
+            <span className={styles.stageLabel}>{level === 4 ? `SUPER RULETA · NIVEL ESPECIAL · ${wheelPrizes.length} PREMIOS` : `RULETA NIVEL ${level} · ${wheelPrizes.length} PREMIOS`}</span>
             <small>{selectedMeta.name}</small>
           </div>
           <div className={styles.wheelBox} data-level={level}>
             <div className={styles.orbitRing} aria-hidden="true"/>
             <div className={styles.pointer} aria-hidden="true"/>
             <div className={styles.wheel} style={{ background: gradient, transform: "rotate(" + rotation + "deg)" }} aria-hidden="true">
-              {prizes.map((p, i) => {
-                const angle = (i + .5) * 2 * Math.PI / prizes.length;
+              {wheelPrizes.map((p, i) => {
+                const angle = (i + .5) * 2 * Math.PI / wheelPrizes.length;
                 const visual = wheelValue(p);
                 const radius = level === 4 ? 37 : 34;
                 return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id} data-special={p.special} data-rarity={p.rarity || "common"}

@@ -183,7 +183,7 @@ export default function PreciosOfertasPage() {
                   <div className={styles.promoPrice}>{pack.regular_price && Number(pack.regular_price) > Number(pack.price) ? <del>{formatPromoMoney(pack.regular_price, pack.currency)}</del> : null}<strong>{formatPromoMoney(pack.price, pack.currency)}</strong></div>
                   <div className={styles.promoBenefits}>
                     {pack.coins > 0 ? <span>🪙 +{pack.coins} Coins</span> : null}
-                    {pack.roulette_spins > 0 && pack.roulette_level ? <span>🎡 +{pack.roulette_spins} giro{pack.roulette_spins === 1 ? "" : "s"} Nivel {pack.roulette_level}</span> : null}
+                    {pack.roulette_spins > 0 && pack.roulette_level ? <span>{Number(pack.roulette_level) === 4 ? `🎰 +${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} SUPER RULETA · Nivel Especial` : `🎡 +${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} Nivel ${pack.roulette_level}`}</span> : null}
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
                     {pack.extra_benefit ? <span>✦ {pack.extra_benefit}</span> : null}
                   </div>
