@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 
 export const runtime = "nodejs";
 
@@ -121,7 +122,7 @@ export async function POST(req: Request) {
       if (!referencia_externa) return NextResponse.json({ ok: false, error: "La referencia del cobro es obligatoria." }, { status: 400 });
       const { data: transaction, error } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
         p: { cliente_id, payment_ref: referencia_externa, amount: importe, currency: moneda, metodo,
-          free: 0, normal: 0, points: pointsFromAmount(importe), notas,
+          free: 0, normal: 0, points: pointsFromAmount(importe), roulette_level: rouletteLevelForPurchaseAmount(importe), notas,
           created_by_user_id: worker.id, created_by_role: worker.role },
       });
       if (error) throw error;

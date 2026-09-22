@@ -242,7 +242,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             </div>
             <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
             <div className={styles.levelMain}><strong>{n === 4 ? "Nivel Especial" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
-            <span>{n === 1 ? "Nivel base de la ruleta clásica" : n === 2 ? "Nivel mejorado de la ruleta clásica" : n === 3 ? "Nivel premium de la ruleta clásica" : "Disponible exclusivamente con la promoción que active Administración"}</span>
+            <span>{n === 1 ? "Compras inferiores a 27 €" : n === 2 ? "Compras desde 27 € hasta menos de 37 €" : n === 3 ? "Compras desde 49 € hasta 99 €" : "Disponible exclusivamente con la promoción que active Administración"}</span>
             <small className={styles.levelCap}>{meta.cap}</small>
           </button>;
         })}

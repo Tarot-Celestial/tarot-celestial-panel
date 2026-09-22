@@ -1,3 +1,4 @@
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 import {
   computeCurrentRankFromSpend,
   createClientNotification,
@@ -8,7 +9,7 @@ import {
 
 export type PromotionPackageSnapshot = {
   kind: "promotion_minute_pack";
-  snapshot_version: 2;
+  snapshot_version: 2 | 3;
   promotion_id: string;
   promotion_name: string;
   package_id: string;
@@ -118,9 +119,18 @@ export async function loadActivePromotion(admin: any) {
 }
 
 export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPackageSnapshot {
+  const price = Number(pack.price || 0);
+  const rouletteSpins = Math.max(0, Math.floor(Number(pack.roulette_spins || 0)));
+  const configuredLevel = Number(pack.roulette_level || 0);
+  // Niveles 1-3 SIEMPRE se deducen del importe. El Nivel 4 es la única excepción:
+  // solo existe cuando una promoción lo concede explícitamente desde Administración.
+  const rouletteLevel = rouletteSpins > 0
+    ? (configuredLevel === 4 ? 4 : rouletteLevelForPurchaseAmount(price))
+    : null;
+
   return {
     kind: "promotion_minute_pack",
-    snapshot_version: 2,
+    snapshot_version: 3,
     promotion_id: String(promotion.id),
     promotion_name: String(promotion.name || "Promoción"),
     package_id: String(pack.id),
@@ -128,11 +138,11 @@ export function promotionPackageSnapshot(promotion: any, pack: any): PromotionPa
     description: String(pack.description || ""),
     paid_minutes: Math.max(0, Number(pack.paid_minutes || 0)),
     free_minutes: Math.max(0, Number(pack.free_minutes || 0)),
-    price: Number(pack.price || 0),
+    price,
     regular_price: pack.regular_price == null ? null : Number(pack.regular_price),
     currency: String(pack.currency || "EUR").toUpperCase() === "USD" ? "USD" : "EUR",
-    roulette_level: [1, 2, 3, 4].includes(Number(pack.roulette_level)) ? Number(pack.roulette_level) as 1 | 2 | 3 | 4 : null,
-    roulette_spins: Math.max(0, Math.floor(Number(pack.roulette_spins || 0))),
+    roulette_level: rouletteLevel,
+    roulette_spins: rouletteLevel ? rouletteSpins : 0,
     coins: Math.max(0, Math.floor(Number(pack.coins || 0))),
     oracle_credits: Math.max(0, Math.floor(Number(pack.oracle_credits || 0))),
     extra_benefit: pack.extra_benefit ? String(pack.extra_benefit) : null,
@@ -151,10 +161,32 @@ export async function applyPromotionMinutePurchase(
     currency: "EUR" | "USD";
   },
 ) {
-  const snap = params.snapshot;
-  if (snap.kind !== "promotion_minute_pack") throw new Error("PROMOTION_SNAPSHOT_INVALID");
-  if (Math.abs(Number(params.amount) - Number(snap.price)) > 0.001) throw new Error("PROMOTION_AMOUNT_MISMATCH");
-  if (params.currency !== snap.currency) throw new Error("PROMOTION_CURRENCY_MISMATCH");
+  const originalSnap = params.snapshot;
+  if (originalSnap.kind !== "promotion_minute_pack") throw new Error("PROMOTION_SNAPSHOT_INVALID");
+  if (Math.abs(Number(params.amount) - Number(originalSnap.price)) > 0.001) throw new Error("PROMOTION_AMOUNT_MISMATCH");
+  if (params.currency !== originalSnap.currency) throw new Error("PROMOTION_CURRENCY_MISMATCH");
+
+  const configuredLevel = Number(originalSnap.roulette_level || 0);
+  const automaticLevel = rouletteLevelForPurchaseAmount(params.amount);
+  const effectiveLevel = originalSnap.roulette_spins > 0
+    ? (configuredLevel === 4 ? 4 : automaticLevel)
+    : null;
+  const snap: PromotionPackageSnapshot = {
+    ...originalSnap,
+    snapshot_version: 3,
+    roulette_level: effectiveLevel,
+    roulette_spins: effectiveLevel ? Math.max(0, Math.floor(Number(originalSnap.roulette_spins || 0))) : 0,
+  };
+
+  // Corrige también intentos creados antes de desplegar esta versión para que la RPC
+  // lea la misma verdad: importe -> nivel automático (salvo Nivel Especial explícito).
+  try {
+    await admin.from("cliente_payment_attempts").update({
+      promotion_snapshot: snap,
+    }).eq("id", params.attemptId).neq("status", "completed");
+  } catch (error) {
+    console.error("[client-promotions/normalize-roulette-snapshot]", error);
+  }
 
   const totalMinutes = snap.paid_minutes + snap.free_minutes;
   const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_promocion_v1", {

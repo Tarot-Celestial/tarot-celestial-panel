@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { effectivePromotionStatus, normalizePromotionDate } from "@/lib/server/client-promotions";
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 
 export const runtime = "nodejs";
 
@@ -214,7 +215,7 @@ export async function POST(req: Request) {
           price: pack.price,
           regular_price: pack.regular_price,
           currency: pack.currency,
-          roulette_level: pack.roulette_level,
+          roulette_level: Number(pack.roulette_level) === 4 ? 4 : rouletteLevelForPurchaseAmount(pack.price),
           roulette_spins: pack.roulette_spins,
           coins: pack.coins,
           oracle_credits: pack.oracle_credits,
@@ -241,6 +242,10 @@ export async function POST(req: Request) {
       if (!promotionId || !name || !Number.isFinite(price) || price <= 0 || paidMinutes + freeMinutes <= 0) {
         return NextResponse.json({ ok: false, error: "DATOS_PAQUETE_INVALIDOS" }, { status: 400 });
       }
+      const rouletteSpins = Math.max(0, Math.floor(Number(body?.roulette_spins || 0)));
+      const requestedSpecial = Number(body?.roulette_level) === 4;
+      const automaticRouletteLevel = rouletteLevelForPurchaseAmount(price);
+      const rouletteLevel = rouletteSpins > 0 ? (requestedSpecial ? 4 : automaticRouletteLevel) : null;
       const row = {
         promotion_id: promotionId,
         name,
@@ -250,8 +255,8 @@ export async function POST(req: Request) {
         price,
         regular_price: body?.regular_price === "" || body?.regular_price == null ? null : Number(body.regular_price),
         currency,
-        roulette_level: [1, 2, 3, 4].includes(Number(body?.roulette_level)) ? Number(body.roulette_level) : null,
-        roulette_spins: Math.max(0, Math.floor(Number(body?.roulette_spins || 0))),
+        roulette_level: rouletteLevel,
+        roulette_spins: rouletteLevel ? rouletteSpins : 0,
         coins: Math.max(0, Math.floor(Number(body?.coins || 0))),
         oracle_credits: Math.max(0, Math.floor(Number(body?.oracle_credits || 0))),
         extra_benefit: cleanText(body?.extra_benefit, 300),
@@ -282,7 +287,7 @@ export async function POST(req: Request) {
         price: source.price,
         regular_price: source.regular_price,
         currency: source.currency,
-        roulette_level: source.roulette_level,
+        roulette_level: Number(source.roulette_level) === 4 ? 4 : rouletteLevelForPurchaseAmount(source.price),
         roulette_spins: source.roulette_spins,
         coins: source.coins,
         oracle_credits: source.oracle_credits,

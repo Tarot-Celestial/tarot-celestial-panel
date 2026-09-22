@@ -5,13 +5,14 @@ import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/clie
 import { createMolliePaymentLink } from "@/lib/server/mollie";
 import { processMolliePayment, processMolliePaymentLink } from "@/lib/server/mollie-payment-processing";
 import { paymentWhatsappConfig, sendPaymentLink } from "@/lib/server/payment-link-whatsapp";
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 const MANUAL_PACK_ID = "crm_manual_amount";
 function publicPack(pack: (typeof CLIENTE_MINUTE_PACKS)[number]) {
   return { id: pack.id, nombre: pack.nombre, descripcion: pack.descripcion, amount: pack.priceUsd,
-    total_minutes: pack.totalMinutes, roulette_level: pack.rouletteLevel, roulette_spins: pack.rouletteSpins,
+    total_minutes: pack.totalMinutes, roulette_level: rouletteLevelForPurchaseAmount(pack.priceUsd), roulette_spins: rouletteLevelForPurchaseAmount(pack.priceUsd) ? pack.rouletteSpins : 0,
     coins: pack.rewardCoins || 0, oracle_credits: pack.oracleCredits || 0, highlight: Boolean(pack.highlight) };
 }
 function allowed(attempt: any, worker: any) {
@@ -84,6 +85,7 @@ export async function POST(req: Request) {
     if (!base.startsWith("https://")) throw new Error("Configura MOLLIE_PUBLIC_BASE_URL con el dominio HTTPS público.");
     const metadata = { source: "crm_cobrador", link_version: 2, attempt_id: id, cliente_id: cliente.id,
       pack_id: pack?.id || MANUAL_PACK_ID, total_minutes: pack?.totalMinutes || 0, manual_amount: !pack,
+      roulette_level: rouletteLevelForPurchaseAmount(amount),
       notes: String(body.notes || "").trim().slice(0,500), initiated_by_worker_id: worker.id,
       initiated_by_role: worker.role, initiated_by_name: worker.display_name || "Central" };
     const { error: insertError } = await admin.from("cliente_payment_attempts").insert({ id, cliente_id: cliente.id, provider: "mollie", order_id: `crm-mollie-init-${id}`, public_token: randomUUID(), pack_id: metadata.pack_id, amount, currency: "EUR", total_minutes: metadata.total_minutes, status: "pending", provider_response: { metadata, creation_base_url: base } });

@@ -96,6 +96,24 @@ export type RouletteReward = {
   entitlement_id?: string | null;
 };
 
+
+export function rouletteLevelForPurchaseAmount(amount: unknown): 1 | 2 | 3 | null {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (value < 27) return 1;
+  if (value >= 27 && value < 37) return 2;
+  if (value >= 49 && value <= 99) return 3;
+  return null;
+}
+
+export function rouletteLevelBandLabel(level: 1 | 2 | 3 | 4 | null) {
+  if (level === 1) return 'Nivel 1 · compras inferiores a 27 €';
+  if (level === 2) return 'Nivel 2 · compras desde 27 € hasta menos de 37 €';
+  if (level === 3) return 'Nivel 3 · compras desde 49 € hasta 99 €';
+  if (level === 4) return 'Nivel Especial · solo promoción específica';
+  return 'Sin nivel automático definido';
+}
+
 export const rarityLabel: Record<RouletteRarity, string> = {
   common: "Común",
   uncommon: "Poco común",

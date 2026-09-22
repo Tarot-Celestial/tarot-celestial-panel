@@ -8,6 +8,7 @@ import {
   toNum,
 } from "@/lib/server/cliente-platform";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 
 export type ClientPurchaseCurrency = "USD" | "EUR";
 
@@ -38,6 +39,8 @@ export async function applyConfiguredMinutePurchase(
   const totalMinutes = Number(pack.totalMinutes);
   const minutesSplit = splitMinutes(totalMinutes);
   const puntosGanados = pack.rewardCoins ?? pointsFromAmount(amount);
+  const rouletteLevel = rouletteLevelForPurchaseAmount(amount);
+  const rouletteSpins = rouletteLevel ? Math.max(0, Number(pack.rouletteSpins || 0)) : 0;
 
   const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v3", {
     p: { cliente_id: params.clienteId, payment_ref: params.paymentRef,
@@ -47,7 +50,7 @@ export async function applyConfiguredMinutePurchase(
       amount, currency, metodo, pack_id: pack.id, pack_name: pack.nombre,
       free: minutesSplit.free, normal: minutesSplit.normal, points: puntosGanados,
       oracle_credits: pack.oracleCredits || 0,
-      roulette_spins: pack.rouletteSpins,
+      roulette_level: rouletteLevel, roulette_spins: rouletteSpins,
       notas: params.notas || "Compra automatizada desde panel cliente · " + pack.nombre },
   });
   if (transactionError) throw transactionError;
@@ -75,17 +78,21 @@ export async function applyConfiguredMinutePurchase(
 
   await syncClientMonthTag(admin, params.clienteId);
 
+  const rouletteBenefit = rouletteLevel && rouletteSpins > 0
+    ? ` y ${rouletteSpins} giro${rouletteSpins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${rouletteLevel}`
+    : "";
+
   await createClientNotification(admin, {
     cliente_id: params.clienteId,
     tipo: "purchase_completed",
     titulo: "Pago confirmado",
-    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} Coins${pack.oracleCredits ? `, +${pack.oracleCredits} tirada${pack.oracleCredits === 1 ? "" : "s"} de Oráculo` : ""} y ${pack.rouletteSpins} giro${pack.rouletteSpins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${pack.rouletteLevel}.`,
+    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} Coins${pack.oracleCredits ? `, +${pack.oracleCredits} tirada${pack.oracleCredits === 1 ? "" : "s"} de Oráculo` : ""}${rouletteBenefit}.`,
     meta: {
       pack_id: pack.id,
       pack_name: pack.nombre,
       total_minutes: totalMinutes,
-      roulette_level: pack.rouletteLevel,
-      roulette_spins: pack.rouletteSpins,
+      roulette_level: rouletteLevel,
+      roulette_spins: rouletteSpins,
       oracle_credits: pack.oracleCredits || 0,
       coins: puntosGanados,
       payment_intent: params.paymentIntent || null,

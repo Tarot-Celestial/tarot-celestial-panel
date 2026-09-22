@@ -1,3 +1,5 @@
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+
 export type ClienteMinutePack = {
   id: string;
   nombre: string;
@@ -120,10 +122,10 @@ export function getConfiguredMinutePack(packId: unknown): ClienteMinutePack | nu
   return CLIENTE_MINUTE_PACKS.find((pack) => pack.id === id) || null;
 }
 
-export function getWheelLevelForPurchase(pack: Pick<ClienteMinutePack, "rouletteLevel">): 1 | 2 | 3 {
-  return pack.rouletteLevel;
+export function getWheelLevelForPurchase(pack: Pick<ClienteMinutePack, "priceUsd">): 1 | 2 | 3 | null {
+  return rouletteLevelForPurchaseAmount(pack.priceUsd);
 }
 
-export function rouletteLevelForPack(pack: ClienteMinutePack): 1 | 2 | 3 {
+export function rouletteLevelForPack(pack: ClienteMinutePack): 1 | 2 | 3 | null {
   return getWheelLevelForPurchase(pack);
 }

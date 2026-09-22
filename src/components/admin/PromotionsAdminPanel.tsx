@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, Copy, Eye, Gift, Plus, Power, RefreshCw, Save, ShoppingBag, Sparkles, Trash2, TrendingUp } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { rouletteLevelForPurchaseAmount, rouletteLevelBandLabel } from "@/lib/ruleta";
 import styles from "./PromotionsAdminPanel.module.css";
 
 const sb = supabaseBrowser();
@@ -260,7 +261,7 @@ function PromotionEditor({ promotion, busy, preview, onPreview, onMutate, active
       {preview ? <PromotionPreview promotion={promotion}/> : null}
 
       <section className={styles.formCard}>
-        <div className={styles.sectionTitle}><ShoppingBag size={17}/><div><strong>Packs configurados</strong><span>Minutos, precio y beneficios estructurados que se acreditan al confirmar Mollie.</span></div><button className={styles.primaryButton} onClick={() => void onMutate({ action: "add_package", promotion_id: promotion.id, name: "Nuevo pack", description: "", paid_minutes: 20, free_minutes: 0, price: 20, currency: "EUR", roulette_level: 1, roulette_spins: 1, coins: 0, oracle_credits: 0, sort_order: promotion.packages.length + 1 }, `add:${promotion.id}`)}><Plus size={15}/> Añadir paquete</button></div>
+        <div className={styles.sectionTitle}><ShoppingBag size={17}/><div><strong>Packs configurados</strong><span>Minutos, precio y beneficios estructurados que se acreditan al confirmar Mollie.</span></div><button className={styles.primaryButton} onClick={() => void onMutate({ action: "add_package", promotion_id: promotion.id, name: "Nuevo pack", description: "", paid_minutes: 20, free_minutes: 0, price: 20, currency: "EUR", roulette_level: null, roulette_spins: 1, coins: 0, oracle_credits: 0, sort_order: promotion.packages.length + 1 }, `add:${promotion.id}`)}><Plus size={15}/> Añadir paquete</button></div>
         <div className={styles.packList}>
           {promotion.packages.length === 0 ? <div className={styles.empty}>Añade el primer paquete de esta promoción.</div> : promotion.packages.map((pack) => <PackageEditor key={pack.id} pack={pack} busy={busy} onMutate={onMutate}/>)}
         </div>
@@ -283,6 +284,8 @@ function PromotionEditor({ promotion, busy, preview, onPreview, onMutate, active
 function PackageEditor({ pack, busy, onMutate }: { pack: PromoPackage; busy: string; onMutate: (payload: any, busyKey?: string) => Promise<any> }) {
   const [form, setForm] = useState({ ...pack, regular_price: pack.regular_price ?? "" as any, roulette_level: pack.roulette_level ?? "" as any });
   useEffect(() => setForm({ ...pack, regular_price: pack.regular_price ?? "" as any, roulette_level: pack.roulette_level ?? "" as any }), [pack]);
+  const automaticLevel = rouletteLevelForPurchaseAmount(form.price);
+  const specialLevel = Number(form.roulette_level) === 4;
   return (
     <article className={styles.packEditor} data-disabled={!form.is_active ? "true" : "false"}>
       <div className={styles.packTop}><strong>{form.name}</strong><label className={styles.inlineCheck}><input type="checkbox" checked={Boolean(form.is_active)} onChange={(e) => setForm({ ...form, is_active: e.target.checked })}/> Activo</label><label className={styles.inlineCheck}><input type="checkbox" checked={Boolean(form.is_recommended)} onChange={(e) => setForm({ ...form, is_recommended: e.target.checked })}/> Recomendado</label></div>
@@ -291,10 +294,10 @@ function PackageEditor({ pack, busy, onMutate }: { pack: PromoPackage; busy: str
         <label>Moneda<select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value as any })}><option>EUR</option><option>USD</option></select></label>
         <label>Min. comprados<input type="number" min="0" value={form.paid_minutes} onChange={(e) => setForm({ ...form, paid_minutes: Number(e.target.value) })}/></label>
         <label>Min. gratis<input type="number" min="0" value={form.free_minutes} onChange={(e) => setForm({ ...form, free_minutes: Number(e.target.value) })}/></label>
-        <label>Precio<input type="number" min="0.01" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}/></label>
+        <label>Precio<input type="number" min="0.01" step="0.01" value={form.price} onChange={(e) => { const price = Number(e.target.value); setForm({ ...form, price, roulette_level: specialLevel ? 4 : (rouletteLevelForPurchaseAmount(price) as any) }); }}/></label>
         <label>Precio normal<input type="number" min="0" step="0.01" value={form.regular_price as any} onChange={(e) => setForm({ ...form, regular_price: e.target.value as any })}/></label>
         <label>Coins<input type="number" min="0" value={form.coins} onChange={(e) => setForm({ ...form, coins: Number(e.target.value) })}/></label>
-        <label>Nivel Ruleta Ultra<select value={form.roulette_level as any} onChange={(e) => setForm({ ...form, roulette_level: e.target.value ? Number(e.target.value) as any : "" as any })}><option value="">Sin giro</option><option value="1">Nivel 1</option><option value="2">Nivel 2</option><option value="3">Nivel 3</option><option value="4">Nivel Especial · Super Ruleta</option></select></label>
+        <label>Nivel Ruleta Ultra<select value={specialLevel ? "4" : "auto"} onChange={(e) => setForm({ ...form, roulette_level: e.target.value === "4" ? 4 : (automaticLevel as any) })}><option value="auto">Automático por importe</option><option value="4">Nivel Especial · Super Ruleta</option></select><small>{specialLevel ? "Nivel 4: solo promoción especial configurada por Administración." : rouletteLevelBandLabel(automaticLevel)}</small></label>
         <label>Giros Ultra Sorpresas<input type="number" min="0" value={form.roulette_spins} onChange={(e) => setForm({ ...form, roulette_spins: Number(e.target.value) })}/></label>
         <label>Tiradas Oráculo<input type="number" min="0" value={form.oracle_credits} onChange={(e) => setForm({ ...form, oracle_credits: Number(e.target.value) })}/></label>
         <label>Orden<input type="number" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}/></label>
