@@ -150,6 +150,7 @@ function buildNota({
   nextFree,
   nextNormales,
   origenColaborador,
+  clasificacion,
 }: any) {
   const origen = origenColaborador ? ` Origen: ${origenColaborador}.` : "";
   if (!clienteCompra && usoTipo === "7free") {
@@ -165,6 +166,7 @@ function buildNota({
   if (resumenCodigo) partes.push(`Uso actual: ${resumenCodigo}.`);
   partes.push(`Tarotista: ${tarotistaNombre || "sin indicar"}.`);
   if (origenColaborador) partes.push(`Origen: ${origenColaborador}.`);
+  if (clasificacion === "super_promo_ruleta") partes.push("Clasificación: Super Promo Ruleta (+1 giro exclusivo Nivel Especial).");
   return partes.join(" ").replace(/\s+/g, " ").trim();
 }
 
@@ -254,6 +256,13 @@ export async function POST(req: Request) {
     const formaPago = cleanText(body?.forma_pago);
     const importe = toNum(body?.importe);
     const clasificacion = String(body?.clasificacion || "nada").trim();
+    const clasificacionesValidas = new Set(["nada", "promo", "captado", "recuperado", "super_promo_ruleta"]);
+    if (!clasificacionesValidas.has(clasificacion)) {
+      return NextResponse.json({ ok: false, error: "CLASIFICACION_INVALIDA" }, { status: 400 });
+    }
+    if (clasificacion === "super_promo_ruleta" && !clienteCompra) {
+      return NextResponse.json({ ok: false, error: "SUPER_PROMO_REQUIERE_COMPRA" }, { status: 400 });
+    }
 
     if (!clienteCompra && usoTipo !== "minutos" && usoTipo !== "7free") {
       return NextResponse.json({ ok: false, error: "USO_TIPO_INVALIDO" }, { status: 400 });
@@ -301,11 +310,22 @@ export async function POST(req: Request) {
         .maybeSingle();
       if (existingPaymentError) throw existingPaymentError;
       if (existingPayment) {
+        let specialSpin: any = null;
+        const linkedRendimientoId = String(existingPayment.source_rendimiento_id || "");
+        if (clasificacion === "super_promo_ruleta" && isUuid(linkedRendimientoId)) {
+          const { data: grantResult, error: grantError } = await admin.rpc("crm_grant_super_promo_spin_v1", {
+            p_cliente_id: clienteId,
+            p_rendimiento_id: linkedRendimientoId,
+          });
+          if (grantError) throw grantError;
+          specialSpin = grantResult;
+        }
         return NextResponse.json({
           ok: true,
           duplicate_prevented: true,
           payment: existingPayment,
-          message: "✅ La operación ya estaba registrada; no se creó un cobro duplicado",
+          special_spin: specialSpin,
+          message: "✅ La operación ya estaba registrada; no se creó un cobro duplicado" + (specialSpin ? " · Super Promo Ruleta: +1 giro Nivel Especial confirmado." : ""),
         });
       }
     }
@@ -417,6 +437,7 @@ export async function POST(req: Request) {
     const promo = clasificacion === "promo";
     const captado = clasificacion === "captado";
     const recuperado = clasificacion === "recuperado";
+    const superPromoRuleta = clasificacion === "super_promo_ruleta";
     const mismaCompra = Boolean(body?.misma_compra);
 
     const notaTexto = buildNota({
@@ -431,6 +452,7 @@ export async function POST(req: Request) {
       nextFree,
       nextNormales,
       origenColaborador: collaboratorDisplayName ? "CALL MARIO" : null,
+      clasificacion,
     });
 
     const normalizedPaymentMethod = (() => {
@@ -548,7 +570,30 @@ export async function POST(req: Request) {
     const inserted = result?.rendimiento ? [result.rendimiento] : [];
     const economicPayment = result?.payment || null;
     let captureAssignment: any = null;
+    let specialSpin: any = null;
     const registeredCallId = String(result?.rendimiento?.id || "");
+
+    // Super Promo Ruleta es una excepción manual: convierte el giro asociado a
+    // esta compra en un único giro de Nivel Especial (4). La RPC es idempotente
+    // y reutiliza la misma payment_key para que nunca existan dos giros por llamada.
+    if (registeredCallId && superPromoRuleta) {
+      const { data: grantResult, error: grantError } = await admin.rpc("crm_grant_super_promo_spin_v1", {
+        p_cliente_id: clienteId,
+        p_rendimiento_id: registeredCallId,
+      });
+      if (grantError) {
+        console.error("[CRM registrar llamada] no se pudo acreditar Super Promo Ruleta", {
+          code: grantError.code,
+          message: grantError.message,
+          cliente_id: clienteId,
+          rendimiento_id: registeredCallId,
+        });
+        throw grantError;
+      }
+      specialSpin = grantResult;
+      if (result?.rendimiento) result.rendimiento.super_promo_ruleta = true;
+    }
+
     // Toda gestión válida participa en la atribución histórica. La RPC decide la
     // primera gestora real y solo confirma la captación cuando existe una compra.
     if (registeredCallId) {
@@ -557,7 +602,7 @@ export async function POST(req: Request) {
         p_worker_id: me.id,
         p_call_id: registeredCallId,
         p_used_initial_free: !clienteCompra && usoTipo === "7free",
-        p_classification: clasificacion,
+        p_classification: superPromoRuleta ? "nada" : clasificacion,
         p_business: String(cliente?.origen || "celestial"),
       });
       if (captureError) throw captureError;
@@ -607,7 +652,7 @@ export async function POST(req: Request) {
     await syncClienteMonthTag(admin, clienteId);
 
     const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
-      ? await admin.from("cliente_ruleta_giros").select("id,nivel").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
+      ? await admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
       : { data: null };
     return NextResponse.json({
       ok: true,
@@ -622,11 +667,14 @@ export async function POST(req: Request) {
       payment_count_today: paymentCountToday,
       xp_event: persistedXpEvent,
       capture_assignment: captureAssignment,
+      special_spin: specialSpin,
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
       business: String(cliente?.origen || "celestial"),
       message: (collaboratorDisplayName
         ? "✅ Llamada registrada y vinculada a CALL MARIO"
-        : "✅ Llamada registrada correctamente") + (awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
+        : "✅ Llamada registrada correctamente") + (superPromoRuleta
+          ? " · Super Promo Ruleta: +1 giro exclusivo Nivel Especial disponible para el cliente."
+          : awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
     });
   } catch (e: any) {
     console.error("🔥 ERROR GENERAL:", e);

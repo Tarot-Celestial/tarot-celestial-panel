@@ -322,6 +322,7 @@ const CLASIF_OPTIONS = [
   { value: "promo", label: "Promo" },
   { value: "captado", label: "Captado" },
   { value: "recuperado", label: "Recuperado" },
+  { value: "super_promo_ruleta", label: "Super Promo Ruleta" },
 ] as const;
 
 export default function RegistrarLlamadaModal({
@@ -437,7 +438,7 @@ export default function RegistrarLlamadaModal({
         }
         list.push({ key: "pago", title: "Forma de pago", subtitle: "Elige cómo se ha cobrado esta compra." });
         list.push({ key: "importe", title: "Importe cobrado", subtitle: "Indica el importe final de la operación." });
-        list.push({ key: "clasificacion", title: "Clasificación", subtitle: "Marca si fue promo, captado, recuperado o nada." });
+        list.push({ key: "clasificacion", title: "Clasificación", subtitle: "Marca si fue promo, captado, recuperado, Super Promo Ruleta o nada." });
       }
     }
 
@@ -843,8 +844,8 @@ export default function RegistrarLlamadaModal({
               <div className={styles.classificationGrid}>
                 {CLASIF_OPTIONS.map((opt) => (
                   <button key={opt.value} type="button" className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
-                    <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : "•"}</span>
-                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"}</small> : null}</span>
+                    <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : opt.value === "super_promo_ruleta" ? "🎡" : "•"}</span>
+                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"}</small> : opt.value === "super_promo_ruleta" ? <small>+1 giro exclusivo · Super Ruleta Nivel Especial</small> : null}</span>
                     {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
                   </button>
                 ))}
@@ -889,6 +890,16 @@ export default function RegistrarLlamadaModal({
                     Clasificación: {CLASIF_OPTIONS.find((x) => x.value === clasificacion)?.label || "Nada"}
                   </div>
                 </div>
+                {clasificacion === "super_promo_ruleta" ? (
+                  <div className={styles.superPromoAchievement}>
+                    <span className={styles.superPromoAchievementIcon} aria-hidden="true">🎡</span>
+                    <div>
+                      <small>SUPER PROMO RULETA</small>
+                      <strong>+1 giro · Nivel Especial</strong>
+                      <p>Se acreditará al guardar correctamente la llamada. No suma giros de Nivel 1, 2 ni 3.</p>
+                    </div>
+                  </div>
+                ) : null}
                 {clasificacion === "captado" ? (
                   <div className={`${styles.captureAchievement} ${captureXp?.already_awarded ? styles.captureAlreadyAwarded : ""}`}>
                     <span className={styles.captureAchievementIcon} aria-hidden="true">★</span>
