@@ -118,6 +118,92 @@ function isUuid(value: unknown): value is string {
   return UUID_PATTERN.test(String(value ?? "").trim());
 }
 
+function rpcIsMissing(error: any) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = `${error?.message || ""} ${error?.details || ""}`.toUpperCase();
+  return code === "PGRST202"
+    || code === "42883"
+    || message.includes("COULD NOT FIND THE FUNCTION")
+    || (message.includes("DOES NOT EXIST") && message.includes("CRM_REGISTER_CALL_ATOMIC"));
+}
+
+async function registerCallAtomic(admin: any, payload: any) {
+  // La instalación estable de CRM usa la RPC atómica histórica. Algunas bases
+  // todavía tienen v4 y otras v7; probamos únicamente la segunda si la primera
+  // no existe. Nunca repetimos una operación que haya llegado a ejecutarse.
+  const v4 = await admin.rpc("crm_register_call_atomic_v4", { p_payload: payload });
+  if (!v4.error || !rpcIsMissing(v4.error)) return { ...v4, rpcName: "crm_register_call_atomic_v4" };
+
+  const v7 = await admin.rpc("crm_register_call_atomic_v7", { p_payload: payload });
+  return { ...v7, rpcName: "crm_register_call_atomic_v7" };
+}
+
+async function ensureSuperPromoSpin(
+  admin: any,
+  params: { clienteId: string; rendimientoId: string; purchaseMinutes?: number | null },
+) {
+  const paymentKey = `rendimiento:${params.rendimientoId}`;
+
+  const { data: existing, error: existingError } = await admin
+    .from("cliente_ruleta_giros")
+    .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
+    .eq("payment_key", paymentKey)
+    .maybeSingle();
+  if (existingError) throw existingError;
+
+  // La compra normal puede haber generado ya N1/N2/N3 mediante trigger.
+  // Al pulsar SUPER PROMO RULETA ese MISMO giro se transforma en Nivel 4:
+  // nunca dejamos un giro normal + otro especial para la misma llamada.
+  if (existing) {
+    if (String(existing.estado || "") !== "pending") return existing;
+    if (Number(existing.nivel) === 4 && String(existing.source || "") === "super_promo_ruleta") return existing;
+
+    const { data: updated, error: updateError } = await admin
+      .from("cliente_ruleta_giros")
+      .update({ nivel: 4, source: "super_promo_ruleta" })
+      .eq("id", existing.id)
+      .eq("estado", "pending")
+      .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
+      .maybeSingle();
+    if (updateError) throw updateError;
+    return updated || existing;
+  }
+
+  // Importes fuera de las franjas normales no generan giro automático.
+  // La clasificación especial sí debe conceder exactamente uno.
+  const insertPayload: any = {
+    cliente_id: params.clienteId,
+    payment_key: paymentKey,
+    source: "super_promo_ruleta",
+    nivel: 4,
+    estado: "pending",
+  };
+  const minutes = Number(params.purchaseMinutes || 0);
+  if (Number.isFinite(minutes) && minutes > 0) insertPayload.purchase_minutes = Math.floor(minutes);
+
+  const { data: created, error: createError } = await admin
+    .from("cliente_ruleta_giros")
+    .insert(insertPayload)
+    .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
+    .single();
+
+  if (!createError) return created;
+
+  // Si dos peticiones concurrentes llegan a la vez, payment_key es único.
+  // Recuperamos el registro existente en vez de conceder un segundo giro.
+  if (String(createError.code || "") === "23505") {
+    const { data: raced, error: racedError } = await admin
+      .from("cliente_ruleta_giros")
+      .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
+      .eq("payment_key", paymentKey)
+      .maybeSingle();
+    if (racedError) throw racedError;
+    if (raced) return raced;
+  }
+
+  throw createError;
+}
+
 function clientIdentificationError() {
   return NextResponse.json(
     { ok: false, error: "CLIENTE_UUID_INVALID" },
@@ -313,12 +399,10 @@ export async function POST(req: Request) {
         let specialSpin: any = null;
         const linkedRendimientoId = String(existingPayment.source_rendimiento_id || "");
         if (clasificacion === "super_promo_ruleta" && isUuid(linkedRendimientoId)) {
-          const { data: grantResult, error: grantError } = await admin.rpc("crm_grant_super_promo_spin_v1", {
-            p_cliente_id: clienteId,
-            p_rendimiento_id: linkedRendimientoId,
+          specialSpin = await ensureSuperPromoSpin(admin, {
+            clienteId,
+            rendimientoId: linkedRendimientoId,
           });
-          if (grantError) throw grantError;
-          specialSpin = grantResult;
         }
         return NextResponse.json({
           ok: true,
@@ -510,9 +594,9 @@ export async function POST(req: Request) {
       business: String(cliente?.origen || "celestial"),
     };
 
-    const { data: atomicResult, error: atomicError } = await admin.rpc(
-      "crm_register_call_ruleta_safe_v1",
-      { p_payload: atomicPayload },
+    const { data: atomicResult, error: atomicError, rpcName } = await registerCallAtomic(
+      admin,
+      atomicPayload,
     );
 
     if (atomicError) {
@@ -521,7 +605,7 @@ export async function POST(req: Request) {
         message: atomicError.message,
         details: atomicError.details,
         hint: atomicError.hint,
-        function: "crm_register_call_atomic_v4",
+        function: rpcName,
         cliente_id: clienteId,
         operation_id: operationId || null,
         metodo_normalizado: normalizedPaymentMethod,
@@ -573,24 +657,25 @@ export async function POST(req: Request) {
     let specialSpin: any = null;
     const registeredCallId = String(result?.rendimiento?.id || "");
 
-    // Super Promo Ruleta es una excepción manual: convierte el giro asociado a
-    // esta compra en un único giro de Nivel Especial (4). La RPC es idempotente
-    // y reutiliza la misma payment_key para que nunca existan dos giros por llamada.
+    // SUPER PROMO RULETA: cuando la compra se guarda correctamente, la misma
+    // operación acredita exactamente 1 giro pendiente de Nivel Especial (4).
+    // Si el importe había creado N1/N2/N3, ese giro se CONVIERTE en N4; no se duplica.
     if (registeredCallId && superPromoRuleta) {
-      const { data: grantResult, error: grantError } = await admin.rpc("crm_grant_super_promo_spin_v1", {
-        p_cliente_id: clienteId,
-        p_rendimiento_id: registeredCallId,
-      });
-      if (grantError) {
+      try {
+        specialSpin = await ensureSuperPromoSpin(admin, {
+          clienteId,
+          rendimientoId: registeredCallId,
+          purchaseMinutes: tiempo,
+        });
+      } catch (grantError: any) {
         console.error("[CRM registrar llamada] no se pudo acreditar Super Promo Ruleta", {
-          code: grantError.code,
-          message: grantError.message,
+          code: grantError?.code || null,
+          message: grantError?.message || null,
           cliente_id: clienteId,
           rendimiento_id: registeredCallId,
         });
         throw grantError;
       }
-      specialSpin = grantResult;
       if (result?.rendimiento) result.rendimiento.super_promo_ruleta = true;
     }
 
@@ -605,8 +690,22 @@ export async function POST(req: Request) {
         p_classification: superPromoRuleta ? "nada" : clasificacion,
         p_business: String(cliente?.origen || "celestial"),
       });
-      if (captureError) throw captureError;
-      captureAssignment = captureResult;
+      if (captureError) {
+        // La clasificación Super Promo Ruleta no depende del subsistema de captación.
+        // La compra y su giro especial ya han quedado persistidos correctamente, por
+        // lo que un fallo de atribución no debe mostrar falsamente "no se aplicaron cambios".
+        if (superPromoRuleta) {
+          console.error("[CRM registrar llamada] atribución de captación omitida en Super Promo Ruleta", {
+            code: captureError.code || null,
+            message: captureError.message || null,
+            cliente_id: clienteId,
+            rendimiento_id: registeredCallId,
+          });
+        } else {
+          throw captureError;
+        }
+      }
+      captureAssignment = captureError ? null : captureResult;
       if (captado && captureResult?.status === "confirmed") {
         const { error: classificationError } = await admin.from("rendimiento_llamadas").update({ captado: true }).eq("id", registeredCallId);
         if (classificationError) throw classificationError;
