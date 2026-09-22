@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, CalendarClock, Coins, Crown, Diamond, Flame, Gift, History,
-  Plus, RefreshCw, Save, ShieldCheck, Sparkles, Star, Target, Trash2, Trophy,
+  Plus, RefreshCw, Save, ShieldCheck, Sparkles, Star, Target, Trash2, Trophy, Percent,
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./ClientRouletteAdminPanel.module.css";
@@ -41,6 +41,7 @@ export default function ClientRouletteAdminPanel() {
   const [view,setView] = useState<"rewards"|"history"|"benefits">("rewards");
   const [campaignForm,setCampaignForm] = useState<any>(null);
   const [editingReward,setEditingReward] = useState<any>(null);
+  const [probabilityDraft,setProbabilityDraft] = useState<Record<string,string>>({});
 
   const token = async()=> (await sb.auth.getSession()).data.session?.access_token || "";
   const load = useCallback(async()=>{
@@ -82,7 +83,19 @@ export default function ClientRouletteAdminPanel() {
   },[campaign]);
 
   const rewards=useMemo(()=> (data.rewards||[]).filter((x:any)=>String(x.campaign_id)===selectedCampaignId && Number(x.nivel)===level),[data.rewards,selectedCampaignId,level]);
-  const totalWeight=useMemo(()=>rewards.filter((r:any)=>r.is_active).reduce((a:number,r:any)=>a+Number(r.weight||0),0),[rewards]);
+  useEffect(()=>{
+    const next:Record<string,string>={};
+    for(const reward of rewards){
+      next[String(reward.id)]=reward.is_active ? Number(reward.probability||0).toFixed(2) : "0.00";
+    }
+    setProbabilityDraft(next);
+  },[selectedCampaignId,level,data.rewards]);
+  const probabilityTotal=useMemo(()=>rewards.filter((r:any)=>r.is_active).reduce((sum:number,r:any)=>{
+    const value=Number(probabilityDraft[String(r.id)] ?? r.probability ?? 0);
+    return sum+(Number.isFinite(value)?Math.max(0,value):0);
+  },0),[rewards,probabilityDraft]);
+  const probabilityRemaining=100-probabilityTotal;
+  const probabilityValid=rewards.some((r:any)=>r.is_active) && Math.abs(probabilityTotal-100)<=0.01;
 
   async function mutate(payload:any,key="save") {
     setBusy(key);setMessage("");
@@ -99,7 +112,24 @@ export default function ClientRouletteAdminPanel() {
   }
 
   function blankReward() {
-    return {campaign_id:selectedCampaignId,nivel:level,name:"Nuevo premio",description:"",reward_type:"minutes",reward_value:5,rarity:"common",weight:10,special:false,fulfillment_mode:"immediate",icon_key:"gift",metadata:{},is_active:true,sort_order:(rewards.length+1)*10};
+    return {campaign_id:selectedCampaignId,nivel:level,name:"Nuevo premio",description:"",reward_type:"minutes",reward_value:5,rarity:"common",weight:1,special:false,fulfillment_mode:"immediate",icon_key:"gift",metadata:{},is_active:true,sort_order:(rewards.length+1)*10};
+  }
+
+  async function saveProbabilities(){
+    const activeRewards=rewards.filter((r:any)=>r.is_active);
+    if(!activeRewards.length){setMessage("Activa al menos un premio antes de configurar probabilidades.");return}
+    const probabilities=activeRewards.map((r:any)=>({
+      id:String(r.id),
+      probability:Number(probabilityDraft[String(r.id)] ?? r.probability ?? 0),
+    }));
+    if(probabilities.some((item:any)=>!Number.isFinite(item.probability)||item.probability<0||item.probability>100)){
+      setMessage("Cada probabilidad debe estar entre 0% y 100%.");return;
+    }
+    const total=probabilities.reduce((sum:number,item:any)=>sum+item.probability,0);
+    if(Math.abs(total-100)>0.01){
+      setMessage(`El reparto debe sumar exactamente 100%. Ahora suma ${total.toFixed(2)}%.`);return;
+    }
+    await mutate({action:"save_probabilities",campaign_id:selectedCampaignId,nivel:level,probabilities},"probabilities");
   }
 
   return <section className={styles.wrap}>
@@ -138,11 +168,11 @@ export default function ClientRouletteAdminPanel() {
       </article>
 
       <article className={styles.card}>
-        <span className={styles.eyebrow}>REGLAS DE PROBABILIDAD</span>
-        <h2>Pesos seguros y normalizados</h2>
-        <p className={styles.help}>Cada premio tiene un peso. El servidor suma los pesos activos del nivel y calcula la probabilidad real automáticamente. Así puedes editar premios sin dejar la ruleta en un estado inválido.</p>
+        <span className={styles.eyebrow}>PROBABILIDAD BAJO TU CONTROL</span>
+        <h2>Tú decides exactamente el % de cada premio</h2>
+        <p className={styles.help}>Ya no necesitas trabajar con pesos. En cada premio verás un campo <b>Probabilidad de ganar</b>. Reparte el 100% como quieras y pulsa <b>Guardar probabilidades</b>. Ese porcentaje se convierte directamente en la ponderación real que utiliza PostgreSQL.</p>
         <div className={styles.rarityLegend}>{rarityOrder.map(r=><span key={r} data-rarity={r}>{rarityNames[r]}</span>)}</div>
-        <div className={styles.ruleBox}><ShieldCheck size={18}/><div><strong>El resultado nunca se decide en frontend.</strong><small>Se bloquea y acredita en PostgreSQL antes de que la animación muestre el premio.</small></div></div>
+        <div className={styles.ruleBox}><ShieldCheck size={18}/><div><strong>El porcentaje que guardas es el porcentaje real.</strong><small>El resultado sigue decidiéndose en backend. La ruleta visual únicamente anima el premio ya seleccionado.</small></div></div>
       </article>
     </section>
 
@@ -158,12 +188,20 @@ export default function ClientRouletteAdminPanel() {
         <button className={styles.gold} disabled={!selectedCampaignId} onClick={()=>setEditingReward(blankReward())}><Plus/> Añadir premio</button>
       </div>
       <div className={styles.levelTabs}>{([1,2,3,4] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===4?"NIVEL ESPECIAL":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
-      <div className={styles.levelSummary}><span>Peso activo total <b>{totalWeight.toFixed(2)}</b></span><span>Probabilidad mostrada = peso / total</span></div>
+      <div className={styles.probabilityControl} data-valid={probabilityValid}>
+        <div>
+          <span className={styles.eyebrow}><Percent size={13}/> REPARTO DEL NIVEL {level===4?"ESPECIAL":level}</span>
+          <strong>{probabilityTotal.toFixed(2)}% / 100%</strong>
+          <small>{probabilityValid?"Reparto válido · listo para guardar":probabilityRemaining>0?`Te queda ${probabilityRemaining.toFixed(2)}% por repartir`:`Te has pasado ${Math.abs(probabilityRemaining).toFixed(2)}%`}</small>
+        </div>
+        <button className={styles.gold} disabled={!probabilityValid||busy==="probabilities"} onClick={()=>void saveProbabilities()}><Save size={14}/>{busy==="probabilities"?"Guardando…":"Guardar probabilidades"}</button>
+      </div>
+      <div className={styles.levelSummary}><span>Premios activos <b>{rewards.filter((r:any)=>r.is_active).length}</b></span><span>El total de probabilidades activas debe ser exactamente 100%</span></div>
       <div className={styles.rewardList}>{rewards.length?rewards.map((r:any)=><article className={styles.reward} key={r.id} data-rarity={r.rarity} data-disabled={!r.is_active}>
         <div className={styles.rewardRarity}><span>{rarityNames[r.rarity]||r.rarity}</span>{r.special?<b>PREMIO FUERTE</b>:null}</div>
-        <div className={styles.rewardMain}><div className={styles.rewardIcon}>{r.rarity==="diamond"?<Diamond/>:r.rarity==="jackpot"?<Flame/>:r.reward_type==="coins"?<Coins/>:r.reward_type==="rank"?<Crown/>:<Gift/>}</div><div><h3>{r.name}</h3><p>{r.description||rewardTypeNames[r.reward_type]}</p></div><strong className={styles.prob}>{Number(r.probability||0).toFixed(2)}%</strong></div>
-        <div className={styles.rewardMeta}><span>{rewardTypeNames[r.reward_type]||r.reward_type}</span><span>Peso {Number(r.weight||0).toFixed(2)}</span><span>{r.is_active?"Activo":"Desactivado"}</span></div>
-        <div className={styles.rewardActions}><button onClick={()=>setEditingReward({...r,metadata:r.metadata||{}})}>Editar</button><button onClick={()=>void mutate({action:"toggle_reward",id:r.id,is_active:!r.is_active},`toggle:${r.id}`)}>{r.is_active?"Desactivar":"Activar"}</button><button className={styles.danger} onClick={()=>{if(window.confirm("¿Eliminar este premio? Si ya tiene historial se archivará para conservar la auditoría.")) void mutate({action:"delete_reward",id:r.id},`delete:${r.id}`)}}><Trash2 size={13}/></button></div>
+        <div className={styles.rewardMain}><div className={styles.rewardIcon}>{r.rarity==="diamond"?<Diamond/>:r.rarity==="jackpot"?<Flame/>:r.reward_type==="coins"?<Coins/>:r.reward_type==="rank"?<Crown/>:<Gift/>}</div><div><h3>{r.name}</h3><p>{r.description||rewardTypeNames[r.reward_type]}</p></div><div className={styles.probabilityEditor}><label>PROBABILIDAD DE GANAR</label><div><input aria-label={`Probabilidad de ${r.name}`} type="number" min="0" max="100" step="0.01" disabled={!r.is_active} value={probabilityDraft[String(r.id)]??Number(r.probability||0).toFixed(2)} onChange={e=>setProbabilityDraft(current=>({...current,[String(r.id)]:e.target.value}))}/><span>%</span></div></div></div>
+        <div className={styles.rewardMeta}><span>{rewardTypeNames[r.reward_type]||r.reward_type}</span><span>Actual {Number(r.probability||0).toFixed(2)}%</span><span>{r.is_active?"Activo":"Desactivado"}</span></div>
+        <div className={styles.rewardActions}><button onClick={()=>setEditingReward({...r,metadata:r.metadata||{}})}>Editar premio</button><button onClick={()=>void mutate({action:"toggle_reward",id:r.id,is_active:!r.is_active},`toggle:${r.id}`)}>{r.is_active?"Desactivar":"Activar"}</button><button className={styles.danger} onClick={()=>{if(window.confirm("¿Eliminar este premio? Si ya tiene historial se archivará para conservar la auditoría.")) void mutate({action:"delete_reward",id:r.id},`delete:${r.id}`)}}><Trash2 size={13}/></button></div>
       </article>):<div className={styles.empty}>Este nivel todavía no tiene premios. Añade el primero.</div>}</div>
     </section>:null}
 
@@ -191,7 +229,7 @@ function RewardModal({reward,busy,onClose,onSave}:{reward:any;busy:string;onClos
       <label>Tipo<select value={form.reward_type} onChange={e=>setForm({...form,reward_type:e.target.value})}>{Object.entries(rewardTypeNames).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label>
       <label>Rareza<select value={form.rarity} onChange={e=>setForm({...form,rarity:e.target.value})}>{rarityOrder.map(r=><option value={r} key={r}>{rarityNames[r]}</option>)}</select></label>
       <label>Valor<input type="number" min="0" step="1" value={form.reward_value} onChange={e=>setForm({...form,reward_value:Number(e.target.value)})}/></label>
-      <label>Peso<input type="number" min="0" step="0.1" value={form.weight} onChange={e=>setForm({...form,weight:Number(e.target.value)})}/></label>
+      <div className={styles.probabilityModalNote}><Percent size={15}/><span>La probabilidad se edita directamente en la lista de premios del nivel. Guarda primero el premio y después asigna su porcentaje exacto.</span></div>
       <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Nivel Especial</option></select></label>
       <label>Entrega<select value={form.fulfillment_mode} onChange={e=>setForm({...form,fulfillment_mode:e.target.value})}><option value="immediate">Inmediata</option><option value="temporary">Temporal</option><option value="manual">Manual supervisada</option><option value="claim">Reclamación</option><option value="scheduled">Programada</option></select></label>
       <label className={styles.span2}>Descripción<textarea rows={2} value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>

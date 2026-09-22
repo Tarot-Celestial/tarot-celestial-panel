@@ -236,6 +236,56 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
     }
 
+    if (action === "save_probabilities") {
+      const campaignId = String(body?.campaign_id || "");
+      const level = Number(body?.nivel);
+      const probabilities = Array.isArray(body?.probabilities) ? body.probabilities : [];
+      if (!campaignId || ![1,2,3,4].includes(level) || !probabilities.length) {
+        return NextResponse.json({ ok: false, error: "PROBABILIDADES_INVALIDAS" }, { status: 400 });
+      }
+
+      const parsed = probabilities.map((item: any) => ({
+        id: String(item?.id || ""),
+        probability: Number(item?.probability),
+      }));
+      if (parsed.some((item: any) => !item.id || !Number.isFinite(item.probability) || item.probability < 0 || item.probability > 100)) {
+        return NextResponse.json({ ok: false, error: "PROBABILIDAD_FUERA_DE_RANGO" }, { status: 400 });
+      }
+      const uniqueIds = new Set(parsed.map((item: any) => item.id));
+      if (uniqueIds.size !== parsed.length) {
+        return NextResponse.json({ ok: false, error: "PREMIOS_DUPLICADOS_EN_REPARTO" }, { status: 400 });
+      }
+      const total = parsed.reduce((sum: number, item: any) => sum + item.probability, 0);
+      if (Math.abs(total - 100) > 0.01) {
+        return NextResponse.json({ ok: false, error: `PROBABILIDADES_DEBEN_SUMAR_100:${total.toFixed(2)}` }, { status: 400 });
+      }
+
+      const { data: activeRewards, error: activeError } = await gate.admin
+        .from("tc_client_roulette_rewards")
+        .select("id,campaign_id,nivel,is_active")
+        .eq("campaign_id", campaignId)
+        .eq("nivel", level)
+        .eq("is_active", true);
+      if (activeError) throw activeError;
+      const activeIds = new Set((activeRewards || []).map((row: any) => String(row.id)));
+      if (activeIds.size !== parsed.length || parsed.some((item: any) => !activeIds.has(item.id))) {
+        return NextResponse.json({ ok: false, error: "REPARTO_DEBE_INCLUIR_TODOS_LOS_PREMIOS_ACTIVOS" }, { status: 409 });
+      }
+
+      for (const item of parsed) {
+        const { error: updateError } = await gate.admin
+          .from("tc_client_roulette_rewards")
+          .update({ weight: item.probability, updated_at: now })
+          .eq("id", item.id)
+          .eq("campaign_id", campaignId)
+          .eq("nivel", level)
+          .eq("is_active", true);
+        if (updateError) throw updateError;
+      }
+      await audit(gate.admin, gate, "probabilities_updated", { nivel: level, total, probabilities: parsed }, campaignId, null);
+      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
+    }
+
     if (action === "toggle_reward") {
       const id = String(body?.id || "");
       const { data, error } = await gate.admin.from("tc_client_roulette_rewards").update({ is_active: Boolean(body?.is_active), updated_at: now }).eq("id", id).select("*").single();
