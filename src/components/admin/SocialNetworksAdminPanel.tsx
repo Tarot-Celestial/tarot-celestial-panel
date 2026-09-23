@@ -223,8 +223,8 @@ export default function SocialNetworksAdminPanel() {
       <section className={styles.securityCard}>
         <ShieldCheck size={24} />
         <div>
-          <strong>Conexión segura como en Neksus</strong>
-          <p>OAuth real, secretos y refresh tokens solo en backend. Esta base queda preparada para añadir después biblioteca, publicación, programación y estadísticas sin volver a rehacer la conexión de las cuentas.</p>
+          <strong>Conexión segura de Tarot Celestial</strong>
+          <p>OAuth real, secretos y refresh tokens solo en backend. OAuth real, secretos y refresh tokens solo en backend. Las conexiones son propias de Tarot Celestial y sirven al centro de contenido, programación, biblioteca y publicaciones.</p>
         </div>
         <button onClick={() => void load()} disabled={loading}><RefreshCw size={15} className={loading ? styles.spin : ""} /> Actualizar estado</button>
       </section>

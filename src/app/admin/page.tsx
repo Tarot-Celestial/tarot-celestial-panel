@@ -60,6 +60,7 @@ const RaffleWinnerAdmin = nextDynamic(() => import("@/features/central/RaffleWin
 const CentralReviewsAdminPanel = nextDynamic(() => import("@/components/admin/CentralReviewsAdminPanel"), { ssr:false });
 const TeamScoreboardAdminPanel = nextDynamic(() => import("@/components/admin/TeamScoreboardAdminPanel"), { ssr:false });
 const SocialNetworksAdminPanel = nextDynamic(() => import("@/components/admin/SocialNetworksAdminPanel"), { ssr:false });
+const SocialChannelAdminPanel = nextDynamic(() => import("@/components/admin/SocialChannelAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
@@ -188,6 +189,8 @@ type TabKey =
   | "chat"
   | "captacion"
   | "redes-sociales"
+  | "redes-sociales-instagram"
+  | "redes-sociales-tiktok"
   | "rendimiento"
   | "reservas"
   | "diario";
@@ -313,6 +316,7 @@ function AdminPage() {
   const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
   const [xpMenuOpen, setXpMenuOpen] = useState(false);
   const [bonusesMenuOpen, setBonusesMenuOpen] = useState(false);
+  const [socialMenuOpen, setSocialMenuOpen] = useState(false);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -340,11 +344,12 @@ function AdminPage() {
       return;
     }
 
-    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "sistema-xp-niveles"]);
+    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "ruletas-clientes", "sistema-xp-niveles", "rangos-tarotistas", "redes-sociales-instagram", "redes-sociales-tiktok"]);
     if (allowedTabs.has(requestedTab as any)) {
       setTab(requestedTab as TabKey);
       if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web") setRanksMenuOpen(true);
       if (requestedTab === "sistema-xp" || requestedTab === "sistema-xp-niveles") setXpMenuOpen(true);
+      if (requestedTab === "redes-sociales" || requestedTab === "redes-sociales-instagram" || requestedTab === "redes-sociales-tiktok") setSocialMenuOpen(true);
     }
   }, [searchParams]);
 
@@ -1807,14 +1812,17 @@ function AdminPage() {
                 const rankGroup = item.key === "rangos-clientes";
                 const xpGroup = item.key === "sistema-xp";
                 const bonusesGroup = item.key === "bonos-tarotistas";
+                const socialGroup = item.key === "redes-sociales";
                 const active = rankGroup
                   ? (tab === "rangos-clientes" || tab === "clientes-web" || tab === "ruletas-clientes")
                   : xpGroup
                     ? (tab === "sistema-xp" || tab === "sistema-xp-niveles")
                     : bonusesGroup
                       ? (tab === "bonos-tarotistas" || tab === "rangos-tarotistas")
-                      : tab === item.key;
-                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : bonusesGroup ? bonusesMenuOpen : false;
+                      : socialGroup
+                        ? (tab === "redes-sociales" || tab === "redes-sociales-instagram" || tab === "redes-sociales-tiktok")
+                        : tab === item.key;
+                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : bonusesGroup ? bonusesMenuOpen : socialGroup ? socialMenuOpen : false;
                 return (
                   <div key={item.key} style={{ display: "grid", gap: 6 }}>
                     <button
@@ -1825,6 +1833,7 @@ function AdminPage() {
                         if (rankGroup) setRanksMenuOpen(true);
                         if (xpGroup) setXpMenuOpen(true);
                         if (bonusesGroup) setBonusesMenuOpen(true);
+                        if (socialGroup) setSocialMenuOpen(true);
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
@@ -1834,16 +1843,17 @@ function AdminPage() {
                           <div className="tc-sidebtn-kicker">{item.kicker}</div>
                         </div>
                       </div>
-                      {rankGroup || xpGroup || bonusesGroup ? (
+                      {rankGroup || xpGroup || bonusesGroup || socialGroup ? (
                         <span
                           onClick={(event) => {
                             event.stopPropagation();
                             if (rankGroup) setRanksMenuOpen((value) => !value);
                             if (xpGroup) setXpMenuOpen((value) => !value);
                             if (bonusesGroup) setBonusesMenuOpen((value) => !value);
+                            if (socialGroup) setSocialMenuOpen((value) => !value);
                           }}
                           className={`${adminStyles.navChevron} ${groupOpen ? adminStyles.navChevronOpen : ""}`}
-                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : xpGroup ? "Desplegar Sistema de XP" : "Desplegar Bonos tarotistas"}
+                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : xpGroup ? "Desplegar Sistema de XP" : bonusesGroup ? "Desplegar Bonos tarotistas" : "Desplegar Redes sociales"}
                         >
                           <ChevronDown size={15} />
                         </span>
@@ -1879,6 +1889,16 @@ function AdminPage() {
                         </button>
                         <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-tarotistas")}>
                           <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Rangos tarotistas</div><div className="tc-sidebtn-kicker">C · B · A · S</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                      </div>
+                    ) : null}
+                    {socialGroup && socialMenuOpen ? (
+                      <div className={adminStyles.submenu}>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "redes-sociales-instagram" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("redes-sociales-instagram")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Instagram</div><div className="tc-sidebtn-kicker">Posts · Reels · Stories</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "redes-sociales-tiktok" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("redes-sociales-tiktok")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">TikTok</div><div className="tc-sidebtn-kicker">Vídeos · Fotos · Programación</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
                         </button>
                       </div>
                     ) : null}
@@ -3013,6 +3033,8 @@ function AdminPage() {
             />
           )}
           {tab === "redes-sociales" && <SocialNetworksAdminPanel />}
+          {tab === "redes-sociales-instagram" && <SocialChannelAdminPanel provider="instagram" />}
+          {tab === "redes-sociales-tiktok" && <SocialChannelAdminPanel provider="tiktok" />}
           {tab === "rendimiento" && <RendimientoPanel mode="admin" />}
           {tab === "reservas" && <ReservasPanel mode="admin" />}
           {tab === "diario" && <DiarioPanel />}

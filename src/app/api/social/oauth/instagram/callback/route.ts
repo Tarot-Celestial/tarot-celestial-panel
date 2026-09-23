@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 function adminRedirect(req: NextRequest, params: Record<string, string>) {
   const url = new URL("/admin", req.url);
-  url.searchParams.set("tab", "redes-sociales");
+  url.searchParams.set("tab", "redes-sociales-instagram");
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   const res = NextResponse.redirect(url);
   res.cookies.delete("tc_social_oauth_state");

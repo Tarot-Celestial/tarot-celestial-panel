@@ -1,12 +1,8 @@
 {
-"crons": [
-{ "path": "/api/sync/calls?mode=daily", "schedule": "0 4 * * *" }
-],
-"redirects": [
-{
-"source": "/",
-"destination": "/cliente",
-"permanent": true
-}
-]
+  "crons": [
+    {
+      "path": "/api/cron/social-publish",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }
