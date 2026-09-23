@@ -2,7 +2,6 @@
 
 export const dynamic = "force-dynamic";
 
-import AttendanceHours from "@/components/attendance/AttendanceHours";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
@@ -21,15 +20,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Users, Trophy, Sparkles } from "lucide-react";
-import adminStyles from "./AdminPremium.module.css";
-import invoiceStyles from "./InvoiceEditor.module.css";
-
-function invoiceLocalDate(value?: string) {
-  const date = value ? new Date(value) : new Date();
-  if (!Number.isFinite(date.getTime())) return "";
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
-}
+import { BarChart3, BookOpen, CalendarDays, CreditCard, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Share2, Users, Trophy } from "lucide-react";
 
 const sb = supabaseBrowser();
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
@@ -45,45 +36,27 @@ const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPan
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
-const WelldoneAdminPanel = nextDynamic(() => import("@/components/admin/WelldoneAdminPanel"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
-const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
-const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/ClientRouletteAdminPanel"), { ssr:false });
-const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
-const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
-const TarotistaRanksAdminPanel = nextDynamic(() => import("@/components/admin/TarotistaRanksAdminPanel"), { ssr:false });
-const XpSystemAdminPanel = nextDynamic(() => import("@/components/admin/XpSystemAdminPanel"), { ssr:false });
-const XpLevelsAdminPanel = nextDynamic(() => import("@/components/admin/XpLevelsAdminPanel"), { ssr:false });
-const PaymentGatewayAdminPanel = nextDynamic(() => import("@/components/admin/PaymentGatewayAdminPanel"), { ssr:false });
-const PromotionsAdminPanel = nextDynamic(() => import("@/components/admin/PromotionsAdminPanel"), { ssr:false });
-const RaffleWinnerAdmin = nextDynamic(() => import("@/features/central/RaffleWinnerAdmin"), { ssr:false });
-const CentralReviewsAdminPanel = nextDynamic(() => import("@/components/admin/CentralReviewsAdminPanel"), { ssr:false });
-const TeamScoreboardAdminPanel = nextDynamic(() => import("@/components/admin/TeamScoreboardAdminPanel"), { ssr:false });
+const SocialNetworksAdminPanel = nextDynamic(() => import("@/components/admin/SocialNetworksAdminPanel"), { ssr:false });
 
 
 const ADMIN_NAV = [
-  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
-  { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
-  { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
-  { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
-  { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
-  { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
-  { key: "equipos-marcador", icon: Flame, label: "Equipos marcador", kicker: "Fuego vs Agua", tone: "goldPurple" },
-  { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
-  { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
-  { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
-  { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Mollie", tone: "gold" },
-  { key: "precios-hoy", icon: Sparkles, label: "Precios de hoy", kicker: "Promociones y packs", tone: "goldPurple" },
-  { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
-  { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
-  { key: "bonos-tarotistas", icon: Trophy, label: "Bonos tarotistas", kicker: "Retos y premios económicos", tone: "goldPurple" },
-  { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros", tone: "magenta" },
-  { key: "sorteo", icon: Trophy, label: "Sorteo", kicker: "Selección de ganadores", tone: "goldPurple" },
-  { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago", tone: "indigo" },
-  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento", tone: "orange" },
-  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas", tone: "blue" },
-  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna", tone: "gold" },
-  { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día", tone: "cyan" },
+  { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo" },
+  { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas" },
+  { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre" },
+  { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta" },
+  { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global" },
+  { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo" },
+  { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos" },
+  { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium" },
+  { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría" },
+  { key: "crm", icon: LayoutDashboard, label: "CRM", kicker: "Fichas y cobros" },
+  { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago" },
+  { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento" },
+  { key: "redes-sociales", icon: Share2, label: "Redes sociales", kicker: "Instagram y TikTok" },
+  { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas" },
+  { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna" },
+  { key: "diario", icon: CalendarDays, label: "Diario", kicker: "Compras del día" },
 ] as const;
 
 function monthKeyNow() {
@@ -165,26 +138,16 @@ type TabKey =
   | "dashboard"
   | "panel"
   | "facturas"
-  | "welldone"
   | "editor"
   | "estadisticas"
-  | "equipos-marcador"
   | "asistencia"
   | "trabajadores"
   | "clientes"
-  | "pagos-web"
-  | "precios-hoy"
   | "rangos-clientes"
-  | "clientes-web"
-  | "ruletas-clientes"
-  | "bonos-tarotistas"
-  | "rangos-tarotistas"
-  | "sistema-xp"
-  | "sistema-xp-niveles"
   | "crm"
-  | "sorteo"
   | "chat"
   | "captacion"
+  | "redes-sociales"
   | "rendimiento"
   | "reservas"
   | "diario";
@@ -307,9 +270,6 @@ function AdminPage() {
   const [ok, setOk] = useState(false);
   const [backgroundReady, setBackgroundReady] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
-  const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
-  const [xpMenuOpen, setXpMenuOpen] = useState(false);
-  const [bonusesMenuOpen, setBonusesMenuOpen] = useState(false);
 
   useEffect(() => {
     const onOpenCrmTab = () => setTab("crm" as any);
@@ -337,11 +297,9 @@ function AdminPage() {
       return;
     }
 
-    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "sistema-xp-niveles"]);
+    const allowedTabs = new Set(ADMIN_NAV.map((item) => item.key));
     if (allowedTabs.has(requestedTab as any)) {
       setTab(requestedTab as TabKey);
-      if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web") setRanksMenuOpen(true);
-      if (requestedTab === "sistema-xp" || requestedTab === "sistema-xp-niveles") setXpMenuOpen(true);
     }
   }, [searchParams]);
 
@@ -356,8 +314,6 @@ function AdminPage() {
   const [listLoading, setListLoading] = useState(false);
   const [listMsg, setListMsg] = useState<string>("");
   const [invoices, setInvoices] = useState<any[]>([]);
-  const [manualInvoiceOpen, setManualInvoiceOpen] = useState(false);
-  const [manualInvoiceId, setManualInvoiceId] = useState<string | null>(null);
 
   const [selId, setSelId] = useState<string>("");
   const [selLoading, setSelLoading] = useState(false);
@@ -369,12 +325,6 @@ function AdminPage() {
   const [newLabel, setNewLabel] = useState("Ajuste");
   const [newAmount, setNewAmount] = useState<string>("0");
   const [newKind, setNewKind] = useState("adjustment");
-  const [incidentClient, setIncidentClient] = useState("");
-  const [incidentSituation, setIncidentSituation] = useState("");
-  const [incidentDate, setIncidentDate] = useState(() => invoiceLocalDate());
-  const [addingLine, setAddingLine] = useState(false);
-  const addLineLock = useRef(false);
-  const lineRequest = useRef("");
 
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsMsg, setStatsMsg] = useState("");
@@ -383,7 +333,6 @@ function AdminPage() {
   const [statsPreviousTotals, setStatsPreviousTotals] = useState<any>(null);
   const [statsPreviousRows, setStatsPreviousRows] = useState<any[]>([]);
   const [statsPreviousInvoiceSummary, setStatsPreviousInvoiceSummary] = useState<any>(null);
-  const [statsComparisonPeriod, setStatsComparisonPeriod] = useState<any>(null);
   const [statsTop, setStatsTop] = useState<any>({ captadas: [], cliente: [], repite: [] });
   const [statsTeams, setStatsTeams] = useState<any>({ fuego: null, agua: null, winner: "empate" });
   const [statsLiveStatus, setStatsLiveStatus] = useState<"connecting" | "live" | "updating" | "reconnecting" | "offline">("connecting");
@@ -762,13 +711,9 @@ function AdminPage() {
       const token = await getTokenOrLogin();
       if (!token) return;
 
-      const r = await fetch(
-        `/api/admin/invoices/list?month=${encodeURIComponent(month)}&t=${Date.now()}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-          cache: "no-store",
-        }
-      );
+      const r = await fetch(`/api/admin/invoices/list?month=${encodeURIComponent(month)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
@@ -917,31 +862,22 @@ function AdminPage() {
   }
 
   async function addLine() {
-    if (!selId || addLineLock.current) return;
-    addLineLock.current = true;
-    setAddingLine(true);
+    if (!selId) return;
     try {
-      lineRequest.current ||= crypto.randomUUID();
-      if (newKind === "incident" && (!newLabel.trim() || !incidentDate || (!incidentClient.trim() && !incidentSituation.trim()))) throw new Error("Completa motivo, fecha y hora, y clienta o situación.");
       const amt = Number(String(newAmount).replace(",", "."));
       await postEdit({
         action: "add_line",
         invoice_id: selId,
-        request_id: lineRequest.current,
         kind: newKind,
         label: newLabel,
         amount: isFinite(amt) ? amt : 0,
-        meta: newKind === "incident" ? { client_name: incidentClient.trim(), situation: incidentSituation.trim(), occurred_at: new Date(incidentDate).toISOString(), business: getActiveBrand() } : {},
+        meta: {},
       });
-      lineRequest.current = "";
       await loadInvoice(selId);
       await listInvoices(true);
-      setSelMsg(newKind === "incident" ? "Incidencia guardada y notificación enviada a su panel." : "Línea añadida.");
+      setSelMsg("✅ Línea añadida.");
     } catch (e: any) {
       setSelMsg(`❌ ${e?.message || "Error"}`);
-    } finally {
-      addLineLock.current = false;
-      setAddingLine(false);
     }
   }
 
@@ -996,9 +932,7 @@ function AdminPage() {
       if (!token) return;
 
       let endpoint = `/api/admin/invoices/pdf?invoice_id=${encodeURIComponent(invoiceId)}`;
-      if (String(invoiceId).startsWith("manual:")) {
-        endpoint = `/api/admin/invoices/manual/pdf?id=${encodeURIComponent(String(invoiceId).replace("manual:", ""))}`;
-      } else if (String(invoiceId).startsWith("collaborator:")) {
+      if (String(invoiceId).startsWith("collaborator:")) {
         const [, collaboratorId, reportMonth] = String(invoiceId).split(":");
         endpoint = `/api/admin/invoices/collaborator/pdf?collaborator_id=${encodeURIComponent(collaboratorId || "")}&month=${encodeURIComponent(reportMonth || month)}`;
       }
@@ -1083,7 +1017,6 @@ function AdminPage() {
       );
       setStatsPreviousRows(statsJ.previous?.rows || []);
       setStatsPreviousInvoiceSummary(invJ.previous_summary || null);
-      setStatsComparisonPeriod(statsJ.comparison_period || null);
       setStatsTop(rankJ.top || { captadas: [], cliente: [], repite: [] });
       setStatsTeams(rankJ.teams || { fuego: null, agua: null, winner: "empate" });
       setInvoices(invJ.invoices || []);
@@ -1529,7 +1462,7 @@ function AdminPage() {
       if (["workers", "billing_collaborators", "billing_collaborator_report_exclusions", "crm_cliente_etiquetas", "invoice_lines"].includes(table)) return true;
       const row = payload?.new && Object.keys(payload.new).length ? payload.new : payload?.old || {};
       if (table === "invoices") return selectedMonths.has(String(row?.month_key || ""));
-      const rawDate = String(row?.issue_date || row?.fecha_hora || row?.fecha || row?.created_at || row?.updated_at || "");
+      const rawDate = String(row?.fecha_hora || row?.fecha || row?.created_at || row?.updated_at || "");
       if (!rawDate) return true;
       return Array.from(selectedMonths).some((key) => rawDate.startsWith(key));
     };
@@ -1552,7 +1485,7 @@ function AdminPage() {
       }, 700);
     };
 
-    const automaticChannel = sb
+    const channel = sb
       .channel(`admin-invoices-live-${month}-${collaboratorOpen ? "detail" : "list"}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, (payload: any) => scheduleInvoiceRefresh("invoices", payload))
       .on("postgres_changes", { event: "*", schema: "public", table: "invoice_lines" }, (payload: any) => scheduleInvoiceRefresh("invoice_lines", payload))
@@ -1564,21 +1497,13 @@ function AdminPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "rendimiento_llamadas" }, (payload: any) => scheduleInvoiceRefresh("rendimiento_llamadas", payload))
       .subscribe();
 
-    // La tabla manual usa un canal independiente: si su publicación Realtime no está
-    // disponible, nunca debe bloquear la sincronización de las facturas automáticas.
-    const manualChannel = sb
-      .channel(`admin-manual-invoices-live-${month}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "manual_invoices" }, (payload: any) => scheduleInvoiceRefresh("manual_invoices", payload))
-      .subscribe();
-
     return () => {
       active = false;
       if (invoiceRealtimeTimerRef.current !== null) {
         window.clearTimeout(invoiceRealtimeTimerRef.current);
         invoiceRealtimeTimerRef.current = null;
       }
-      void sb.removeChannel(automaticChannel);
-      void sb.removeChannel(manualChannel);
+      void sb.removeChannel(channel);
     };
     // Un único canal para la lista o el detalle de colaborador; se limpia al cambiar de vista o mes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1793,108 +1718,45 @@ function AdminPage() {
       <ReservasGlobalWatcher enabled={ok} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="admin" />
 
-      <div className={`tc-shell tc-shell-premium ${adminStyles.adminShell}`}>
-        <aside className={`tc-sidebar ${adminStyles.sidebar}`}>
-          <div className={`tc-sidebar-card ${adminStyles.sidebarCard}`}>
-            <div className={adminStyles.sidebarHudLine} aria-hidden="true" />
-            <div className={`tc-sidebar-title ${adminStyles.sidebarTitle}`}><span>Navegación admin</span><small>Centro de mando</small></div>
+      <div className="tc-shell tc-shell-premium">
+        <aside className="tc-sidebar">
+          <div className="tc-sidebar-card">
+            <div className="tc-sidebar-title">Navegación admin</div>
             <div className="tc-sidebar-nav">
               {ADMIN_NAV.map((item) => {
                 const Icon = item.icon;
-                const rankGroup = item.key === "rangos-clientes";
-                const xpGroup = item.key === "sistema-xp";
-                const bonusesGroup = item.key === "bonos-tarotistas";
-                const active = rankGroup
-                  ? (tab === "rangos-clientes" || tab === "clientes-web" || tab === "ruletas-clientes")
-                  : xpGroup
-                    ? (tab === "sistema-xp" || tab === "sistema-xp-niveles")
-                    : bonusesGroup
-                      ? (tab === "bonos-tarotistas" || tab === "rangos-tarotistas")
-                      : tab === item.key;
-                const groupOpen = rankGroup ? ranksMenuOpen : xpGroup ? xpMenuOpen : bonusesGroup ? bonusesMenuOpen : false;
+                const active = tab === item.key;
                 return (
-                  <div key={item.key} style={{ display: "grid", gap: 6 }}>
-                    <button
-                      className={`tc-sidebtn ${adminStyles.navItem} ${active ? `tc-sidebtn-active ${adminStyles.navItemActive}` : ""}`}
-                      data-tone={item.tone}
-                      onClick={() => {
-                        setTab(item.key as TabKey);
-                        if (rankGroup) setRanksMenuOpen(true);
-                        if (xpGroup) setXpMenuOpen(true);
-                        if (bonusesGroup) setBonusesMenuOpen(true);
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                        <div className={`tc-chip ${adminStyles.navIcon}`}><Icon size={17} /></div>
-                        <div style={{ minWidth: 0 }}>
-                          <div className="tc-sidebtn-main">{item.label}</div>
-                          <div className="tc-sidebtn-kicker">{item.kicker}</div>
-                        </div>
+                  <button
+                    key={item.key}
+                    className={`tc-sidebtn ${active ? "tc-sidebtn-active" : ""}`}
+                    onClick={() => setTab(item.key as TabKey)}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                      <div className="tc-chip" style={{ width: 38, height: 38, display: "grid", placeItems: "center", padding: 0 }}>
+                        <Icon size={16} />
                       </div>
-                      {rankGroup || xpGroup || bonusesGroup ? (
-                        <span
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            if (rankGroup) setRanksMenuOpen((value) => !value);
-                            if (xpGroup) setXpMenuOpen((value) => !value);
-                            if (bonusesGroup) setBonusesMenuOpen((value) => !value);
-                          }}
-                          className={`${adminStyles.navChevron} ${groupOpen ? adminStyles.navChevronOpen : ""}`}
-                          aria-label={rankGroup ? "Desplegar Rangos de clientes" : xpGroup ? "Desplegar Sistema de XP" : "Desplegar Bonos tarotistas"}
-                        >
-                          <ChevronDown size={15} />
-                        </span>
-                      ) : <span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />}
-                    </button>
-                    {rankGroup && ranksMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-clientes")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Gestión de rangos</div><div className="tc-sidebtn-kicker">Automático y temporal</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "clientes-web" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("clientes-web")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Clientes web</div><div className="tc-sidebtn-kicker">Accesos y cuentas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "ruletas-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("ruletas-clientes")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Ruletas clientes</div><div className="tc-sidebtn-kicker">Premios y probabilidades</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="tc-sidebtn-main">{item.label}</div>
+                        <div className="tc-sidebtn-kicker">{item.kicker}</div>
                       </div>
-                    ) : null}
-                    {xpGroup && xpMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Configuración XP</div><div className="tc-sidebtn-kicker">Acciones y experiencia</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "sistema-xp-niveles" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("sistema-xp-niveles")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Sistema de niveles telefonista</div><div className="tc-sidebtn-kicker">Niveles y recompensas</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                      </div>
-                    ) : null}
-                    {bonusesGroup && bonusesMenuOpen ? (
-                      <div className={adminStyles.submenu}>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "bonos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("bonos-tarotistas")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Bonos y retos</div><div className="tc-sidebtn-kicker">Premios económicos</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rangos-tarotistas" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rangos-tarotistas")}>
-                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Rangos tarotistas</div><div className="tc-sidebtn-kicker">C · B · A · S</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
+                    </div>
+                    <span className="tc-sidebtn-dot" />
+                  </button>
                 );
               })}
             </div>
           </div>
         </aside>
 
-        <main className={`tc-main ${adminStyles.main}`}>
-          <section className={`tc-admin-toolbar ${adminStyles.toolbar}`}>
-            <div className={adminStyles.toolbarCopy}>
-              <div className={adminStyles.toolbarEyebrow}><LayoutDashboard size={13} /> Centro de mando · Administración</div>
+        <main className="tc-main">
+          <section className="tc-admin-toolbar">
+            <div>
               <div className="tc-admin-toolbar-title">Panel admin</div>
               <div className="tc-sub">Control operativo, facturación y métricas en una vista limpia.</div>
             </div>
-            <div className={`tc-row ${adminStyles.toolbarActions}`}>
-              <span className={`tc-chip ${adminStyles.monthBadge}`}>Mes</span>
+            <div className="tc-row">
+              <span className="tc-chip">Mes</span>
               <input className="tc-input" value={month} onChange={(e) => setMonth(e.target.value)} placeholder="2026-02" style={{ width: 120 }} />
               <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
                 {listLoading ? "Cargando…" : "Refrescar"}
@@ -1902,7 +1764,7 @@ function AdminPage() {
             </div>
           </section>
 
-          <div className={`tc-main-content ${adminStyles.mainContent}`}>
+          <div className="tc-main-content">
 {tab === "dashboard" && <DashboardPanel month={month} />}
 
           {tab === "panel" && <OperatorPanel mode="admin" />}
@@ -1924,9 +1786,6 @@ function AdminPage() {
                   </div>
 
                   <div className="tc-invoice-actions">
-                    <button className="tc-btn tc-invoice-btn-primary" onClick={() => { setManualInvoiceId(null); setManualInvoiceOpen(true); }}>
-                      <span>＋</span>Crear factura manual
-                    </button>
                     <button className="tc-btn tc-invoice-btn-primary" onClick={generateInvoices} disabled={genLoading}>
                       <span>⚡</span>{genLoading ? "Generando…" : "Generar facturas"}
                     </button>
@@ -2004,14 +1863,7 @@ function AdminPage() {
                         <tr
                           key={x.invoice_id}
                           className={`tc-click ${selId === x.invoice_id ? "tc-invoice-row-selected" : ""}`}
-                          onClick={() => {
-                            if (x.is_manual) {
-                              setManualInvoiceId(String(x.manual_id || String(x.invoice_id).replace("manual:", "")));
-                              setManualInvoiceOpen(true);
-                            } else {
-                              loadInvoice(x.invoice_id);
-                            }
-                          }}
+                          onClick={() => loadInvoice(x.invoice_id)}
                         >
                           <td>
                             <div className="tc-invoice-worker-cell">
@@ -2019,7 +1871,7 @@ function AdminPage() {
                               <span className="tc-invoice-avatar">{String(x.display_name || "?").trim().charAt(0).toUpperCase()}</span>
                               <div>
                                 <b>{x.display_name}</b>
-                                <small>{x.is_manual ? `${x.invoice_number || "Factura manual"} · Factura manual` : x.is_collaborator ? `${x.tag_name || "Etiqueta vinculada"} · En vivo` : `Factura ${x.month_key || month}`}</small>
+                                <small>{x.is_collaborator ? `${x.tag_name || "Etiqueta vinculada"} · En vivo` : `Factura ${x.month_key || month}`}</small>
                               </div>
                             </div>
                           </td>
@@ -2094,18 +1946,18 @@ function AdminPage() {
                 onBack={() => setTab("facturas")}
               />
             ) : (
-            <div className={invoiceStyles.editor}>
+            <div className="tc-card">
               <div className="tc-row" style={{ justifyContent: "space-between" }}>
                 <div>
-                  <div className="tc-title">Editor de factura</div>
-                  <div className="tc-sub">Conceptos, ajustes e incidencias del período</div>
+                  <div className="tc-title">✏️ Editor de factura</div>
+                  <div className="tc-sub">Líneas con desglose automático (minutos x tarifa)</div>
                 </div>
 
                 {selId && (
                   <div className="tc-row">
                     <button className="tc-btn tc-btn-gold" onClick={() => loadInvoice(selId)}>Recargar</button>
                     <button className="tc-btn tc-btn-gold" onClick={() => downloadInvoicePdf(selId)}>Descargar PDF</button>
-                    <button className="tc-btn" onClick={() => setStatus("draft")}>Borrador</button>
+                    <button className="tc-btn" onClick={() => setStatus("draft")}>Draft</button>
                     <button className="tc-btn tc-btn-ok" onClick={() => setStatus("final")}>Finalizar</button>
                   </div>
                 )}
@@ -2117,7 +1969,6 @@ function AdminPage() {
                 <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
               ) : (
                 <>
-                  {selWorker?.role === "tarotista" && selInvoice?.worker_id && <AttendanceHours month={selInvoice.month_key} workerId={selInvoice.worker_id} readOnly />}
                   <div style={{ marginTop: 10 }} className="tc-sub">
                     <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
                     <br />
@@ -2136,38 +1987,74 @@ function AdminPage() {
 
                   <div className="tc-hr" />
 
-                  <div className={invoiceStyles.notice}>Al generar la factura se actualizan los conceptos automáticos. Los bonus, ajustes e incidencias guardados se conservan.</div>
-                  <div className={invoiceStyles.summary}>
-                    <div><span>Conceptos positivos</span><b>{eur(selLines.reduce((sum: number, l: any) => sum + Math.max(0, Number(l.amount)), 0))}</b></div>
-                    <div><span>Descuentos e incidencias</span><b>{eur(selLines.reduce((sum: number, l: any) => sum + Math.min(0, Number(l.amount)), 0))}</b></div>
-                    <div><span>Total a pagar</span><b>{eur(selInvoice?.total || 0)}</b></div>
-                  </div>
-                  {[
-                    { title: "Producción y sueldo", accepts: (l: any) => l.kind !== "incident" && ["auto_generate", "fixed_salary"].includes(l.meta?.source) },
-                    { title: "Bonus y ajustes manuales", accepts: (l: any) => l.kind !== "incident" && !["auto_generate", "fixed_salary"].includes(l.meta?.source) },
-                    { title: "Incidencias y descuentos", accepts: (l: any) => l.kind === "incident" },
-                  ].map(group => <section className={invoiceStyles.section} key={group.title}>
-                    <h3>{group.title}</h3>
-                    {selLines.filter(group.accepts).map((l: any) => <LineEditor key={l.id} line={l} onSave={payload => updateLine(l.id, payload)} onDelete={() => deleteLine(l.id)} />)}
-                    {!selLines.some(group.accepts) && <div className="tc-sub">Sin conceptos en esta sección.</div>}
-                  </section>)}
-                  <section className={invoiceStyles.form}>
-                    <h3>Añadir concepto</h3>
-                    <div className={invoiceStyles.fields}>
-                      <label>Tipo<select className="tc-select" value={newKind} onChange={e => { setNewKind(e.target.value); setNewLabel(""); }}>
-                        <option value="adjustment">Ajuste manual</option><option value="incident">Incidencia / multa</option><option value="bonus">Bonus adicional</option><option value="salary_bonus">Bonus de sueldo</option>
-                      </select></label>
-                      <label>{newKind === "incident" ? "Importe a descontar (€)" : "Importe (€)"}<input className="tc-input" inputMode="decimal" value={newAmount} onChange={e => setNewAmount(e.target.value)} /></label>
-                      <label className={invoiceStyles.wide}>{newKind === "incident" ? "Motivo de la incidencia" : "Concepto"}<input className="tc-input" value={newLabel} onChange={e => setNewLabel(e.target.value)} /></label>
-                      {newKind === "incident" && <>
-                        <label>Fecha y hora de la incidencia<input className="tc-input" type="datetime-local" value={incidentDate} onChange={e => setIncidentDate(e.target.value)} /></label>
-                        <label>Clienta relacionada (si corresponde)<input className="tc-input" value={incidentClient} onChange={e => setIncidentClient(e.target.value)} /></label>
-                        <label className={invoiceStyles.wide}>¿Qué ocurrió?<textarea className="tc-input" rows={3} value={incidentSituation} onChange={e => setIncidentSituation(e.target.value)} /></label>
-                        <p className={invoiceStyles.wide}>El importe se descontará y la trabajadora recibirá una notificación con estos datos.</p>
-                      </>}
+                  {(selLines || []).some((line: any) => String(line?.kind || "") === "salary_base") && (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                        gap: 10,
+                        padding: 14,
+                        marginBottom: 12,
+                        borderRadius: 16,
+                        background: "linear-gradient(135deg, rgba(181,156,255,.14), rgba(255,215,130,.08))",
+                        border: "1px solid rgba(181,156,255,.28)",
+                      }}
+                    >
+                      <div>
+                        <div className="tc-sub">Sueldo fijo protegido</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_base")?.amount || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="tc-sub">Bonus opcional</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur((selLines || []).find((line: any) => String(line?.kind || "") === "salary_bonus")?.amount || 0)}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="tc-sub">Total de la factura</div>
+                        <div className="tc-title" style={{ marginTop: 4 }}>
+                          {eur(selInvoice?.total || 0)}
+                        </div>
+                      </div>
                     </div>
-                    <button className="tc-btn tc-btn-gold" disabled={addingLine || !["draft","pending","review"].includes(selInvoice?.status)} onClick={() => void addLine()}>{addingLine ? "Guardando…" : newKind === "incident" ? "Guardar incidencia y notificar" : "Añadir concepto"}</button>
-                  </section>
+                  )}
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {(selLines || []).map((l: any) => (
+                      <LineEditor
+                        key={l.id}
+                        line={l}
+                        onSave={(payload) => updateLine(l.id, payload)}
+                        onDelete={() => deleteLine(l.id)}
+                      />
+                    ))}
+                  </div>
+
+                  <div className="tc-hr" />
+
+                  <div className="tc-title" style={{ fontSize: 14 }}>➕ Añadir línea</div>
+
+                  <div className="tc-row" style={{ marginTop: 8, flexWrap: "wrap" }}>
+                    <select className="tc-select" value={newKind} onChange={(e) => setNewKind(e.target.value)}>
+                      <option value="adjustment">adjustment</option>
+                      <option value="incident">incident</option>
+                      <option value="bonus_ranking">bonus_ranking</option>
+                      <option value="bonus_captadas">bonus_captadas</option>
+                      <option value="minutes_free">minutes_free</option>
+                      <option value="minutes_rueda">minutes_rueda</option>
+                      <option value="minutes_cliente">minutes_cliente</option>
+                      <option value="minutes_repite">minutes_repite</option>
+                      <option value="salary_base">salary_base</option>
+                      <option value="salary_bonus">salary_bonus</option>
+                    </select>
+
+                    <input className="tc-input" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} style={{ width: 240 }} />
+                    <input className="tc-input" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} style={{ width: 140 }} />
+
+                    <button className="tc-btn tc-btn-gold" onClick={addLine}>Añadir</button>
+                  </div>
 
                   <div style={{ marginTop: 10 }} className="tc-sub">{selMsg || " "}</div>
                 </>
@@ -2190,13 +2077,9 @@ function AdminPage() {
               teams={statsTeams}
               invoices={invoices}
               previousInvoiceSummary={statsPreviousInvoiceSummary}
-              comparisonPeriod={statsComparisonPeriod}
-              brand={getActiveBrand()}
               onRefresh={() => void loadAdminStats(false, "manual")}
             />
           )}
-
-          {tab === "equipos-marcador" && <TeamScoreboardAdminPanel month={month} />}
 
 
           {tab === "trabajadores" && (
@@ -2269,7 +2152,6 @@ function AdminPage() {
                   <input className="tc-input" value={editingWorkerTeam} onChange={(e) => setEditingWorkerTeam(e.target.value)} placeholder="Equipo" />
                   <input className="tc-input" value={editingWorkerEmail} onChange={(e) => setEditingWorkerEmail(e.target.value)} placeholder="Email" />
                 </div><div className="tc-row" style={{ justifyContent: "flex-end", marginTop: 12, gap: 8 }}><button className="tc-btn" onClick={cancelEditWorker}>Cancelar</button><button className="tc-btn tc-btn-ok" onClick={updateWorker}>Guardar cambios</button></div></div> : null}
-              <CentralReviewsAdminPanel />
             </div>
           )}
           {tab === "asistencia" && (
@@ -2965,39 +2847,17 @@ function AdminPage() {
           )}
 
 
-          {tab === "welldone" && <WelldoneAdminPanel />}
-
           {tab === "clientes" && (
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
           )}
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
-          {tab === "ruletas-clientes" && <ClientRouletteAdminPanel />}
-
-          {tab === "bonos-tarotistas" && <BonusAdminPanel />}
-          {tab === "rangos-tarotistas" && <TarotistaRanksAdminPanel />}
-          {tab === "sistema-xp" && <XpSystemAdminPanel />}
-          {tab === "sistema-xp-niveles" && <XpLevelsAdminPanel />}
-
-          {tab === "pagos-web" && <PaymentGatewayAdminPanel />}
-          {tab === "precios-hoy" && <PromotionsAdminPanel />}
-
-          {tab === "clientes-web" && (
-            <ClientWebAdminPanel
-              onOpenCrm={(clientId) => {
-                setTab("crm");
-                window.setTimeout(() => window.dispatchEvent(new CustomEvent("crm-open-cliente", { detail: { id: clientId } })), 250);
-              }}
-              onManageRank={() => setTab("rangos-clientes")}
-            />
-          )}
 
           {tab === "crm" && (
             <CRMClientesPanel mode="admin" />
           )}
 
           {tab === "chat" && <AdminChatPanel />}
-          {tab === "sorteo" && <RaffleWinnerAdmin />}
 
           {tab === "captacion" && (
             <CaptacionPanel
@@ -3009,15 +2869,10 @@ function AdminPage() {
               }}
             />
           )}
+          {tab === "redes-sociales" && <SocialNetworksAdminPanel />}
           {tab === "rendimiento" && <RendimientoPanel mode="admin" />}
           {tab === "reservas" && <ReservasPanel mode="admin" />}
           {tab === "diario" && <DiarioPanel />}
-          <ManualInvoiceModal
-            open={manualInvoiceOpen}
-            invoiceId={manualInvoiceId}
-            onClose={() => setManualInvoiceOpen(false)}
-            onSaved={() => { void listInvoices(true); }}
-          />
 
         </div>
       </main>
@@ -3196,25 +3051,17 @@ function LineEditor({
   const [amount, setAmount] = useState<string>(String(line.amount ?? "0"));
 
   const meta = line?.meta || {};
-  const isIncident = line.kind === "incident";
-  const [clientName, setClientName] = useState(String(meta.client_name || ""));
-  const [situation, setSituation] = useState(String(meta.situation || ""));
-  const [occurredAt, setOccurredAt] = useState(invoiceLocalDate(meta.occurred_at || line.created_at));
   const hasBreakdown = meta && meta.minutes != null && meta.rate != null;
   const isProtectedSalary =
     String(line?.kind || "") === "salary_base" ||
     meta?.locked === true ||
     meta?.protected === true;
   const isSalaryBonus = String(line?.kind || "") === "salary_bonus";
-  const isConfirmedBonus = Boolean(meta?.bonus_award_id);
 
   const [minutes, setMinutes] = useState<string>(String(meta.minutes ?? ""));
   const [rate, setRate] = useState<string>(String(meta.rate ?? ""));
 
   useEffect(() => {
-    setClientName(String(line.meta?.client_name || ""));
-    setSituation(String(line.meta?.situation || ""));
-    setOccurredAt(invoiceLocalDate(line.meta?.occurred_at || line.created_at));
     setLabel(String(line.label || ""));
     setAmount(String(line.amount ?? "0"));
     setMinutes(String(line?.meta?.minutes ?? ""));
@@ -3248,17 +3095,19 @@ function LineEditor({
     onSave({
       label,
       amount: Number(String(amount).replace(",", ".")) || 0,
-      meta: isIncident ? { ...meta, client_name: clientName, situation, occurred_at: occurredAt ? new Date(occurredAt).toISOString() : null } : meta,
+      meta,
     });
   }
 
   return (
-    <div className={`${invoiceStyles.line} ${isIncident ? invoiceStyles.incident : ""}`}>
-      {isIncident && <div className={invoiceStyles.fields}>
-        <label>Fecha y hora<input className="tc-input" type="datetime-local" value={occurredAt} onChange={e => setOccurredAt(e.target.value)} /></label>
-        <label>Clienta<input className="tc-input" value={clientName} onChange={e => setClientName(e.target.value)} /></label>
-        <label className={invoiceStyles.wide}>Situación<textarea className="tc-input" rows={2} value={situation} onChange={e => setSituation(e.target.value)} /></label>
-      </div>}
+    <div
+      style={{
+        border: "1px solid rgba(255,255,255,0.10)",
+        borderRadius: 14,
+        padding: 12,
+        background: "rgba(255,255,255,0.03)",
+      }}
+    >
       <div className="tc-row" style={{ justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 220 }}>
           <div style={{ fontWeight: 900 }}>{label}</div>
@@ -3284,7 +3133,7 @@ function LineEditor({
           />
           {isProtectedSalary && (
             <span className="tc-chip" style={{ padding: "5px 9px" }}>
-              🔒 {isConfirmedBonus ? "Bono confirmado · gestionar desde Bonos tarotistas" : "Importe fijo protegido"}
+              🔒 Importe fijo protegido
             </span>
           )}
           {isSalaryBonus && (
@@ -3336,7 +3185,7 @@ function LineEditor({
           <div className="tc-row" style={{ justifyContent: "space-between", marginTop: 0, flexWrap: "wrap" }}>
             <div>
               <div className="tc-sub">
-                {isConfirmedBonus ? "Bono confirmado" : isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
+                {isProtectedSalary ? "Sueldo fijo mensual" : isSalaryBonus ? "Cantidad de bonus" : "Importe"}
               </div>
               <input
                 className="tc-input"
