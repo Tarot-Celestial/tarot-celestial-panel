@@ -222,7 +222,7 @@ export async function GET(req: Request) {
         };
       })
       .filter((c: any) => {
-        if (rango && ["bronce", "plata", "oro"].includes(rango) && c.rango_efectivo !== rango) return false;
+        if (rango && ["bronce", "plata", "oro", "diamante"].includes(rango) && c.rango_efectivo !== rango) return false;
         const web = clientWebMeta(c);
         if (webFilter === "registrados") return web.registered;
         if (webFilter === "no_registrados") return !web.registered;

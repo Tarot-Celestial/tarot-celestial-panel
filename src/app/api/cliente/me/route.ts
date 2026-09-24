@@ -25,16 +25,16 @@ type ClienteRow = Record<string, any> & {
 function rankMeta(rank: string | null | undefined) {
   const key = normalizeClientRank(rank) || "bronce";
   const label = key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : "Bronce";
-  const min = key === "diamante" ? 500 : key === "oro" ? 500 : key === "plata" ? 100 : 1;
-  const nextRank = key === "diamante" || key === "oro" ? null : key === "plata" ? "oro" : "plata";
-  const nextTarget = nextRank === "oro" ? 500 : nextRank === "plata" ? 100 : null;
+  const min = key === "diamante" ? 1000 : key === "oro" ? 500 : key === "plata" ? 100 : 1;
+  const nextRank = key === "diamante" ? null : key === "oro" ? "diamante" : key === "plata" ? "oro" : "plata";
+  const nextTarget = nextRank === "diamante" ? 1000 : nextRank === "oro" ? 500 : nextRank === "plata" ? 100 : null;
 
   return {
     key,
     label,
     min,
     nextRank,
-    nextLabel: nextRank === "oro" ? "Oro" : nextRank === "plata" ? "Plata" : null,
+    nextLabel: nextRank === "diamante" ? "Diamante" : nextRank === "oro" ? "Oro" : nextRank === "plata" ? "Plata" : null,
     nextTarget,
     benefits: currentRankBenefits(key),
     nextBenefits: nextRank ? currentRankBenefits(nextRank) : [],
@@ -46,19 +46,13 @@ function buildRankProgress(last30DaysSpend: number, last30DaysPurchases: number,
   const compras = Math.max(0, Math.floor(toNum(last30DaysPurchases)));
   const rank = String(currentRank || computeCurrentRankFromSpend(gasto, compras) || "sin_rango").toLowerCase();
 
+  if (rank === "diamante") {
+    return { current_rank:"diamante", current_label:"Diamante", progress_percent:100, current_value:gasto, next_rank:null, next_label:null, next_target:null, remaining_to_next:0, status_text:"Has alcanzado Diamante, el rango más exclusivo de Tarot Celestial.", monthly_requirement_text:`En los últimos 30 días llevas ${gasto.toFixed(2)} USD acumulados y mantienes Diamante.` };
+  }
+
   if (rank === "oro") {
-    return {
-      current_rank: "oro",
-      current_label: "Oro",
-      progress_percent: 100,
-      current_value: gasto,
-      next_rank: null,
-      next_label: null,
-      next_target: null,
-      remaining_to_next: 0,
-      status_text: "Ya disfrutas del rango más alto.",
-      monthly_requirement_text: `En los últimos 30 días llevas ${gasto.toFixed(2)} USD acumulados y mantienes Oro.`,
-    };
+    const target = 1000; const pct=Math.max(0,Math.min(100,((gasto-500)/(target-500))*100)); const remaining=Math.max(0,target-gasto);
+    return { current_rank:"oro", current_label:"Oro", progress_percent:Number(pct.toFixed(1)), current_value:gasto, next_rank:"diamante", next_label:"Diamante", next_target:target, remaining_to_next:Number(remaining.toFixed(2)), status_text: remaining>0?`Te faltan ${remaining.toFixed(2)} USD de gasto en los últimos 30 días para llegar a Diamante.`:"Ya cumples el objetivo de Diamante.", monthly_requirement_text:`Tu progreso a Diamante se calcula con ${gasto.toFixed(2)} USD gastados en los últimos 30 días.` };
   }
 
   if (rank === "plata") {

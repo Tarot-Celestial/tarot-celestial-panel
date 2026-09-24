@@ -49,6 +49,7 @@ function normalizeName(v: any) {
 }
 
 function calcRank(total: number) {
+  if (total >= 1000) return "diamante";
   if (total >= 500) return "oro";
   if (total >= 100) return "plata";
   if (total > 0) return "bronce";
@@ -65,7 +66,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const rank = String(searchParams.get("rank") || "").trim().toLowerCase();
-    if (!["bronce", "plata", "oro"].includes(rank)) {
+    if (!["bronce", "plata", "oro", "diamante"].includes(rank)) {
       return NextResponse.json({ ok: false, error: "INVALID_RANK" }, { status: 400 });
     }
 

@@ -151,8 +151,20 @@ const rankInfo: Record<string, { label: string; next: number | null; perks: stri
   },
   oro: {
     label: "Oro",
+    next: 1000,
+    perks: [
+      "12 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+12 minutos GRATIS permanentes en cada compra a precio regular",
+      "Participación automática en sorteos activos (1 número por sorteo)",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "Seguimiento energético durante 1 mes post rituales",
+    ],
+  },
+  diamante: {
+    label: "Diamante",
     next: null,
     perks: [
+      "Acceso exclusivo a Mi Ritual y seguimiento visual de rituales",
       "12 minutos GRATIS cuando se incorpora una nueva tarotista",
       "+12 minutos GRATIS permanentes en cada compra a precio regular",
       "Participación automática en sorteos activos (1 número por sorteo)",

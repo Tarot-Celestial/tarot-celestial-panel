@@ -60,7 +60,7 @@ export async function GET(req: Request) {
 
     const totals = await loadRolling30ClientTotals(admin, clientes || [], since, now.toISOString());
 
-    const counts = { bronce: 0, plata: 0, oro: 0 };
+    const counts = { bronce: 0, plata: 0, oro: 0, diamante: 0 };
     let compras30d = 0;
     let gasto30d = 0;
 
@@ -77,10 +77,11 @@ export async function GET(req: Request) {
       window_days: 30,
       source: "crm_cliente_pagos+rendimento_llamadas",
       summary: {
-        totalConRango: counts.bronce + counts.plata + counts.oro,
+        totalConRango: counts.bronce + counts.plata + counts.oro + counts.diamante,
         bronce: counts.bronce,
         plata: counts.plata,
         oro: counts.oro,
+        diamante: counts.diamante,
         gastoMesAnterior: Number(gasto30d.toFixed(2)),
         comprasMesAnterior: compras30d,
       },

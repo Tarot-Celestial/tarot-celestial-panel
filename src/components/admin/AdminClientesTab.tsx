@@ -133,7 +133,7 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
   const [rankSummary, setRankSummary] = useState<any>(null);
   const [rankLoading, setRankLoading] = useState(false);
   const [rankMsg, setRankMsg] = useState("");
-  const [rankFilter, setRankFilter] = useState<"bronce" | "plata" | "oro" | null>(null);
+  const [rankFilter, setRankFilter] = useState<"bronce" | "plata" | "oro" | "diamante" | null>(null);
   const [rankClients, setRankClients] = useState<RankClient[]>([]);
   const [rankClientsLoading, setRankClientsLoading] = useState(false);
 
@@ -206,7 +206,7 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
     }
   }
 
-  async function openRankClients(rank: "bronce" | "plata" | "oro") {
+  async function openRankClients(rank: "bronce" | "plata" | "oro" | "diamante") {
     try {
       setRankFilter(rank);
       setRankClientsLoading(true);
@@ -244,9 +244,10 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
     const bronce = Number(rankSummary?.bronce || 0);
     const plata = Number(rankSummary?.plata || 0);
     const oro = Number(rankSummary?.oro || 0);
+    const diamante = Number(rankSummary?.diamante || 0);
     return {
-      total: bronce + plata + oro,
-      top: oro > 0 ? "Oro" : plata > 0 ? "Plata" : bronce > 0 ? "Bronce" : "Sin rango",
+      total: bronce + plata + oro + diamante,
+      top: diamante > 0 ? "Diamante" : oro > 0 ? "Oro" : plata > 0 ? "Plata" : bronce > 0 ? "Bronce" : "Sin rango",
       subida: Number(rankSummary?.subidas || rankSummary?.up || 0),
       bajada: Number(rankSummary?.bajadas || rankSummary?.down || 0),
     };
@@ -270,6 +271,7 @@ export default function AdminClientesTab({ onReviewClient }: { onReviewClient?: 
           <KpiCard title="Bronce" value={String(Number(rankSummary?.bronce || 0))} hint="Clientes en rango bronce" accent="rgba(214,156,110,.28)" onClick={() => openRankClients("bronce")} active={rankFilter === "bronce"} />
           <KpiCard title="Plata" value={String(Number(rankSummary?.plata || 0))} hint="Clientes en rango plata" accent="rgba(196,210,255,.28)" onClick={() => openRankClients("plata")} active={rankFilter === "plata"} />
           <KpiCard title="Oro" value={String(Number(rankSummary?.oro || 0))} hint="Clientes en rango oro" accent="rgba(255,215,120,.28)" onClick={() => openRankClients("oro")} active={rankFilter === "oro"} />
+          <KpiCard title="Diamante" value={String(Number(rankSummary?.diamante || 0))} hint="Clientes en el rango más exclusivo" accent="rgba(168,235,255,.38)" onClick={() => openRankClients("diamante")} active={rankFilter === "diamante"} />
           <KpiCard title="Suben" value={String(movementSummary.subida)} hint="Movimientos positivos detectados" accent="rgba(120,255,190,.35)" />
           <KpiCard title="Bajan" value={String(movementSummary.bajada)} hint="Movimientos negativos detectados" accent="rgba(255,98,98,.35)" />
           <KpiCard title="Total con rango" value={String(Number(rankSummary?.totalConRango || movementSummary.total || 0))} hint={`Rango dominante: ${movementSummary.top}`} accent="rgba(181,156,255,.28)" />

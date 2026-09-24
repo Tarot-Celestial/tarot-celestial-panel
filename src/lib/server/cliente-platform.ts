@@ -93,6 +93,7 @@ export function getCallTarget(phoneLike: string | null | undefined) {
 export function computeCurrentRankFromSpend(spend: number, purchases: number) {
   const total = toNum(spend);
   const count = Math.max(0, Math.floor(toNum(purchases)));
+  if (total >= 1000) return "diamante";
   if (total >= 500) return "oro";
   if (total >= 100) return "plata";
   if (count >= 1 || total > 0) return "bronce";
@@ -402,6 +403,10 @@ export function pickDailyOracle(topic: string, clientId: string, rank: string | 
 
   const intros = topicTitles[normalizedTopic] || topicTitles.general;
   const adviceByRank: Record<string, string[]> = {
+    diamante: [
+      "Tu rango Diamante abre una experiencia más exclusiva: hoy conviene actuar con claridad y propósito.",
+      "Estás en el nivel más alto de la experiencia Celestial: aprovecha tus beneficios premium con intención.",
+    ],
     oro: [
       "Tu rango Oro te favorece con energía expansiva: aprovecha para tomar iniciativa.",
       "Hoy estás en un punto de liderazgo espiritual: si das el primer paso, la respuesta llega.",
@@ -426,7 +431,7 @@ export function pickDailyOracle(topic: string, clientId: string, rank: string | 
     "La señal es favorable, pero la claridad total llega cuando preguntas lo concreto.",
   ];
 
-  const rankKey = ["oro", "plata", "bronce"].includes(String(rank || "").toLowerCase())
+  const rankKey = ["diamante", "oro", "plata", "bronce"].includes(String(rank || "").toLowerCase())
     ? String(rank || "").toLowerCase()
     : "default";
 
@@ -450,7 +455,9 @@ export function answerOracleFollowup(input: string, topic: string, rank: string 
   else if (/(salud|energia|energía|ansiedad|cans)/.test(q)) focus = "Tu energía necesita bajar carga antes de abrir una nueva etapa.";
   else if (/(llamar|consulta|tarotista)/.test(q)) focus = "Sí hay tema para profundizar con una consulta, porque la energía aparece activa y no cerrada.";
 
-  const rankNote = String(rank || "").toLowerCase() === "oro"
+  const rankNote = String(rank || "").toLowerCase() === "diamante"
+    ? "Tu vibración Diamante representa el nivel premium de tu experiencia y favorece una lectura más personalizada."
+    : String(rank || "").toLowerCase() === "oro"
     ? "Tu vibración Oro favorece respuestas más rápidas cuando actúas con decisión."
     : String(rank || "").toLowerCase() === "plata"
     ? "Tu energía Plata pide constancia y buena lectura de señales."

@@ -31,7 +31,7 @@ function initials(nombre: string, apellido: string) {
 
 function rankLabel(value: string) {
   const key = String(value || "").toLowerCase();
-  return key === "oro" ? "Oro" : key === "plata" ? "Plata" : key === "bronce" ? "Bronce" : "Sin rango";
+  return key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : key === "bronce" ? "Bronce" : "Sin rango";
 }
 
 function memberSince(value: string | null) {

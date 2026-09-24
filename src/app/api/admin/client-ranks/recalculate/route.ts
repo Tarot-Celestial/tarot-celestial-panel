@@ -42,7 +42,7 @@ async function workerFromReq(req: Request) {
 
 async function notifyRankChange(admin: any, params: { clienteId: string; clientName: string; rank: string; previousRank?: string | null }) {
   const { clienteId, clientName, rank, previousRank } = params;
-  const order: Record<string, number> = { bronce: 1, plata: 2, oro: 3 };
+  const order: Record<string, number> = { bronce: 1, plata: 2, oro: 3, diamante: 4 };
   if (!previousRank) return;
   if ((order[rank] || 0) <= (order[previousRank] || 0)) return;
   await admin.from("notifications").insert({
@@ -90,6 +90,7 @@ async function runRecalc() {
   let bronce = 0;
   let plata = 0;
   let oro = 0;
+  let diamante = 0;
   let updated = 0;
   let gasto30d = 0;
   let compras30d = 0;
@@ -101,6 +102,7 @@ async function runRecalc() {
     if (rank === "bronce") bronce += 1;
     if (rank === "plata") plata += 1;
     if (rank === "oro") oro += 1;
+    if (rank === "diamante") diamante += 1;
     gasto30d += info.total;
     compras30d += info.compras;
 
@@ -146,7 +148,7 @@ async function runRecalc() {
     clientes_actualizados: updated,
     gastoMesAnterior: Number(gasto30d.toFixed(2)),
     comprasMesAnterior: compras30d,
-    rangos: { bronce, plata, oro },
+    rangos: { bronce, plata, oro, diamante },
   };
 }
 

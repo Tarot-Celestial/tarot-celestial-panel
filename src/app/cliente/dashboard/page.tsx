@@ -124,7 +124,7 @@ function formatDate(value: string | null | undefined): string {
 
 function getRankBadge(rango: string | null | undefined) {
   const key = String(rango || "bronce").toLowerCase();
-  if (key === "diamante") return { label: "Diamante", key: "gold" };
+  if (key === "diamante") return { label: "Diamante", key: "diamond" };
   if (key === "oro") return { label: "Oro", key: "gold" };
   if (key === "plata") return { label: "Plata", key: "silver" };
   return { label: "Bronce", key: "bronze" };
@@ -860,7 +860,7 @@ export default function ClienteDashboardPage() {
               {rankInfo?.nextLabel ? (
                 <div className="tc-card tc-perks-card tc-perks-next">
                   <div className="tc-perks-header">
-                    <div className={`tc-rank-emblem tc-rank-emblem-${String(rankInfo.nextRank || "plata") === "oro" ? "gold" : "silver"}`}><Medal size={23} /></div>
+                    <div className={`tc-rank-emblem tc-rank-emblem-${String(rankInfo.nextRank || "plata") === "diamante" ? "diamond" : String(rankInfo.nextRank || "plata") === "oro" ? "gold" : "silver"}`}><Medal size={23} /></div>
                     <div>
                       <span>PRÓXIMO RANGO</span>
                       <strong>{rankInfo.nextLabel.toUpperCase()}</strong>

@@ -7,8 +7,11 @@ export function normalizeRankClientName(v: any) {
     .trim();
 }
 
+export const CLIENT_RANK_THRESHOLDS = { bronce: 0.01, plata: 100, oro: 500, diamante: 1000 } as const;
+
 export function calcClientRank(total: number) {
-  if (total >= 500) return "oro";
+  if (total >= CLIENT_RANK_THRESHOLDS.diamante) return "diamante";
+  if (total >= CLIENT_RANK_THRESHOLDS.oro) return "oro";
   if (total >= 100) return "plata";
   if (total > 0) return "bronce";
   return null;

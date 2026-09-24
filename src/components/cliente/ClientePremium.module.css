@@ -969,6 +969,7 @@
 .premiumShell :global(.tc-rank-emblem-bronze) { color: #ffd0a0; background: linear-gradient(145deg,#8a4d28,#3b241d); box-shadow: inset 0 1px 0 rgba(255,255,255,.17),0 0 26px rgba(196,113,57,.12); }
 .premiumShell :global(.tc-rank-emblem-silver) { color: #eef4ff; background: linear-gradient(145deg,#8994a7,#343a48); box-shadow: inset 0 1px 0 rgba(255,255,255,.18),0 0 26px rgba(185,203,234,.12); }
 .premiumShell :global(.tc-rank-emblem-gold) { color: #fff2a6; background: linear-gradient(145deg,#d4a92f,#6e4b08); box-shadow: inset 0 1px 0 rgba(255,255,255,.22),0 0 30px rgba(250,204,21,.15); }
+.premiumShell :global(.tc-rank-emblem-diamond) { color:#f5feff; background:linear-gradient(145deg,#c9f7ff 0%,#87dce8 28%,#b99cff 62%,#5c6d91 100%); border-color:rgba(230,253,255,.72); box-shadow:inset 0 1px 0 rgba(255,255,255,.75),0 0 18px rgba(125,226,255,.35),0 0 38px rgba(182,146,255,.2); text-shadow:0 0 9px #fff; }
 
 .premiumShell :global(.tc-rank-identity span),
 .premiumShell :global(.tc-rank-progress-label),

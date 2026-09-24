@@ -22,8 +22,8 @@ export function normalizeClientRank(value: unknown): ClientRankName {
 }
 
 export function rankThresholds(rank: ClientRankName) {
-  if (rank === "diamante") return { currentMin: 500, next: null, nextMin: null };
-  if (rank === "oro") return { currentMin: 500, next: null, nextMin: null };
+  if (rank === "diamante") return { currentMin: 1000, next: null, nextMin: null };
+  if (rank === "oro") return { currentMin: 500, next: "diamante" as const, nextMin: 1000 };
   if (rank === "plata") return { currentMin: 100, next: "oro" as const, nextMin: 500 };
   return { currentMin: rank === "bronce" ? 0.01 : 0, next: "plata" as const, nextMin: 100 };
 }

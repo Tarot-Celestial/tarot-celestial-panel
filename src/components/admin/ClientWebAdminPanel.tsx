@@ -45,7 +45,7 @@ type Props = {
 
 function rankLabel(rank: string | null) {
   const value = String(rank || "").toLowerCase();
-  return value === "oro" ? "Oro" : value === "plata" ? "Plata" : value === "bronce" ? "Bronce" : "Sin rango";
+  return value === "diamante" ? "Diamante" : value === "oro" ? "Oro" : value === "plata" ? "Plata" : value === "bronce" ? "Bronce" : "Sin rango";
 }
 
 function formatDate(value: string | null, withTime = true) {
@@ -197,7 +197,7 @@ export default function ClientWebAdminPanel({ onOpenCrm, onManageRank }: Props) 
 
     <div className={styles.toolbar}>
       <label className={styles.search}><Search size={16}/><input value={q} onChange={(e) => { setPage(1); setQ(e.target.value); }} placeholder="Buscar nombre, email o teléfono"/></label>
-      <select value={rank} onChange={(e) => { setPage(1); setRank(e.target.value); }}><option value="all">Todos los rangos</option><option value="bronce">Bronce</option><option value="plata">Plata</option><option value="oro">Oro</option></select>
+      <select value={rank} onChange={(e) => { setPage(1); setRank(e.target.value); }}><option value="all">Todos los rangos</option><option value="bronce">Bronce</option><option value="plata">Plata</option><option value="oro">Oro</option><option value="diamante">Diamante</option></select>
       <select value={account} onChange={(e) => { setPage(1); setAccount(e.target.value); }}><option value="all">Cualquier estado</option><option value="active">Cuenta activa</option><option value="blocked">Cuenta bloqueada</option></select>
       <select value={access} onChange={(e) => { setPage(1); setAccess(e.target.value); }}><option value="web">Con acceso web</option><option value="without">Sin acceso web</option><option value="all">Todos los clientes</option></select>
     </div>

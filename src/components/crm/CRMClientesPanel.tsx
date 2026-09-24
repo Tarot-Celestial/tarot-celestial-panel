@@ -45,11 +45,12 @@ function crmNoteTone(text: string) {
 
 const sb = supabaseBrowser();
 
-function normalizeRankParam(value: string | null | undefined): "" | "bronce" | "plata" | "oro" {
+function normalizeRankParam(value: string | null | undefined): "" | "bronce" | "plata" | "oro" | "diamante" {
   const v = String(value || "").trim().toLowerCase();
   if (["bronce", "bronze", "bronzes"].includes(v)) return "bronce";
   if (["plata", "silver", "silvers"].includes(v)) return "plata";
   if (["oro", "gold", "golds"].includes(v)) return "oro";
+  if (["diamante", "diamond", "diamonds"].includes(v)) return "diamante";
   return "";
 }
 
@@ -299,7 +300,7 @@ export default function CRMClientesPanel({
   const router = useRouter();
   const searchParams = useSearchParams();
   const rankFromUrl = normalizeRankParam(searchParams?.get("rango"));
-  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro">(rankFromUrl);
+  const [crmRankFilter, setCrmRankFilter] = useState<"" | "bronce" | "plata" | "oro" | "diamante">(rankFromUrl);
   const [activeBrand, setActiveBrand] = useState<"celestial" | "orion">("celestial");
   const [crmNewOrigen, setCrmNewOrigen] = useState(() =>
     getActiveBrand() === "orion" ? "tarot_orion" : "tarot_celestial"
@@ -859,14 +860,15 @@ export default function CRMClientesPanel({
     }
   }
 
-  function rankLabel(rank: "" | "bronce" | "plata" | "oro") {
+  function rankLabel(rank: "" | "bronce" | "plata" | "oro" | "diamante") {
+    if (rank === "diamante") return "Diamante";
     if (rank === "oro") return "Oro";
     if (rank === "plata") return "Plata";
     if (rank === "bronce") return "Bronce";
     return "Todos";
   }
 
-  async function openRankClients(rank: "bronce" | "plata" | "oro") {
+  async function openRankClients(rank: "bronce" | "plata" | "oro" | "diamante") {
     setCrmRankFilter(rank);
 
     try {
@@ -892,7 +894,7 @@ export default function CRMClientesPanel({
     await searchCRM(false, "");
   }
 
-  async function searchCRM(silent = false, forcedRank: "" | "bronce" | "plata" | "oro" = crmRankFilter) {
+  async function searchCRM(silent = false, forcedRank: "" | "bronce" | "plata" | "oro" | "diamante" = crmRankFilter) {
     const q = crmQuery.trim();
     const telefono = crmPhoneFilter.trim();
     const etiqueta = crmTagFilter.trim();
@@ -917,7 +919,7 @@ export default function CRMClientesPanel({
       if (pais) params.set("pais", pais);
       if (crmWebFilter !== "todos") params.set("web_filter", crmWebFilter);
       params.set("marca", activeBrand);
-      if (forcedRank && ["bronce", "plata", "oro"].includes(forcedRank)) {
+      if (forcedRank && ["bronce", "plata", "oro", "diamante"].includes(forcedRank)) {
   params.set("rango", forcedRank);
 }
       
@@ -1957,6 +1959,14 @@ export default function CRMClientesPanel({
             style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", width: "100%", textAlign: "left", cursor: "pointer", background: crmRankFilter === "oro" ? "rgba(255,215,120,.24)" : "rgba(255,215,120,.12)", border: crmRankFilter === "oro" ? "1px solid rgba(255,215,120,.46)" : "1px solid rgba(255,215,120,.22)" }}
           >
             <span>🥇 Oro</span><b>{Number(crmRankSummary?.oro || 0)}</b>
+          </button>
+          <button
+            type="button"
+            className="tc-chip"
+            onClick={() => openRankClients("diamante")}
+            style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", width: "100%", textAlign: "left", cursor: "pointer", color: "#effdff", background: crmRankFilter === "diamante" ? "linear-gradient(135deg,rgba(105,224,255,.28),rgba(183,137,255,.24))" : "linear-gradient(135deg,rgba(105,224,255,.13),rgba(183,137,255,.10))", border: crmRankFilter === "diamante" ? "1px solid rgba(207,249,255,.64)" : "1px solid rgba(190,239,255,.30)", boxShadow: "0 0 22px rgba(113,222,255,.08)" }}
+          >
+            <span>💎 Diamante</span><b>{Number(crmRankSummary?.diamante || 0)}</b>
           </button>
           <div className="tc-chip" style={{ justifyContent: "space-between", padding: "14px 16px", display: "flex", background: "rgba(181,156,255,.12)", border: "1px solid rgba(181,156,255,.22)" }}><span>Total con rango</span><b>{Number(crmRankSummary?.totalConRango || 0)}</b></div>
         </div>

@@ -5,7 +5,7 @@ import styles from "./ClientRanksAdminPanel.module.css";
 
 const sb = supabaseBrowser();
 const rankLabel=(r:any)=>r?String(r).charAt(0).toUpperCase()+String(r).slice(1):"Sin rango";
-const rankClass=(r:any)=>r==="diamante"?styles.gold:r==="oro"?styles.gold:r==="plata"?styles.silver:r==="bronce"?styles.bronze:styles.none;
+const rankClass=(r:any)=>r==="diamante"?styles.diamond:r==="oro"?styles.gold:r==="plata"?styles.silver:r==="bronce"?styles.bronze:styles.none;
 const money=(n:any)=>Number(n||0).toLocaleString("es-ES",{style:"currency",currency:"EUR"});
 
 export default function ClientRanksAdminPanel(){
