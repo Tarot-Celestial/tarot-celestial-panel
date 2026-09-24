@@ -67,7 +67,7 @@ export default function SocialChannelAdminPanel({provider}:Props){
       // La conexión OAuth se carga de forma independiente. Un fallo en biblioteca,
       // campañas o analítica no puede hacer que una cuenta conectada aparezca como desconectada.
       const status = await api(`/api/admin/social-connections/status?t=${Date.now()}`);
-      setConnection(status.connections?.[provider]||null);
+      setConnection(status.connections?.[provider] ?? status?.[provider] ?? null);
       setConfigured(Boolean(status.configured?.[provider]));
 
       const results = await Promise.allSettled([
@@ -107,7 +107,7 @@ export default function SocialChannelAdminPanel({provider}:Props){
       const verify = async()=>{
         try {
           const status = await api(`/api/admin/social-connections/status?t=${Date.now()}`);
-          const current = status.connections?.[provider] || null;
+          const current = status.connections?.[provider] ?? status?.[provider] ?? null;
           setConnection(current);
           setConfigured(Boolean(status.configured?.[provider]));
           if (current) {
@@ -121,7 +121,7 @@ export default function SocialChannelAdminPanel({provider}:Props){
               ? ` Recuperación: ${recovery.error}${build}`
               : storage.error
                 ? ` Supabase: ${storage.error}${build}`
-                : ` Tabla: ${storage.table || "tc_social_connections"} · filas: ${storage.rows ?? "?"} · proyecto: ${storage.project_ref || "?"}${build}.`;
+                : ` Tabla: ${storage.table || "tc_social_connections"} · filas: ${storage.rows ?? "?"} · providers: ${(storage.providers || []).join(",") || "—"} · instagram_found: ${String(storage.instagram_found)} · proyecto: ${storage.project_ref || "?"}${build}.`;
             setError(`${brand.name} autorizó los permisos, pero la conexión no aparece en el panel.${detail}`);
           }
         } catch(e:any) {

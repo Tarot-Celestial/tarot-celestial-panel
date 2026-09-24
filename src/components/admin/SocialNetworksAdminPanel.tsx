@@ -67,7 +67,10 @@ export default function SocialNetworksAdminPanel() {
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "No se pudieron cargar las conexiones");
-      setConnections(json.connections || { instagram: null, tiktok: null });
+      setConnections({
+        instagram: json.connections?.instagram ?? json.instagram ?? null,
+        tiktok: json.connections?.tiktok ?? json.tiktok ?? null,
+      });
       setConfigured(json.configured || { instagram: false, tiktok: false });
     } catch (e: any) {
       setError(e?.message || "No se pudieron cargar las conexiones");
