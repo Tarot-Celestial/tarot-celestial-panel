@@ -1,7 +1,7 @@
-import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import {
+  createSocialOAuthState,
   instagramScopes,
   isSocialProvider,
   socialRedirectUri,
@@ -19,7 +19,9 @@ export async function POST(req: Request) {
     const provider = body?.provider;
     if (!isSocialProvider(provider)) return NextResponse.json({ ok: false, error: "INVALID_PROVIDER" }, { status: 400 });
 
-    const state = crypto.randomBytes(32).toString("hex");
+    // Estado firmado y autocontenido: no dependemos únicamente de una cookie del navegador.
+    // Esto evita perder el OAuth si Meta vuelve por el dominio de producción de Vercel.
+    const state = createSocialOAuthState(provider, String(auth.me.id || "") || null);
     const redirectUri = socialRedirectUri(provider, req.url);
     let authUrl = "";
 
@@ -52,14 +54,15 @@ export async function POST(req: Request) {
       authUrl = `https://www.tiktok.com/v2/auth/authorize/?${params.toString()}`;
     }
 
-    const res = NextResponse.json({ ok: true, auth_url: authUrl });
+    const res = NextResponse.json({ ok: true, auth_url: authUrl, redirect_uri: redirectUri });
     const cookieBase = {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax" as const,
       path: "/",
-      maxAge: 60 * 10,
+      maxAge: 60 * 15,
     };
+    // Mantenemos cookies como segunda comprobación/fallback, pero el state firmado es la fuente principal.
     res.cookies.set("tc_social_oauth_state", state, cookieBase);
     res.cookies.set("tc_social_oauth_provider", provider, cookieBase);
     res.cookies.set("tc_social_oauth_admin", String(auth.me.id || ""), cookieBase);

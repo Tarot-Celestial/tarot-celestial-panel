@@ -53,12 +53,67 @@ export function socialRedirectUri(provider: SocialProvider, requestUrl: string) 
   return `${origin}/api/social/oauth/${provider}/callback`;
 }
 
+const INSTAGRAM_LOGIN_SUPPORTED_SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_content_publish",
+  "instagram_business_manage_comments",
+  "instagram_business_manage_messages",
+] as const;
+
 export function instagramScopes() {
-  return (process.env.INSTAGRAM_SCOPES ||
-    "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_comments,instagram_business_manage_messages")
+  const requested = (process.env.INSTAGRAM_SCOPES || INSTAGRAM_LOGIN_SUPPORTED_SCOPES.join(","))
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
+
+  // Instagram Login solo admite estos scopes. Filtramos cualquier permiso del flujo
+  // Facebook Login (por ejemplo insights) para que no rompa el OAuth.
+  return requested.filter((scope) =>
+    (INSTAGRAM_LOGIN_SUPPORTED_SCOPES as readonly string[]).includes(scope),
+  );
+}
+
+type OAuthStatePayload = {
+  provider: SocialProvider;
+  adminId: string | null;
+  nonce: string;
+  issuedAt: number;
+};
+
+function oauthStateKey() {
+  const secret = process.env.SOCIAL_TOKEN_ENCRYPTION_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secret) throw new Error("Missing SOCIAL_TOKEN_ENCRYPTION_KEY or SUPABASE_SERVICE_ROLE_KEY");
+  return crypto.createHash("sha256").update(`tc-social-oauth:${secret}`).digest();
+}
+
+export function createSocialOAuthState(provider: SocialProvider, adminId?: string | null) {
+  const payload: OAuthStatePayload = {
+    provider,
+    adminId: adminId || null,
+    nonce: crypto.randomBytes(20).toString("hex"),
+    issuedAt: Date.now(),
+  };
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = crypto.createHmac("sha256", oauthStateKey()).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+export function verifySocialOAuthState(value: string | null | undefined, provider: SocialProvider) {
+  if (!value) return null;
+  const [encoded, signature] = value.split(".");
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac("sha256", oauthStateKey()).update(encoded).digest("base64url");
+  const a = Buffer.from(signature);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as OAuthStatePayload;
+    if (payload.provider !== provider) return null;
+    if (!payload.issuedAt || Date.now() - payload.issuedAt > 15 * 60 * 1000) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 export function tiktokScopes() {

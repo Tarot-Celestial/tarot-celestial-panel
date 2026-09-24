@@ -61,34 +61,66 @@ export default function SocialChannelAdminPanel({provider}:Props){
   const accessToken=useCallback(async()=>{const {data}=await supabaseBrowser().auth.getSession();const t=data.session?.access_token;if(!t)throw new Error("Sesión de administrador no disponible");return t;},[]);
   const api=useCallback(async(path:string,init?:RequestInit)=>{const t=await accessToken();const res=await fetch(path,{...init,headers:{Authorization:`Bearer ${t}`,"Content-Type":"application/json",...(init?.headers||{})},cache:"no-store"});const json=await res.json().catch(()=>({}));if(!res.ok||json?.ok===false)throw new Error(json?.error||"Error de servidor");return json;},[accessToken]);
 
-  const load=useCallback(async()=>{setLoading(true);setError("");try{
-    const [c,p,l,a,s]=await Promise.all([
-      api(`/api/admin/social-content?provider=${provider}&t=${Date.now()}`),
-      api(`/api/admin/social-campaigns?provider=${provider}&t=${Date.now()}`),
-      api(`/api/admin/social-library?provider=${provider}&t=${Date.now()}`),
-      api(`/api/admin/social-analytics?provider=${provider}&t=${Date.now()}`),
-      api(`/api/admin/social-connections/status?t=${Date.now()}`),
-    ]);
-    setItems(c.items||[]);setCampaigns(p.items||[]);setLibrary(l.items||[]);setAnalytics(a);setConnection(s.connections?.[provider]||null);setConfigured(Boolean(s.configured?.[provider]));
-  }catch(e:any){setError(e?.message||"No se pudo cargar el panel");}finally{setLoading(false);}},[api,provider]);
+  const load=useCallback(async()=>{
+    setLoading(true);
+    try {
+      // La conexión OAuth se carga de forma independiente. Un fallo en biblioteca,
+      // campañas o analítica no puede hacer que una cuenta conectada aparezca como desconectada.
+      const status = await api(`/api/admin/social-connections/status?t=${Date.now()}`);
+      setConnection(status.connections?.[provider]||null);
+      setConfigured(Boolean(status.configured?.[provider]));
+
+      const results = await Promise.allSettled([
+        api(`/api/admin/social-content?provider=${provider}&t=${Date.now()}`),
+        api(`/api/admin/social-campaigns?provider=${provider}&t=${Date.now()}`),
+        api(`/api/admin/social-library?provider=${provider}&t=${Date.now()}`),
+        api(`/api/admin/social-analytics?provider=${provider}&t=${Date.now()}`),
+      ]);
+      const [c,p,l,a] = results;
+      if (c.status === "fulfilled") setItems(c.value.items||[]);
+      if (p.status === "fulfilled") setCampaigns(p.value.items||[]);
+      if (l.status === "fulfilled") setLibrary(l.value.items||[]);
+      if (a.status === "fulfilled") setAnalytics(a.value);
+
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === "rejected");
+      if (failed) setError(failed.reason?.message || "Algún módulo social no pudo cargar sus datos");
+    } catch(e:any) {
+      setError(e?.message||"No se pudo cargar el estado de conexión");
+    } finally {
+      setLoading(false);
+    }
+  },[api,provider]);
   useEffect(()=>{void load();},[load]);
+
   useEffect(()=>{
     const connected = searchParams?.get("social_connected");
     const oauthError = searchParams?.get("social_error");
     if (oauthError) {
       setError(oauthError);
+      setMessage("");
       setSection("conexion");
     }
     if (connected === provider) {
-      setMessage(`${brand.name} conectado correctamente.`);
+      setMessage(`${brand.name} autorizado por OAuth. Comprobando conexión guardada…`);
+      setError("");
       setSection("conexion");
-      // El callback ya guardó la conexión. Reintentamos la lectura por si el navegador
-      // restaura la sesión de Supabase unas décimas después de volver de Instagram/TikTok.
-      const t1 = window.setTimeout(() => void load(), 250);
-      const t2 = window.setTimeout(() => void load(), 1200);
-      return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+      const verify = async()=>{
+        try {
+          const status = await api(`/api/admin/social-connections/status?t=${Date.now()}`);
+          const current = status.connections?.[provider] || null;
+          setConnection(current);
+          setConfigured(Boolean(status.configured?.[provider]));
+          if (current) setMessage(`${brand.name} conectado correctamente.`);
+          else setError(`${brand.name} autorizó los permisos, pero no existe una conexión guardada en Supabase.`);
+        } catch(e:any) {
+          setError(e?.message || "No se pudo verificar la conexión después del OAuth");
+        }
+      };
+      const t1 = window.setTimeout(()=>void verify(),250);
+      const t2 = window.setTimeout(()=>void verify(),1200);
+      return ()=>{window.clearTimeout(t1);window.clearTimeout(t2);};
     }
-  },[searchParams,provider,load,brand.name]);
+  },[searchParams,provider,api,brand.name]);
   useEffect(()=>{setDraft((v:any)=>({...v,id:"",content_type:provider==="instagram"?"post":"video",privacy_level:"SELF_ONLY",publish_mode:"direct"}));},[provider]);
 
   const scheduled=useMemo(()=>items.filter(x=>x.status==="scheduled"),[items]);
