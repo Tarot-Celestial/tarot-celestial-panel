@@ -3,7 +3,7 @@ import { loadEffectiveRanksBatch, loadRecentRankTotals, type RankAdminClient } f
 export type FidelityPurchase = { id?: string | null; created_at?: string | null; importe?: number | string | null };
 export type FidelityActivity = { created_at?: string | null; closed_at?: string | null; estado?: string | null };
 export type FidelityFollowUp = FidelityActivity & { completed_at?: string | null; result?: string | null };
-export type FidelityRank = "bronce" | "plata" | "oro" | null;
+export type FidelityRank = "bronce" | "plata" | "oro" | "diamante" | null;
 
 export type ClientFidelityInput = {
   capturedAt?: string | null;
@@ -56,7 +56,7 @@ function daysSince(value: string | null | undefined, now: Date) {
 }
 function normalizeRank(value: unknown): FidelityRank {
   const rank = String(value || "").trim().toLowerCase();
-  return rank === "bronce" || rank === "plata" || rank === "oro" ? rank : null;
+  return rank === "bronce" || rank === "plata" || rank === "oro" || rank === "diamante" ? rank : null;
 }
 function classify(score: number) {
   if (score >= 85) return { level: "very_high" as const, label: "Muy alta", description: "Clienta muy fidelizada" };
@@ -109,7 +109,7 @@ function scoreFollowUp(followUps: FidelityFollowUp[], commercialActivity: Date[]
   return Math.min(10, points);
 }
 function scoreContinuity(rank: FidelityRank, capturedAt: string | null | undefined, purchases: FidelityPurchase[], now: Date) {
-  const rankPoints = rank === "oro" ? 6 : rank === "plata" ? 4 : rank === "bronce" ? 2 : 0;
+  const rankPoints = rank === "diamante" || rank === "oro" ? 6 : rank === "plata" ? 4 : rank === "bronce" ? 2 : 0;
   const relationshipDays = daysSince(capturedAt, now) || 0;
   const purchaseDates = purchases.map((row) => validDate(row.created_at)).filter((date): date is Date => Boolean(date));
   if (!purchaseDates.length) return rankPoints;
