@@ -37,8 +37,8 @@ export async function GET(req:Request){
     if(!diamond)return NextResponse.json({ok:true,diamond:false,rank:rank.effective||"sin_rango",ritual:null,history:[]});
     const {data:active,error}=await gate.admin.from("client_rituals").select("*,ritual_types(*)").eq("cliente_id",gate.cliente.id).in("estado",["pendiente","activo","pausado"]).order("created_at",{ascending:false}).limit(1).maybeSingle();
     if(error)throw error;
-    const {data:history,error:hErr}=await gate.admin.from("client_rituals").select("id,estado,fecha_inicio,fecha_fin_real,created_at,ritual_types(nombre,slug)").eq("cliente_id",gate.cliente.id).in("estado",["completado","cancelado"]).order("created_at",{ascending:false}).limit(12);
+    const {data:history,error:hErr}=await gate.admin.from("client_rituals").select("id,nombre_personalizado,estado,modo,fecha_inicio,fecha_fin_prevista,fecha_fin_real,created_at,progreso_manual,fase_manual,override_automatico,mensaje_actual,consejo_actual,ritual_types(nombre,slug,icono,descripcion,fases)").eq("cliente_id",gate.cliente.id).in("estado",["completado","cancelado"]).order("created_at",{ascending:false}).limit(12);
     if(hErr)throw hErr;
-    return NextResponse.json({ok:true,diamond:true,rank:"diamante",ritual:computed(active),history:history||[]});
+    return NextResponse.json({ok:true,diamond:true,rank:"diamante",ritual:computed(active),history:(history||[]).map(computed)});
   }catch(e:any){return NextResponse.json({ok:false,error:e?.message||"ERR_RITUAL"},{status:500});}
 }
