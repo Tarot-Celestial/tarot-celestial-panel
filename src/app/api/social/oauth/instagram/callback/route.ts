@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
       throw new Error(`Instagram autorizó la aplicación, pero no devolvió el ID de la cuenta${profileError ? `: ${profileError}` : ""}`);
     }
 
-    await saveSocialConnection({
+    const savedConnection = await saveSocialConnection({
       provider: "instagram",
       accountId,
       username: profile?.username || null,
@@ -124,6 +124,9 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    if (!savedConnection?.provider || savedConnection.provider !== "instagram") {
+      throw new Error("Instagram autorizó la cuenta pero no se pudo confirmar la persistencia en Supabase.");
+    }
     return adminRedirect(req, { social_connected: "instagram" });
   } catch (error: any) {
     return adminRedirect(req, { social_error: String(error?.message || "Error conectando Instagram").slice(0, 220) });

@@ -163,11 +163,35 @@ export async function saveSocialConnection(input: {
     updated_at: now.toISOString(),
   };
 
-  const { error } = await db.from("tc_social_connections").upsert(row, { onConflict: "provider" });
+  const { data: saved, error } = await db
+    .from("tc_social_connections")
+    .upsert(row, { onConflict: "provider" })
+    .select("provider,account_id,username,display_name,avatar_url,token_expires_at,refresh_expires_at,scopes,metadata,connected_at,updated_at")
+    .single();
+
   if (error) {
     const detail = [error.message, error.details, error.hint].filter(Boolean).join(" · ");
     throw new Error(`No se pudo guardar la conexión social en Supabase: ${detail || error.code || "error desconocido"}`);
   }
+  if (!saved?.provider) {
+    throw new Error("Supabase aceptó el guardado OAuth pero no devolvió la fila de conexión.");
+  }
+
+  // Verificación inmediata contra la misma base de datos. No devolvemos éxito al navegador
+  // hasta comprobar que la conexión realmente existe y puede volver a leerse.
+  const { data: verified, error: verifyError } = await db
+    .from("tc_social_connections")
+    .select("provider,account_id,username,display_name,avatar_url,token_expires_at,refresh_expires_at,scopes,metadata,connected_at,updated_at")
+    .eq("provider", input.provider)
+    .maybeSingle();
+  if (verifyError) {
+    const detail = [verifyError.message, verifyError.details, verifyError.hint].filter(Boolean).join(" · ");
+    throw new Error(`La conexión se guardó pero Supabase no pudo verificarla: ${detail || verifyError.code || "error desconocido"}`);
+  }
+  if (!verified?.provider) {
+    throw new Error("La conexión OAuth no persiste en tc_social_connections. Ejecuta el SQL de reparación de Redes Sociales.");
+  }
+  return verified;
 }
 
 export async function getSocialConnections() {
