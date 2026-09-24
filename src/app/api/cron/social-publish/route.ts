@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { publishSocialContentById, refreshTikTokStatusForContent } from "@/lib/server/social-publishing";
+import { maybeCaptureSocialSnapshots } from "@/lib/server/social-analytics";
 export const runtime="nodejs";
 async function run(req:Request){
   const secret=process.env.CRON_SECRET;const auth=req.headers.get("authorization");
@@ -14,6 +15,8 @@ async function run(req:Request){
   const results:any[]=[];
   for(const item of due||[]){try{await publishSocialContentById(item.id);results.push({id:item.id,action:"publish",ok:true});}catch(e:any){results.push({id:item.id,action:"publish",ok:false,error:e?.message||"error"});}}
   for(const item of processing||[]){try{await refreshTikTokStatusForContent(item.id);results.push({id:item.id,action:"status",ok:true});}catch(e:any){results.push({id:item.id,action:"status",ok:false,error:e?.message||"error"});}}
-  return NextResponse.json({ok:true,processed:results.length,results});
+  let snapshots:any = null;
+  try { snapshots = await maybeCaptureSocialSnapshots(); } catch {}
+  return NextResponse.json({ok:true,processed:results.length,results,snapshots});
 }
 export const GET=run;export const POST=run;
