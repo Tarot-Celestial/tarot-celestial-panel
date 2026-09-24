@@ -24,9 +24,9 @@ type ClienteRow = Record<string, any> & {
 
 function rankMeta(rank: string | null | undefined) {
   const key = normalizeClientRank(rank) || "bronce";
-  const label = key === "oro" ? "Oro" : key === "plata" ? "Plata" : "Bronce";
-  const min = key === "oro" ? 500 : key === "plata" ? 100 : 1;
-  const nextRank = key === "oro" ? null : key === "plata" ? "oro" : "plata";
+  const label = key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : "Bronce";
+  const min = key === "diamante" ? 500 : key === "oro" ? 500 : key === "plata" ? 100 : 1;
+  const nextRank = key === "diamante" || key === "oro" ? null : key === "plata" ? "oro" : "plata";
   const nextTarget = nextRank === "oro" ? 500 : nextRank === "plata" ? 100 : null;
 
   return {

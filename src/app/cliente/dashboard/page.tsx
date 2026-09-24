@@ -124,6 +124,7 @@ function formatDate(value: string | null | undefined): string {
 
 function getRankBadge(rango: string | null | undefined) {
   const key = String(rango || "bronce").toLowerCase();
+  if (key === "diamante") return { label: "Diamante", key: "gold" };
   if (key === "oro") return { label: "Oro", key: "gold" };
   if (key === "plata") return { label: "Plata", key: "silver" };
   return { label: "Bronce", key: "bronze" };

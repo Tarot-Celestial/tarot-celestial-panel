@@ -49,6 +49,7 @@ const WelldoneAdminPanel = nextDynamic(() => import("@/components/admin/Welldone
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/ClientRouletteAdminPanel"), { ssr:false });
+const ClientRitualsAdminPanel = nextDynamic(() => import("@/components/admin/ClientRitualsAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
 const TarotistaRanksAdminPanel = nextDynamic(() => import("@/components/admin/TarotistaRanksAdminPanel"), { ssr:false });
@@ -180,6 +181,7 @@ type TabKey =
   | "rangos-clientes"
   | "clientes-web"
   | "ruletas-clientes"
+  | "rituales-clientes"
   | "bonos-tarotistas"
   | "rangos-tarotistas"
   | "sistema-xp"
@@ -344,10 +346,10 @@ function AdminPage() {
       return;
     }
 
-    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "ruletas-clientes", "sistema-xp-niveles", "rangos-tarotistas", "redes-sociales-instagram", "redes-sociales-tiktok"]);
+    const allowedTabs = new Set<string>([...ADMIN_NAV.map((item) => item.key), "clientes-web", "ruletas-clientes", "rituales-clientes", "sistema-xp-niveles", "rangos-tarotistas", "redes-sociales-instagram", "redes-sociales-tiktok"]);
     if (allowedTabs.has(requestedTab as any)) {
       setTab(requestedTab as TabKey);
-      if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web") setRanksMenuOpen(true);
+      if (requestedTab === "rangos-clientes" || requestedTab === "clientes-web" || requestedTab === "ruletas-clientes" || requestedTab === "rituales-clientes") setRanksMenuOpen(true);
       if (requestedTab === "sistema-xp" || requestedTab === "sistema-xp-niveles") setXpMenuOpen(true);
       if (requestedTab === "redes-sociales" || requestedTab === "redes-sociales-instagram" || requestedTab === "redes-sociales-tiktok") setSocialMenuOpen(true);
     }
@@ -1814,7 +1816,7 @@ function AdminPage() {
                 const bonusesGroup = item.key === "bonos-tarotistas";
                 const socialGroup = item.key === "redes-sociales";
                 const active = rankGroup
-                  ? (tab === "rangos-clientes" || tab === "clientes-web" || tab === "ruletas-clientes")
+                  ? (tab === "rangos-clientes" || tab === "clientes-web" || tab === "ruletas-clientes" || tab === "rituales-clientes")
                   : xpGroup
                     ? (tab === "sistema-xp" || tab === "sistema-xp-niveles")
                     : bonusesGroup
@@ -1869,6 +1871,9 @@ function AdminPage() {
                         </button>
                         <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "ruletas-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("ruletas-clientes")}>
                           <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Ruletas clientes</div><div className="tc-sidebtn-kicker">Premios y probabilidades</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
+                        </button>
+                        <button className={`tc-sidebtn ${adminStyles.submenuItem} ${tab === "rituales-clientes" ? `tc-sidebtn-active ${adminStyles.submenuItemActive}` : ""}`} onClick={() => setTab("rituales-clientes")}>
+                          <div className={adminStyles.submenuCopy}><div className="tc-sidebtn-main">Rituales clientes</div><div className="tc-sidebtn-kicker">Progreso y experiencias</div></div><span className={`tc-sidebtn-dot ${adminStyles.navDot}`} />
                         </button>
                       </div>
                     ) : null}
@@ -2996,6 +3001,7 @@ function AdminPage() {
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
           {tab === "ruletas-clientes" && <ClientRouletteAdminPanel />}
+          {tab === "rituales-clientes" && <ClientRitualsAdminPanel />}
 
           {tab === "bonos-tarotistas" && <BonusAdminPanel />}
           {tab === "rangos-tarotistas" && <TarotistaRanksAdminPanel />}

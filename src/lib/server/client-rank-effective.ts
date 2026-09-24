@@ -1,6 +1,6 @@
 import { calcClientRank } from "@/lib/server/client-ranks";
 
-export type ClientRankName = "bronce" | "plata" | "oro" | null;
+export type ClientRankName = "bronce" | "plata" | "oro" | "diamante" | null;
 
 export type EffectiveClientRank = {
   automatic: ClientRankName;
@@ -18,10 +18,11 @@ export type EffectiveClientRank = {
 
 export function normalizeClientRank(value: unknown): ClientRankName {
   const rank = String(value || "").trim().toLowerCase();
-  return rank === "bronce" || rank === "plata" || rank === "oro" ? rank : null;
+  return rank === "bronce" || rank === "plata" || rank === "oro" || rank === "diamante" ? rank : null;
 }
 
 export function rankThresholds(rank: ClientRankName) {
+  if (rank === "diamante") return { currentMin: 500, next: null, nextMin: null };
   if (rank === "oro") return { currentMin: 500, next: null, nextMin: null };
   if (rank === "plata") return { currentMin: 100, next: "oro" as const, nextMin: 500 };
   return { currentMin: rank === "bronce" ? 0.01 : 0, next: "plata" as const, nextMin: 100 };
