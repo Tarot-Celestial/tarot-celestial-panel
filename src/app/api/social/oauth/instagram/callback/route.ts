@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  encodeSocialRecovery,
   instagramScopes,
   saveSocialConnection,
   socialRedirectUri,
@@ -8,7 +9,7 @@ import {
 
 export const runtime = "nodejs";
 
-function adminRedirect(req: NextRequest, params: Record<string, string>) {
+function adminRedirect(req: NextRequest, params: Record<string, string>, recoveryCookie?: string | null) {
   const url = new URL("/admin", req.url);
   url.searchParams.set("tab", "redes-sociales-instagram");
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -16,6 +17,15 @@ function adminRedirect(req: NextRequest, params: Record<string, string>) {
   res.cookies.delete("tc_social_oauth_state");
   res.cookies.delete("tc_social_oauth_provider");
   res.cookies.delete("tc_social_oauth_admin");
+  if (recoveryCookie) {
+    res.cookies.set("tc_social_oauth_recovery", recoveryCookie, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 15,
+    });
+  }
   return res;
 }
 
@@ -107,8 +117,8 @@ export async function GET(req: NextRequest) {
       throw new Error(`Instagram autorizó la aplicación, pero no devolvió el ID de la cuenta${profileError ? `: ${profileError}` : ""}`);
     }
 
-    const savedConnection = await saveSocialConnection({
-      provider: "instagram",
+    const connectionInput = {
+      provider: "instagram" as const,
       accountId,
       username: profile?.username || null,
       displayName: profile?.name || profile?.username || "Instagram",
@@ -122,12 +132,23 @@ export async function GET(req: NextRequest) {
         oauth_user_id: shortJson?.user_id || null,
         redirect_uri: redirectUri,
       },
-    });
+    };
 
+    const savedConnection = await saveSocialConnection(connectionInput);
     if (!savedConnection?.provider || savedConnection.provider !== "instagram") {
       throw new Error("Instagram autorizó la cuenta pero no se pudo confirmar la persistencia en Supabase.");
     }
-    return adminRedirect(req, { social_connected: "instagram" });
+
+    // Guardamos durante 15 minutos una copia cifrada y HttpOnly del resultado OAuth.
+    // Si Vercel ejecuta el callback y la lectura de estado en instancias distintas o
+    // Supabase tarda en reflejar el cambio, la ruta de estado puede reconstruir la
+    // conexión una sola vez sin exponer el token al navegador.
+    const recoveryCookie = encodeSocialRecovery({
+      ...connectionInput,
+      createdAt: Date.now(),
+    });
+
+    return adminRedirect(req, { social_connected: "instagram", social_saved: "1" }, recoveryCookie);
   } catch (error: any) {
     return adminRedirect(req, { social_error: String(error?.message || "Error conectando Instagram").slice(0, 220) });
   }

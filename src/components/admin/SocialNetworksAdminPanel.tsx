@@ -81,10 +81,29 @@ export default function SocialNetworksAdminPanel() {
   useEffect(() => {
     const connected = search.get("social_connected");
     const oauthError = search.get("social_error");
-    if (connected === "instagram") setMessage("Instagram conectado correctamente.");
-    if (connected === "tiktok") setMessage("TikTok conectado correctamente.");
-    if (oauthError) setError(oauthError);
-  }, [search]);
+    if (oauthError) {
+      setMessage("");
+      setError(oauthError);
+      return;
+    }
+    if (connected === "instagram" || connected === "tiktok") {
+      setError("");
+      setMessage(`${META[connected].title} autorizado. Verificando conexión guardada…`);
+      const timers = [200, 900, 2200].map((ms) => window.setTimeout(async () => {
+        await load();
+      }, ms));
+      return () => timers.forEach((timer) => window.clearTimeout(timer));
+    }
+  }, [search, load]);
+
+  useEffect(() => {
+    const connected = search.get("social_connected") as Provider | null;
+    if (!connected || (connected !== "instagram" && connected !== "tiktok")) return;
+    if (connections[connected]) {
+      setError("");
+      setMessage(`${META[connected].title} conectado correctamente.`);
+    }
+  }, [connections, search]);
 
   const connectedCount = useMemo(() => Object.values(connections).filter(Boolean).length, [connections]);
 

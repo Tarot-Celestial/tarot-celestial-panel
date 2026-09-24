@@ -45,6 +45,40 @@ export function decryptSecret(value: string | null | undefined) {
   return Buffer.concat([decipher.update(Buffer.from(encryptedRaw, "base64url")), decipher.final()]).toString("utf8");
 }
 
+
+export type SocialRecoveryPayload = {
+  provider: SocialProvider;
+  accountId: string;
+  username?: string | null;
+  displayName?: string | null;
+  avatarUrl?: string | null;
+  accessToken: string;
+  refreshToken?: string | null;
+  expiresIn?: number | null;
+  refreshExpiresIn?: number | null;
+  scopes?: string[] | null;
+  metadata?: Record<string, any> | null;
+  connectedBy?: string | null;
+  createdAt: number;
+};
+
+export function encodeSocialRecovery(payload: SocialRecoveryPayload) {
+  return encryptSecret(JSON.stringify(payload));
+}
+
+export function decodeSocialRecovery(value: string | null | undefined): SocialRecoveryPayload | null {
+  try {
+    const plain = decryptSecret(value);
+    if (!plain) return null;
+    const payload = JSON.parse(plain) as SocialRecoveryPayload;
+    if (!payload?.provider || !payload?.accessToken || !payload?.accountId) return null;
+    if (!payload.createdAt || Date.now() - payload.createdAt > 15 * 60 * 1000) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export function socialRedirectUri(provider: SocialProvider, requestUrl: string) {
   const envName = provider === "instagram" ? "INSTAGRAM_REDIRECT_URI" : "TIKTOK_REDIRECT_URI";
   const configured = process.env[envName]?.trim();

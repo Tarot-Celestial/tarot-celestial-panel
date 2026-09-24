@@ -110,15 +110,26 @@ export default function SocialChannelAdminPanel({provider}:Props){
           const current = status.connections?.[provider] || null;
           setConnection(current);
           setConfigured(Boolean(status.configured?.[provider]));
-          if (current) setMessage(`${brand.name} conectado correctamente.`);
-          else setError(`${brand.name} autorizó los permisos, pero no existe una conexión guardada en Supabase.`);
+          if (current) {
+            setError("");
+            setMessage(`${brand.name} conectado correctamente.`);
+          } else {
+            const storage = status.storage || {};
+            const recovery = status.recovery || {};
+            const build = status.build ? ` · build ${status.build}` : "";
+            const detail = recovery.error
+              ? ` Recuperación: ${recovery.error}${build}`
+              : storage.error
+                ? ` Supabase: ${storage.error}${build}`
+                : ` Tabla: ${storage.table || "tc_social_connections"} · filas: ${storage.rows ?? "?"} · proyecto: ${storage.project_ref || "?"}${build}.`;
+            setError(`${brand.name} autorizó los permisos, pero la conexión no aparece en el panel.${detail}`);
+          }
         } catch(e:any) {
           setError(e?.message || "No se pudo verificar la conexión después del OAuth");
         }
       };
-      const t1 = window.setTimeout(()=>void verify(),250);
-      const t2 = window.setTimeout(()=>void verify(),1200);
-      return ()=>{window.clearTimeout(t1);window.clearTimeout(t2);};
+      const timers = [250, 1000, 2500, 5000].map((ms)=>window.setTimeout(()=>void verify(),ms));
+      return ()=>{timers.forEach((timer)=>window.clearTimeout(timer));};
     }
   },[searchParams,provider,api,brand.name]);
   useEffect(()=>{setDraft((v:any)=>({...v,id:"",content_type:provider==="instagram"?"post":"video",privacy_level:"SELF_ONLY",publish_mode:"direct"}));},[provider]);
