@@ -17,14 +17,18 @@ function adminRedirect(req: NextRequest, params: Record<string, string>) {
 export async function GET(req: NextRequest) {
   const expectedState = req.cookies.get("tc_social_oauth_state")?.value;
   const expectedProvider = req.cookies.get("tc_social_oauth_provider")?.value;
-  const connectedBy = req.cookies.get("tc_social_oauth_admin")?.value || null;
+  const connectedByRaw = req.cookies.get("tc_social_oauth_admin")?.value || "";
+  const connectedBy = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(connectedByRaw)
+    ? connectedByRaw
+    : null;
   const state = req.nextUrl.searchParams.get("state");
   const code = req.nextUrl.searchParams.get("code");
   const oauthError = req.nextUrl.searchParams.get("error_description") || req.nextUrl.searchParams.get("error");
 
   if (oauthError) return adminRedirect(req, { social_error: oauthError.slice(0, 180) });
-  if (!code || !state || !expectedState || state !== expectedState || expectedProvider !== "instagram") {
-    return adminRedirect(req, { social_error: "OAuth de Instagram no válido. Vuelve a conectar la cuenta." });
+  if (!code) return adminRedirect(req, { social_error: "Instagram no devolvió el código OAuth. Vuelve a conectar la cuenta." });
+  if (!state || !expectedState || state !== expectedState || expectedProvider !== "instagram") {
+    return adminRedirect(req, { social_error: "La sesión OAuth de Instagram caducó o no coincide. Vuelve a pulsar Conectar Instagram." });
   }
 
   try {
@@ -74,9 +78,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const accountId = String(profile?.user_id || profile?.id || shortJson?.user_id || "").trim();
+    if (!accountId) throw new Error("Instagram autorizó la app, pero no devolvió el identificador de la cuenta profesional.");
+
     await saveSocialConnection({
       provider: "instagram",
-      accountId: String(profile?.user_id || profile?.id || shortJson?.user_id || ""),
+      accountId,
       username: profile?.username || null,
       displayName: profile?.name || profile?.username || "Instagram",
       avatarUrl: profile?.profile_picture_url || null,

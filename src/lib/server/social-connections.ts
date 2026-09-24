@@ -109,7 +109,10 @@ export async function saveSocialConnection(input: {
   };
 
   const { error } = await db.from("tc_social_connections").upsert(row, { onConflict: "provider" });
-  if (error) throw error;
+  if (error) {
+    const detail = [error.message, error.details, error.hint].filter(Boolean).join(" · ");
+    throw new Error(`No se pudo guardar la conexión social en Supabase: ${detail || error.code || "error desconocido"}`);
+  }
 }
 
 export async function getSocialConnections() {

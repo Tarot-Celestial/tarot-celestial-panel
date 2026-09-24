@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CalendarClock, CheckCircle2, Clock3, FolderOpen, Instagram, LayoutDashboard, Link2, Megaphone, PlayCircle, Plus, RefreshCw, Send, Settings2, Sparkles, Trash2, Video } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./SocialChannelAdminPanel.module.css";
@@ -38,6 +39,7 @@ function fmt(value?:string|null){if(!value)return "—";const d=new Date(value);
 function statusLabel(s:string){return ({draft:"Borrador",scheduled:"Programada",publishing:"Publicando",processing:"Procesando",published:"Publicada",failed:"Error",sent_to_inbox:"Enviada a TikTok"} as any)[s]||s;}
 
 export default function SocialChannelAdminPanel({provider}:Props){
+  const searchParams = useSearchParams();
   const [section,setSection]=useState<Section>("resumen");
   const [items,setItems]=useState<ContentItem[]>([]);
   const [campaigns,setCampaigns]=useState<Campaign[]>([]);
@@ -70,6 +72,23 @@ export default function SocialChannelAdminPanel({provider}:Props){
     setItems(c.items||[]);setCampaigns(p.items||[]);setLibrary(l.items||[]);setAnalytics(a);setConnection(s.connections?.[provider]||null);setConfigured(Boolean(s.configured?.[provider]));
   }catch(e:any){setError(e?.message||"No se pudo cargar el panel");}finally{setLoading(false);}},[api,provider]);
   useEffect(()=>{void load();},[load]);
+  useEffect(()=>{
+    const connected = searchParams?.get("social_connected");
+    const oauthError = searchParams?.get("social_error");
+    if (oauthError) {
+      setError(oauthError);
+      setSection("conexion");
+    }
+    if (connected === provider) {
+      setMessage(`${brand.name} conectado correctamente.`);
+      setSection("conexion");
+      // El callback ya guardó la conexión. Reintentamos la lectura por si el navegador
+      // restaura la sesión de Supabase unas décimas después de volver de Instagram/TikTok.
+      const t1 = window.setTimeout(() => void load(), 250);
+      const t2 = window.setTimeout(() => void load(), 1200);
+      return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
+    }
+  },[searchParams,provider,load,brand.name]);
   useEffect(()=>{setDraft((v:any)=>({...v,id:"",content_type:provider==="instagram"?"post":"video",privacy_level:"SELF_ONLY",publish_mode:"direct"}));},[provider]);
 
   const scheduled=useMemo(()=>items.filter(x=>x.status==="scheduled"),[items]);
