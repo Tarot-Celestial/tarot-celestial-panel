@@ -29,7 +29,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./SocialChannelAdminPanel.module.css";
 
 type Provider = "instagram" | "tiktok";
-type Section = "resumen" | "crear" | "ia" | "programadas" | "publicaciones" | "promociones" | "biblioteca" | "analitica" | "conexion";
+type Section = "resumen" | "crear" | "ia" | "programadas" | "calendario" | "publicaciones" | "promociones" | "biblioteca" | "analitica" | "conexion";
 
 type ContentItem = {
   id: string;
@@ -102,6 +102,11 @@ type WeekPlan = {
   items: WeekItem[];
 };
 
+type FlexiblePlan = {
+  strategy_summary: string;
+  items: WeekItem[];
+};
+
 type Props = { provider: Provider };
 
 const sections: Array<{ key: Section; label: string; icon: any }> = [
@@ -109,6 +114,7 @@ const sections: Array<{ key: Section; label: string; icon: any }> = [
   { key: "crear", label: "Crear", icon: Plus },
   { key: "ia", label: "IA Studio", icon: Sparkles },
   { key: "programadas", label: "Programadas", icon: CalendarClock },
+  { key: "calendario", label: "Calendario", icon: CalendarClock },
   { key: "publicaciones", label: "Publicaciones", icon: Send },
   { key: "promociones", label: "Promociones", icon: Megaphone },
   { key: "biblioteca", label: "Biblioteca", icon: FolderOpen },
@@ -187,6 +193,41 @@ function dayName(startDate: string, dayOffset: number) {
   const d = new Date(`${startDate}T12:00:00`);
   d.setDate(d.getDate() + dayOffset);
   return d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "short" });
+}
+
+function currentMonthValue(date = new Date()) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 7);
+}
+
+function shiftMonth(value: string, delta: number) {
+  const [year, month] = String(value || currentMonthValue()).split("-").map(Number);
+  const d = new Date(year || new Date().getFullYear(), (month || 1) - 1 + delta, 1, 12, 0, 0);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(value: string) {
+  const [year, month] = String(value || currentMonthValue()).split("-").map(Number);
+  const d = new Date(year || new Date().getFullYear(), (month || 1) - 1, 1, 12, 0, 0);
+  return d.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+}
+
+function buildCalendarDays(monthValue: string) {
+  const [year, month] = String(monthValue || currentMonthValue()).split("-").map(Number);
+  const first = new Date(year || new Date().getFullYear(), (month || 1) - 1, 1, 12, 0, 0);
+  const start = new Date(first);
+  start.setDate(first.getDate() - ((first.getDay() + 6) % 7));
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0, 12, 0, 0);
+  const end = new Date(last);
+  end.setDate(last.getDate() + (7 - ((last.getDay() + 6) % 7) - 1));
+  const days: Array<{ key: string; day: number; inMonth: boolean }> = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-${String(cursor.getDate()).padStart(2, "0")}`;
+    days.push({ key, day: cursor.getDate(), inMonth: cursor.getMonth() === first.getMonth() });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
 }
 
 function FollowerChart({ history }: { history: any[] }) {
@@ -268,6 +309,20 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     generate_images: true,
   });
   const [weekPlan, setWeekPlan] = useState<WeekPlan | null>(null);
+  const [flexDraft, setFlexDraft] = useState<any>({
+    start_date: localDateInput(),
+    brief: "",
+    objective: "crecimiento, interacción y conversión",
+    preferred_time: "19:30",
+    campaign_id: "",
+    days: 7,
+    posts_per_day: 1,
+    reels_per_day: 0,
+    stories_per_day: 1,
+    generate_media: true,
+  });
+  const [flexPlan, setFlexPlan] = useState<FlexiblePlan | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(currentMonthValue());
 
   const brand = provider === "instagram"
     ? { name: "Instagram", Icon: Instagram, tag: "Contenido, Reels, Stories, campañas e insights" }
@@ -360,6 +415,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setDraft((v: any) => ({ ...v, id: "", content_type: provider === "instagram" ? "post" : "video", privacy_level: "SELF_ONLY", publish_mode: "direct" }));
     setAiSingle((v: any) => ({ ...v, content_type: provider === "instagram" ? "post" : "photo" }));
     setWeekPlan(null);
+    setFlexPlan(null);
     setAiIdea(null);
   }, [provider]);
 
@@ -369,6 +425,26 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
   const native = analytics?.native || null;
   const profile = native?.profile || {};
   const nativeMetrics = native?.metrics || {};
+
+  const calendarItemsByDay = useMemo(() => {
+    const map = new Map<string, ContentItem[]>();
+    for (const item of items) {
+      const base = item.scheduled_at || item.published_at || null;
+      if (!base) continue;
+      const d = new Date(base);
+      if (!Number.isFinite(d.getTime())) continue;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const list = map.get(key) || [];
+      list.push(item);
+      map.set(key, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(a.scheduled_at || a.published_at || a.created_at).getTime() - new Date(b.scheduled_at || b.published_at || b.created_at).getTime());
+    }
+    return map;
+  }, [items]);
+
+  const calendarDays = useMemo(() => buildCalendarDays(calendarMonth), [calendarMonth]);
 
   function campaignPayload(id: string) {
     const campaign = campaigns.find((c) => c.id === id);
@@ -693,6 +769,130 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     }
   }
 
+  async function generateFlexiblePlan() {
+    if (provider !== "instagram") {
+      setError("Este planificador avanzado está preparado para Instagram.");
+      return;
+    }
+    if (!flexDraft.brief.trim()) {
+      setError("Escribe el briefing del calendario antes de generarlo.");
+      return;
+    }
+    setBusy("ai-flex-plan");
+    setFlexPlan(null);
+    setError("");
+    setMessage("");
+    try {
+      const response = await api("/api/admin/social-ai", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "plan",
+          provider,
+          brief: flexDraft.brief,
+          objective: flexDraft.objective,
+          preferred_time: flexDraft.preferred_time,
+          days: Number(flexDraft.days || 7),
+          posts_per_day: Number(flexDraft.posts_per_day || 0),
+          reels_per_day: Number(flexDraft.reels_per_day || 0),
+          stories_per_day: Number(flexDraft.stories_per_day || 0),
+          campaign: campaignPayload(flexDraft.campaign_id),
+        }),
+      });
+      setFlexPlan(response.plan);
+      setMessage("Plan generado. Si quieres, ahora puedo crear automáticamente las imágenes, los Reels y dejar todo programado.");
+    } catch (e: any) {
+      setError(e?.message || "No se pudo crear el calendario automático");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function scheduleFlexiblePlan() {
+    if (!flexPlan?.items?.length) return;
+    setBusy("ai-flex-schedule");
+    setError("");
+    setMessage("");
+    const results: string[] = [];
+    try {
+      const ordered = [...flexPlan.items].sort((a, b) => a.day_offset - b.day_offset || String(a.time).localeCompare(String(b.time)));
+      for (let index = 0; index < ordered.length; index += 1) {
+        const item = ordered[index];
+        setAiProgress(`Preparando ${index + 1} de ${ordered.length}: ${dayName(flexDraft.start_date, item.day_offset)} · ${item.time}`);
+        let mediaUrl = item.media_url || "";
+        if (flexDraft.generate_media && !mediaUrl) {
+          if (item.requires_video) {
+            const videoResult = await api("/api/admin/social-ai", {
+              method: "POST",
+              body: JSON.stringify({
+                action: "video",
+                provider,
+                prompt: item.reel_script || item.visual_prompt,
+                label: item.title,
+                format: "vertical",
+                duration: 5,
+              }),
+            });
+            mediaUrl = videoResult.asset.url;
+          } else {
+            const format = item.content_type === "story" ? "vertical" : "square";
+            const imageResult = await api("/api/admin/social-ai", {
+              method: "POST",
+              body: JSON.stringify({
+                action: "image",
+                provider,
+                prompt: item.visual_prompt,
+                label: item.title,
+                format,
+                quality: "medium",
+              }),
+            });
+            mediaUrl = imageResult.asset.url;
+          }
+        }
+
+        const canSchedule = Boolean(mediaUrl);
+        await api("/api/admin/social-content", {
+          method: "POST",
+          body: JSON.stringify({
+            provider,
+            content_type: item.content_type,
+            title: item.title,
+            caption: captionWithHashtags(item),
+            media_urls: mediaUrl ? [mediaUrl] : [],
+            scheduled_at: canSchedule ? scheduledIso(flexDraft.start_date, item.day_offset, item.time || flexDraft.preferred_time) : null,
+            campaign_id: flexDraft.campaign_id || null,
+            privacy_level: "SELF_ONLY",
+            publish_mode: "direct",
+            settings: {
+              is_aigc: true,
+              share_to_feed: true,
+              brand_organic_toggle: true,
+              ai_meta: {
+                source: "ai_flexible_plan",
+                hook: item.hook,
+                visual_prompt: item.visual_prompt,
+                reel_script: item.reel_script,
+                requires_video: item.requires_video,
+                strategy_summary: flexPlan.strategy_summary,
+              },
+            },
+          }),
+        });
+        results.push(`${dayName(flexDraft.start_date, item.day_offset)} · ${item.time}: ${canSchedule ? "programada" : "borrador sin media"}`);
+      }
+      setMessage(`Calendario listo. ${results.filter((x) => x.includes("programada")).length} programadas; ${results.filter((x) => x.includes("borrador")).length} quedaron en borrador.`);
+      setSection("calendario");
+      setCalendarMonth(String(flexDraft.start_date || localDateInput()).slice(0, 7));
+      await load();
+    } catch (e: any) {
+      setError(e?.message || "No se pudo generar y programar el calendario");
+    } finally {
+      setAiProgress("");
+      setBusy("");
+    }
+  }
+
+
   const ContentTable = ({ rows }: { rows: ContentItem[] }) => (
     <div className={styles.tableWrap}>
       <table>
@@ -821,6 +1021,38 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             </section>
           </div>
 
+          {provider === "instagram" && <section className={styles.card}>
+            <div className={styles.cardTitle}><div><h3><CalendarClock size={18} /> Planificador automático con calendario</h3><p>Indica cuántos días quieres, cuántas publicaciones, reels y stories por día, y el sistema generará los copies, las imágenes, los vídeos con Runway y la programación.</p></div><span className={styles.pill}>AUTO</span></div>
+            <div className={styles.formGrid}>
+              <label className={styles.full}>Briefing del calendario<textarea rows={5} value={flexDraft.brief} onChange={(e) => setFlexDraft({ ...flexDraft, brief: e.target.value })} placeholder="Ej. Durante 10 días quiero captar consultas de amor. Haz 1 publicación diaria, 1 story diaria y 1 reel cada día con mensajes cercanos, místicos y orientados a conversión. No inventes promociones ni precios si no te los doy." /></label>
+              <label>Empieza el<input type="date" value={flexDraft.start_date} onChange={(e) => setFlexDraft({ ...flexDraft, start_date: e.target.value })} /></label>
+              <label>Hora base<input type="time" value={flexDraft.preferred_time} onChange={(e) => setFlexDraft({ ...flexDraft, preferred_time: e.target.value })} /></label>
+              <label>Días<input type="number" min={1} max={31} value={flexDraft.days} onChange={(e) => setFlexDraft({ ...flexDraft, days: e.target.value })} /></label>
+              <label>Publicaciones / día<input type="number" min={0} max={6} value={flexDraft.posts_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, posts_per_day: e.target.value })} /></label>
+              <label>Reels / día<input type="number" min={0} max={6} value={flexDraft.reels_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, reels_per_day: e.target.value })} /></label>
+              <label>Stories / día<input type="number" min={0} max={10} value={flexDraft.stories_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, stories_per_day: e.target.value })} /></label>
+              <label>Promoción<select value={flexDraft.campaign_id} onChange={(e) => setFlexDraft({ ...flexDraft, campaign_id: e.target.value })}><option value="">Sin promoción fija</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+              <label className={styles.full}>Objetivo<input value={flexDraft.objective} onChange={(e) => setFlexDraft({ ...flexDraft, objective: e.target.value })} /></label>
+              <label className={styles.checkLabel}><input type="checkbox" checked={flexDraft.generate_media} onChange={(e) => setFlexDraft({ ...flexDraft, generate_media: e.target.checked })} /> Generar automáticamente creatividades e incluso Reels con Runway</label>
+            </div>
+            <div className={styles.actions}><button className={styles.primary} disabled={busy === "ai-flex-plan"} onClick={() => void generateFlexiblePlan()}><Sparkles size={16} /> {busy === "ai-flex-plan" ? "Creando calendario…" : "Crear calendario con IA"}</button></div>
+
+            {flexPlan && <div className={styles.weekPlan}>
+              <div className={styles.weekSummary}><b>Estrategia:</b> {flexPlan.strategy_summary}</div>
+              <div className={styles.planMeta}>
+                <span>{Number(flexDraft.days || 0)} días</span>
+                <span>{Number(flexDraft.posts_per_day || 0)} publicaciones / día</span>
+                <span>{Number(flexDraft.reels_per_day || 0)} reels / día</span>
+                <span>{Number(flexDraft.stories_per_day || 0)} stories / día</span>
+                <span>{flexPlan.items.length} piezas en total</span>
+              </div>
+              <div className={styles.planList}>
+                {[...flexPlan.items].sort((a, b) => a.day_offset - b.day_offset || String(a.time).localeCompare(String(b.time))).map((item, idx) => <article key={`${item.day_offset}-${item.time}-${idx}`}><div className={styles.weekDay}><span>{dayName(flexDraft.start_date, item.day_offset)}</span><b>{item.time}</b></div><strong>{item.title}</strong><small>{contentLabel(provider, item.content_type)}{item.requires_video ? " · Reel con vídeo" : " · imagen automática"}</small><p>{item.caption}</p><em>{item.hook}</em>{item.reel_script && <details><summary>Ver guion</summary><p>{item.reel_script}</p></details>}</article>)}
+              </div>
+              <div className={styles.weekActionBox}><div><b>¿Lo preparo todo?</b><span>Se generarán los copies, las imágenes y los Reels con Runway, y quedará todo programado en Instagram.</span></div><button className={styles.primary} disabled={busy === "ai-flex-schedule"} onClick={() => void scheduleFlexiblePlan()}><CalendarClock size={16} /> {busy === "ai-flex-schedule" ? (aiProgress || "Preparando…") : "Generar y programar calendario"}</button></div>
+            </div>}
+          </section>}
+
           <section className={styles.card}>
             <div className={styles.cardTitle}><div><h3><CalendarClock size={18} /> Generador semanal automático</h3><p>Pídele a la IA una semana completa y prográmala de una vez.</p></div><span className={styles.pill}>7 DÍAS</span></div>
             <div className={styles.formGrid}>
@@ -844,6 +1076,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       )}
 
       {section === "programadas" && <section className={styles.card}><div className={styles.cardTitle}><div><h3>Calendario y programadas</h3><p>Todo lo que saldrá automáticamente mediante el worker.</p></div><button className={styles.secondary} onClick={() => setSection("crear")}><Plus size={15} />Nueva</button></div><ContentTable rows={scheduled} /></section>}
+      {section === "calendario" && <section className={styles.card}><div className={styles.cardTitle}><div><h3>Vista calendario</h3><p>Aquí ves de un vistazo todo lo programado y publicado por día.</p></div><div className={styles.calendarToolbar}><button className={styles.secondary} onClick={() => setCalendarMonth((v) => shiftMonth(v, -1))}>←</button><b>{monthLabel(calendarMonth)}</b><button className={styles.secondary} onClick={() => setCalendarMonth((v) => shiftMonth(v, 1))}>→</button></div></div><div className={styles.calendarGrid}><div className={styles.calendarWeekday}>Lun</div><div className={styles.calendarWeekday}>Mar</div><div className={styles.calendarWeekday}>Mié</div><div className={styles.calendarWeekday}>Jue</div><div className={styles.calendarWeekday}>Vie</div><div className={styles.calendarWeekday}>Sáb</div><div className={styles.calendarWeekday}>Dom</div>{calendarDays.map((day) => { const dayItems = calendarItemsByDay.get(day.key) || []; return <div key={day.key} className={`${styles.calendarCell} ${day.inMonth ? "" : styles.calendarMuted}`}><div className={styles.calendarDate}><span>{day.day}</span><small>{dayItems.length ? `${dayItems.length} pieza${dayItems.length === 1 ? "" : "s"}` : ""}</small></div><div className={styles.calendarEvents}>{dayItems.slice(0, 4).map((item) => <button key={item.id} className={`${styles.calendarEvent} ${styles[`status_${item.status}`] || ""}`} onClick={() => editContent(item)}><b>{new Date(item.scheduled_at || item.published_at || item.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</b><span>{item.title || contentLabel(provider, item.content_type)}</span></button>)}{dayItems.length > 4 && <div className={styles.moreEvents}>+{dayItems.length - 4} más</div>}</div></div>; })}</div></section>}
       {section === "publicaciones" && <section className={styles.card}><div className={styles.cardTitle}><div><h3>Historial de publicaciones</h3><p>Publicadas, procesando, enviadas a bandeja y errores reales de API.</p></div><button className={styles.secondary} onClick={() => void load()}><RefreshCw size={15} />Actualizar</button></div><ContentTable rows={published} /></section>}
 
       {section === "promociones" && <div className={styles.twoCols}>
@@ -881,7 +1114,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       {section === "conexion" && <section className={styles.card}><div className={styles.connectionPanel}><div className={styles.connectionIcon}><Icon size={32} /></div><div><h3>Conexión oficial de {brand.name}</h3><p>OAuth propio de Tarot Celestial. Las credenciales y tokens se guardan cifrados en servidor y nunca se exponen al navegador.</p></div><span className={`${styles.bigState} ${connection ? styles.connected : ""}`}>{connection ? "CONECTADO" : "SIN CONECTAR"}</span></div><div className={styles.connectionRows}><div><span>Variables de entorno</span><b>{configured ? "Configuradas" : "Pendientes"}</b></div><div><span>Cuenta</span><b>{connection ? `@${connection.username || connection.display_name || "autorizada"}` : "—"}</b></div><div><span>Token</span><b>{connection?.token_expires_at ? `Caduca ${fmt(connection.token_expires_at)}` : "—"}</b></div></div><div className={styles.actions}>{connection ? <><button className={styles.secondary} onClick={() => void connect()} disabled={busy === "connect"}><RefreshCw size={16} />Reconectar</button><button className={styles.danger} onClick={() => void disconnect()} disabled={busy === "disconnect"}>Desconectar</button></> : <button className={styles.primary} onClick={() => void connect()} disabled={!configured || busy === "connect"}><Link2 size={16} />Conectar {brand.name}</button>}</div></section>}
 
       {loading && <div className={styles.loading}><RefreshCw className={styles.spin} size={18} />Actualizando datos…</div>}
-      {aiProgress && busy === "ai-week-schedule" && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} />{aiProgress}</div>}
+      {aiProgress && (busy === "ai-week-schedule" || busy === "ai-flex-schedule") && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} />{aiProgress}</div>}
     </div>
   );
 }
