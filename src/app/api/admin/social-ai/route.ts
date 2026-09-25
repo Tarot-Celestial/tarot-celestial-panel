@@ -5,6 +5,7 @@ import {
   generateAndStoreSocialVideo,
   generateSingleSocialContent,
   generateSocialCalendarPlan,
+  generateSocialSeries,
   generateSocialWeek,
 } from "@/lib/server/social-ai";
 import type { SocialProvider } from "@/lib/server/social-connections";
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
         label: String(body.label || "Creatividad IA").slice(0, 140),
         format: body.format === "vertical" || body.format === "landscape" ? body.format : "square",
         quality: body.quality === "high" || body.quality === "low" ? body.quality : "medium",
+        contentType: String(body.content_type || ""),
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, asset });
@@ -47,6 +49,20 @@ export async function POST(req: Request) {
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, asset });
+    }
+
+    if (action === "series") {
+      const series = await generateSocialSeries({
+        provider,
+        contentType: String(body.content_type || (provider === "instagram" ? "post" : "photo")),
+        brief: String(body.brief || "").trim(),
+        objective: String(body.objective || "").trim(),
+        tone: String(body.tone || "premium, cercano y celestial"),
+        cta: String(body.cta || "").trim(),
+        piecesCount: Number(body.pieces_count || 1),
+        campaign: body.campaign || null,
+      });
+      return NextResponse.json({ ok: true, series, models: { text: process.env.OPENAI_TEXT_MODEL || "gpt-5.6-luna", image: process.env.OPENAI_IMAGE_MODEL || "gpt-image-2", video: process.env.RUNWAY_VIDEO_MODEL || "gen4.5" } });
     }
 
     if (action === "plan") {

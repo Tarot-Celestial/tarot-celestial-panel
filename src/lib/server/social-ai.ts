@@ -98,6 +98,35 @@ const singleSchema = {
   },
 };
 
+const seriesSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["strategy_summary", "items"],
+  properties: {
+    strategy_summary: { type: "string" },
+    items: {
+      type: "array",
+      minItems: 1,
+      maxItems: 20,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "content_type", "hook", "caption", "hashtags", "cta", "visual_prompt", "reel_script"],
+        properties: {
+          title: { type: "string" },
+          content_type: { type: "string" },
+          hook: { type: "string" },
+          caption: { type: "string" },
+          hashtags: { type: "array", items: { type: "string" }, maxItems: 12 },
+          cta: { type: "string" },
+          visual_prompt: { type: "string" },
+          reel_script: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
 const weekSchema = {
   type: "object",
   additionalProperties: false,
@@ -151,8 +180,28 @@ export async function generateSingleSocialContent(input: {
   return structuredResponse(
     "tarot_celestial_social_post",
     singleSchema,
-    `Crea una pieza para ${input.provider}. Formatos permitidos: ${allowed}. Si se pide Reel/vídeo, devuelve también un guion accionable; si es imagen, reel_script puede quedar vacío. El visual_prompt debe describir una creatividad lista para generar con IA, sin inventar datos comerciales.`,
+    `Crea una pieza para ${input.provider}. Formatos permitidos: ${allowed}. Si se pide Reel/vídeo, devuelve también un guion accionable; si es imagen, reel_script puede quedar vacío. El visual_prompt debe describir una creatividad lista para generar con IA, sin inventar datos comerciales. Si el formato es story, el visual_prompt debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. Si el formato es post, debe ser visualmente potente y de alto contraste.` ,
     JSON.stringify(input),
+  );
+}
+
+export async function generateSocialSeries(input: {
+  provider: SocialProvider;
+  contentType: string;
+  brief: string;
+  objective?: string;
+  tone?: string;
+  cta?: string;
+  piecesCount: number;
+  campaign?: any;
+}) {
+  const allowed = input.provider === "instagram" ? "post, reel, story, carousel" : "video, photo";
+  const piecesCount = Math.max(1, Math.min(20, Number(input.piecesCount || 1)));
+  return structuredResponse(
+    "tarot_celestial_social_series",
+    seriesSchema,
+    `Crea una serie de ${piecesCount} piezas para ${input.provider}. Formatos permitidos: ${allowed}. Todas las piezas deben compartir coherencia de estilo y tema, pero no duplicarse. Cada pieza debe aportar un ángulo distinto. Si el usuario pide una serie sobre horóscopos, signos o zodiaco, reparte bien la serie entre signos, grupos de signos, elementos o ideas complementarias para que parezca una colección real. Si se piden stories, el visual_prompt de cada pieza debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. Si se piden reels/vídeos, cada reel_script debe ser accionable y visualmente potente.`,
+    JSON.stringify({ ...input, piecesCount }),
   );
 }
 
@@ -271,6 +320,7 @@ export async function generateAndStoreSocialImage(input: {
   label?: string;
   format?: "square" | "vertical" | "landscape";
   quality?: "low" | "medium" | "high";
+  contentType?: string;
   createdBy?: string | null;
 }) {
   const size = input.format === "landscape" ? "1536x1024" : input.format === "vertical" ? "1024x1536" : "1024x1024";

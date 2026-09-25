@@ -302,8 +302,11 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     cta: "",
     content_type: provider === "instagram" ? "post" : "photo",
     campaign_id: "",
+    quantity: 1,
   });
   const [aiIdea, setAiIdea] = useState<AiIdea | null>(null);
+  const [aiSeries, setAiSeries] = useState<AiIdea[]>([]);
+  const [aiSeriesSummary, setAiSeriesSummary] = useState("");
   const [weekDraft, setWeekDraft] = useState<any>({
     start_date: localDateInput(),
     brief: "",
@@ -422,6 +425,8 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setWeekPlan(null);
     setFlexPlan(null);
     setAiIdea(null);
+    setAiSeries([]);
+    setAiSeriesSummary("");
   }, [provider]);
 
   const scheduled = useMemo(() => items.filter((x) => x.status === "scheduled"), [items]);
@@ -605,6 +610,92 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     }
   }
 
+  async function materializeIdeaMedia(idea: AiIdea) {
+    const wantsVideo = isVideoType(idea.content_type);
+    if (wantsVideo) {
+      const videoResponse = await api("/api/admin/social-ai", {
+        method: "POST",
+        body: JSON.stringify({
+          action: "video",
+          provider,
+          prompt: idea.reel_script || idea.visual_prompt || idea.caption || idea.title,
+          label: idea.title || "Reel IA",
+          format: "vertical",
+          duration: 5,
+          content_type: idea.content_type,
+        }),
+      });
+      return { ...idea, media_url: videoResponse.asset.url, media_kind: "video" as const };
+    }
+    const format = ["story", "photo"].includes(String(idea.content_type || "")) ? "vertical" : "square";
+    const imageResponse = await api("/api/admin/social-ai", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "image",
+        provider,
+        prompt: idea.visual_prompt || idea.caption || idea.title,
+        label: idea.title || "Creatividad IA",
+        format,
+        quality: "high",
+        content_type: idea.content_type,
+      }),
+    });
+    return { ...idea, media_url: imageResponse.asset.url, media_kind: "image" as const };
+  }
+
+  function pushIdeaToEditor(idea: AiIdea) {
+    setDraft({
+      id: "",
+      content_type: idea.content_type || (provider === "instagram" ? "post" : "photo"),
+      title: idea.title,
+      caption: captionWithHashtags(idea),
+      media: idea.media_url || "",
+      scheduled_at: "",
+      campaign_id: aiSingle.campaign_id || "",
+      privacy_level: "SELF_ONLY",
+      publish_mode: "direct",
+      share_to_feed: true,
+      disable_comment: false,
+      disable_duet: false,
+      disable_stitch: false,
+      is_aigc: true,
+      ai_meta: { hook: idea.hook, visual_prompt: idea.visual_prompt, reel_script: idea.reel_script, source: "ai_studio" },
+    });
+    setSection("crear");
+  }
+
+  async function saveSeriesToDrafts() {
+    if (!aiSeries.length) return;
+    setBusy("ai-series-save");
+    setError("");
+    setMessage("");
+    try {
+      for (const idea of aiSeries) {
+        await api("/api/admin/social-content", {
+          method: "POST",
+          body: JSON.stringify({
+            provider,
+            content_type: idea.content_type,
+            title: idea.title,
+            caption: captionWithHashtags(idea),
+            media_urls: idea.media_url ? [idea.media_url] : [],
+            campaign_id: aiSingle.campaign_id || null,
+            privacy_level: "SELF_ONLY",
+            publish_mode: "direct",
+            settings: { is_aigc: true, share_to_feed: true, brand_organic_toggle: true, ai_meta: { source: "ai_series", hook: idea.hook, visual_prompt: idea.visual_prompt, reel_script: idea.reel_script } },
+          }),
+        });
+      }
+      setMessage(`Serie guardada. ${aiSeries.length} piezas añadidas como borradores.`);
+      await load();
+      setSection("crear");
+    } catch (e: any) {
+      setError(e?.message || "No se pudo guardar la serie");
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function generateSingleIdea() {
     if (!aiSingle.brief.trim()) {
       setError("Describe qué quieres promocionar o comunicar.");
@@ -613,56 +704,60 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setBusy("ai-single");
     setError("");
     setMessage("");
+    setAiIdea(null);
+    setAiSeries([]);
+    setAiSeriesSummary("");
     try {
-      const response = await api("/api/admin/social-ai", {
-        method: "POST",
-        body: JSON.stringify({
-          action: "single",
-          provider,
-          brief: aiSingle.brief,
-          objective: aiSingle.objective,
-          tone: aiSingle.tone,
-          cta: aiSingle.cta,
-          content_type: aiSingle.content_type,
-          campaign: campaignPayload(aiSingle.campaign_id),
-        }),
-      });
-      const result = response.result || {};
-      const wantsVideo = isVideoType(result.content_type || aiSingle.content_type);
-      if (wantsVideo) {
-        const videoResponse = await api("/api/admin/social-ai", {
+      const quantity = Math.max(1, Math.min(20, Number(aiSingle.quantity || 1)));
+      if (quantity > 1) {
+        const response = await api("/api/admin/social-ai", {
           method: "POST",
           body: JSON.stringify({
-            action: "video",
+            action: "series",
             provider,
-            prompt: result.reel_script || result.visual_prompt || aiSingle.brief,
-            label: result.title || "Reel IA",
-            format: "vertical",
-            duration: 5,
+            brief: aiSingle.brief,
+            objective: aiSingle.objective,
+            tone: aiSingle.tone,
+            cta: aiSingle.cta,
+            content_type: aiSingle.content_type,
+            pieces_count: quantity,
+            campaign: campaignPayload(aiSingle.campaign_id),
           }),
         });
-        setAiIdea({ ...result, media_url: videoResponse.asset.url, media_kind: "video" });
-        setMessage("La IA ha creado la pieza completa: copy + vídeo listo. Ya no necesitas generar primero el texto y luego el recurso.");
+        const items = Array.isArray(response.series?.items) ? response.series.items : [];
+        const built: AiIdea[] = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const rawIdea = items[index] as AiIdea;
+          setAiProgress(`Generando pieza ${index + 1} de ${items.length}…`);
+          built.push(await materializeIdeaMedia(rawIdea));
+        }
+        setAiSeriesSummary(String(response.series?.strategy_summary || ""));
+        setAiSeries(built);
+        setMessage(`La IA ha creado una serie completa de ${built.length} piezas listas.`);
       } else {
-        const format = ["story", "photo"].includes(String(result.content_type || aiSingle.content_type)) ? "vertical" : "square";
-        const imageResponse = await api("/api/admin/social-ai", {
+        const response = await api("/api/admin/social-ai", {
           method: "POST",
           body: JSON.stringify({
-            action: "image",
+            action: "single",
             provider,
-            prompt: result.visual_prompt || aiSingle.brief,
-            label: result.title || "Creatividad IA",
-            format,
-            quality: "medium",
+            brief: aiSingle.brief,
+            objective: aiSingle.objective,
+            tone: aiSingle.tone,
+            cta: aiSingle.cta,
+            content_type: aiSingle.content_type,
+            campaign: campaignPayload(aiSingle.campaign_id),
           }),
         });
-        setAiIdea({ ...result, media_url: imageResponse.asset.url, media_kind: "image" });
-        setMessage("La IA ha creado la pieza completa: copy + creatividad lista para publicar.");
+        const result = response.result || {};
+        const built = await materializeIdeaMedia(result);
+        setAiIdea(built);
+        setMessage("La IA ha creado la pieza completa: copy + creatividad final lista.");
       }
       await load();
     } catch (e: any) {
       setError(e?.message || "No se pudo generar la pieza completa");
     } finally {
+      setAiProgress("");
       setBusy("");
     }
   }
@@ -672,22 +767,9 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setBusy("ai-image");
     setError("");
     try {
-      if (isVideoType(aiIdea.content_type)) {
-        const response = await api("/api/admin/social-ai", {
-          method: "POST",
-          body: JSON.stringify({ action: "video", provider, prompt: aiIdea.reel_script || aiIdea.visual_prompt, label: aiIdea.title, format: "vertical", duration: 5 }),
-        });
-        setAiIdea({ ...aiIdea, media_url: response.asset.url, media_kind: "video" });
-        setMessage("Vídeo regenerado y guardado en la Biblioteca multimedia.");
-      } else {
-        const format = ["story", "photo"].includes(aiIdea.content_type) ? "vertical" : "square";
-        const response = await api("/api/admin/social-ai", {
-          method: "POST",
-          body: JSON.stringify({ action: "image", provider, prompt: aiIdea.visual_prompt, label: aiIdea.title, format, quality: "medium" }),
-        });
-        setAiIdea({ ...aiIdea, media_url: response.asset.url, media_kind: "image" });
-        setMessage("Imagen regenerada y guardada en la Biblioteca multimedia.");
-      }
+      const rebuilt = await materializeIdeaMedia(aiIdea);
+      setAiIdea(rebuilt);
+      setMessage(isVideoType(aiIdea.content_type) ? "Vídeo regenerado y guardado en la Biblioteca multimedia." : "Imagen regenerada y guardada en la Biblioteca multimedia.");
       await load();
     } catch (e: any) {
       setError(e?.message || (isVideoType(aiIdea?.content_type || "") ? "No se pudo generar el vídeo" : "No se pudo generar la imagen"));
@@ -698,24 +780,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
 
   function sendIdeaToEditor() {
     if (!aiIdea) return;
-    setDraft({
-      id: "",
-      content_type: aiIdea.content_type || (provider === "instagram" ? "post" : "photo"),
-      title: aiIdea.title,
-      caption: captionWithHashtags(aiIdea),
-      media: aiIdea.media_url || "",
-      scheduled_at: "",
-      campaign_id: aiSingle.campaign_id || "",
-      privacy_level: "SELF_ONLY",
-      publish_mode: "direct",
-      share_to_feed: true,
-      disable_comment: false,
-      disable_duet: false,
-      disable_stitch: false,
-      is_aigc: true,
-      ai_meta: { hook: aiIdea.hook, visual_prompt: aiIdea.visual_prompt, reel_script: aiIdea.reel_script, source: "ai_studio" },
-    });
-    setSection("crear");
+    pushIdeaToEditor(aiIdea);
   }
 
   async function generateWeekPlan() {
@@ -1046,6 +1111,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                   <label>Promoción<select value={aiSingle.campaign_id} onChange={(e) => setAiSingle({ ...aiSingle, campaign_id: e.target.value })}><option value="">Sin promoción vinculada</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
                   <label>Objetivo<input value={aiSingle.objective} onChange={(e) => setAiSingle({ ...aiSingle, objective: e.target.value })} /></label>
                   <label>CTA opcional<input value={aiSingle.cta} onChange={(e) => setAiSingle({ ...aiSingle, cta: e.target.value })} placeholder="Ej. Llama ahora / Escríbenos" /></label>
+                  <label>Cantidad de piezas<input type="number" min={1} max={20} value={aiSingle.quantity} onChange={(e) => setAiSingle({ ...aiSingle, quantity: e.target.value })} /></label>
                 </div>
                 <button className={styles.primary} disabled={busy === "ai-single"} onClick={() => void generateSingleIdea()}><Sparkles size={16} /> {busy === "ai-single" ? "Creando pieza completa…" : "Generar pieza final con IA"}</button>
               </div>
@@ -1053,7 +1119,20 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
 
             <section className={styles.card}>
               <div className={styles.cardTitle}><div><h3>Resultado IA</h3><p>La IA ya te lo devuelve montado. Desde aquí puedes revisarlo, regenerarlo o pasarlo al editor.</p></div></div>
-              {aiIdea ? <div className={styles.aiResult}>
+              {aiSeries.length ? <div className={styles.aiSeriesWrap}>
+                {aiSeriesSummary && <div className={styles.weekSummary}><b>Estrategia:</b> {aiSeriesSummary}</div>}
+                <div className={styles.seriesHeader}><b>{aiSeries.length} piezas generadas</b><button className={styles.primary} disabled={busy === "ai-series-save"} onClick={() => void saveSeriesToDrafts()}><FolderOpen size={15} /> {busy === "ai-series-save" ? "Guardando…" : "Guardar serie en borradores"}</button></div>
+                <div className={styles.aiSeriesGrid}>{aiSeries.map((idea, idx) => <article key={`${idea.title}-${idx}`} className={styles.aiSeriesCard}>
+                  {idea.media_url && (idea.media_kind === "video" || isVideoType(idea.content_type) ? <video src={idea.media_url} controls playsInline preload="metadata" /> : <img src={idea.media_url} alt={idea.title} />)}
+                  <span>{contentLabel(provider, idea.content_type)}</span>
+                  <h4>{idea.title}</h4>
+                  <b>{idea.hook}</b>
+                  <p>{idea.caption}</p>
+                  <div className={styles.hashes}>{(idea.hashtags || []).map((h) => <em key={`${h}-${idx}`}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div>
+                  {idea.reel_script && <details><summary>Guion / storyboard</summary><p>{idea.reel_script}</p></details>}
+                  <div className={styles.actions}><button className={styles.secondary} onClick={() => pushIdeaToEditor(idea)}>Pasar al editor</button></div>
+                </article>)}</div>
+              </div> : aiIdea ? <div className={styles.aiResult}>
                 {aiIdea.media_url && (aiIdea.media_kind === "video" || isVideoType(aiIdea.content_type)
                   ? <video src={aiIdea.media_url} controls playsInline preload="metadata" />
                   : <img src={aiIdea.media_url} alt="Creatividad generada" />)}
@@ -1064,7 +1143,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                 <div className={styles.hashes}>{(aiIdea.hashtags || []).map((h) => <em key={h}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div>
                 {aiIdea.reel_script && <details><summary>Guion / storyboard</summary><p>{aiIdea.reel_script}</p></details>}
                 <div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateMediaForIdea()}>{isVideoType(aiIdea.content_type) ? <Video size={15} /> : <ImageIcon size={15} />} {busy === "ai-image" ? "Regenerando…" : (isVideoType(aiIdea.content_type) ? (aiIdea.media_url ? "Regenerar vídeo" : "Generar vídeo IA") : (aiIdea.media_url ? "Regenerar imagen" : "Generar imagen IA"))}</button><button className={styles.primary} onClick={sendIdeaToEditor}>Pasar al editor</button></div>
-              </div> : <div className={styles.aiEmpty}><Sparkles size={30} /><p>Tu publicación generada aparecerá aquí.</p></div>}
+              </div> : <div className={styles.aiEmpty}><Sparkles size={30} /><p>Tu publicación o serie generada aparecerá aquí.</p></div>}
             </section>
           </div>
 
