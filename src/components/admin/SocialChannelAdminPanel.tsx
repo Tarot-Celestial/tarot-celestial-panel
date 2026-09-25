@@ -88,6 +88,7 @@ type AiIdea = {
   visual_prompt: string;
   reel_script: string;
   media_url?: string;
+  media_kind?: "image" | "video";
 };
 
 type WeekItem = AiIdea & {
@@ -172,6 +173,10 @@ function contentLabel(provider: Provider, type: string) {
     photo: "Fotos",
   };
   return labels[type] || (provider === "instagram" ? "Publicación" : "Contenido");
+}
+
+function isVideoType(type: string) {
+  return ["reel", "video"].includes(String(type || "").toLowerCase());
 }
 
 function captionWithHashtags(idea: AiIdea) {
@@ -622,30 +627,70 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
           campaign: campaignPayload(aiSingle.campaign_id),
         }),
       });
-      setAiIdea(response.result);
-      setMessage("La IA ha preparado la publicación. Puedes editarla, generar la imagen o pasarla al editor.");
+      const result = response.result || {};
+      const wantsVideo = isVideoType(result.content_type || aiSingle.content_type);
+      if (wantsVideo) {
+        const videoResponse = await api("/api/admin/social-ai", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "video",
+            provider,
+            prompt: result.reel_script || result.visual_prompt || aiSingle.brief,
+            label: result.title || "Reel IA",
+            format: "vertical",
+            duration: 5,
+          }),
+        });
+        setAiIdea({ ...result, media_url: videoResponse.asset.url, media_kind: "video" });
+        setMessage("La IA ha creado la pieza completa: copy + vídeo listo. Ya no necesitas generar primero el texto y luego el recurso.");
+      } else {
+        const format = ["story", "photo"].includes(String(result.content_type || aiSingle.content_type)) ? "vertical" : "square";
+        const imageResponse = await api("/api/admin/social-ai", {
+          method: "POST",
+          body: JSON.stringify({
+            action: "image",
+            provider,
+            prompt: result.visual_prompt || aiSingle.brief,
+            label: result.title || "Creatividad IA",
+            format,
+            quality: "medium",
+          }),
+        });
+        setAiIdea({ ...result, media_url: imageResponse.asset.url, media_kind: "image" });
+        setMessage("La IA ha creado la pieza completa: copy + creatividad lista para publicar.");
+      }
+      await load();
     } catch (e: any) {
-      setError(e?.message || "No se pudo generar la publicación");
+      setError(e?.message || "No se pudo generar la pieza completa");
     } finally {
       setBusy("");
     }
   }
 
-  async function generateImageForIdea() {
-    if (!aiIdea?.visual_prompt) return;
+  async function generateMediaForIdea() {
+    if (!aiIdea?.visual_prompt && !aiIdea?.reel_script) return;
     setBusy("ai-image");
     setError("");
     try {
-      const format = ["story", "reel", "video", "photo"].includes(aiIdea.content_type) ? "vertical" : "square";
-      const response = await api("/api/admin/social-ai", {
-        method: "POST",
-        body: JSON.stringify({ action: "image", provider, prompt: aiIdea.visual_prompt, label: aiIdea.title, format, quality: "medium" }),
-      });
-      setAiIdea({ ...aiIdea, media_url: response.asset.url });
-      setMessage("Imagen generada y guardada en la Biblioteca multimedia.");
+      if (isVideoType(aiIdea.content_type)) {
+        const response = await api("/api/admin/social-ai", {
+          method: "POST",
+          body: JSON.stringify({ action: "video", provider, prompt: aiIdea.reel_script || aiIdea.visual_prompt, label: aiIdea.title, format: "vertical", duration: 5 }),
+        });
+        setAiIdea({ ...aiIdea, media_url: response.asset.url, media_kind: "video" });
+        setMessage("Vídeo regenerado y guardado en la Biblioteca multimedia.");
+      } else {
+        const format = ["story", "photo"].includes(aiIdea.content_type) ? "vertical" : "square";
+        const response = await api("/api/admin/social-ai", {
+          method: "POST",
+          body: JSON.stringify({ action: "image", provider, prompt: aiIdea.visual_prompt, label: aiIdea.title, format, quality: "medium" }),
+        });
+        setAiIdea({ ...aiIdea, media_url: response.asset.url, media_kind: "image" });
+        setMessage("Imagen regenerada y guardada en la Biblioteca multimedia.");
+      }
       await load();
     } catch (e: any) {
-      setError(e?.message || "No se pudo generar la imagen");
+      setError(e?.message || (isVideoType(aiIdea?.content_type || "") ? "No se pudo generar el vídeo" : "No se pudo generar la imagen"));
     } finally {
       setBusy("");
     }
@@ -993,7 +1038,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
 
           <div className={styles.twoCols}>
             <section className={styles.card}>
-              <div className={styles.cardTitle}><div><h3><Sparkles size={18} /> Generar una publicación</h3><p>Describe lo que quieres comunicar y la IA prepara la pieza.</p></div><span className={styles.aiBadge}>IA</span></div>
+              <div className={styles.cardTitle}><div><h3><Sparkles size={18} /> Generar pieza final</h3><p>Describe lo que quieres comunicar y la IA te devolverá directamente la pieza montada: copy + imagen o copy + vídeo.</p></div><span className={styles.aiBadge}>IA</span></div>
               <div className={styles.formStack}>
                 <label>Qué quieres publicar<textarea rows={5} value={aiSingle.brief} onChange={(e) => setAiSingle({ ...aiSingle, brief: e.target.value })} placeholder="Ej. Promocionar la Super Ruleta. 30 minutos por 20€, 50 minutos por 25€. Hoy último día. Mantén tono premium y urgente." /></label>
                 <div className={styles.formGrid}>
@@ -1002,21 +1047,23 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                   <label>Objetivo<input value={aiSingle.objective} onChange={(e) => setAiSingle({ ...aiSingle, objective: e.target.value })} /></label>
                   <label>CTA opcional<input value={aiSingle.cta} onChange={(e) => setAiSingle({ ...aiSingle, cta: e.target.value })} placeholder="Ej. Llama ahora / Escríbenos" /></label>
                 </div>
-                <button className={styles.primary} disabled={busy === "ai-single"} onClick={() => void generateSingleIdea()}><Sparkles size={16} /> {busy === "ai-single" ? "Generando…" : "Generar con IA"}</button>
+                <button className={styles.primary} disabled={busy === "ai-single"} onClick={() => void generateSingleIdea()}><Sparkles size={16} /> {busy === "ai-single" ? "Creando pieza completa…" : "Generar pieza final con IA"}</button>
               </div>
             </section>
 
             <section className={styles.card}>
-              <div className={styles.cardTitle}><div><h3>Resultado IA</h3><p>Revísalo antes de publicar. Puedes editarlo después en Crear.</p></div></div>
+              <div className={styles.cardTitle}><div><h3>Resultado IA</h3><p>La IA ya te lo devuelve montado. Desde aquí puedes revisarlo, regenerarlo o pasarlo al editor.</p></div></div>
               {aiIdea ? <div className={styles.aiResult}>
-                {aiIdea.media_url && <img src={aiIdea.media_url} alt="Creatividad generada" />}
+                {aiIdea.media_url && (aiIdea.media_kind === "video" || isVideoType(aiIdea.content_type)
+                  ? <video src={aiIdea.media_url} controls playsInline preload="metadata" />
+                  : <img src={aiIdea.media_url} alt="Creatividad generada" />)}
                 <span>{contentLabel(provider, aiIdea.content_type)}</span>
                 <h4>{aiIdea.title}</h4>
                 <b>{aiIdea.hook}</b>
                 <p>{aiIdea.caption}</p>
                 <div className={styles.hashes}>{(aiIdea.hashtags || []).map((h) => <em key={h}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div>
                 {aiIdea.reel_script && <details><summary>Guion / storyboard</summary><p>{aiIdea.reel_script}</p></details>}
-                <div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateImageForIdea()}><ImageIcon size={15} /> {aiIdea.media_url ? "Regenerar imagen" : "Generar imagen IA"}</button><button className={styles.primary} onClick={sendIdeaToEditor}>Pasar al editor</button></div>
+                <div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateMediaForIdea()}>{isVideoType(aiIdea.content_type) ? <Video size={15} /> : <ImageIcon size={15} />} {busy === "ai-image" ? "Regenerando…" : (isVideoType(aiIdea.content_type) ? (aiIdea.media_url ? "Regenerar vídeo" : "Generar vídeo IA") : (aiIdea.media_url ? "Regenerar imagen" : "Generar imagen IA"))}</button><button className={styles.primary} onClick={sendIdeaToEditor}>Pasar al editor</button></div>
               </div> : <div className={styles.aiEmpty}><Sparkles size={30} /><p>Tu publicación generada aparecerá aquí.</p></div>}
             </section>
           </div>
