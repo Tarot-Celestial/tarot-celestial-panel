@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { ArrowRight, Check, Clock3, Gem, Heart, LockKeyhole, MoonStar, Orbit, Shield, Sparkles, Sprout } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { RITUAL_CHANGED } from "@/lib/ritual-sync";
+import RitualSymbol from "./RitualSymbol";
+import { ritualMaterials, ritualSymbol, ritualEnergy } from "./ritual-materials";
 import styles from "./Ritual.module.css";
 
 type Phase = { name?: string; message?: string; advice?: string; asset_url?: string | null; index?: number };
@@ -17,11 +19,10 @@ type Ritual = {
 type ResponseData = { ok: boolean; diamond: boolean; rank?: string; ritual: Ritual | null; history: Ritual[] };
 const sb = supabaseClienteBrowser();
 const icons: Record<string, typeof Shield> = { shield: Shield, heart: Heart, orbit: Orbit, gem: Gem, sprout: Sprout, sparkles: Sparkles };
-const slugIcons: Record<string, string> = { proteccion: "shield", sanacion: "heart", armonizacion: "orbit", limpieza: "gem", prosperidad: "sprout" };
 const statusNames: Record<string, string> = { pendiente: "Pendiente", activo: "En proceso", pausado: "Pausado", completado: "Completado", cancelado: "Cancelado" };
 const date = (value?: string | null) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString("es-ES") : "Sin fecha registrada";
 const title = (ritual: Ritual) => ritual.nombre_personalizado || ritual.ritual_types?.nombre || "Mi ritual";
-const symbol = (ritual: Ritual) => ritual.ritual_types?.icono?.toLowerCase() || slugIcons[ritual.ritual_types?.slug || ""] || "sparkles";
+const symbol = (ritual: Ritual) => ritualSymbol(ritual.ritual_types);
 
 export default function RitualPage() {
   const [data, setData] = useState<ResponseData | null>(null);
@@ -93,25 +94,26 @@ function Empty() {
 }
 
 function Visual({ ritual, current, count }: { ritual: Ritual; current: number; count: number }) {
-  const id = useId().replace(/:/g, "");
   const key = symbol(ritual);
-  const Icon = icons[key] || Sparkles;
-  const completed = ritual.estado === "completado";
-  const energy = completed ? 1 : count > 1 ? current / (count - 1) : 0;
+  const material = ritualMaterials[key];
+  const energy = ritualEnergy(ritual.estado, current, count);
   const [reduced, setReduced] = useState(true);
   const [visible, setVisible] = useState(true);
+  const [pageVisible, setPageVisible] = useState(true);
   const [failedAsset, setFailedAsset] = useState<string | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const asset = ritual.phase?.asset_url;
-  const paused = ritual.estado !== "activo" || reduced || !visible;
+  const paused = ritual.estado !== "activo" || reduced || !visible || !pageVisible;
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReduced(query.matches);
     update(); query.addEventListener("change", update);
+    const visibility = () => setPageVisible(!document.hidden);
+    visibility(); document.addEventListener("visibilitychange", visibility);
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
     if (host.current) observer.observe(host.current);
-    return () => { query.removeEventListener("change", update); observer.disconnect(); };
+    return () => { query.removeEventListener("change", update); document.removeEventListener("visibilitychange", visibility); observer.disconnect(); };
   }, []);
   useEffect(() => {
     const element = video.current;
@@ -122,7 +124,7 @@ function Visual({ ritual, current, count }: { ritual: Ritual; current: number; c
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, [paused, asset, failedAsset]);
-  return <div ref={host} className={styles.visual} data-paused={paused} data-theme={ritual.ritual_types?.slug} style={{ "--energy": energy, "--aura-opacity": .25 + energy * .5 } as CSSProperties}>
+  return <div ref={host} className={styles.visual} data-paused={paused} data-theme={ritual.ritual_types?.slug} data-material={key} data-state={ritual.estado} style={{ "--energy": energy, "--aura-opacity": .2 + energy * .5, "--inner-light": .12 + energy * .48, "--accent": material.main, "--material-light": material.light, "--material-dark": material.dark, "--material-glow": material.glow, "--material-secondary": material.secondary } as CSSProperties}>
     <div className={styles.scene} aria-hidden="true">
       <div className={styles.halo} /><div className={styles.chart} /><div className={styles.pedestal} />
       <div className={styles.levitation}>
@@ -130,16 +132,7 @@ function Visual({ ritual, current, count }: { ritual: Ritual; current: number; c
         <div className={styles.sphere}>
           <div className={styles.meridian} />
           <div className={styles.symbol}>
-            {key === "shield" ? <svg viewBox="0 0 160 190" fill="none">
-              <defs>
-                <linearGradient id={`${id}-gold`} x1="25" y1="15" x2="140" y2="180" gradientUnits="userSpaceOnUse"><stop stopColor="#fff8ce" /><stop offset=".28" stopColor="#d19a3e" /><stop offset=".5" stopColor="#fff0ad" /><stop offset=".78" stopColor="#a96723" /><stop offset="1" stopColor="#ffe7a1" /></linearGradient>
-                <linearGradient id={`${id}-face`} x1="30" y1="40" x2="132" y2="148" gradientUnits="userSpaceOnUse"><stop stopColor="#5c436a" /><stop offset=".5" stopColor="#1c142b" /><stop offset="1" stopColor="#0b0814" /></linearGradient>
-              </defs>
-              <path d="M80 14C60 31 36 37 19 37v63c0 33 25 59 61 77 36-18 61-44 61-77V37c-17 0-41-6-61-23Z" fill={`url(#${id}-face)`} stroke={`url(#${id}-gold)`} strokeWidth="7" />
-              <path d="M80 27c-17 12-35 19-48 20v52c0 26 19 48 48 64 29-16 48-38 48-64V47c-13-1-31-8-48-20Z" stroke="#f9d98a" strokeOpacity=".65" />
-              <path d="M80 29v132c-29-16-47-37-47-62V48c17-3 32-9 47-19Z" fill="#fff4cf" fillOpacity=".07" />
-              <path d="m80 65 6 28 21 8-21 7-6 28-6-28-21-7 21-8 6-28Z" fill={`url(#${id}-gold)`} />
-            </svg> : <><Icon className={styles.symbolDepth} strokeWidth={1.25} /><Icon strokeWidth={1.25} /></>}
+            <RitualSymbol kind={key} />
           </div>
         </div>
         {Array.from({ length: 1 + Math.round(energy * 2) }, (_, i) => <div key={i} className={styles.orbit} style={{ "--orbit-index": i } as CSSProperties}><i /></div>)}
