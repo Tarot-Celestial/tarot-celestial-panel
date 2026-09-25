@@ -180,7 +180,7 @@ export async function generateSingleSocialContent(input: {
   return structuredResponse(
     "tarot_celestial_social_post",
     singleSchema,
-    `Crea una pieza para ${input.provider}. Formatos permitidos: ${allowed}. Si se pide Reel/vídeo, devuelve también un guion accionable; si es imagen, reel_script puede quedar vacío. El visual_prompt debe describir una creatividad lista para generar con IA, sin inventar datos comerciales. Si el formato es story, el visual_prompt debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. Si el formato es post, debe ser visualmente potente y de alto contraste.` ,
+    `Crea una pieza para ${input.provider}. Formatos permitidos: ${allowed}. Si se pide Reel/vídeo, devuelve también un guion accionable; si es imagen, reel_script puede quedar vacío. El visual_prompt debe describir una creatividad lista para generar con IA, sin inventar datos comerciales. Si el formato es story, el visual_prompt debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. IMPORTANTE: en las stories todo el mensaje debe ir integrado dentro de la imagen; no dependas de texto externo. Para stories devuelve caption="" y cta="" salvo que el usuario pida explícitamente un texto aparte. Si el formato es post, debe ser visualmente potente y de alto contraste.` ,
     JSON.stringify(input),
   );
 }
@@ -200,7 +200,7 @@ export async function generateSocialSeries(input: {
   return structuredResponse(
     "tarot_celestial_social_series",
     seriesSchema,
-    `Crea una serie de ${piecesCount} piezas para ${input.provider}. Formatos permitidos: ${allowed}. Todas las piezas deben compartir coherencia de estilo y tema, pero no duplicarse. Cada pieza debe aportar un ángulo distinto. Si el usuario pide una serie sobre horóscopos, signos o zodiaco, reparte bien la serie entre signos, grupos de signos, elementos o ideas complementarias para que parezca una colección real. Si se piden stories, el visual_prompt de cada pieza debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. Si se piden reels/vídeos, cada reel_script debe ser accionable y visualmente potente.`,
+    `Crea una serie de ${piecesCount} piezas para ${input.provider}. Formatos permitidos: ${allowed}. Todas las piezas deben compartir coherencia de estilo y tema, pero no duplicarse. Cada pieza debe aportar un ángulo distinto. Si el usuario pide una serie sobre horóscopos, signos o zodiaco, reparte bien la serie entre signos, grupos de signos, elementos o ideas complementarias para que parezca una colección real. Si se piden stories, el visual_prompt de cada pieza debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. IMPORTANTE: en las stories todo el mensaje debe ir integrado dentro de la imagen; no dependas de texto externo. Para stories devuelve caption="" y cta="" salvo que el usuario pida explícitamente un texto aparte. Si se piden reels/vídeos, cada reel_script debe ser accionable y visualmente potente.`,
     JSON.stringify({ ...input, piecesCount }),
   );
 }
@@ -276,7 +276,7 @@ Cada día debe incluir exactamente:
 No inventes formatos extra ni cambies las cantidades.
 Asigna horas realistas sin repetir dentro del mismo día. Las stories pueden ir antes, los posts a media mañana/tarde y los reels a tarde/noche.
 Hora orientativa base: ${input.preferredTime || "19:30"}.
-Cada caption debe ser listo para publicar. El visual_prompt debe servir para generar una imagen estática. En los reels, el reel_script debe ser completo y accionable para Runway.`,
+Cada caption debe ser listo para publicar, excepto en stories donde debe ir vacío salvo necesidad explícita del briefing. El visual_prompt debe servir para generar una imagen estática. En stories, todo el texto principal debe ir integrado visualmente en la propia imagen. En los reels, el reel_script debe ser completo y accionable para Runway.`,
     JSON.stringify({ ...input, days, postsPerDay, reelsPerDay, storiesPerDay, total }),
   );
 

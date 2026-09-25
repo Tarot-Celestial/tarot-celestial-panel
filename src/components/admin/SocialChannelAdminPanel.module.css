@@ -9,3 +9,5 @@
 
 .aiSeriesWrap{display:grid;gap:14px}.seriesHeader{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.aiSeriesGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.aiSeriesCard{display:grid;align-content:start;gap:10px;padding:14px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08)}.aiSeriesCard>img,.aiSeriesCard>video{width:100%;max-height:320px;object-fit:cover;border-radius:15px;border:1px solid rgba(255,255,255,.08);background:#0c0916}.aiSeriesCard>span{font-size:11px;color:#cdbdff;text-transform:uppercase;letter-spacing:.08em}.aiSeriesCard>h4{margin:0;font-size:18px}.aiSeriesCard>p{margin:0;color:#ded6ed;line-height:1.6}.aiSeriesCard>b{color:#f7dea0}.aiSeriesCard details{font-size:13px;color:#d8cde9}
 @media(max-width:900px){.aiSeriesGrid{grid-template-columns:1fr}}
+
+.storyNotice{padding:10px 12px;border-radius:12px;background:rgba(215,181,109,.08);border:1px solid rgba(215,181,109,.18);font-size:12px;color:#dbc98f}

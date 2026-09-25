@@ -178,13 +178,22 @@ function contentLabel(provider: Provider, type: string) {
 function isVideoType(type: string) {
   return ["reel", "video"].includes(String(type || "").toLowerCase());
 }
+function isStoryType(type: string) {
+  return String(type || "").toLowerCase() === "story";
+}
 
-function captionWithHashtags(idea: AiIdea) {
+function publishCaptionForIdea(idea: AiIdea) {
+  if (isStoryType(idea.content_type)) return "";
   const tags = (idea.hashtags || [])
     .map((tag) => String(tag || "").trim())
     .filter(Boolean)
     .map((tag) => (tag.startsWith("#") ? tag : `#${tag.replace(/\s+/g, "")}`));
   return [idea.caption?.trim(), idea.cta?.trim(), tags.join(" ")].filter(Boolean).join("\n\n");
+}
+
+
+function captionWithHashtags(idea: AiIdea) {
+  return publishCaptionForIdea(idea);
 }
 
 function scheduledIso(startDate: string, dayOffset: number, time: string) {
@@ -684,6 +693,45 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setSection("crear");
   }
 
+  async function createIdeaAsContent(idea: AiIdea, publishNow = false) {
+    setBusy(publishNow ? "ai-publish" : "ai-save");
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api("/api/admin/social-content", {
+        method: "POST",
+        body: JSON.stringify({
+          provider,
+          content_type: idea.content_type,
+          title: idea.title,
+          caption: publishCaptionForIdea(idea),
+          media_urls: idea.media_url ? [idea.media_url] : [],
+          campaign_id: aiSingle.campaign_id || null,
+          privacy_level: "SELF_ONLY",
+          publish_mode: "direct",
+          settings: {
+            is_aigc: true,
+            share_to_feed: true,
+            brand_organic_toggle: true,
+            ai_meta: { source: "ai_studio", hook: idea.hook, visual_prompt: idea.visual_prompt, reel_script: idea.reel_script, story_caption_embedded: isStoryType(idea.content_type) },
+          },
+        }),
+      });
+      if (publishNow && saved.item?.id) {
+        await api("/api/admin/social-publish", { method: "POST", body: JSON.stringify({ id: saved.item.id }) });
+        setMessage(isStoryType(idea.content_type) ? "Story enviada a publicación." : "Contenido enviado a publicación.");
+        setSection("publicaciones");
+      } else {
+        setMessage(isStoryType(idea.content_type) ? "Story guardada como borrador." : "Contenido guardado como borrador.");
+      }
+      await load();
+    } catch (e: any) {
+      setError(e?.message || (publishNow ? "No se pudo publicar el contenido" : "No se pudo guardar el contenido"));
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function saveSeriesToDrafts() {
     if (!aiSeries.length) return;
     setBusy("ai-series-save");
@@ -1113,7 +1161,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             <label>Tipo<select value={draft.content_type} onChange={(e) => setDraft({ ...draft, content_type: e.target.value })}>{provider === "instagram" ? <><option value="post">Publicación</option><option value="reel">Reel</option><option value="story">Story</option><option value="carousel">Carrusel</option></> : <><option value="video">Vídeo</option><option value="photo">Fotos</option></>}</select></label>
             <label>Promoción<select value={draft.campaign_id} onChange={(e) => setDraft({ ...draft, campaign_id: e.target.value })}><option value="">Sin promoción</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label className={styles.full}>Título interno<input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} placeholder="Ej. Promo último día" /></label>
-            <label className={styles.full}>Texto / caption<textarea rows={6} value={draft.caption} onChange={(e) => setDraft({ ...draft, caption: e.target.value })} placeholder="Texto que acompañará la publicación…" /></label>
+            {draft.content_type === "story" ? <div className={`${styles.full} ${styles.storyNotice}`}>En las stories de Instagram el texto principal va dentro de la propia imagen. Este contenido se guardará y publicará sin caption externo.</div> : <label className={styles.full}>Texto / caption<textarea rows={6} value={draft.caption} onChange={(e) => setDraft({ ...draft, caption: e.target.value })} placeholder="Texto que acompañará la publicación…" /></label>}
             <label className={styles.full}>URLs públicas de imagen/vídeo<textarea rows={3} value={draft.media} onChange={(e) => setDraft({ ...draft, media: e.target.value })} placeholder="Una URL por línea. Para carrusel/fotos puedes añadir varias." /><small>Meta y TikTok deben poder descargar el recurso desde Internet.</small></label>
             <label>Programar para<input type="datetime-local" value={draft.scheduled_at} onChange={(e) => setDraft({ ...draft, scheduled_at: e.target.value })} /></label>
             {provider === "tiktok" && <><label>Modo<select value={draft.publish_mode} onChange={(e) => setDraft({ ...draft, publish_mode: e.target.value })}><option value="direct">Publicación directa</option><option value="inbox">Enviar a bandeja TikTok</option></select></label><label>Privacidad<select value={draft.privacy_level} onChange={(e) => setDraft({ ...draft, privacy_level: e.target.value })}><option value="SELF_ONLY">Solo yo / pruebas</option><option value="PUBLIC_TO_EVERYONE">Público</option><option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option><option value="FOLLOWER_OF_CREATOR">Seguidores</option></select></label></>}
@@ -1156,11 +1204,10 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                   {idea.media_url && (idea.media_kind === "video" || isVideoType(idea.content_type) ? <video src={idea.media_url} controls playsInline preload="metadata" /> : <img src={idea.media_url} alt={idea.title} />)}
                   <span>{contentLabel(provider, idea.content_type)}</span>
                   <h4>{idea.title}</h4>
-                  <b>{idea.hook}</b>
-                  <p>{idea.caption}</p>
-                  <div className={styles.hashes}>{(idea.hashtags || []).map((h) => <em key={`${h}-${idx}`}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div>
+                  {!isStoryType(idea.content_type) && <><b>{idea.hook}</b><p>{idea.caption}</p><div className={styles.hashes}>{(idea.hashtags || []).map((h) => <em key={`${h}-${idx}`}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div></>}
                   {idea.reel_script && <details><summary>Guion / storyboard</summary><p>{idea.reel_script}</p></details>}
-                  <div className={styles.actions}><button className={styles.secondary} onClick={() => pushIdeaToEditor(idea)}>Pasar al editor</button></div>
+                  {isStoryType(idea.content_type) ? <div className={styles.storyNotice}>Story con texto integrado en la imagen.</div> : null}
+                  <div className={styles.actions}><button className={styles.secondary} onClick={() => pushIdeaToEditor(idea)}>Pasar al editor</button><button className={styles.secondary} disabled={busy === "ai-save"} onClick={() => void createIdeaAsContent(idea, false)}><FolderOpen size={15} /> Guardar</button><button className={styles.primary} disabled={busy === "ai-publish" || !connection} onClick={() => void createIdeaAsContent(idea, true)}><Send size={15} /> Publicar</button></div>
                 </article>)}</div>
               </div> : aiIdea ? <div className={styles.aiResult}>
                 {aiIdea.media_url && (aiIdea.media_kind === "video" || isVideoType(aiIdea.content_type)
@@ -1168,11 +1215,10 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                   : <img src={aiIdea.media_url} alt="Creatividad generada" />)}
                 <span>{contentLabel(provider, aiIdea.content_type)}</span>
                 <h4>{aiIdea.title}</h4>
-                <b>{aiIdea.hook}</b>
-                <p>{aiIdea.caption}</p>
-                <div className={styles.hashes}>{(aiIdea.hashtags || []).map((h) => <em key={h}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div>
+                {!isStoryType(aiIdea.content_type) && <><b>{aiIdea.hook}</b><p>{aiIdea.caption}</p><div className={styles.hashes}>{(aiIdea.hashtags || []).map((h) => <em key={h}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div></>}
+                {isStoryType(aiIdea.content_type) && <div className={styles.storyNotice}>En las stories el mensaje va integrado dentro de la imagen. No se publicará texto externo.</div>}
                 {aiIdea.reel_script && <details><summary>Guion / storyboard</summary><p>{aiIdea.reel_script}</p></details>}
-                <div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateMediaForIdea()}>{isVideoType(aiIdea.content_type) ? <Video size={15} /> : <ImageIcon size={15} />} {busy === "ai-image" ? "Regenerando…" : (isVideoType(aiIdea.content_type) ? (aiIdea.media_url ? "Regenerar vídeo" : "Generar vídeo IA") : (aiIdea.media_url ? "Regenerar imagen" : "Generar imagen IA"))}</button><button className={styles.primary} onClick={sendIdeaToEditor}>Pasar al editor</button></div>
+                <div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateMediaForIdea()}>{isVideoType(aiIdea.content_type) ? <Video size={15} /> : <ImageIcon size={15} />} {busy === "ai-image" ? "Regenerando…" : (isVideoType(aiIdea.content_type) ? (aiIdea.media_url ? "Regenerar vídeo" : "Generar vídeo IA") : (aiIdea.media_url ? "Regenerar imagen" : "Generar imagen IA"))}</button><button className={styles.secondary} disabled={busy === "ai-save"} onClick={() => void createIdeaAsContent(aiIdea, false)}><FolderOpen size={15} /> Guardar</button><button className={styles.primary} disabled={busy === "ai-publish" || !connection} onClick={() => void createIdeaAsContent(aiIdea, true)}><Send size={15} /> Publicar ahora</button><button className={styles.secondary} onClick={sendIdeaToEditor}>Pasar al editor</button></div>
               </div> : <div className={styles.aiEmpty}><Sparkles size={30} /><p>Tu publicación o serie generada aparecerá aquí.</p></div>}
             </section>
           </div>
