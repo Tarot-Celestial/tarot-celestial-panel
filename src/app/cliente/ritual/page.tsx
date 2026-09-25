@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } f
 import { ArrowRight, Check, Clock3, Gem, Heart, LockKeyhole, MoonStar, Orbit, Shield, Sparkles, Sprout } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import { RITUAL_CHANGED } from "@/lib/ritual-sync";
 import styles from "./Ritual.module.css";
 
 type Phase = { name?: string; message?: string; advice?: string; asset_url?: string | null; index?: number };
@@ -26,11 +27,13 @@ export default function RitualPage() {
   const [data, setData] = useState<ResponseData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [updated, setUpdated] = useState<Date | null>(null);
   const request = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
+    const timeout = window.setTimeout(() => controller.abort("timeout"), 15000);
     try {
       const token = (await sb.auth.getSession()).data.session?.access_token;
       if (controller.signal.aborted) return;
@@ -40,11 +43,13 @@ export default function RitualPage() {
       if (!response.ok) throw new Error("No se pudo actualizar tu ritual. Inténtalo de nuevo.");
       const result: ResponseData = await response.json();
       if (!result.ok) throw new Error("No se pudo cargar tu ritual.");
-      if (!controller.signal.aborted) { setData(result); setError(""); }
+      if (!controller.signal.aborted) { setData(result); setError(""); setUpdated(new Date()); }
     } catch (cause) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "No se pudo cargar tu ritual.");
+      if (controller.signal.reason === "timeout") setError("La actualización está tardando demasiado. Inténtalo de nuevo.");
+      else if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "No se pudo cargar tu ritual.");
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      clearTimeout(timeout);
+      if (!controller.signal.aborted || controller.signal.reason === "timeout") setLoading(false);
     }
   }, []);
 
@@ -52,24 +57,28 @@ export default function RitualPage() {
     void load();
     // Also refresh empty/history-only states so new assignments appear without reloading.
     const refresh = () => { if (document.visibilityState === "visible") void load(); };
-    const timer = window.setInterval(refresh, 60000);
+    // Direct table subscriptions cannot read these RLS-protected rows. Always refetch the authenticated API.
+    const timer = window.setInterval(refresh, 20000);
+    const storage = (event: StorageEvent) => { if (event.key === RITUAL_CHANGED) refresh(); };
     document.addEventListener("visibilitychange", refresh);
-    return () => { request.current?.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", refresh); };
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    window.addEventListener("storage", storage);
+    window.addEventListener(RITUAL_CHANGED, refresh);
+    return () => {
+      request.current?.abort(); clearInterval(timer); document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh);
+      window.removeEventListener("storage", storage); window.removeEventListener(RITUAL_CHANGED, refresh);
+    };
   }, [load]);
-  useEffect(() => {
-    if (!data?.ritual?.id) return;
-    const channel = sb.channel(`ritual-${data.ritual.id}`).on("postgres_changes", {
-      event: "*", schema: "public", table: "client_rituals", filter: `id=eq.${data.ritual.id}`,
-    }, () => void load()).subscribe();
-    return () => { void sb.removeChannel(channel); };
-  }, [data?.ritual?.id, load]);
 
   return <ClienteLayout title="Mi Ritual" subtitle="Tu espacio privado para seguir cada etapa de tu experiencia." eyebrow="Tarot Celestial · Experiencia privada">
     <div className={styles.root}>
+      <div className={styles.refreshBar}><span>{updated ? `Actualizado a las ${updated.toLocaleTimeString("es-ES")}` : "Consultando tu ritual…"}</span><button type="button" onClick={() => void load()}>Actualizar</button></div>
       {error && <section className={styles.error} role="alert"><span>{error}{data ? " Se muestra la última información recibida." : ""}</span><button onClick={() => void load()}>Reintentar</button></section>}
       {loading ? <section className={styles.state} role="status">Preparando tu espacio ritual…</section>
         : !data ? null : !data.diamond ? <Locked rank={data.rank} /> : <>
-          {data.ritual ? <Active ritual={data.ritual} /> : <Empty />}
+          {data.ritual ? <Active key={data.ritual.id} ritual={data.ritual} /> : <Empty />}
           <History rituals={data.history || []} />
         </>}
     </div>
