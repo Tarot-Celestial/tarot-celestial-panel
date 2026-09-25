@@ -275,6 +275,8 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [aiProgress, setAiProgress] = useState("");
+  const [aiProgressCurrent, setAiProgressCurrent] = useState(0);
+  const [aiProgressTotal, setAiProgressTotal] = useState(0);
 
   const [draft, setDraft] = useState<any>({
     id: "",
@@ -610,6 +612,24 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     }
   }
 
+  function startAiProgress(total: number, initialText: string) {
+    setAiProgressTotal(total);
+    setAiProgressCurrent(total > 0 ? 1 : 0);
+    setAiProgress(initialText);
+  }
+
+  function updateAiProgress(current: number, total: number, textLabel: string) {
+    setAiProgressTotal(total);
+    setAiProgressCurrent(current);
+    setAiProgress(textLabel);
+  }
+
+  function clearAiProgress() {
+    setAiProgress("");
+    setAiProgressCurrent(0);
+    setAiProgressTotal(0);
+  }
+
   async function materializeIdeaMedia(idea: AiIdea) {
     const wantsVideo = isVideoType(idea.content_type);
     if (wantsVideo) {
@@ -636,7 +656,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
         prompt: idea.visual_prompt || idea.caption || idea.title,
         label: idea.title || "Creatividad IA",
         format,
-        quality: "high",
+        quality: "medium",
         content_type: idea.content_type,
       }),
     });
@@ -670,7 +690,10 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setError("");
     setMessage("");
     try {
-      for (const idea of aiSeries) {
+      startAiProgress(aiSeries.length, `Guardando borrador 1/${aiSeries.length}…`);
+      for (let index = 0; index < aiSeries.length; index += 1) {
+        const idea = aiSeries[index];
+        updateAiProgress(index + 1, aiSeries.length, `Guardando borrador ${index + 1}/${aiSeries.length}: ${idea.title || "sin título"}`);
         await api("/api/admin/social-content", {
           method: "POST",
           body: JSON.stringify({
@@ -692,6 +715,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     } catch (e: any) {
       setError(e?.message || "No se pudo guardar la serie");
     } finally {
+      clearAiProgress();
       setBusy("");
     }
   }
@@ -710,6 +734,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     try {
       const quantity = Math.max(1, Math.min(20, Number(aiSingle.quantity || 1)));
       if (quantity > 1) {
+        startAiProgress(quantity, `Preparando serie 1/${quantity}…`);
         const response = await api("/api/admin/social-ai", {
           method: "POST",
           body: JSON.stringify({
@@ -725,16 +750,18 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
           }),
         });
         const items = Array.isArray(response.series?.items) ? response.series.items : [];
+        setAiSeriesSummary(String(response.series?.strategy_summary || ""));
         const built: AiIdea[] = [];
         for (let index = 0; index < items.length; index += 1) {
           const rawIdea = items[index] as AiIdea;
-          setAiProgress(`Generando pieza ${index + 1} de ${items.length}…`);
-          built.push(await materializeIdeaMedia(rawIdea));
+          updateAiProgress(index + 1, items.length, `Generando pieza ${index + 1}/${items.length}: ${rawIdea.title || "sin título"}`);
+          const ready = await materializeIdeaMedia(rawIdea);
+          built.push(ready);
+          setAiSeries([...built]);
         }
-        setAiSeriesSummary(String(response.series?.strategy_summary || ""));
-        setAiSeries(built);
         setMessage(`La IA ha creado una serie completa de ${built.length} piezas listas.`);
       } else {
+        startAiProgress(1, "Creando idea…");
         const response = await api("/api/admin/social-ai", {
           method: "POST",
           body: JSON.stringify({
@@ -748,6 +775,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             campaign: campaignPayload(aiSingle.campaign_id),
           }),
         });
+        updateAiProgress(1, 1, "Generando creatividad final…");
         const result = response.result || {};
         const built = await materializeIdeaMedia(result);
         setAiIdea(built);
@@ -757,7 +785,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     } catch (e: any) {
       setError(e?.message || "No se pudo generar la pieza completa");
     } finally {
-      setAiProgress("");
+      clearAiProgress();
       setBusy("");
     }
   }
@@ -767,6 +795,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setBusy("ai-image");
     setError("");
     try {
+      startAiProgress(1, isVideoType(aiIdea.content_type) ? "Regenerando vídeo…" : "Regenerando imagen…");
       const rebuilt = await materializeIdeaMedia(aiIdea);
       setAiIdea(rebuilt);
       setMessage(isVideoType(aiIdea.content_type) ? "Vídeo regenerado y guardado en la Biblioteca multimedia." : "Imagen regenerada y guardada en la Biblioteca multimedia.");
@@ -774,6 +803,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     } catch (e: any) {
       setError(e?.message || (isVideoType(aiIdea?.content_type || "") ? "No se pudo generar el vídeo" : "No se pudo generar la imagen"));
     } finally {
+      clearAiProgress();
       setBusy("");
     }
   }
@@ -1111,9 +1141,9 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                   <label>Promoción<select value={aiSingle.campaign_id} onChange={(e) => setAiSingle({ ...aiSingle, campaign_id: e.target.value })}><option value="">Sin promoción vinculada</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
                   <label>Objetivo<input value={aiSingle.objective} onChange={(e) => setAiSingle({ ...aiSingle, objective: e.target.value })} /></label>
                   <label>CTA opcional<input value={aiSingle.cta} onChange={(e) => setAiSingle({ ...aiSingle, cta: e.target.value })} placeholder="Ej. Llama ahora / Escríbenos" /></label>
-                  <label>Cantidad de piezas<input type="number" min={1} max={20} value={aiSingle.quantity} onChange={(e) => setAiSingle({ ...aiSingle, quantity: e.target.value })} /></label>
+                  <label>Cantidad de piezas<input type="number" min={1} max={20} value={aiSingle.quantity} onChange={(e) => setAiSingle({ ...aiSingle, quantity: e.target.value })} /><small>Si pones más de 1, la IA te creará una serie completa y verás el progreso pieza a pieza.</small></label>
                 </div>
-                <button className={styles.primary} disabled={busy === "ai-single"} onClick={() => void generateSingleIdea()}><Sparkles size={16} /> {busy === "ai-single" ? "Creando pieza completa…" : "Generar pieza final con IA"}</button>
+                <button className={styles.primary} disabled={busy === "ai-single"} onClick={() => void generateSingleIdea()}><Sparkles size={16} /> {busy === "ai-single" ? (Number(aiSingle.quantity || 1) > 1 ? "Generando serie…" : "Creando pieza completa…") : (Number(aiSingle.quantity || 1) > 1 ? "Generar serie con IA" : "Generar pieza final con IA")}</button>
               </div>
             </section>
 
@@ -1240,7 +1270,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       {section === "conexion" && <section className={styles.card}><div className={styles.connectionPanel}><div className={styles.connectionIcon}><Icon size={32} /></div><div><h3>Conexión oficial de {brand.name}</h3><p>OAuth propio de Tarot Celestial. Las credenciales y tokens se guardan cifrados en servidor y nunca se exponen al navegador.</p></div><span className={`${styles.bigState} ${connection ? styles.connected : ""}`}>{connection ? "CONECTADO" : "SIN CONECTAR"}</span></div><div className={styles.connectionRows}><div><span>Variables de entorno</span><b>{configured ? "Configuradas" : "Pendientes"}</b></div><div><span>Cuenta</span><b>{connection ? `@${connection.username || connection.display_name || "autorizada"}` : "—"}</b></div><div><span>Token</span><b>{connection?.token_expires_at ? `Caduca ${fmt(connection.token_expires_at)}` : "—"}</b></div></div><div className={styles.actions}>{connection ? <><button className={styles.secondary} onClick={() => void connect()} disabled={busy === "connect"}><RefreshCw size={16} />Reconectar</button><button className={styles.danger} onClick={() => void disconnect()} disabled={busy === "disconnect"}>Desconectar</button></> : <button className={styles.primary} onClick={() => void connect()} disabled={!configured || busy === "connect"}><Link2 size={16} />Conectar {brand.name}</button>}</div></section>}
 
       {loading && <div className={styles.loading}><RefreshCw className={styles.spin} size={18} />Actualizando datos…</div>}
-      {aiProgress && (busy === "ai-week-schedule" || busy === "ai-flex-schedule") && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} />{aiProgress}</div>}
+      {aiProgress && ["ai-week-schedule", "ai-flex-schedule", "ai-single", "ai-image", "ai-series-save"].includes(busy) && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} /><div><b>{aiProgressTotal > 0 ? `${aiProgressCurrent}/${aiProgressTotal}` : "Procesando"}</b><span>{aiProgress}</span></div></div>}
     </div>
   );
 }
