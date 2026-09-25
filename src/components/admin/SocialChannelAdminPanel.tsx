@@ -693,10 +693,13 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     setSection("crear");
   }
 
-  async function createIdeaAsContent(idea: AiIdea, publishNow = false) {
-    setBusy(publishNow ? "ai-publish" : "ai-save");
-    setError("");
-    setMessage("");
+  async function createIdeaAsContent(idea: AiIdea, publishNow = false, options?: { silent?: boolean; skipReload?: boolean; skipBusy?: boolean; skipSectionChange?: boolean }) {
+    const silent = Boolean(options?.silent);
+    if (!options?.skipBusy) setBusy(publishNow ? "ai-publish" : "ai-save");
+    if (!silent) {
+      setError("");
+      setMessage("");
+    }
     try {
       const saved = await api("/api/admin/social-content", {
         method: "POST",
@@ -719,15 +722,40 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       });
       if (publishNow && saved.item?.id) {
         await api("/api/admin/social-publish", { method: "POST", body: JSON.stringify({ id: saved.item.id }) });
-        setMessage(isStoryType(idea.content_type) ? "Story enviada a publicación." : "Contenido enviado a publicación.");
-        setSection("publicaciones");
-      } else {
+        if (!silent) setMessage(isStoryType(idea.content_type) ? "Story enviada a publicación." : "Contenido enviado a publicación.");
+        if (!options?.skipSectionChange) setSection("publicaciones");
+      } else if (!silent) {
         setMessage(isStoryType(idea.content_type) ? "Story guardada como borrador." : "Contenido guardado como borrador.");
       }
+      if (!options?.skipReload) await load();
+      return saved.item;
+    } catch (e: any) {
+      if (!silent) setError(e?.message || (publishNow ? "No se pudo publicar el contenido" : "No se pudo guardar el contenido"));
+      throw e;
+    } finally {
+      if (!options?.skipBusy) setBusy("");
+    }
+  }
+
+  async function publishSeries() {
+    if (!aiSeries.length) return;
+    setBusy("ai-series-publish");
+    setError("");
+    setMessage("");
+    try {
+      startAiProgress(aiSeries.length, `Publicando serie 1/${aiSeries.length}…`);
+      for (let index = 0; index < aiSeries.length; index += 1) {
+        const idea = aiSeries[index];
+        updateAiProgress(index + 1, aiSeries.length, `Publicando ${index + 1}/${aiSeries.length}: ${idea.title || "sin título"}`);
+        await createIdeaAsContent(idea, true, { silent: true, skipReload: true, skipBusy: true, skipSectionChange: true });
+      }
+      setMessage(`Serie publicada correctamente. ${aiSeries.length} piezas enviadas a Instagram.`);
+      setSection("publicaciones");
       await load();
     } catch (e: any) {
-      setError(e?.message || (publishNow ? "No se pudo publicar el contenido" : "No se pudo guardar el contenido"));
+      setError(e?.message || "No se pudo publicar la serie completa");
     } finally {
+      clearAiProgress();
       setBusy("");
     }
   }
@@ -1199,7 +1227,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
               <div className={styles.cardTitle}><div><h3>Resultado IA</h3><p>La IA ya te lo devuelve montado. Desde aquí puedes revisarlo, regenerarlo o pasarlo al editor.</p></div></div>
               {aiSeries.length ? <div className={styles.aiSeriesWrap}>
                 {aiSeriesSummary && <div className={styles.weekSummary}><b>Estrategia:</b> {aiSeriesSummary}</div>}
-                <div className={styles.seriesHeader}><b>{aiSeries.length} piezas generadas</b><button className={styles.primary} disabled={busy === "ai-series-save"} onClick={() => void saveSeriesToDrafts()}><FolderOpen size={15} /> {busy === "ai-series-save" ? "Guardando…" : "Guardar serie en borradores"}</button></div>
+                <div className={styles.seriesHeader}><b>{aiSeries.length} piezas generadas</b><div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-series-save"} onClick={() => void saveSeriesToDrafts()}><FolderOpen size={15} /> {busy === "ai-series-save" ? "Guardando…" : "Guardar serie en borradores"}</button><button className={styles.primary} disabled={busy === "ai-series-publish" || !connection} onClick={() => void publishSeries()}><Send size={15} /> {busy === "ai-series-publish" ? "Publicando serie…" : "Publicar serie"}</button></div></div>
                 <div className={styles.aiSeriesGrid}>{aiSeries.map((idea, idx) => <article key={`${idea.title}-${idx}`} className={styles.aiSeriesCard}>
                   {idea.media_url && (idea.media_kind === "video" || isVideoType(idea.content_type) ? <video src={idea.media_url} controls playsInline preload="metadata" /> : <img src={idea.media_url} alt={idea.title} />)}
                   <span>{contentLabel(provider, idea.content_type)}</span>
@@ -1316,7 +1344,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       {section === "conexion" && <section className={styles.card}><div className={styles.connectionPanel}><div className={styles.connectionIcon}><Icon size={32} /></div><div><h3>Conexión oficial de {brand.name}</h3><p>OAuth propio de Tarot Celestial. Las credenciales y tokens se guardan cifrados en servidor y nunca se exponen al navegador.</p></div><span className={`${styles.bigState} ${connection ? styles.connected : ""}`}>{connection ? "CONECTADO" : "SIN CONECTAR"}</span></div><div className={styles.connectionRows}><div><span>Variables de entorno</span><b>{configured ? "Configuradas" : "Pendientes"}</b></div><div><span>Cuenta</span><b>{connection ? `@${connection.username || connection.display_name || "autorizada"}` : "—"}</b></div><div><span>Token</span><b>{connection?.token_expires_at ? `Caduca ${fmt(connection.token_expires_at)}` : "—"}</b></div></div><div className={styles.actions}>{connection ? <><button className={styles.secondary} onClick={() => void connect()} disabled={busy === "connect"}><RefreshCw size={16} />Reconectar</button><button className={styles.danger} onClick={() => void disconnect()} disabled={busy === "disconnect"}>Desconectar</button></> : <button className={styles.primary} onClick={() => void connect()} disabled={!configured || busy === "connect"}><Link2 size={16} />Conectar {brand.name}</button>}</div></section>}
 
       {loading && <div className={styles.loading}><RefreshCw className={styles.spin} size={18} />Actualizando datos…</div>}
-      {aiProgress && ["ai-week-schedule", "ai-flex-schedule", "ai-single", "ai-image", "ai-series-save"].includes(busy) && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} /><div><b>{aiProgressTotal > 0 ? `${aiProgressCurrent}/${aiProgressTotal}` : "Procesando"}</b><span>{aiProgress}</span></div></div>}
+      {aiProgress && ["ai-week-schedule", "ai-flex-schedule", "ai-single", "ai-image", "ai-series-save", "ai-series-publish"].includes(busy) && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} /><div><b>{aiProgressTotal > 0 ? `${aiProgressCurrent}/${aiProgressTotal}` : "Procesando"}</b><span>{aiProgress}</span></div></div>}
     </div>
   );
 }
