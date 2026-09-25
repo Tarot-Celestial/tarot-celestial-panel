@@ -1,5 +1,10 @@
 import "server-only";
 import { randomUUID } from "crypto";
+import { promises as fs } from "fs";
+import os from "os";
+import path from "path";
+import { promisify } from "util";
+import { execFile } from "child_process";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SocialProvider } from "@/lib/server/social-connections";
 
@@ -31,6 +36,30 @@ function runwayApiKey() {
 }
 function runwayModel() {
   return process.env.RUNWAY_VIDEO_MODEL?.trim() || "gen4.5";
+}
+
+const execFileAsync = promisify(execFile);
+
+function storyMusicUrl() {
+  return process.env.SOCIAL_STORY_AUDIO_URL?.trim() || "";
+}
+
+function storyMusicEnabled() {
+  return /^(1|true|yes)$/i.test(process.env.SOCIAL_STORY_ENABLE_MUSIC?.trim() || "true");
+}
+
+function storyVideoDuration() {
+  const n = Number(process.env.SOCIAL_STORY_VIDEO_DURATION || 7);
+  return Number.isFinite(n) ? Math.max(5, Math.min(15, n)) : 7;
+}
+
+function storyMusicVolume() {
+  const n = Number(process.env.SOCIAL_STORY_AUDIO_VOLUME || 0.75);
+  return Number.isFinite(n) ? Math.max(0.1, Math.min(1.5, n)) : 0.75;
+}
+
+function shouldRenderStoryVideo(provider: SocialProvider, contentType?: string) {
+  return provider === "instagram" && String(contentType || "").toLowerCase() === "story" && storyMusicEnabled() && Boolean(storyMusicUrl());
 }
 
 function extractResponseText(json: any) {
@@ -180,7 +209,7 @@ export async function generateSingleSocialContent(input: {
   return structuredResponse(
     "tarot_celestial_social_post",
     singleSchema,
-    `Crea una pieza para ${input.provider}. Formatos permitidos: ${allowed}. Si se pide Reel/vídeo, devuelve también un guion accionable; si es imagen, reel_script puede quedar vacío. El visual_prompt debe describir una creatividad lista para generar con IA, sin inventar datos comerciales. Si el formato es story, el visual_prompt debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. IMPORTANTE: en las stories todo el mensaje debe ir integrado dentro de la imagen; no dependas de texto externo. Para stories devuelve caption="" y cta="" salvo que el usuario pida explícitamente un texto aparte. Si el formato es post, debe ser visualmente potente y de alto contraste.` ,
+    `Crea una pieza para ${input.provider}. Formatos permitidos: ${allowed}. Si se pide Reel/vídeo, devuelve también un guion accionable; si es imagen, reel_script puede quedar vacío. El visual_prompt debe describir una creatividad lista para generar con IA, sin inventar datos comerciales. Si el formato es story, el visual_prompt debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. Hazla visualmente más premium, magnética y moderna, con composición impactante, brillo sutil, jerarquía fuerte, CTA integrado dentro de la pieza y aspecto muy compartible. IMPORTANTE: en las stories todo el mensaje debe ir integrado dentro de la imagen; no dependas de texto externo. Para stories devuelve caption="" y cta="" salvo que el usuario pida explícitamente un texto aparte. Si el formato es post, debe ser visualmente potente y de alto contraste.` ,
     JSON.stringify(input),
   );
 }
@@ -200,7 +229,7 @@ export async function generateSocialSeries(input: {
   return structuredResponse(
     "tarot_celestial_social_series",
     seriesSchema,
-    `Crea una serie de ${piecesCount} piezas para ${input.provider}. Formatos permitidos: ${allowed}. Todas las piezas deben compartir coherencia de estilo y tema, pero no duplicarse. Cada pieza debe aportar un ángulo distinto. Si el usuario pide una serie sobre horóscopos, signos o zodiaco, reparte bien la serie entre signos, grupos de signos, elementos o ideas complementarias para que parezca una colección real. Si se piden stories, el visual_prompt de cada pieza debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. IMPORTANTE: en las stories todo el mensaje debe ir integrado dentro de la imagen; no dependas de texto externo. Para stories devuelve caption="" y cta="" salvo que el usuario pida explícitamente un texto aparte. Si se piden reels/vídeos, cada reel_script debe ser accionable y visualmente potente.`,
+    `Crea una serie de ${piecesCount} piezas para ${input.provider}. Formatos permitidos: ${allowed}. Todas las piezas deben compartir coherencia de estilo y tema, pero no duplicarse. Cada pieza debe aportar un ángulo distinto. Si el usuario pide una serie sobre horóscopos, signos o zodiaco, reparte bien la serie entre signos, grupos de signos, elementos o ideas complementarias para que parezca una colección real. Si se piden stories, el visual_prompt de cada pieza debe pedir una historia vertical 9:16 muy llamativa, bien encuadrada, con tipografía grande y legible, jerarquía clara, composición completa hasta el borde, sin cajas vacías ni huecos innecesarios, y con márgenes seguros para la interfaz de Instagram. Hazla visualmente más premium, magnética y moderna, con composición impactante, brillo sutil, jerarquía fuerte, CTA integrado dentro de la pieza y aspecto muy compartible. IMPORTANTE: en las stories todo el mensaje debe ir integrado dentro de la imagen; no dependas de texto externo. Para stories devuelve caption="" y cta="" salvo que el usuario pida explícitamente un texto aparte. Si se piden reels/vídeos, cada reel_script debe ser accionable y visualmente potente.`,
     JSON.stringify({ ...input, piecesCount }),
   );
 }
@@ -314,6 +343,49 @@ async function downloadBuffer(url: string) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+async function renderStoryVideoFromImage(imageBuffer: Buffer) {
+  const music = storyMusicUrl();
+  if (!music) return null;
+  const audioBuffer = await downloadBuffer(music);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tc-story-"));
+  const imagePath = path.join(tempDir, "story.png");
+  const audioPath = path.join(tempDir, "music.mp3");
+  const outputPath = path.join(tempDir, "story.mp4");
+  await fs.writeFile(imagePath, imageBuffer);
+  await fs.writeFile(audioPath, audioBuffer);
+  const duration = storyVideoDuration();
+  const fps = 25;
+  const frames = duration * fps;
+  const filter = [
+    `scale=1080:1920:force_original_aspect_ratio=increase`,
+    `crop=1080:1920`,
+    `zoompan=z='min(zoom+0.0009,1.08)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=1080x1920:fps=${fps}`,
+    `format=yuv420p`
+  ].join(',');
+  try {
+    await execFileAsync("ffmpeg", [
+      "-y",
+      "-loop", "1",
+      "-i", imagePath,
+      "-i", audioPath,
+      "-t", String(duration),
+      "-vf", filter,
+      "-af", `volume=${storyMusicVolume()}`,
+      "-r", String(fps),
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-pix_fmt", "yuv420p",
+      "-c:a", "aac",
+      "-b:a", "160k",
+      "-shortest",
+      outputPath,
+    ]);
+    return await fs.readFile(outputPath);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+  }
+}
+
 export async function generateAndStoreSocialImage(input: {
   provider: SocialProvider;
   prompt: string;
@@ -325,31 +397,66 @@ export async function generateAndStoreSocialImage(input: {
 }) {
   const size = input.format === "landscape" ? "1536x1024" : input.format === "vertical" ? "1024x1536" : "1024x1024";
   const quality = input.quality || "medium";
-  const enhancedPrompt = `${BRAND_RULES}\nGenera SOLO la pieza visual. ${input.prompt}\nComposición profesional para redes sociales. Si incluyes texto, debe ser corto, en español y perfectamente legible. No inventes precios ni promociones que no aparezcan literalmente en el prompt.`;
+  const isStory = String(input.contentType || "").toLowerCase() === "story";
+  const formatPrompt = isStory
+    ? "Es una historia de Instagram final. Debe ser 9:16, con gancho inmediato, estética premium, composición centrada y muy llamativa, texto grande y perfectamente legible, CTA integrado en la imagen, sin huecos vacíos y con margen seguro para la interfaz superior e inferior de Instagram."
+    : "Composición profesional para redes sociales.";
+  const enhancedPrompt = `${BRAND_RULES}
+Genera SOLO la pieza visual. ${formatPrompt} ${input.prompt}
+Si incluyes texto, debe ser corto, en español y perfectamente legible. No inventes precios ni promociones que no aparezcan literalmente en el prompt.`;
   const buffer = await generateImageBase64(enhancedPrompt, size, quality);
   const bucket = process.env.SOCIAL_MEDIA_BUCKET?.trim() || "tc-social-media";
   const db = supabaseAdmin();
-  const path = `${input.provider}/ai/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.png`;
-  const { error: uploadError } = await db.storage.from(bucket).upload(path, buffer, {
+  const basePath = `${input.provider}/ai/${new Date().toISOString().slice(0, 10)}/${randomUUID()}`;
+  const imagePath = `${basePath}.png`;
+  const { error: uploadError } = await db.storage.from(bucket).upload(imagePath, buffer, {
     contentType: "image/png",
     cacheControl: "31536000",
     upsert: false,
   });
   if (uploadError) throw new Error(`No se pudo guardar la imagen IA en Supabase Storage: ${uploadError.message}`);
-  const { data: publicData } = db.storage.from(bucket).getPublicUrl(path);
-  const publicUrl = publicData?.publicUrl;
-  if (!publicUrl) throw new Error("Supabase no devolvió URL pública para la imagen IA.");
+  const { data: publicData } = db.storage.from(bucket).getPublicUrl(imagePath);
+  const imageUrl = publicData?.publicUrl;
+  if (!imageUrl) throw new Error("Supabase no devolvió URL pública para la imagen IA.");
+
+  if (shouldRenderStoryVideo(input.provider, input.contentType)) {
+    const videoBuffer = await renderStoryVideoFromImage(buffer);
+    if (videoBuffer) {
+      const videoPath = `${basePath}.mp4`;
+      const { error: videoUploadError } = await db.storage.from(bucket).upload(videoPath, videoBuffer, {
+        contentType: "video/mp4",
+        cacheControl: "31536000",
+        upsert: false,
+      });
+      if (videoUploadError) throw new Error(`No se pudo guardar la story con música en Supabase Storage: ${videoUploadError.message}`);
+      const { data: videoPublicData } = db.storage.from(bucket).getPublicUrl(videoPath);
+      const videoUrl = videoPublicData?.publicUrl;
+      if (!videoUrl) throw new Error("Supabase no devolvió URL pública para la story con música.");
+      await db.from("tc_social_library").insert({
+        provider: input.provider,
+        label: input.label || "Story IA con música",
+        media_type: "video",
+        url: videoUrl,
+        thumbnail_url: imageUrl,
+        mime_type: "video/mp4",
+        metadata: { ai_generated: true, model: imageModel(), prompt: input.prompt, format: input.format || "vertical", quality, engine: "openai+ffmpeg", story_music: true, story_music_url: storyMusicUrl(), duration: storyVideoDuration() },
+        created_by: input.createdBy || null,
+      });
+      return { url: videoUrl, path: videoPath, bucket, model: imageModel(), media_type: "video", thumbnail_url: imageUrl, story_music: true, duration: storyVideoDuration() };
+    }
+  }
+
   await db.from("tc_social_library").insert({
     provider: input.provider,
     label: input.label || "Creatividad IA",
     media_type: "image",
-    url: publicUrl,
-    thumbnail_url: publicUrl,
+    url: imageUrl,
+    thumbnail_url: imageUrl,
     mime_type: "image/png",
     metadata: { ai_generated: true, model: imageModel(), prompt: input.prompt, format: input.format || "square", quality, engine: "openai" },
     created_by: input.createdBy || null,
   });
-  return { url: publicUrl, path, bucket, model: imageModel() };
+  return { url: imageUrl, path: imagePath, bucket, model: imageModel(), media_type: "image", thumbnail_url: imageUrl, story_music: false };
 }
 
 export async function generateAndStoreSocialVideo(input: {
