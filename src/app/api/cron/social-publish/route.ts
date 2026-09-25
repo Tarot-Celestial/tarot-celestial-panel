@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { publishSocialContentById, refreshTikTokStatusForContent } from "@/lib/server/social-publishing";
 import { maybeCaptureSocialSnapshots } from "@/lib/server/social-analytics";
 export const runtime="nodejs";
+export const maxDuration = 300;
 async function run(req:Request){
   const secret=process.env.CRON_SECRET;const auth=req.headers.get("authorization");
   if(!secret||auth!==`Bearer ${secret}`)return NextResponse.json({ok:false,error:"UNAUTHORIZED"},{status:401});

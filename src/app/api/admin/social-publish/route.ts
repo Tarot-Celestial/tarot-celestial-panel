@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { publishSocialContentById, refreshTikTokStatusForContent } from "@/lib/server/social-publishing";
 export const runtime = "nodejs";
+export const maxDuration = 300;
 export async function POST(req: Request) {
   try {
     const auth = await requireAdmin(req);

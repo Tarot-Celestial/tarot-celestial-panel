@@ -90,13 +90,41 @@ async function createInstagramContainer(accountId: string, token: string, params
 }
 
 async function waitInstagramContainer(containerId: string, token: string) {
-  for (let i = 0; i < 7; i += 1) {
+  let lastStatus = "UNKNOWN";
+  for (let i = 0; i < 20; i += 1) {
     const q = new URLSearchParams({ fields: "status_code,status", access_token: token });
     const result = await igFetch(`${containerId}?${q.toString()}`, token);
-    if (result?.status_code === "FINISHED") return;
-    if (result?.status_code === "ERROR" || result?.status_code === "EXPIRED") throw new Error(result?.status || "Instagram no pudo procesar el contenido");
-    await new Promise((resolve) => setTimeout(resolve, 1800));
+    lastStatus = String(result?.status_code || result?.status || "UNKNOWN").toUpperCase();
+    if (lastStatus === "FINISHED" || lastStatus === "PUBLISHED") return;
+    if (lastStatus === "ERROR" || lastStatus === "EXPIRED") {
+      throw new Error(result?.status || `Instagram no pudo procesar el contenido (${lastStatus})`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, i < 4 ? 1200 : 2000));
   }
+  throw new Error(`Instagram todavía está procesando el contenido (${lastStatus}). Inténtalo de nuevo en unos segundos.`);
+}
+
+function isInstagramMediaNotReadyError(error: any) {
+  const message = String(error?.message || error || "").toLowerCase();
+  return message.includes("media id is not available") || message.includes("media is not ready") || message.includes("2207027");
+}
+
+async function publishInstagramContainer(accountId: string, token: string, creationId: string) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const body = new URLSearchParams({ creation_id: creationId, access_token: token });
+      return await igFetch(`${accountId}/media_publish`, token, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+    } catch (error: any) {
+      if (!isInstagramMediaNotReadyError(error) || attempt === 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 2500 + attempt * 1000));
+      await waitInstagramContainer(creationId, token);
+    }
+  }
+  throw new Error("Instagram no pudo publicar el contenedor.");
 }
 
 async function publishInstagram(row: SocialContentRow) {
@@ -117,7 +145,9 @@ async function publishInstagram(row: SocialContentRow) {
       const child = await createInstagramContainer(accountId, token, isVideo
         ? { media_type: "VIDEO", video_url: url, is_carousel_item: "true" }
         : { image_url: url, is_carousel_item: "true" });
-      children.push(String(child.id));
+      const childId = String(child.id);
+      await waitInstagramContainer(childId, token);
+      children.push(childId);
     }
     const parent = await createInstagramContainer(accountId, token, {
       media_type: "CAROUSEL",
@@ -125,6 +155,7 @@ async function publishInstagram(row: SocialContentRow) {
       caption,
     });
     creationId = String(parent.id);
+    await waitInstagramContainer(creationId, token);
   } else if (row.content_type === "reel") {
     const created = await createInstagramContainer(accountId, token, {
       media_type: "REELS",
@@ -140,14 +171,14 @@ async function publishInstagram(row: SocialContentRow) {
       ? { media_type: "STORIES", video_url: media[0] }
       : { media_type: "STORIES", image_url: media[0] });
     creationId = String(created.id);
-    if (isVideo) await waitInstagramContainer(creationId, token);
+    await waitInstagramContainer(creationId, token);
   } else {
     const created = await createInstagramContainer(accountId, token, { image_url: media[0], caption });
     creationId = String(created.id);
+    await waitInstagramContainer(creationId, token);
   }
 
-  const body = new URLSearchParams({ creation_id: creationId, access_token: token });
-  const published = await igFetch(`${accountId}/media_publish`, token, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+  const published = await publishInstagramContainer(accountId, token, creationId);
   return { externalPostId: String(published.id || ""), externalPublishId: creationId, raw: published };
 }
 
