@@ -36,7 +36,7 @@ const NODE_SPECS: NodeSpec[] = [
   },
   {
     id: "team",
-    tables: ["workers", "worker_schedules", "attendance_state", "attendance_events"],
+    tables: ["workers", "worker_schedules", "attendance_state", "attendance_events", "attendance_incidents", "attendance_incident_recoveries", "attendance_incident_justifications"],
   },
   {
     id: "realtime",
