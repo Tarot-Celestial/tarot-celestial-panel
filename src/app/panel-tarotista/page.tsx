@@ -485,13 +485,13 @@ export default function Tarotista() {
     (incidents || []).slice(0, 3).forEach((inc: any, idx: number) => {
       rows.push({
         id: `incident-${inc.id || idx}`,
-        tone: "red",
-        section: "Incidencias",
+        tone: String(inc.kind || "") === "attendance_jornada" ? (Number(inc.meta?.pending_minutes || 0) > 0 ? "gold" : "green") : "red",
+        section: String(inc.kind || "") === "attendance_jornada" ? "Jornada" : "Incidencias",
         title: String(inc.title || inc.reason || "Incidencia del mes"),
-        detail: String(inc.reason || "Revisión recomendada desde el resumen de factura."),
+        detail: String(inc.kind || "") === "attendance_jornada" ? `${inc.reason || "Incidencia de jornada"} · ${Number(inc.meta?.pending_minutes || 0)} min pendientes` : String(inc.reason || "Revisión recomendada desde el resumen de factura."),
         actionLabel: "Ver incidencias",
         actionTab: "facturas",
-        meta: canSeeMoney ? `Impacto ${eur(Number(inc.amount || 0))}` : "Impacto oculto",
+        meta: String(inc.kind || "") === "attendance_jornada" ? `${Number(inc.meta?.recovered_minutes || 0)} min recuperados · sin impacto económico automático` : canSeeMoney ? `Impacto ${eur(Number(inc.amount || 0))}` : "Impacto oculto",
       });
     });
 
