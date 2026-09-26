@@ -1,0 +1,30 @@
+name: Brain Phase 5 Artifact
+on:
+  push:
+    branches:
+      - brain-phase5-observabilidad-produccion
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cerebro-celestial-fase-5-observabilidad
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            SQL_CEREBRO_FASE_5_OBSERVABILIDAD.sql
+            src/lib/server/brain-observability.ts
+            src/lib/server/cliente-platform.ts
+            src/app/api/admin/cerebro/health/route.ts
+            src/app/api/admin/client-web/route.ts
+            src/app/api/cliente/activity/ping/route.ts
+            src/app/api/cliente/oraculo/route.ts
+            src/features/brain/CelestialBrain.tsx
+            src/features/brain/CelestialBrain.module.css
