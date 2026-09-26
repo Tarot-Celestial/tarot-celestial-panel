@@ -1,0 +1,30 @@
+name: Export Fase 7 Corrected ZIP
+on:
+  push:
+    branches:
+      - export/fase7-corrected-zip
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare corrected Phase 7 package
+        run: |
+          mkdir -p package/src/app/api/admin/cerebro
+          mkdir -p package/src/features/brain
+          cp src/app/api/admin/cerebro/health/route.ts package/src/app/api/admin/cerebro/health/route.ts
+          cp src/features/brain/CelestialBrain.tsx package/src/features/brain/CelestialBrain.tsx
+          cp src/features/brain/CelestialBrain.module.css package/src/features/brain/CelestialBrain.module.css
+          cp src/features/brain/BrainPreventivePanel.tsx package/src/features/brain/BrainPreventivePanel.tsx
+          cp src/features/brain/BrainPreventivePanel.module.css package/src/features/brain/BrainPreventivePanel.module.css
+          cp src/features/brain/celestial-brain-forecast.ts package/src/features/brain/celestial-brain-forecast.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cerebro_Celestial_FASE_7_CORREGIDO
+          path: package
+          if-no-files-found: error
+          compression-level: 9
