@@ -31,6 +31,8 @@ import {
   Search,
   ShieldAlert,
   ShieldCheck,
+  TriangleAlert,
+  Workflow,
   Sparkles,
   Users,
   X,
@@ -66,6 +68,18 @@ type LiveNode = {
   probes: Probe[];
 };
 
+type BrainDiagnostic = {
+  id: string;
+  severity: "attention" | "error";
+  title: string;
+  summary: string;
+  root_node_id: string;
+  affected_node_ids: string[];
+  chain: string[];
+  evidence: string[];
+  recommendation: string;
+};
+
 type BrainHealthPayload = {
   ok: boolean;
   generated_at: string;
@@ -76,6 +90,13 @@ type BrainHealthPayload = {
     attention_nodes: number;
     error_nodes: number;
     total_nodes: number;
+  };
+  diagnostics?: BrainDiagnostic[];
+  diagnostics_summary?: {
+    active: number;
+    critical: number;
+    attention: number;
+    monitored_paths: number;
   };
   runtime?: {
     vercel_env?: string | null;
@@ -200,6 +221,11 @@ export default function CelestialBrain() {
     [nodeById, selectedId]
   );
   const selectedLive = health?.nodes?.[selected.id] || null;
+  const diagnostics = health?.diagnostics || [];
+  const affectedNodeIds = useMemo(
+    () => new Set(diagnostics.flatMap((item) => item.affected_node_ids)),
+    [diagnostics]
+  );
   const selectedContext = detailContext[selected.status];
   const ContextIcon = selectedContext.icon;
 
@@ -255,6 +281,10 @@ export default function CelestialBrain() {
       value: health ? `${health.duration_ms} ms` : "—",
       label: "latencia pulso",
     },
+    {
+      value: health ? String(health.diagnostics_summary?.active ?? diagnostics.length) : "—",
+      label: "diagnósticos activos",
+    },
   ];
 
   return (
@@ -278,6 +308,52 @@ export default function CelestialBrain() {
           {auditItems.map((item) => <div key={item.label}><strong>{item.value}</strong><span>{item.label}</span></div>)}
         </div>
       </header>
+
+      {health ? (
+        <section className={`${styles.diagnosticPanel} ${diagnostics.length ? styles.diagnosticPanelActive : styles.diagnosticPanelHealthy}`}>
+          <div className={styles.diagnosticHeader}>
+            <div>
+              <span className={styles.diagnosticKicker}><Workflow size={14} /> DIAGNÓSTICO DE DEPENDENCIAS</span>
+              <h2>{diagnostics.length ? "El Cerebro detectó rutas que requieren atención" : "Todas las rutas monitorizadas responden"}</h2>
+              <p>
+                {diagnostics.length
+                  ? "Relacionamos la conexión que falla con los sistemas que puede afectar para evitar corregir síntomas aislados."
+                  : `${health.diagnostics_summary?.monitored_paths ?? 0} cadenas críticas monitorizadas sin incidencias activas.`}
+              </p>
+            </div>
+            <div className={styles.diagnosticCounter}>
+              <strong>{health.diagnostics_summary?.critical ?? 0}</strong>
+              <span>críticos</span>
+              <strong>{health.diagnostics_summary?.attention ?? 0}</strong>
+              <span>atención</span>
+            </div>
+          </div>
+
+          {diagnostics.length ? (
+            <div className={styles.diagnosticGrid}>
+              {diagnostics.map((diagnostic) => (
+                <button
+                  type="button"
+                  key={diagnostic.id}
+                  className={`${styles.diagnosticCard} ${diagnostic.severity === "error" ? styles.diagnosticError : styles.diagnosticAttention}`}
+                  onClick={() => {
+                    setSelectedId(diagnostic.root_node_id);
+                    setDetailOpen(true);
+                  }}
+                >
+                  <span className={styles.diagnosticCardIcon}><TriangleAlert size={17} /></span>
+                  <span className={styles.diagnosticCardBody}>
+                    <strong>{diagnostic.title}</strong>
+                    <small>{diagnostic.summary}</small>
+                    <span className={styles.diagnosticChain}>{diagnostic.chain.join(" → ")}</span>
+                  </span>
+                  <span className={styles.diagnosticCardMeta}>{diagnostic.affected_node_ids.length} nodos</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className={styles.workspace}>
         <div className={styles.toolbar}>
@@ -322,7 +398,8 @@ export default function CelestialBrain() {
                 const x2 = to.position.x + 130;
                 const y2 = to.position.y + 70;
                 const mid = (x1 + x2) / 2;
-                return <path key={connection.to} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} />;
+                const impacted = affectedNodeIds.has(connection.from) && affectedNodeIds.has(connection.to);
+                return <path className={impacted ? styles.impactedConnection : undefined} key={connection.to} d={`M ${x1} ${y1} C ${mid} ${y1}, ${mid} ${y2}, ${x2} ${y2}`} />;
               })}
             </svg>
 
@@ -335,7 +412,7 @@ export default function CelestialBrain() {
                 <button
                   type="button"
                   key={node.id}
-                  className={`${styles.node} ${node.id === "core" ? styles.coreNode : ""} ${selectedId === node.id ? styles.selectedNode : ""} ${hidden ? styles.filteredNode : ""}`}
+                  className={`${styles.node} ${node.id === "core" ? styles.coreNode : ""} ${selectedId === node.id ? styles.selectedNode : ""} ${affectedNodeIds.has(node.id) ? styles.impactedNode : ""} ${hidden ? styles.filteredNode : ""}`}
                   style={{ left: node.position.x, top: node.position.y, "--status": meta.color } as CSSProperties}
                   onClick={() => selectNode(node)}
                   aria-pressed={selectedId === node.id}
@@ -393,6 +470,17 @@ export default function CelestialBrain() {
                   </div>
                 </section>
               ) : null}
+
+              {diagnostics.filter((item) => item.affected_node_ids.includes(selected.id)).map((diagnostic) => (
+                <section key={diagnostic.id} className={`${styles.nodeDiagnostic} ${diagnostic.severity === "error" ? styles.nodeDiagnosticError : styles.nodeDiagnosticAttention}`}>
+                  <div className={styles.nodeDiagnosticTitle}><TriangleAlert size={15} /><strong>{diagnostic.title}</strong></div>
+                  <p>{diagnostic.summary}</p>
+                  <div className={styles.nodeDiagnosticChain}>{diagnostic.chain.join(" → ")}</div>
+                  {diagnostic.evidence.map((evidence) => <small key={evidence}>{evidence}</small>)}
+                  <b>Acción sugerida</b>
+                  <p>{diagnostic.recommendation}</p>
+                </section>
+              ))}
 
               <div className={styles.chips}>{selected.children.map((child) => <span key={child}>{child}</span>)}</div>
               <DetailList icon={Boxes} title="Componentes" values={selected.components} />
