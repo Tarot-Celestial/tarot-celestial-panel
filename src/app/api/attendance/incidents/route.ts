@@ -166,10 +166,16 @@ export async function POST(req: Request) {
       const reason = String(body.reason_code || "").trim();
       const detail = String(body.reason_detail || "").trim();
       const notes = String(body.notes || "").trim();
+      const settings = await gate.admin.from("attendance_incident_settings").select("require_notes,reasons").eq("id", 1).maybeSingle();
+      if (settings.error) throw settings.error;
       if (!workerId || !validDate(date) || !validTime(start) || !validTime(end) || !reason) {
         return json({ ok: false, error: "Completa trabajador, fecha, horario y motivo." }, 400);
       }
       if (start === end || minutesBetween(start, end) <= 0) return json({ ok: false, error: "El horario afectado no es válido." }, 400);
+      if (settings.data?.require_notes && !notes) return json({ ok: false, error: "Las observaciones son obligatorias según la configuración actual." }, 400);
+      if (Array.isArray(settings.data?.reasons) && settings.data.reasons.length && !settings.data.reasons.includes(reason)) {
+        return json({ ok: false, error: "El motivo seleccionado ya no está disponible. Recarga la vista." }, 409);
+      }
       const target = await gate.admin.from("workers").select("id,role").eq("id", workerId).eq("role", "tarotista").maybeSingle();
       if (target.error) throw target.error;
       if (!target.data) return json({ ok: false, error: "Tarotista no encontrada." }, 404);
@@ -209,6 +215,16 @@ export async function POST(req: Request) {
       if (!incidentId || !validDate(date) || !validTime(start) || !validTime(end) || start === end) {
         return json({ ok: false, error: "Completa fecha y horario de recuperación." }, 400);
       }
+      const current = await gate.admin.from("v_attendance_incidents").select("pending_minutes").eq("id", incidentId).maybeSingle();
+      if (current.error) throw current.error;
+      if (!current.data) return json({ ok: false, error: "Incidencia no encontrada." }, 404);
+      const recoverySettings = await gate.admin.from("attendance_incident_settings").select("allow_partial_recovery").eq("id", 1).maybeSingle();
+      if (recoverySettings.error) throw recoverySettings.error;
+      const recoveryMinutes = minutesBetween(start, end);
+      if (recoverySettings.data?.allow_partial_recovery === false && recoveryMinutes !== Number(current.data.pending_minutes || 0)) {
+        return json({ ok: false, error: "La recuperación parcial está desactivada. Debes registrar exactamente todas las horas pendientes." }, 409);
+      }
+
       const result = await gate.admin.rpc("attendance_add_recovery", {
         p_incident_id: incidentId,
         p_recovery_date: date,
