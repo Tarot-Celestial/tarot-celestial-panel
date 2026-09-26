@@ -5,6 +5,7 @@ import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
 import { buildClienteAliasEmail, ensureClienteAuthUser, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 import { getClientPushSubscriptions, sendPushToSubscriptions } from "@/lib/server/web-push";
 import { classifyBrainIncident, recordBrainIncident } from "@/lib/server/brain-observability";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -473,19 +474,16 @@ export async function GET(req: Request) {
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
     console.error("[client-web:get]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
-    const gate = await requireAdmin(req).catch(() => null);
-    if (gate?.ok) {
-      await recordBrainIncident(
-        gate.admin,
-        classifyBrainIncident(error, {
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(error, {
           source: "vercel",
           subsystem: "clients",
           route: "/api/admin/client-web",
           title: "Lectura de Clientes web degradada",
           affectedNodeIds: ["clients", "core"],
         })
-      );
-    }
+    );
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_WEB" }, { status: 500 });
   }
 }
@@ -758,19 +756,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "INVALID_ACTION" }, { status: 400 });
   } catch (error: any) {
     console.error("[client-web:post]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
-    const gate = await requireAdmin(req).catch(() => null);
-    if (gate?.ok) {
-      await recordBrainIncident(
-        gate.admin,
-        classifyBrainIncident(error, {
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(error, {
           source: "vercel",
           subsystem: "clients",
           route: "/api/admin/client-web",
           title: "Acción de Clientes web degradada",
           affectedNodeIds: ["clients", "core"],
         })
-      );
-    }
+    );
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_WEB_ACTION" }, { status: 500 });
   }
 }
