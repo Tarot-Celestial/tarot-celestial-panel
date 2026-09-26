@@ -2,6 +2,7 @@
 
 import { ArrowDownRight, ArrowUpRight, Check, CircleDollarSign, Clock3, RotateCw, Sparkles, Star, Target, Trophy, WalletCards } from "lucide-react";
 import styles from "./TarotistaInvoiceDashboard.module.css";
+import AttendanceIncidentCenter from "@/components/attendance/AttendanceIncidentCenter";
 
 type Props = {
   month: string;
@@ -69,7 +70,7 @@ function GoalCard({ icon, title, current, target, reward, unit, tone }: {
 
 export default function TarotistaInvoiceDashboard(props: Props) {
   const { month, invoice, lines, insights, liveStats, canSeeMoney } = props;
-  const incidents = (props.incidents || []).filter(item => item.kind !== "attendance_info" && item.meta?.type !== "attendance_hours");
+  const incidents = (props.incidents || []).filter(item => !["attendance_info","attendance_jornada"].includes(String(item.kind || "")) && item.meta?.type !== "attendance_hours");
   const currentStored = insights?.current || {};
   const previous = insights?.previous || {};
   const hasPrevious = Boolean(previous?.exists);
@@ -210,8 +211,10 @@ export default function TarotistaInvoiceDashboard(props: Props) {
         )}
       </article>
 
+      <AttendanceIncidentCenter mode="readonly" month={month} compact />
+
       <article className={styles.incidents}>
-        <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>Control transparente</span><h2>Incidencias del mes</h2></div><span>{incidents?.length || 0}</span></div>
+        <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>Control económico</span><h2>Incidencias económicas del mes</h2></div><span>{incidents?.length || 0}</span></div>
         {!incidents?.length ? <div className={styles.clean}><Check size={18} /> No tienes incidencias registradas este mes.</div> : incidents.map((incident: any) => (
           <div className={styles.incident} key={incident.id}><span>{incident.title || incident.reason || "Incidencia"}</span><strong>{canSeeMoney ? `-${euro(incident.amount)}` : "Protegido"}</strong></div>
         ))}
