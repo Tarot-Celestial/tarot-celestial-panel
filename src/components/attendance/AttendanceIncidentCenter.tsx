@@ -122,7 +122,7 @@ export default function AttendanceIncidentCenter({
   const [status, setStatus] = useState("all");
   const [selectedWorker, setSelectedWorker] = useState(workerId || "");
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
-  const [dialog, setDialog] = useState<"create" | "recovery" | "justify" | "history" | "settings" | null>(null);
+  const [dialog, setDialog] = useState<"create" | "edit" | "recovery" | "justify" | "history" | "settings" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -184,6 +184,7 @@ export default function AttendanceIncidentCenter({
   };
 
   if (!data && busy) return <section className={styles.shell}><div className={styles.loading}><RefreshCw size={18} /> Cargando centro de incidencias…</div></section>;
+  if (readonly && data?.settings?.show_in_invoice === false) return null;
 
   return <section className={`${styles.shell} ${compact ? styles.compact : ""}`}>
     {!readonly && <header className={styles.hero}>
@@ -249,6 +250,7 @@ export default function AttendanceIncidentCenter({
         </div>
         {!readonly && <div className={styles.actions}>
           {incident.pending_minutes > 0 && <button onClick={() => { setSelectedIncident(incident); setDialog("recovery"); }}><Clock3 size={15}/> Registrar recuperación</button>}
+          <button onClick={() => { setSelectedIncident(incident); setDialog("edit"); }}><Wrench size={15}/> Editar</button>
           {incident.pending_minutes > 0 && (data?.role === "admin" || data?.settings?.allow_central_justify) && <button onClick={() => { setSelectedIncident(incident); setDialog("justify"); }}><ShieldCheck size={15}/> Justificar horas</button>}
           <button onClick={() => { setSelectedIncident(incident); setDialog("history"); }}><History size={15}/> Ver historial</button>
           {incident.pending_minutes === 0 && incident.status !== "closed" && <button onClick={() => void act({ action: "close", incident_id: incident.id }, "Incidencia cerrada.")}><CheckCircle2 size={15}/> Cerrar</button>}
@@ -261,10 +263,11 @@ export default function AttendanceIncidentCenter({
     {dialog && <div className={styles.backdrop} onMouseDown={e => { if (e.currentTarget === e.target) setDialog(null); }}>
       <div className={styles.modal}>
         <div className={styles.modalHead}><div><span className={styles.eyebrow}>INCIDENCIAS · TAROT CELESTIAL</span><h3>{
-          dialog === "create" ? "Nueva incidencia" : dialog === "recovery" ? "Registrar recuperación" : dialog === "justify" ? "Justificar horas" : dialog === "settings" ? "Configuración profesional" : "Historial de incidencia"
+          dialog === "create" ? "Nueva incidencia" : dialog === "edit" ? "Editar incidencia" : dialog === "recovery" ? "Registrar recuperación" : dialog === "justify" ? "Justificar horas" : dialog === "settings" ? "Configuración profesional" : "Historial de incidencia"
         }</h3></div><button onClick={() => setDialog(null)}><X size={18}/></button></div>
 
         {dialog === "create" && <CreateForm workers={workers} schedules={data?.schedules || []} reasons={data?.settings?.reasons || []} busy={busy} onSubmit={body => act(body, "Incidencia creada y sincronizada.")}/>}
+        {dialog === "edit" && selectedIncident && <EditForm incident={selectedIncident} reasons={data?.settings?.reasons || []} busy={busy} onSubmit={body => act(body, "Incidencia actualizada.")}/>}
         {dialog === "recovery" && selectedIncident && <RecoveryForm incident={selectedIncident} busy={busy} onSubmit={body => act(body, "Recuperación registrada.")}/>}
         {dialog === "justify" && selectedIncident && <JustifyForm incident={selectedIncident} busy={busy} onSubmit={body => act(body, "Horas justificadas.")}/>}
         {dialog === "history" && selectedIncident && <HistoryView incident={selectedIncident}/>}
@@ -294,6 +297,22 @@ function CreateForm({ workers, schedules, reasons, busy, onSubmit }: { workers: 
     {reason === "Otro" && <label>Describe el motivo<input value={detail} onChange={e => setDetail(e.target.value)} required /></label>}
     <label>Observaciones internas<textarea rows={4} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Contexto de la central, comunicación con la trabajadora, etc." /></label>
     <button className={styles.submit} disabled={busy}>{busy ? "Guardando…" : "Crear incidencia"}</button>
+  </form>;
+}
+
+function EditForm({ incident, reasons, busy, onSubmit }: { incident: Incident; reasons: string[]; busy: boolean; onSubmit: (body:any)=>void }) {
+  const [start,setStart]=useState(hm(incident.missed_start));
+  const [end,setEnd]=useState(hm(incident.missed_end));
+  const [reason,setReason]=useState(incident.reason_code);
+  const [detail,setDetail]=useState(incident.reason_detail || "");
+  const [notes,setNotes]=useState(incident.notes || "");
+  return <form className={styles.form} onSubmit={e=>{e.preventDefault();onSubmit({action:"edit",incident_id:incident.id,missed_start:start,missed_end:end,reason_code:reason,reason_detail:detail,notes});}}>
+    <div className={styles.context}><Wrench size={15}/> Editas la incidencia del <b>{dateLabel(incident.incident_date)}</b>. El historial anterior se conserva.</div>
+    <div className={styles.two}><label>Inicio afectado<input type="time" value={start} onChange={e=>setStart(e.target.value)} required/></label><label>Fin afectado<input type="time" value={end} onChange={e=>setEnd(e.target.value)} required/></label></div>
+    <label>Motivo<select value={reason} onChange={e=>setReason(e.target.value)}>{reasons.map(x=><option key={x}>{x}</option>)}</select></label>
+    {reason === "Otro" && <label>Describe el motivo<input value={detail} onChange={e=>setDetail(e.target.value)} required/></label>}
+    <label>Observaciones internas<textarea rows={4} value={notes} onChange={e=>setNotes(e.target.value)}/></label>
+    <button className={styles.submit} disabled={busy}>{busy ? "Guardando…" : "Guardar cambios"}</button>
   </form>;
 }
 
