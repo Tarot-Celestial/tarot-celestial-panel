@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import AttendanceHours from "@/components/attendance/AttendanceHours";
+import AttendanceIncidentCenter from "@/components/attendance/AttendanceIncidentCenter";
 import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
@@ -73,6 +74,7 @@ const ADMIN_NAV = [
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
   { key: "equipos-marcador", icon: Flame, label: "Equipos marcador", kicker: "Fuego vs Agua", tone: "goldPurple" },
   { key: "asistencia", icon: ShieldCheck, label: "Asistencia", kicker: "Control operativo", tone: "mint" },
+  { key: "incidencias", icon: ShieldCheck, label: "Incidencias", kicker: "Jornada y recuperaciones", tone: "goldPurple" },
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
   { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Mollie", tone: "gold" },
@@ -174,6 +176,7 @@ type TabKey =
   | "estadisticas"
   | "equipos-marcador"
   | "asistencia"
+  | "incidencias"
   | "trabajadores"
   | "clientes"
   | "pagos-web"
@@ -2145,7 +2148,9 @@ function AdminPage() {
                 <div className="tc-sub" style={{ marginTop: 10 }}>Cargando…</div>
               ) : (
                 <>
-                  {selWorker?.role === "tarotista" && selInvoice?.worker_id && <AttendanceHours month={selInvoice.month_key} workerId={selInvoice.worker_id} readOnly />}
+                  {selWorker?.role === "tarotista" && selInvoice?.worker_id && (
+                    <AttendanceIncidentCenter month={selInvoice.month_key} workerId={selInvoice.worker_id} mode="readonly" compact />
+                  )}
                   <div style={{ marginTop: 10 }} className="tc-sub">
                     <b>{selWorker?.display_name}</b> · {selWorker?.role} · Mes <b>{selInvoice?.month_key}</b>
                     <br />
@@ -2300,6 +2305,10 @@ function AdminPage() {
               <CentralReviewsAdminPanel />
             </div>
           )}
+          {tab === "incidencias" && (
+            <AttendanceIncidentCenter mode="admin" />
+          )}
+
           {tab === "asistencia" && (
             <div style={{ display: "grid", gap: 16 }}>
               <div className="tc-card">
