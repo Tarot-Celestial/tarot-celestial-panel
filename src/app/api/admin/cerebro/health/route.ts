@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { buildBrainDiagnostics, BRAIN_MONITORED_PATHS_COUNT } from "@/features/brain/celestial-brain-diagnostics";
+import { buildBrainForecast } from "@/features/brain/celestial-brain-forecast";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -343,6 +344,22 @@ export async function GET(req: Request) {
 
     const snapshotKey = `${currentCommit || "local"}:${generatedAt.slice(0, 16)}`;
     const durationMs = Date.now() - started;
+
+    const forecast = buildBrainForecast({
+      durationMs,
+      nodes,
+      incidents,
+      history: incidentHistory,
+      snapshots: previousSnapshots,
+      deploymentComparison: {
+        current_commit: currentCommit,
+        previous_commit: priorDeploymentSnapshot?.deployment_commit || null,
+        delta_open_incidents: priorDeploymentSnapshot
+          ? incidents.length - (Number(priorDeploymentSnapshot.open_incidents || 0) + Number(priorDeploymentSnapshot.recovering_incidents || 0))
+          : null,
+      },
+    });
+
     await admin.from("brain_health_snapshots").upsert({
       snapshot_key: snapshotKey,
       generated_at: generatedAt,
@@ -360,6 +377,11 @@ export async function GET(req: Request) {
       details: {
         diagnostics_active: diagnostics.length,
         incident_occurrences: incidents.reduce((sum: number, item: any) => sum + Number(item.occurrences || 0), 0),
+        forecast_score: forecast.score,
+        forecast_level: forecast.level,
+        node_latencies: Object.fromEntries(Object.entries(nodes).map(([id, node]: [string, any]) => [id, Number(node?.latency_ms || 0)])),
+        node_statuses: Object.fromEntries(Object.entries(nodes).map(([id, node]: [string, any]) => [id, String(node?.status || "unknown")])),
+        failed_probes: Object.fromEntries(Object.entries(nodes).map(([id, node]: [string, any]) => [id, (node?.probes || []).filter((probe: any) => !probe.ok).map((probe: any) => probe.name)])),
       },
     }, { onConflict: "snapshot_key" });
 
@@ -372,6 +394,7 @@ export async function GET(req: Request) {
         summary,
         diagnostics,
         diagnostics_summary: diagnosticsSummary,
+        prevention: forecast,
         observability: {
           window_hours: 24,
           active_window_hours: 6,
