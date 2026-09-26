@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { getOracleCreditBalance, ORACLE_PACKS } from "@/lib/server/oracle-premium";
 import { consumeOracleQuestion, getOracleQuestionBalance, ORACLE_QUESTION_PACK } from "@/lib/server/oracle-questions";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { classifyBrainIncident, recordBrainIncident } from "@/lib/server/brain-observability";
 import {
   TAROT_CARDS,
   answerTarotFollowup,
@@ -133,6 +135,16 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, freeAvailable: freeState.available, freeDailyAvailable: freeState.available, freeState, premiumCredits: credits, totalAvailable: credits + (freeState.available ? 1 : 0), creditsConfigured: true, credits, packs: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK, questionState, latestDraw: serializeDraw(latestDraw), activeSession: serializeSession(activeSession), mensajes: messages, deckSize: TAROT_CARDS.length, secretPrize });
   } catch (error: any) {
     console.error("[cliente/oraculo][GET]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(error, {
+        source: "vercel",
+        subsystem: "clients",
+        route: "/api/cliente/oraculo",
+        title: "Lectura del Oráculo degradada",
+        affectedNodeIds: ["clients", "core"],
+      })
+    );
     return NextResponse.json({ ok: false, error: "No hemos podido cargar el Oráculo. Inténtalo de nuevo." }, { status: 500 });
   }
 }
@@ -291,6 +303,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, respuesta, mensajes: await loadMessages(gate.admin, gate.cliente.id, freshDraw), questionState: await getQuestionState(gate.admin, gate.cliente.id, freshDraw) });
   } catch (error: any) {
     console.error("[cliente/oraculo][POST]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(error, {
+        source: "vercel",
+        subsystem: "clients",
+        route: "/api/cliente/oraculo",
+        title: "Operación del Oráculo degradada",
+        affectedNodeIds: ["clients", "core"],
+      })
+    );
     return NextResponse.json({ ok: false, error: "No hemos podido completar la consulta. Inténtalo de nuevo." }, { status: 500 });
   }
 }

@@ -4,6 +4,8 @@ import { loadEffectiveRanksBatch, loadRecentRankTotals, type RankAdminClient } f
 import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
 import { buildClienteAliasEmail, ensureClienteAuthUser, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 import { getClientPushSubscriptions, sendPushToSubscriptions } from "@/lib/server/web-push";
+import { classifyBrainIncident, recordBrainIncident } from "@/lib/server/brain-observability";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -262,15 +264,36 @@ async function resolveClientAuthUser(admin: any, client: any) {
 }
 
 async function writeAudit(admin: any, worker: any, clientId: string, authUserId: string, action: string, payload: Record<string, unknown>) {
+  // crm_audit_logs.client_id pertenece al CRM legado `crm_clients`,
+  // mientras que Clientes web trabaja sobre `crm_clientes`. Evitamos
+  // romper la auditoría por una FK incompatible y conservamos el ID real
+  // dentro del payload hasta que ambas identidades se unifiquen.
+  const legacyClient = await admin.from("crm_clients").select("id").eq("id", clientId).maybeSingle();
+  const auditPayload = { ...payload, crm_cliente_id: clientId };
+
   const { error } = await admin.from("crm_audit_logs").insert({
-    client_id: clientId,
+    client_id: legacyClient.data?.id || null,
     worker_id: worker.id,
     action_type: action,
     entity_type: "auth.users",
     entity_id: authUserId,
-    payload,
+    payload: auditPayload,
   });
-  if (error) console.error("[client-web:audit]", { code: error.code, message: error.message, details: error.details, hint: error.hint });
+
+  if (error) {
+    console.error("[client-web:audit]", { code: error.code, message: error.message, details: error.details, hint: error.hint });
+    await recordBrainIncident(
+      admin,
+      classifyBrainIncident(error, {
+        source: "vercel",
+        subsystem: "clients",
+        route: "/api/admin/client-web",
+        title: "Auditoría de Clientes web degradada",
+        affectedNodeIds: ["clients", "core"],
+        metadata: { action },
+      })
+    );
+  }
 }
 
 export async function GET(req: Request) {
@@ -451,6 +474,16 @@ export async function GET(req: Request) {
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error: any) {
     console.error("[client-web:get]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(error, {
+          source: "vercel",
+          subsystem: "clients",
+          route: "/api/admin/client-web",
+          title: "Lectura de Clientes web degradada",
+          affectedNodeIds: ["clients", "core"],
+        })
+    );
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_WEB" }, { status: 500 });
   }
 }
@@ -723,6 +756,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "INVALID_ACTION" }, { status: 400 });
   } catch (error: any) {
     console.error("[client-web:post]", { code: error?.code, message: error?.message, details: error?.details, hint: error?.hint });
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(error, {
+          source: "vercel",
+          subsystem: "clients",
+          route: "/api/admin/client-web",
+          title: "Acción de Clientes web degradada",
+          affectedNodeIds: ["clients", "core"],
+        })
+    );
     return NextResponse.json({ ok: false, error: error?.message || "ERR_CLIENT_WEB_ACTION" }, { status: 500 });
   }
 }

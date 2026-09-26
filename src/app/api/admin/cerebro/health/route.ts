@@ -127,6 +127,25 @@ export async function GET(req: Request) {
 
     const admin = gate.admin;
     const generatedAt = new Date().toISOString();
+    const incidentCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const activeIncidentCutoffMs = Date.now() - 6 * 60 * 60 * 1000;
+
+    const incidentResult = await admin
+      .from("brain_observability_events")
+      .select("id,fingerprint,source,severity,subsystem,route,code,title,message,affected_node_ids,metadata,occurrences,first_seen_at,last_seen_at,resolved_at")
+      .is("resolved_at", null)
+      .gte("last_seen_at", incidentCutoff)
+      .order("last_seen_at", { ascending: false })
+      .limit(30);
+
+    const incidents = incidentResult.error ? [] : (incidentResult.data || []);
+    const incidentProbe: ProbeResult = {
+      name: "Observabilidad producción",
+      ok: !incidentResult.error,
+      count: incidents.length,
+      latency_ms: 0,
+      error: safeError(incidentResult.error),
+    };
 
     const entries = await Promise.all(
       NODE_SPECS.map(async (spec) => {
@@ -200,6 +219,7 @@ export async function GET(req: Request) {
       latency_ms: 0,
       error: null,
     });
+    infraProbes.push(incidentProbe);
 
     nodes.infra = {
       id: "infra",
@@ -215,6 +235,22 @@ export async function GET(req: Request) {
       observations: observationsFrom(infraProbes),
       probes: infraProbes,
     };
+
+    for (const incident of incidents) {
+      const lastSeenMs = new Date(String(incident.last_seen_at || "")).getTime();
+      if (!Number.isFinite(lastSeenMs) || lastSeenMs < activeIncidentCutoffMs) continue;
+      const affected = Array.isArray(incident.affected_node_ids) ? incident.affected_node_ids : [];
+      for (const nodeId of affected) {
+        const node = nodes[nodeId];
+        if (!node) continue;
+        const incidentStatus: BrainStatus = incident.severity === "critical" ? "error" : "attention";
+        if (node.status !== "error") node.status = incidentStatus;
+        node.observations = [
+          `Producción · ${incident.title} · ${incident.occurrences} ocurrencia(s) · última ${incident.last_seen_at}`,
+          ...(node.observations || []),
+        ].slice(0, 8);
+      }
+    }
 
     const childNodes = Object.values(nodes) as any[];
     const allProbes = childNodes.flatMap((node) => node.probes || []);
@@ -269,6 +305,18 @@ export async function GET(req: Request) {
         summary,
         diagnostics,
         diagnostics_summary: diagnosticsSummary,
+        observability: {
+          window_hours: 24,
+          active_window_hours: 6,
+          incidents,
+          summary: {
+            open: incidents.length,
+            critical: incidents.filter((item: any) => item.severity === "critical").length,
+            errors: incidents.filter((item: any) => item.severity === "error").length,
+            warnings: incidents.filter((item: any) => item.severity === "warning").length,
+            occurrences: incidents.reduce((sum: number, item: any) => sum + Number(item.occurrences || 0), 0),
+          },
+        },
         runtime: {
           vercel_env: process.env.VERCEL_ENV || null,
           deployment: process.env.VERCEL_URL || null,

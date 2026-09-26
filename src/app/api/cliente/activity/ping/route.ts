@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import { touchClientActivity } from "@/lib/server/cliente-platform";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+import { classifyBrainIncident, recordBrainIncident } from "@/lib/server/brain-observability";
 
 export const runtime = "nodejs";
 
@@ -17,6 +19,16 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
+    await recordBrainIncident(
+      supabaseAdmin(),
+      classifyBrainIncident(e, {
+        source: "vercel",
+        subsystem: "clients",
+        route: "/api/cliente/activity/ping",
+        title: "Heartbeat del panel cliente degradado",
+        affectedNodeIds: ["clients", "realtime", "core"],
+      })
+    );
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ACTIVITY" }, { status: 500 });
   }
 }

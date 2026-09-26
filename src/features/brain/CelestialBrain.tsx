@@ -80,6 +80,24 @@ type BrainDiagnostic = {
   recommendation: string;
 };
 
+type BrainIncident = {
+  id: string;
+  fingerprint: string;
+  source: string;
+  severity: "warning" | "error" | "critical";
+  subsystem: string;
+  route?: string | null;
+  code?: string | null;
+  title: string;
+  message: string;
+  affected_node_ids: string[];
+  metadata?: Record<string, unknown>;
+  occurrences: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  resolved_at?: string | null;
+};
+
 type BrainHealthPayload = {
   ok: boolean;
   generated_at: string;
@@ -97,6 +115,18 @@ type BrainHealthPayload = {
     critical: number;
     attention: number;
     monitored_paths: number;
+  };
+  observability?: {
+    window_hours: number;
+    active_window_hours: number;
+    incidents: BrainIncident[];
+    summary: {
+      open: number;
+      critical: number;
+      errors: number;
+      warnings: number;
+      occurrences: number;
+    };
   };
   runtime?: {
     vercel_env?: string | null;
@@ -222,9 +252,14 @@ export default function CelestialBrain() {
   );
   const selectedLive = health?.nodes?.[selected.id] || null;
   const diagnostics = health?.diagnostics || [];
+  const incidents = health?.observability?.incidents || [];
   const affectedNodeIds = useMemo(
     () => new Set(diagnostics.flatMap((item) => item.affected_node_ids)),
     [diagnostics]
+  );
+  const incidentAffectedNodeIds = useMemo(
+    () => new Set(incidents.flatMap((item) => item.affected_node_ids || [])),
+    [incidents]
   );
   const selectedContext = detailContext[selected.status];
   const ContextIcon = selectedContext.icon;
@@ -284,6 +319,10 @@ export default function CelestialBrain() {
     {
       value: health ? String(health.diagnostics_summary?.active ?? diagnostics.length) : "—",
       label: "diagnósticos activos",
+    },
+    {
+      value: health ? String(health.observability?.summary.open ?? 0) : "—",
+      label: "incidentes 24h",
     },
   ];
 
@@ -355,6 +394,51 @@ export default function CelestialBrain() {
         </section>
       ) : null}
 
+      {health?.observability ? (
+        <section className={`${styles.incidentPanel} ${incidents.length ? styles.incidentPanelActive : styles.incidentPanelHealthy}`}>
+          <div className={styles.incidentHeader}>
+            <div>
+              <span className={styles.incidentKicker}><Activity size={14} /> INCIDENTES DE PRODUCCIÓN · 24H</span>
+              <h2>{incidents.length ? "Errores reales correlacionados con el mapa" : "Sin incidentes abiertos en la ventana reciente"}</h2>
+              <p>
+                El Cerebro agrupa errores repetidos por huella, conserva la primera y última aparición y los relaciona con los nodos afectados.
+              </p>
+            </div>
+            <div className={styles.incidentStats}>
+              <div><strong>{health.observability.summary.critical}</strong><span>críticos</span></div>
+              <div><strong>{health.observability.summary.errors}</strong><span>errores</span></div>
+              <div><strong>{health.observability.summary.warnings}</strong><span>avisos</span></div>
+              <div><strong>{health.observability.summary.occurrences}</strong><span>ocurrencias</span></div>
+            </div>
+          </div>
+
+          {incidents.length ? (
+            <div className={styles.incidentGrid}>
+              {incidents.slice(0, 8).map((incident) => (
+                <button
+                  type="button"
+                  key={incident.id}
+                  className={`${styles.incidentCard} ${incident.severity === "critical" ? styles.incidentCritical : incident.severity === "error" ? styles.incidentError : styles.incidentWarning}`}
+                  onClick={() => {
+                    const firstNode = incident.affected_node_ids?.[0] || "core";
+                    setSelectedId(firstNode);
+                    setDetailOpen(true);
+                  }}
+                >
+                  <span className={styles.incidentTopline}>
+                    <b>{incident.severity === "critical" ? "CRÍTICO" : incident.severity === "error" ? "ERROR" : "AVISO"}</b>
+                    <small>{incident.occurrences}× · {formatClock(incident.last_seen_at)}</small>
+                  </span>
+                  <strong>{incident.title}</strong>
+                  <span className={styles.incidentMessage}>{incident.message}</span>
+                  <span className={styles.incidentRoute}>{incident.route || incident.subsystem}{incident.code ? ` · ${incident.code}` : ""}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className={styles.workspace}>
         <div className={styles.toolbar}>
           <label className={styles.search}>
@@ -412,7 +496,7 @@ export default function CelestialBrain() {
                 <button
                   type="button"
                   key={node.id}
-                  className={`${styles.node} ${node.id === "core" ? styles.coreNode : ""} ${selectedId === node.id ? styles.selectedNode : ""} ${affectedNodeIds.has(node.id) ? styles.impactedNode : ""} ${hidden ? styles.filteredNode : ""}`}
+                  className={`${styles.node} ${node.id === "core" ? styles.coreNode : ""} ${selectedId === node.id ? styles.selectedNode : ""} ${affectedNodeIds.has(node.id) ? styles.impactedNode : ""} ${incidentAffectedNodeIds.has(node.id) ? styles.incidentImpactedNode : ""} ${hidden ? styles.filteredNode : ""}`}
                   style={{ left: node.position.x, top: node.position.y, "--status": meta.color } as CSSProperties}
                   onClick={() => selectNode(node)}
                   aria-pressed={selectedId === node.id}
@@ -470,6 +554,15 @@ export default function CelestialBrain() {
                   </div>
                 </section>
               ) : null}
+
+              {incidents.filter((item) => item.affected_node_ids?.includes(selected.id)).map((incident) => (
+                <section key={incident.id} className={`${styles.nodeIncident} ${incident.severity === "critical" ? styles.nodeIncidentCritical : incident.severity === "error" ? styles.nodeIncidentError : styles.nodeIncidentWarning}`}>
+                  <div className={styles.nodeIncidentTitle}><Activity size={15} /><strong>{incident.title}</strong><span>{incident.occurrences}×</span></div>
+                  <p>{incident.message}</p>
+                  <small>{incident.route || incident.subsystem}{incident.code ? ` · ${incident.code}` : ""}</small>
+                  <small>Primera: {formatClock(incident.first_seen_at)} · Última: {formatClock(incident.last_seen_at)}</small>
+                </section>
+              ))}
 
               {diagnostics.filter((item) => item.affected_node_ids.includes(selected.id)).map((diagnostic) => (
                 <section key={diagnostic.id} className={`${styles.nodeDiagnostic} ${diagnostic.severity === "error" ? styles.nodeDiagnosticError : styles.nodeDiagnosticAttention}`}>
