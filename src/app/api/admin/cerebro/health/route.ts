@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { buildBrainDiagnostics, BRAIN_MONITORED_PATHS_COUNT } from "@/features/brain/celestial-brain-diagnostics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -251,6 +252,14 @@ export async function GET(req: Request) {
       total_nodes: visibleNodes.length,
     };
 
+    const diagnostics = buildBrainDiagnostics(nodes);
+    const diagnosticsSummary = {
+      active: diagnostics.length,
+      critical: diagnostics.filter((item) => item.severity === "error").length,
+      attention: diagnostics.filter((item) => item.severity === "attention").length,
+      monitored_paths: BRAIN_MONITORED_PATHS_COUNT,
+    };
+
     return NextResponse.json(
       {
         ok: true,
@@ -258,6 +267,8 @@ export async function GET(req: Request) {
         duration_ms: Date.now() - started,
         nodes,
         summary,
+        diagnostics,
+        diagnostics_summary: diagnosticsSummary,
         runtime: {
           vercel_env: process.env.VERCEL_ENV || null,
           deployment: process.env.VERCEL_URL || null,
