@@ -44,6 +44,7 @@ import {
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { auditSummary, brainConnections, brainNodes, statusMeta, type BrainNode, type BrainStatus } from "./celestial-brain-data";
 import styles from "./CelestialBrain.module.css";
+import BrainPreventivePanel from "./BrainPreventivePanel";
 
 const VIEW_WIDTH = 1680;
 const VIEW_HEIGHT = 1080;
@@ -406,6 +407,8 @@ export default function CelestialBrain() {
           {auditItems.map((item) => <div key={item.label}><strong>{item.value}</strong><span>{item.label}</span></div>)}
         </div>
       </header>
+
+      <BrainPreventivePanel prevention={(health as any)?.prevention} onSelectNode={(nodeId) => { setSelectedId(nodeId); setDetailOpen(true); }} />
 
       {health ? (
         <section className={`${styles.diagnosticPanel} ${diagnostics.length ? styles.diagnosticPanelActive : styles.diagnosticPanelHealthy}`}>
