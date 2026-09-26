@@ -220,9 +220,14 @@ export async function touchClientActivity(
     patch.total_accesos = Math.max(0, Number(current?.total_accesos || 0)) + 1;
   }
 
-  await admin.from("crm_clientes").update(patch).eq("id", clienteId);
+  const { error: activityError } = await admin.from("crm_clientes").update(patch).eq("id", clienteId);
+  if (activityError) throw activityError;
 
-  await syncClientMonthTag(admin, clienteId);
+  // El heartbeat se ejecuta cada 60 s. La etiqueta mensual solo necesita
+  // sincronizarse cuando contamos un acceso real, no en cada ping.
+  if (opts?.access) {
+    await syncClientMonthTag(admin, clienteId);
+  }
 }
 
 export async function applyClientPurchase(
