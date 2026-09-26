@@ -44,7 +44,7 @@ import {
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { auditSummary, brainConnections, brainNodes, statusMeta, type BrainNode, type BrainStatus } from "./celestial-brain-data";
 import styles from "./CelestialBrain.module.css";
-import BrainPreventivePanel from "./BrainPreventivePanel";
+import BrainPreventivePanel, { type BrainForecast } from "./BrainPreventivePanel";
 
 const VIEW_WIDTH = 1680;
 const VIEW_HEIGHT = 1080;
@@ -148,6 +148,7 @@ type BrainHealthPayload = {
     attention: number;
     monitored_paths: number;
   };
+  prevention?: BrainForecast;
   observability?: {
     window_hours: number;
     active_window_hours: number;
@@ -309,6 +310,11 @@ export default function CelestialBrain() {
   const resolvedIncidents = health?.observability?.resolved_incidents || [];
   const incidentHistory = health?.observability?.history || [];
   const deploymentComparison = health?.observability?.deployment_comparison || null;
+  const prevention = health?.prevention || null;
+  const preventiveNodeIds = useMemo(
+    () => new Set(prevention?.watch_node_ids || []),
+    [prevention]
+  );
   const affectedNodeIds = useMemo(
     () => new Set(diagnostics.flatMap((item) => item.affected_node_ids)),
     [diagnostics]
@@ -384,6 +390,10 @@ export default function CelestialBrain() {
       value: health ? String(health.observability?.summary.resolved_recent ?? 0) : "—",
       label: "resueltos 7d",
     },
+    {
+      value: prevention ? String(prevention.score) : "—",
+      label: "riesgo preventivo",
+    },
   ];
 
   return (
@@ -408,7 +418,7 @@ export default function CelestialBrain() {
         </div>
       </header>
 
-      <BrainPreventivePanel prevention={(health as any)?.prevention} onSelectNode={(nodeId) => { setSelectedId(nodeId); setDetailOpen(true); }} />
+      <BrainPreventivePanel prevention={prevention} onSelectNode={(nodeId) => { setSelectedId(nodeId); setDetailOpen(true); }} />
 
       {health ? (
         <section className={`${styles.diagnosticPanel} ${diagnostics.length ? styles.diagnosticPanelActive : styles.diagnosticPanelHealthy}`}>
@@ -623,7 +633,7 @@ export default function CelestialBrain() {
                 <button
                   type="button"
                   key={node.id}
-                  className={`${styles.node} ${node.id === "core" ? styles.coreNode : ""} ${selectedId === node.id ? styles.selectedNode : ""} ${affectedNodeIds.has(node.id) ? styles.impactedNode : ""} ${incidentAffectedNodeIds.has(node.id) ? styles.incidentImpactedNode : ""} ${hidden ? styles.filteredNode : ""}`}
+                  className={`${styles.node} ${node.id === "core" ? styles.coreNode : ""} ${selectedId === node.id ? styles.selectedNode : ""} ${affectedNodeIds.has(node.id) ? styles.impactedNode : ""} ${incidentAffectedNodeIds.has(node.id) ? styles.incidentImpactedNode : ""} ${preventiveNodeIds.has(node.id) ? styles.preventiveNode : ""} ${hidden ? styles.filteredNode : ""}`}
                   style={{ left: node.position.x, top: node.position.y, "--status": meta.color } as CSSProperties}
                   onClick={() => selectNode(node)}
                   aria-pressed={selectedId === node.id}
