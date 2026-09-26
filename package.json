@@ -19,8 +19,7 @@
     "stripe": "^14.25.0",
     "web-push": "^3.6.7",
     "twilio": "^4.23.0",
-    "sip.js": "^0.21.2",
-    "@runwayml/sdk": "^1.4.0"
+    "sip.js": "^0.21.2"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

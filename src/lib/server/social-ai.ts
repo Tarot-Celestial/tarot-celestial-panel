@@ -459,6 +459,40 @@ Si incluyes texto, debe ser corto, en español y perfectamente legible. No inven
   return { url: imageUrl, path: imagePath, bucket, model: imageModel(), media_type: "image", thumbnail_url: imageUrl, story_music: false };
 }
 
+async function runwayRequest(pathname: string, init?: RequestInit) {
+  const response = await fetch(`https://api.dev.runwayml.com${pathname}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${runwayApiKey()}`,
+      "X-Runway-Version": "2024-11-06",
+      "Content-Type": "application/json",
+      ...(init?.headers || {}),
+    },
+    cache: "no-store",
+  });
+  const json: any = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = json?.error?.message || json?.message || json?.error || `Runway API ${response.status}`;
+    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+  }
+  return json;
+}
+
+async function waitForRunwayTask(taskId: string, timeoutMs = 260000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const task = await runwayRequest(`/v1/tasks/${encodeURIComponent(taskId)}`);
+    const status = String(task?.status || "").toUpperCase();
+    if (status === "SUCCEEDED") return task;
+    if (["FAILED", "CANCELED", "CANCELLED"].includes(status)) {
+      const reason = task?.failure || task?.failureCode || task?.error || `Runway terminó con estado ${status}`;
+      throw new Error(typeof reason === "string" ? reason : JSON.stringify(reason));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  throw new Error("Runway sigue procesando el vídeo y superó el tiempo máximo de espera. Inténtalo de nuevo en unos minutos.");
+}
+
 export async function generateAndStoreSocialVideo(input: {
   provider: SocialProvider;
   prompt: string;
@@ -467,27 +501,28 @@ export async function generateAndStoreSocialVideo(input: {
   duration?: number;
   createdBy?: string | null;
 }) {
-  const sdkModule: any = await import("@runwayml/sdk");
-  const RunwayML = sdkModule?.default || sdkModule?.RunwayML;
-  if (!RunwayML) throw new Error("No se pudo cargar el SDK de Runway.");
-  const secret = runwayApiKey();
-  process.env.RUNWAYML_API_SECRET = secret;
-
   const ratio = input.format === "landscape" ? "1280:720" : input.format === "square" ? "1080:1080" : "720:1280";
   const duration = [5, 8, 10].includes(Number(input.duration)) ? Number(input.duration) : 5;
-  const client = new RunwayML();
-  const task = await client.imageToVideo.create({
-    model: runwayModel(),
-    promptText: `${BRAND_RULES}\nGenera un vídeo corto para redes sociales. ${input.prompt}`,
-    ratio,
-    duration,
-  }).waitForTaskOutput();
+
+  const created = await runwayRequest("/v1/image_to_video", {
+    method: "POST",
+    body: JSON.stringify({
+      model: runwayModel(),
+      promptText: `${BRAND_RULES}\nGenera un vídeo corto para redes sociales. ${input.prompt}`,
+      ratio,
+      duration,
+    }),
+  });
+
+  const taskId = String(created?.id || "").trim();
+  if (!taskId) throw new Error("Runway no devolvió el identificador de la tarea.");
+  const task = await waitForRunwayTask(taskId);
 
   const firstOutput = Array.isArray(task?.output) ? task.output[0] : null;
   const outputUrl = typeof firstOutput === "string"
     ? firstOutput
     : (firstOutput?.url || firstOutput?.uri || firstOutput?.src || null);
-  if (!outputUrl) throw new Error("Runway no devolvió la URL del vídeo generado.");
+  if (!outputUrl) throw new Error("Runway terminó la tarea pero no devolvió la URL del vídeo generado.");
 
   const buffer = await downloadBuffer(String(outputUrl));
   const bucket = process.env.SOCIAL_MEDIA_BUCKET?.trim() || "tc-social-media";
@@ -509,8 +544,17 @@ export async function generateAndStoreSocialVideo(input: {
     url: publicUrl,
     thumbnail_url: null,
     mime_type: "video/mp4",
-    metadata: { ai_generated: true, model: runwayModel(), prompt: input.prompt, format: input.format || "vertical", duration, engine: "runway", output_url: outputUrl, task_id: task?.id || null },
+    metadata: {
+      ai_generated: true,
+      model: runwayModel(),
+      prompt: input.prompt,
+      format: input.format || "vertical",
+      duration,
+      engine: "runway-rest",
+      output_url: outputUrl,
+      task_id: taskId,
+    },
     created_by: input.createdBy || null,
   });
-  return { url: publicUrl, path, bucket, model: runwayModel(), duration };
+  return { url: publicUrl, path, bucket, model: runwayModel(), duration, task_id: taskId };
 }
