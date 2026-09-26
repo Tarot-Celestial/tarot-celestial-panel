@@ -1,0 +1,188 @@
+.selectionStage{
+  position:relative;
+  isolation:isolate;
+  overflow:hidden;
+  width:100%;
+  display:grid;
+  gap:clamp(18px,2vw,28px);
+  padding:clamp(28px,3.2vw,44px) clamp(16px,2vw,28px) clamp(26px,2.8vw,38px);
+  border:1px solid rgba(255,214,119,.72);
+  border-radius:28px;
+  background:
+    radial-gradient(circle at 50% 78%,rgba(255,181,65,.18),transparent 28%),
+    radial-gradient(circle at 18% 24%,rgba(78,94,255,.27),transparent 26%),
+    radial-gradient(circle at 82% 22%,rgba(212,74,255,.24),transparent 29%),
+    radial-gradient(circle at 50% 28%,rgba(106,63,203,.28),transparent 46%),
+    linear-gradient(180deg,#151334 0%,#0c0b20 50%,#080812 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255,245,215,.08),
+    inset 0 0 0 7px rgba(255,200,79,.025),
+    inset 0 0 64px rgba(119,70,255,.12),
+    0 18px 50px rgba(0,0,0,.38),
+    0 0 28px rgba(255,187,62,.08);
+}
+.selectionStage::before{
+  content:"";
+  position:absolute;inset:0;z-index:-2;pointer-events:none;
+  background:
+    radial-gradient(circle at 11% 18%,rgba(255,245,211,.95) 0 1px,transparent 1.8px),
+    radial-gradient(circle at 22% 10%,rgba(255,199,72,.9) 0 1px,transparent 1.8px),
+    radial-gradient(circle at 34% 28%,rgba(186,124,255,.86) 0 1.2px,transparent 2px),
+    radial-gradient(circle at 48% 12%,rgba(255,236,174,.92) 0 1px,transparent 1.8px),
+    radial-gradient(circle at 64% 17%,rgba(255,196,68,.92) 0 1px,transparent 1.8px),
+    radial-gradient(circle at 78% 11%,rgba(186,124,255,.82) 0 1px,transparent 1.8px),
+    radial-gradient(circle at 90% 26%,rgba(255,226,155,.9) 0 1px,transparent 1.8px),
+    radial-gradient(circle at 12% 34%,rgba(241,228,255,.52) 0 44px,rgba(123,78,222,.16) 45px 48px,transparent 49px),
+    radial-gradient(circle at 89% 31%,rgba(184,83,236,.38) 0 58px,rgba(245,188,255,.12) 59px 63px,transparent 64px),
+    repeating-radial-gradient(circle at 50% 88%,transparent 0 56px,rgba(246,200,96,.06) 57px 58px,transparent 59px 86px),
+    conic-gradient(from 0deg at 50% 72%,transparent 0 8deg,rgba(249,206,104,.05) 8deg 9deg,transparent 9deg 18deg);
+  opacity:.95;
+  animation:stars 7s ease-in-out infinite alternate;
+}
+.selectionStage::after{
+  content:"";
+  position:absolute;
+  left:50%;bottom:-25%;
+  z-index:-1;
+  width:min(980px,96%);
+  aspect-ratio:2.7/1;
+  transform:translateX(-50%) perspective(700px) rotateX(66deg);
+  border-radius:50%;
+  pointer-events:none;
+  background:
+    radial-gradient(ellipse at center,rgba(255,208,109,.29) 0 2%,transparent 3% 17%,rgba(255,208,109,.20) 18% 19%,transparent 20% 31%,rgba(143,91,255,.18) 32% 33%,transparent 34% 47%,rgba(255,214,122,.12) 48% 49%,transparent 50%),
+    repeating-conic-gradient(from 0deg,rgba(255,213,119,.11) 0 .7deg,transparent .7deg 15deg);
+  border:1px solid rgba(255,213,119,.18);
+  box-shadow:0 0 34px rgba(255,193,64,.22),0 0 80px rgba(137,77,255,.16),inset 0 0 36px rgba(255,210,110,.12);
+  animation:altar 6.5s ease-in-out infinite;
+}
+.selectionHeader{position:relative;z-index:3;display:grid;justify-items:center;gap:10px;text-align:center}
+.badge{
+  min-height:30px;padding:0 18px;
+  display:inline-flex;align-items:center;justify-content:center;
+  border-radius:999px;
+  border:1px solid rgba(255,213,112,.5);
+  color:#ffe8ac;
+  background:linear-gradient(180deg,rgba(45,22,86,.95),rgba(18,13,44,.96));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 4px rgba(255,204,83,.025),0 0 18px rgba(232,168,54,.12);
+  font-size:11px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;
+}
+.title{
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:clamp(36px,4.4vw,60px);
+  line-height:1;
+  font-weight:700;
+  letter-spacing:-.035em;
+  color:#fffaf0;
+  text-shadow:0 1px 0 rgba(255,255,255,.18),0 0 18px rgba(255,217,137,.12),0 8px 30px rgba(57,28,119,.32);
+}
+.cardRail{
+  position:relative;z-index:3;
+  width:100%;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:clamp(10px,.85vw,14px);
+  padding:34px clamp(8px,1vw,16px) 42px;
+  overflow-x:auto;
+  overflow-y:visible;
+  scroll-snap-type:x proximity;
+  overscroll-behavior-inline:contain;
+  scrollbar-width:thin;
+  scrollbar-color:#9c5cff rgba(255,255,255,.035);
+}
+.cardRail::-webkit-scrollbar{height:7px}
+.cardRail::-webkit-scrollbar-track{background:linear-gradient(90deg,rgba(255,255,255,.02),rgba(112,62,181,.09),rgba(255,255,255,.02));border-radius:999px}
+.cardRail::-webkit-scrollbar-thumb{border:1px solid rgba(255,214,119,.18);border-radius:999px;background:linear-gradient(90deg,#7548d9,#ad63ff 50%,#8248df);box-shadow:0 0 12px rgba(158,92,255,.48)}
+.cardButton{
+  --rot:0deg;
+  flex:0 0 clamp(88px,7vw,118px);
+  height:clamp(154px,12vw,198px);
+  padding:0;border:0;background:transparent;
+  border-radius:16px;
+  cursor:pointer;
+  scroll-snap-align:center;
+  perspective:1000px;
+  transform-origin:50% 75%;
+  animation:float 5.2s cubic-bezier(.45,0,.28,1) infinite;
+  will-change:transform,filter;
+  transition:transform .2s cubic-bezier(.2,.8,.2,1),filter .2s ease;
+}
+.cardButton:nth-child(4n+1){--rot:-1.8deg;animation-delay:-.5s}
+.cardButton:nth-child(4n+2){--rot:.9deg;animation-delay:-1.7s}
+.cardButton:nth-child(4n+3){--rot:-.6deg;animation-delay:-3s}
+.cardButton:nth-child(4n){--rot:1.4deg;animation-delay:-4s}
+.cardButton:hover:not(:disabled){transform:translateY(-15px) scale(1.055);filter:drop-shadow(0 15px 18px rgba(0,0,0,.44)) drop-shadow(0 0 14px rgba(255,205,93,.32)) drop-shadow(0 0 22px rgba(167,91,255,.3));animation-play-state:paused;z-index:8}
+.cardButton:focus-visible{outline:2px solid #ffdc7e;outline-offset:5px}
+.cardBack{
+  position:relative;
+  width:100%;height:100%;
+  display:grid;place-items:center;
+  overflow:hidden;
+  border-radius:16px;
+  border:1px solid rgba(255,219,127,.96);
+  background:
+    radial-gradient(circle at 50% 50%,rgba(255,196,72,.14),transparent 18%),
+    radial-gradient(circle at 50% 51%,rgba(150,73,255,.43),transparent 43%),
+    linear-gradient(145deg,#753dba 0%,#3b1768 48%,#160b34 100%);
+  box-shadow:
+    inset 0 0 0 3px rgba(10,5,25,.95),
+    inset 0 0 0 4px rgba(255,213,108,.7),
+    inset 0 0 0 8px rgba(151,77,230,.22),
+    inset 0 0 28px rgba(196,94,255,.22),
+    0 14px 28px rgba(0,0,0,.38),
+    0 0 16px rgba(255,196,70,.16);
+}
+.cardBack::before{
+  content:"";
+  position:absolute;inset:9px;z-index:1;
+  border-radius:10px;
+  border:1px solid rgba(255,222,137,.34);
+  background:
+    radial-gradient(circle at 50% 13%,rgba(255,225,145,.95) 0 1px,transparent 2px),
+    radial-gradient(circle at 19% 24%,rgba(255,195,80,.75) 0 1px,transparent 1.7px),
+    radial-gradient(circle at 81% 23%,rgba(218,173,255,.74) 0 1px,transparent 1.7px),
+    radial-gradient(circle at 20% 75%,rgba(255,225,151,.75) 0 1px,transparent 1.7px),
+    radial-gradient(circle at 80% 73%,rgba(255,193,75,.82) 0 1px,transparent 1.7px),
+    repeating-linear-gradient(45deg,rgba(255,211,112,.055) 0 1px,transparent 1px 9px),
+    repeating-linear-gradient(-45deg,rgba(167,104,255,.05) 0 1px,transparent 1px 11px);
+  box-shadow:inset 0 0 0 2px rgba(28,12,54,.8),inset 0 0 22px rgba(255,200,85,.05);
+  pointer-events:none;
+}
+.cardBack::after{
+  content:"";
+  position:relative;z-index:2;
+  width:64%;aspect-ratio:1;
+  background-color:#ffd76f;
+  -webkit-mask:url("/tarot-celestial-logo.png") center/contain no-repeat;
+  mask:url("/tarot-celestial-logo.png") center/contain no-repeat;
+  filter:drop-shadow(0 0 6px rgba(255,218,110,.8)) drop-shadow(0 0 16px rgba(255,181,43,.32));
+  animation:seal 4.4s ease-in-out infinite;
+}
+@keyframes float{
+  0%,100%{transform:translate3d(0,3px,0) rotate(var(--rot))}
+  25%{transform:translate3d(0,-5px,0) rotate(var(--rot))}
+  52%{transform:translate3d(0,-10px,0) rotate(var(--rot))}
+  77%{transform:translate3d(0,-3px,0) rotate(var(--rot))}
+}
+@keyframes seal{0%,100%{opacity:.82;transform:scale(.96)}50%{opacity:1;transform:scale(1.04)}}
+@keyframes stars{0%{opacity:.72;filter:brightness(.96)}100%{opacity:1;filter:brightness(1.08)}}
+@keyframes altar{0%,100%{opacity:.76;filter:brightness(.94)}50%{opacity:1;filter:brightness(1.12)}}
+@media(max-width:820px){
+  .selectionStage{padding:24px 12px 28px;border-radius:24px}
+  .title{font-size:clamp(31px,7vw,44px)}
+  .cardRail{padding:28px 8px 34px}
+  .cardButton{flex-basis:84px;height:146px}
+}
+@media(max-width:520px){
+  .selectionStage{gap:16px;padding-inline:9px;border-radius:20px}
+  .badge{min-height:28px;padding-inline:14px;font-size:10px}
+  .title{font-size:clamp(29px,9.4vw,39px)}
+  .cardRail{gap:9px;padding-inline:5px;padding-bottom:31px}
+  .cardButton{flex:0 0 78px;height:136px}
+  .selectionStage::after{width:135%;bottom:-16%}
+}
+@media(prefers-reduced-motion:reduce){
+  .selectionStage::before,.selectionStage::after,.cardButton,.cardBack::after{animation:none!important}
+  .cardButton:hover:not(:disabled){transform:translateY(-7px) scale(1.035)}
+}
