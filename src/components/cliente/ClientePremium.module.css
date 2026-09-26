@@ -1218,11 +1218,11 @@
 }
 
 @media (min-width: 1101px) {
-  .premiumShell :global(.tc-hero-summary) { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .premiumShell :global(.tc-hero-summary) { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 }
 
 @media (max-width: 1100px) and (min-width: 801px) {
-  .premiumShell :global(.tc-hero-summary) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .premiumShell :global(.tc-hero-summary) { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 }
 
 @media (max-width: 800px) {
