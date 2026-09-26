@@ -71,7 +71,12 @@ export async function recordBrainIncident(admin: any, input: BrainIncidentInput)
       p_title: safeText(input.title || "Incidente de producción", 180) || "Incidente de producción",
       p_message: safeText(input.message, 1200) || "Sin detalle",
       p_affected_node_ids: Array.from(new Set((input.affectedNodeIds || ["core"]).filter(Boolean))).slice(0, 12),
-      p_metadata: safeMetadata(input.metadata),
+      p_metadata: {
+        ...safeMetadata(input.metadata),
+        deployment_commit: safeText(process.env.VERCEL_GIT_COMMIT_SHA || "", 80) || null,
+        deployment_url: safeText(process.env.VERCEL_URL || "", 240) || null,
+        deployment_env: safeText(process.env.VERCEL_ENV || process.env.NODE_ENV || "", 40) || null,
+      },
     };
 
     const { error } = await admin.rpc("brain_record_observability_event", payload);

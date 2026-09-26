@@ -29,6 +29,9 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  History,
+  GitCompareArrows,
+  CheckCircle2,
   ShieldAlert,
   ShieldCheck,
   TriangleAlert,
@@ -96,6 +99,34 @@ type BrainIncident = {
   first_seen_at: string;
   last_seen_at: string;
   resolved_at?: string | null;
+  status?: "open" | "recovering" | "resolved";
+  cycle_started_at?: string | null;
+  reopened_count?: number;
+  resolved_reason?: string | null;
+  resolved_by?: string | null;
+};
+
+type BrainIncidentHistory = {
+  id: string;
+  event_id: string;
+  fingerprint: string;
+  event_type: "opened" | "occurred" | "reopened" | "recovering" | "resolved";
+  status_after: "open" | "recovering" | "resolved";
+  source: string;
+  severity: "warning" | "error" | "critical";
+  subsystem: string;
+  route?: string | null;
+  code?: string | null;
+  title: string;
+  message: string;
+  affected_node_ids: string[];
+  occurrences_snapshot: number;
+  cycle_started_at: string;
+  deployment_commit?: string | null;
+  deployment_url?: string | null;
+  deployment_env?: string | null;
+  metadata?: Record<string, unknown>;
+  occurred_at: string;
 };
 
 type BrainHealthPayload = {
@@ -119,13 +150,34 @@ type BrainHealthPayload = {
   observability?: {
     window_hours: number;
     active_window_hours: number;
+    lifecycle?: {
+      ok?: boolean;
+      recovering?: number;
+      resolved?: number;
+      checked_at?: string;
+      recovering_after_minutes?: number;
+      resolve_after_minutes?: number;
+    } | null;
     incidents: BrainIncident[];
+    resolved_incidents?: BrainIncident[];
+    history?: BrainIncidentHistory[];
     summary: {
       open: number;
+      recovering: number;
+      resolved_recent: number;
       critical: number;
       errors: number;
       warnings: number;
       occurrences: number;
+      reopened: number;
+    };
+    deployment_comparison?: {
+      current_commit?: string | null;
+      current_incident_events: number;
+      current_open_incidents: number;
+      previous_commit?: string | null;
+      previous_open_incidents?: number | null;
+      delta_open_incidents?: number | null;
     };
   };
   runtime?: {
@@ -253,6 +305,9 @@ export default function CelestialBrain() {
   const selectedLive = health?.nodes?.[selected.id] || null;
   const diagnostics = health?.diagnostics || [];
   const incidents = health?.observability?.incidents || [];
+  const resolvedIncidents = health?.observability?.resolved_incidents || [];
+  const incidentHistory = health?.observability?.history || [];
+  const deploymentComparison = health?.observability?.deployment_comparison || null;
   const affectedNodeIds = useMemo(
     () => new Set(diagnostics.flatMap((item) => item.affected_node_ids)),
     [diagnostics]
@@ -321,8 +376,12 @@ export default function CelestialBrain() {
       label: "diagnósticos activos",
     },
     {
-      value: health ? String(health.observability?.summary.open ?? 0) : "—",
-      label: "incidentes 24h",
+      value: health ? String((health.observability?.summary.open ?? 0) + (health.observability?.summary.recovering ?? 0)) : "—",
+      label: "incidentes activos",
+    },
+    {
+      value: health ? String(health.observability?.summary.resolved_recent ?? 0) : "—",
+      label: "resueltos 7d",
     },
   ];
 
@@ -396,18 +455,36 @@ export default function CelestialBrain() {
 
       {health?.observability ? (
         <section className={`${styles.incidentPanel} ${incidents.length ? styles.incidentPanelActive : styles.incidentPanelHealthy}`}>
+          <div className={styles.lifecycleStrip}>
+            <div className={styles.lifecycleCard}>
+              <span className={styles.lifecycleIcon}><Activity size={16} /></span>
+              <div><strong>{health.observability.summary.open}</strong><span>abiertos</span></div>
+            </div>
+            <div className={styles.lifecycleCard}>
+              <span className={styles.lifecycleIcon}><RefreshCw size={16} /></span>
+              <div><strong>{health.observability.summary.recovering}</strong><span>recuperando</span></div>
+            </div>
+            <div className={styles.lifecycleCard}>
+              <span className={styles.lifecycleIcon}><CheckCircle2 size={16} /></span>
+              <div><strong>{health.observability.summary.resolved_recent}</strong><span>resueltos · 7d</span></div>
+            </div>
+            <div className={styles.lifecycleCard}>
+              <span className={styles.lifecycleIcon}><History size={16} /></span>
+              <div><strong>{health.observability.summary.reopened}</strong><span>reaperturas</span></div>
+            </div>
+          </div>
           <div className={styles.incidentHeader}>
             <div>
               <span className={styles.incidentKicker}><Activity size={14} /> INCIDENTES DE PRODUCCIÓN · 24H</span>
-              <h2>{incidents.length ? "Errores reales correlacionados con el mapa" : "Sin incidentes abiertos en la ventana reciente"}</h2>
+              <h2>{incidents.length ? "Ciclo de vida de incidentes en producción" : "Sin incidentes activos en la ventana reciente"}</h2>
               <p>
-                El Cerebro agrupa errores repetidos por huella, conserva la primera y última aparición y los relaciona con los nodos afectados.
+                El Cerebro abre, agrupa, marca recuperación, resuelve por silencio y reabre automáticamente una incidencia si vuelve a aparecer.
               </p>
             </div>
             <div className={styles.incidentStats}>
               <div><strong>{health.observability.summary.critical}</strong><span>críticos</span></div>
               <div><strong>{health.observability.summary.errors}</strong><span>errores</span></div>
-              <div><strong>{health.observability.summary.warnings}</strong><span>avisos</span></div>
+              <div><strong>{health.observability.summary.recovering}</strong><span>recuperando</span></div>
               <div><strong>{health.observability.summary.occurrences}</strong><span>ocurrencias</span></div>
             </div>
           </div>
@@ -426,7 +503,7 @@ export default function CelestialBrain() {
                   }}
                 >
                   <span className={styles.incidentTopline}>
-                    <b>{incident.severity === "critical" ? "CRÍTICO" : incident.severity === "error" ? "ERROR" : "AVISO"}</b>
+                    <b>{incident.status === "recovering" ? "RECUPERANDO" : incident.severity === "critical" ? "CRÍTICO" : incident.severity === "error" ? "ERROR" : "AVISO"}</b>
                     <small>{incident.occurrences}× · {formatClock(incident.last_seen_at)}</small>
                   </span>
                   <strong>{incident.title}</strong>
@@ -436,6 +513,53 @@ export default function CelestialBrain() {
               ))}
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {health?.observability ? (
+        <section className={styles.lifecyclePanel}>
+          <div className={styles.lifecyclePanelHeader}>
+            <div>
+              <span><GitCompareArrows size={14} /> EVOLUCIÓN Y DESPLIEGUES</span>
+              <h2>Antes y después de cada versión</h2>
+              <p>El Cerebro conserva snapshots de salud e identifica en qué commit apareció cada incidente.</p>
+            </div>
+            <div className={styles.deployCompare}>
+              <div><small>Commit actual</small><strong>{deploymentComparison?.current_commit?.slice(0, 8) || "sin dato"}</strong></div>
+              <div><small>Incidentes actuales</small><strong>{deploymentComparison?.current_open_incidents ?? 0}</strong></div>
+              <div><small>Commit anterior</small><strong>{deploymentComparison?.previous_commit?.slice(0, 8) || "sin base"}</strong></div>
+              <div><small>Δ incidentes</small><strong>{deploymentComparison?.delta_open_incidents == null ? "—" : deploymentComparison.delta_open_incidents > 0 ? `+${deploymentComparison.delta_open_incidents}` : String(deploymentComparison.delta_open_incidents)}</strong></div>
+            </div>
+          </div>
+
+          <div className={styles.timelineGrid}>
+            <div className={styles.timelineColumn}>
+              <div className={styles.timelineTitle}><History size={14} /> Historial reciente</div>
+              {incidentHistory.length ? incidentHistory.slice(0, 10).map((item) => (
+                <div key={item.id} className={styles.timelineItem} data-event={item.event_type}>
+                  <span className={styles.timelineDot} />
+                  <div>
+                    <strong>{item.title}</strong>
+                    <small>{item.event_type === "opened" ? "abierto" : item.event_type === "occurred" ? "nueva ocurrencia" : item.event_type === "recovering" ? "recuperando" : item.event_type === "resolved" ? "resuelto" : "reabierto"} · {formatClock(item.occurred_at)}</small>
+                    <span>{item.deployment_commit ? `commit ${item.deployment_commit.slice(0, 8)}` : item.route || item.subsystem}</span>
+                  </div>
+                </div>
+              )) : <p className={styles.timelineEmpty}>Aún no hay eventos suficientes para construir la evolución.</p>}
+            </div>
+
+            <div className={styles.timelineColumn}>
+              <div className={styles.timelineTitle}><CheckCircle2 size={14} /> Recuperaciones recientes</div>
+              {resolvedIncidents.length ? resolvedIncidents.slice(0, 8).map((incident) => (
+                <div key={incident.id} className={styles.resolvedItem}>
+                  <div>
+                    <strong>{incident.title}</strong>
+                    <small>resuelto {formatClock(incident.resolved_at)} · {incident.occurrences} ocurrencia(s)</small>
+                  </div>
+                  <span>{incident.reopened_count ? `${incident.reopened_count} reapertura(s)` : "sin reaperturas"}</span>
+                </div>
+              )) : <p className={styles.timelineEmpty}>No hay recuperaciones registradas todavía.</p>}
+            </div>
+          </div>
         </section>
       ) : null}
 
