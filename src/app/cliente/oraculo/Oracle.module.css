@@ -816,3 +816,369 @@
     animation: none !important;
   }
 }
+
+
+/* ==========================================================================
+   ORÁCULO · FASE 1 — ALTAR CELESTIAL DE SELECCIÓN
+   Alcance: únicamente el bloque visual de selección de cartas.
+   Mantiene intacta toda la lógica de tiradas / Supabase / créditos.
+   ========================================================================== */
+
+.selectionStage {
+  isolation: isolate;
+  overflow: hidden;
+  gap: clamp(18px, 2vw, 28px);
+  padding: clamp(26px, 3.4vw, 46px) clamp(14px, 2.2vw, 34px) clamp(24px, 3vw, 38px);
+  border: 1px solid rgba(255, 215, 116, .66);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 12% 25%, rgba(90, 116, 255, .24), transparent 24%),
+    radial-gradient(circle at 87% 20%, rgba(203, 74, 255, .20), transparent 28%),
+    radial-gradient(circle at 50% 76%, rgba(255, 177, 57, .14), transparent 28%),
+    radial-gradient(circle at 50% 28%, rgba(83, 52, 190, .32), transparent 44%),
+    linear-gradient(180deg, #11102d 0%, #0b0b21 44%, #080812 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 243, 202, .09),
+    inset 0 0 0 7px rgba(255, 198, 69, .025),
+    inset 0 0 65px rgba(99, 59, 255, .12),
+    0 0 0 1px rgba(72, 43, 12, .8),
+    0 20px 48px rgba(0, 0, 0, .40),
+    0 0 30px rgba(255, 186, 52, .08);
+}
+
+.selectionStage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: .95;
+  background:
+    radial-gradient(circle at 9% 22%, rgba(255, 246, 214, .98) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 18% 14%, rgba(255, 201, 87, .9) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 27% 32%, rgba(170, 123, 255, .9) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 39% 12%, rgba(255, 243, 201, .84) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 52% 19%, rgba(255, 198, 63, .94) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 64% 10%, rgba(187, 132, 255, .84) 0 1.1px, transparent 1.8px),
+    radial-gradient(circle at 78% 28%, rgba(255, 230, 159, .9) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 90% 12%, rgba(255, 198, 77, .9) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 12% 37%, rgba(246, 223, 255, .72) 0 42px, rgba(137, 92, 246, .18) 43px 46px, transparent 47px),
+    radial-gradient(circle at 89% 31%, rgba(171, 97, 240, .42) 0 54px, rgba(238, 180, 255, .14) 55px 60px, transparent 61px),
+    repeating-radial-gradient(circle at 50% 87%, transparent 0 54px, rgba(245, 199, 96, .06) 55px 56px, transparent 57px 84px),
+    conic-gradient(from 0deg at 50% 70%, transparent 0 8deg, rgba(243, 203, 103, .045) 8deg 9deg, transparent 9deg 18deg);
+  background-size:
+    100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,100% 100%,
+    100% 100%,100% 100%,100% 100%,100% 100%;
+  animation: celestialShimmer 8s ease-in-out infinite alternate;
+}
+
+.selectionStage::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -23%;
+  z-index: -1;
+  width: min(980px, 94%);
+  aspect-ratio: 2.75 / 1;
+  transform: translateX(-50%) perspective(650px) rotateX(66deg);
+  border-radius: 50%;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 206, 102, .28) 0 2%, transparent 3% 17%, rgba(255, 206, 102, .20) 18% 18.8%, transparent 19% 31%, rgba(151, 100, 255, .18) 32% 33%, transparent 34% 47%, rgba(255, 214, 122, .12) 48% 49%, transparent 50%),
+    repeating-conic-gradient(from 0deg, rgba(255, 214, 123, .10) 0 .7deg, transparent .7deg 15deg);
+  border: 1px solid rgba(255, 210, 111, .17);
+  box-shadow:
+    0 0 30px rgba(255, 193, 66, .18),
+    0 0 75px rgba(128, 76, 255, .16),
+    inset 0 0 35px rgba(255, 210, 108, .12);
+  filter: blur(.1px);
+  animation: altarBreath 7s ease-in-out infinite;
+}
+
+.selectionHeader {
+  position: relative;
+  z-index: 3;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.selectionHeader .freeBadge {
+  min-height: 30px;
+  padding: 0 18px;
+  color: #ffe6a6;
+  border: 1px solid rgba(255, 211, 108, .46);
+  background:
+    linear-gradient(180deg, rgba(36, 20, 73, .90), rgba(18, 13, 43, .92));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.08),
+    0 0 0 4px rgba(255, 206, 85, .025),
+    0 0 20px rgba(229, 164, 48, .10);
+  letter-spacing: .12em;
+  text-shadow: 0 0 12px rgba(255, 212, 115, .22);
+}
+
+.selectionTitle {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 4.2vw, 58px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -.035em;
+  color: #fffaf0;
+  text-wrap: balance;
+  text-shadow:
+    0 1px 0 rgba(255,255,255,.18),
+    0 0 18px rgba(255, 217, 137, .12),
+    0 8px 28px rgba(64, 32, 126, .30);
+}
+
+.cardRail {
+  position: relative;
+  z-index: 3;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(8px, .72vw, 13px);
+  padding: 28px clamp(8px, 1.1vw, 18px) 38px;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(154, 94, 255, .82) rgba(255,255,255,.035);
+}
+
+.cardRail::-webkit-scrollbar {
+  height: 7px;
+}
+
+.cardRail::-webkit-scrollbar-track {
+  background: linear-gradient(90deg, rgba(255,255,255,.025), rgba(107,60,176,.08), rgba(255,255,255,.025));
+  border-radius: 999px;
+}
+
+.cardRail::-webkit-scrollbar-thumb {
+  border: 1px solid rgba(255, 213, 119, .16);
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7447d8, #a75dff 50%, #7f48dc);
+  box-shadow: 0 0 12px rgba(154, 94, 255, .45);
+}
+
+.cardButton {
+  --float-rotate: 0deg;
+  flex: 0 0 clamp(74px, 6.3vw, 104px);
+  height: clamp(128px, 10.9vw, 178px);
+  scroll-snap-align: center;
+  border-radius: 14px;
+  transform-origin: 50% 72%;
+  animation: celestialCardFloat 5.4s cubic-bezier(.45,0,.28,1) infinite;
+  will-change: transform, filter;
+  transition:
+    transform .20s cubic-bezier(.2,.8,.2,1),
+    filter .20s ease;
+}
+
+.cardButton:nth-child(4n+1) { --float-rotate: -1.6deg; animation-delay: -.6s; }
+.cardButton:nth-child(4n+2) { --float-rotate: .9deg; animation-delay: -1.8s; }
+.cardButton:nth-child(4n+3) { --float-rotate: -0.5deg; animation-delay: -3s; }
+.cardButton:nth-child(4n) { --float-rotate: 1.4deg; animation-delay: -4.1s; }
+
+.cardButton:nth-child(3n+1),
+.cardButton:nth-child(3n+2),
+.cardButton:nth-child(3n) {
+  transform: none;
+}
+
+.cardButton:hover:not(:disabled) {
+  transform: translateY(-14px) scale(1.055) rotate(0deg);
+  filter:
+    drop-shadow(0 15px 18px rgba(0,0,0,.42))
+    drop-shadow(0 0 13px rgba(255, 205, 93, .26))
+    drop-shadow(0 0 19px rgba(163, 91, 255, .28));
+  z-index: 8;
+  animation-play-state: paused;
+}
+
+.cardButton:focus-visible {
+  outline: 2px solid #ffdb7b;
+  outline-offset: 5px;
+}
+
+.cardBack {
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 218, 129, .92);
+  background:
+    radial-gradient(circle at 50% 44%, rgba(255, 202, 82, .13), transparent 18%),
+    radial-gradient(circle at 50% 51%, rgba(153, 73, 255, .42), transparent 43%),
+    linear-gradient(145deg, rgba(110, 48, 178, .98), rgba(44, 15, 83, .99) 51%, rgba(18, 10, 46, .99));
+  box-shadow:
+    inset 0 0 0 3px rgba(11, 6, 25, .92),
+    inset 0 0 0 4px rgba(255, 209, 105, .55),
+    inset 0 0 0 8px rgba(134, 70, 218, .19),
+    inset 0 0 26px rgba(179, 85, 255, .20),
+    0 12px 24px rgba(0, 0, 0, .36),
+    0 0 13px rgba(255, 194, 75, .12);
+}
+
+.cardBack::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  z-index: 1;
+  border-radius: 9px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(255,223,143,.95) 0 1px, transparent 2px),
+    radial-gradient(circle at 19% 23%, rgba(255,196,88,.7) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 80% 25%, rgba(216,172,255,.7) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 20% 74%, rgba(255,225,151,.75) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 81% 72%, rgba(255,195,78,.8) 0 1px, transparent 1.7px),
+    repeating-linear-gradient(45deg, rgba(255, 211, 112, .05) 0 1px, transparent 1px 9px),
+    repeating-linear-gradient(-45deg, rgba(166, 104, 255, .045) 0 1px, transparent 1px 11px);
+  border: 1px solid rgba(255, 220, 132, .28);
+  box-shadow:
+    inset 0 0 0 2px rgba(29, 13, 54, .75),
+    inset 0 0 20px rgba(255, 200, 85, .035);
+}
+
+.cardBack::after {
+  content: "";
+  position: relative;
+  z-index: 2;
+  width: 57%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(255,226,150,.13) 0 31%, transparent 32%),
+    radial-gradient(circle, transparent 0 41%, rgba(255,214,112,.52) 42% 43%, transparent 44% 55%, rgba(255,210,94,.25) 56% 57%, transparent 58%);
+  -webkit-mask: url("/tarot-celestial-logo.png") center / contain no-repeat;
+  mask: url("/tarot-celestial-logo.png") center / contain no-repeat;
+  background-color: #ffd76f;
+  filter:
+    drop-shadow(0 0 5px rgba(255, 218, 110, .75))
+    drop-shadow(0 0 14px rgba(255, 180, 41, .26));
+  animation: sealGlow 4.8s ease-in-out infinite;
+}
+
+.cardBack:hover {
+  box-shadow:
+    inset 0 0 0 3px rgba(12, 6, 27, .94),
+    inset 0 0 0 4px rgba(255, 221, 132, .76),
+    inset 0 0 0 8px rgba(155, 83, 235, .25),
+    inset 0 0 31px rgba(188, 95, 255, .28),
+    0 15px 30px rgba(0,0,0,.42),
+    0 0 20px rgba(255, 207, 91, .21);
+}
+
+@keyframes celestialCardFloat {
+  0%, 100% {
+    transform: translate3d(0, 2px, 0) rotate(var(--float-rotate));
+  }
+  25% {
+    transform: translate3d(0, -5px, 0) rotate(var(--float-rotate));
+  }
+  52% {
+    transform: translate3d(0, -9px, 0) rotate(var(--float-rotate));
+  }
+  77% {
+    transform: translate3d(0, -3px, 0) rotate(var(--float-rotate));
+  }
+}
+
+@keyframes sealGlow {
+  0%,100% { opacity: .82; transform: scale(.96) rotate(-1deg); }
+  50% { opacity: 1; transform: scale(1.035) rotate(1deg); }
+}
+
+@keyframes celestialShimmer {
+  0% { opacity: .72; filter: brightness(.96); transform: scale(1); }
+  100% { opacity: 1; filter: brightness(1.08); transform: scale(1.006); }
+}
+
+@keyframes altarBreath {
+  0%,100% {
+    opacity: .74;
+    filter: brightness(.92);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.12);
+  }
+}
+
+@media (max-width: 820px) {
+  .selectionStage {
+    padding: 24px 12px 26px;
+    border-radius: 24px;
+  }
+
+  .selectionTitle {
+    font-size: clamp(31px, 7vw, 44px);
+  }
+
+  .cardRail {
+    justify-content: flex-start;
+    padding: 24px 8px 32px;
+  }
+
+  .cardButton {
+    flex-basis: 78px;
+    height: 134px;
+  }
+
+  .selectionStage::before {
+    opacity: .72;
+  }
+}
+
+@media (max-width: 520px) {
+  .selectionStage {
+    gap: 16px;
+    padding-inline: 9px;
+    border-radius: 20px;
+  }
+
+  .selectionHeader .freeBadge {
+    min-height: 28px;
+    padding-inline: 14px;
+    font-size: 10px;
+  }
+
+  .selectionTitle {
+    font-size: clamp(29px, 9.4vw, 39px);
+  }
+
+  .cardRail {
+    gap: 9px;
+    padding-inline: 5px;
+    padding-bottom: 30px;
+  }
+
+  .cardButton {
+    flex: 0 0 76px;
+    height: 132px;
+  }
+
+  .selectionStage::after {
+    width: 130%;
+    bottom: -16%;
+  }
+
+  .selectionStage::before {
+    background:
+      radial-gradient(circle at 12% 25%, rgba(255, 246, 214, .8) 0 1px, transparent 1.8px),
+      radial-gradient(circle at 52% 19%, rgba(255, 198, 63, .78) 0 1px, transparent 1.8px),
+      radial-gradient(circle at 88% 20%, rgba(187, 132, 255, .7) 0 1px, transparent 1.8px),
+      repeating-radial-gradient(circle at 50% 87%, transparent 0 46px, rgba(245, 199, 96, .05) 47px 48px, transparent 49px 74px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selectionStage::before,
+  .selectionStage::after,
+  .cardButton,
+  .cardBack::after {
+    animation: none !important;
+  }
+
+  .cardButton:hover:not(:disabled) {
+    transform: translateY(-7px) scale(1.035);
+  }
+}
