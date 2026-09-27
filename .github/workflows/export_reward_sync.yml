@@ -1,0 +1,26 @@
+name: Export Reward Sync ZIP
+on:
+  push:
+    branches:
+      - export/reward-sync-zip
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare package
+        run: |
+          mkdir -p package
+          cp --parents SQL_CLIENT_REWARD_CREDIT_SYNC.sql package/
+          cp --parents src/app/api/crm/rendimiento/registrar/route.ts package/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Tarot_Celestial_FIX_Recompensas_Clientes
+          path: package
+          if-no-files-found: error
+          compression-level: 9
