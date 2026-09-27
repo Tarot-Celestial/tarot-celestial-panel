@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
 
 export const runtime = "nodejs";
 
@@ -128,9 +129,12 @@ function rpcIsMissing(error: any) {
 }
 
 async function registerCallAtomic(admin: any, payload: any) {
-  // La instalación estable de CRM usa la RPC atómica histórica. Algunas bases
-  // todavía tienen v4 y otras v7; probamos únicamente la segunda si la primera
-  // no existe. Nunca repetimos una operación que haya llegado a ejecutarse.
+  // v8 conserva la transacción histórica, pero aplica los saldos como DELTAS
+  // contra el saldo bloqueado en PostgreSQL. Así una ruleta/recompensa acreditada
+  // entre la lectura del modal y el guardado de la llamada nunca se pierde.
+  const v8 = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
+  if (!v8.error || !rpcIsMissing(v8.error)) return { ...v8, rpcName: "crm_register_call_atomic_v8" };
+
   const v4 = await admin.rpc("crm_register_call_atomic_v4", { p_payload: payload });
   if (!v4.error || !rpcIsMissing(v4.error)) return { ...v4, rpcName: "crm_register_call_atomic_v4" };
 
@@ -222,6 +226,49 @@ function codigoText(mins: number, code: string | null) {
 
 function pointsFromAmount(amount: number) {
   return Math.max(0, Math.floor(Number(amount || 0) * 10));
+}
+
+async function resolveManualPurchaseBenefits(admin: any, amount: number) {
+  const fallback = {
+    source: "legacy_amount" as const,
+    coins: pointsFromAmount(amount),
+    oracle_credits: 0,
+    roulette_level: null as number | null,
+    roulette_spins: 0,
+    promotion_id: null as string | null,
+    promotion_name: null as string | null,
+    package_id: null as string | null,
+    package_name: null as string | null,
+  };
+
+  try {
+    const promotion = await loadActivePromotion(admin);
+    if (!promotion) return fallback;
+
+    const exact = (promotion.packages || []).filter((pack: any) => {
+      const currency = String(pack?.currency || "EUR").toUpperCase();
+      return pack?.is_active !== false
+        && currency === "EUR"
+        && Math.abs(Number(pack?.price || 0) - Number(amount || 0)) < 0.001;
+    });
+    if (exact.length !== 1) return fallback;
+
+    const snap = promotionPackageSnapshot(promotion, exact[0]);
+    return {
+      source: "active_promotion" as const,
+      coins: Math.max(0, Math.floor(Number(snap.coins || 0))),
+      oracle_credits: Math.max(0, Math.floor(Number(snap.oracle_credits || 0))),
+      roulette_level: snap.roulette_level ? Number(snap.roulette_level) : null,
+      roulette_spins: Math.max(0, Math.floor(Number(snap.roulette_spins || 0))),
+      promotion_id: String(snap.promotion_id),
+      promotion_name: String(snap.promotion_name),
+      package_id: String(snap.package_id),
+      package_name: String(snap.package_name),
+    };
+  } catch (error) {
+    console.error("[CRM registrar llamada] no se pudo resolver beneficios activos; se conserva la regla base", error);
+    return fallback;
+  }
 }
 
 function buildNota({
@@ -502,17 +549,20 @@ export async function POST(req: Request) {
       }, { status: 409 });
     }
 
-    let nextFree = currentFree;
-    let nextNormales = currentNormales;
-    if (clienteCompra) {
-      nextFree = Boolean(body?.guarda_minutos) ? guardadosFree : 0;
-      nextNormales = Boolean(body?.guarda_minutos) ? guardadosNormales : 0;
-    } else if (usoTipo === "7free") {
-      nextFree = currentFree - 7;
-    } else if (usoTipo === "minutos") {
-      nextFree = currentFree - usedFree;
-      nextNormales = currentNormales - usedNormales;
-    }
+    const freeDelta = clienteCompra
+      ? (Boolean(body?.guarda_minutos) ? guardadosFree : 0)
+      : usoTipo === "7free" ? -7
+      : usoTipo === "minutos" ? -usedFree
+      : 0;
+    const normalDelta = clienteCompra
+      ? (Boolean(body?.guarda_minutos) ? guardadosNormales : 0)
+      : usoTipo === "minutos" ? -usedNormales
+      : 0;
+
+    // Solo se usa para previsualizar la nota. PostgreSQL vuelve a calcular el
+    // resultado contra el saldo REAL bloqueado dentro de la transacción v8.
+    let nextFree = Math.max(0, currentFree + freeDelta);
+    let nextNormales = Math.max(0, currentNormales + normalDelta);
 
     const tiempo = !clienteCompra && usoTipo === "7free" ? 7 : minutos1 + minutos2;
     const resumenCodigo = [codigoText(minutos1, codigo1), codigoText(minutos2, codigo2)].filter(Boolean).join(" · ") || (!clienteCompra && usoTipo === "7free" ? "7 free" : null);
@@ -546,6 +596,10 @@ export async function POST(req: Request) {
       if (method === "BIZUM") return "bizum";
       return method ? method.toLowerCase() : "otros";
     })();
+
+    const purchaseBenefits = clienteCompra
+      ? await resolveManualPurchaseBenefits(admin, importe)
+      : null;
 
     const atomicPayload = {
       operation_id: operationId || null,
@@ -584,13 +638,16 @@ export async function POST(req: Request) {
       next_normales: nextNormales,
       expected_free: currentFree,
       expected_normal: currentNormales,
+      free_delta: freeDelta,
+      normal_delta: normalDelta,
       note_text: notaTexto,
       note_author_user_id: me.user_id || null,
       note_author_name: me.display_name || me.email || "Central",
       note_author_email: me.email || null,
       created_by_user_id: me.user_id || null,
       created_by_role: me.role,
-      points_to_add: clienteCompra && importe > 0 ? pointsFromAmount(importe) : 0,
+      points_to_add: clienteCompra && importe > 0 ? Number(purchaseBenefits?.coins || 0) : 0,
+      purchase_benefits: purchaseBenefits,
       business: String(cliente?.origen || "celestial"),
     };
 
