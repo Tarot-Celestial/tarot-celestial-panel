@@ -441,3 +441,391 @@
 .promoBuy:disabled { opacity:.55; cursor:wait; transform:none; }
 @media (max-width: 980px) { .promoGrid { grid-template-columns:1fr 1fr; } }
 @media (max-width: 680px) { .promoSection { padding:18px; } .promoHeader { flex-direction:column; } .promoGrid { grid-template-columns:1fr; } .promoBuy { min-height:50px; } }
+
+/* === Mejora visual premium del apartado de precios === */
+.shell {
+  position: relative;
+}
+
+.shell::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(87, 58, 178, .16), transparent 18%),
+    radial-gradient(circle at 92% 14%, rgba(231, 189, 98, .10), transparent 18%),
+    radial-gradient(circle at 86% 78%, rgba(127, 71, 203, .10), transparent 18%);
+  opacity: .9;
+}
+
+.hero,
+.section,
+.level,
+.promoSection,
+.card,
+.promoCard {
+  backdrop-filter: blur(3px);
+}
+
+.minuteSection {
+  background:
+    radial-gradient(circle at 92% 8%, rgba(244, 199, 93, .16), transparent 24%),
+    radial-gradient(circle at 10% 92%, rgba(115, 64, 186, .18), transparent 26%),
+    linear-gradient(145deg, rgba(15, 12, 20, .985), rgba(6, 8, 16, .99) 52%, rgba(18, 11, 31, .985));
+}
+
+.level {
+  overflow: visible;
+  padding: 22px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent 16%),
+    linear-gradient(150deg, rgba(18, 18, 31, .94), rgba(10, 9, 18, .98) 65%, rgba(18, 12, 27, .96));
+  box-shadow: 0 18px 40px rgba(0, 0, 0, .28), inset 0 1px rgba(255,255,255,.05);
+}
+
+.levelPremium {
+  background:
+    radial-gradient(circle at 86% 8%, rgba(244, 200, 97, .10), transparent 28%),
+    linear-gradient(155deg, rgba(28, 20, 11, .97), rgba(10, 9, 18, .985) 52%, rgba(27, 15, 37, .97));
+}
+
+.levelCelestial {
+  position: relative;
+  padding-top: 26px;
+  border-color: rgba(255, 218, 126, .62);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(138, 72, 214, .24), transparent 18%),
+    radial-gradient(circle at 88% 8%, rgba(244, 199, 93, .16), transparent 22%),
+    radial-gradient(circle at 3% 100%, rgba(110, 64, 186, .18), transparent 24%),
+    linear-gradient(150deg, rgba(7, 10, 24, .98), rgba(10, 9, 18, .99) 42%, rgba(20, 10, 37, .98));
+  box-shadow: 0 20px 48px rgba(0,0,0,.30), inset 0 1px rgba(255,255,255,.08), 0 0 30px rgba(181, 132, 45, .12);
+}
+
+.levelCelestial::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 12% 84%, rgba(255,255,255,.08) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 65% 22%, rgba(255,255,255,.14) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 78% 70%, rgba(255,255,255,.10) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 84% 18%, rgba(255,226,147,.10), transparent 24%);
+  opacity: .9;
+}
+
+.celestialStage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.stageOrb {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  filter: blur(.2px);
+}
+
+.stageOrbLeft {
+  left: -48px;
+  bottom: 26px;
+  width: 154px;
+  height: 154px;
+  background: radial-gradient(circle at 35% 35%, rgba(145, 132, 255, .55), rgba(40, 36, 82, .88) 55%, rgba(16, 16, 30, .02) 75%);
+  box-shadow: 0 0 60px rgba(108, 89, 210, .28);
+}
+
+.stageOrbRight {
+  right: -52px;
+  top: 24px;
+  width: 138px;
+  height: 138px;
+  background: radial-gradient(circle at 35% 35%, rgba(255, 213, 144, .32), rgba(73, 53, 103, .92) 55%, rgba(16,16,30,.02) 74%);
+  box-shadow: 0 0 50px rgba(255, 198, 103, .12);
+}
+
+.stageMoon {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #ffdf91;
+  font-size: 28px;
+  text-shadow: 0 0 18px rgba(255, 215, 123, .35);
+}
+
+.stageConstellation {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  width: 240px;
+  height: 130px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 1px solid rgba(255, 218, 126, .12);
+  box-shadow:
+    0 0 0 22px rgba(255, 218, 126, .05),
+    0 0 0 46px rgba(255, 218, 126, .03);
+  opacity: .55;
+}
+
+.levelHeader {
+  position: relative;
+  padding-bottom: 18px;
+}
+
+.levelIdentity p {
+  max-width: 460px;
+}
+
+.levelBenefits {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 420px;
+}
+
+.levelBenefits strong {
+  width: 100%;
+  margin-bottom: 1px;
+}
+
+.levelBenefitChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid rgba(244, 206, 111, .22);
+  border-radius: 999px;
+  color: #fff0c4;
+  background: linear-gradient(135deg, rgba(55, 33, 79, .52), rgba(17, 14, 31, .74));
+  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 8px 18px rgba(0,0,0,.18);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.levelBenefitChip i {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 214, 111, .12);
+  font-style: normal;
+}
+
+.levelThreeGrid {
+  gap: 18px;
+}
+
+.card {
+  overflow: hidden;
+  min-height: 292px;
+  border-color: rgba(244, 204, 108, .18);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.025), transparent 20%),
+    linear-gradient(155deg, rgba(17, 16, 29, .97), rgba(8, 9, 17, .985));
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: auto -25% -40% 10%;
+  height: 160px;
+  background: radial-gradient(circle, rgba(255, 196, 83, .14), transparent 58%);
+  pointer-events: none;
+}
+
+.minuteCard {
+  min-height: 540px;
+  gap: 13px;
+}
+
+.minuteCard[data-level="3"] {
+  padding-top: 20px;
+  border-color: rgba(255, 220, 136, .30);
+  background:
+    radial-gradient(circle at 68% 28%, rgba(138, 72, 214, .24), transparent 24%),
+    radial-gradient(circle at 74% 72%, rgba(250, 194, 84, .13), transparent 22%),
+    linear-gradient(155deg, rgba(12, 12, 28, .98), rgba(8, 9, 17, .985));
+  box-shadow: inset 0 1px rgba(255,255,255,.06), 0 18px 36px rgba(0,0,0,.28), 0 0 32px rgba(152, 92, 230, .10);
+}
+
+.minuteCard[data-level="3"][data-highlight="true"] {
+  transform: translateY(-6px);
+  border-color: rgba(255, 216, 127, .72);
+  box-shadow: inset 0 1px rgba(255,255,255,.10), 0 22px 48px rgba(0,0,0,.34), 0 0 34px rgba(255, 203, 99, .24), 0 0 70px rgba(137, 89, 218, .18);
+}
+
+.minuteCard[data-level="2"] {
+  background:
+    radial-gradient(circle at 72% 28%, rgba(210, 150, 65, .12), transparent 22%),
+    linear-gradient(155deg, rgba(21, 18, 24, .96), rgba(8, 9, 17, .985));
+}
+
+.minuteCard[data-level="1"] {
+  background:
+    radial-gradient(circle at 72% 28%, rgba(128, 85, 204, .10), transparent 22%),
+    linear-gradient(155deg, rgba(17, 16, 24, .96), rgba(8, 9, 17, .985));
+}
+
+.cardAura {
+  position: absolute;
+  inset: auto 14px 96px 14px;
+  height: 112px;
+  pointer-events: none;
+  background: radial-gradient(circle at 78% 28%, rgba(255, 201, 92, .14), transparent 32%);
+  opacity: .9;
+}
+
+.visualCluster {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: -2px;
+}
+
+.visualToken {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 52px;
+  padding: 10px 11px;
+  border: 1px solid rgba(244, 206, 111, .18);
+  border-radius: 16px;
+  color: #fff1c6;
+  background:
+    linear-gradient(140deg, rgba(255,255,255,.03), transparent 55%),
+    linear-gradient(140deg, rgba(27, 20, 34, .82), rgba(16, 12, 27, .94));
+  box-shadow: inset 0 1px rgba(255,255,255,.04), 0 10px 22px rgba(0,0,0,.16);
+}
+
+.visualToken::after {
+  content: "";
+  position: absolute;
+  inset: auto -16px -20px auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 208, 103, .18), transparent 70%);
+  pointer-events: none;
+}
+
+.visualEmoji {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  font-size: 18px;
+  background: rgba(255, 227, 147, .12);
+  box-shadow: inset 0 1px rgba(255,255,255,.06), 0 0 22px rgba(255, 208, 103, .08);
+}
+
+.visualToken small {
+  color: rgba(255, 245, 219, .88);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.coinsToken .visualEmoji { background: rgba(255, 204, 96, .16); }
+.rouletteToken .visualEmoji { background: rgba(255, 138, 72, .15); }
+.oracleToken .visualEmoji { background: rgba(159, 104, 255, .18); }
+.orbToken .visualEmoji { background: rgba(121, 80, 221, .18); }
+
+.promoSection {
+  background:
+    radial-gradient(circle at 82% 0, rgba(255, 203, 76, .18), transparent 28%),
+    radial-gradient(circle at 14% 100%, rgba(125, 68, 196, .18), transparent 34%),
+    linear-gradient(145deg, rgba(18, 14, 28, .98), rgba(10, 8, 18, .99) 52%, rgba(25, 11, 35, .99));
+}
+
+.promoCard,
+.card {
+  border-color: rgba(244, 204, 108, .20);
+}
+
+.promoCard:hover,
+.card:hover {
+  border-color: rgba(255, 219, 128, .40);
+}
+
+.promoCard h3,
+.card h3 {
+  text-wrap: balance;
+}
+
+@media (max-width: 1040px) {
+  .levelBenefits {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .levelThreeGrid,
+  .grid {
+    gap: 16px;
+  }
+
+  .minuteCard {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 680px) {
+  .level {
+    padding: 16px;
+  }
+
+  .stageOrbLeft {
+    width: 110px;
+    height: 110px;
+    left: -46px;
+    bottom: 18px;
+  }
+
+  .stageOrbRight {
+    width: 96px;
+    height: 96px;
+    right: -42px;
+    top: 38px;
+  }
+
+  .stageConstellation {
+    width: 160px;
+    height: 86px;
+  }
+
+  .levelBenefits {
+    gap: 8px;
+  }
+
+  .levelBenefitChip {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .visualCluster {
+    grid-template-columns: 1fr;
+  }
+
+  .minuteCard[data-level="3"][data-highlight="true"] {
+    transform: none;
+  }
+}

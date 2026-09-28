@@ -18,6 +18,24 @@ type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: n
 type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number };
 type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
+const LEVEL_BENEFITS: Record<RouletteLevel, { icon: string; label: string }[]> = {
+  1: [
+    { icon: "🎡", label: "1 giro Nivel 1" },
+    { icon: "✨", label: "Hasta +60 min" },
+    { icon: "🪙", label: "Hasta 400 Coins" },
+  ],
+  2: [
+    { icon: "🎡", label: "1 giro Nivel 2" },
+    { icon: "✨", label: "Hasta +80 min" },
+    { icon: "🪙", label: "Hasta 1.000 Coins" },
+  ],
+  3: [
+    { icon: "🎡", label: "1–2 giros Nivel 3" },
+    { icon: "🪙", label: "Coins por compra" },
+    { icon: "🔮", label: "2 tiradas Oráculo" },
+  ],
+};
+
 export default function PreciosOfertasPage() {
   const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
   const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
@@ -214,10 +232,7 @@ export default function PreciosOfertasPage() {
                   <h3 id="level-one-title">Nivel 1</h3>
                   <p>Consultas rápidas + giro con premio. Paquetes configurados como Nivel 1.</p>
                 </div>
-                <div className={styles.levelBenefits}>
-                  <strong>Tu compra incluye</strong>
-                  <span>🎡 1 giro Nivel 1</span><span>✨ Hasta +60 min</span><span>🪙 Hasta 400 Coins</span>
-                </div>
+                <LevelBenefitChips level={1} />
               </div>
               <div className={styles.grid}>
                 {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={1} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
@@ -232,10 +247,7 @@ export default function PreciosOfertasPage() {
                   <h3 id="level-two-title">Nivel 2</h3>
                   <p>Más consulta. Premios superiores. Paquetes configurados como Nivel 2.</p>
                 </div>
-                <div className={styles.levelBenefits}>
-                  <strong>Tu compra incluye</strong>
-                  <span>🎡 1 giro Nivel 2</span><span>✨ Hasta +80 min</span><span>🪙 Hasta 1.000 Coins</span>
-                </div>
+                <LevelBenefitChips level={2} />
               </div>
               <div className={styles.grid}>
                 {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
@@ -248,6 +260,12 @@ export default function PreciosOfertasPage() {
             </button>
 
             {showLevelThree ? <section id="level-three-packs" className={`${styles.level} ${styles.levelPremium} ${styles.levelCelestial}`} aria-labelledby="level-three-title">
+              <div className={styles.celestialStage} aria-hidden="true">
+                <span className={`${styles.stageOrb} ${styles.stageOrbLeft}`} />
+                <span className={`${styles.stageOrb} ${styles.stageOrbRight}`} />
+                <span className={styles.stageMoon}>☾</span>
+                <span className={styles.stageConstellation} />
+              </div>
               <div className={styles.levelHeader}>
                 <div className={`${styles.levelMedallion} ${styles.celestialMedallion}`}><Gem /></div>
                 <div className={styles.levelIdentity}>
@@ -255,12 +273,9 @@ export default function PreciosOfertasPage() {
                   <h3 id="level-three-title">Nivel 3</h3>
                   <p>Tu compra premium desbloquea nuestros premios más exclusivos.</p>
                 </div>
-                <div className={styles.levelBenefits}>
-                  <strong>Tu compra incluye</strong>
-                  <span>🎡 1–2 giros Nivel 3</span><span>🪙 Coins por compra</span><span>🔮 2 tiradas Oráculo</span>
-                </div>
+                <LevelBenefitChips level={3} />
               </div>
-              <div className={styles.grid}>
+              <div className={`${styles.grid} ${styles.levelThreeGrid}`}>
                 {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section> : null}
@@ -311,9 +326,11 @@ function formatPromoMoney(value: number, currency: string) {
 }
 
 function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel; busy: boolean; onBuy: () => void }) {
+  const rewardCoins = pack.rewardCoins ?? Math.round(pack.priceUsd * 10);
   return (
-    <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`}>
+    <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`} data-level={level} data-highlight={pack.highlight ? "true" : "false"}>
       {pack.highlight ? <span className={styles.recommended}>{level === 3 ? "PREMIUM" : level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
+      <div className={styles.cardAura} aria-hidden="true" />
       <div className={styles.serviceTop}>
         <div className={styles.icon}>{level === 3 ? <Crown /> : level === 2 ? <Gem /> : <ShoppingBag />}</div>
         <span className={styles.levelTag}>GIRO NIVEL {level}</span>
@@ -323,8 +340,40 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
         <strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong>
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
-      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins ?? Math.round(pack.priceUsd * 10)} oracleCredits={pack.oracleCredits} />
+      <div className={styles.visualCluster} aria-hidden="true">
+        <div className={`${styles.visualToken} ${styles.coinsToken}`}>
+          <span className={styles.visualEmoji}>🪙</span>
+          <small>+{rewardCoins.toLocaleString("es-ES")} Coins</small>
+        </div>
+        <div className={`${styles.visualToken} ${styles.rouletteToken}`}>
+          <span className={styles.visualEmoji}>🎰</span>
+          <small>{pack.rouletteSpins} giro{pack.rouletteSpins === 1 ? "" : "s"}</small>
+        </div>
+        {(pack.oracleCredits || 0) > 0 ? <div className={`${styles.visualToken} ${styles.oracleToken}`}>
+          <span className={styles.visualEmoji}>🔮</span>
+          <small>{pack.oracleCredits || 0} tirada{(pack.oracleCredits || 0) === 1 ? "" : "s"}</small>
+        </div> : null}
+        {level === 3 ? <div className={`${styles.visualToken} ${styles.orbToken}`}>
+          <span className={styles.visualEmoji}>{pack.highlight ? "🌙" : "✨"}</span>
+          <small>{pack.highlight ? "Orbe premium" : "Bonus místico"}</small>
+        </div> : null}
+      </div>
+      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={rewardCoins} oracleCredits={pack.oracleCredits} />
       <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
     </article>
+  );
+}
+
+function LevelBenefitChips({ level }: { level: RouletteLevel }) {
+  return (
+    <div className={styles.levelBenefits}>
+      <strong>Tu compra incluye</strong>
+      {LEVEL_BENEFITS[level].map((item) => (
+        <span key={`${level}-${item.label}`} className={styles.levelBenefitChip}>
+          <i aria-hidden="true">{item.icon}</i>
+          {item.label}
+        </span>
+      ))}
+    </div>
   );
 }

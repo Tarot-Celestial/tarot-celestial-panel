@@ -66,3 +66,49 @@
 @media (prefers-reduced-motion: reduce) {
   .benefit a svg { transition: none; }
 }
+
+/* Mejora premium visual */
+.benefit {
+  gap: 9px;
+  padding: 15px 14px;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(231, 189, 98, .16), transparent 42%),
+    linear-gradient(138deg, rgba(46, 30, 61, .58), rgba(17, 14, 29, .88));
+  box-shadow: inset 0 1px rgba(255,255,255,.05), 0 12px 22px rgba(0,0,0,.16);
+}
+
+.eyebrow {
+  color: rgba(255, 244, 208, .56);
+  font-size: 9px;
+}
+
+.benefit strong {
+  color: #ffe89f;
+  font-size: 12px;
+}
+
+.confirmed {
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 219, 128, .14);
+  border-radius: 12px;
+  background: rgba(255, 214, 111, .06);
+}
+
+.prizes {
+  padding: 0 2px;
+}
+
+.benefit a {
+  color: #ffd86e;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.benefit[data-level="3"] {
+  border-color: rgba(255, 224, 135, .50);
+  background:
+    radial-gradient(circle at 92% 4%, rgba(255, 221, 123, .18), transparent 36%),
+    linear-gradient(132deg, rgba(151, 94, 21, .20), rgba(67, 31, 87, .22) 58%, rgba(7, 5, 10, .34));
+  box-shadow: inset 0 1px rgba(255,255,255,.08), 0 0 26px rgba(231,189,98,.08), 0 12px 24px rgba(0,0,0,.18);
+}
