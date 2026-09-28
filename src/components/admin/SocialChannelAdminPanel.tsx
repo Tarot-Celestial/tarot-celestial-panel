@@ -296,7 +296,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     scheduled_at: "",
     campaign_id: "",
     privacy_level: "SELF_ONLY",
-    publish_mode: "direct",
+    publish_mode: provider === "tiktok" ? "inbox" : "direct",
     share_to_feed: true,
     disable_comment: false,
     disable_duet: false,
@@ -431,7 +431,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
   }, [searchParams, provider, api, brand.name]);
 
   useEffect(() => {
-    setDraft((v: any) => ({ ...v, id: "", content_type: provider === "instagram" ? "post" : "video", privacy_level: "SELF_ONLY", publish_mode: "direct" }));
+    setDraft((v: any) => ({ ...v, id: "", content_type: provider === "instagram" ? "post" : "video", privacy_level: "SELF_ONLY", publish_mode: provider === "tiktok" ? "inbox" : "direct" }));
     setAiSingle((v: any) => ({ ...v, content_type: provider === "instagram" ? "post" : "photo" }));
     setWeekPlan(null);
     setFlexPlan(null);
@@ -482,7 +482,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       scheduled_at: toLocalInput(item.scheduled_at),
       campaign_id: item.campaign_id || "",
       privacy_level: item.privacy_level || "SELF_ONLY",
-      publish_mode: item.publish_mode || "direct",
+      publish_mode: item.publish_mode || (provider === "tiktok" ? "inbox" : "direct"),
       share_to_feed: item.settings?.share_to_feed !== false,
       disable_comment: Boolean(item.settings?.disable_comment),
       disable_duet: Boolean(item.settings?.disable_duet),
@@ -520,7 +520,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       } else {
         setMessage(draft.scheduled_at ? "Publicación programada." : "Borrador guardado.");
       }
-      setDraft({ id: "", content_type: provider === "instagram" ? "post" : "video", title: "", caption: "", media: "", scheduled_at: "", campaign_id: "", privacy_level: "SELF_ONLY", publish_mode: "direct", share_to_feed: true, disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: false, ai_meta: null });
+      setDraft({ id: "", content_type: provider === "instagram" ? "post" : "video", title: "", caption: "", media: "", scheduled_at: "", campaign_id: "", privacy_level: "SELF_ONLY", publish_mode: provider === "tiktok" ? "inbox" : "direct", share_to_feed: true, disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: false, ai_meta: null });
       await load();
     } catch (e: any) {
       setError(e?.message || "No se pudo guardar");
@@ -682,7 +682,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       scheduled_at: "",
       campaign_id: aiSingle.campaign_id || "",
       privacy_level: "SELF_ONLY",
-      publish_mode: "direct",
+      publish_mode: provider === "tiktok" ? "inbox" : "direct",
       share_to_feed: true,
       disable_comment: false,
       disable_duet: false,
@@ -711,7 +711,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
           media_urls: idea.media_url ? [idea.media_url] : [],
           campaign_id: aiSingle.campaign_id || null,
           privacy_level: "SELF_ONLY",
-          publish_mode: "direct",
+          publish_mode: provider === "tiktok" ? "inbox" : "direct",
           settings: {
             is_aigc: true,
             share_to_feed: true,
@@ -780,7 +780,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             media_urls: idea.media_url ? [idea.media_url] : [],
             campaign_id: aiSingle.campaign_id || null,
             privacy_level: "SELF_ONLY",
-            publish_mode: "direct",
+            publish_mode: provider === "tiktok" ? "inbox" : "direct",
             settings: { is_aigc: true, share_to_feed: true, brand_organic_toggle: true, ai_meta: { source: "ai_series", hook: idea.hook, visual_prompt: idea.visual_prompt, reel_script: idea.reel_script } },
           }),
         });
@@ -955,7 +955,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
           scheduled_at: canSchedule ? scheduledIso(weekDraft.start_date, item.day_offset, item.time || weekDraft.preferred_time) : null,
           campaign_id: weekDraft.campaign_id || null,
           privacy_level: "SELF_ONLY",
-          publish_mode: "direct",
+          publish_mode: provider === "tiktok" ? "inbox" : "direct",
           status: "draft",
           settings: {
             is_aigc: true,
@@ -1078,7 +1078,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             scheduled_at: canSchedule ? scheduledIso(flexDraft.start_date, item.day_offset, item.time || flexDraft.preferred_time) : null,
             campaign_id: flexDraft.campaign_id || null,
             privacy_level: "SELF_ONLY",
-            publish_mode: "direct",
+            publish_mode: provider === "tiktok" ? "inbox" : "direct",
             settings: {
               is_aigc: true,
               share_to_feed: true,
@@ -1192,7 +1192,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             {draft.content_type === "story" ? <div className={`${styles.full} ${styles.storyNotice}`}>En las stories de Instagram el texto principal va dentro de la propia pieza. Este contenido se guardará y publicará sin caption externo. Si configuras música de fondo, la story se generará como vídeo.</div> : <label className={styles.full}>Texto / caption<textarea rows={6} value={draft.caption} onChange={(e) => setDraft({ ...draft, caption: e.target.value })} placeholder="Texto que acompañará la publicación…" /></label>}
             <label className={styles.full}>URLs públicas de imagen/vídeo<textarea rows={3} value={draft.media} onChange={(e) => setDraft({ ...draft, media: e.target.value })} placeholder="Una URL por línea. Para carrusel/fotos puedes añadir varias." /><small>Meta y TikTok deben poder descargar el recurso desde Internet.</small></label>
             <label>Programar para<input type="datetime-local" value={draft.scheduled_at} onChange={(e) => setDraft({ ...draft, scheduled_at: e.target.value })} /></label>
-            {provider === "tiktok" && <><label>Modo<select value={draft.publish_mode} onChange={(e) => setDraft({ ...draft, publish_mode: e.target.value })}><option value="direct">Publicación directa</option><option value="inbox">Enviar a bandeja TikTok</option></select></label><label>Privacidad<select value={draft.privacy_level} onChange={(e) => setDraft({ ...draft, privacy_level: e.target.value })}><option value="SELF_ONLY">Solo yo / pruebas</option><option value="PUBLIC_TO_EVERYONE">Público</option><option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option><option value="FOLLOWER_OF_CREATOR">Seguidores</option></select></label></>}
+            {provider === "tiktok" && <><label>Modo<select value={draft.publish_mode} onChange={(e) => setDraft({ ...draft, publish_mode: e.target.value })}><option value="inbox">Enviar a bandeja TikTok (recomendado)</option><option value="direct">Publicación directa</option></select></label><label>Privacidad<select value={draft.privacy_level} onChange={(e) => setDraft({ ...draft, privacy_level: e.target.value })}><option value="SELF_ONLY">Solo yo / pruebas</option><option value="PUBLIC_TO_EVERYONE">Público</option><option value="MUTUAL_FOLLOW_FRIENDS">Amigos mutuos</option><option value="FOLLOWER_OF_CREATOR">Seguidores</option></select></label></>}
             {provider === "instagram" && <label className={styles.checkLabel}><input type="checkbox" checked={draft.share_to_feed} onChange={(e) => setDraft({ ...draft, share_to_feed: e.target.checked })} /> Mostrar Reel también en el feed</label>}
             {provider === "tiktok" && <div className={styles.checkGroup}><label><input type="checkbox" checked={draft.disable_comment} onChange={(e) => setDraft({ ...draft, disable_comment: e.target.checked })} /> Desactivar comentarios</label><label><input type="checkbox" checked={draft.disable_duet} onChange={(e) => setDraft({ ...draft, disable_duet: e.target.checked })} /> Desactivar duetos</label><label><input type="checkbox" checked={draft.disable_stitch} onChange={(e) => setDraft({ ...draft, disable_stitch: e.target.checked })} /> Desactivar stitch</label><label><input type="checkbox" checked={draft.is_aigc} onChange={(e) => setDraft({ ...draft, is_aigc: e.target.checked })} /> Contenido generado con IA</label></div>}
           </div>

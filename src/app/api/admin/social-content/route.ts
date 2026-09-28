@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     scheduled_at: scheduledAt,
     status,
     privacy_level: body.privacy_level || null,
-    publish_mode: body.publish_mode || "direct",
+    publish_mode: body.publish_mode || (body.provider === "tiktok" ? "inbox" : "direct"),
     settings: body.settings || {},
     updated_at: new Date().toISOString(),
   };

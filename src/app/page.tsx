@@ -1,5 +1,1 @@
-import { redirect } from "next/navigation";
-
-export default function Page() {
-  redirect("/login");
-}
+export { default, metadata } from "@/app/informacion-comercial/page";

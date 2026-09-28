@@ -151,7 +151,7 @@ export function verifySocialOAuthState(value: string | null | undefined, provide
 }
 
 export function tiktokScopes() {
-  return (process.env.TIKTOK_SCOPES || "user.info.basic,user.info.stats,video.list,video.upload,video.publish")
+  return (process.env.TIKTOK_SCOPES || "user.info.basic,video.upload")
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);

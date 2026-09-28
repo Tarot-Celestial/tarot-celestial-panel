@@ -7,7 +7,7 @@ export const BUSINESS = {
   email: "alexrivera200118@gmail.com",
   phoneDisplay: "+34 603 391 576",
   phoneHref: "+34603391576",
-  website: "https://clientestarotcelestial.es",
+  website: "https://nextjs-boilerplate-git-main-caudetricky-3164s-projects.vercel.app",
 } as const;
 
 export const PRICES = [

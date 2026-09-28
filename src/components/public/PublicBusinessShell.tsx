@@ -65,7 +65,7 @@ export function LegalDocument({ eyebrow, title, intro, children }: { eyebrow: st
         <span>{eyebrow}</span>
         <h1>{title}</h1>
         <p>{intro}</p>
-        <small>Última actualización: 8 de septiembre de 2026</small>
+        <small>Última actualización: 29 de septiembre de 2026</small>
       </header>
       <article className={styles.legalDocument}>{children}</article>
     </div>
