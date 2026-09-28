@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { configuredXpProgress } from "@/lib/xp-levels";
 import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
+import { evaluateProfessionalXpRules } from "@/lib/server/xp-professional-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,17 +18,27 @@ export async function GET(req:Request){
   const {admin}=gate;
   const levelConfig = await loadXpLevelConfiguration(admin);
   const monthStartIso=monthStart(), dayStartIso=dayStart();
-  const [rulesR,eventsR,rollupR,workersR,auditR,missionsR,levelMissionsR,tierMissionsR]=await Promise.all([
-   admin.from("worker_xp_rules").select("*").order("created_at"),
-   admin.from("worker_xp_events").select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,created_at").order("created_at",{ascending:false}).limit(250),
-   admin.rpc("get_worker_xp_rollup",{p_month_start:monthStartIso,p_day_start:dayStartIso,p_worker_id:null}),
+  const [workersR,settingsR]=await Promise.all([
    admin.from("workers").select("id,display_name,email,role,team,is_active").eq("role","central").order("display_name"),
+   admin.from("worker_xp_system_settings").select("professional_mode,auto_evaluate,updated_at").eq("id",true).maybeSingle(),
+  ]);
+  if(workersR.error) throw workersR.error;
+  const settingsInstalled=!settingsR.error;
+  const settings=settingsInstalled?(settingsR.data||{professional_mode:true,auto_evaluate:true}):{professional_mode:true,auto_evaluate:true};
+  let evaluation:any={evaluated:0,awarded:0,skipped:0};
+  if(settings.professional_mode!==false&&settings.auto_evaluate!==false){
+   evaluation=await evaluateProfessionalXpRules(admin,(workersR.data||[]).map((w:any)=>String(w.id)));
+  }
+  const [rulesR,eventsR,rollupR,auditR,missionsR,levelMissionsR,tierMissionsR]=await Promise.all([
+   admin.from("worker_xp_rules").select("*").order("created_at"),
+   admin.from("worker_xp_events").select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at").order("created_at",{ascending:false}).limit(250),
+   admin.rpc("get_worker_xp_rollup",{p_month_start:monthStartIso,p_day_start:dayStartIso,p_worker_id:null}),
    admin.from("worker_xp_audit").select("*").order("created_at",{ascending:false}).limit(100),
    admin.from("worker_xp_missions").select("*").order("display_order"),
    admin.from("worker_xp_level_missions").select("level,mission_id,availability,display_order,active"),
    admin.from("worker_xp_tier_missions").select("tier_key,mission_id,availability,display_order,active"),
   ]);
-  for(const r of [rulesR,eventsR,rollupR,workersR,auditR]) if(r.error) throw r.error;
+  for(const r of [rulesR,eventsR,rollupR,auditR]) if(r.error) throw r.error;
   const missionInstalled=!missionsR.error&&!levelMissionsR.error&&!tierMissionsR.error;
   const [coinConfigR,walletsR,conversionsR]=await Promise.all([
    admin.from("worker_xp_coin_config").select("xp_units,coin_units,min_xp,enabled,updated_at").eq("id",true).maybeSingle(),
@@ -42,7 +53,8 @@ export async function GET(req:Request){
   const rollupByWorker=new Map<string,any>((rollupR.data||[]).map((row:any)=>[String(row.worker_id),row]));
   const cards=workers.map((w:any)=>{ const stats=rollupByWorker.get(String(w.id))||{}; const total=num(stats.total_xp); const month=num(stats.xp_month); const today=num(stats.xp_today); const lvl=configuredXpProgress(total, levelConfig.levels, levelConfig.tiers); const conversion=conversionsByWorker.get(String(w.id)); return {...w,total_xp:total,xp_month:month,xp_today:today,level:lvl.level,level_xp:lvl.current,next_level_xp:lvl.span,next_level_total:lvl.next,clients_captured:num(stats.clients_captured),repurchases:num(stats.repurchases),followups:num(stats.followups),consultations:num(stats.consultations),positive_reviews:num(stats.positive_reviews),missions:num(stats.missions),coins:coinInstalled?(walletByWorker.get(String(w.id))||0):null,coins_spent:coinInstalled?(conversion?.spent||0):null,rewards_claimed:null,rewards_value:null}; });
   const top=[...cards].sort((a:any,b:any)=>b.xp_month-a.xp_month)[0]||null;
-  return NextResponse.json({ok:true,rules:rulesR.data||[],workers:cards,events,audit:auditR.data||[],level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,missions:{installed:missionInstalled,catalog:missionInstalled?missionsR.data||[]:[],levels:missionInstalled?levelMissionsR.data||[]:[],tiers:missionInstalled?tierMissionsR.data||[]:[]},coin_exchange:{installed:coinInstalled,config:coinConfigR.data||null},summary:{xp_month:cards.reduce((s:any,w:any)=>s+num(w.xp_month),0),xp_today:cards.reduce((s:any,w:any)=>s+num(w.xp_today),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:coinInstalled?(conversionsR.data||[]).filter((r:any)=>r.status==="completed").reduce((s:number,r:any)=>s+num(r.coins_granted),0):null,rewards_claimed:null,active_rules:(rulesR.data||[]).filter((r:any)=>r.enabled).length}});
+  const rules=[...(rulesR.data||[])].sort((a:any,b:any)=>(Number(a.display_order||100)-Number(b.display_order||100))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+  return NextResponse.json({ok:true,rules,workers:cards,events,audit:auditR.data||[],settings:{installed:settingsInstalled,...settings},evaluation,level_config:levelConfig.levels,tier_config:levelConfig.tiers,level_config_persisted:levelConfig.persisted,missions:{installed:missionInstalled,catalog:missionInstalled?missionsR.data||[]:[],levels:missionInstalled?levelMissionsR.data||[]:[],tiers:missionInstalled?tierMissionsR.data||[]:[]},coin_exchange:{installed:coinInstalled,config:coinConfigR.data||null},summary:{xp_month:cards.reduce((s:any,w:any)=>s+num(w.xp_month),0),xp_today:cards.reduce((s:any,w:any)=>s+num(w.xp_today),0),average_level:cards.length?cards.reduce((s:any,w:any)=>s+w.level,0)/cards.length:0,top_worker:top?{id:top.id,name:top.display_name,xp:top.xp_month}:null,coins_generated:coinInstalled?(conversionsR.data||[]).filter((r:any)=>r.status==="completed").reduce((s:number,r:any)=>s+num(r.coins_granted),0):null,rewards_claimed:null,active_rules:rules.filter((r:any)=>r.enabled).length,pending_rules:rules.filter((r:any)=>String(r.integration_status||"")==="pending").length,error_rules:rules.filter((r:any)=>String(r.integration_status||"")==="error").length,automatic_rules:rules.filter((r:any)=>r.enabled&&r.automatic!==false).length}});
  }catch(e:any){ return NextResponse.json({ok:false,error:e?.message||"ERR"},{status:500}); }
 }
 
@@ -51,12 +63,32 @@ export async function POST(req:Request){
   const gate=await requireAdmin(req); if(!gate.ok) return NextResponse.json({ok:false,error:gate.error},{status:403});
   const {admin,me}=gate; const b=await req.json(); const op=String(b?.op||"");
   if(op==="save_rule"){
-   const key=String(b.action_key||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_"); if(!key) throw new Error("ACTION_KEY_REQUIRED");
-   const old=await admin.from("worker_xp_rules").select("*").eq("action_key",key).maybeSingle();
-   const payload={action_key:key,name:String(b.name||"").trim(),description:String(b.description||"").trim(),xp_reward:Math.max(0,Math.round(num(b.xp_reward))),frequency:String(b.frequency||"").trim(),enabled:!!b.enabled,integration_status:String(b.integration_status||"pending")==="connected"?"connected":"pending",updated_at:new Date().toISOString()};
-   const saved=await admin.from("worker_xp_rules").upsert(payload,{onConflict:"action_key"}).select("*").single(); if(saved.error) throw saved.error;
-   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:key,old_value:old.data||null,new_value:saved.data});
+   const key=String(b.action_key||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,""); if(!key) throw new Error("ACTION_KEY_REQUIRED");
+   const name=String(b.name||"").trim(); if(!name) throw new Error("RULE_NAME_REQUIRED");
+   const allowedStatus=["connected","pending","error"];
+   const allowedTrigger=["event","threshold","manual"];
+   const old=await admin.from("worker_xp_rules").select("*").eq("action_key",key).maybeSingle(); if(old.error) throw old.error;
+   const condition=b.condition_json&&typeof b.condition_json==="object"&&!Array.isArray(b.condition_json)?b.condition_json:{};
+   const payload={action_key:key,name,description:String(b.description||"").trim(),xp_reward:Math.max(0,Math.round(num(b.xp_reward))),frequency:String(b.frequency||"unlimited").trim()||"unlimited",enabled:b.enabled!==false,integration_status:allowedStatus.includes(String(b.integration_status))?String(b.integration_status):"pending",category:String(b.category||"custom").trim()||"custom",source_key:String(b.source_key||"custom").trim()||"custom",trigger_type:allowedTrigger.includes(String(b.trigger_type))?String(b.trigger_type):"event",condition_json:condition,max_awards:b.max_awards==null||String(b.max_awards)===""?null:Math.max(1,Math.round(num(b.max_awards))),automatic:b.automatic!==false,notes:String(b.notes||"").trim(),integration_error:String(b.integration_error||"").trim()||null,display_order:Math.max(1,Math.round(num(b.display_order)||100)),updated_at:new Date().toISOString()};
+   let saved=await admin.from("worker_xp_rules").upsert(payload,{onConflict:"action_key"}).select("*").single();
+   if(saved.error&&["42703","PGRST204"].includes(String(saved.error.code||""))){
+    const legacy={action_key:key,name,description:payload.description,xp_reward:payload.xp_reward,frequency:payload.frequency,enabled:payload.enabled,integration_status:payload.integration_status==="connected"?"connected":"pending",updated_at:payload.updated_at};
+    saved=await admin.from("worker_xp_rules").upsert(legacy,{onConflict:"action_key"}).select("*").single();
+   }
+   if(saved.error) throw saved.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:old.data?"rule_update":"rule_create",target_key:key,old_value:old.data||null,new_value:saved.data});
    return NextResponse.json({ok:true,rule:saved.data});
+  }
+  if(op==="save_settings"){
+   const payload={id:true,professional_mode:b.professional_mode!==false,auto_evaluate:b.auto_evaluate!==false,updated_at:new Date().toISOString(),updated_by_worker_id:me.id};
+   const saved=await admin.from("worker_xp_system_settings").upsert(payload,{onConflict:"id"}).select("*").single(); if(saved.error) throw saved.error;
+   await admin.from("worker_xp_audit").insert({admin_worker_id:me.id,change_type:"rule_update",target_key:"xp_system_settings",old_value:null,new_value:saved.data});
+   return NextResponse.json({ok:true,settings:saved.data});
+  }
+  if(op==="evaluate_rules"){
+   const workers=await admin.from("workers").select("id").eq("role","central").or("is_active.is.null,is_active.eq.true"); if(workers.error) throw workers.error;
+   const result=await evaluateProfessionalXpRules(admin,(workers.data||[]).map((row:any)=>String(row.id)));
+   return NextResponse.json({ok:true,result});
   }
   if(op==="delete_rule"){
    const key=String(b.action_key||"").trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_"); if(!key) throw new Error("ACTION_KEY_REQUIRED");

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
 import { configuredXpProgress } from "@/lib/xp-levels";
 import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
+import { evaluateProfessionalXpRules } from "@/lib/server/xp-professional-rules";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -145,6 +146,7 @@ export async function GET(req: Request) {
     if (me.role !== "central" && me.role !== "admin") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const admin = getAdminClient();
+    await evaluateProfessionalXpRules(admin, [String(me.id)]).catch(() => null);
     const levelConfig = await loadXpLevelConfiguration(admin);
     const requestedDate = new URL(req.url).searchParams.get("date");
     const operationalDay = buildOperationalDay(requestedDate);
