@@ -666,7 +666,7 @@ async function stitchStudioVideos(urls: string[]) {
   }
 }
 
-export async function generateTarotVideoStudio(input: {
+export async function startTarotVideoStudio(input: {
   provider: SocialProvider;
   model?: string;
   duration?: number;
@@ -726,9 +726,94 @@ export async function generateTarotVideoStudio(input: {
   const taskIds = createdTasks.map((task) => String(task?.id || "").trim());
   if (taskIds.some((id) => !id)) throw new Error("Runway no devolvió todos los identificadores de tarea.");
 
-  const completed = await Promise.all(taskIds.map((id) => waitForRunwayTask(id)));
+  return {
+    job_id: randomUUID(),
+    provider: input.provider,
+    started_at: new Date().toISOString(),
+    title: String(plan.title || "Vídeo Tarot Celestial IA"),
+    model,
+    duration,
+    format,
+    resolution,
+    ratio,
+    long_mode: longMode,
+    credits_estimate: studioCredits(model, resolution, duration),
+    prompt: String(plan.master_prompt || ""),
+    prompt_scene_1: String(plan.scene_1_prompt || ""),
+    prompt_scene_2: String(plan.scene_2_prompt || ""),
+    task_ids: taskIds,
+    reference_urls: referenceUrls,
+    use_first_frame: Boolean(input.useFirstFrame),
+  };
+}
+
+export async function getTarotVideoStudioStatus(taskIds: string[]) {
+  const ids = Array.from(new Set(taskIds.map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 4);
+  if (!ids.length) throw new Error("No hay tareas de Runway para consultar.");
+
+  const tasks = await Promise.all(ids.map(async (id) => {
+    const task = await runwayRequest(`/v1/tasks/${encodeURIComponent(id)}`);
+    const status = String(task?.status || "PENDING").toUpperCase();
+    const failure = task?.failure || task?.error || null;
+    return {
+      id,
+      status,
+      created_at: task?.createdAt || null,
+      failure_code: task?.failureCode || null,
+      failure: typeof failure === "string" ? failure : failure ? JSON.stringify(failure) : null,
+    };
+  }));
+
+  return { tasks };
+}
+
+export async function finalizeTarotVideoStudio(input: {
+  provider: SocialProvider;
+  taskIds: string[];
+  title?: string;
+  model?: string;
+  duration?: number;
+  format?: TarotStudioFormat;
+  resolution?: TarotStudioResolution;
+  ratio?: string;
+  longMode?: boolean;
+  creditsEstimate?: number;
+  prompt?: string;
+  promptScene1?: string;
+  promptScene2?: string;
+  referenceUrls?: string[];
+  useFirstFrame?: boolean;
+  createdBy?: string | null;
+}) {
+  const taskIds = Array.from(new Set((input.taskIds || []).map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 4);
+  if (!taskIds.length) throw new Error("No hay tareas de Runway para finalizar.");
+
+  const completed = await Promise.all(taskIds.map(async (id) => {
+    const task = await runwayRequest(`/v1/tasks/${encodeURIComponent(id)}`);
+    const status = String(task?.status || "").toUpperCase();
+    if (status !== "SUCCEEDED") {
+      if (["FAILED", "CANCELED", "CANCELLED"].includes(status)) {
+        const reason = task?.failure || task?.failureCode || task?.error || `Runway terminó con estado ${status}`;
+        throw new Error(typeof reason === "string" ? reason : JSON.stringify(reason));
+      }
+      throw new Error(`Runway todavía está procesando la tarea ${id}. Estado actual: ${status || "PENDING"}.`);
+    }
+    return task;
+  }));
+
   const outputUrls = completed.map(runwayOutputUrl).filter(Boolean).map(String);
-  if (outputUrls.length !== prompts.length) throw new Error("Runway terminó la generación pero falta alguna salida de vídeo.");
+  if (outputUrls.length !== taskIds.length) throw new Error("Runway terminó la generación pero falta alguna salida de vídeo.");
+
+  const model = studioModel(input.model);
+  const longMode = Boolean(input.longMode);
+  const duration = studioDuration(model, input.duration, longMode);
+  const format: TarotStudioFormat = input.format === "landscape" ? "landscape" : "vertical";
+  const resolution: TarotStudioResolution = model === "gen4.5"
+    ? "720p"
+    : input.resolution === "480p" || input.resolution === "1080p" ? input.resolution : "720p";
+  const ratio = String(input.ratio || studioRatio(model, format, resolution));
+  const referenceUrls = Array.isArray(input.referenceUrls) ? input.referenceUrls.filter(Boolean).slice(0, 10) : [];
+  const creditsEstimate = Number(input.creditsEstimate || studioCredits(model, resolution, duration));
 
   const buffer = await stitchStudioVideos(outputUrls);
   const bucket = process.env.SOCIAL_MEDIA_BUCKET?.trim() || "tc-social-media";
@@ -744,10 +829,10 @@ export async function generateTarotVideoStudio(input: {
   const publicUrl = publicData?.publicUrl;
   if (!publicUrl) throw new Error("Supabase no devolvió URL pública para el vídeo final.");
 
-  const creditsEstimate = studioCredits(model, resolution, duration);
+  const title = String(input.title || "Vídeo Tarot Celestial IA").slice(0, 140);
   await db.from("tc_social_library").insert({
     provider: input.provider,
-    label: String(plan.title || "Vídeo Tarot Celestial IA").slice(0, 140),
+    label: title,
     media_type: "video",
     url: publicUrl,
     thumbnail_url: referenceUrls[0] || null,
@@ -761,13 +846,13 @@ export async function generateTarotVideoStudio(input: {
       resolution,
       ratio,
       long_mode: longMode,
-      scenes: prompts.length,
+      scenes: taskIds.length,
       credits_estimate: creditsEstimate,
       reference_urls: referenceUrls,
       use_first_frame: Boolean(input.useFirstFrame),
-      prompt: plan.master_prompt,
-      prompt_scene_1: plan.scene_1_prompt,
-      prompt_scene_2: plan.scene_2_prompt,
+      prompt: String(input.prompt || ""),
+      prompt_scene_1: String(input.promptScene1 || ""),
+      prompt_scene_2: String(input.promptScene2 || ""),
       runway_output_urls: outputUrls,
       task_ids: taskIds,
     },
@@ -778,7 +863,7 @@ export async function generateTarotVideoStudio(input: {
     url: publicUrl,
     path: storagePath,
     bucket,
-    title: String(plan.title || "Vídeo Tarot Celestial IA"),
+    title,
     model,
     duration,
     format,
@@ -786,11 +871,52 @@ export async function generateTarotVideoStudio(input: {
     ratio,
     long_mode: longMode,
     credits_estimate: creditsEstimate,
-    prompt: String(plan.master_prompt || ""),
-    prompt_scene_1: String(plan.scene_1_prompt || ""),
-    prompt_scene_2: String(plan.scene_2_prompt || ""),
+    prompt: String(input.prompt || ""),
+    prompt_scene_1: String(input.promptScene1 || ""),
+    prompt_scene_2: String(input.promptScene2 || ""),
     task_ids: taskIds,
   };
+}
+
+// Compatibilidad con llamadas antiguas. IA Studio usa ahora start/status/finalize para no
+// mantener una petición HTTP abierta durante varios minutos.
+export async function generateTarotVideoStudio(input: {
+  provider: SocialProvider;
+  model?: string;
+  duration?: number;
+  longMode?: boolean;
+  format?: TarotStudioFormat;
+  resolution?: TarotStudioResolution;
+  brief: string;
+  contentType?: string;
+  mood?: string;
+  camera?: string;
+  pace?: string;
+  advanced?: string;
+  referenceUrls?: string[];
+  useFirstFrame?: boolean;
+  createdBy?: string | null;
+}) {
+  const job = await startTarotVideoStudio(input);
+  await Promise.all(job.task_ids.map((id) => waitForRunwayTask(id)));
+  return finalizeTarotVideoStudio({
+    provider: input.provider,
+    taskIds: job.task_ids,
+    title: job.title,
+    model: job.model,
+    duration: job.duration,
+    format: job.format,
+    resolution: job.resolution,
+    ratio: job.ratio,
+    longMode: job.long_mode,
+    creditsEstimate: job.credits_estimate,
+    prompt: job.prompt,
+    promptScene1: job.prompt_scene_1,
+    promptScene2: job.prompt_scene_2,
+    referenceUrls: job.reference_urls,
+    useFirstFrame: job.use_first_frame,
+    createdBy: input.createdBy,
+  });
 }
 
 export async function generateAndStoreSocialVideo(input: {

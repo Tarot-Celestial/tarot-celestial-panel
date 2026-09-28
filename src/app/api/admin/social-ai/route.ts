@@ -4,6 +4,9 @@ import {
   generateAndStoreSocialImage,
   generateAndStoreSocialVideo,
   generateTarotVideoStudio,
+  startTarotVideoStudio,
+  getTarotVideoStudioStatus,
+  finalizeTarotVideoStudio,
   generateSingleSocialContent,
   generateSocialCalendarPlan,
   generateSocialSeries,
@@ -33,6 +36,58 @@ export async function POST(req: Request) {
         format: body.format === "vertical" || body.format === "landscape" ? body.format : "square",
         quality: body.quality === "high" || body.quality === "low" ? body.quality : "medium",
         contentType: String(body.content_type || ""),
+        createdBy: auth.me.id,
+      });
+      return NextResponse.json({ ok: true, asset });
+    }
+
+    if (action === "video-studio-start") {
+      const brief = String(body.brief || "").trim();
+      if (!brief) return NextResponse.json({ ok: false, error: "Describe qué vídeo de tarot quieres generar." }, { status: 400 });
+      const job = await startTarotVideoStudio({
+        provider,
+        model: String(body.model || "wan3"),
+        duration: Number(body.duration || 15),
+        longMode: Boolean(body.long_mode),
+        format: body.format === "landscape" ? "landscape" : "vertical",
+        resolution: body.resolution === "480p" || body.resolution === "1080p" ? body.resolution : "720p",
+        brief: brief.slice(0, 6000),
+        contentType: String(body.content_type || "lectura_tarot"),
+        mood: String(body.mood || ""),
+        camera: String(body.camera || ""),
+        pace: String(body.pace || ""),
+        advanced: String(body.advanced || "").slice(0, 4000),
+        referenceUrls: Array.isArray(body.reference_urls) ? body.reference_urls.map(String).slice(0, 10) : [],
+        useFirstFrame: Boolean(body.use_first_frame),
+        createdBy: auth.me.id,
+      });
+      return NextResponse.json({ ok: true, job });
+    }
+
+    if (action === "video-studio-status") {
+      const taskIds = Array.isArray(body.task_ids) ? body.task_ids.map(String).slice(0, 4) : [];
+      const status = await getTarotVideoStudioStatus(taskIds);
+      return NextResponse.json({ ok: true, ...status });
+    }
+
+    if (action === "video-studio-finalize") {
+      const taskIds = Array.isArray(body.task_ids) ? body.task_ids.map(String).slice(0, 4) : [];
+      const asset = await finalizeTarotVideoStudio({
+        provider,
+        taskIds,
+        title: String(body.title || "Vídeo Tarot Celestial IA").slice(0, 140),
+        model: String(body.model || "wan3"),
+        duration: Number(body.duration || 15),
+        longMode: Boolean(body.long_mode),
+        format: body.format === "landscape" ? "landscape" : "vertical",
+        resolution: body.resolution === "480p" || body.resolution === "1080p" ? body.resolution : "720p",
+        ratio: String(body.ratio || ""),
+        creditsEstimate: Number(body.credits_estimate || 0),
+        prompt: String(body.prompt || "").slice(0, 12000),
+        promptScene1: String(body.prompt_scene_1 || "").slice(0, 12000),
+        promptScene2: String(body.prompt_scene_2 || "").slice(0, 12000),
+        referenceUrls: Array.isArray(body.reference_urls) ? body.reference_urls.map(String).slice(0, 10) : [],
+        useFirstFrame: Boolean(body.use_first_frame),
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, asset });

@@ -1,10 +1,13 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CheckCircle2,
   Clapperboard,
+  Clock3,
   Film,
   ImagePlus,
+  ListChecks,
   Loader2,
   Play,
   Send,
@@ -32,6 +35,33 @@ type StudioResult = {
   task_ids?: string[];
   long_mode?: boolean;
   credits_estimate?: number;
+};
+
+type StudioJob = {
+  job_id: string;
+  provider: Provider;
+  started_at: string;
+  title: string;
+  model: Model;
+  duration: number;
+  format: "vertical" | "landscape";
+  resolution: Resolution;
+  ratio: string;
+  long_mode: boolean;
+  credits_estimate: number;
+  prompt: string;
+  prompt_scene_1?: string;
+  prompt_scene_2?: string;
+  task_ids: string[];
+  reference_urls: string[];
+  use_first_frame: boolean;
+};
+
+type StudioTaskState = {
+  id: string;
+  status: string;
+  failure?: string | null;
+  failure_code?: string | null;
 };
 
 type ReferenceAsset = { name: string; url: string; size: number };
@@ -79,6 +109,10 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<StudioResult | null>(null);
+  const [job, setJob] = useState<StudioJob | null>(null);
+  const [taskStates, setTaskStates] = useState<StudioTaskState[]>([]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const activeJobRef = useRef<string | null>(null);
 
   const effectiveResolution: Resolution = model === "gen4.5" ? "720p" : resolution;
   const effectiveDuration = longMode ? 60 : clampDuration(model, duration);
@@ -156,21 +190,151 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
     }
   }
 
+  function jobStorageKey() {
+    return `tc_tarot_video_studio_job_v3_${provider}`;
+  }
+
+  function statusLabel(status: string) {
+    const value = String(status || "PENDING").toUpperCase();
+    if (value === "PENDING") return "En cola en Runway";
+    if (value === "RUNNING" || value === "PROCESSING") return "Runway está generando";
+    if (value === "SUCCEEDED") return "Completada";
+    if (value === "FAILED") return "Fallida";
+    if (value === "CANCELED" || value === "CANCELLED") return "Cancelada";
+    return value || "Preparando";
+  }
+
+  function taskPhase(status: string) {
+    const value = String(status || "PENDING").toUpperCase();
+    if (value === "SUCCEEDED") return 100;
+    if (value === "RUNNING" || value === "PROCESSING") return 68;
+    if (value === "PENDING") return 28;
+    return 10;
+  }
+
+  function elapsedLabel(seconds: number) {
+    const safe = Math.max(0, Math.floor(seconds));
+    const minutes = Math.floor(safe / 60);
+    const rest = safe % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+  }
+
+  async function sleep(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  async function finalizeJob(currentJob: StudioJob) {
+    setProgress(currentJob.long_mode
+      ? "Las dos escenas están listas. Montando el MP4 final de 60 segundos y guardándolo en la Biblioteca…"
+      : "Runway terminó el vídeo. Guardando el MP4 final en la Biblioteca…");
+    const json = await api("/api/admin/social-ai", {
+      method: "POST",
+      body: JSON.stringify({
+        action: "video-studio-finalize",
+        provider: currentJob.provider,
+        task_ids: currentJob.task_ids,
+        title: currentJob.title,
+        model: currentJob.model,
+        duration: currentJob.duration,
+        long_mode: currentJob.long_mode,
+        format: currentJob.format,
+        resolution: currentJob.resolution,
+        ratio: currentJob.ratio,
+        credits_estimate: currentJob.credits_estimate,
+        prompt: currentJob.prompt,
+        prompt_scene_1: currentJob.prompt_scene_1 || "",
+        prompt_scene_2: currentJob.prompt_scene_2 || "",
+        reference_urls: currentJob.reference_urls,
+        use_first_frame: currentJob.use_first_frame,
+      }),
+    });
+    const asset = json.asset as StudioResult;
+    setResult(asset);
+    setJob(null);
+    setTaskStates([]);
+    setProgress("");
+    activeJobRef.current = null;
+    try { window.localStorage.removeItem(jobStorageKey()); } catch {}
+    setMessage(currentJob.long_mode
+      ? "Vídeo final de 60 s generado, unido y guardado en la Biblioteca multimedia."
+      : "Vídeo generado y guardado en la Biblioteca multimedia.");
+    await onRefresh?.();
+  }
+
+  async function monitorJob(currentJob: StudioJob) {
+    activeJobRef.current = currentJob.job_id;
+    setBusy("generate");
+    let transientFailures = 0;
+    try {
+      while (activeJobRef.current === currentJob.job_id) {
+        try {
+          const json = await api("/api/admin/social-ai", {
+            method: "POST",
+            body: JSON.stringify({
+              action: "video-studio-status",
+              provider: currentJob.provider,
+              task_ids: currentJob.task_ids,
+            }),
+          });
+          const states = (Array.isArray(json.tasks) ? json.tasks : []) as StudioTaskState[];
+          setTaskStates(states);
+          transientFailures = 0;
+
+          const failed = states.find((task) => ["FAILED", "CANCELED", "CANCELLED"].includes(String(task.status || "").toUpperCase()));
+          if (failed) throw new Error(failed.failure || failed.failure_code || `Runway no pudo completar ${currentJob.long_mode ? "una de las escenas" : "el vídeo"}.`);
+
+          const allDone = states.length === currentJob.task_ids.length && states.every((task) => String(task.status || "").toUpperCase() === "SUCCEEDED");
+          if (allDone) {
+            await finalizeJob(currentJob);
+            return;
+          }
+
+          const done = states.filter((task) => String(task.status || "").toUpperCase() === "SUCCEEDED").length;
+          if (currentJob.long_mode) {
+            if (done === 0) setProgress("Runway está trabajando en las 2 escenas. Puedes dejar esta pantalla abierta; el panel seguirá consultando el estado.");
+            else setProgress("Escena 1/2 lista. Esperando a que Runway termine la escena restante…");
+          } else {
+            setProgress("Runway está generando el vídeo. El panel consulta el estado automáticamente cada pocos segundos.");
+          }
+        } catch (pollError: any) {
+          const message = String(pollError?.message || "");
+          const isTerminal = /FAILED|CANCELED|CANCELLED|no pudo completar|SAFETY|moderation/i.test(message);
+          if (isTerminal) throw pollError;
+          transientFailures += 1;
+          if (transientFailures >= 5) throw pollError;
+          setProgress(`Conexión temporal con Runway. Reintentando automáticamente (${transientFailures}/5)…`);
+        }
+        await sleep(5500);
+      }
+    } catch (e: any) {
+      activeJobRef.current = null;
+      setProgress("");
+      setError(e?.message || "No se pudo completar el vídeo");
+    } finally {
+      if (activeJobRef.current === currentJob.job_id) activeJobRef.current = null;
+      setBusy("");
+    }
+  }
+
   async function generate() {
     if (!brief.trim()) {
       setError("Describe qué vídeo de tarot quieres crear.");
       return;
     }
+    activeJobRef.current = null;
     setBusy("generate");
     setError("");
     setMessage("");
     setResult(null);
-    setProgress(longMode ? "Diseñando las dos escenas y preparando 60 segundos…" : "Diseñando la dirección creativa del vídeo…");
+    setJob(null);
+    setTaskStates([]);
+    setElapsedSeconds(0);
+    setProgress(longMode ? "Preparando la dirección creativa y creando las 2 tareas de Runway…" : "Preparando la dirección creativa y creando la tarea de Runway…");
     try {
       const json = await api("/api/admin/social-ai", {
         method: "POST",
         body: JSON.stringify({
-          action: "video-studio",
+          action: "video-studio-start",
           provider,
           model,
           duration: longMode ? 60 : effectiveDuration,
@@ -187,14 +351,17 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
           use_first_frame: useFirstFrame && !longMode,
         }),
       });
-      setProgress("");
-      setResult(json.asset as StudioResult);
-      setMessage(longMode ? "Vídeo final de 60 s generado y unido en un único MP4." : "Vídeo generado y guardado en la Biblioteca multimedia.");
-      await onRefresh?.();
+      const nextJob = json.job as StudioJob;
+      setJob(nextJob);
+      setTaskStates(nextJob.task_ids.map((id) => ({ id, status: "PENDING" })));
+      try { window.localStorage.setItem(jobStorageKey(), JSON.stringify(nextJob)); } catch {}
+      setProgress(nextJob.long_mode
+        ? "Tareas creadas. Runway empieza a generar las 2 escenas de 30 segundos…"
+        : "Tarea creada. Runway empieza a generar el vídeo…");
+      await monitorJob(nextJob);
     } catch (e: any) {
       setProgress("");
-      setError(e?.message || "No se pudo generar el vídeo");
-    } finally {
+      setError(e?.message || "No se pudo iniciar la generación del vídeo");
       setBusy("");
     }
   }
@@ -239,6 +406,36 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
       setBusy("");
     }
   }
+
+  useEffect(() => {
+    if (!job) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const started = new Date(job.started_at).getTime();
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [job]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(jobStorageKey());
+      if (!raw) return;
+      const restored = JSON.parse(raw) as StudioJob;
+      if (!restored?.job_id || !Array.isArray(restored.task_ids) || !restored.task_ids.length) return;
+      setJob(restored);
+      setTaskStates(restored.task_ids.map((id) => ({ id, status: "PENDING" })));
+      setProgress("Recuperando una generación de Runway que estaba en curso…");
+      void monitorJob(restored);
+    } catch {
+      try { window.localStorage.removeItem(jobStorageKey()); } catch {}
+    }
+    return () => { activeJobRef.current = null; };
+    // Se ejecuta una sola vez para recuperar un trabajo tras recargar la página.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className={styles.studio}>
@@ -340,7 +537,26 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
             {busy === "generate" ? <Loader2 size={18} className={styles.spin} /> : <Sparkles size={18} />}
             {busy === "generate" ? (longMode ? "Generando 2 escenas y montando…" : "Generando vídeo…") : (longMode ? "Generar vídeo final de 60 s" : "Generar vídeo")}
           </button>
-          {progress && <div className={styles.progress}><Loader2 size={15} className={styles.spin} /><span>{progress}</span></div>}
+          {progress && !job && <div className={styles.progress}><Loader2 size={15} className={styles.spin} /><span>{progress}</span></div>}
+          {job && <section className={styles.liveProgress}>
+            <div className={styles.liveProgressTop}>
+              <div className={styles.liveProgressTitle}><Loader2 size={18} className={styles.spin} /><div><b>Generación en curso</b><span>{progress || "Consultando Runway…"}</span></div></div>
+              <div className={styles.timer}><Clock3 size={14} /><strong>{elapsedLabel(elapsedSeconds)}</strong></div>
+            </div>
+            <div className={styles.taskList}>
+              {job.task_ids.map((id, index) => {
+                const state = taskStates.find((task) => task.id === id);
+                const status = String(state?.status || "PENDING").toUpperCase();
+                const done = status === "SUCCEEDED";
+                return <article key={id} className={`${styles.taskCard} ${done ? styles.taskDone : ""}`}>
+                  <div className={styles.taskIcon}>{done ? <CheckCircle2 size={18} /> : <Loader2 size={18} className={styles.spin} />}</div>
+                  <div className={styles.taskInfo}><b>{job.long_mode ? `Escena ${index + 1}/2 · 30 s` : `Vídeo · ${job.duration} s`}</b><span>{statusLabel(status)}</span><small>ID {id.slice(0, 8)}…</small></div>
+                  <div className={styles.phaseBar} aria-label={`Fase ${taskPhase(status)} de 100`}><i style={{ width: `${taskPhase(status)}%` }} /></div>
+                </article>;
+              })}
+            </div>
+            <p className={styles.progressNote}><ListChecks size={13} /> Runway no publica un porcentaje exacto de render. Mostramos el estado real de cada tarea, su fase y el tiempo transcurrido. Puedes recargar la página: el seguimiento se recuperará automáticamente.</p>
+          </section>}
         </section>
 
         <aside className={styles.preview}>
@@ -356,7 +572,14 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
               <button className={styles.secondary} disabled={busy === "generate"} onClick={() => void generate()}><Sparkles size={15} /> Regenerar</button>
             </div>
             {provider === "tiktok" && !connected && <p className={styles.notConnected}>Conecta TikTok para poder enviarlo directamente a la bandeja.</p>}
-          </> : <div className={styles.emptyPreview}><div><Film size={36} /></div><b>Tu vídeo aparecerá aquí</b><span>Configura la idea, referencias y duración. El estudio guardará automáticamente el resultado en tu Biblioteca.</span></div>}
+          </> : job ? <div className={styles.processingPreview}>
+            <div className={styles.processingOrb}><Loader2 size={34} className={styles.spin} /></div>
+            <span>RUNWAY · EN PROCESO</span>
+            <b>{job.long_mode ? "Generando 2 escenas de 30 segundos" : `Generando vídeo de ${job.duration} segundos`}</b>
+            <strong>{elapsedLabel(elapsedSeconds)}</strong>
+            <p>{progress || "El panel está consultando el estado automáticamente."}</p>
+            <div className={styles.miniTasks}>{job.task_ids.map((id, index) => { const state = taskStates.find((task) => task.id === id); const status = String(state?.status || "PENDING").toUpperCase(); return <div key={id}><span>{job.long_mode ? `ESCENA ${index + 1}` : "VÍDEO"}</span><b>{statusLabel(status)}</b>{status === "SUCCEEDED" ? <CheckCircle2 size={15} /> : <Loader2 size={15} className={styles.spin} />}</div>; })}</div>
+          </div> : <div className={styles.emptyPreview}><div><Film size={36} /></div><b>Tu vídeo aparecerá aquí</b><span>Configura la idea, referencias y duración. El estudio guardará automáticamente el resultado en tu Biblioteca.</span></div>}
         </aside>
       </div>
     </div>
