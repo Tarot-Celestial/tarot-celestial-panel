@@ -6,6 +6,8 @@ import { BellRing, Check, CheckCheck, Coins, RefreshCw, ShoppingBag, Sparkles, T
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import styles from "./Notifications.module.css";
+import CampaignPreferences from "@/components/cliente/CampaignPreferences";
+import { UUID } from "@/lib/campaigns";
 
 const sb = supabaseClienteBrowser();
 
@@ -41,6 +43,7 @@ function formatDate(value?: string | null) {
 }
 
 function presentation(item: NotificationItem): NotificationPresentation {
+  if (item.tipo === "campaign" && UUID.test(String(item.meta?.campaign_id || ""))) return { label: "Promoción", href: `/cliente/campanas/${item.meta!.campaign_id}?delivery=${item.id}`, action: "Ver promoción", tone: "gold", icon: BellRing };
   const content = `${item.tipo || ""} ${item.titulo || ""} ${item.mensaje || ""}`.toLowerCase();
   if (content.includes("sorteo") || content.includes("premiad")) {
     return { label: "Sorteo", href: "/cliente/sorteo", action: "Ver premio", tone: "green", icon: Trophy };
@@ -98,9 +101,11 @@ export default function ClienteNotificationsPage() {
       if (!document.hidden) void load();
     };
     window.addEventListener("focus", refresh);
+    const timer = window.setInterval(refresh, 60000);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       window.removeEventListener("focus", refresh);
+      window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [load]);
@@ -144,6 +149,7 @@ export default function ClienteNotificationsPage() {
       ]}
     >
       <main className={styles.shell}>
+        <CampaignPreferences />
         <section className={styles.toolbar} aria-labelledby="notifications-heading">
           <div>
             <span className={styles.eyrow}><Sparkles size={15} /> CENTRO DE NOVEDADES</span>
@@ -213,4 +219,3 @@ export default function ClienteNotificationsPage() {
     </ClienteLayout>
   );
 }
-
