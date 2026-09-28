@@ -1,0 +1,251 @@
+.section {
+  padding: 0 22px 30px;
+  color: #f8f4ff;
+  background: #08060d;
+}
+.shell {
+  width: min(1800px, 100%);
+  margin: 0 auto;
+  padding: 22px;
+  border: 1px solid rgba(99, 231, 169, .18);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 15% 0%, rgba(55, 190, 134, .12), transparent 34%),
+    radial-gradient(circle at 92% 12%, rgba(113, 78, 182, .16), transparent 32%),
+    linear-gradient(155deg, rgba(20, 16, 28, .97), rgba(8, 7, 13, .99));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .35);
+}
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.kicker,
+.subHeader span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #79e8ad;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.header h2,
+.subHeader h3 {
+  margin: 7px 0 4px;
+  letter-spacing: -.02em;
+}
+.header h2 { font-size: clamp(23px, 3vw, 34px); }
+.subHeader h3 { font-size: 18px; }
+.header p,
+.subHeader small {
+  margin: 0;
+  max-width: 820px;
+  color: rgba(255, 255, 255, .56);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.headerStats {
+  display: flex;
+  align-items: stretch;
+  gap: 7px;
+}
+.headerStats > div {
+  min-width: 76px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .2);
+}
+.headerStats strong,
+.headerStats span { display: block; }
+.headerStats strong { color: #f3d787; font-size: 16px; }
+.headerStats span { margin-top: 2px; color: rgba(255, 255, 255, .4); font-size: 8px; text-transform: uppercase; }
+.headerStats button {
+  width: 42px;
+  border: 1px solid rgba(121, 232, 173, .22);
+  border-radius: 12px;
+  color: #a8f3ca;
+  background: rgba(62, 160, 111, .09);
+  cursor: pointer;
+}
+.safetyStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 17px;
+}
+.safetyStrip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border: 1px solid rgba(121, 232, 173, .13);
+  border-radius: 999px;
+  color: rgba(218, 255, 234, .76);
+  background: rgba(44, 128, 82, .08);
+  font-size: 9px;
+  font-weight: 750;
+}
+.errorBox {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 102, 127, .28);
+  border-radius: 12px;
+  color: #ff9bab;
+  background: rgba(115, 34, 50, .16);
+  font-size: 11px;
+}
+.catalogueGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+.catalogueCard,
+.recoveryCard,
+.actionRow {
+  border: 1px solid rgba(255, 255, 255, .08);
+  background: linear-gradient(145deg, rgba(255, 255, 255, .035), rgba(0, 0, 0, .16));
+}
+.catalogueCard {
+  padding: 16px;
+  border-radius: 16px;
+}
+.cardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.riskLow,
+.riskMedium,
+.scope,
+.statusBadge {
+  padding: 5px 7px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.riskLow { color: #8ef2bc; background: rgba(65, 180, 117, .12); border: 1px solid rgba(65, 180, 117, .22); }
+.riskMedium { color: #f5cf77; background: rgba(187, 133, 42, .12); border: 1px solid rgba(232, 178, 77, .22); }
+.scope { color: #cab2f3; background: rgba(121, 80, 187, .1); border: 1px solid rgba(171, 126, 235, .18); }
+.catalogueCard h3 { margin: 13px 0 6px; font-size: 17px; }
+.catalogueCard p { margin: 0; color: rgba(255,255,255,.62); font-size: 11px; line-height: 1.5; }
+.catalogueCard small { display: block; margin-top: 10px; color: rgba(255,255,255,.38); font-size: 9px; line-height: 1.45; }
+.catalogueCard button,
+.recoveryCard button,
+.actionButtons button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(121, 232, 173, .23);
+  border-radius: 10px;
+  color: #ddf9e9;
+  background: rgba(52, 143, 93, .12);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 800;
+}
+.catalogueCard button { margin-top: 14px; }
+.catalogueCard button:disabled,
+.recoveryCard button:disabled,
+.actionButtons button:disabled { opacity: .48; cursor: wait; }
+.recoveryBlock,
+.queueBlock {
+  margin-top: 19px;
+  padding-top: 17px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.subHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+.recoveryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+.recoveryCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 12px;
+  align-items: center;
+  padding: 13px;
+  border-radius: 13px;
+}
+.recoveryCard div strong,
+.recoveryCard div span { display: block; }
+.recoveryCard div strong { font-size: 11px; }
+.recoveryCard div span,
+.recoveryCard small { color: rgba(255,255,255,.42); font-size: 8px; }
+.recoveryCard small { grid-column: 1; }
+.recoveryCard button { grid-column: 2; grid-row: 1 / span 2; }
+.emptyState {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px dashed rgba(255,255,255,.11);
+  border-radius: 13px;
+  color: rgba(255,255,255,.4);
+  background: rgba(0,0,0,.13);
+  font-size: 10px;
+}
+.actionList { display: grid; gap: 8px; margin-top: 12px; }
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 13px;
+}
+.actionRow[data-status="succeeded"] { border-color: rgba(73, 227, 154, .18); }
+.actionRow[data-status="failed"] { border-color: rgba(255, 102, 127, .2); }
+.actionRow[data-status="approved"] { border-color: rgba(236, 190, 94, .2); }
+.actionMain { min-width: 0; }
+.actionMain strong,
+.actionMain small,
+.actionMain em { display: block; }
+.actionMain strong { margin-top: 6px; font-size: 11px; }
+.actionMain small { margin-top: 4px; color: rgba(255,255,255,.38); font-size: 8px; }
+.actionMain em { margin-top: 5px; color: #ff96a7; font-size: 8px; font-style: normal; }
+.statusBadge { display: inline-block; color: #d6c4ef; border: 1px solid rgba(184,145,235,.16); background: rgba(116,76,167,.09); }
+.actionButtons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.actionButtons .executeButton { border-color: rgba(235, 193, 95, .3); color: #f5dd9b; background: rgba(154, 111, 35, .12); }
+.actionButtons .cancelButton { border-color: rgba(255, 102, 127, .18); color: #ffacb9; background: rgba(123, 35, 50, .1); }
+.executing { display: inline-flex; align-items: center; gap: 7px; color: #bdebd0; font-size: 9px; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (max-width: 900px) {
+  .header,
+  .subHeader { align-items: stretch; flex-direction: column; }
+  .headerStats { width: 100%; flex-wrap: wrap; }
+  .catalogueGrid,
+  .recoveryGrid { grid-template-columns: 1fr; }
+}
+@media (max-width: 680px) {
+  .section { padding: 0 10px 20px; }
+  .shell { padding: 15px; }
+  .headerStats > div { flex: 1 1 70px; }
+  .actionRow { align-items: stretch; flex-direction: column; }
+  .actionButtons { justify-content: flex-start; }
+  .recoveryCard { grid-template-columns: 1fr; }
+  .recoveryCard small,
+  .recoveryCard button { grid-column: 1; grid-row: auto; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}

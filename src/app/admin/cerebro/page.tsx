@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
+import BrainControlledActionsPanel from "@/features/brain/BrainControlledActionsPanel";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
@@ -68,7 +69,10 @@ export default function CelestialBrainPage() {
       />
       <PaymentMotivationWatcher mode="admin" />
       {authorized ? (
-        <CelestialBrain />
+        <>
+          <CelestialBrain />
+          <BrainControlledActionsPanel />
+        </>
       ) : (
         <div style={{ minHeight: "70vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.6)", background: "#08060d" }}>
           Verificando acceso de administración…
