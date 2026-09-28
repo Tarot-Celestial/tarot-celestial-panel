@@ -18,7 +18,10 @@ type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: n
 type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number };
 type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
-const LEVEL_BENEFITS: Record<RouletteLevel, { icon: string; label: string }[]> = {
+// Standard packs use levels 1–3; level 4 belongs to special promotions.
+type StandardPackLevel = Extract<RouletteLevel, 1 | 2 | 3>;
+
+const LEVEL_BENEFITS: Record<StandardPackLevel, { icon: string; label: string }[]> = {
   1: [
     { icon: "🎡", label: "1 giro Nivel 1" },
     { icon: "✨", label: "Hasta +60 min" },
@@ -364,7 +367,7 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
   );
 }
 
-function LevelBenefitChips({ level }: { level: RouletteLevel }) {
+function LevelBenefitChips({ level }: { level: StandardPackLevel }) {
   return (
     <div className={styles.levelBenefits}>
       <strong>Tu compra incluye</strong>
