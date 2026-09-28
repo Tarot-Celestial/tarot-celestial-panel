@@ -327,12 +327,13 @@ export default function Tarotista() {
   const myPublicRange = (["C", "B", "A", "S"] as const).includes(myPublicRangeRaw as any) ? myPublicRangeRaw : "B";
 
   const bonusRanking = Number(s?.bonus_ranking || 0);
+  const bonusRank = Number(s?.bonus_rank || 0);
   const br = s?.bonus_ranking_breakdown || {};
   const brCaptadas = Number(br?.captadas || 0);
   const brCliente = Number(br?.cliente || 0);
   const brRepite = Number(br?.repite || 0);
 
-  const bonusTotal = bonusCaptadas + bonusRanking;
+  const bonusTotal = bonusCaptadas + bonusRanking + bonusRank;
   const totalPreview = payMinutes + bonusTotal - incidenciasLive;
   const canSeeMoney = tarotistaLevel !== 2;
   const money = (n: any) => (canSeeMoney ? eur(n) : "Oculto nivel 2");

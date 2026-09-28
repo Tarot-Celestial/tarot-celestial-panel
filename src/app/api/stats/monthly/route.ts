@@ -40,7 +40,7 @@ function tarotistaPublicScore(row: any) {
 function buildTarotistaRanges(rows: any[], rankConfig: TarotistaRankConfig[]) {
   const sorted = (rows || [])
     .map((row) => {
-      const rankState = resolveTarotistaRankState(row?.pct_cliente, rankConfig);
+      const rankState = resolveTarotistaRankState(row, rankConfig);
       return {
         worker_id: String(row.worker_id),
         score: tarotistaPublicScore(row),
@@ -186,11 +186,23 @@ export async function GET(req: Request) {
     const tier = captureTier(rules, Number(mine.captadas_total || 0), month);
     const nextTier = rules.filter(r => r.kind === 'tier' && applicable(r,month) && r.minimum > Number(mine.captadas_total || 0)).sort((a,b) => a.minimum-b.minimum)[0];
 
-    const fallbackRankState = resolveTarotistaRankState(mine?.pct_cliente, rankConfig);
+    const fallbackRankState = resolveTarotistaRankState(mine, rankConfig);
     const myRange = tarotistaRanges.get(String(me.id)) || { rango: fallbackRankState.current.code, score: 0, puntuacion: 0, position: null, total_compared: tarotistaRanges.size, rank_state: fallbackRankState };
+    const currentRankBenefits = myRange.rank_state?.current?.benefit_config || { cliente_rate_bonus: 0, repite_rate_bonus: 0, health_bonus: 0, rank_bonus: 0, extras: [] };
+    const rankMinuteExtra = roundMoney(
+      Number(mine.minutes_cliente || 0) * Number(currentRankBenefits.cliente_rate_bonus || 0) +
+      Number(mine.minutes_repite || 0) * Number(currentRankBenefits.repite_rate_bonus || 0)
+    );
+    const rankFixedBonus = roundMoney(Number(currentRankBenefits.health_bonus || 0) + Number(currentRankBenefits.rank_bonus || 0));
     const moneyPatch = tarotistaLevel === 2
-      ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
-      : { bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0), bonus_ranking_breakdown };
+      ? { pay_minutes: 0, bonus_captadas: 0, bonus_ranking: 0, bonus_rank: 0, bonus_ranking_breakdown: { captadas: 0, cliente: 0, repite: 0 }, revenue_total: 0 }
+      : {
+          pay_minutes: roundMoney(Number(mine.pay_minutes || 0) + rankMinuteExtra),
+          bonus_rank: rankFixedBonus,
+          tarotista_rank_benefits: currentRankBenefits,
+          bonus_ranking: Object.values(bonus_ranking_breakdown).reduce((a: number, n: any) => a + Number(n || 0), 0),
+          bonus_ranking_breakdown,
+        };
 
     return NextResponse.json({
       ok: true,
