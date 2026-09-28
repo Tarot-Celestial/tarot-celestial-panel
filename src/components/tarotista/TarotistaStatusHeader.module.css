@@ -51,3 +51,5 @@
 @media (max-width: 1080px) { .header { grid-template-columns: 1fr 1fr; } .controls { grid-column: 1 / -1; justify-content: flex-start; } }
 @media (max-width: 680px) { .header { grid-template-columns: 1fr; padding: 16px; border-radius: 21px; } .controls, .syncLine { grid-column: auto; } .controls { justify-content: stretch; flex-wrap: wrap; } .monthControl { flex: 1; } .statusMenu, .statusMenu > summary, .primary { flex: 1; justify-content: center; } .statusOptions { left: 0; right: auto; } }
 @media (prefers-reduced-motion: reduce) { .spinning { animation: none; } }
+
+:global(.tc-rank-panel) .header { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }

@@ -527,3 +527,18 @@
   }
 }
 .claimMission{width:100%;margin-top:10px;padding:9px;border:1px solid rgba(235,193,89,.45);border-radius:10px;color:#ffe49a;background:linear-gradient(90deg,rgba(130,77,16,.35),rgba(117,69,179,.28));font-size:10px;font-weight:900;letter-spacing:.06em}.claimMission:disabled{opacity:.55;cursor:default}
+
+
+.panel { --accent:var(--rank-rgb); min-height:390px; padding:22px; }
+.panel::before { height:1px; opacity:.4; }
+.panel:hover { transform:none; }
+.panel h2,.notificationHeader h2 { color:var(--panel-text); font-size:22px; font-weight:700; letter-spacing:-.025em; line-height:1.25; }
+.panelHeader p { color:var(--panel-muted); font-size:13px; font-weight:400; }
+.kicker { font-size:10px; font-weight:650; color:var(--rank-accent); }
+.headerIcon { width:38px; height:38px; border-color:var(--panel-border); color:var(--rank-accent); background:rgba(var(--rank-rgb),.04); box-shadow:none; }
+.panelButton { min-height:44px; color:var(--panel-text); border-color:var(--panel-border); background:rgba(var(--rank-rgb),.05); font-weight:650; }
+.emptyState { padding:24px 16px; border:1px dashed var(--panel-border); border-radius:14px; color:var(--panel-muted); line-height:1.6; font-size:13px; }
+.notification,.mission,.dailyAction { background:rgba(var(--rank-rgb),.035); box-shadow:none; border-color:var(--panel-border); }
+.notificationAction { display:inline-flex; border:0; padding:6px 0; min-height:36px; background:none; cursor:pointer; text-align:left; font:inherit; font-size:12px; color:var(--rank-accent); }
+@media(max-width:1200px) { .layout { grid-template-columns:repeat(2,minmax(0,1fr)); } .notificationsPanel { grid-column:1/-1; } }
+@media(max-width:620px) { .layout { grid-template-columns:minmax(0,1fr); } .panel { min-height:300px; padding:18px; } }

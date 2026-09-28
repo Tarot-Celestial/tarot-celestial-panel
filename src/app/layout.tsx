@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./panel-theme.css";
 
 import { PhoneProvider } from "@/context/PhoneContext";
 import { OpsProvider } from "@/providers/OpsProvider";

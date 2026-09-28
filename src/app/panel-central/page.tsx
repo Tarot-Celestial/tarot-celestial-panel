@@ -247,14 +247,15 @@ function CentralPage() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
   const notificationFeed = useCentralNotificationsFeed();
-  const myInvoiceFeed = useMyInvoice(ok && tab === "mi-factura");
+  const myInvoiceFeed = useMyInvoice(ok && (tab === "mi-factura" || tab === "central"));
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const todayKey = madridTodayKey();
   const requestedDate = String(searchParams?.get("date") || "");
   const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) && requestedDate <= todayKey ? requestedDate : todayKey;
-  const needsXpData = tab === "central" || tab === "mis-clientas" || tab.startsWith("tu-sistema-xp");
+  // The shared header and rank theme need current XP on every Central tab.
+  const needsXpData = true;
   const needsFidelityData = tab === "central" || tab === "mis-clientas";
   const xpFeed = useCentralXpData(selectedDate, ok && needsXpData);
   const fidelityFeed = useCentralFidelityData(ok && needsFidelityData);
@@ -300,6 +301,12 @@ function CentralPage() {
     xpToday: xpData?.daily_activity.total_xp || 0,
     xpDateLabel: selectedDate === todayKey ? "hoy" : `el ${new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "2-digit", timeZone: "UTC" }).format(new Date(`${selectedDate}T12:00:00Z`))}`,
     currentLevel: xpProgress ? `Nivel ${xpProgress.level} · ${currentTierName}` : currentTierName,
+    tierKey: xpProgress?.tier?.key,
+    tierName: xpProgress?.tier?.name,
+    levelNumber: xpProgress?.level,
+    maxLevel: xpProgress?.max_level,
+    clientsLoaded: myClientsRealStats !== null,
+    earningsLoaded: Boolean(myInvoiceFeed.data),
     currentLevelXp: xpProgress?.level_xp || 0,
     nextLevelXp: xpProgress?.level_span || 0,
     nextLevelName,
@@ -1228,7 +1235,7 @@ function CentralPage() {
   if (!ok) return <div style={{ padding: 40 }}>Cargando…</div>;
 
   return (
-    <CentralThemeProvider workerId={themeWorkerId}>
+    <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
       <div className="tc-premium-bg" aria-hidden="true">
         <div className="tc-premium-orb tc-premium-orb-one" />
         <div className="tc-premium-orb tc-premium-orb-two" />
@@ -1984,4 +1991,3 @@ export default function Page() {
     </Suspense>
   );
 }
-
