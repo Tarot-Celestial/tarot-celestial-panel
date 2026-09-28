@@ -71,6 +71,69 @@
   background: rgba(62, 160, 111, .09);
   cursor: pointer;
 }
+
+.professionalBanner {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.2fr) repeat(2, minmax(180px, .7fr));
+  gap: 9px;
+  margin-top: 17px;
+}
+.professionalBanner > div {
+  min-width: 0;
+  padding: 12px 13px;
+  border: 1px solid rgba(121, 232, 173, .16);
+  border-radius: 13px;
+  background:
+    linear-gradient(145deg, rgba(54, 163, 105, .09), rgba(0, 0, 0, .16));
+}
+.professionalBanner > div:first-child {
+  position: relative;
+  padding-left: 38px;
+}
+.professionalBanner strong,
+.professionalBanner b,
+.professionalBanner span,
+.professionalBanner small { display: block; }
+.professionalBanner strong {
+  color: #dff9ea;
+  font-size: 12px;
+}
+.professionalBanner span {
+  color: #79e8ad;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.professionalBanner b {
+  margin-top: 4px;
+  color: rgba(255,255,255,.78);
+  font-size: 10px;
+  font-weight: 750;
+}
+.professionalBanner small {
+  margin-top: 4px;
+  color: rgba(255,255,255,.42);
+  font-size: 8px;
+}
+.professionalPulse {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #49e39a;
+  box-shadow: 0 0 0 5px rgba(73,227,154,.08), 0 0 16px rgba(73,227,154,.45);
+}
+.professionalPulse[data-running="true"] {
+  animation: professionalPulse 1s ease-in-out infinite;
+}
+@keyframes professionalPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(.72); opacity: .55; }
+}
+
 .safetyStrip {
   display: flex;
   flex-wrap: wrap;
@@ -233,6 +296,7 @@
   .header,
   .subHeader { align-items: stretch; flex-direction: column; }
   .headerStats { width: 100%; flex-wrap: wrap; }
+  .professionalBanner { grid-template-columns: 1fr; }
   .catalogueGrid,
   .recoveryGrid { grid-template-columns: 1fr; }
 }
@@ -247,5 +311,6 @@
   .recoveryCard button { grid-column: 1; grid-row: auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .spin { animation: none; }
+  .spin,
+  .professionalPulse[data-running="true"] { animation: none; }
 }
