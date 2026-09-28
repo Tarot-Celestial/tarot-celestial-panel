@@ -11,30 +11,7 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ACTION_SELECT = [
-  "id",
-  "request_id",
-  "action_key",
-  "status",
-  "risk_level",
-  "title",
-  "target_node_id",
-  "incident_id",
-  "diagnostic_id",
-  "input",
-  "result",
-  "error",
-  "requested_by_worker_id",
-  "approved_by_worker_id",
-  "executed_by_worker_id",
-  "approved_at",
-  "approval_expires_at",
-  "execution_started_at",
-  "executed_at",
-  "cancelled_at",
-  "created_at",
-  "updated_at",
-].join(",");
+const ACTION_SELECT = "id,request_id,action_key,status,risk_level,title,target_node_id,incident_id,diagnostic_id,input,result,error,requested_by_worker_id,approved_by_worker_id,executed_by_worker_id,approved_at,approval_expires_at,execution_started_at,executed_at,cancelled_at,created_at,updated_at" as const;
 
 const BRAIN_NODE_IDS = new Set(["core", "clients", "team", "realtime", "xp", "billing", "infra"]);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
