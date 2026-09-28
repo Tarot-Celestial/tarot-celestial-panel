@@ -9,7 +9,6 @@ import {
   Users,
 } from "lucide-react";
 import styles from "./CentralStatsCards.module.css";
-import { panelThemeVariables } from "@/lib/panel-theme";
 
 export type CentralLevel = string;
 
@@ -127,7 +126,7 @@ export default function CentralStatsCards({
         <CardButton label="VER PROGRESO" onClick={onViewProgress} />
       </article>
 
-      <article className={`tc-glass ${styles.card} ${styles.levelCard}`} style={panelThemeVariables(data.tierKey) as React.CSSProperties}>
+      <article className={`tc-glass ${styles.card} ${styles.levelCard}`}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>NIVEL ACTUAL</div>

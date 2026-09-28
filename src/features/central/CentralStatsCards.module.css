@@ -312,7 +312,7 @@
 .levelValue { color:var(--rank-accent); font-size:clamp(28px,2.4vw,40px); font-weight:750; letter-spacing:-.035em; text-shadow:none; }
 .levelNumber { margin-top:9px; color:var(--panel-muted); font-size:13px; }
 .positive { color:var(--panel-muted); font-size:12px; font-weight:500; line-height:1.5; }
-.moneyCard .positive { color:#92dfc6; }
+.moneyCard .positive { color:var(--ct-success,#92dfc6); }
 .muted,.progressMeta,.progressMeta span:last-child { color:var(--panel-muted); font-size:12px; }
 .iconBox { width:38px; height:38px; border-radius:12px; color:var(--rank-accent); border-color:var(--panel-border); background:rgba(var(--rank-rgb),.055); box-shadow:inset 0 1px 0 rgba(255,255,255,.08); }
 .iconBox svg { width:21px; height:21px; }

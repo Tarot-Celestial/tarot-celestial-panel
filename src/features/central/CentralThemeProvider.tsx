@@ -3,7 +3,7 @@
 import { createContext, type CSSProperties, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import themeStyles from "./CentralThemes.module.css";
 import PanelTheme from "@/components/ui/PanelTheme";
-import { PANEL_PALETTES, resolvePanelRank } from "@/lib/panel-theme";
+import { panelThemeVariables } from "@/lib/panel-theme";
 
 export const CENTRAL_THEMES = [
   { id: "rango-actual", name: "Cristal · mi rango", family: "rank", colors: ["#090d19", "#27334b", "#e0e8f4"] },
@@ -106,17 +106,18 @@ export function CentralThemeProvider({ workerId, rank, children }: { workerId?: 
   const update = useCallback((patch: Partial<VisualSettings>) => setSettings((current) => normalize({ ...current, ...patch })), []);
   const reset = useCallback(() => setSettings(DEFAULT_VISUAL_SETTINGS), []);
   const themeMeta = CENTRAL_THEMES.find((item) => item.id === settings.theme) || CENTRAL_THEMES[0];
-  const isLight = themeMeta.family === "light";
-  const palette = PANEL_PALETTES[resolvePanelRank(rank)];
   const themePanel = settings.theme === "rango-actual" ? "#151d2e" : themeMeta.colors[0];
   const effectivePanel = settings.panelPreset === "theme" ? themePanel : settings.panelColor;
+  const isLight = luminance(effectivePanel) > .4;
+  const rankVariables = panelThemeVariables(rank, isLight);
   const effectiveText = settings.smartContrast && contrastRatio(settings.textColor, effectivePanel) < 4.5 ? accessibleText(effectivePanel) : settings.textColor;
   const blur = { off: 0, soft: 8, medium: 15, intense: 22 }[settings.glass];
   const variables = {
+    ...rankVariables,
     "--ct-text": effectiveText, "--ct-heading": effectiveText, "--ct-muted": mix(effectiveText, effectivePanel, .36), "--ct-text-secondary": mix(effectiveText, effectivePanel, .22), "--ct-text-on-accent": accessibleText(themeMeta.colors[2]),
     "--ct-user-surface": rgba(effectivePanel, settings.panelOpacity / 100), "--ct-user-surface-solid": effectivePanel, "--ct-surface-opacity": settings.panelOpacity / 100,
     "--ct-surface-blur": `${blur}px`, "--ct-font-scale": settings.fontSize / 16, "--ct-font-base": `${settings.fontSize}px`, "--ct-shadow-strength": settings.shadowStrength / 100,
-    "--ct-glass-border": settings.borderGlow ? `rgba(${settings.theme === "rango-actual" ? palette.rgb : rgb(themeMeta.colors[2]).join(",")},.26)` : "var(--ct-border)",
+    "--ct-glass-border": settings.borderGlow ? `rgba(${settings.theme === "rango-actual" ? rankVariables["--rank-rgb"] : rgb(themeMeta.colors[2]).join(",")},.26)` : "var(--ct-border)",
   } as CSSProperties;
   const context = useMemo(() => ({ settings, update, reset, isLight, effectiveText, effectivePanel }), [settings, update, reset, isLight, effectiveText, effectivePanel]);
 

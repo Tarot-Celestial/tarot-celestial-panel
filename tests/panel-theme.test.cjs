@@ -35,3 +35,15 @@ test('a rank change produces a new palette with no persisted account state',()=>
   assert.notEqual(silver['--rank-accent'],gold['--rank-accent']);
   assert.equal(panelThemeVariables(null)['--rank-accent'],'#c9c1ee');
 });
+test('rank labels remain readable on both light and dark panel backgrounds',()=>{
+  const luminance = (hex) => [1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)/255)
+    .map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4)
+    .reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+  for (const rank of ['celestial','bronze','silver','gold','elite','master','legend','diamond','platinum']) {
+    for (const [light,background] of [[true,'#f7f8fa'],[false,'#151d2e']]) {
+      const foreground=panelThemeVariables(rank,light)['--rank-accent'];
+      const [a,b]=[luminance(foreground),luminance(background)].sort((a,b)=>b-a);
+      assert.ok((a+.05)/(b+.05)>=4.5,`${rank} has insufficient contrast`);
+    }
+  }
+});

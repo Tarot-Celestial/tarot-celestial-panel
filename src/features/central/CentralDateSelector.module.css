@@ -5,5 +5,5 @@
 .bar small,.controls .today { color:var(--rank-accent); }
 .bar span { color:var(--panel-muted); }
 .controls button,.controls label { min-height:40px; border-color:var(--panel-border); color:var(--panel-text); }
-.controls input { color:var(--panel-text); min-width:0; }
+.controls input { color:var(--panel-text); min-width:0; color-scheme:inherit; }
 @media(max-width:400px) { .controls { gap:4px; } .controls button,.controls label { padding:0 7px; } .controls label { min-width:130px; } .controls .today { font-size:9px; gap:3px; } }

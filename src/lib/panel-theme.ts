@@ -25,11 +25,19 @@ export function resolvePanelRank(value?: string | null): PanelRank {
   return aliases[key] || "celestial";
 }
 
-export function panelThemeVariables(value?: string | null) {
-  const palette = PANEL_PALETTES[resolvePanelRank(value)];
+const LIGHT_ACCENTS: Record<PanelRank, string> = {
+  celestial: "#635583", bronze: "#835033", silver: "#485d78", gold: "#78591b",
+  elite: "#655094", master: "#854467", legend: "#705729", diamond: "#326578", platinum: "#38675c",
+};
+
+export function panelThemeVariables(value?: string | null, light = false) {
+  const rank = resolvePanelRank(value);
+  const palette = PANEL_PALETTES[rank];
+  const accent = light ? LIGHT_ACCENTS[rank] : palette.accent;
+  const rgb = light ? [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16)).join(",") : palette.rgb;
   return {
-    "--rank-accent": palette.accent,
-    "--rank-rgb": palette.rgb,
-    "--rank-secondary": palette.secondary,
+    "--rank-accent": accent,
+    "--rank-rgb": rgb,
+    "--rank-secondary": light ? accent : palette.secondary,
   };
 }
