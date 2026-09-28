@@ -9,6 +9,7 @@ import {
   Users,
 } from "lucide-react";
 import styles from "./CentralStatsCards.module.css";
+import { panelThemeVariables } from "@/lib/panel-theme";
 
 export type CentralLevel = string;
 
@@ -17,6 +18,12 @@ export type CentralStatsData = {
   xpToday: number;
   xpDateLabel?: string;
   currentLevel: CentralLevel;
+  tierKey?: string;
+  tierName?: string;
+  levelNumber?: number;
+  maxLevel?: boolean;
+  clientsLoaded?: boolean;
+  earningsLoaded?: boolean;
   currentLevelXp: number;
   nextLevelXp: number;
   nextLevelName: string;
@@ -98,13 +105,12 @@ export default function CentralStatsCards({
     100,
     Math.max(0, (data.currentLevelXp / Math.max(1, data.nextLevelXp)) * 100)
   );
-  const levelClass = styles[`level${data.currentLevel}`] || styles.levelOro;
   const earnedMoneyPoints = moneyChartPoints(data.earnedMoneyEvolution || []);
   const xpPoints = moneyChartPoints(data.xpEvolution || []);
 
   return (
     <section className={styles.grid} aria-label="Estadísticas de Central">
-      <article className={`${styles.card} ${styles.xpCard}`}>
+      <article className={`tc-glass ${styles.card} ${styles.xpCard}`}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>XP DISPONIBLE</div>
@@ -116,49 +122,51 @@ export default function CentralStatsCards({
           </div>
         </div>
         <div className={styles.visualArea} aria-hidden="true">
-          <MiniChart points={xpPoints} />
+          {data.xpEvolution?.length ? <MiniChart points={xpPoints} /> : <span className={styles.muted}>Sin evolución registrada</span>}
         </div>
         <CardButton label="VER PROGRESO" onClick={onViewProgress} />
       </article>
 
-      <article className={`${styles.card} ${styles.levelCard} ${levelClass}`}>
+      <article className={`tc-glass ${styles.card} ${styles.levelCard}`} style={panelThemeVariables(data.tierKey) as React.CSSProperties}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>NIVEL ACTUAL</div>
-            <div className={styles.levelValue}>{data.currentLevel.toUpperCase()}</div>
+            <div className={styles.levelValue}>{data.tierName || data.currentLevel}</div>
+            {data.levelNumber != null && <div className={styles.levelNumber}>Nivel {data.levelNumber}</div>}
           </div>
           <div className={`${styles.iconBox} ${styles.levelBadge}`} aria-hidden="true">
             <Shield size={29} />
           </div>
         </div>
         <div className={styles.progressMeta}>
-          <span>{formatNumber(data.currentLevelXp)} / {formatNumber(data.nextLevelXp)} XP</span>
-          <span>para Nivel {data.nextLevelName}</span>
+          <span>{data.maxLevel ? "Nivel máximo alcanzado" : `${formatNumber(data.currentLevelXp)} / ${formatNumber(data.nextLevelXp)} XP`}</span>
+          {!data.maxLevel && <span>para Nivel {data.nextLevelName}</span>}
         </div>
-        <div className={styles.progressTrack} aria-hidden="true">
-          <span style={{ width: `${levelProgress}%` }} />
+        <div className={styles.progressTrack} role="progressbar" aria-label="Progreso de nivel" aria-valuemin={0} aria-valuemax={100} aria-valuenow={data.maxLevel ? 100 : Math.round(levelProgress)}>
+          <span style={{ width: `${data.maxLevel ? 100 : levelProgress}%` }} />
         </div>
         <CardButton label="VER NIVELES" onClick={onViewLevels} />
       </article>
 
-      <article className={`${styles.card} ${styles.clientsCard}`}>
+      <article className={`tc-glass ${styles.card} ${styles.clientsCard}`}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>CLIENTES ACTIVAS</div>
-            <div className={styles.value}>{formatNumber(data.activeClients)}</div>
-            <div className={styles.positive}>+{formatNumber(data.activeClientsThisWeek)} esta semana</div>
+            <div className={styles.value}>{data.clientsLoaded === false ? "—" : formatNumber(data.activeClients)}</div>
+            <div className={styles.positive}>{data.clientsLoaded === false ? "Cargando cartera…" : `+${formatNumber(data.activeClientsThisWeek)} esta semana`}</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">
             <Users size={27} />
           </div>
         </div>
-        <div className={styles.ringVisual} aria-hidden="true">
-          <span className={styles.ringCore}>{Math.min(99, data.activeClients)}%</span>
+        <div className={styles.clientVisual} aria-hidden="true">
+          <Users size={36} strokeWidth={1.3} />
+          <span>Tu cartera activa</span>
         </div>
         <CardButton label="VER MIS CLIENTES" onClick={onViewClients} />
       </article>
 
-      <article className={`${styles.card} ${styles.notificationsCard}`}>
+      <article className={`tc-glass ${styles.card} ${styles.notificationsCard}`}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>NOTIFICACIONES</div>
@@ -177,19 +185,19 @@ export default function CentralStatsCards({
         <CardButton label="VER TODAS" onClick={onViewNotifications} />
       </article>
 
-      <article className={`${styles.card} ${styles.moneyCard}`}>
+      <article className={`tc-glass ${styles.card} ${styles.moneyCard}`}>
         <div className={styles.cardTop}>
           <div>
             <div className={styles.eyebrow}>DINERO GANADO</div>
-            <div className={styles.value}>{formatMoney(data.earnedMoney)}</div>
-            <div className={styles.positive}>+{formatMoney(data.earnedMoneyThisWeek)} esta semana</div>
+            <div className={styles.value}>{data.earningsLoaded === false ? "—" : formatMoney(data.earnedMoney)}</div>
+            <div className={styles.positive}>{data.earningsLoaded === false ? "Cargando ingresos…" : `+${formatMoney(data.earnedMoneyThisWeek)} esta semana`}</div>
           </div>
           <div className={styles.iconBox} aria-hidden="true">
             <CircleDollarSign size={28} />
           </div>
         </div>
         <div className={styles.visualArea} aria-hidden="true">
-          <MiniChart points={earnedMoneyPoints} />
+          {data.earnedMoneyEvolution?.length ? <MiniChart points={earnedMoneyPoints} /> : <span className={styles.muted}>Sin evolución registrada</span>}
         </div>
         <CardButton label="VER DETALLE" onClick={onViewEarnings} />
       </article>

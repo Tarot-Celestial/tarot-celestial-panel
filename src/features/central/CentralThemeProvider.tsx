@@ -2,8 +2,11 @@
 
 import { createContext, type CSSProperties, type ReactNode, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import themeStyles from "./CentralThemes.module.css";
+import PanelTheme from "@/components/ui/PanelTheme";
+import { PANEL_PALETTES, resolvePanelRank } from "@/lib/panel-theme";
 
 export const CENTRAL_THEMES = [
+  { id: "rango-actual", name: "Cristal · mi rango", family: "rank", colors: ["#090d19", "#27334b", "#e0e8f4"] },
   { id: "celestial-original", name: "Celestial Original", family: "original", colors: ["#08060d", "#6f3ea8", "#d7b56d"] },
   { id: "obsidiana-violeta", name: "Obsidiana Violeta", family: "dark", colors: ["#05050a", "#281535", "#ad78df"] },
   { id: "amatista-nocturna", name: "Amatista Nocturna", family: "dark", colors: ["#100717", "#4b1555", "#dd72da"] },
@@ -35,7 +38,7 @@ export type VisualSettings = {
   shadowStrength: number;
 };
 
-export const DEFAULT_VISUAL_SETTINGS: VisualSettings = { theme: "celestial-original", textColor: "#fffaf0", smartContrast: true, panelPreset: "theme", panelColor: "#12101b", panelOpacity: 94, glass: "soft", fontSize: 16, borderGlow: true, shadowStrength: 55 };
+export const DEFAULT_VISUAL_SETTINGS: VisualSettings = { theme: "rango-actual", textColor: "#f1f4fa", smartContrast: true, panelPreset: "theme", panelColor: "#151d2e", panelOpacity: 82, glass: "medium", fontSize: 16, borderGlow: true, shadowStrength: 45 };
 const validThemes = new Set<string>(CENTRAL_THEMES.map((theme) => theme.id));
 const validGlass = new Set<GlassIntensity>(["off", "soft", "medium", "intense"]);
 const validPanels = new Set<PanelPreset>(["theme", "dark", "violet", "blue", "graphite", "champagne", "light", "custom"]);
@@ -67,9 +70,10 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function useCentralTheme() { const value = useContext(ThemeContext); if (!value) throw new Error("useCentralTheme debe usarse dentro de CentralThemeProvider"); return value; }
 
-export function CentralThemeProvider({ workerId, children }: { workerId?: string | null; children: ReactNode }) {
+export function CentralThemeProvider({ workerId, rank, children }: { workerId?: string | null; rank?: string | null; children: ReactNode }) {
   const [settings, setSettings] = useState<VisualSettings>(DEFAULT_VISUAL_SETTINGS);
-  const storageKey = workerId ? `tc:central-visual:v2:${workerId}` : null;
+  const storageKey = workerId ? `tc:central-visual:v3:${workerId}` : null;
+  const previousKey = workerId ? `tc:central-visual:v2:${workerId}` : null;
   const legacyKey = workerId ? `tc:central-theme:v1:${workerId}` : null;
 
   useLayoutEffect(() => {
@@ -77,9 +81,21 @@ export function CentralThemeProvider({ workerId, children }: { workerId?: string
     try {
       const stored = window.localStorage.getItem(storageKey);
       if (stored) setSettings(normalize(JSON.parse(stored)));
-      else { const legacy = legacyKey ? window.localStorage.getItem(legacyKey) : null; setSettings(legacy && validThemes.has(legacy) ? { ...DEFAULT_VISUAL_SETTINGS, theme: legacy as CentralThemeId } : DEFAULT_VISUAL_SETTINGS); }
+      else {
+        const previous = previousKey ? window.localStorage.getItem(previousKey) : null;
+        if (previous) {
+          const value = normalize(JSON.parse(previous));
+          // Migrate the former default while retaining deliberately customized themes.
+          setSettings(value.theme === "celestial-original" && value.panelPreset === "theme"
+            ? { ...value, theme: "rango-actual", panelOpacity: value.panelOpacity === 94 ? 82 : value.panelOpacity }
+            : value);
+        } else {
+          const legacy = legacyKey ? window.localStorage.getItem(legacyKey) : null;
+          setSettings(legacy && legacy !== "celestial-original" && validThemes.has(legacy) ? { ...DEFAULT_VISUAL_SETTINGS, theme: legacy as CentralThemeId } : DEFAULT_VISUAL_SETTINGS);
+        }
+      }
     } catch { setSettings(DEFAULT_VISUAL_SETTINGS); }
-  }, [legacyKey, storageKey]);
+  }, [legacyKey, previousKey, storageKey]);
 
   useEffect(() => {
     if (!storageKey) return;
@@ -91,17 +107,18 @@ export function CentralThemeProvider({ workerId, children }: { workerId?: string
   const reset = useCallback(() => setSettings(DEFAULT_VISUAL_SETTINGS), []);
   const themeMeta = CENTRAL_THEMES.find((item) => item.id === settings.theme) || CENTRAL_THEMES[0];
   const isLight = themeMeta.family === "light";
-  const themePanel = themeMeta.colors[0];
+  const palette = PANEL_PALETTES[resolvePanelRank(rank)];
+  const themePanel = settings.theme === "rango-actual" ? "#151d2e" : themeMeta.colors[0];
   const effectivePanel = settings.panelPreset === "theme" ? themePanel : settings.panelColor;
   const effectiveText = settings.smartContrast && contrastRatio(settings.textColor, effectivePanel) < 4.5 ? accessibleText(effectivePanel) : settings.textColor;
   const blur = { off: 0, soft: 8, medium: 15, intense: 22 }[settings.glass];
   const variables = {
-    "--ct-text": effectiveText, "--ct-heading": effectiveText, "--ct-muted": mix(effectiveText, effectivePanel, .48), "--ct-text-secondary": mix(effectiveText, effectivePanel, .26), "--ct-text-on-accent": accessibleText(themeMeta.colors[2]),
+    "--ct-text": effectiveText, "--ct-heading": effectiveText, "--ct-muted": mix(effectiveText, effectivePanel, .36), "--ct-text-secondary": mix(effectiveText, effectivePanel, .22), "--ct-text-on-accent": accessibleText(themeMeta.colors[2]),
     "--ct-user-surface": rgba(effectivePanel, settings.panelOpacity / 100), "--ct-user-surface-solid": effectivePanel, "--ct-surface-opacity": settings.panelOpacity / 100,
     "--ct-surface-blur": `${blur}px`, "--ct-font-scale": settings.fontSize / 16, "--ct-font-base": `${settings.fontSize}px`, "--ct-shadow-strength": settings.shadowStrength / 100,
-    "--ct-glass-border": settings.borderGlow ? `rgba(${rgb(themeMeta.colors[2]).join(",")},.32)` : "var(--ct-border)",
+    "--ct-glass-border": settings.borderGlow ? `rgba(${settings.theme === "rango-actual" ? palette.rgb : rgb(themeMeta.colors[2]).join(",")},.26)` : "var(--ct-border)",
   } as CSSProperties;
   const context = useMemo(() => ({ settings, update, reset, isLight, effectiveText, effectivePanel }), [settings, update, reset, isLight, effectiveText, effectivePanel]);
 
-  return <ThemeContext.Provider value={context}><div className={themeStyles.themeRoot} data-central-theme={settings.theme} data-central-light={isLight ? "true" : "false"} data-glass={settings.glass} style={variables}>{children}</div></ThemeContext.Provider>;
+  return <ThemeContext.Provider value={context}><PanelTheme rank={rank} className={themeStyles.themeRoot} data-central-theme={settings.theme} data-central-light={isLight ? "true" : "false"} data-glass={settings.glass} style={variables}>{children}</PanelTheme></ThemeContext.Provider>;
 }

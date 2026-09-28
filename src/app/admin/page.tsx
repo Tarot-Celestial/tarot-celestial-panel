@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import nextDynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
+import PanelTheme from "@/components/ui/PanelTheme";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
@@ -1794,7 +1795,7 @@ function AdminPage() {
   if (!ok) return <div style={{ padding: 40, minHeight: "100vh", display: "grid", placeItems: "center", color: "rgba(255,255,255,.92)", fontSize: 18, letterSpacing: ".02em", background: "transparent" }}>Cargando…</div>;
 
   return (
-    <>
+    <PanelTheme>
       <div className="tc-premium-bg" aria-hidden="true">
         <div className="tc-premium-orb tc-premium-orb-one" />
         <div className="tc-premium-orb tc-premium-orb-two" />
@@ -3131,7 +3132,7 @@ function AdminPage() {
         </div>
       )}
 
-    </>
+    </PanelTheme>
   );
 }
 
@@ -3498,4 +3499,3 @@ export default function Page() {
     </Suspense>
   );
 }
-

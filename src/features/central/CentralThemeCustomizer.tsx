@@ -1,7 +1,8 @@
 "use client";
 
 import { AlertTriangle, Check, Minus, Palette, Plus, RotateCcw, Settings2, ShieldCheck, Sparkles, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { accessibleText, CENTRAL_THEMES, contrastRatio, useCentralTheme, type GlassIntensity, type PanelPreset } from "./CentralTheme";
 import styles from "./CentralThemeCustomizer.module.css";
 
@@ -12,27 +13,47 @@ const GLASS_OPTIONS: Array<[GlassIntensity, string]> = [["off", "Desactivado"], 
 type Tab = "themes" | "readability" | "panels" | "advanced";
 
 export default function CentralThemeCustomizer() {
-  const { settings, update, reset, effectiveText, effectivePanel } = useCentralTheme();
+  const { settings, update, reset, effectiveText, effectivePanel, isLight } = useCentralTheme();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("themes");
   const rootRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const dialogStyle = {
+    "--ct-text": effectiveText, "--ct-muted": `color-mix(in srgb,${effectiveText} 72%,${effectivePanel})`,
+    "--ct-surface": effectivePanel, "--ct-surface2": `color-mix(in srgb,${effectivePanel} 94%,${effectiveText})`,
+    "--ct-border": `color-mix(in srgb,${effectiveText} 22%,transparent)`,
+    "--ct-glass-border": `color-mix(in srgb,${effectiveText} 28%,transparent)`,
+    "--ct-accent": isLight ? "#536880" : "#e0e8f4", "--ct-primary-rgb": isLight ? "83,104,128" : "224,232,244",
+    "--ct-success": isLight ? "#197449" : "#92dfc6",
+  } as CSSProperties;
   const ratio = contrastRatio(settings.textColor, effectivePanel);
   const lowContrast = !settings.smartContrast && ratio < 4.5;
 
   useEffect(() => {
     if (!open) return;
-    const closeOutside = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node)) setOpen(false); };
-    const closeEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const closeOutside = (event: PointerEvent) => { if (!rootRef.current?.contains(event.target as Node) && !dialogRef.current?.contains(event.target as Node)) setOpen(false); };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Tab") return;
+      const controls = dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex="0"]');
+      if (!controls?.length) return;
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
     document.addEventListener("pointerdown", closeOutside); document.addEventListener("keydown", closeEscape);
-    return () => { document.removeEventListener("pointerdown", closeOutside); document.removeEventListener("keydown", closeEscape); };
+    return () => { document.body.style.overflow = previousOverflow; rootRef.current?.querySelector<HTMLButtonElement>("button")?.focus(); document.removeEventListener("pointerdown", closeOutside); document.removeEventListener("keydown", closeEscape); };
   }, [open]);
 
   const selectPanel = (preset: PanelPreset, color: string) => update({ panelPreset: preset, panelColor: color });
-  const restore = () => { if (window.confirm("¿Restaurar toda tu apariencia a Celestial Original?")) { reset(); setTab("themes"); } };
+  const restore = () => { if (window.confirm("¿Restaurar toda tu apariencia a Cristal · mi rango?")) { reset(); setTab("themes"); } };
 
   return <div className={styles.root} ref={rootRef}>
     <button type="button" className={`${styles.trigger} ${open ? styles.triggerOpen : ""}`} onClick={() => setOpen((value) => !value)} aria-label="Abrir centro de personalización visual" aria-expanded={open} aria-haspopup="dialog" title="Personalizar panel"><Settings2 size={19} /></button>
-    {open ? <div className={styles.popover} role="dialog" aria-modal="false" aria-label="Centro de personalización visual">
+    {open ? createPortal(<><div className={styles.backdrop} aria-hidden="true" /><div ref={dialogRef} style={dialogStyle} className={styles.popover} role="dialog" aria-modal="true" aria-label="Centro de personalización visual">
       <header className={styles.popoverHeader}><div className={styles.titleWrap}><span className={styles.titleIcon}><Sparkles size={17} /></span><div><strong>Centro de personalización</strong><small>Apariencia individual · vista previa inmediata</small></div></div><button type="button" className={styles.close} onClick={() => setOpen(false)} aria-label="Cerrar"><X size={17} /></button></header>
       <div className={styles.demo} style={{ color: effectiveText, background: effectivePanel }}><span className={styles.demoKicker}>VISTA PREVIA</span><strong>Rendimiento</strong><b>184 XP</b><small>Información secundaria y legible</small><button type="button">Botón de ejemplo</button></div>
       <div className={styles.tabs} role="tablist" aria-label="Secciones de personalización">{([['themes','Temas'],['readability','Legibilidad'],['panels','Paneles'],['advanced','Avanzado']] as const).map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key} className={tab === key ? styles.tabActive : ""} onClick={() => setTab(key)}>{label}</button>)}</div>
@@ -51,10 +72,10 @@ export default function CentralThemeCustomizer() {
         {tab === "advanced" ? <div className={styles.sectionStack}>
           <section><label className={styles.switchRow}><span><strong>Borde luminoso fino</strong><small>Realce holográfico moderado en paneles.</small></span><input type="checkbox" checked={settings.borderGlow} onChange={(event) => update({ borderGlow: event.target.checked })} /></label></section>
           <section><div className={styles.rangeHeader}><span><strong>Profundidad de sombras</strong><small>Controla la separación visual de las capas</small></span><b>{settings.shadowStrength}%</b></div><input className={styles.range} type="range" min="0" max="100" value={settings.shadowStrength} onChange={(event) => update({ shadowStrength: Number(event.target.value) })} /></section>
-          <section className={styles.resetZone}><RotateCcw size={20} /><div><strong>Restaurar Celestial Original</strong><small>Restablece tema, texto, tamaño, paneles, contraste y efectos.</small></div><button type="button" onClick={restore}>Restaurar todo</button></section>
+          <section className={styles.resetZone}><RotateCcw size={20} /><div><strong>Restaurar Cristal · mi rango</strong><small>Restablece tema, texto, tamaño, paneles, contraste y efectos.</small></div><button type="button" onClick={restore}>Restaurar todo</button></section>
         </div> : null}
       </div>
       <footer className={styles.footer}><span><Check size={13} /> Cambios aplicados en tiempo real</span><small>Guardado automático individual</small></footer>
-    </div> : null}
+    </div></>, document.body) : null}
   </div>;
 }

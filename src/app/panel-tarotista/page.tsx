@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import TarotistaBonuses from "@/components/bonuses/TarotistaBonuses";
 import AppHeader from "@/components/AppHeader";
+import PanelTheme from "@/components/ui/PanelTheme";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { loadPanelIdentity, panelPathForRole, redirectToLogin } from "@/lib/panel-access";
@@ -1502,7 +1503,7 @@ export default function Tarotista() {
   }
 
   return (
-    <>
+    <PanelTheme rank={s?.tarotista_rango}>
       <div className="tc-premium-bg" aria-hidden="true">
         <div className="tc-premium-orb tc-premium-orb-one" />
         <div className="tc-premium-orb tc-premium-orb-two" />
@@ -2614,7 +2615,7 @@ export default function Tarotista() {
           </main>
         </div>
       )}
-    </>
+    </PanelTheme>
   );
 }
 
@@ -2721,4 +2722,3 @@ function TeamCard({
     </article>
   );
 }
-

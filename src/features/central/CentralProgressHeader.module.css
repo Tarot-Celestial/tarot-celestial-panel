@@ -338,3 +338,27 @@
   .metric, .syncButton, .profileCard { transition: none; }
   .syncingButton svg, .sync_syncing span { animation: none; }
 }
+
+
+.header { position:relative; top:auto; z-index:30; grid-template-columns:minmax(150px,.7fr) minmax(0,1.8fr) minmax(230px,1fr); gap:18px; padding:20px; }
+.header::before { background:linear-gradient(115deg,rgba(255,255,255,.025),transparent 35%); }
+.header::after { background:linear-gradient(90deg,transparent,rgba(var(--rank-rgb),.45),transparent); }
+.brandTitle { font-size:18px; font-weight:700; letter-spacing:.12em; text-shadow:none; }
+.brandMark,.metricIcon { color:var(--rank-accent); border-color:var(--panel-border); background:rgba(var(--rank-rgb),.07); box-shadow:inset 0 1px 0 rgba(255,255,255,.07); }
+.metric { background:rgba(var(--rank-rgb),.035); border-color:var(--panel-border); padding:12px; gap:8px; }
+.metricLabel { font-size:9px; font-weight:650; letter-spacing:.06em; white-space:normal; line-height:1.5; }
+.metricValue { font-weight:700; font-size:20px; }
+.profileArea { grid-template-columns:minmax(0,1fr) auto; gap:8px; }
+.syncControls { grid-column:1/-1; order:2; justify-content:flex-end; }
+.syncState { padding:4px 8px; border:0; background:none; box-shadow:none; }
+.syncState small { color:var(--panel-muted); font-size:10px; }
+.syncState span { box-shadow:none; width:6px; height:6px; }
+.syncButton { width:30px; height:30px; border-radius:9px; color:var(--panel-muted); }
+.profileCard { min-width:0; border-color:rgba(var(--rank-rgb),.3); background:linear-gradient(120deg,rgba(var(--rank-rgb),.11),rgba(var(--rank-rgb),.025)); padding:12px; }
+.profileCard:hover { border-color:rgba(var(--rank-rgb),.5); }
+.avatar { border-radius:50%; background:linear-gradient(135deg,var(--rank-accent),var(--rank-secondary)); border-color:rgba(var(--rank-rgb),.5); box-shadow:0 4px 16px rgba(0,0,0,.15); }
+.profileLevel,.editProfileIcon { color:var(--rank-accent); }
+.profileRole,.profileRating small { color:var(--panel-muted); }
+.profileName { font-weight:700; }
+@media(max-width:1500px) { .header { grid-template-columns:minmax(0,1fr) minmax(230px,.8fr); } .metrics { grid-column:1/-1; order:3; } .profileArea { grid-column:2; } }
+@media(max-width:620px) { .header { grid-template-columns:minmax(0,1fr); padding:16px; } .profileArea { grid-column:1; } .metrics { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .metric { flex-direction:column; align-items:flex-start; padding:10px 8px; } .metricIcon { display:none; } .metricValue { font-size:17px; } .metricLabel { min-height:28px; font-size:8px; } .profileCard { order:0; } }

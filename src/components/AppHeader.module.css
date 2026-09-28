@@ -213,3 +213,12 @@
   .clockTime { font-size: 12px; }
   .clockIcon { width: 13px; height: 13px; right: 7px; top: 6px; }
 }
+
+
+:global(.tc-rank-panel) .shell { border-color:var(--panel-border)!important; background:linear-gradient(120deg,rgba(var(--rank-rgb),.055),transparent 60%),rgba(10,15,27,.94)!important; box-shadow:0 4px 24px rgba(0,0,0,.2)!important; }
+:global(.tc-rank-panel) .shell::before { opacity:.15; }
+:global(.tc-rank-panel) .logo { border-color:var(--panel-border)!important; background:rgba(var(--rank-rgb),.06)!important; box-shadow:inset 0 1px 0 rgba(255,255,255,.12)!important; }
+:global(.tc-rank-panel) .productName { color:#f1f4fa; font-weight:750; }
+:global(.tc-rank-panel) .operator b,:global(.tc-rank-panel) .count { color:var(--rank-accent); }
+:global(.tc-rank-panel) .route { color:#a7b4ca; }
+:global(.tc-rank-panel) .brainButton { color:var(--rank-accent); background:rgba(var(--rank-rgb),.07); border-color:var(--panel-border); }

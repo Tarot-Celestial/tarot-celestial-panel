@@ -107,7 +107,7 @@ export default function CentralDailyOverview({
 
   return (
     <section className={styles.layout} aria-label="Actividad diaria de Central">
-      <article className={`${styles.panel} ${styles.summaryPanel}`}>
+      <article className={`tc-glass ${styles.panel} ${styles.summaryPanel}`}>
         <header className={styles.panelHeader}>
           <div>
             <span className={styles.kicker}>PROGRESO DIARIO</span>
@@ -151,7 +151,7 @@ export default function CentralDailyOverview({
         </div>
       </article>
 
-      <article className={`${styles.panel} ${styles.missionsPanel}`}>
+      <article className={`tc-glass ${styles.panel} ${styles.missionsPanel}`}>
         <header className={styles.panelHeader}>
           <div>
             <span className={styles.kicker}>DESAFÍOS</span>
@@ -164,6 +164,7 @@ export default function CentralDailyOverview({
         </header>
 
         <div className={styles.missionList}>
+          {!data.missions.length && <p className={styles.emptyState}>No tienes misiones activas para esta fecha.</p>}
           {data.missions.map((mission) => {
             const missionPercent = percent(mission.progress, mission.target);
             const complete = isMissionComplete(mission.progress, mission.target);
@@ -203,7 +204,7 @@ export default function CentralDailyOverview({
         </button>
       </article>
 
-      <article className={`${styles.panel} ${styles.notificationsPanel}`}>
+      <article className={`tc-glass ${styles.panel} ${styles.notificationsPanel}`}>
         <header className={styles.notificationHeader}>
           <div>
             <span className={styles.kicker}>ACTIVIDAD</span>
@@ -212,6 +213,7 @@ export default function CentralDailyOverview({
         </header>
 
         <div className={styles.notificationList}>
+          {!data.notifications.length && <p className={styles.emptyState}>Estás al día. No hay notificaciones recientes.</p>}
           {data.notifications.map((notification) => (
             <div
               className={`${styles.notification} ${styles[`notification_${notification.type}`]}`}
@@ -230,7 +232,7 @@ export default function CentralDailyOverview({
                   <div className={styles.observation}>{notification.observation}</div>
                 )}
                 {notification.actionLabel && (
-                  <span className={styles.notificationAction}>{notification.actionLabel}</span>
+                  <button type="button" className={styles.notificationAction} onClick={onViewAllNotifications}>{notification.actionLabel}</button>
                 )}
               </div>
             </div>

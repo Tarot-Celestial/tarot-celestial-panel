@@ -86,7 +86,7 @@ export default function CentralProgressHeader({
   const shownPhoto = publicProfile.photoUrl || profile.photoUrl;
 
   return (
-    <section className={styles.header} aria-label="Resumen de progreso de la telefonista">
+    <section className={`tc-glass ${styles.header}`} aria-label="Resumen de progreso de la telefonista">
       <div className={styles.brand}>
         <div className={styles.brandMark} aria-hidden="true">
           <Sparkles size={21} />
