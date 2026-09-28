@@ -50,6 +50,7 @@ const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/C
 const WelldoneAdminPanel = nextDynamic(() => import("@/components/admin/WelldoneAdminPanel"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
+const ClientCampaignsPanel = nextDynamic(() => import("@/components/admin/ClientCampaignsPanel"), { ssr:false });
 const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/ClientRouletteAdminPanel"), { ssr:false });
 const ClientRitualsAdminPanel = nextDynamic(() => import("@/components/admin/ClientRitualsAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
@@ -87,6 +88,7 @@ const ADMIN_NAV = [
   { key: "sorteo", icon: Trophy, label: "Sorteo", kicker: "Selección de ganadores", tone: "goldPurple" },
   { key: "chat", icon: LayoutDashboard, label: "Chat", kicker: "Consultas de pago", tone: "indigo" },
   { key: "captacion", icon: Megaphone, label: "Captación", kicker: "Leads y seguimiento", tone: "orange" },
+  { key: "campanas-clientes", icon: Megaphone, label: "Campañas", kicker: "Promociones y notificaciones", tone: "goldPurple" },
   { key: "redes-sociales", icon: Share2, label: "Redes sociales", kicker: "Instagram y TikTok", tone: "goldPurple" },
   { key: "rendimiento", icon: BarChart3, label: "Rendimiento", kicker: "Llamadas registradas", tone: "blue" },
   { key: "reservas", icon: CalendarDays, label: "Reservas", kicker: "Agenda interna", tone: "gold" },
@@ -194,6 +196,7 @@ type TabKey =
   | "sorteo"
   | "chat"
   | "captacion"
+  | "campanas-clientes"
   | "redes-sociales"
   | "redes-sociales-instagram"
   | "redes-sociales-tiktok"
@@ -3049,6 +3052,7 @@ function AdminPage() {
             />
           )}
           {tab === "redes-sociales" && <SocialNetworksAdminPanel />}
+          {tab === "campanas-clientes" && <ClientCampaignsPanel />}
           {tab === "redes-sociales-instagram" && <SocialChannelAdminPanel provider="instagram" />}
           {tab === "redes-sociales-tiktok" && <SocialChannelAdminPanel provider="tiktok" />}
           {tab === "rendimiento" && <RendimientoPanel mode="admin" />}

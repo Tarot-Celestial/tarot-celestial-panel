@@ -1,30 +1,29 @@
 import { NextResponse } from "next/server";
-import { clientFromRequest } from "@/lib/server/auth-cliente";
+import { campaignIdentity, campaignResponseError } from "@/lib/server/campaign-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
-    const gate = await clientFromRequest(req);
-    if (!gate.uid || !gate.cliente) {
-      return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    }
+    const { db: admin, clientId } = await campaignIdentity(req, "client");
 
     const url = new URL(req.url);
     const requestedLimit = Number(url.searchParams.get("limit") || 60);
     const limit = Math.max(1, Math.min(100, Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 60));
 
     const [itemsResult, unreadResult] = await Promise.all([
-      gate.admin
+      admin
         .from("cliente_notificaciones")
         .select("id, titulo, mensaje, tipo, leida, created_at, meta")
-        .eq("cliente_id", gate.cliente.id)
+        .eq("cliente_id", clientId)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
         .order("created_at", { ascending: false })
         .limit(limit),
-      gate.admin
+      admin
         .from("cliente_notificaciones")
         .select("id", { count: "exact", head: true })
-        .eq("cliente_id", gate.cliente.id)
+        .eq("cliente_id", clientId)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
         .eq("leida", false),
     ]);
 
@@ -35,7 +34,6 @@ export async function GET(req: Request) {
       { headers: { "Cache-Control": "private, no-store, max-age=0" } },
     );
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_NOTIFS" }, { status: 500 });
+    return campaignResponseError(e);
   }
 }
-
