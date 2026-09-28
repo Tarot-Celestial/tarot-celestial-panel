@@ -348,6 +348,7 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
   }, [team]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const productName = role === "tarotista" ? "Tarot Leonaris" : "Tarot Celestial";
 
   return (
     <>
@@ -380,11 +381,11 @@ export default function AppHeader({ onIdentityLoaded }: AppHeaderProps = {}) {
                   boxShadow: "0 12px 28px rgba(0,0,0,.22)",
                 }}
               >
-                <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={38} height={38} />
+                <Image src="/Nuevo-logo-tarot.png" alt={productName} width={38} height={38} />
               </div>
 
               <div className={styles.identityText} style={{ lineHeight: 1.15 }}>
-                <div className={styles.productName} style={{ fontWeight: 900, fontSize: 17 }}>Tarot Celestial</div>
+                <div className={styles.productName} style={{ fontWeight: 900, fontSize: 17 }}>{productName}</div>
                 <div className={`${styles.operator} tc-sub`} style={{ marginTop: 5 }}>
                   <b>{name}</b> · {roleText}
                   {teamText ? ` · ${teamText}` : ""}

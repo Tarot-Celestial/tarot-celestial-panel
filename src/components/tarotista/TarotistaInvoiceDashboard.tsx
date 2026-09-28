@@ -94,7 +94,8 @@ export default function TarotistaInvoiceDashboard(props: Props) {
   const rankingBonus = (lines || []).filter(l => l.kind === "bonus_ranking").reduce((n,l) => n + Number(l.amount || 0),0);
   const repeatBonus = (lines || []).filter(l => ["bonus_challenge","bonus_repite_goal"].includes(l.kind)).reduce((n,l) => n + Number(l.amount || 0),0);
   const manualBonuses = (lines || []).filter(l => ["bonus","salary_bonus"].includes(l.kind)).reduce((n,l) => n + Number(l.amount || 0),0);
-  const allBonuses = captureBonus + rankingBonus + repeatBonus + manualBonuses;
+  const liveRankBonus = invoice ? 0 : Number(liveStats?.bonus_rank || 0);
+  const allBonuses = captureBonus + rankingBonus + repeatBonus + manualBonuses + liveRankBonus;
   const incidentsTotal = invoice ? -(lines || []).filter(l => l.kind === "incident").reduce((n,l) => n + Number(l.amount || 0),0) : (incidents || []).reduce((sum, item) => sum + Number(item?.amount || 0), 0);
   const adjustments = (lines || []).filter(l => !String(l.kind).startsWith("minutes_") && !["salary_base","bonus_captadas","bonus_ranking","bonus_challenge","bonus_repite_goal","bonus","salary_bonus","incident"].includes(l.kind)).reduce((n,l) => n + Number(l.amount || 0),0);
   const earnedToday = Math.round((minuteEarnings + allBonuses + adjustments - incidentsTotal) * 100) / 100;
