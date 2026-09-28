@@ -51,34 +51,35 @@ export async function GET(req: NextRequest) {
 
     let recovered = false;
     let recoveryError: string | null = null;
+    let recoveredProvider: "instagram" | "tiktok" | null = null;
 
-    if (!instagram) {
-      const recoveryRaw = req.cookies.get("tc_social_oauth_recovery")?.value;
-      const recovery = decodeSocialRecovery(recoveryRaw);
-      if (recovery?.provider === "instagram") {
-        try {
-          await saveSocialConnection({
-            provider: "instagram",
-            accountId: recovery.accountId,
-            username: recovery.username || null,
-            displayName: recovery.displayName || null,
-            avatarUrl: recovery.avatarUrl || null,
-            accessToken: recovery.accessToken,
-            refreshToken: recovery.refreshToken || null,
-            expiresIn: recovery.expiresIn || null,
-            refreshExpiresIn: recovery.refreshExpiresIn || null,
-            scopes: recovery.scopes || [],
-            metadata: {
-              ...(recovery.metadata || {}),
-              recovered_from_oauth_cookie: true,
-            },
-            connectedBy: recovery.connectedBy || null,
-          });
-          instagram = await readProvider("instagram");
-          recovered = Boolean(instagram);
-        } catch (error: any) {
-          recoveryError = error?.message || "No se pudo recuperar la conexión OAuth";
-        }
+    const recoveryRaw = req.cookies.get("tc_social_oauth_recovery")?.value;
+    const recovery = decodeSocialRecovery(recoveryRaw);
+    if (recovery && ((recovery.provider === "instagram" && !instagram) || (recovery.provider === "tiktok" && !tiktok))) {
+      try {
+        await saveSocialConnection({
+          provider: recovery.provider,
+          accountId: recovery.accountId,
+          username: recovery.username || null,
+          displayName: recovery.displayName || null,
+          avatarUrl: recovery.avatarUrl || null,
+          accessToken: recovery.accessToken,
+          refreshToken: recovery.refreshToken || null,
+          expiresIn: recovery.expiresIn || null,
+          refreshExpiresIn: recovery.refreshExpiresIn || null,
+          scopes: recovery.scopes || [],
+          metadata: {
+            ...(recovery.metadata || {}),
+            recovered_from_oauth_cookie: true,
+          },
+          connectedBy: recovery.connectedBy || null,
+        });
+        if (recovery.provider === "instagram") instagram = await readProvider("instagram");
+        if (recovery.provider === "tiktok") tiktok = await readProvider("tiktok");
+        recovered = recovery.provider === "instagram" ? Boolean(instagram) : Boolean(tiktok);
+        recoveredProvider = recovered ? recovery.provider : null;
+      } catch (error: any) {
+        recoveryError = error?.message || "No se pudo recuperar la conexión OAuth";
       }
     }
 
@@ -109,19 +110,22 @@ export async function GET(req: NextRequest) {
         project_ref: projectRef(),
       },
       recovery: {
-        attempted: Boolean(req.cookies.get("tc_social_oauth_recovery")?.value),
+        attempted: Boolean(recoveryRaw),
         recovered,
+        provider: recoveredProvider,
         error: recoveryError,
       },
-      build: "social-oauth-v5-direct-provider-read",
+      build: "social-oauth-v6-tiktok-recovery",
     });
 
-    if (instagram || recoveryError) response.cookies.delete("tc_social_oauth_recovery");
+    if (recovered || recoveryError || (recovery?.provider === "instagram" && instagram) || (recovery?.provider === "tiktok" && tiktok)) {
+      response.cookies.delete("tc_social_oauth_recovery");
+    }
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     return response;
   } catch (error: any) {
     return NextResponse.json(
-      { ok: false, error: error?.message || "SOCIAL_STATUS_ERROR", build: "social-oauth-v5-direct-provider-read" },
+      { ok: false, error: error?.message || "SOCIAL_STATUS_ERROR", build: "social-oauth-v6-tiktok-recovery" },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
