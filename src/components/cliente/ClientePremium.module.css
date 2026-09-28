@@ -1557,3 +1557,11 @@
     animation: none !important;
   }
 }
+
+.premiumShell:global(.tc-rank-panel) { background:radial-gradient(ellipse at 80% 0,rgba(var(--rank-rgb),.08),transparent 50%),#090d19; }
+.premiumShell:global(.tc-rank-panel) .spaceField { opacity:.2; }
+.premiumShell:global(.tc-rank-panel) .celestialBackdrop { opacity:.14; }
+.premiumShell:global(.tc-rank-panel) :global(.tc-client-hero)::before { opacity:.3; border-color:var(--panel-border); }
+.premiumShell:global(.tc-rank-panel) :global(.tc-kpi) { border-radius:16px; }
+.premiumShell:global(.tc-rank-panel) :global(.tc-nav-link) { color:var(--panel-text); background:rgba(var(--rank-rgb),.04); border-color:rgba(var(--rank-rgb),.15); }
+.premiumShell:global(.tc-rank-panel) .particleIcon { color:var(--rank-accent); filter:none; }

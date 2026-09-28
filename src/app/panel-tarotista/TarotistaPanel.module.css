@@ -2260,3 +2260,11 @@
     height: 56px;
   }
 }
+
+:global(.tc-rank-panel) .railCard,
+:global(.tc-rank-panel) .clientsHero,
+:global(.tc-rank-panel) .clientsProgressCard,
+:global(.tc-rank-panel) .clientsListCard,
+:global(.tc-rank-panel) .clientsAddCard,
+:global(.tc-rank-panel) .clientsActivityCard,
+:global(.tc-rank-panel) .teamBattleCard { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }

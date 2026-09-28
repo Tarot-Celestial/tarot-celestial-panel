@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import PanelTheme from "@/components/ui/PanelTheme";
+import { useClientPanelRank } from "@/hooks/useClientPanelRank";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
@@ -116,6 +118,7 @@ function SummaryIcon({ label, tone }: { label: string; tone: NonNullable<Summary
 
 export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celestial", summaryItems = [], children }: Props) {
   const pathname = usePathname();
+  const panelRank = useClientPanelRank();
   const router = useRouter();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [promoActive, setPromoActive] = useState(false);
@@ -254,7 +257,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   }
 
   return (
-    <div className={`tc-wrap ${styles.premiumShell}`} data-home={pathname === "/cliente/dashboard" ? "true" : "false"}>
+    <PanelTheme rank={panelRank} className={`tc-wrap ${styles.premiumShell}`} data-home={pathname === "/cliente/dashboard" ? "true" : "false"}>
       <div className={styles.spaceField} aria-hidden="true">
         <span />
         <span />
@@ -408,6 +411,6 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
       </div>
 
       <LeoCelestialGuide promoActive={promoActive} />
-    </div>
+    </PanelTheme>
   );
 }

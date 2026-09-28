@@ -75,3 +75,9 @@
 @media (max-width:950px) { .teamGrid { grid-template-columns:1fr; }.summaryGrid { grid-template-columns:repeat(2,1fr); } }
 @media (max-width:640px) { .hero,.sectionHeading,.competitionHeader { align-items:stretch; flex-direction:column; }.toolbar { justify-content:flex-start; }.sectionHeading input { width:100%; }.summaryGrid { grid-template-columns:1fr 1fr; }.presenceStatus { align-self:flex-start; }.memberCard { align-items:flex-start; flex-wrap:wrap; }.footerNote { text-align:left; } }
 @media (prefers-reduced-motion:reduce) { .spinning,.memberCard,.teamLeader { animation:none; }.progress i,.refreshButton { transition:none; } }
+
+
+/* Use the shared rank palette without changing section behavior. */
+:global(.tc-rank-panel) .hero,
+:global(.tc-rank-panel) .memberCard,
+:global(.tc-rank-panel) .teamCard { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }

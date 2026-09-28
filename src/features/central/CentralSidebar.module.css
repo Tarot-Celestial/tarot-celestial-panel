@@ -340,3 +340,18 @@
     transition: none !important;
   }
 }
+
+
+.sidebarCard { border-radius:20px; }
+.sidebarTitle { color:var(--rank-accent)!important; text-shadow:none; font-size:11px; letter-spacing:.1em; }
+.sidebarTitle::after { background:linear-gradient(90deg,rgba(var(--rank-rgb),.3),transparent); }
+.navRow { display:flex; align-items:stretch; min-width:0; gap:3px; }
+.navRow > .navButton { flex:1; min-width:0; }
+.navButton { padding:10px!important; border-radius:12px; }
+.iconHud { width:32px!important; height:32px!important; border-radius:10px; box-shadow:none!important; }
+.navContent { gap:10px; }
+.dot { width:5px; height:5px; box-shadow:none!important; }
+.navButton::after { box-shadow:none; }
+.chevron { position:static; align-self:center; min-width:32px; min-height:40px; display:grid; place-items:center; border:1px solid var(--panel-border); border-radius:9px; color:var(--rank-accent); background:rgba(var(--rank-rgb),.04); cursor:pointer; }
+.navButtonActive .iconHud,.navButton:hover .iconHud { transform:none; }
+.subnav[hidden] { display:none; }

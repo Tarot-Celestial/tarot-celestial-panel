@@ -91,9 +91,10 @@ export default function CentralSidebar<T extends string = string>({ items, activ
             const expanded = hasChildren && (openGroups[key] ?? childActive);
             const notificationAlert = key === "notificaciones" && typeof item.badge === "number" && item.badge > 0;
             const tone = navTone(key, notificationAlert);
-            const toneStyle = { "--nav-rgb": tone.rgb } as CSSProperties;
+            const toneStyle = { "--nav-rgb": notificationAlert ? tone.rgb : "var(--rank-rgb)" } as CSSProperties;
             return (
               <div key={item.key} className={hasChildren ? styles.navGroup : undefined}>
+                <div className={styles.navRow}>
                 <button
                   className={[
                     "tc-sidebtn",
@@ -108,6 +109,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                     if (hasChildren) setOpenGroups((current) => ({ ...current, [key]: true }));
                   }}
                   type="button"
+                  aria-current={active ? "page" : undefined}
                 >
                   <div className={styles.navContent}>
                     <div className={`tc-chip ${styles.iconHud}`}>
@@ -118,19 +120,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                       <div className="tc-sidebtn-kicker">{item.kicker}</div>
                     </div>
                   </div>
-                  {hasChildren ? (
-                    <span
-                      className={`${styles.chevron} ${expanded ? styles.chevronOpen : ""}`}
-                      role="button"
-                      aria-label={expanded ? "Cerrar submenú" : "Abrir submenú"}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setOpenGroups((current) => ({ ...current, [key]: !expanded }));
-                      }}
-                    >
-                      <ChevronDown size={16} />
-                    </span>
-                  ) : typeof item.badge === "number" && item.badge > 0 ? (
+                  {typeof item.badge === "number" && item.badge > 0 ? (
                     <span
                       aria-label={`${item.badge} notificaciones pendientes`}
                       className={styles.badge}
@@ -141,8 +131,10 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                     <span className={`tc-sidebtn-dot ${styles.dot}`} />
                   )}
                 </button>
+                {hasChildren && <button type="button" className={`${styles.chevron} ${expanded ? styles.chevronOpen : ""}`} aria-expanded={expanded} aria-label={`${expanded ? "Cerrar" : "Abrir"} submenú ${item.label}`} onClick={() => setOpenGroups(current => ({ ...current, [key]: !expanded }))}><ChevronDown size={16} /></button>}
+                </div>
                 {hasChildren ? (
-                  <div className={`${styles.subnav} ${expanded ? styles.subnavOpen : ""}`} style={toneStyle}>
+                  <div className={`${styles.subnav} ${expanded ? styles.subnavOpen : ""}`} style={toneStyle} hidden={!expanded}>
                     {item.children?.map((child) => {
                       const isActive = activeTab === child.key;
                       return (

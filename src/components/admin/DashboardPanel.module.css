@@ -1050,3 +1050,6 @@
     animation: none;
   }
 }
+
+:global(.tc-rank-panel) .heroCard,
+:global(.tc-rank-panel) .panelCard { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }

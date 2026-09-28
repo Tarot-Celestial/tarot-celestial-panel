@@ -8,3 +8,11 @@
 .detailMissions{width:100%;display:grid;gap:8px;margin-top:10px;padding:14px;border:1px solid rgba(var(--tier),.18);border-radius:15px;background:rgba(var(--tier),.035)}.detailMissions>span{font-size:8px;letter-spacing:.14em;color:rgb(var(--tier));font-weight:900}.detailMissions>div{display:flex;gap:9px;align-items:center}.detailMissions svg{color:#e7c76d}.detailMissions p{display:grid;gap:2px;margin:0}.detailMissions small{color:#91879d;font-size:9px}
 .detailMissions em{font-style:normal;color:#b792e4;font-size:9px}.detailMissions .previewMission{opacity:.58}.detailMissions .completedMission{padding:7px;border:1px solid rgba(73,214,143,.2);border-radius:10px;background:rgba(53,186,119,.055)}.detailMissions .completedMission svg,.detailMissions .completedMission em{color:#65dfa0}
 .detailMissions>div>button{margin-left:auto;padding:7px 9px;border:1px solid rgba(238,199,91,.38);border-radius:9px;background:rgba(211,166,55,.1);color:#efd078;font-size:9px;font-weight:900}.detailMissions>div>button:disabled{opacity:.55}
+
+
+/* Use the shared rank palette without changing section behavior. */
+:global(.tc-rank-panel) .hero,
+:global(.tc-rank-panel) .heroBadge,
+:global(.tc-rank-panel) .progressPanel,
+:global(.tc-rank-panel) .tierCard,
+:global(.tc-rank-panel) .claimedState { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }

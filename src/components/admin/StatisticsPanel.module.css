@@ -466,3 +466,18 @@
   .metricControls .settingsButton { width:100%; }
   .settingsList { grid-template-columns:1fr; }
 }
+
+
+/* Use the shared rank palette without changing section behavior. */
+:global(.tc-rank-panel) .heroCard,
+:global(.tc-rank-panel) .metricsSection,
+:global(.tc-rank-panel) .rankingCard,
+:global(.tc-rank-panel) .battleCard,
+:global(.tc-rank-panel) .performanceCard,
+:global(.tc-rank-panel) .heroGlow,
+:global(.tc-rank-panel) .heroIcon,
+:global(.tc-rank-panel) .sectionIcon,
+:global(.tc-rank-panel) .metricCard,
+:global(.tc-rank-panel) .teamCard,
+:global(.tc-rank-panel) .emptyState,
+:global(.tc-rank-panel) .settingsPanel { background:var(--panel-glass); border-color:var(--panel-border); box-shadow:var(--panel-shadow); backdrop-filter:blur(var(--panel-blur)); }

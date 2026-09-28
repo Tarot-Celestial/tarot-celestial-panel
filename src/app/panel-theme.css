@@ -1,0 +1,88 @@
+/* Shared glass surfaces for Central, Tarotista, Admin and Cliente. */
+.tc-rank-panel {
+  --panel-bg: #090d19;
+  --panel-surface: #151d2e;
+  --panel-text: var(--ct-text, #f1f4fa);
+  --panel-muted: var(--ct-muted, #abb8ce);
+  --panel-border: var(--ct-glass-border, rgba(var(--rank-rgb), .22));
+  --panel-glass: linear-gradient(132deg, rgba(255,255,255,.075), transparent 45%), var(--ct-user-surface, rgba(21,29,46,.82));
+  --panel-shadow: 0 14px 36px rgba(0,0,0,calc(.08 + .3 * var(--ct-shadow-strength,.45))), inset 0 1px 0 rgba(255,255,255,.12), inset 0 -1px 0 rgba(255,255,255,.025);
+  --panel-blur: var(--ct-surface-blur, 16px);
+  --tc-bg: var(--panel-bg);
+  --tc-bg-2: #131729;
+  --tc-panel: var(--panel-surface);
+  --tc-border: var(--panel-border);
+  --tc-text: var(--panel-text);
+  --tc-muted: var(--panel-muted);
+  --tc-gold: var(--rank-accent);
+  --tc-purple: var(--rank-secondary);
+  min-height: 100dvh;
+  color: var(--panel-text);
+  color-scheme: dark;
+  background: radial-gradient(ellipse at 78% 0, rgba(var(--rank-rgb),.08), transparent 48%), radial-gradient(ellipse at 0 55%, #191a35 0, transparent 55%), var(--panel-bg);
+}
+.tc-rank-panel *, .tc-rank-panel *::before, .tc-rank-panel *::after { box-sizing: border-box; }
+.tc-rank-panel .tc-premium-bg {
+  background: radial-gradient(ellipse at 82% 0, rgba(var(--rank-rgb),.1), transparent 52%), radial-gradient(ellipse at 4% 60%, rgba(97,87,161,.12), transparent 55%), var(--panel-bg) !important;
+}
+.tc-rank-panel .tc-premium-orb { opacity: .1; animation: none; }
+.tc-rank-panel .tc-login-stars { opacity: .2; animation: none; }
+.tc-rank-panel .tc-login-grid { opacity: .035; }
+.tc-rank-panel .tc-shell-premium::before, .tc-rank-panel .tc-premium-bg::after { opacity: .14; }
+.tc-rank-panel .tc-shell { max-width: 1800px; padding: 24px 28px 110px; grid-template-columns: 248px minmax(0,1fr); gap: 24px; }
+.tc-rank-panel .tc-main { min-width: 0; gap: 20px; }
+.tc-rank-panel .tc-main-content { min-width: 0; }
+.tc-rank-panel :is(.tc-glass, .tc-card, .tc-sidebar-card, .tc-kpi-panel, .tc-mini-stat, .tc-pack-card, .tc-client-hero, .tc-kpi) {
+  border: 1px solid var(--panel-border) !important;
+  border-radius: 20px;
+  color: var(--panel-text);
+  background: var(--panel-glass) !important;
+  box-shadow: var(--panel-shadow) !important;
+  -webkit-backdrop-filter: blur(var(--panel-blur)) saturate(120%);
+  backdrop-filter: blur(var(--panel-blur)) saturate(120%);
+}
+.tc-rank-panel :is(.tc-card,.tc-sidebar-card)::before { display: none; }
+.tc-rank-panel .tc-card:hover { transform: none; }
+.tc-rank-panel :is(.tc-title,.tc-kpi-value,.tc-brand-title) { color: var(--panel-text); text-shadow: none; }
+.tc-rank-panel :is(.tc-sub,.tc-muted,.tc-kpi-label,.tc-kpi-meta,.tc-brand-copy,.tc-sidebtn-kicker) { color: var(--panel-muted); }
+.tc-rank-panel .tc-sidebar-title { color: var(--rank-accent); }
+.tc-rank-panel .tc-sidebtn { min-height: 52px; border-radius: 12px; color: var(--panel-text); }
+.tc-rank-panel .tc-sidebtn-active, .tc-rank-panel .tc-nav-link-active {
+  border-color: rgba(var(--rank-rgb),.42) !important;
+  background: linear-gradient(120deg,rgba(var(--rank-rgb),.16),rgba(var(--rank-rgb),.04)) !important;
+  color: var(--rank-accent) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1) !important;
+}
+.tc-rank-panel :is(.tc-btn,.tc-nav-link) { min-height: 42px; border-radius: 12px; }
+.tc-rank-panel :is(.tc-btn-gold,.tc-btn-purple) {
+  color: var(--panel-text);
+  background: linear-gradient(125deg,rgba(var(--rank-rgb),.17),rgba(var(--rank-rgb),.06));
+  border-color: rgba(var(--rank-rgb),.34);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.1);
+}
+.tc-rank-panel :is(.tc-input,.tc-select,.tc-textarea) { background: rgba(6,12,24,.64); border-color: var(--panel-border); color: var(--panel-text); }
+.tc-rank-panel :is(button,a,input,select,textarea,[tabindex]):focus-visible { outline: 2px solid var(--rank-accent); outline-offset: 4px; }
+.tc-rank-panel button:not(:disabled):active { transform: translateY(1px); }
+.tc-rank-panel :is(button,a) { -webkit-tap-highlight-color: transparent; }
+.tc-rank-panel .tc-glass::before { pointer-events: none; }
+.tc-rank-panel[data-glass="off"] { --panel-blur: 0px; }
+@supports not (backdrop-filter: blur(1px)) { .tc-rank-panel { --panel-glass: var(--ct-user-surface-solid, #151d2e); } }
+@media (max-width: 1150px) {
+  .tc-rank-panel .tc-shell { grid-template-columns: 210px minmax(0,1fr); padding: 18px 20px 110px; gap: 18px; }
+}
+@media (max-width: 900px) {
+  .tc-rank-panel .tc-shell { grid-template-columns: minmax(0,1fr); }
+  .tc-rank-panel .tc-sidebar { position: static; max-height: none; }
+  .tc-rank-panel .tc-sidebar-card { max-height: 280px; }
+  .tc-rank-panel .tc-sidebar-nav { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 6px; }
+}
+@media (max-width: 540px) {
+  .tc-rank-panel .tc-shell { padding: 12px 12px 110px; gap: 14px; }
+  .tc-rank-panel .tc-sidebar-card { padding: 12px; max-height: 230px; }
+  .tc-rank-panel .tc-sidebtn { padding: 10px; }
+  .tc-rank-panel .tc-sidebtn-main { font-size: 12px; }
+  .tc-rank-panel .tc-sidebtn-kicker { font-size: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tc-rank-panel *, .tc-rank-panel *::before, .tc-rank-panel *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
