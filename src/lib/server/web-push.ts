@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { createClient } from "@supabase/supabase-js";
+import { isTrustedPushEndpoint } from "@/lib/campaigns";
 
 type PushSubscriptionRow = {
   id?: string;
@@ -36,7 +37,7 @@ export function ensureWebPushConfigured() {
 
 export async function sendPushToSubscriptions(
   subscriptions: PushSubscriptionRow[],
-  payload: { title: string; body: string; url?: string; tag?: string; icon?: string }
+  payload: { title: string; body: string; url?: string; tag?: string; icon?: string; image?: string; expiresAt?: string }
 ) {
   ensureWebPushConfigured();
   const admin = getPushAdmin();
@@ -44,6 +45,7 @@ export async function sendPushToSubscriptions(
   const settled = await Promise.allSettled(
     subscriptions.map(async (sub) => {
       try {
+        if (!isTrustedPushEndpoint(sub.endpoint)) return { ok: false, statusCode: 400, message: "INVALID_PUSH_ENDPOINT" };
         await webpush.sendNotification(
           {
             endpoint: sub.endpoint,
@@ -58,7 +60,10 @@ export async function sendPushToSubscriptions(
             url: payload.url || "/cliente/dashboard",
             tag: payload.tag || "tarot-celestial",
             icon: payload.icon || "/Nuevo-logo-tarot.png",
-          })
+            image: payload.image,
+            expiresAt: payload.expiresAt,
+          }),
+          { timeout: 5000, TTL: payload.expiresAt ? Math.max(0, Math.min(86400, Math.floor((Date.parse(payload.expiresAt) - Date.now()) / 1000))) : 86400 }
         );
         return { ok: true };
       } catch (error: any) {
@@ -73,7 +78,8 @@ export async function sendPushToSubscriptions(
 
   const sent = settled.filter((item) => item.status === "fulfilled" && item.value?.ok).length;
   const failed = settled.length - sent;
-  return { sent, failed };
+  const results = settled.map(item => item.status === "fulfilled" ? { statusCode: 0, ...item.value } : { ok: false, statusCode: 0, message: "PUSH_SEND_ERROR" });
+  return { sent, failed, results };
 }
 
 export async function getClientPushSubscriptions(clienteId: string) {

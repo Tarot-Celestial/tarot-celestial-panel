@@ -311,10 +311,6 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
   const [yesterdayRows, setYesterdayRows] = useState<any[]>([]);
   const [yesterdayLoaded, setYesterdayLoaded] = useState(false);
   const [clientAccess, setClientAccess] = useState<any>(null);
-  const [pushTitle, setPushTitle] = useState("Aviso Tarot Celestial");
-  const [pushBody, setPushBody] = useState("");
-  const [pushSending, setPushSending] = useState(false);
-  const [pushMsg, setPushMsg] = useState("");
 
   const previousMonth = useMemo(() => previousMonthKey(month), [month]);
 
@@ -584,42 +580,6 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
     return items;
   }, [reservasProximas, diarioRows, pendientes, statsRows, statsTotals]);
 
-  async function sendClientPush() {
-    try {
-      const title = String(pushTitle || "").trim();
-      const body = String(pushBody || "").trim();
-      if (!title || !body) throw new Error("Escribe título y mensaje antes de enviar.");
-
-      setPushSending(true);
-      setPushMsg("");
-      const token = await getTokenOrLogin();
-      if (!token) return;
-
-      const res = await fetch("/api/admin/client-push/send", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title, body, url: "/cliente/dashboard", save_internal: true }),
-      });
-      const json = await safeJson(res);
-      if (!json?._ok || !json?.ok) throw new Error(json?.error || `HTTP ${json?._status || 500}`);
-
-      const sent = Number(json?.sent || 0);
-      const total = Number(json?.total || 0);
-      setPushMsg(`Notificación enviada. ${sent}/${total} dispositivos recibieron el envío.`);
-      setPushBody("");
-      tcToast({ title: "Notificación enviada", description: `${sent}/${total} dispositivos`, tone: "success" });
-    } catch (e: any) {
-      const errorText = String(e?.message || "No se pudo enviar la notificación");
-      setPushMsg(`Error: ${errorText}`);
-      tcToast({ title: "Error enviando push", description: errorText, tone: "error" });
-    } finally {
-      setPushSending(false);
-    }
-  }
-
   const selectedMonthLabel = monthLabel(month);
   const previousMonthLabel = monthLabel(previousMonth);
   const accessTotals = clientAccess?.totals || {};
@@ -723,55 +683,8 @@ export default function DashboardPanel({ month }: DashboardPanelProps) {
       </section>
 
       <section className={styles.panelCard}>
-        <div className={styles.panelGlow} />
-        <div className={styles.sectionHeading}>
-          <div className={styles.sectionTitleGroup}>
-            <span className={`${styles.sectionIcon} ${styles.iconPurple}`}><BellRing size={20} aria-hidden="true" /></span>
-            <div>
-              <span className={styles.sectionKicker}>Acción directa</span>
-              <h3>Enviar notificación a clientes</h3>
-              <p>Envía un push a los clientes que ya tienen activadas las notificaciones.</p>
-            </div>
-          </div>
-          <span className={styles.gameChip}><Sparkles size={13} aria-hidden="true" /> Push manual</span>
-        </div>
-
-        <div className={styles.pushGrid}>
-          <label className={styles.fieldGroup}>
-            <span>Título</span>
-            <input
-              className={`tc-input ${styles.gameInput}`}
-              value={pushTitle}
-              onChange={(event) => setPushTitle(event.target.value)}
-              placeholder="Título de la notificación"
-            />
-          </label>
-          <label className={`${styles.fieldGroup} ${styles.messageField}`}>
-            <span>Mensaje</span>
-            <textarea
-              className={`tc-textarea ${styles.gameTextarea}`}
-              value={pushBody}
-              onChange={(event) => setPushBody(event.target.value)}
-              placeholder="Escribe el mensaje que verán los clientes..."
-              rows={4}
-            />
-          </label>
-          <div className={styles.pushFooter}>
-            <div className={styles.pushHint}><CircleAlert size={15} aria-hidden="true" /> También se guarda en el historial interno del cliente.</div>
-            <button
-              className={`tc-btn tc-btn-gold ${styles.primaryButton}`}
-              onClick={sendClientPush}
-              disabled={pushSending || !pushTitle.trim() || !pushBody.trim()}
-            >
-              <Send size={16} aria-hidden="true" /> {pushSending ? "Enviando..." : "Enviar notificación"}
-            </button>
-          </div>
-          {pushMsg ? (
-            <div className={`${styles.pushMessage} ${pushMsg.startsWith("Error") ? styles.pushError : styles.pushSuccess}`}>
-              {pushMsg}
-            </div>
-          ) : null}
-        </div>
+        <div className={styles.sectionHeading}><div><span className={styles.sectionKicker}>Comunicación</span><h3>Campañas para tus clientes</h3><p>Prepara promociones, revisa los destinatarios y consulta cada envío desde el centro de campañas.</p></div></div>
+        <a className="tc-btn tc-btn-gold" href="/admin?tab=campanas-clientes">Abrir centro de campañas</a>
       </section>
 
       <section className={styles.panelCard}>

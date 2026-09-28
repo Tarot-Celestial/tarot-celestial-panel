@@ -6,6 +6,10 @@ export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
+    const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!token) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    const verified = await getAdminClient().auth.getUser(token);
+    if (verified.error || !verified.data.user) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
     const worker = await workerFromRequest(req);
     if (!worker) {
       return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
@@ -16,6 +20,7 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const clienteId = String(body?.cliente_id || "").trim();
+    if (!clienteId) return NextResponse.json({ ok: false, error: "Para envíos a varios clientes, utiliza Admin > Campañas." }, { status: 400 });
     const title = String(body?.title || "").trim();
     const message = String(body?.body || body?.mensaje || "").trim();
     const url = String(body?.url || "/cliente/dashboard").trim() || "/cliente/dashboard";
