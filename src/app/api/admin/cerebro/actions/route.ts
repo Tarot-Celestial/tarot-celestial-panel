@@ -7,6 +7,10 @@ import {
   getBrainControlledActionSpec,
   type BrainControlledActionKey,
 } from "@/features/brain/brain-controlled-actions";
+import {
+  BRAIN_PROFESSIONAL_MODE,
+  BRAIN_PROFESSIONAL_SAFETY,
+} from "@/features/brain/brain-professional-mode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -232,10 +236,15 @@ export async function GET(req: Request) {
         recovering_incidents: recoveringResult.data || [],
         latest_snapshot: snapshotResult.data || null,
         safety: {
-          business_mutations_enabled: false,
-          external_deployments_enabled: false,
-          destructive_actions_enabled: false,
-          mode: "approval_required",
+          business_mutations_enabled: BRAIN_PROFESSIONAL_SAFETY.businessMutationsEnabled,
+          external_deployments_enabled: BRAIN_PROFESSIONAL_SAFETY.externalDeploymentsEnabled,
+          destructive_actions_enabled: BRAIN_PROFESSIONAL_SAFETY.destructiveActionsEnabled,
+          schema_changes_enabled: BRAIN_PROFESSIONAL_SAFETY.schemaChangesEnabled,
+          mode: "professional_active",
+          professional_mode_enabled: BRAIN_PROFESSIONAL_MODE.enabled,
+          auto_execute_low_risk: true,
+          human_approval_medium_risk: true,
+          tick_interval_ms: BRAIN_PROFESSIONAL_MODE.tickIntervalMs,
         },
       },
       noStore()
@@ -292,9 +301,11 @@ export async function POST(req: Request) {
         }
       }
 
+      const trigger = cleanText(body?.trigger, 32) === "professional" ? "professional" : "manual";
       const input = {
         reason: reason || null,
-        requested_from: "admin_cerebro",
+        requested_from: trigger === "professional" ? "admin_cerebro_professional" : "admin_cerebro",
+        trigger,
         requested_at: new Date().toISOString(),
       };
 

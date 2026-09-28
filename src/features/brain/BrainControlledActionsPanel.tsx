@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
+  Bot,
   Check,
   Clock3,
   Database,
@@ -20,6 +21,7 @@ import {
   type BrainControlledActionRisk,
   type BrainControlledActionStatus,
 } from "./brain-controlled-actions";
+import { BRAIN_PROFESSIONAL_MODE } from "./brain-professional-mode";
 import styles from "./BrainControlledActionsPanel.module.css";
 
 type ControlledAction = {
@@ -79,7 +81,12 @@ type ActionsPayload = {
     business_mutations_enabled?: boolean;
     external_deployments_enabled?: boolean;
     destructive_actions_enabled?: boolean;
+    schema_changes_enabled?: boolean;
     mode?: string;
+    professional_mode_enabled?: boolean;
+    auto_execute_low_risk?: boolean;
+    human_approval_medium_risk?: boolean;
+    tick_interval_ms?: number;
   };
   error?: string;
 };
@@ -130,6 +137,9 @@ export default function BrainControlledActionsPanel() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
+  const [professionalRunning, setProfessionalRunning] = useState(false);
+  const [lastProfessionalTick, setLastProfessionalTick] = useState<string | null>(null);
+  const professionalBusyRef = useRef(false);
   const sb = useMemo(() => supabaseBrowser(), []);
 
   const request = useCallback(async (method: "GET" | "POST", body?: Record<string, unknown>) => {
@@ -165,9 +175,112 @@ export default function BrainControlledActionsPanel() {
     }
   }, [request]);
 
+  const professionalTick = useCallback(async () => {
+    if (!BRAIN_PROFESSIONAL_MODE.enabled || professionalBusyRef.current) return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+    professionalBusyRef.current = true;
+    setProfessionalRunning(true);
+
+    try {
+      const current = await request("GET") as ActionsPayload;
+      const actions = current.actions || [];
+      const recovering = current.recovering_incidents || [];
+      const now = Date.now();
+
+      const latestFor = (actionKey: BrainControlledActionKey, incidentId?: string | null) =>
+        actions
+          .filter((item) => item.action_key === actionKey && (incidentId ? item.incident_id === incidentId : !item.incident_id))
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+
+      const isActive = (action?: ControlledAction) =>
+        Boolean(action && ["proposed", "approved", "executing"].includes(action.status));
+
+      const lastTime = (action?: ControlledAction) => {
+        if (!action) return 0;
+        const raw = action.executed_at || action.created_at;
+        const value = new Date(raw).getTime();
+        return Number.isFinite(value) ? value : 0;
+      };
+
+      const runLowRisk = async (actionKey: "probe_core_services" | "refresh_incident_lifecycle", cooldownMs: number) => {
+        const latest = latestFor(actionKey);
+        if (isActive(latest)) return;
+        if (latest && now - lastTime(latest) < cooldownMs) return;
+
+        const proposed = await request("POST", {
+          operation: "propose",
+          action_key: actionKey,
+          request_id: crypto.randomUUID(),
+          trigger: "professional",
+        }) as { action?: ControlledAction };
+
+        const actionId = proposed.action?.id;
+        if (!actionId) throw new Error("ACTION_STATE_CHANGED");
+
+        await request("POST", { operation: "approve", action_id: actionId });
+        await request("POST", { operation: "execute", action_id: actionId });
+      };
+
+      await runLowRisk("probe_core_services", BRAIN_PROFESSIONAL_MODE.probeCooldownMs);
+      await runLowRisk("refresh_incident_lifecycle", BRAIN_PROFESSIONAL_MODE.lifecycleCooldownMs);
+
+      for (const incident of recovering) {
+        const lastSeen = new Date(incident.last_seen_at).getTime();
+        if (!Number.isFinite(lastSeen) || now - lastSeen < BRAIN_PROFESSIONAL_MODE.recoveringMinAgeMs) continue;
+
+        const latest = latestFor("resolve_recovered_incident", incident.id);
+        if (isActive(latest)) continue;
+        if (latest && now - lastTime(latest) < BRAIN_PROFESSIONAL_MODE.recoveringProposalCooldownMs) continue;
+
+        await request("POST", {
+          operation: "propose",
+          action_key: "resolve_recovered_incident",
+          incident_id: incident.id,
+          target_node_id: incident.affected_node_ids?.[0] || null,
+          reason: "Modo profesional: recuperación detectada y estabilizada. Requiere aprobación humana antes del cierre.",
+          request_id: crypto.randomUUID(),
+          trigger: "professional",
+        });
+      }
+
+      const refreshed = await request("GET") as ActionsPayload;
+      setPayload(refreshed);
+      setError("");
+      setLastProfessionalTick(new Date().toISOString());
+    } catch (tickError) {
+      setError(explainError(tickError instanceof Error ? tickError.message : "CEREBRO_ACTION_ERROR"));
+    } finally {
+      professionalBusyRef.current = false;
+      setProfessionalRunning(false);
+    }
+  }, [request]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!BRAIN_PROFESSIONAL_MODE.enabled) return;
+
+    const initial = window.setTimeout(() => void professionalTick(), 1500);
+    const timer = window.setInterval(() => void professionalTick(), BRAIN_PROFESSIONAL_MODE.tickIntervalMs);
+    const wake = () => {
+      if (document.visibilityState === "visible") void professionalTick();
+    };
+
+    window.addEventListener("online", wake);
+    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", wake);
+
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+      window.removeEventListener("online", wake);
+      window.removeEventListener("focus", wake);
+      document.removeEventListener("visibilitychange", wake);
+    };
+  }, [professionalTick]);
 
   const operate = useCallback(async (key: string, body: Record<string, unknown>) => {
     try {
@@ -227,11 +340,11 @@ export default function BrainControlledActionsPanel() {
       <div className={styles.shell}>
         <header className={styles.header}>
           <div>
-            <span className={styles.kicker}><Lock size={14} /> FASE 5 · OPERACIONES CONTROLADAS</span>
-            <h2>Acciones seguras con aprobación explícita</h2>
+            <span className={styles.kicker}><Bot size={14} /> FASE 6 · MODO PROFESIONAL ACTIVO</span>
+            <h2>Supervisión autónoma segura + aprobación humana</h2>
             <p>
-              El Cerebro ya puede preparar y ejecutar una lista mínima de acciones internas. Cada operación queda registrada,
-              requiere aprobación y el servidor vuelve a validar el estado antes de ejecutarla.
+              El Cerebro ejecuta automáticamente solo comprobaciones de riesgo bajo y observabilidad. Las acciones de riesgo medio
+              se preparan solas, pero siguen bloqueadas hasta que un administrador las apruebe.
             </p>
           </div>
           <div className={styles.headerStats}>
@@ -244,11 +357,31 @@ export default function BrainControlledActionsPanel() {
           </div>
         </header>
 
+        <div className={styles.professionalBanner}>
+          <div>
+            <span className={styles.professionalPulse} data-running={professionalRunning ? "true" : "false"} />
+            <strong>Modo profesional activo</strong>
+            <small>
+              {professionalRunning
+                ? "Ejecutando ciclo seguro…"
+                : lastProfessionalTick
+                  ? `Último ciclo ${formatDate(lastProfessionalTick)}`
+                  : "Preparando primer ciclo"}
+            </small>
+          </div>
+          <div>
+            <span>Automático</span><b>Sondeos + ciclo de incidentes</b>
+          </div>
+          <div>
+            <span>Con aprobación</span><b>Cierres recuperados</b>
+          </div>
+        </div>
+
         <div className={styles.safetyStrip}>
           <span><ShieldCheck size={15} /> Sin mutaciones de negocio</span>
           <span><Database size={15} /> Sin cambios de esquema automáticos</span>
           <span><Activity size={15} /> Solo observabilidad y sondeos</span>
-          <span><Lock size={15} /> Aprobación con caducidad</span>
+          <span><Lock size={15} /> Riesgo medio siempre con aprobación</span>
         </div>
 
         {error ? <div className={styles.errorBox}><TriangleAlert size={16} />{error}</div> : null}
@@ -310,9 +443,9 @@ export default function BrainControlledActionsPanel() {
           <div className={styles.subHeader}>
             <div>
               <span><ShieldCheck size={14} /> COLA DE APROBACIÓN</span>
-              <h3>Auditoría de acciones</h3>
+              <h3>Auditoría profesional de acciones</h3>
             </div>
-            <small>Propuesta → aprobación → ejecución. Ningún botón salta pasos.</small>
+            <small>El modo profesional automatiza solo riesgo bajo. Riesgo medio conserva propuesta → aprobación → ejecución.</small>
           </div>
 
           {loading && !payload ? (
