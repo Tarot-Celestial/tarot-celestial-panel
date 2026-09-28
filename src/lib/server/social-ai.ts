@@ -493,6 +493,306 @@ async function waitForRunwayTask(taskId: string, timeoutMs = 260000) {
   throw new Error("Runway sigue procesando el vídeo y superó el tiempo máximo de espera. Inténtalo de nuevo en unos minutos.");
 }
 
+
+
+type TarotStudioModel = "wan3" | "seedance2_5" | "gen4.5";
+type TarotStudioResolution = "480p" | "720p" | "1080p";
+type TarotStudioFormat = "vertical" | "landscape";
+
+const tarotVideoPlanSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["title", "master_prompt", "scene_1_prompt", "scene_2_prompt"],
+  properties: {
+    title: { type: "string" },
+    master_prompt: { type: "string" },
+    scene_1_prompt: { type: "string" },
+    scene_2_prompt: { type: "string" },
+  },
+};
+
+function studioModel(value: unknown): TarotStudioModel {
+  const model = String(value || "wan3");
+  return model === "seedance2_5" || model === "gen4.5" ? model : "wan3";
+}
+
+function studioDuration(model: TarotStudioModel, value: unknown, longMode: boolean) {
+  if (longMode) {
+    if (model === "gen4.5") throw new Error("Gen-4.5 no admite el modo de 60 segundos. Usa WAN 3.0 o Seedance 2.5.");
+    return 60;
+  }
+  const raw = Math.round(Number(value || 10));
+  const min = model === "seedance2_5" ? 4 : 2;
+  const max = model === "gen4.5" ? 10 : 30;
+  return Math.max(min, Math.min(max, raw));
+}
+
+function studioRatio(model: TarotStudioModel, format: TarotStudioFormat, resolution: TarotStudioResolution) {
+  if (model === "gen4.5") return format === "landscape" ? "1280:720" : "720:1280";
+  if (resolution === "1080p") return format === "landscape" ? "1920:1080" : "1080:1920";
+  if (resolution === "480p") {
+    // WAN 3.0 and Seedance 2.5 use different documented 480p dimensions.
+    if (model === "wan3") return format === "landscape" ? "832:480" : "480:832";
+    return format === "landscape" ? "854:480" : "480:854";
+  }
+  return format === "landscape" ? "1280:720" : "720:1280";
+}
+
+function studioCredits(model: TarotStudioModel, resolution: TarotStudioResolution, seconds: number) {
+  const table: Record<TarotStudioModel, Record<TarotStudioResolution, number>> = {
+    wan3: { "480p": 5, "720p": 10, "1080p": 20 },
+    seedance2_5: { "480p": 20, "720p": 30, "1080p": 68 },
+    "gen4.5": { "480p": 12, "720p": 12, "1080p": 12 },
+  };
+  const raw = table[model][model === "gen4.5" ? "720p" : resolution] * seconds;
+  if (model === "seedance2_5") return Math.max(seconds > 30 ? 160 : 80, raw);
+  return raw;
+}
+
+async function buildTarotVideoPlan(input: {
+  brief: string;
+  contentType: string;
+  mood: string;
+  camera: string;
+  pace: string;
+  advanced?: string;
+  format: TarotStudioFormat;
+  duration: number;
+  longMode: boolean;
+  referenceCount: number;
+}) {
+  return structuredResponse(
+    "tarot_celestial_video_direction",
+    tarotVideoPlanSchema,
+    `Actúas como director creativo y director de fotografía especializado EXCLUSIVAMENTE en vídeos de tarot para Tarot Celestial.
+Convierte el briefing en instrucciones visuales precisas para un generador de vídeo. La prioridad es conseguir movimiento humano natural, manos anatómicamente coherentes, cartas de tarot creíbles, continuidad de vestuario/escenario y una estética premium realista.
+Identidad visual habitual: negro, violeta profundo, azul noche y dorado; velas, mesa de tarot, humo muy sutil, cristales o elementos celestiales solo cuando encajen. Evita que todo parezca fantasía artificial: debe poder parecer contenido real de una marca premium de tarot.
+No inventes precios, promociones, teléfonos ni condiciones. No prometas resultados adivinatorios garantizados. Evita texto generado dentro del vídeo salvo que el usuario lo pida expresamente, porque el texto de modelos de vídeo puede salir ilegible.
+Describe con precisión sujeto, escenario, luz, óptica/cámara, movimiento corporal, manos, cartas, ritmo y transición final.
+Si hay referencias visuales, indica que deben conservar identidad, rasgos, ropa, cartas, mesa, iluminación o estilo según lo que sea visible.
+Para modo 60 s: crea dos escenas de 30 s que formen una sola pieza. La escena 2 debe CONTINUAR la escena 1 con mismo sujeto, mismo vestuario, mismo escenario, misma hora/luz, misma paleta, mismas cartas/props y un arranque que visualmente pueda seguir del final de la escena 1. No repitas la acción inicial.
+Devuelve master_prompt como dirección global lista para Runway; scene_1_prompt y scene_2_prompt deben ser prompts autónomos. En modo corto, scene_2_prompt debe ser cadena vacía.`,
+    JSON.stringify(input),
+  );
+}
+
+function runwayOutputUrl(task: any) {
+  const firstOutput = Array.isArray(task?.output) ? task.output[0] : null;
+  return typeof firstOutput === "string"
+    ? firstOutput
+    : (firstOutput?.url || firstOutput?.uri || firstOutput?.src || null);
+}
+
+async function createStudioRunwayTask(input: {
+  model: TarotStudioModel;
+  prompt: string;
+  duration: number;
+  ratio: string;
+  resolution: TarotStudioResolution;
+  referenceUrls: string[];
+  useFirstFrame?: boolean;
+}) {
+  const refs = input.referenceUrls.filter((x) => /^https:\/\//i.test(x)).slice(0, input.model === "gen4.5" ? 1 : 10);
+  const promptLimit = input.model === "gen4.5" ? 1000 : input.model === "wan3" ? 2500 : 15000;
+  const promptText = input.prompt.slice(0, promptLimit);
+
+  if (input.model === "gen4.5") {
+    const body: Record<string, any> = {
+      model: "gen4.5",
+      promptText,
+      ratio: input.ratio,
+      duration: input.duration,
+    };
+    if (refs[0]) {
+      body.promptImage = refs[0];
+      return runwayRequest("/v1/image_to_video", { method: "POST", body: JSON.stringify(body) });
+    }
+    return runwayRequest("/v1/text_to_video", { method: "POST", body: JSON.stringify(body) });
+  }
+
+  if (input.useFirstFrame && refs[0]) {
+    const keyframeRatio = input.model === "wan3" ? `auto_${input.resolution}` : input.ratio;
+    return runwayRequest("/v1/image_to_video", {
+      method: "POST",
+      body: JSON.stringify({
+        model: input.model,
+        promptText,
+        promptImage: refs[0],
+        ratio: keyframeRatio,
+        duration: input.duration,
+        audio: false,
+      }),
+    });
+  }
+
+  const body: Record<string, any> = {
+    model: input.model,
+    promptText,
+    ratio: input.ratio,
+    duration: input.duration,
+    audio: false,
+  };
+  // Direct Runway video endpoints use `references` for image references.
+  if (refs.length) body.references = refs.map((uri) => ({ uri }));
+  return runwayRequest("/v1/text_to_video", { method: "POST", body: JSON.stringify(body) });
+}
+
+async function stitchStudioVideos(urls: string[]) {
+  if (urls.length === 1) return downloadBuffer(urls[0]);
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tc-video-studio-"));
+  const paths: string[] = [];
+  try {
+    for (let i = 0; i < urls.length; i += 1) {
+      const inputPath = path.join(tempDir, `scene-${i + 1}.mp4`);
+      await fs.writeFile(inputPath, await downloadBuffer(urls[i]));
+      paths.push(inputPath);
+    }
+    const listPath = path.join(tempDir, "concat.txt");
+    const outputPath = path.join(tempDir, "final.mp4");
+    const quoteForConcat = (value: string) => value.replace(/'/g, "'\\''");
+    await fs.writeFile(listPath, paths.map((x) => `file '${quoteForConcat(x)}'`).join("\n"));
+    try {
+      await execFileAsync("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-movflags", "+faststart", outputPath]);
+    } catch {
+      try {
+        await execFileAsync("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outputPath]);
+      } catch (error: any) {
+        throw new Error(`No se pudieron unir las dos escenas de 30 s. El runtime necesita ffmpeg disponible. ${error?.message || ""}`.trim());
+      }
+    }
+    return await fs.readFile(outputPath);
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+  }
+}
+
+export async function generateTarotVideoStudio(input: {
+  provider: SocialProvider;
+  model?: string;
+  duration?: number;
+  longMode?: boolean;
+  format?: TarotStudioFormat;
+  resolution?: TarotStudioResolution;
+  brief: string;
+  contentType?: string;
+  mood?: string;
+  camera?: string;
+  pace?: string;
+  advanced?: string;
+  referenceUrls?: string[];
+  useFirstFrame?: boolean;
+  createdBy?: string | null;
+}) {
+  const model = studioModel(input.model);
+  const longMode = Boolean(input.longMode);
+  const duration = studioDuration(model, input.duration, longMode);
+  const format: TarotStudioFormat = input.format === "landscape" ? "landscape" : "vertical";
+  const resolution: TarotStudioResolution = model === "gen4.5"
+    ? "720p"
+    : input.resolution === "480p" || input.resolution === "1080p" ? input.resolution : "720p";
+  const referenceUrls = Array.isArray(input.referenceUrls) ? input.referenceUrls.filter(Boolean).slice(0, 10) : [];
+  const ratio = studioRatio(model, format, resolution);
+  const plan = await buildTarotVideoPlan({
+    brief: input.brief.slice(0, 6000),
+    contentType: input.contentType || "lectura_tarot",
+    mood: input.mood || "místico premium, oscuro, violeta y dorado",
+    camera: input.camera || "acercamiento cinematográfico suave",
+    pace: input.pace || "elegante y magnético",
+    advanced: input.advanced || "",
+    format,
+    duration,
+    longMode,
+    referenceCount: referenceUrls.length,
+  });
+
+  const globalDirection = `${BRAND_RULES}\nVIDEO TAROT CELESTIAL. ${plan.master_prompt}`;
+  const prompts = longMode
+    ? [
+      `${globalDirection}\nESCENA 1/2 · 30 segundos. ${plan.scene_1_prompt}`,
+      `${globalDirection}\nESCENA 2/2 · 30 segundos. CONTINUIDAD OBLIGATORIA con la escena anterior. ${plan.scene_2_prompt}`,
+    ]
+    : [`${globalDirection}\n${plan.scene_1_prompt}`];
+
+  const clipDuration = longMode ? 30 : duration;
+  const createdTasks = await Promise.all(prompts.map((prompt, index) => createStudioRunwayTask({
+    model,
+    prompt,
+    duration: clipDuration,
+    ratio,
+    resolution,
+    referenceUrls,
+    useFirstFrame: Boolean(input.useFirstFrame) && !longMode && index === 0,
+  })));
+  const taskIds = createdTasks.map((task) => String(task?.id || "").trim());
+  if (taskIds.some((id) => !id)) throw new Error("Runway no devolvió todos los identificadores de tarea.");
+
+  const completed = await Promise.all(taskIds.map((id) => waitForRunwayTask(id)));
+  const outputUrls = completed.map(runwayOutputUrl).filter(Boolean).map(String);
+  if (outputUrls.length !== prompts.length) throw new Error("Runway terminó la generación pero falta alguna salida de vídeo.");
+
+  const buffer = await stitchStudioVideos(outputUrls);
+  const bucket = process.env.SOCIAL_MEDIA_BUCKET?.trim() || "tc-social-media";
+  const db = supabaseAdmin();
+  const storagePath = `${input.provider}/ai-studio/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.mp4`;
+  const { error: uploadError } = await db.storage.from(bucket).upload(storagePath, buffer, {
+    contentType: "video/mp4",
+    cacheControl: "31536000",
+    upsert: false,
+  });
+  if (uploadError) throw new Error(`No se pudo guardar el vídeo final en Supabase Storage: ${uploadError.message}`);
+  const { data: publicData } = db.storage.from(bucket).getPublicUrl(storagePath);
+  const publicUrl = publicData?.publicUrl;
+  if (!publicUrl) throw new Error("Supabase no devolvió URL pública para el vídeo final.");
+
+  const creditsEstimate = studioCredits(model, resolution, duration);
+  await db.from("tc_social_library").insert({
+    provider: input.provider,
+    label: String(plan.title || "Vídeo Tarot Celestial IA").slice(0, 140),
+    media_type: "video",
+    url: publicUrl,
+    thumbnail_url: referenceUrls[0] || null,
+    mime_type: "video/mp4",
+    metadata: {
+      ai_generated: true,
+      source: "tarot_video_studio",
+      model,
+      duration,
+      format,
+      resolution,
+      ratio,
+      long_mode: longMode,
+      scenes: prompts.length,
+      credits_estimate: creditsEstimate,
+      reference_urls: referenceUrls,
+      use_first_frame: Boolean(input.useFirstFrame),
+      prompt: plan.master_prompt,
+      prompt_scene_1: plan.scene_1_prompt,
+      prompt_scene_2: plan.scene_2_prompt,
+      runway_output_urls: outputUrls,
+      task_ids: taskIds,
+    },
+    created_by: input.createdBy || null,
+  });
+
+  return {
+    url: publicUrl,
+    path: storagePath,
+    bucket,
+    title: String(plan.title || "Vídeo Tarot Celestial IA"),
+    model,
+    duration,
+    format,
+    resolution,
+    ratio,
+    long_mode: longMode,
+    credits_estimate: creditsEstimate,
+    prompt: String(plan.master_prompt || ""),
+    prompt_scene_1: String(plan.scene_1_prompt || ""),
+    prompt_scene_2: String(plan.scene_2_prompt || ""),
+    task_ids: taskIds,
+  };
+}
+
 export async function generateAndStoreSocialVideo(input: {
   provider: SocialProvider;
   prompt: string;

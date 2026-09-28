@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./SocialChannelAdminPanel.module.css";
+import TarotVideoStudio from "./TarotVideoStudio";
 
 type Provider = "instagram" | "tiktok";
 type Section = "resumen" | "crear" | "ia" | "programadas" | "calendario" | "publicaciones" | "promociones" | "biblioteca" | "analitica" | "conexion";
@@ -1173,10 +1174,10 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             <section className={styles.card}>
               <h3><Sparkles size={18} /> Centro inteligente</h3>
               <div className={styles.flow}>
-                <div><b>1</b><span>IA crea la estrategia o la publicación</span></div>
-                <div><b>2</b><span>Genera creatividad visual y la guarda</span></div>
-                <div><b>3</b><span>Programa el calendario automáticamente</span></div>
-                <div><b>4</b><span>Analiza crecimiento y rendimiento real</span></div>
+                <div><b>1</b><span>IA dirige el concepto del vídeo de tarot</span></div>
+                <div><b>2</b><span>Runway genera el clip con tus referencias</span></div>
+                <div><b>3</b><span>Puedes crear hasta 60 s en dos escenas</span></div>
+                <div><b>4</b><span>El resultado queda listo para editar o enviar</span></div>
               </div>
               <button className={styles.aiCta} onClick={() => setSection("ia")}><Sparkles size={16} /> Abrir IA Studio</button>
             </section>
@@ -1203,108 +1204,37 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       )}
 
       {section === "ia" && (
-        <div className={styles.stack}>
-          <section className={styles.aiHero}>
-            <div><span>IA SOCIAL · TAROT CELESTIAL</span><h3>De una idea a una semana completa de contenido</h3><p>Genera textos, creatividades y calendario. Los precios o promociones solo se usan si tú los escribes o están en la campaña elegida.</p></div>
-            <Sparkles size={42} />
-          </section>
-
-          <div className={styles.twoCols}>
-            <section className={styles.card}>
-              <div className={styles.cardTitle}><div><h3><Sparkles size={18} /> Generar pieza final</h3><p>Describe lo que quieres comunicar y la IA te devolverá directamente la pieza montada: copy + imagen o copy + vídeo.</p></div><span className={styles.aiBadge}>IA</span></div>
-              <div className={styles.formStack}>
-                <label>Qué quieres publicar<textarea rows={5} value={aiSingle.brief} onChange={(e) => setAiSingle({ ...aiSingle, brief: e.target.value })} placeholder="Ej. Promocionar la Super Ruleta. 30 minutos por 20€, 50 minutos por 25€. Hoy último día. Mantén tono premium y urgente." /></label>
-                <div className={styles.formGrid}>
-                  <label>Formato<select value={aiSingle.content_type} onChange={(e) => setAiSingle({ ...aiSingle, content_type: e.target.value })}>{provider === "instagram" ? <><option value="post">Publicación</option><option value="story">Story</option><option value="reel">Reel / guion</option><option value="carousel">Carrusel</option></> : <><option value="photo">Foto</option><option value="video">Vídeo / guion</option></>}</select></label>
-                  <label>Promoción<select value={aiSingle.campaign_id} onChange={(e) => setAiSingle({ ...aiSingle, campaign_id: e.target.value })}><option value="">Sin promoción vinculada</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-                  <label>Objetivo<input value={aiSingle.objective} onChange={(e) => setAiSingle({ ...aiSingle, objective: e.target.value })} /></label>
-                  <label>CTA opcional<input value={aiSingle.cta} onChange={(e) => setAiSingle({ ...aiSingle, cta: e.target.value })} placeholder="Ej. Llama ahora / Escríbenos" /></label>
-                  <label>Cantidad de piezas<input type="number" min={1} max={20} value={aiSingle.quantity} onChange={(e) => setAiSingle({ ...aiSingle, quantity: e.target.value })} /><small>Si pones más de 1, la IA te creará una serie completa y verás el progreso pieza a pieza.</small></label>
-                </div>
-                <button className={styles.primary} disabled={busy === "ai-single"} onClick={() => void generateSingleIdea()}><Sparkles size={16} /> {busy === "ai-single" ? (Number(aiSingle.quantity || 1) > 1 ? "Generando serie…" : "Creando pieza completa…") : (Number(aiSingle.quantity || 1) > 1 ? "Generar serie con IA" : "Generar pieza final con IA")}</button>
-              </div>
-            </section>
-
-            <section className={styles.card}>
-              <div className={styles.cardTitle}><div><h3>Resultado IA</h3><p>La IA ya te lo devuelve montado. Desde aquí puedes revisarlo, regenerarlo o pasarlo al editor.</p></div></div>
-              {aiSeries.length ? <div className={styles.aiSeriesWrap}>
-                {aiSeriesSummary && <div className={styles.weekSummary}><b>Estrategia:</b> {aiSeriesSummary}</div>}
-                <div className={styles.seriesHeader}><b>{aiSeries.length} piezas generadas</b><div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-series-save"} onClick={() => void saveSeriesToDrafts()}><FolderOpen size={15} /> {busy === "ai-series-save" ? "Guardando…" : "Guardar serie en borradores"}</button><button className={styles.primary} disabled={busy === "ai-series-publish" || !connection} onClick={() => void publishSeries()}><Send size={15} /> {busy === "ai-series-publish" ? "Publicando serie…" : "Publicar serie"}</button></div></div>
-                <div className={styles.aiSeriesGrid}>{aiSeries.map((idea, idx) => <article key={`${idea.title}-${idx}`} className={styles.aiSeriesCard}>
-                  {idea.media_url && (idea.media_kind === "video" || isVideoType(idea.content_type) ? <video src={idea.media_url} controls playsInline preload="metadata" /> : <img src={idea.media_url} alt={idea.title} />)}
-                  <span>{contentLabel(provider, idea.content_type)}</span>
-                  <h4>{idea.title}</h4>
-                  {!isStoryType(idea.content_type) && <><b>{idea.hook}</b><p>{idea.caption}</p><div className={styles.hashes}>{(idea.hashtags || []).map((h) => <em key={`${h}-${idx}`}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div></>}
-                  {idea.reel_script && <details><summary>Guion / storyboard</summary><p>{idea.reel_script}</p></details>}
-                  {isStoryType(idea.content_type) ? <div className={styles.storyNotice}>Story optimizada: el texto va dentro de la pieza y, si has configurado música en Vercel, se generará como vídeo con música de fondo.</div> : null}
-                  <div className={styles.actions}><button className={styles.secondary} onClick={() => pushIdeaToEditor(idea)}>Pasar al editor</button><button className={styles.secondary} disabled={busy === "ai-save"} onClick={() => void createIdeaAsContent(idea, false)}><FolderOpen size={15} /> Guardar</button><button className={styles.primary} disabled={busy === "ai-publish" || !connection} onClick={() => void createIdeaAsContent(idea, true)}><Send size={15} /> Publicar</button></div>
-                </article>)}</div>
-              </div> : aiIdea ? <div className={styles.aiResult}>
-                {aiIdea.media_url && (aiIdea.media_kind === "video" || isVideoType(aiIdea.content_type)
-                  ? <video src={aiIdea.media_url} controls playsInline preload="metadata" />
-                  : <img src={aiIdea.media_url} alt="Creatividad generada" />)}
-                <span>{contentLabel(provider, aiIdea.content_type)}</span>
-                <h4>{aiIdea.title}</h4>
-                {!isStoryType(aiIdea.content_type) && <><b>{aiIdea.hook}</b><p>{aiIdea.caption}</p><div className={styles.hashes}>{(aiIdea.hashtags || []).map((h) => <em key={h}>{h.startsWith("#") ? h : `#${h}`}</em>)}</div></>}
-                {isStoryType(aiIdea.content_type) && <div className={styles.storyNotice}>En las stories el mensaje va integrado dentro de la pieza. No se publicará texto externo y, si has configurado música, la story saldrá como vídeo con música de fondo.</div>}
-                {aiIdea.reel_script && <details><summary>Guion / storyboard</summary><p>{aiIdea.reel_script}</p></details>}
-                <div className={styles.actions}><button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateMediaForIdea()}>{isVideoType(aiIdea.content_type) ? <Video size={15} /> : <ImageIcon size={15} />} {busy === "ai-image" ? "Regenerando…" : (isVideoType(aiIdea.content_type) ? (aiIdea.media_url ? "Regenerar vídeo" : "Generar vídeo IA") : (aiIdea.media_url ? "Regenerar imagen" : "Generar imagen IA"))}</button><button className={styles.secondary} disabled={busy === "ai-save"} onClick={() => void createIdeaAsContent(aiIdea, false)}><FolderOpen size={15} /> Guardar</button><button className={styles.primary} disabled={busy === "ai-publish" || !connection} onClick={() => void createIdeaAsContent(aiIdea, true)}><Send size={15} /> Publicar ahora</button><button className={styles.secondary} onClick={sendIdeaToEditor}>Pasar al editor</button></div>
-              </div> : <div className={styles.aiEmpty}><Sparkles size={30} /><p>Tu publicación o serie generada aparecerá aquí.</p></div>}
-            </section>
-          </div>
-
-          {provider === "instagram" && <section className={styles.card}>
-            <div className={styles.cardTitle}><div><h3><CalendarClock size={18} /> Planificador automático con calendario</h3><p>Indica cuántos días quieres, cuántas publicaciones, reels y stories por día, y el sistema generará los copies, las imágenes, los vídeos con Runway y la programación.</p></div><span className={styles.pill}>AUTO</span></div>
-            <div className={styles.formGrid}>
-              <label className={styles.full}>Briefing del calendario<textarea rows={5} value={flexDraft.brief} onChange={(e) => setFlexDraft({ ...flexDraft, brief: e.target.value })} placeholder="Ej. Durante 10 días quiero captar consultas de amor. Haz 1 publicación diaria, 1 story diaria y 1 reel cada día con mensajes cercanos, místicos y orientados a conversión. No inventes promociones ni precios si no te los doy." /></label>
-              <label>Empieza el<input type="date" value={flexDraft.start_date} onChange={(e) => setFlexDraft({ ...flexDraft, start_date: e.target.value })} /></label>
-              <label>Hora base<input type="time" value={flexDraft.preferred_time} onChange={(e) => setFlexDraft({ ...flexDraft, preferred_time: e.target.value })} /></label>
-              <label>Días<input type="number" min={1} max={31} value={flexDraft.days} onChange={(e) => setFlexDraft({ ...flexDraft, days: e.target.value })} /></label>
-              <label>Publicaciones / día<input type="number" min={0} max={6} value={flexDraft.posts_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, posts_per_day: e.target.value })} /></label>
-              <label>Reels / día<input type="number" min={0} max={6} value={flexDraft.reels_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, reels_per_day: e.target.value })} /></label>
-              <label>Stories / día<input type="number" min={0} max={10} value={flexDraft.stories_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, stories_per_day: e.target.value })} /></label>
-              <label>Promoción<select value={flexDraft.campaign_id} onChange={(e) => setFlexDraft({ ...flexDraft, campaign_id: e.target.value })}><option value="">Sin promoción fija</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-              <label className={styles.full}>Objetivo<input value={flexDraft.objective} onChange={(e) => setFlexDraft({ ...flexDraft, objective: e.target.value })} /></label>
-              <label className={styles.checkLabel}><input type="checkbox" checked={flexDraft.generate_media} onChange={(e) => setFlexDraft({ ...flexDraft, generate_media: e.target.checked })} /> Generar automáticamente creatividades e incluso Reels con Runway</label>
-            </div>
-            <div className={styles.actions}><button className={styles.primary} disabled={busy === "ai-flex-plan"} onClick={() => void generateFlexiblePlan()}><Sparkles size={16} /> {busy === "ai-flex-plan" ? "Creando calendario…" : "Crear calendario con IA"}</button></div>
-
-            {flexPlan && <div className={styles.weekPlan}>
-              <div className={styles.weekSummary}><b>Estrategia:</b> {flexPlan.strategy_summary}</div>
-              <div className={styles.planMeta}>
-                <span>{Number(flexDraft.days || 0)} días</span>
-                <span>{Number(flexDraft.posts_per_day || 0)} publicaciones / día</span>
-                <span>{Number(flexDraft.reels_per_day || 0)} reels / día</span>
-                <span>{Number(flexDraft.stories_per_day || 0)} stories / día</span>
-                <span>{flexPlan.items.length} piezas en total</span>
-              </div>
-              <div className={styles.planList}>
-                {[...flexPlan.items].sort((a, b) => a.day_offset - b.day_offset || String(a.time).localeCompare(String(b.time))).map((item, idx) => <article key={`${item.day_offset}-${item.time}-${idx}`}><div className={styles.weekDay}><span>{dayName(flexDraft.start_date, item.day_offset)}</span><b>{item.time}</b></div><strong>{item.title}</strong><small>{contentLabel(provider, item.content_type)}{item.requires_video ? " · Reel con vídeo" : " · imagen automática"}</small><p>{item.caption}</p><em>{item.hook}</em>{item.reel_script && <details><summary>Ver guion</summary><p>{item.reel_script}</p></details>}</article>)}
-              </div>
-              <div className={styles.weekActionBox}><div><b>¿Lo preparo todo?</b><span>Se generarán los copies, las imágenes y los Reels con Runway, y quedará todo programado en Instagram.</span></div><button className={styles.primary} disabled={busy === "ai-flex-schedule"} onClick={() => void scheduleFlexiblePlan()}><CalendarClock size={16} /> {busy === "ai-flex-schedule" ? (aiProgress || "Preparando…") : "Generar y programar calendario"}</button></div>
-            </div>}
-          </section>}
-
-          <section className={styles.card}>
-            <div className={styles.cardTitle}><div><h3><CalendarClock size={18} /> Generador semanal automático</h3><p>Pídele a la IA una semana completa y prográmala de una vez.</p></div><span className={styles.pill}>7 DÍAS</span></div>
-            <div className={styles.formGrid}>
-              <label className={styles.full}>Briefing semanal<textarea rows={5} value={weekDraft.brief} onChange={(e) => setWeekDraft({ ...weekDraft, brief: e.target.value })} placeholder="Ej. Esta semana queremos captar consultas de amor, explicar el Oráculo, recordar la ruleta y cerrar el viernes con una promo. No inventar precios." /></label>
-              <label>Empieza el<input type="date" value={weekDraft.start_date} onChange={(e) => setWeekDraft({ ...weekDraft, start_date: e.target.value })} /></label>
-              <label>Hora orientativa<input type="time" value={weekDraft.preferred_time} onChange={(e) => setWeekDraft({ ...weekDraft, preferred_time: e.target.value })} /></label>
-              <label>Promoción<select value={weekDraft.campaign_id} onChange={(e) => setWeekDraft({ ...weekDraft, campaign_id: e.target.value })}><option value="">Sin promoción fija</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-              <label>Estrategia<select value={weekDraft.mode} onChange={(e) => setWeekDraft({ ...weekDraft, mode: e.target.value })}><option value="automatic">100% automática y publicable</option><option value="mixed">Mixta con Reels/vídeos</option></select></label>
-              <label className={styles.full}>Objetivo<input value={weekDraft.objective} onChange={(e) => setWeekDraft({ ...weekDraft, objective: e.target.value })} /></label>
-              <label className={styles.checkLabel}><input type="checkbox" checked={weekDraft.generate_images} onChange={(e) => setWeekDraft({ ...weekDraft, generate_images: e.target.checked })} /> Generar también las imágenes con IA</label>
-            </div>
-            <div className={styles.actions}><button className={styles.primary} disabled={busy === "ai-week"} onClick={() => void generateWeekPlan()}><Sparkles size={16} /> {busy === "ai-week" ? "Diseñando semana…" : "Crear semana con IA"}</button></div>
-
-            {weekPlan && <div className={styles.weekPlan}>
-              <div className={styles.weekSummary}><b>Estrategia:</b> {weekPlan.strategy_summary}</div>
-              <div className={styles.weekGrid}>{[...weekPlan.items].sort((a, b) => a.day_offset - b.day_offset).map((item) => <article key={`${item.day_offset}-${item.title}`}><div className={styles.weekDay}><span>{dayName(weekDraft.start_date, item.day_offset)}</span><b>{item.time}</b></div><strong>{item.title}</strong><small>{contentLabel(provider, item.content_type)}{item.requires_video ? " · requiere vídeo" : " · publicable automático"}</small><p>{item.caption}</p><em>{item.hook}</em>{item.reel_script && <details><summary>Ver guion</summary><p>{item.reel_script}</p></details>}</article>)}</div>
-              <div className={styles.weekActionBox}><div><b>¿Listo?</b><span>{weekDraft.mode === "mixed" ? "Las piezas con vídeo quedarán como borrador con guion. El resto se programa." : "Se generará una creatividad por día y las 7 publicaciones quedarán programadas."}</span></div><button className={styles.primary} disabled={busy === "ai-week-schedule"} onClick={() => void scheduleWeek()}><CalendarClock size={16} /> {busy === "ai-week-schedule" ? (aiProgress || "Preparando…") : "Generar y programar la semana"}</button></div>
-            </div>}
-          </section>
-        </div>
+        <TarotVideoStudio
+          provider={provider}
+          connected={Boolean(connection)}
+          onRefresh={load}
+          onUseInEditor={(studioResult) => {
+            setDraft({
+              id: "",
+              content_type: provider === "instagram" ? "reel" : "video",
+              title: studioResult.title || "Vídeo IA Studio",
+              caption: "",
+              media: studioResult.url,
+              scheduled_at: "",
+              campaign_id: "",
+              privacy_level: "SELF_ONLY",
+              publish_mode: provider === "tiktok" ? "inbox" : "direct",
+              share_to_feed: true,
+              disable_comment: false,
+              disable_duet: false,
+              disable_stitch: false,
+              is_aigc: true,
+              ai_meta: {
+                source: "tarot_video_studio",
+                model: studioResult.model,
+                duration: studioResult.duration,
+                prompt: studioResult.prompt,
+                long_mode: studioResult.long_mode,
+              },
+            });
+            setSection("crear");
+          }}
+        />
       )}
 
       {section === "programadas" && <section className={styles.card}><div className={styles.cardTitle}><div><h3>Calendario y programadas</h3><p>Todo lo que saldrá automáticamente mediante el worker.</p></div><button className={styles.secondary} onClick={() => setSection("crear")}><Plus size={15} />Nueva</button></div><ContentTable rows={scheduled} /></section>}
