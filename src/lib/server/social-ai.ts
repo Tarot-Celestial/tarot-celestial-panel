@@ -579,6 +579,8 @@ async function buildTarotVideoPlan(input: {
   duration: number;
   longMode: boolean;
   referenceCount: number;
+  audioEnabled: boolean;
+  audioDirection?: string;
 }) {
   return structuredResponse(
     "tarot_celestial_video_direction",
@@ -589,6 +591,7 @@ Identidad visual habitual: negro, violeta profundo, azul noche y dorado; velas, 
 No inventes precios, promociones, teléfonos ni condiciones. No prometas resultados adivinatorios garantizados. Evita texto generado dentro del vídeo salvo que el usuario lo pida expresamente, porque el texto de modelos de vídeo puede salir ilegible.
 Describe con precisión sujeto, escenario, luz, óptica/cámara, movimiento corporal, manos, cartas, ritmo y transición final.
 Si hay referencias visuales, indica que deben conservar identidad, rasgos, ropa, cartas, mesa, iluminación o estilo según lo que sea visible.
+Si audioEnabled es true, integra también la dirección sonora en los prompts: ambiente realista, efectos coherentes y cualquier diálogo pedido por el usuario. No inventes frases habladas si el usuario no las ha solicitado. Respeta audioDirection. Para piezas de 60 s, mantén continuidad de ambiente, voz, intensidad y paisaje sonoro entre escena 1 y escena 2.
 Para modo 60 s: crea dos escenas de 30 s que formen una sola pieza. La escena 2 debe CONTINUAR la escena 1 con mismo sujeto, mismo vestuario, mismo escenario, misma hora/luz, misma paleta, mismas cartas/props y un arranque que visualmente pueda seguir del final de la escena 1. No repitas la acción inicial.
 Devuelve master_prompt como dirección global lista para Runway; scene_1_prompt y scene_2_prompt deben ser prompts autónomos. En modo corto, scene_2_prompt debe ser cadena vacía.`,
     JSON.stringify(input),
@@ -610,10 +613,16 @@ async function createStudioRunwayTask(input: {
   resolution: TarotStudioResolution;
   referenceUrls: string[];
   useFirstFrame?: boolean;
+  audioEnabled?: boolean;
+  audioDirection?: string;
 }) {
   const refs = input.referenceUrls.filter((x) => /^https:\/\//i.test(x)).slice(0, input.model === "gen4.5" ? 1 : 10);
   const promptLimit = input.model === "gen4.5" ? 1000 : input.model === "wan3" ? 2500 : 15000;
-  const promptText = input.prompt.slice(0, promptLimit);
+  const audioDirection = String(input.audioDirection || "").trim();
+  const audioSuffix = input.audioEnabled && input.model !== "gen4.5"
+    ? `\nAUDIO NATIVO: genera una pista sonora sincronizada con la escena. ${audioDirection || "Ambiente místico realista, efectos naturales de la escena y sin voces aleatorias."}`
+    : "";
+  const promptText = `${input.prompt}${audioSuffix}`.slice(0, promptLimit);
 
   if (input.model === "gen4.5") {
     const body: Record<string, any> = {
@@ -639,7 +648,7 @@ async function createStudioRunwayTask(input: {
         promptImage: refs[0],
         ratio: keyframeRatio,
         duration: input.duration,
-        audio: false,
+        audio: Boolean(input.audioEnabled),
       }),
     });
   }
@@ -649,7 +658,7 @@ async function createStudioRunwayTask(input: {
     promptText,
     ratio: input.ratio,
     duration: input.duration,
-    audio: false,
+    audio: Boolean(input.audioEnabled),
   };
   // Direct Runway video endpoints use `references` for image references.
   if (refs.length) body.references = refs.map((uri) => ({ uri }));
@@ -804,6 +813,8 @@ export async function startTarotVideoStudio(input: {
   advanced?: string;
   referenceUrls?: string[];
   useFirstFrame?: boolean;
+  audioEnabled?: boolean;
+  audioDirection?: string;
   createdBy?: string | null;
 }) {
   const model = studioModel(input.model);
@@ -815,6 +826,8 @@ export async function startTarotVideoStudio(input: {
     : input.resolution === "480p" || input.resolution === "1080p" ? input.resolution : "720p";
   const referenceUrls = Array.isArray(input.referenceUrls) ? input.referenceUrls.filter(Boolean).slice(0, 10) : [];
   const ratio = studioRatio(model, format, resolution);
+  const audioEnabled = model !== "gen4.5" && input.audioEnabled !== false;
+  const audioDirection = audioEnabled ? String(input.audioDirection || "").trim().slice(0, 2000) : "";
   const plan = await buildTarotVideoPlan({
     brief: input.brief.slice(0, 6000),
     contentType: input.contentType || "lectura_tarot",
@@ -826,6 +839,8 @@ export async function startTarotVideoStudio(input: {
     duration,
     longMode,
     referenceCount: referenceUrls.length,
+    audioEnabled,
+    audioDirection,
   });
 
   const globalDirection = `${BRAND_RULES}\nVIDEO TAROT CELESTIAL. ${plan.master_prompt}`;
@@ -845,6 +860,8 @@ export async function startTarotVideoStudio(input: {
     resolution,
     referenceUrls,
     useFirstFrame: Boolean(input.useFirstFrame) && !longMode && index === 0,
+    audioEnabled,
+    audioDirection,
   })));
   const taskIds = createdTasks.map((task) => String(task?.id || "").trim());
   if (taskIds.some((id) => !id)) throw new Error("Runway no devolvió todos los identificadores de tarea.");
@@ -867,6 +884,8 @@ export async function startTarotVideoStudio(input: {
     task_ids: taskIds,
     reference_urls: referenceUrls,
     use_first_frame: Boolean(input.useFirstFrame),
+    audio_enabled: audioEnabled,
+    audio_direction: audioDirection,
   };
 }
 
@@ -908,6 +927,8 @@ export async function finalizeTarotVideoStudio(input: {
   promptScene2?: string;
   referenceUrls?: string[];
   useFirstFrame?: boolean;
+  audioEnabled?: boolean;
+  audioDirection?: string;
   createdBy?: string | null;
 }) {
   const taskIds = Array.from(new Set((input.taskIds || []).map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 4);
@@ -986,6 +1007,8 @@ export async function finalizeTarotVideoStudio(input: {
       credits_estimate: creditsEstimate,
       reference_urls: referenceUrls,
       use_first_frame: Boolean(input.useFirstFrame),
+      audio_enabled: Boolean(input.audioEnabled),
+      audio_direction: String(input.audioDirection || ""),
       prompt: String(input.prompt || ""),
       prompt_scene_1: String(input.promptScene1 || ""),
       prompt_scene_2: String(input.promptScene2 || ""),
@@ -1011,6 +1034,8 @@ export async function finalizeTarotVideoStudio(input: {
     ratio,
     long_mode: longMode,
     credits_estimate: creditsEstimate,
+    audio_enabled: Boolean(input.audioEnabled),
+    audio_direction: String(input.audioDirection || ""),
     prompt: String(input.prompt || ""),
     prompt_scene_1: String(input.promptScene1 || ""),
     prompt_scene_2: String(input.promptScene2 || ""),
@@ -1035,6 +1060,8 @@ export async function generateTarotVideoStudio(input: {
   advanced?: string;
   referenceUrls?: string[];
   useFirstFrame?: boolean;
+  audioEnabled?: boolean;
+  audioDirection?: string;
   createdBy?: string | null;
 }) {
   const job = await startTarotVideoStudio(input);
@@ -1055,6 +1082,8 @@ export async function generateTarotVideoStudio(input: {
     promptScene2: job.prompt_scene_2,
     referenceUrls: job.reference_urls,
     useFirstFrame: job.use_first_frame,
+    audioEnabled: job.audio_enabled,
+    audioDirection: job.audio_direction,
     createdBy: input.createdBy,
   });
 }

@@ -59,6 +59,8 @@ export async function POST(req: Request) {
         advanced: String(body.advanced || "").slice(0, 4000),
         referenceUrls: Array.isArray(body.reference_urls) ? body.reference_urls.map(String).slice(0, 10) : [],
         useFirstFrame: Boolean(body.use_first_frame),
+        audioEnabled: body.audio_enabled !== false,
+        audioDirection: String(body.audio_direction || "").slice(0, 2000),
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, job });
@@ -89,6 +91,8 @@ export async function POST(req: Request) {
         promptScene2: String(body.prompt_scene_2 || "").slice(0, 12000),
         referenceUrls: Array.isArray(body.reference_urls) ? body.reference_urls.map(String).slice(0, 10) : [],
         useFirstFrame: Boolean(body.use_first_frame),
+        audioEnabled: Boolean(body.audio_enabled),
+        audioDirection: String(body.audio_direction || "").slice(0, 2000),
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, asset });
@@ -112,6 +116,8 @@ export async function POST(req: Request) {
         advanced: String(body.advanced || "").slice(0, 4000),
         referenceUrls: Array.isArray(body.reference_urls) ? body.reference_urls.map(String).slice(0, 10) : [],
         useFirstFrame: Boolean(body.use_first_frame),
+        audioEnabled: body.audio_enabled !== false,
+        audioDirection: String(body.audio_direction || "").slice(0, 2000),
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, asset });

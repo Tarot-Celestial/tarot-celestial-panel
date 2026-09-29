@@ -15,6 +15,7 @@ import {
   Trash2,
   UploadCloud,
   WandSparkles,
+  Volume2,
 } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./TarotVideoStudio.module.css";
@@ -35,6 +36,8 @@ type StudioResult = {
   task_ids?: string[];
   long_mode?: boolean;
   credits_estimate?: number;
+  audio_enabled?: boolean;
+  audio_direction?: string;
 };
 
 type StudioJob = {
@@ -55,6 +58,8 @@ type StudioJob = {
   task_ids: string[];
   reference_urls: string[];
   use_first_frame: boolean;
+  audio_enabled: boolean;
+  audio_direction: string;
 };
 
 type StudioTaskState = {
@@ -103,6 +108,8 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
   const [camera, setCamera] = useState("acercamiento cinematográfico suave");
   const [pace, setPace] = useState("elegante y magnético");
   const [advanced, setAdvanced] = useState("");
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [audioDirection, setAudioDirection] = useState("Ambiente místico realista y elegante: roce natural de cartas, leve crepitar de velas, sala íntima y una base sonora celestial muy sutil. Si hay diálogo indicado en el concepto o en las instrucciones extra, usar voz humana natural en español de España, clara y cercana. No añadir voces aleatorias ni música invasiva.");
   const [references, setReferences] = useState<ReferenceAsset[]>([]);
   const [useFirstFrame, setUseFirstFrame] = useState(false);
   const [busy, setBusy] = useState("");
@@ -117,6 +124,7 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
 
   const effectiveResolution: Resolution = model === "gen4.5" ? "720p" : resolution;
   const effectiveDuration = longMode ? 60 : clampDuration(model, duration);
+  const effectiveAudioEnabled = model !== "gen4.5" && audioEnabled;
   const creditEstimate = useMemo(() => {
     const seconds = longMode ? 60 : effectiveDuration;
     const raw = COSTS[model][effectiveResolution] * seconds;
@@ -255,6 +263,8 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
         prompt_scene_2: currentJob.prompt_scene_2 || "",
         reference_urls: currentJob.reference_urls,
         use_first_frame: currentJob.use_first_frame,
+        audio_enabled: currentJob.audio_enabled,
+        audio_direction: currentJob.audio_direction,
       }),
     });
     const asset = json.asset as StudioResult;
@@ -389,6 +399,8 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
           advanced: advanced.trim(),
           reference_urls: references.map((x) => x.url),
           use_first_frame: useFirstFrame && !longMode,
+          audio_enabled: effectiveAudioEnabled,
+          audio_direction: effectiveAudioEnabled ? audioDirection.trim() : "",
         }),
       });
       const nextJob = json.job as StudioJob;
@@ -570,7 +582,20 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
           <p className={styles.referenceHint}>{model === "gen4.5" ? "Gen-4.5 utiliza la primera referencia como imagen inicial. Para referencias múltiples, WAN 3.0 o Seedance 2.5 son mejores opciones." : "Las referencias se envían al modelo para mantener persona, cartas, ambiente y estilo visual coherentes."}</p>
 
           <div className={styles.divider} />
-          <div className={styles.sectionTitle}><Clapperboard size={18} /><div><b>4. Dirección avanzada</b><span>Opcional. Añade instrucciones muy concretas sin reescribir todo el prompt.</span></div></div>
+          <div className={styles.sectionTitle}><Volume2 size={18} /><div><b>4. Audio</b><span>Genera sonido nativo junto al vídeo cuando el modelo lo permite.</span></div></div>
+          <div className={styles.audioCard}>
+            <label className={styles.audioToggle}>
+              <input type="checkbox" checked={effectiveAudioEnabled} disabled={model === "gen4.5"} onChange={(e) => setAudioEnabled(e.target.checked)} />
+              <div><b>{model === "gen4.5" ? "Audio nativo no disponible en Gen-4.5" : "Generar vídeo con sonido"}</b><span>{model === "gen4.5" ? "Usa WAN 3.0 o Seedance 2.5 para generar audio junto al vídeo." : "Runway generará ambiente, efectos y voz si la pides en el guion."}</span></div>
+            </label>
+            <label className={styles.bigLabel}>Dirección de audio
+              <textarea rows={4} value={audioDirection} disabled={!effectiveAudioEnabled} onChange={(e) => setAudioDirection(e.target.value)} placeholder="Ej. Voz natural en español de España. Sonido realista de cartas y velas. Música mística muy sutil, sin tapar la voz." />
+            </label>
+            {longMode && effectiveAudioEnabled && <p className={styles.audioHint}>En 60 s, las dos escenas se generan con audio y FFmpeg conservará la pista sonora al unirlas. La dirección pide continuidad para que no parezcan dos piezas distintas.</p>}
+          </div>
+
+          <div className={styles.divider} />
+          <div className={styles.sectionTitle}><Clapperboard size={18} /><div><b>5. Dirección avanzada</b><span>Opcional. Añade instrucciones muy concretas sin reescribir todo el prompt.</span></div></div>
           <label className={styles.bigLabel}>Instrucciones extra<textarea rows={4} value={advanced} onChange={(e) => setAdvanced(e.target.value)} placeholder="Ej. Mantener exactamente la misma mujer de la referencia. Movimiento de manos natural. No inventar cartas. Evitar texto ilegible. La cámara debe acercarse al rostro al final." /></label>
 
           <button className={styles.generate} disabled={busy === "generate" || !brief.trim()} onClick={() => void generate()}>
@@ -607,7 +632,7 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
           <div className={styles.previewHeader}><div><span>RESULTADO</span><b>Preview final</b></div>{result && <em>{result.duration}s</em>}</div>
           {result ? <>
             <video src={result.url} controls playsInline preload="metadata" />
-            <div className={styles.resultMeta}><div><span>Modelo</span><b>{MODEL_META[result.model]?.name || result.model}</b></div><div><span>Resolución</span><b>{result.resolution}</b></div><div><span>Formato</span><b>{result.format === "vertical" ? "9:16" : "16:9"}</b></div><div><span>Coste estimado</span><b>{result.credits_estimate || creditEstimate} cr.</b></div></div>
+            <div className={styles.resultMeta}><div><span>Modelo</span><b>{MODEL_META[result.model]?.name || result.model}</b></div><div><span>Resolución</span><b>{result.resolution}</b></div><div><span>Formato</span><b>{result.format === "vertical" ? "9:16" : "16:9"}</b></div><div><span>Audio</span><b>{result.audio_enabled ? "Generado" : "Sin audio IA"}</b></div><div><span>Coste estimado</span><b>{result.credits_estimate || creditEstimate} cr.</b></div></div>
             <div className={styles.resultTitle}><Sparkles size={16} /><div><span>Dirección IA</span><b>{result.title}</b></div></div>
             <details className={styles.promptDetails}><summary>Ver prompt final</summary><p>{result.prompt}</p>{result.prompt_scene_2 && <><b>Escena 2</b><p>{result.prompt_scene_2}</p></>}</details>
             <div className={styles.previewActions}>
