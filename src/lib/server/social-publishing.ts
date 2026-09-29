@@ -257,6 +257,14 @@ async function putTikTokVideoChunk(params: {
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
+      // Next/Vercel tipa fetch() con el BodyInit del DOM. En TS 5.x, un
+      // Uint8Array puede estar respaldado por ArrayBufferLike (incluido
+      // SharedArrayBuffer), y por eso no siempre es asignable directamente
+      // a BodyInit durante el build. Copiamos el chunk a un ArrayBuffer real
+      // para que el cuerpo sea válido tanto para TypeScript como para fetch().
+      const uploadBody = new ArrayBuffer(chunk.byteLength);
+      new Uint8Array(uploadBody).set(chunk);
+
       const response = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
@@ -264,7 +272,7 @@ async function putTikTokVideoChunk(params: {
           "Content-Length": String(chunk.byteLength),
           "Content-Range": `bytes ${firstByte}-${lastByte}/${totalBytes}`,
         },
-        body: chunk,
+        body: uploadBody,
         cache: "no-store",
       });
 
