@@ -11,3 +11,22 @@
 @media(max-width:900px){.aiSeriesGrid{grid-template-columns:1fr}}
 
 .storyNotice{padding:10px 12px;border-radius:12px;background:rgba(215,181,109,.08);border:1px solid rgba(215,181,109,.18);font-size:12px;color:#dbc98f}
+
+/* Biblioteca multimedia PRO: reproducción y publicación directa */
+.libraryPreview{position:relative;background:#080611;overflow:hidden;border-bottom:1px solid rgba(255,255,255,.07)}
+.libraryPreview>img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:#0c0916}
+.libraryVideo{display:block;width:100%;aspect-ratio:9/16;max-height:520px;object-fit:contain;background:#05040a}
+.mediaCardVideo{display:flex;flex-direction:column}
+.libraryBadges{position:absolute;left:10px;top:10px;display:flex;gap:6px;pointer-events:none}
+.libraryBadges span{padding:5px 7px;border-radius:999px;background:rgba(7,5,15,.78);border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(10px);color:#eee5ff;font-size:9px!important;font-weight:900;letter-spacing:.08em}
+.libraryMeta{display:grid!important;gap:6px!important;padding:12px!important}
+.libraryMeta>strong{font-size:13px;line-height:1.35;color:#fff}
+.libraryMeta>span{font-size:10px;color:#8c8397}
+.libraryActions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:5px}
+.libraryActions button{margin:0!important;min-height:36px;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 9px!important;font-size:11px;font-weight:800}
+.libraryEditButton{background:rgba(255,255,255,.06)!important;color:#eee8f7!important;border:1px solid rgba(255,255,255,.09)!important}
+.libraryPublishButton{background:linear-gradient(135deg,#7d4df2,#ad69ff)!important;color:#fff!important;border:1px solid rgba(205,178,255,.18)!important;box-shadow:0 8px 22px rgba(126,77,242,.18)}
+.libraryPublishButton:disabled{opacity:.4;cursor:not-allowed}
+.libraryEmpty{grid-column:1/-1;min-height:180px;border:1px dashed rgba(255,255,255,.1);border-radius:18px;display:grid;place-items:center;align-content:center;gap:8px;color:#83798e}
+.libraryEmpty p{margin:0}
+@media(max-width:680px){.libraryVideo{max-height:70vh}.libraryActions{grid-template-columns:1fr}}
