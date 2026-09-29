@@ -5,6 +5,7 @@ import os from "os";
 import path from "path";
 import { promisify } from "util";
 import { execFile } from "child_process";
+import ffmpegStatic from "ffmpeg-static";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { SocialProvider } from "@/lib/server/social-connections";
 
@@ -39,6 +40,10 @@ function runwayModel() {
 }
 
 const execFileAsync = promisify(execFile);
+
+function ffmpegExecutable() {
+  return process.env.FFMPEG_PATH?.trim() || ffmpegStatic || "ffmpeg";
+}
 
 function storyMusicUrl() {
   return process.env.SOCIAL_STORY_AUDIO_URL?.trim() || "";
@@ -363,7 +368,7 @@ async function renderStoryVideoFromImage(imageBuffer: Buffer) {
     `format=yuv420p`
   ].join(',');
   try {
-    await execFileAsync("ffmpeg", [
+    await execFileAsync(ffmpegExecutable(), [
       "-y",
       "-loop", "1",
       "-i", imagePath,
@@ -652,12 +657,12 @@ async function stitchStudioVideos(urls: string[]) {
     const quoteForConcat = (value: string) => value.replace(/'/g, "'\\''");
     await fs.writeFile(listPath, paths.map((x) => `file '${quoteForConcat(x)}'`).join("\n"));
     try {
-      await execFileAsync("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-movflags", "+faststart", outputPath]);
+      await execFileAsync(ffmpegExecutable(), ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-movflags", "+faststart", outputPath]);
     } catch {
       try {
-        await execFileAsync("ffmpeg", ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outputPath]);
+        await execFileAsync(ffmpegExecutable(), ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outputPath]);
       } catch (error: any) {
-        throw new Error(`No se pudieron unir las dos escenas de 30 s. El runtime necesita ffmpeg disponible. ${error?.message || ""}`.trim());
+        throw new Error(`No se pudieron unir las dos escenas de 30 s con FFmpeg (${ffmpegExecutable()}). ${error?.message || ""}`.trim());
       }
     }
     return await fs.readFile(outputPath);
@@ -761,6 +766,7 @@ export async function getTarotVideoStudioStatus(taskIds: string[]) {
       created_at: task?.createdAt || null,
       failure_code: task?.failureCode || null,
       failure: typeof failure === "string" ? failure : failure ? JSON.stringify(failure) : null,
+      output_url: status === "SUCCEEDED" ? String(runwayOutputUrl(task) || "") || null : null,
     };
   }));
 
@@ -770,6 +776,7 @@ export async function getTarotVideoStudioStatus(taskIds: string[]) {
 export async function finalizeTarotVideoStudio(input: {
   provider: SocialProvider;
   taskIds: string[];
+  outputUrls?: string[];
   title?: string;
   model?: string;
   duration?: number;
@@ -788,20 +795,29 @@ export async function finalizeTarotVideoStudio(input: {
   const taskIds = Array.from(new Set((input.taskIds || []).map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 4);
   if (!taskIds.length) throw new Error("No hay tareas de Runway para finalizar.");
 
-  const completed = await Promise.all(taskIds.map(async (id) => {
-    const task = await runwayRequest(`/v1/tasks/${encodeURIComponent(id)}`);
-    const status = String(task?.status || "").toUpperCase();
-    if (status !== "SUCCEEDED") {
-      if (["FAILED", "CANCELED", "CANCELLED"].includes(status)) {
-        const reason = task?.failure || task?.failureCode || task?.error || `Runway terminó con estado ${status}`;
-        throw new Error(typeof reason === "string" ? reason : JSON.stringify(reason));
-      }
-      throw new Error(`Runway todavía está procesando la tarea ${id}. Estado actual: ${status || "PENDING"}.`);
-    }
-    return task;
-  }));
+  // El cliente ya recibe las URLs de salida cuando las tareas pasan a SUCCEEDED.
+  // Usarlas aquí evita volver a consultar Runway durante la fase de montaje, que es
+  // independiente y puede tardar varios segundos. Se mantiene fallback para clientes antiguos.
+  let outputUrls = Array.isArray(input.outputUrls)
+    ? input.outputUrls.map((url) => String(url || "").trim()).filter(Boolean).slice(0, taskIds.length)
+    : [];
 
-  const outputUrls = completed.map(runwayOutputUrl).filter(Boolean).map(String);
+  if (outputUrls.length !== taskIds.length) {
+    const completed = await Promise.all(taskIds.map(async (id) => {
+      const task = await runwayRequest(`/v1/tasks/${encodeURIComponent(id)}`);
+      const status = String(task?.status || "").toUpperCase();
+      if (status !== "SUCCEEDED") {
+        if (["FAILED", "CANCELED", "CANCELLED"].includes(status)) {
+          const reason = task?.failure || task?.failureCode || task?.error || `Runway terminó con estado ${status}`;
+          throw new Error(typeof reason === "string" ? reason : JSON.stringify(reason));
+        }
+        throw new Error(`Runway todavía está procesando la tarea ${id}. Estado actual: ${status || "PENDING"}.`);
+      }
+      return task;
+    }));
+    outputUrls = completed.map(runwayOutputUrl).filter(Boolean).map(String);
+  }
+
   if (outputUrls.length !== taskIds.length) throw new Error("Runway terminó la generación pero falta alguna salida de vídeo.");
 
   const model = studioModel(input.model);

@@ -62,6 +62,7 @@ type StudioTaskState = {
   status: string;
   failure?: string | null;
   failure_code?: string | null;
+  output_url?: string | null;
 };
 
 type ReferenceAsset = { name: string; url: string; size: number };
@@ -223,9 +224,16 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
     await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function finalizeJob(currentJob: StudioJob) {
+  async function finalizeJob(currentJob: StudioJob, completedStates: StudioTaskState[]) {
+    const outputUrls = completedStates
+      .map((task) => String(task.output_url || "").trim())
+      .filter(Boolean);
+    if (outputUrls.length !== currentJob.task_ids.length) {
+      throw new Error("Runway terminó las escenas, pero no devolvió todas las URLs de salida necesarias para montar el vídeo final.");
+    }
+
     setProgress(currentJob.long_mode
-      ? "Las dos escenas están listas. Montando el MP4 final de 60 segundos y guardándolo en la Biblioteca…"
+      ? "Runway ya terminó las 2 escenas. Descargando clips y montando el MP4 final de 60 segundos…"
       : "Runway terminó el vídeo. Guardando el MP4 final en la Biblioteca…");
     const json = await api("/api/admin/social-ai", {
       method: "POST",
@@ -233,6 +241,7 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
         action: "video-studio-finalize",
         provider: currentJob.provider,
         task_ids: currentJob.task_ids,
+        output_urls: outputUrls,
         title: currentJob.title,
         model: currentJob.model,
         duration: currentJob.duration,
@@ -285,8 +294,15 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
 
           const allDone = states.length === currentJob.task_ids.length && states.every((task) => String(task.status || "").toUpperCase() === "SUCCEEDED");
           if (allDone) {
-            await finalizeJob(currentJob);
-            return;
+            // A partir de aquí Runway ya terminó. El montaje es una fase distinta y
+            // no debe confundirse con un fallo temporal al consultar Runway.
+            try {
+              await finalizeJob(currentJob, states);
+              return;
+            } catch (finalizeError: any) {
+              const detail = String(finalizeError?.message || "No se pudo montar el vídeo final");
+              throw new Error(`Las escenas de Runway están terminadas, pero falló el montaje/guardado final: ${detail}`);
+            }
           }
 
           const done = states.filter((task) => String(task.status || "").toUpperCase() === "SUCCEEDED").length;
@@ -298,7 +314,7 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
           }
         } catch (pollError: any) {
           const message = String(pollError?.message || "");
-          const isTerminal = /FAILED|CANCELED|CANCELLED|no pudo completar|SAFETY|moderation/i.test(message);
+          const isTerminal = /FAILED|CANCELED|CANCELLED|no pudo completar|SAFETY|moderation|montaje\/guardado final|escenas de Runway están terminadas/i.test(message);
           if (isTerminal) throw pollError;
           transientFailures += 1;
           if (transientFailures >= 5) throw pollError;
@@ -312,6 +328,30 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
       setError(e?.message || "No se pudo completar el vídeo");
     } finally {
       if (activeJobRef.current === currentJob.job_id) activeJobRef.current = null;
+      setBusy("");
+    }
+  }
+
+  async function retryFinalize() {
+    if (!job) return;
+    const readyStates = job.task_ids
+      .map((id) => taskStates.find((task) => task.id === id))
+      .filter(Boolean) as StudioTaskState[];
+    const allReady = readyStates.length === job.task_ids.length
+      && readyStates.every((task) => String(task.status || "").toUpperCase() === "SUCCEEDED" && Boolean(task.output_url));
+    if (!allReady) {
+      setError("Las escenas todavía no están listas para montar. Espera a que ambas aparezcan como Completadas.");
+      return;
+    }
+    setBusy("generate");
+    setError("");
+    setMessage("");
+    try {
+      await finalizeJob(job, readyStates);
+    } catch (e: any) {
+      setProgress("");
+      setError(`Las escenas ya están generadas; solo ha fallado el montaje final. ${e?.message || "Vuelve a intentarlo."}`);
+    } finally {
       setBusy("");
     }
   }
@@ -556,6 +596,10 @@ export default function TarotVideoStudio({ provider, connected, onUseInEditor, o
               })}
             </div>
             <p className={styles.progressNote}><ListChecks size={13} /> Runway no publica un porcentaje exacto de render. Mostramos el estado real de cada tarea, su fase y el tiempo transcurrido. Puedes recargar la página: el seguimiento se recuperará automáticamente.</p>
+            {!busy && job.task_ids.length > 0 && job.task_ids.every((id) => {
+              const state = taskStates.find((task) => task.id === id);
+              return String(state?.status || "").toUpperCase() === "SUCCEEDED" && Boolean(state?.output_url);
+            }) && <button type="button" className={styles.secondary} onClick={() => void retryFinalize()}><Clapperboard size={15} /> Reintentar solo el montaje (sin regenerar ni gastar créditos)</button>}
           </section>}
         </section>
 

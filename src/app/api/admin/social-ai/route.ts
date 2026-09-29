@@ -75,6 +75,7 @@ export async function POST(req: Request) {
       const asset = await finalizeTarotVideoStudio({
         provider,
         taskIds,
+        outputUrls: Array.isArray(body.output_urls) ? body.output_urls.map(String).slice(0, 4) : [],
         title: String(body.title || "Vídeo Tarot Celestial IA").slice(0, 140),
         model: String(body.model || "wan3"),
         duration: Number(body.duration || 15),
