@@ -5,6 +5,7 @@ import {
   generateAndStoreSocialVideo,
   generateTarotVideoStudio,
   startTarotVideoStudio,
+  continueTarotVideoStudio,
   getTarotVideoStudioStatus,
   finalizeTarotVideoStudio,
   generateSingleSocialContent,
@@ -66,6 +67,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, job });
     }
 
+    if (action === "video-studio-continue") {
+      const scene1TaskId = String(body.scene1_task_id || "").trim();
+      if (!scene1TaskId) return NextResponse.json({ ok: false, error: "Falta la tarea de la escena 1." }, { status: 400 });
+      const continuation = await continueTarotVideoStudio({
+        provider,
+        scene1TaskId,
+        model: String(body.model || "wan3"),
+        resolution: body.resolution === "480p" || body.resolution === "1080p" ? body.resolution : "720p",
+        ratio: String(body.ratio || ""),
+        promptScene2: String(body.prompt_scene_2 || "").slice(0, 12000),
+        audioEnabled: body.audio_enabled !== false,
+        audioDirection: String(body.audio_direction || "").slice(0, 2000),
+        audioScene2: String(body.audio_scene_2 || "").slice(0, 1800),
+      });
+      return NextResponse.json({ ok: true, continuation });
+    }
+
     if (action === "video-studio-status") {
       const taskIds = Array.isArray(body.task_ids) ? body.task_ids.map(String).slice(0, 4) : [];
       const status = await getTarotVideoStudioStatus(taskIds);
@@ -93,6 +111,8 @@ export async function POST(req: Request) {
         useFirstFrame: Boolean(body.use_first_frame),
         audioEnabled: Boolean(body.audio_enabled),
         audioDirection: String(body.audio_direction || "").slice(0, 2000),
+        audioScene1: String(body.audio_scene_1 || "").slice(0, 1800),
+        audioScene2: String(body.audio_scene_2 || "").slice(0, 1800),
         createdBy: auth.me.id,
       });
       return NextResponse.json({ ok: true, asset });

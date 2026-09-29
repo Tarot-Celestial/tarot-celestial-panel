@@ -521,12 +521,14 @@ type TarotStudioFormat = "vertical" | "landscape";
 const tarotVideoPlanSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "master_prompt", "scene_1_prompt", "scene_2_prompt"],
+  required: ["title", "master_prompt", "scene_1_prompt", "scene_2_prompt", "scene_1_audio", "scene_2_audio"],
   properties: {
     title: { type: "string" },
-    master_prompt: { type: "string" },
-    scene_1_prompt: { type: "string" },
-    scene_2_prompt: { type: "string" },
+    master_prompt: { type: "string", maxLength: 700 },
+    scene_1_prompt: { type: "string", maxLength: 1500 },
+    scene_2_prompt: { type: "string", maxLength: 1500 },
+    scene_1_audio: { type: "string", maxLength: 1800 },
+    scene_2_audio: { type: "string", maxLength: 1800 },
   },
 };
 
@@ -592,8 +594,26 @@ No inventes precios, promociones, teléfonos ni condiciones. No prometas resulta
 Describe con precisión sujeto, escenario, luz, óptica/cámara, movimiento corporal, manos, cartas, ritmo y transición final.
 Si hay referencias visuales, indica que deben conservar identidad, rasgos, ropa, cartas, mesa, iluminación o estilo según lo que sea visible.
 Si audioEnabled es true, integra también la dirección sonora en los prompts: ambiente realista, efectos coherentes y cualquier diálogo pedido por el usuario. No inventes frases habladas si el usuario no las ha solicitado. Respeta audioDirection. Para piezas de 60 s, mantén continuidad de ambiente, voz, intensidad y paisaje sonoro entre escena 1 y escena 2.
-Para modo 60 s: crea dos escenas de 30 s que formen una sola pieza. La escena 2 debe CONTINUAR la escena 1 con mismo sujeto, mismo vestuario, mismo escenario, misma hora/luz, misma paleta, mismas cartas/props y un arranque que visualmente pueda seguir del final de la escena 1. No repitas la acción inicial.
-Devuelve master_prompt como dirección global lista para Runway; scene_1_prompt y scene_2_prompt deben ser prompts autónomos. En modo corto, scene_2_prompt debe ser cadena vacía.`,
+
+REGLAS ESTRICTAS PARA MODO 60 s:
+- Son DOS clips técnicos de 30 s, pero narrativamente deben ser UNA SOLA GRABACIÓN de 60 s.
+- master_prompt SOLO puede contener identidad visual, sujeto, vestuario, escenario, iluminación, cámara, tono y reglas de continuidad. NO metas en master_prompt el guion hablado completo, la cronología completa ni acciones que puedan repetirse en ambas escenas.
+- scene_1_prompt contiene EXCLUSIVAMENTE lo que ocurre y se dice entre 0:00 y 0:30.
+- scene_2_prompt contiene EXCLUSIVAMENTE lo que ocurre y se dice entre 0:30 y 1:00. Nunca repitas una frase, introducción, revelación, extracción de carta o acción ya ejecutada en scene_1_prompt.
+- Si el briefing o advanced incluye un guion completo de 60 s, DIVÍDELO en dos mitades naturales. La escena 2 debe empezar por la frase siguiente a la última frase de la escena 1, nunca desde el principio.
+- La escena 1 debe terminar en una postura/acción que pueda continuar físicamente. La escena 2 debe comenzar desde ESA MISMA postura, no desde una pose inicial.
+- Si una carta ya fue revelada en la escena 1, en escena 2 esa carta YA ESTÁ REVELADA y permanece siendo la misma. No volver a barajar, sacar, girar ni revelar otra vez.
+- El primer fotograma real de la escena 2 será aportado por el sistema a partir del último fotograma de la escena 1; escribe scene_2_prompt asumiendo que esa continuidad visual ya existe.
+- En escena 2 usa verbos de continuidad: “continúa hablando”, “mantiene la carta”, “prosigue el gesto”; evita “empieza”, “saca”, “presenta de nuevo”, “revela”.
+- Para voz: scene_1_prompt y scene_2_prompt deben incluir únicamente las frases habladas de su mitad. No duplicar saludo, introducción ni consejo.
+- scene_1_audio contiene SOLO la dirección sonora y el diálogo que debe oírse entre 0:00 y 0:30.
+- scene_2_audio contiene SOLO la dirección sonora y el diálogo que debe oírse entre 0:30 y 1:00. Debe continuar con la misma voz, pero NO puede repetir ninguna frase de scene_1_audio.
+- Si audioDirection contiene un guion o frases habladas, DIVÍDELO entre scene_1_audio y scene_2_audio; nunca copies audioDirection completo en ambas escenas.
+- Si audioEnabled es false, scene_1_audio y scene_2_audio deben ser cadenas vacías.
+- El acento, timbre y estilo de voz sí deben conservarse entre ambas escenas; el texto hablado NO.
+
+Mantén master_prompt por debajo de 700 caracteres y cada prompt de escena por debajo de 1500 caracteres: prioriza acciones, diálogo exacto y continuidad sobre adjetivos redundantes.
+Devuelve master_prompt como dirección global compacta; scene_1_prompt y scene_2_prompt deben ser prompts autónomos y no redundantes. En modo corto, scene_2_prompt debe ser cadena vacía y scene_2_audio también.`,
     JSON.stringify(input),
   );
 }
@@ -622,7 +642,9 @@ async function createStudioRunwayTask(input: {
   const audioSuffix = input.audioEnabled && input.model !== "gen4.5"
     ? `\nAUDIO NATIVO: genera una pista sonora sincronizada con la escena. ${audioDirection || "Ambiente místico realista, efectos naturales de la escena y sin voces aleatorias."}`
     : "";
-  const promptText = `${input.prompt}${audioSuffix}`.slice(0, promptLimit);
+  const audioBudget = Math.min(audioSuffix.length, Math.floor(promptLimit * 0.35));
+  const visualBudget = Math.max(400, promptLimit - audioBudget);
+  const promptText = `${input.prompt.slice(0, visualBudget)}${audioSuffix.slice(0, audioBudget)}`.slice(0, promptLimit);
 
   if (input.model === "gen4.5") {
     const body: Record<string, any> = {
@@ -663,6 +685,44 @@ async function createStudioRunwayTask(input: {
   // Direct Runway video endpoints use `references` for image references.
   if (refs.length) body.references = refs.map((uri) => ({ uri }));
   return runwayRequest("/v1/text_to_video", { method: "POST", body: JSON.stringify(body) });
+}
+
+async function extractAndStoreStudioContinuityFrame(input: {
+  provider: SocialProvider;
+  videoUrl: string;
+}) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tc-video-continuity-"));
+  try {
+    const inputPath = path.join(tempDir, "scene-1.mp4");
+    const framePath = path.join(tempDir, "scene-1-last-frame.jpg");
+    await fs.writeFile(inputPath, await downloadBuffer(input.videoUrl));
+
+    try {
+      // Tomamos un fotograma apenas antes del final para evitar frames negros de cierre.
+      await execFileAsync(ffmpegExecutable(), [
+        "-y", "-sseof", "-0.20", "-i", inputPath,
+        "-frames:v", "1", "-q:v", "2", framePath,
+      ]);
+    } catch (error: any) {
+      throw new Error(`No se pudo extraer el último fotograma de la escena 1 para encadenar la escena 2. ${error?.message || ""}`.trim());
+    }
+
+    const frame = await fs.readFile(framePath);
+    const bucket = process.env.SOCIAL_MEDIA_BUCKET?.trim() || "tc-social-media";
+    const db = supabaseAdmin();
+    const storagePath = `${input.provider}/ai-studio/continuity/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.jpg`;
+    const { error } = await db.storage.from(bucket).upload(storagePath, frame, {
+      contentType: "image/jpeg",
+      cacheControl: "31536000",
+      upsert: false,
+    });
+    if (error) throw new Error(`No se pudo guardar el fotograma de continuidad: ${error.message}`);
+    const { data } = db.storage.from(bucket).getPublicUrl(storagePath);
+    if (!data?.publicUrl) throw new Error("Supabase no devolvió URL pública para el fotograma de continuidad.");
+    return data.publicUrl;
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
+  }
 }
 
 function studioStorageTargetBytes() {
@@ -815,6 +875,8 @@ export async function startTarotVideoStudio(input: {
   useFirstFrame?: boolean;
   audioEnabled?: boolean;
   audioDirection?: string;
+  audioScene1?: string;
+  audioScene2?: string;
   createdBy?: string | null;
 }) {
   const model = studioModel(input.model);
@@ -843,28 +905,35 @@ export async function startTarotVideoStudio(input: {
     audioDirection,
   });
 
-  const globalDirection = `${BRAND_RULES}\nVIDEO TAROT CELESTIAL. ${plan.master_prompt}`;
-  const prompts = longMode
-    ? [
-      `${globalDirection}\nESCENA 1/2 · 30 segundos. ${plan.scene_1_prompt}`,
-      `${globalDirection}\nESCENA 2/2 · 30 segundos. CONTINUIDAD OBLIGATORIA con la escena anterior. ${plan.scene_2_prompt}`,
-    ]
-    : [`${globalDirection}\n${plan.scene_1_prompt}`];
+  const globalVisualDirection = `VIDEO TAROT CELESTIAL · DIRECCIÓN GLOBAL. ${plan.master_prompt}`;
+  const scene1Prompt = longMode
+    ? `${globalVisualDirection}\nESCENA 1/2 · SOLO 0:00–0:30. Ejecuta únicamente esta primera mitad. NO adelantes ni repitas contenido de la segunda mitad. ${plan.scene_1_prompt}`
+    : `${globalVisualDirection}\n${plan.scene_1_prompt}`;
 
   const clipDuration = longMode ? 30 : duration;
-  const createdTasks = await Promise.all(prompts.map((prompt, index) => createStudioRunwayTask({
+  // En 60 s se crea SOLO la escena 1. La escena 2 se crea después, usando el
+  // último fotograma REAL de la escena 1 como promptImage. Esto evita que Runway
+  // interprete dos prompts paralelos como dos vídeos que empiezan desde cero.
+  const scene1AudioDirection = audioEnabled
+    ? String(plan.scene_1_audio || audioDirection || "").trim().slice(0, 1800)
+    : "";
+  const scene2AudioDirection = audioEnabled
+    ? String(plan.scene_2_audio || "").trim().slice(0, 1800)
+    : "";
+
+  const scene1Task = await createStudioRunwayTask({
     model,
-    prompt,
+    prompt: scene1Prompt,
     duration: clipDuration,
     ratio,
     resolution,
     referenceUrls,
-    useFirstFrame: Boolean(input.useFirstFrame) && !longMode && index === 0,
+    useFirstFrame: Boolean(input.useFirstFrame) && Boolean(referenceUrls[0]),
     audioEnabled,
-    audioDirection,
-  })));
-  const taskIds = createdTasks.map((task) => String(task?.id || "").trim());
-  if (taskIds.some((id) => !id)) throw new Error("Runway no devolvió todos los identificadores de tarea.");
+    audioDirection: scene1AudioDirection,
+  });
+  const scene1TaskId = String(scene1Task?.id || "").trim();
+  if (!scene1TaskId) throw new Error("Runway no devolvió el identificador de la escena 1.");
 
   return {
     job_id: randomUUID(),
@@ -881,11 +950,86 @@ export async function startTarotVideoStudio(input: {
     prompt: String(plan.master_prompt || ""),
     prompt_scene_1: String(plan.scene_1_prompt || ""),
     prompt_scene_2: String(plan.scene_2_prompt || ""),
-    task_ids: taskIds,
+    task_ids: [scene1TaskId],
     reference_urls: referenceUrls,
     use_first_frame: Boolean(input.useFirstFrame),
     audio_enabled: audioEnabled,
     audio_direction: audioDirection,
+    audio_scene_1: scene1AudioDirection,
+    audio_scene_2: scene2AudioDirection,
+    continuity_frame_url: null,
+    chained_generation: longMode,
+  };
+}
+
+export async function continueTarotVideoStudio(input: {
+  provider: SocialProvider;
+  scene1TaskId: string;
+  model?: string;
+  resolution?: TarotStudioResolution;
+  ratio?: string;
+  promptScene2: string;
+  audioEnabled?: boolean;
+  audioDirection?: string;
+  audioScene2?: string;
+}) {
+  const scene1TaskId = String(input.scene1TaskId || "").trim();
+  if (!scene1TaskId) throw new Error("Falta la tarea de la escena 1 para crear la continuidad.");
+
+  const scene1Task = await runwayRequest(`/v1/tasks/${encodeURIComponent(scene1TaskId)}`);
+  const scene1Status = String(scene1Task?.status || "").toUpperCase();
+  if (scene1Status !== "SUCCEEDED") {
+    throw new Error(`La escena 1 todavía no está terminada. Estado: ${scene1Status || "PENDING"}.`);
+  }
+  const scene1OutputUrl = String(runwayOutputUrl(scene1Task) || "").trim();
+  if (!scene1OutputUrl) throw new Error("Runway terminó la escena 1 pero no devolvió su vídeo.");
+
+  const model = studioModel(input.model);
+  if (model === "gen4.5") throw new Error("Gen-4.5 no admite el modo de continuidad de 60 segundos.");
+  const resolution: TarotStudioResolution = input.resolution === "480p" || input.resolution === "1080p" ? input.resolution : "720p";
+  const ratio = String(input.ratio || studioRatio(model, "vertical", resolution));
+  const audioEnabled = input.audioEnabled !== false;
+  // Nunca reutilizar el guion de audio completo de la escena 1 en la escena 2.
+  // Para trabajos nuevos llega audioScene2 ya dividido por el planificador. El
+  // fallback conserva solo el estilo sonoro de trabajos antiguos.
+  const audioDirection = audioEnabled
+    ? String(input.audioScene2 || input.audioDirection || "").trim().slice(0, 1800)
+    : "";
+
+  const continuityFrameUrl = await extractAndStoreStudioContinuityFrame({
+    provider: input.provider,
+    videoUrl: scene1OutputUrl,
+  });
+
+  const scene2Only = String(input.promptScene2 || "").trim();
+  if (!scene2Only) throw new Error("La dirección creativa no contiene la segunda mitad del vídeo.");
+
+  const continuityPrompt = `VIDEO TAROT CELESTIAL · ESCENA 2/2 · SOLO 0:30–1:00.\n` +
+    `El promptImage es el ÚLTIMO FOTOGRAMA REAL de la escena 1. CONTINÚA exactamente desde ese instante: misma persona, rostro, ropa, pose, manos, carta, objetos, encuadre, distancia de cámara, iluminación y movimiento. ` +
+    `NO reinicies la escena. NO repitas saludo, introducción, barajado, extracción, giro ni revelación de carta. Si la carta ya está visible, mantenla visible y siendo exactamente la misma. ` +
+    `NO vuelvas a decir ninguna frase de los primeros 30 segundos. Continúa únicamente con la segunda mitad del diálogo y la acción. ` +
+    `La voz debe retomar desde la PRIMERA FRASE NUEVA de la segunda mitad; no saludes, no presentes la carta otra vez y no reinicies el consejo. ` +
+    `La primera acción debe ser la continuación física inmediata del fotograma de entrada.\n` +
+    scene2Only;
+
+  const scene2Task = await createStudioRunwayTask({
+    model,
+    prompt: continuityPrompt,
+    duration: 30,
+    ratio,
+    resolution,
+    referenceUrls: [continuityFrameUrl],
+    useFirstFrame: true,
+    audioEnabled,
+    audioDirection,
+  });
+  const scene2TaskId = String(scene2Task?.id || "").trim();
+  if (!scene2TaskId) throw new Error("Runway no devolvió el identificador de la escena 2.");
+
+  return {
+    scene2_task_id: scene2TaskId,
+    continuity_frame_url: continuityFrameUrl,
+    scene1_output_url: scene1OutputUrl,
   };
 }
 
@@ -929,6 +1073,8 @@ export async function finalizeTarotVideoStudio(input: {
   useFirstFrame?: boolean;
   audioEnabled?: boolean;
   audioDirection?: string;
+  audioScene1?: string;
+  audioScene2?: string;
   createdBy?: string | null;
 }) {
   const taskIds = Array.from(new Set((input.taskIds || []).map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 4);
@@ -1009,6 +1155,8 @@ export async function finalizeTarotVideoStudio(input: {
       use_first_frame: Boolean(input.useFirstFrame),
       audio_enabled: Boolean(input.audioEnabled),
       audio_direction: String(input.audioDirection || ""),
+      audio_scene_1: String(input.audioScene1 || ""),
+      audio_scene_2: String(input.audioScene2 || ""),
       prompt: String(input.prompt || ""),
       prompt_scene_1: String(input.promptScene1 || ""),
       prompt_scene_2: String(input.promptScene2 || ""),
@@ -1036,6 +1184,8 @@ export async function finalizeTarotVideoStudio(input: {
     credits_estimate: creditsEstimate,
     audio_enabled: Boolean(input.audioEnabled),
     audio_direction: String(input.audioDirection || ""),
+    audio_scene_1: String(input.audioScene1 || ""),
+    audio_scene_2: String(input.audioScene2 || ""),
     prompt: String(input.prompt || ""),
     prompt_scene_1: String(input.promptScene1 || ""),
     prompt_scene_2: String(input.promptScene2 || ""),
@@ -1065,10 +1215,28 @@ export async function generateTarotVideoStudio(input: {
   createdBy?: string | null;
 }) {
   const job = await startTarotVideoStudio(input);
-  await Promise.all(job.task_ids.map((id) => waitForRunwayTask(id)));
+  await waitForRunwayTask(job.task_ids[0]);
+
+  const taskIds = [...job.task_ids];
+  if (job.long_mode) {
+    const continued = await continueTarotVideoStudio({
+      provider: input.provider,
+      scene1TaskId: taskIds[0],
+      model: job.model,
+      resolution: job.resolution,
+      ratio: job.ratio,
+      promptScene2: job.prompt_scene_2,
+      audioEnabled: job.audio_enabled,
+      audioDirection: job.audio_direction,
+      audioScene2: job.audio_scene_2,
+    });
+    taskIds.push(continued.scene2_task_id);
+    await waitForRunwayTask(continued.scene2_task_id);
+  }
+
   return finalizeTarotVideoStudio({
     provider: input.provider,
-    taskIds: job.task_ids,
+    taskIds,
     title: job.title,
     model: job.model,
     duration: job.duration,
@@ -1084,6 +1252,8 @@ export async function generateTarotVideoStudio(input: {
     useFirstFrame: job.use_first_frame,
     audioEnabled: job.audio_enabled,
     audioDirection: job.audio_direction,
+    audioScene1: job.audio_scene_1,
+    audioScene2: job.audio_scene_2,
     createdBy: input.createdBy,
   });
 }
