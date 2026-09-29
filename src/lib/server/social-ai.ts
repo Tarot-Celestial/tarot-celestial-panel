@@ -656,8 +656,51 @@ async function createStudioRunwayTask(input: {
   return runwayRequest("/v1/text_to_video", { method: "POST", body: JSON.stringify(body) });
 }
 
-async function stitchStudioVideos(urls: string[]) {
-  if (urls.length === 1) return downloadBuffer(urls[0]);
+function studioStorageTargetBytes() {
+  // Mantener el MP4 final claramente por debajo del límite habitual de 50 MB
+  // de Supabase Free. Se puede subir este objetivo en Vercel con
+  // SOCIAL_VIDEO_TARGET_MB si el proyecto/bucket permite archivos mayores.
+  const requestedMb = Number(process.env.SOCIAL_VIDEO_TARGET_MB || 32);
+  const safeMb = Number.isFinite(requestedMb) ? Math.max(12, Math.min(200, requestedMb)) : 32;
+  return Math.floor(safeMb * 1_000_000);
+}
+
+function parseStorageLimitBytes(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  if (/^\d+(?:\.\d+)?$/.test(raw)) return Number(raw);
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(KB|MB|GB)$/i);
+  if (!match) return 0;
+  const amount = Number(match[1]);
+  const unit = match[2].toUpperCase();
+  const multiplier = unit === "GB" ? 1_000_000_000 : unit === "MB" ? 1_000_000 : 1_000;
+  return Math.floor(amount * multiplier);
+}
+
+async function resolveStudioStorageTargetBytes(db: any, bucket: string) {
+  const configuredTarget = studioStorageTargetBytes();
+  try {
+    const { data } = await db.storage.getBucket(bucket);
+    const bucketLimit = parseStorageLimitBytes(data?.file_size_limit ?? data?.fileSizeLimit);
+    if (bucketLimit > 0) {
+      // Dejamos un 20 % de margen para no chocar contra el límite exacto del bucket.
+      return Math.max(8_000_000, Math.min(configuredTarget, Math.floor(bucketLimit * 0.8)));
+    }
+  } catch {
+    // Si no podemos leer la configuración del bucket, usamos el objetivo seguro local.
+  }
+  return configuredTarget;
+}
+
+function studioTargetVideoBitrateKbps(durationSeconds: number, targetBytes: number) {
+  // Reservamos margen para audio, cabeceras MP4 y pequeñas variaciones del encoder.
+  const duration = Math.max(1, durationSeconds);
+  const totalKbps = Math.floor((targetBytes * 8) / duration / 1000);
+  return Math.max(900, Math.min(8_000, totalKbps - 320));
+}
+
+async function stitchStudioVideos(urls: string[], durationSeconds: number, targetBytes: number) {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "tc-video-studio-"));
   const paths: string[] = [];
   try {
@@ -666,20 +709,81 @@ async function stitchStudioVideos(urls: string[]) {
       await fs.writeFile(inputPath, await downloadBuffer(urls[i]));
       paths.push(inputPath);
     }
-    const listPath = path.join(tempDir, "concat.txt");
+
     const outputPath = path.join(tempDir, "final.mp4");
+
+    if (paths.length === 1) {
+      const original = await fs.readFile(paths[0]);
+      if (original.byteLength <= targetBytes) {
+        return { buffer: original, originalBytes: original.byteLength, finalBytes: original.byteLength, optimized: false };
+      }
+
+      const videoKbps = studioTargetVideoBitrateKbps(durationSeconds, targetBytes);
+      try {
+        await execFileAsync(ffmpegExecutable(), [
+          "-y", "-i", paths[0],
+          "-c:v", "libx264", "-preset", "veryfast",
+          "-b:v", `${videoKbps}k`, "-maxrate", `${videoKbps}k`, "-bufsize", `${videoKbps * 2}k`,
+          "-pix_fmt", "yuv420p",
+          "-c:a", "aac", "-b:a", "128k",
+          "-movflags", "+faststart",
+          outputPath,
+        ]);
+      } catch (error: any) {
+        throw new Error(`El vídeo se generó correctamente, pero FFmpeg no pudo optimizarlo para Supabase Storage. ${error?.message || ""}`.trim());
+      }
+
+      const optimized = await fs.readFile(outputPath);
+      return { buffer: optimized, originalBytes: original.byteLength, finalBytes: optimized.byteLength, optimized: true };
+    }
+
+    const listPath = path.join(tempDir, "concat.txt");
+    const copyPath = path.join(tempDir, "joined-copy.mp4");
     const quoteForConcat = (value: string) => value.replace(/'/g, "'\\''");
     await fs.writeFile(listPath, paths.map((x) => `file '${quoteForConcat(x)}'`).join("\n"));
+
+    // Primero intentamos concatenación sin recodificar: es rápida y conserva calidad.
+    // Si el resultado supera el objetivo seguro para Storage, recodificamos después.
+    let originalBytes = 0;
     try {
-      await execFileAsync(ffmpegExecutable(), ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c", "copy", "-movflags", "+faststart", outputPath]);
-    } catch {
-      try {
-        await execFileAsync(ffmpegExecutable(), ["-y", "-f", "concat", "-safe", "0", "-i", listPath, "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", outputPath]);
-      } catch (error: any) {
-        throw new Error(`No se pudieron unir las dos escenas de 30 s con FFmpeg (${ffmpegExecutable()}). ${error?.message || ""}`.trim());
+      await execFileAsync(ffmpegExecutable(), [
+        "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+        "-c", "copy", "-movflags", "+faststart", copyPath,
+      ]);
+      const stat = await fs.stat(copyPath);
+      originalBytes = stat.size;
+      if (stat.size <= targetBytes) {
+        const buffer = await fs.readFile(copyPath);
+        return { buffer, originalBytes: stat.size, finalBytes: stat.size, optimized: false };
       }
+    } catch {
+      // Si los clips no son compatibles con stream-copy, continuamos directamente
+      // con una recodificación uniforme.
     }
-    return await fs.readFile(outputPath);
+
+    const videoKbps = studioTargetVideoBitrateKbps(durationSeconds, targetBytes);
+    try {
+      await execFileAsync(ffmpegExecutable(), [
+        "-y", "-f", "concat", "-safe", "0", "-i", listPath,
+        "-c:v", "libx264", "-preset", "veryfast",
+        "-b:v", `${videoKbps}k`, "-maxrate", `${videoKbps}k`, "-bufsize", `${videoKbps * 2}k`,
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        outputPath,
+      ]);
+    } catch (error: any) {
+      throw new Error(`No se pudieron unir y optimizar las escenas con FFmpeg (${ffmpegExecutable()}). ${error?.message || ""}`.trim());
+    }
+
+    const buffer = await fs.readFile(outputPath);
+    if (buffer.byteLength > targetBytes * 1.08) {
+      throw new Error(
+        `El montaje final ocupa ${(buffer.byteLength / 1_000_000).toFixed(1)} MB tras optimizarlo. ` +
+        `Reduce SOCIAL_VIDEO_TARGET_MB o aumenta el límite del bucket de Supabase.`
+      );
+    }
+    return { buffer, originalBytes: originalBytes || buffer.byteLength, finalBytes: buffer.byteLength, optimized: true };
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => null);
   }
@@ -845,9 +949,11 @@ export async function finalizeTarotVideoStudio(input: {
   const referenceUrls = Array.isArray(input.referenceUrls) ? input.referenceUrls.filter(Boolean).slice(0, 10) : [];
   const creditsEstimate = Number(input.creditsEstimate || studioCredits(model, resolution, duration));
 
-  const buffer = await stitchStudioVideos(outputUrls);
   const bucket = process.env.SOCIAL_MEDIA_BUCKET?.trim() || "tc-social-media";
   const db = supabaseAdmin();
+  const storageTargetBytes = await resolveStudioStorageTargetBytes(db, bucket);
+  const mountedVideo = await stitchStudioVideos(outputUrls, duration, storageTargetBytes);
+  const buffer = mountedVideo.buffer;
   const storagePath = `${input.provider}/ai-studio/${new Date().toISOString().slice(0, 10)}/${randomUUID()}.mp4`;
   const { error: uploadError } = await db.storage.from(bucket).upload(storagePath, buffer, {
     contentType: "video/mp4",
@@ -885,6 +991,10 @@ export async function finalizeTarotVideoStudio(input: {
       prompt_scene_2: String(input.promptScene2 || ""),
       runway_output_urls: outputUrls,
       task_ids: taskIds,
+      storage_optimized: mountedVideo.optimized,
+      original_size_bytes: mountedVideo.originalBytes,
+      final_size_bytes: mountedVideo.finalBytes,
+      storage_target_bytes: storageTargetBytes,
     },
     created_by: input.createdBy || null,
   });
