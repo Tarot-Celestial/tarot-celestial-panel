@@ -423,7 +423,9 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             const recovery = status.recovery?.attempted ? ` · recuperación: ${status.recovery?.recovered ? "OK" : (status.recovery?.error || "no aplicada")}` : "";
             const callbackBuild = searchParams?.get("social_callback_build");
             const callbackProvider = searchParams?.get("social_callback_provider");
-            const callbackInfo = callbackBuild ? ` · callback: ${callbackBuild}${callbackProvider ? `/${callbackProvider}` : ""}` : " · callback: NO IDENTIFICADO (posible despliegue antiguo)`;
+            const callbackInfo = callbackBuild
+              ? ` · callback: ${callbackBuild}${callbackProvider ? `/${callbackProvider}` : ""}`
+              : " · callback: NO IDENTIFICADO (posible despliegue antiguo)";
             setError(`${brand.name} autorizó los permisos, pero la conexión no aparece en el panel. Tabla: ${storage.table || "tc_social_connections"} · filas: ${storage.rows ?? "?"} · proyecto: ${storage.project_ref || "?"}${providers}${recovery}${build}${callbackInfo}`);
           }
         } catch (e: any) {
