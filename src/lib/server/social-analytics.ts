@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { decryptSecret, type SocialProvider } from "@/lib/server/social-connections";
+import { decryptSecret, SOCIAL_CONNECTIONS_TABLE, type SocialProvider } from "@/lib/server/social-connections";
 
 type SocialConnectionSecret = {
   provider: SocialProvider;
@@ -31,7 +31,7 @@ function graphVersion() {
 
 async function getConnection(provider: SocialProvider) {
   const { data, error } = await supabaseAdmin()
-    .from("tc_social_connections")
+    .from(SOCIAL_CONNECTIONS_TABLE)
     .select("provider,account_id,username,access_token_ciphertext")
     .eq("provider", provider)
     .maybeSingle();

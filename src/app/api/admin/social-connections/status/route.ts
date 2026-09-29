@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/require-admin";
 import {
   decodeSocialRecovery,
   saveSocialConnection,
+  SOCIAL_CONNECTIONS_TABLE,
 } from "@/lib/server/social-connections";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -23,7 +24,7 @@ function projectRef() {
 async function readProvider(provider: "instagram" | "tiktok") {
   const db = supabaseAdmin();
   const { data, error } = await db
-    .from("tc_social_connections")
+    .from(SOCIAL_CONNECTIONS_TABLE)
     .select(CONNECTION_SELECT)
     .eq("provider", provider)
     .maybeSingle();
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Leemos cada proveedor directamente por PK. Evitamos construir el estado a partir
-    // de una lista genérica: tc_social_connections.provider es la PK y ésta es la fuente
+    // de una lista genérica: la tabla v2 usa provider como PK y ésta es la fuente
     // de verdad exacta para el panel.
     let [instagram, tiktok] = await Promise.all([
       readProvider("instagram"),
@@ -85,7 +86,7 @@ export async function GET(req: NextRequest) {
 
     const db = supabaseAdmin();
     const { data: providerRows, count, error: countError } = await db
-      .from("tc_social_connections")
+      .from(SOCIAL_CONNECTIONS_TABLE)
       .select("provider", { count: "exact" })
       .order("provider");
 
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
         tiktok: Boolean(process.env.TIKTOK_CLIENT_KEY && process.env.TIKTOK_CLIENT_SECRET),
       },
       storage: {
-        table: "tc_social_connections",
+        table: SOCIAL_CONNECTIONS_TABLE,
         readable: !countError,
         rows: countError ? null : (count ?? providerRows?.length ?? 0),
         providers: (providerRows || []).map((row: any) => String(row?.provider || "").trim().toLowerCase()),
@@ -115,7 +116,7 @@ export async function GET(req: NextRequest) {
         provider: recoveredProvider,
         error: recoveryError,
       },
-      build: "social-oauth-v7-provider-insert",
+      build: "social-oauth-v8-clean-table",
     });
 
     if (recovered || recoveryError || (recovery?.provider === "instagram" && instagram) || (recovery?.provider === "tiktok" && tiktok)) {
@@ -125,7 +126,7 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (error: any) {
     return NextResponse.json(
-      { ok: false, error: error?.message || "SOCIAL_STATUS_ERROR", build: "social-oauth-v7-provider-insert" },
+      { ok: false, error: error?.message || "SOCIAL_STATUS_ERROR", build: "social-oauth-v8-clean-table" },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }

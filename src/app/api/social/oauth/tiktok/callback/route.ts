@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
     // Segunda lectura independiente antes de declarar éxito OAuth.
     const providersAfterSave = (await getSocialConnections()).map((row: any) => String(row?.provider || "").trim().toLowerCase());
     if (!providersAfterSave.includes("tiktok")) {
-      throw new Error(`TikTok se guardó pero no aparece al releer tc_social_connections (proveedores: ${providersAfterSave.join(", ") || "ninguno"}). Ejecuta SQL_SOCIAL_CONNECTIONS_TIKTOK.sql.`);
+      throw new Error(`TikTok se guardó pero no aparece al releer tc_social_connections_v2 (proveedores: ${providersAfterSave.join(", ") || "ninguno"}). Ejecuta SQL_SOCIAL_CONNECTIONS_V2.sql.`);
     }
 
     const recoveryCookie = encodeSocialRecovery({
@@ -144,7 +144,7 @@ export async function GET(req: NextRequest) {
     return adminRedirect(req, {
       social_connected: "tiktok",
       social_saved: "1",
-      social_callback_build: "social-oauth-v7-provider-insert",
+      social_callback_build: "social-oauth-v8-clean-table",
       social_callback_provider: "tiktok",
     }, recoveryCookie);
   } catch (error: any) {

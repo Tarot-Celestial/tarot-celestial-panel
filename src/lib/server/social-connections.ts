@@ -4,6 +4,10 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export type SocialProvider = "instagram" | "tiktok";
 
+// Tabla v2 creada específicamente para soportar varias conexiones sociales sin
+// depender de restricciones/triggers heredados de tc_social_connections.
+export const SOCIAL_CONNECTIONS_TABLE = "tc_social_connections_v2";
+
 export type StoredSocialConnection = {
   provider: SocialProvider;
   account_id: string | null;
@@ -203,7 +207,7 @@ export async function saveSocialConnection(input: {
   // Primero intentamos actualizar exclusivamente la fila del proveedor. Si no existe,
   // insertamos una nueva. Así Instagram y TikTok nunca se pisan entre sí.
   const { data: updatedRows, error: updateError } = await db
-    .from("tc_social_connections")
+    .from(SOCIAL_CONNECTIONS_TABLE)
     .update(row)
     .eq("provider", input.provider)
     .select(selectFields);
@@ -217,7 +221,7 @@ export async function saveSocialConnection(input: {
 
   if (!saved) {
     const { data: inserted, error: insertError } = await db
-      .from("tc_social_connections")
+      .from(SOCIAL_CONNECTIONS_TABLE)
       .insert(row)
       .select(selectFields)
       .single();
@@ -236,7 +240,7 @@ export async function saveSocialConnection(input: {
   // Verificación inmediata contra la misma base de datos. No devolvemos éxito al navegador
   // hasta comprobar que la conexión realmente existe y puede volver a leerse.
   const { data: verified, error: verifyError } = await db
-    .from("tc_social_connections")
+    .from(SOCIAL_CONNECTIONS_TABLE)
     .select("provider,account_id,username,display_name,avatar_url,token_expires_at,refresh_expires_at,scopes,metadata,connected_at,updated_at")
     .eq("provider", input.provider)
     .maybeSingle();
@@ -245,7 +249,7 @@ export async function saveSocialConnection(input: {
     throw new Error(`La conexión se guardó pero Supabase no pudo verificarla: ${detail || verifyError.code || "error desconocido"}`);
   }
   if (!verified?.provider) {
-    throw new Error("La conexión OAuth no persiste en tc_social_connections. Ejecuta el SQL de reparación de Redes Sociales.");
+    throw new Error("La conexión OAuth no persiste en tc_social_connections_v2. Ejecuta SQL_SOCIAL_CONNECTIONS_V2.sql.");
   }
   return verified;
 }
@@ -253,7 +257,7 @@ export async function saveSocialConnection(input: {
 export async function getSocialConnections() {
   const db = supabaseAdmin();
   const { data, error } = await db
-    .from("tc_social_connections")
+    .from(SOCIAL_CONNECTIONS_TABLE)
     .select("provider,account_id,username,display_name,avatar_url,token_expires_at,refresh_expires_at,scopes,metadata,connected_at,updated_at")
     .order("provider");
   if (error) throw error;
@@ -262,7 +266,7 @@ export async function getSocialConnections() {
 
 export async function deleteSocialConnection(provider: SocialProvider) {
   const db = supabaseAdmin();
-  const { error } = await db.from("tc_social_connections").delete().eq("provider", provider);
+  const { error } = await db.from(SOCIAL_CONNECTIONS_TABLE).delete().eq("provider", provider);
   if (error) throw error;
 }
 

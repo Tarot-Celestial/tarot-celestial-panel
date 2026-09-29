@@ -1,6 +1,6 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { decryptSecret, encryptSecret, type SocialProvider } from "@/lib/server/social-connections";
+import { decryptSecret, encryptSecret, SOCIAL_CONNECTIONS_TABLE, type SocialProvider } from "@/lib/server/social-connections";
 
 export type SocialContentRow = {
   id: string;
@@ -17,7 +17,7 @@ export type SocialContentRow = {
 
 async function connection(provider: SocialProvider) {
   const db = supabaseAdmin();
-  const { data, error } = await db.from("tc_social_connections").select("*").eq("provider", provider).maybeSingle();
+  const { data, error } = await db.from(SOCIAL_CONNECTIONS_TABLE).select("*").eq("provider", provider).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error(`${provider.toUpperCase()}_NOT_CONNECTED`);
   let accessToken = decryptSecret(data.access_token_ciphertext);
@@ -35,7 +35,7 @@ async function connection(provider: SocialProvider) {
         const refreshed: any = await refreshResponse.json().catch(() => ({}));
         if (refreshResponse.ok && refreshed?.access_token) {
           accessToken = String(refreshed.access_token);
-          await db.from("tc_social_connections").update({
+          await db.from(SOCIAL_CONNECTIONS_TABLE).update({
             access_token_ciphertext: encryptSecret(accessToken),
             token_expires_at: refreshed.expires_in ? new Date(Date.now() + Number(refreshed.expires_in) * 1000).toISOString() : data.token_expires_at,
             updated_at: new Date().toISOString(),
@@ -54,7 +54,7 @@ async function connection(provider: SocialProvider) {
           const refreshed: any = await refreshResponse.json().catch(() => ({}));
           if (refreshResponse.ok && refreshed?.access_token) {
             accessToken = String(refreshed.access_token);
-            await db.from("tc_social_connections").update({
+            await db.from(SOCIAL_CONNECTIONS_TABLE).update({
               access_token_ciphertext: encryptSecret(accessToken),
               refresh_token_ciphertext: encryptSecret(refreshed.refresh_token || refreshToken),
               token_expires_at: refreshed.expires_in ? new Date(Date.now() + Number(refreshed.expires_in) * 1000).toISOString() : data.token_expires_at,
