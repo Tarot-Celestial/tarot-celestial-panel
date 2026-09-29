@@ -197,18 +197,40 @@ export async function saveSocialConnection(input: {
     updated_at: now.toISOString(),
   };
 
-  const { data: saved, error } = await db
-    .from("tc_social_connections")
-    .upsert(row, { onConflict: "provider" })
-    .select("provider,account_id,username,display_name,avatar_url,token_expires_at,refresh_expires_at,scopes,metadata,connected_at,updated_at")
-    .single();
+  const selectFields = "provider,account_id,username,display_name,avatar_url,token_expires_at,refresh_expires_at,scopes,metadata,connected_at,updated_at";
 
-  if (error) {
-    const detail = [error.message, error.details, error.hint].filter(Boolean).join(" · ");
-    throw new Error(`No se pudo guardar la conexión social en Supabase: ${detail || error.code || "error desconocido"}`);
+  // No dependemos de que exista una restricción UNIQUE concreta para poder usar UPSERT.
+  // Primero intentamos actualizar exclusivamente la fila del proveedor. Si no existe,
+  // insertamos una nueva. Así Instagram y TikTok nunca se pisan entre sí.
+  const { data: updatedRows, error: updateError } = await db
+    .from("tc_social_connections")
+    .update(row)
+    .eq("provider", input.provider)
+    .select(selectFields);
+
+  if (updateError) {
+    const detail = [updateError.message, updateError.details, updateError.hint].filter(Boolean).join(" · ");
+    throw new Error(`No se pudo actualizar la conexión ${input.provider} en Supabase: ${detail || updateError.code || "error desconocido"}`);
   }
-  if (!saved?.provider) {
-    throw new Error("Supabase aceptó el guardado OAuth pero no devolvió la fila de conexión.");
+
+  let saved = Array.isArray(updatedRows) && updatedRows.length ? updatedRows[0] : null;
+
+  if (!saved) {
+    const { data: inserted, error: insertError } = await db
+      .from("tc_social_connections")
+      .insert(row)
+      .select(selectFields)
+      .single();
+
+    if (insertError) {
+      const detail = [insertError.message, insertError.details, insertError.hint].filter(Boolean).join(" · ");
+      throw new Error(`No se pudo insertar la conexión ${input.provider} en Supabase: ${detail || insertError.code || "error desconocido"}. Ejecuta SQL_SOCIAL_CONNECTIONS_TIKTOK.sql.`);
+    }
+    saved = inserted;
+  }
+
+  if (!saved?.provider || saved.provider !== input.provider) {
+    throw new Error(`Supabase no devolvió la fila esperada para ${input.provider}. Ejecuta SQL_SOCIAL_CONNECTIONS_TIKTOK.sql.`);
   }
 
   // Verificación inmediata contra la misma base de datos. No devolvemos éxito al navegador

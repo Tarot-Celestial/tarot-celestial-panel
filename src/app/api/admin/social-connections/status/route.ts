@@ -115,7 +115,7 @@ export async function GET(req: NextRequest) {
         provider: recoveredProvider,
         error: recoveryError,
       },
-      build: "social-oauth-v6-tiktok-recovery",
+      build: "social-oauth-v7-provider-insert",
     });
 
     if (recovered || recoveryError || (recovery?.provider === "instagram" && instagram) || (recovery?.provider === "tiktok" && tiktok)) {
@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
     return response;
   } catch (error: any) {
     return NextResponse.json(
-      { ok: false, error: error?.message || "SOCIAL_STATUS_ERROR", build: "social-oauth-v6-tiktok-recovery" },
+      { ok: false, error: error?.message || "SOCIAL_STATUS_ERROR", build: "social-oauth-v7-provider-insert" },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }

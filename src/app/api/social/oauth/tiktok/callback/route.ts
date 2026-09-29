@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   encodeSocialRecovery,
+  getSocialConnections,
   saveSocialConnection,
   socialRedirectUri,
   tiktokScopes,
@@ -129,12 +130,23 @@ export async function GET(req: NextRequest) {
       throw new Error("TikTok autorizó la cuenta pero no se pudo confirmar la persistencia en Supabase.");
     }
 
+    // Segunda lectura independiente antes de declarar éxito OAuth.
+    const providersAfterSave = (await getSocialConnections()).map((row: any) => String(row?.provider || "").trim().toLowerCase());
+    if (!providersAfterSave.includes("tiktok")) {
+      throw new Error(`TikTok se guardó pero no aparece al releer tc_social_connections (proveedores: ${providersAfterSave.join(", ") || "ninguno"}). Ejecuta SQL_SOCIAL_CONNECTIONS_TIKTOK.sql.`);
+    }
+
     const recoveryCookie = encodeSocialRecovery({
       ...connectionInput,
       createdAt: Date.now(),
     });
 
-    return adminRedirect(req, { social_connected: "tiktok", social_saved: "1" }, recoveryCookie);
+    return adminRedirect(req, {
+      social_connected: "tiktok",
+      social_saved: "1",
+      social_callback_build: "social-oauth-v7-provider-insert",
+      social_callback_provider: "tiktok",
+    }, recoveryCookie);
   } catch (error: any) {
     return adminRedirect(req, { social_error: String(error?.message || "Error conectando TikTok").slice(0, 220) });
   }
