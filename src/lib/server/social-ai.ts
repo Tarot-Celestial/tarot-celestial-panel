@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "crypto";
-import { promises as fs } from "fs";
+import { existsSync, promises as fs } from "fs";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
@@ -42,7 +42,21 @@ function runwayModel() {
 const execFileAsync = promisify(execFile);
 
 function ffmpegExecutable() {
-  return process.env.FFMPEG_PATH?.trim() || ffmpegStatic || "ffmpeg";
+  const explicit = process.env.FFMPEG_PATH?.trim();
+  const candidates = [
+    explicit,
+    typeof ffmpegStatic === "string" ? ffmpegStatic : "",
+    path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg"),
+    "/var/task/node_modules/ffmpeg-static/ffmpeg",
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(
+    `FFMPEG_BINARY_NOT_FOUND. El binario de ffmpeg-static no está disponible en esta función de Vercel. Rutas comprobadas: ${candidates.join(", ")}`
+  );
 }
 
 function storyMusicUrl() {
