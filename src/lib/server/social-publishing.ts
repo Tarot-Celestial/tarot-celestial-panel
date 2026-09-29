@@ -194,6 +194,105 @@ async function tiktokRequest(path: string, token: string, body?: any) {
   return json;
 }
 
+const TIKTOK_MAX_STANDARD_CHUNK_BYTES = 64 * 1024 * 1024;
+
+function tiktokVideoMime(url: string, contentType: string | null) {
+  const normalized = String(contentType || "").split(";")[0].trim().toLowerCase();
+  if (["video/mp4", "video/quicktime", "video/webm"].includes(normalized)) return normalized;
+  const pathname = (() => {
+    try { return new URL(url).pathname.toLowerCase(); } catch { return url.toLowerCase(); }
+  })();
+  if (pathname.endsWith(".mov") || pathname.endsWith(".qt")) return "video/quicktime";
+  if (pathname.endsWith(".webm")) return "video/webm";
+  return "video/mp4";
+}
+
+function tiktokChunkPlan(videoSize: number) {
+  if (!Number.isFinite(videoSize) || videoSize <= 0) throw new Error("El vídeo que se va a enviar a TikTok está vacío.");
+
+  // TikTok permite una única parte hasta 64 MB. Para vídeos mayores usamos
+  // partes de 64 MB y fusionamos el remanente en la última parte, tal como
+  // exige su Media Transfer Guide (la última puede llegar hasta 128 MB).
+  if (videoSize <= TIKTOK_MAX_STANDARD_CHUNK_BYTES) {
+    return { chunkSize: videoSize, totalChunkCount: 1 };
+  }
+
+  const chunkSize = TIKTOK_MAX_STANDARD_CHUNK_BYTES;
+  const totalChunkCount = Math.max(1, Math.floor(videoSize / chunkSize));
+  return { chunkSize, totalChunkCount };
+}
+
+async function downloadTikTokVideo(url: string) {
+  let response: Response;
+  try {
+    response = await fetch(url, { method: "GET", cache: "no-store", redirect: "follow" });
+  } catch (error: any) {
+    throw new Error(`No se pudo descargar el vídeo desde la Biblioteca para enviarlo a TikTok: ${String(error?.message || error)}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`No se pudo descargar el vídeo desde la Biblioteca para enviarlo a TikTok (HTTP ${response.status}).`);
+  }
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (!bytes.byteLength) throw new Error("El vídeo descargado desde la Biblioteca está vacío.");
+
+  return {
+    bytes,
+    mime: tiktokVideoMime(url, response.headers.get("content-type")),
+  };
+}
+
+async function putTikTokVideoChunk(params: {
+  uploadUrl: string;
+  chunk: Uint8Array;
+  mime: string;
+  firstByte: number;
+  lastByte: number;
+  totalBytes: number;
+  isLast: boolean;
+}) {
+  const { uploadUrl, chunk, mime, firstByte, lastByte, totalBytes, isLast } = params;
+  let lastMessage = "";
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      const response = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": mime,
+          "Content-Length": String(chunk.byteLength),
+          "Content-Range": `bytes ${firstByte}-${lastByte}/${totalBytes}`,
+        },
+        body: chunk,
+        cache: "no-store",
+      });
+
+      if (response.ok) {
+        // TikTok documenta 206 para partes intermedias y 201 para la última.
+        // Aceptamos cualquier 2xx para no romper si el edge de upload devuelve
+        // otro código de éxito equivalente.
+        return;
+      }
+
+      const text = (await response.text().catch(() => "")).slice(0, 500);
+      lastMessage = `HTTP ${response.status}${text ? `: ${text}` : ""}`;
+      if (response.status < 500 || attempt === 3) {
+        throw new Error(lastMessage);
+      }
+    } catch (error: any) {
+      lastMessage = String(error?.message || error || "Error desconocido");
+      if (attempt === 3 || !/HTTP 5\d\d/.test(lastMessage)) {
+        throw new Error(`TikTok no pudo recibir ${isLast ? "la última parte" : "una parte"} del vídeo (${lastMessage}).`);
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+  }
+
+  throw new Error(`TikTok no pudo recibir el vídeo (${lastMessage || "error de transferencia"}).`);
+}
+
 async function publishTikTok(row: SocialContentRow) {
   const conn = await connection("tiktok");
   const token = conn.accessToken;
@@ -226,9 +325,21 @@ async function publishTikTok(row: SocialContentRow) {
     return { externalPostId: "", externalPublishId: String(result?.data?.publish_id || ""), raw: result };
   }
 
+  // Para vídeo usamos siempre FILE_UPLOAD. Así TikTok recibe el binario
+  // directamente y no depende de que el dominio de Supabase esté verificado
+  // como URL Property para PULL_FROM_URL.
+  const downloaded = await downloadTikTokVideo(media[0]);
+  const videoSize = downloaded.bytes.byteLength;
+  const { chunkSize, totalChunkCount } = tiktokChunkPlan(videoSize);
+
   const endpoint = publishMode === "direct" ? "/v2/post/publish/video/init/" : "/v2/post/publish/inbox/video/init/";
   const body: any = {
-    source_info: { source: "PULL_FROM_URL", video_url: media[0] },
+    source_info: {
+      source: "FILE_UPLOAD",
+      video_size: videoSize,
+      chunk_size: chunkSize,
+      total_chunk_count: totalChunkCount,
+    },
   };
   if (publishMode === "direct") {
     body.post_info = {
@@ -241,8 +352,47 @@ async function publishTikTok(row: SocialContentRow) {
       is_aigc: Boolean(row.settings?.is_aigc),
     };
   }
+
   const result = await tiktokRequest(endpoint, token, body);
-  return { externalPostId: "", externalPublishId: String(result?.data?.publish_id || ""), raw: result };
+  const uploadUrl = String(result?.data?.upload_url || "");
+  const publishId = String(result?.data?.publish_id || "");
+  if (!uploadUrl) throw new Error("TikTok inició la publicación pero no devolvió upload_url para FILE_UPLOAD.");
+  if (!publishId) throw new Error("TikTok inició la publicación pero no devolvió publish_id.");
+
+  // Reutilizamos el vídeo que ya descargamos para evitar una segunda descarga
+  // desde Supabase.
+  for (let index = 0; index < totalChunkCount; index += 1) {
+    const firstByte = index * chunkSize;
+    const isLast = index === totalChunkCount - 1;
+    const endExclusive = isLast ? videoSize : Math.min(videoSize, firstByte + chunkSize);
+    const lastByte = endExclusive - 1;
+    const chunk = downloaded.bytes.subarray(firstByte, endExclusive);
+
+    await putTikTokVideoChunk({
+      uploadUrl,
+      chunk,
+      mime: downloaded.mime,
+      firstByte,
+      lastByte,
+      totalBytes: videoSize,
+      isLast,
+    });
+  }
+
+  return {
+    externalPostId: "",
+    externalPublishId: publishId,
+    raw: {
+      ...result,
+      transfer: {
+        source: "FILE_UPLOAD",
+        video_size: videoSize,
+        chunk_size: chunkSize,
+        total_chunk_count: totalChunkCount,
+        content_type: downloaded.mime,
+      },
+    },
+  };
 }
 
 export async function publishSocialContentById(id: string) {
