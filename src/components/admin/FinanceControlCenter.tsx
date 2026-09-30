@@ -152,11 +152,20 @@ function comparisonLabel(current: CurrencyTotals, previous: CurrencyTotals) {
   }).join(" · ");
 }
 
-async function authHeaders(json = true) {
+async function authHeaders(json = true): Promise<Record<string, string>> {
   const { data } = await supabaseBrowser().auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error("NO_AUTH");
-  return json ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { Authorization: `Bearer ${token}` };
+
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+
+  if (json) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  return headers;
 }
 
 async function safeJson(response: Response) {
