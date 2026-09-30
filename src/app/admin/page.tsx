@@ -23,7 +23,7 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 
 
 
-import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, Phone, ShieldCheck, Share2, Users, Trophy, Sparkles } from "lucide-react";
+import { BarChart3, BookOpen, CalendarDays, ChevronDown, CreditCard, Flame, KeyRound, LayoutDashboard, Megaphone, Phone, ReceiptText, ShieldCheck, Share2, Users, Trophy, Sparkles } from "lucide-react";
 import adminStyles from "./AdminPremium.module.css";
 import invoiceStyles from "./InvoiceEditor.module.css";
 
@@ -48,6 +48,7 @@ const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/Rend
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
 const WelldoneAdminPanel = nextDynamic(() => import("@/components/admin/WelldoneAdminPanel"), { ssr:false });
+const FinanceControlCenter = nextDynamic(() => import("@/components/admin/FinanceControlCenter"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ClientCampaignsPanel = nextDynamic(() => import("@/components/admin/ClientCampaignsPanel"), { ssr:false });
@@ -72,6 +73,7 @@ const ADMIN_NAV = [
   { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
   { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
+  { key: "finance-center", icon: ReceiptText, label: "Factura de gastos, ingresos y ganancias", kicker: "Control económico y pendientes", tone: "goldPurple" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
   { key: "equipos-marcador", icon: Flame, label: "Equipos marcador", kicker: "Fuego vs Agua", tone: "goldPurple" },
@@ -175,6 +177,7 @@ type TabKey =
   | "panel"
   | "facturas"
   | "welldone"
+  | "finance-center"
   | "editor"
   | "estadisticas"
   | "equipos-marcador"
@@ -3007,6 +3010,7 @@ function AdminPage() {
 
 
           {tab === "welldone" && <WelldoneAdminPanel />}
+          {tab === "finance-center" && <FinanceControlCenter />}
 
           {tab === "clientes" && (
             <AdminClientesTab onReviewClient={openAdminClienteReview} />
