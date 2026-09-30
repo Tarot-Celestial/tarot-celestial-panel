@@ -83,6 +83,9 @@ type Receivable = {
   counterparty?: string | null;
   currency: string;
   original_amount: number;
+  gross_amount?: number | null;
+  fee_amount?: number | null;
+  net_amount?: number | null;
   settled_amount: number;
   outstanding_amount: number;
   status: string;
@@ -133,7 +136,6 @@ function totalsText(values?: CurrencyTotals) {
   if (!entries.length) return "0,00 €";
   return entries.map(([currency, value]) => money(value, currency)).join(" · ");
 }
-function sumTotals(values?: CurrencyTotals) { return Object.values(values || {}).reduce((sum, value) => sum + Number(value || 0), 0); }
 function statusLabel(value: string) { return STATUS_LABELS[String(value || "").toLowerCase()] || value || "—"; }
 function comparisonLabel(current: CurrencyTotals, previous: CurrencyTotals) {
   const currencies = Array.from(new Set([...Object.keys(current || {}), ...Object.keys(previous || {})]));
@@ -175,6 +177,7 @@ export default function FinanceControlCenter() {
   const [movementOpen, setMovementOpen] = useState(false);
   const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
   const [receivableOpen, setReceivableOpen] = useState(false);
+  const [editingReceivable, setEditingReceivable] = useState<Receivable | null>(null);
   const [settlementTarget, setSettlementTarget] = useState<Receivable | null>(null);
 
   const load = useCallback(async (silent = false) => {
@@ -263,7 +266,7 @@ export default function FinanceControlCenter() {
       <section className={styles.kpiGrid}>
         <Kpi icon={TrendingUp} label="Ingresos del periodo" value={totalsText(totals.income)} detail={comparisonLabel(totals.income || {}, previous.income || {})} tone="positive" />
         <Kpi icon={TrendingDown} label="Gastos del periodo" value={totalsText(totals.expense)} detail={comparisonLabel(totals.expense || {}, previous.expense || {})} tone="negative" />
-        <Kpi icon={CircleDollarSign} label="Resultado del periodo" value={totalsText(totals.result)} detail="Ingresos − gastos · por moneda" tone={sumTotals(totals.result) >= 0 ? "gold" : "negative"} />
+        <Kpi icon={CircleDollarSign} label="Resultado del periodo" value={totalsText(totals.result)} detail={`Ingresos − gastos · ${comparisonLabel(totals.result || {}, previous.result || {})}`} tone="gold" />
         <Kpi icon={CheckCircle2} label="Cobros confirmados" value={totalsText(totals.confirmedCollections)} detail="Cobros reales del Diario; no equivale a saldo bancario" tone="cyan" />
         <Kpi icon={ArrowDownToLine} label="Recepciones registradas" value={totalsText(totals.registeredReceipts)} detail="Liquidaciones/recepciones registradas en este periodo" tone="positive" />
         <Kpi icon={ArrowUpRight} label="Pagos realizados" value={totalsText(totals.registeredPayments)} detail="Pagos manuales y liquidaciones de gastos" tone="negative" />
@@ -281,7 +284,7 @@ export default function FinanceControlCenter() {
       </nav>
 
       {section === "pending" ? (
-        <PendingSection rows={receivables} settlements={Array.isArray(data?.settlements) ? data.settlements : []} onNew={() => setReceivableOpen(true)} onSettle={setSettlementTarget} onChanged={() => void load(true)} />
+        <PendingSection rows={receivables} settlements={Array.isArray(data?.settlements) ? data.settlements : []} onNew={() => { setEditingReceivable(null); setReceivableOpen(true); }} onEdit={(row) => { setEditingReceivable(row); setReceivableOpen(true); }} onSettle={setSettlementTarget} onChanged={() => void load(true)} />
       ) : section === "settings" ? (
         <OptionsSection options={options} onChanged={() => void load(true)} />
       ) : (
@@ -300,7 +303,7 @@ export default function FinanceControlCenter() {
       )}
 
       {movementOpen ? <MovementModal movement={editingMovement} options={options} onClose={() => setMovementOpen(false)} onSaved={() => { setMovementOpen(false); void load(true); }} /> : null}
-      {receivableOpen ? <ReceivableModal options={options} onClose={() => setReceivableOpen(false)} onSaved={() => { setReceivableOpen(false); void load(true); }} /> : null}
+      {receivableOpen ? <ReceivableModal target={editingReceivable} options={options} onClose={() => { setReceivableOpen(false); setEditingReceivable(null); }} onSaved={() => { setReceivableOpen(false); setEditingReceivable(null); void load(true); }} /> : null}
       {settlementTarget ? <SettlementModal target={settlementTarget} accounts={Array.from(new Set([...optionLabels("destination"), ...optionLabels("origin")]))} onClose={() => setSettlementTarget(null)} onSaved={() => { setSettlementTarget(null); void load(true); }} /> : null}
     </div>
   );
@@ -340,7 +343,7 @@ function MovementRow({ row, onEdit, onChanged }: { row: FinanceMovement; onEdit:
   </tr>;
 }
 
-function PendingSection({ rows, settlements, onNew, onSettle, onChanged }: { rows: Receivable[]; settlements: any[]; onNew: () => void; onSettle: (row: Receivable) => void; onChanged: () => void }) {
+function PendingSection({ rows, settlements, onNew, onEdit, onSettle, onChanged }: { rows: Receivable[]; settlements: any[]; onNew: () => void; onEdit: (row: Receivable) => void; onSettle: (row: Receivable) => void; onChanged: () => void }) {
   const [historyTarget, setHistoryTarget] = useState<Receivable | null>(null);
   const archive = async (row: Receivable) => {
     if (!window.confirm("¿Archivar este registro? No se borrará su histórico de liquidaciones.")) return;
@@ -350,7 +353,7 @@ function PendingSection({ rows, settlements, onNew, onSettle, onChanged }: { row
   };
   return <><section className={styles.tableCard}><div className={styles.tableHead}><div><span className={styles.eyebrow}>PENDIENTES Y RETENIDOS</span><h3>Dinero que todavía no está disponible o no se ha pagado</h3><p>Una retención de Mollie/Stripe no es una deuda del cliente y su liberación no vuelve a sumar ingresos.</p></div><button className={styles.primaryButton} onClick={onNew}><Plus size={16} /> Registrar pendiente / retenido</button></div>
     <div className={styles.tableWrap}><table><thead><tr><th>Tipo</th><th>Concepto</th><th>Quién</th><th>Negocio</th><th>Previsto</th><th>Original</th><th>Recibido/Pagado</th><th>Pendiente</th><th>Estado</th><th></th></tr></thead><tbody>
-      {rows.map((row) => <tr key={row.id}><td><span className={styles.holdBadge} data-kind={row.kind}>{RECEIVABLE_LABELS[row.kind]}</span></td><td><b>{row.concept}</b><small className={styles.cellSub}>{row.note || row.description || ""}</small></td><td>{row.counterparty || row.provider || "—"}</td><td>{row.business}</td><td>{row.expected_date || (row.expected_month ? `${row.expected_month} · mes` : "Sin fecha")}</td><td>{money(row.original_amount, row.currency)}</td><td>{money(row.settled_amount, row.currency)}</td><td className={styles.amount}>{money(row.outstanding_amount, row.currency)}</td><td><span className={styles.statusBadge} data-status={row.status}>{statusLabel(row.status)}</span></td><td><div className={styles.rowActions}>{row.outstanding_amount > 0 && !["cancelled", "settled"].includes(row.status) ? <button className={styles.textAction} onClick={() => onSettle(row)}>{row.kind === "payable" ? "Registrar pago" : "Registrar recepción"}</button> : null}<button className={styles.textAction} onClick={() => setHistoryTarget(row)}>Historial</button><button onClick={() => void archive(row)} title="Archivar"><Archive size={14} /></button></div></td></tr>)}
+      {rows.map((row) => <tr key={row.id}><td><span className={styles.holdBadge} data-kind={row.kind}>{RECEIVABLE_LABELS[row.kind]}</span></td><td><b>{row.concept}</b><small className={styles.cellSub}>{row.note || row.description || ""}{row.gross_amount != null || row.fee_amount != null || row.net_amount != null ? `${row.note || row.description ? " · " : ""}Bruto ${money(Number(row.gross_amount ?? row.original_amount), row.currency)} · Comisiones ${money(Number(row.fee_amount || 0), row.currency)} · Neto ${money(Number(row.net_amount ?? row.original_amount), row.currency)}` : ""}</small></td><td>{row.counterparty || row.provider || "—"}</td><td>{row.business}</td><td>{row.expected_date || (row.expected_month ? `${row.expected_month} · mes` : "Sin fecha")}</td><td>{money(row.original_amount, row.currency)}</td><td>{money(row.settled_amount, row.currency)}</td><td className={styles.amount}>{money(row.outstanding_amount, row.currency)}</td><td><span className={styles.statusBadge} data-status={row.status}>{statusLabel(row.status)}</span></td><td><div className={styles.rowActions}>{row.outstanding_amount > 0 && !["cancelled", "settled"].includes(row.status) ? <button className={styles.textAction} onClick={() => onSettle(row)}>{row.kind === "payable" ? "Registrar pago" : "Registrar recepción"}</button> : null}<button onClick={() => onEdit(row)} title="Editar"><Pencil size={14} /></button><button className={styles.textAction} onClick={() => setHistoryTarget(row)}>Historial</button><button onClick={() => void archive(row)} title="Archivar"><Archive size={14} /></button></div></td></tr>)}
       {!rows.length ? <tr><td colSpan={10} className={styles.empty}>No hay pendientes o retenciones con los filtros actuales.</td></tr> : null}
     </tbody></table></div></section>{historyTarget ? <Modal title="Historial de liquidaciones" subtitle={`${historyTarget.concept} · ${RECEIVABLE_LABELS[historyTarget.kind]}`} onClose={() => setHistoryTarget(null)}><div className={styles.historyList}>{settlements.filter((item) => String(item.receivable_id) === historyTarget.id).map((item) => <div key={item.id} className={styles.historyRow}><div><b>{item.settled_on}</b><small>{item.destination_account || "Cuenta no indicada"}{item.note ? ` · ${item.note}` : ""}</small></div><strong>{money(Number(item.amount || 0), item.currency || historyTarget.currency)}</strong></div>)}{!settlements.some((item) => String(item.receivable_id) === historyTarget.id) ? <div className={styles.empty}>Todavía no hay recepciones o pagos registrados en el periodo seleccionado.</div> : null}</div></Modal> : null}</>;
 }
@@ -370,11 +373,32 @@ function MovementModal({ movement, options, onClose, onSaved }: { movement: Fina
   </Modal>;
 }
 
-function ReceivableModal({ options, onClose, onSaved }: { options: AccountingOption[]; onClose: () => void; onSaved: () => void }) {
+function ReceivableModal({ target, options, onClose, onSaved }: { target: Receivable | null; options: AccountingOption[]; onClose: () => void; onSaved: () => void }) {
   const labels=(c:OptionCategory)=>options.filter(i=>i.category===c&&i.is_active).sort((a,b)=>a.sort_order-b.sort_order).map(i=>i.label);
-  const [form,setForm]=useState<any>({kind:"platform_hold",business:"Celestial",concept:"Fondos retenidos",category:"Venta / consulta",payment_method:"Mollie",provider:"Mollie",counterparty:"Mollie",currency:"EUR",original_amount:"",operation_date:todayKey(),expected_date:"",expected_month:"",source_payment_id:"",reference:"",note:""}); const [saving,setSaving]=useState(false); const [error,setError]=useState(""); const set=(k:string,v:any)=>setForm((c:any)=>({...c,[k]:v}));
-  const save=async()=>{setSaving(true);setError("");try{const headers=await authHeaders();const response=await fetch("/api/admin/finance",{method:"POST",headers,body:JSON.stringify({action:"receivable",...form,original_amount:Number(String(form.original_amount).replace(",",".")),idempotency_key:crypto.randomUUID()})});const json=await safeJson(response);if(!response.ok||!json.ok)throw new Error(json.error||"No se pudo guardar");onSaved();}catch(e:any){setError(e.message)}finally{setSaving(false)}};
-  return <Modal title="Registrar pendiente o retenido" subtitle="No crea un segundo ingreso. Sirve para controlar disponibilidad, deudas y obligaciones." onClose={onClose}><div className={styles.formGrid}><Field label="Naturaleza"><select value={form.kind} onChange={(e)=>{const kind=e.target.value;set("kind",kind);set("concept",kind==="platform_hold"?"Fondos retenidos":kind==="payable"?"Gasto pendiente":"Cobro pendiente de cliente")}}><option value="platform_hold">Retenido por plataforma</option><option value="client_receivable">Cobro pendiente del cliente</option><option value="payable">Gasto pendiente de pagar</option></select></Field><Field label="Negocio"><DatalistInput value={form.business} values={labels("business")} onChange={(v)=>set("business",v)}/></Field><Field label="Concepto"><input value={form.concept} onChange={(e)=>set("concept",e.target.value)}/></Field><Field label="Categoría"><DatalistInput value={form.category} values={labels("type")} onChange={(v)=>set("category",v)}/></Field><Field label="Método / plataforma"><DatalistInput value={form.payment_method} values={labels("payment_method")} onChange={(v)=>{set("payment_method",v);set("provider",v);if(form.kind==="platform_hold")set("counterparty",v)}}/></Field><Field label="Quién debe entregar / recibir"><input value={form.counterparty} onChange={(e)=>set("counterparty",e.target.value)}/></Field><Field label="Importe original"><input inputMode="decimal" value={form.original_amount} onChange={(e)=>set("original_amount",e.target.value)} placeholder="0,00"/></Field><Field label="Moneda"><select value={form.currency} onChange={(e)=>set("currency",e.target.value)}><option>EUR</option><option>USD</option><option>GBP</option></select></Field><Field label="Fecha operación"><input type="date" value={form.operation_date} onChange={(e)=>set("operation_date",e.target.value)}/></Field><Field label="Fecha prevista exacta"><input type="date" value={form.expected_date} onChange={(e)=>set("expected_date",e.target.value)}/></Field><Field label="O solo mes previsto"><input type="month" value={form.expected_month} onChange={(e)=>set("expected_month",e.target.value)}/></Field><Field label="ID pago Diario (opcional)"><input value={form.source_payment_id} onChange={(e)=>set("source_payment_id",e.target.value)} placeholder="Solo si quieres vincularlo a una venta concreta"/></Field><Field label="Referencia"><input value={form.reference} onChange={(e)=>set("reference",e.target.value)}/></Field></div><Field label="Observaciones"><textarea rows={3} value={form.note} onChange={(e)=>set("note",e.target.value)}/></Field>{error?<div className={styles.errorBox}>{error}</div>:null}<div className={styles.modalActions}><button className={styles.secondaryButton} onClick={onClose}>Cancelar</button><button className={styles.primaryButton} onClick={()=>void save()} disabled={saving}>{saving?"Guardando…":"Registrar"}</button></div></Modal>;
+  const [form,setForm]=useState<any>({
+    kind:target?.kind || "platform_hold",
+    business:target?.business || "Celestial",
+    concept:target?.concept || "Fondos retenidos",
+    category:target?.category || "Venta / consulta",
+    payment_method:target?.payment_method || "Mollie",
+    provider:target?.provider || target?.payment_method || "Mollie",
+    counterparty:target?.counterparty || target?.provider || "Mollie",
+    currency:target?.currency || "EUR",
+    original_amount:target?.original_amount ?? "",
+    gross_amount:target?.gross_amount ?? "",
+    fee_amount:target?.fee_amount ?? "",
+    net_amount:target?.net_amount ?? "",
+    operation_date:target?.operation_date || todayKey(),
+    expected_date:target?.expected_date || "",
+    expected_month:target?.expected_month || "",
+    source_payment_id:target?.source_payment_id || "",
+    reference:target?.reference || "",
+    note:target?.note || "",
+  });
+  const [saving,setSaving]=useState(false); const [error,setError]=useState(""); const set=(k:string,v:any)=>setForm((c:any)=>({...c,[k]:v}));
+  const numberOrUndefined=(value:any)=>String(value ?? "").trim()===""?undefined:Number(String(value).replace(",","."));
+  const save=async()=>{setSaving(true);setError("");try{const headers=await authHeaders();const payload={...form,original_amount:Number(String(form.original_amount).replace(",",".")),gross_amount:numberOrUndefined(form.gross_amount),fee_amount:numberOrUndefined(form.fee_amount),net_amount:numberOrUndefined(form.net_amount)};const response=await fetch("/api/admin/finance",{method:target?"PATCH":"POST",headers,body:JSON.stringify(target?{entity:"receivable",id:target.id,...payload}:{action:"receivable",...payload,idempotency_key:crypto.randomUUID()})});const json=await safeJson(response);if(!response.ok||!json.ok)throw new Error(json.error||"No se pudo guardar");onSaved();}catch(e:any){setError(e.message)}finally{setSaving(false)}};
+  return <Modal title={target?"Editar pendiente o retenido":"Registrar pendiente o retenido"} subtitle="No crea un segundo ingreso. Sirve para controlar disponibilidad, deudas y obligaciones." onClose={onClose}><div className={styles.formGrid}><Field label="Naturaleza"><select value={form.kind} disabled={!!target} onChange={(e)=>{const kind=e.target.value;set("kind",kind);set("concept",kind==="platform_hold"?"Fondos retenidos":kind==="payable"?"Gasto pendiente":"Cobro pendiente de cliente")}}><option value="platform_hold">Retenido por plataforma</option><option value="client_receivable">Cobro pendiente del cliente</option><option value="payable">Gasto pendiente de pagar</option></select></Field><Field label="Negocio"><DatalistInput value={form.business} values={labels("business")} onChange={(v)=>set("business",v)}/></Field><Field label="Concepto"><input value={form.concept} onChange={(e)=>set("concept",e.target.value)}/></Field><Field label="Categoría"><DatalistInput value={form.category} values={labels("type")} onChange={(v)=>set("category",v)}/></Field><Field label="Método / plataforma"><DatalistInput value={form.payment_method} values={labels("payment_method")} onChange={(v)=>{set("payment_method",v);set("provider",v);if(form.kind==="platform_hold")set("counterparty",v)}}/></Field><Field label="Quién debe entregar / recibir"><input value={form.counterparty} onChange={(e)=>set("counterparty",e.target.value)}/></Field><Field label="Importe pendiente original"><input inputMode="decimal" value={form.original_amount} onChange={(e)=>set("original_amount",e.target.value)} placeholder="0,00"/></Field><Field label="Moneda"><select value={form.currency} onChange={(e)=>set("currency",e.target.value)}><option>EUR</option><option>USD</option><option>GBP</option></select></Field><Field label="Bruto (opcional)"><input inputMode="decimal" value={form.gross_amount} onChange={(e)=>set("gross_amount",e.target.value)} placeholder="Antes de comisiones"/></Field><Field label="Comisiones (opcional)"><input inputMode="decimal" value={form.fee_amount} onChange={(e)=>set("fee_amount",e.target.value)} placeholder="0,00"/></Field><Field label="Neto previsto (opcional)"><input inputMode="decimal" value={form.net_amount} onChange={(e)=>set("net_amount",e.target.value)} placeholder="Después de comisiones"/></Field><Field label="Fecha operación"><input type="date" value={form.operation_date} onChange={(e)=>set("operation_date",e.target.value)}/></Field><Field label="Fecha prevista exacta"><input type="date" value={form.expected_date} onChange={(e)=>set("expected_date",e.target.value)}/></Field><Field label="O solo mes previsto"><input type="month" value={form.expected_month} onChange={(e)=>set("expected_month",e.target.value)}/></Field><Field label="ID pago Diario (opcional)"><input value={form.source_payment_id} disabled={!!target} onChange={(e)=>set("source_payment_id",e.target.value)} placeholder="Vincula la retención a una venta concreta"/></Field><Field label="Referencia"><input value={form.reference} onChange={(e)=>set("reference",e.target.value)}/></Field></div><Field label="Observaciones"><textarea rows={3} value={form.note} onChange={(e)=>set("note",e.target.value)}/></Field>{error?<div className={styles.errorBox}>{error}</div>:null}<div className={styles.modalActions}><button className={styles.secondaryButton} onClick={onClose}>Cancelar</button><button className={styles.primaryButton} onClick={()=>void save()} disabled={saving}>{saving?"Guardando…":target?"Guardar cambios":"Registrar"}</button></div></Modal>;
 }
 
 function SettlementModal({ target, accounts, onClose, onSaved }: { target: Receivable; accounts: string[]; onClose: () => void; onSaved: () => void }) {

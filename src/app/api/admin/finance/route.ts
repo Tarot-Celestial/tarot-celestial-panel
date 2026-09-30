@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const ENTRY_SELECT = "id,kind,concept,amount,month_key,note,created_at,entry_date,movement,business,origin,destination,payment_method,movement_type,operation_mode,entry_type,currency,status,due_date,due_month,reference,counterparty,gross_amount,fee_amount,net_amount,settled_amount,source_system,source_id,is_transfer,document_path,archived_at,created_by,updated_by,updated_at,idempotency_key";
-const RECEIVABLE_SELECT = "id,kind,business,concept,description,category,payment_method,provider,counterparty,currency,original_amount,settled_amount,status,operation_date,expected_date,expected_month,source_payment_id,source_entry_id,reference,note,created_at,updated_at,created_by,updated_by,archived_at";
+const RECEIVABLE_SELECT = "id,kind,business,concept,description,category,payment_method,provider,counterparty,currency,original_amount,gross_amount,fee_amount,net_amount,settled_amount,status,operation_date,expected_date,expected_month,source_payment_id,source_entry_id,reference,note,created_at,updated_at,created_by,updated_by,archived_at";
 
 function normalizeEntryType(row: any): "income" | "expense" | "transfer" {
   const explicit = String(row?.entry_type || "").toLowerCase();
@@ -169,6 +169,7 @@ export async function GET(req: Request) {
 
     const receivables = (receivablesRes.data || []).map(receivableRow).filter((row) => {
       if (filters.business !== "all" && String(row.business || "").toLowerCase() !== filters.business.toLowerCase()) return false;
+      if (filters.category !== "all" && String(row.category || "").toLowerCase() !== filters.category.toLowerCase()) return false;
       if (filters.method !== "all" && String(row.payment_method || row.provider || "").toLowerCase() !== filters.method.toLowerCase()) return false;
       if (filters.currency !== "all" && String(row.currency || "").toLowerCase() !== filters.currency.toLowerCase()) return false;
       if (filters.status !== "all" && String(row.status || "").toLowerCase() !== filters.status.toLowerCase()) return false;
@@ -244,6 +245,20 @@ export async function POST(req: Request) {
       const expectedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.expected_date || "")) ? String(body.expected_date) : null;
       const expectedMonth = /^\d{4}-\d{2}$/.test(String(body.expected_month || "")) ? String(body.expected_month) : null;
       const idempotencyKey = String(body.idempotency_key || "").trim() || null;
+      const sourcePaymentId = String(body.source_payment_id || "").trim() || null;
+      if (sourcePaymentId) {
+        const [{ data: sourcePayment, error: sourcePaymentError }, { data: existingLink, error: existingLinkError }] = await Promise.all([
+          gate.admin.from("crm_cliente_pagos").select("id").eq("id", sourcePaymentId).maybeSingle(),
+          gate.admin.from("accounting_receivables").select("id").eq("source_payment_id", sourcePaymentId).is("archived_at", null).limit(1).maybeSingle(),
+        ]);
+        if (sourcePaymentError) throw sourcePaymentError;
+        if (existingLinkError) throw existingLinkError;
+        if (!sourcePayment) return NextResponse.json({ ok: false, error: "SOURCE_PAYMENT_NOT_FOUND" }, { status: 404 });
+        if (existingLink) return NextResponse.json({ ok: false, error: "SOURCE_PAYMENT_ALREADY_LINKED" }, { status: 409 });
+      }
+      const feeAmount = Math.max(0, roundFinanceMoney(body.fee_amount || 0));
+      const grossAmount = body.gross_amount === undefined || body.gross_amount === null || body.gross_amount === "" ? null : Math.max(0, roundFinanceMoney(body.gross_amount));
+      const netAmount = body.net_amount === undefined || body.net_amount === null || body.net_amount === "" ? null : Math.max(0, roundFinanceMoney(body.net_amount));
       const payload = {
         kind,
         business: String(body.business || "Celestial").trim() || "Celestial",
@@ -255,12 +270,15 @@ export async function POST(req: Request) {
         counterparty: String(body.counterparty || "").trim() || null,
         currency,
         original_amount: amount,
+        gross_amount: grossAmount,
+        fee_amount: feeAmount,
+        net_amount: netAmount,
         settled_amount: 0,
         status: "pending",
         operation_date: cleanFinanceDate(body.operation_date, madridTodayKey()),
         expected_date: expectedDate,
         expected_month: expectedDate ? expectedDate.slice(0, 7) : expectedMonth,
-        source_payment_id: String(body.source_payment_id || "").trim() || null,
+        source_payment_id: sourcePaymentId,
         source_entry_id: String(body.source_entry_id || "").trim() || null,
         reference: String(body.reference || "").trim() || null,
         note: String(body.note || "").trim() || null,
@@ -341,7 +359,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, movement: manualRow(data) });
   } catch (error: any) {
     const message = String(error?.message || "FINANCE_CREATE_ERROR");
-    const status = ["INVALID_RECEIVABLE_KIND", "AMOUNT_REQUIRED", "INVALID_ENTRY_TYPE", "INVALID_STATUS"].includes(message) ? 400 : 500;
+    const status = ["INVALID_RECEIVABLE_KIND", "AMOUNT_REQUIRED", "INVALID_ENTRY_TYPE", "INVALID_STATUS"].includes(message) ? 400 : message === "SOURCE_PAYMENT_NOT_FOUND" ? 404 : ["SOURCE_PAYMENT_ALREADY_LINKED"].includes(message) ? 409 : 500;
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
@@ -365,6 +383,18 @@ export async function PATCH(req: Request) {
       }
       if (body.expected_date !== undefined) update.expected_date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.expected_date || "")) ? String(body.expected_date) : null;
       if (body.expected_month !== undefined) update.expected_month = /^\d{4}-\d{2}$/.test(String(body.expected_month || "")) ? String(body.expected_month) : null;
+      if (body.operation_date !== undefined) update.operation_date = cleanFinanceDate(body.operation_date, String(before.operation_date || madridTodayKey()));
+      if (body.currency !== undefined) update.currency = cleanFinanceCurrency(body.currency);
+      if (body.original_amount !== undefined) {
+        const originalAmount = roundFinanceMoney(body.original_amount);
+        if (!(originalAmount > 0)) throw new Error("AMOUNT_REQUIRED");
+        if (originalAmount + 0.0001 < Number(before.settled_amount || 0)) throw new Error("AMOUNT_BELOW_SETTLED");
+        update.original_amount = originalAmount;
+        update.status = Number(before.settled_amount || 0) >= originalAmount ? "settled" : Number(before.settled_amount || 0) > 0 ? "partial" : "pending";
+      }
+      if (body.gross_amount !== undefined) update.gross_amount = body.gross_amount === null || body.gross_amount === "" ? null : Math.max(0, roundFinanceMoney(body.gross_amount));
+      if (body.fee_amount !== undefined) update.fee_amount = body.fee_amount === null || body.fee_amount === "" ? 0 : Math.max(0, roundFinanceMoney(body.fee_amount));
+      if (body.net_amount !== undefined) update.net_amount = body.net_amount === null || body.net_amount === "" ? null : Math.max(0, roundFinanceMoney(body.net_amount));
       if (body.archive === true) update.archived_at = new Date().toISOString();
       if (body.status && ["pending", "partial", "settled", "cancelled"].includes(String(body.status))) update.status = String(body.status);
       const { data, error } = await gate.admin.from("accounting_receivables").update(update).eq("id", id).select(RECEIVABLE_SELECT).single();
@@ -379,22 +409,35 @@ export async function PATCH(req: Request) {
     if (!["manual", "legacy_manual"].includes(String(before.source_system || "manual"))) return NextResponse.json({ ok: false, error: "READ_ONLY_SOURCE" }, { status: 409 });
     const update: any = { updated_at: new Date().toISOString(), updated_by: String(gate.me.id || "") || null };
     if (body.archive === true) update.archived_at = new Date().toISOString();
-    if (body.status && ["settled", "pending", "partial", "cancelled", "refunded"].includes(String(body.status))) update.status = String(body.status);
-    for (const key of ["business", "origin", "destination", "payment_method", "reference", "counterparty", "note"] as const) {
+    const requestedStatus = body.status && ["settled", "pending", "partial", "cancelled", "refunded"].includes(String(body.status)) ? String(body.status) : null;
+    if (requestedStatus) update.status = requestedStatus;
+    for (const key of ["business", "origin", "destination", "payment_method", "reference", "counterparty", "note", "document_path"] as const) {
       if (body[key] !== undefined) update[key] = String(body[key] || "").trim() || null;
     }
     if (body.category !== undefined) { update.concept = String(body.category || "Otros").trim() || "Otros"; update.movement_type = update.concept; }
-    if (body.amount !== undefined) { const amount = roundFinanceMoney(body.amount); if (!(amount > 0)) throw new Error("AMOUNT_REQUIRED"); update.amount = amount; }
+    const nextAmount = body.amount !== undefined ? roundFinanceMoney(body.amount) : roundFinanceMoney(before.amount);
+    if (!(nextAmount > 0)) throw new Error("AMOUNT_REQUIRED");
+    if (body.amount !== undefined) update.amount = nextAmount;
     if (body.entry_date !== undefined) { const date = cleanFinanceDate(body.entry_date, String(before.entry_date || madridTodayKey())); update.entry_date = date; update.month_key = date.slice(0, 7); }
     if (body.currency !== undefined) update.currency = cleanFinanceCurrency(body.currency);
     if (body.due_date !== undefined) update.due_date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.due_date || "")) ? String(body.due_date) : null;
     if (body.due_month !== undefined) update.due_month = /^\d{4}-\d{2}$/.test(String(body.due_month || "")) ? String(body.due_month) : null;
-    if (body.settled_amount !== undefined) update.settled_amount = Math.max(0, roundFinanceMoney(body.settled_amount));
+    if (body.gross_amount !== undefined) update.gross_amount = body.gross_amount === null || body.gross_amount === "" ? nextAmount : Math.max(0, roundFinanceMoney(body.gross_amount));
+    if (body.fee_amount !== undefined) update.fee_amount = body.fee_amount === null || body.fee_amount === "" ? 0 : Math.max(0, roundFinanceMoney(body.fee_amount));
+    if (body.net_amount !== undefined) update.net_amount = body.net_amount === null || body.net_amount === "" ? nextAmount : Math.max(0, roundFinanceMoney(body.net_amount));
+    let nextSettled = body.settled_amount !== undefined ? Math.max(0, roundFinanceMoney(body.settled_amount)) : roundFinanceMoney(before.settled_amount || 0);
+    if (requestedStatus === "settled") nextSettled = nextAmount;
+    if (requestedStatus === "pending") nextSettled = 0;
+    if (nextSettled > nextAmount + 0.005) throw new Error("SETTLED_EXCEEDS_AMOUNT");
+    update.settled_amount = nextSettled;
+    if (!requestedStatus && nextSettled > 0 && nextSettled < nextAmount) update.status = "partial";
     const { data, error } = await gate.admin.from("accounting_entries").update(update).eq("id", id).select(ENTRY_SELECT).single();
     if (error) throw error;
     await audit(gate.admin, gate.me, "movement", id, body.archive ? "archive" : "update", before, data);
     return NextResponse.json({ ok: true, movement: manualRow(data) });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "FINANCE_UPDATE_ERROR" }, { status: 500 });
+    const message = String(error?.message || "FINANCE_UPDATE_ERROR");
+    const status = ["AMOUNT_REQUIRED"].includes(message) ? 400 : ["AMOUNT_BELOW_SETTLED", "SETTLED_EXCEEDS_AMOUNT"].includes(message) ? 409 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
