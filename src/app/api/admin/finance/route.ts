@@ -433,3 +433,43 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
+export async function DELETE(req: Request) {
+  try {
+    const gate = await requireAdmin(req);
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: 403 });
+
+    const body = await req.json().catch(() => ({}));
+    const entity = String(body.entity || "movement");
+    const id = String(body.id || "").trim();
+    if (!id) return NextResponse.json({ ok: false, error: "ID_REQUIRED" }, { status: 400 });
+
+    if (entity !== "movement") {
+      return NextResponse.json({ ok: false, error: "DELETE_NOT_ALLOWED_FOR_ENTITY" }, { status: 400 });
+    }
+
+    const { data: before, error: beforeError } = await gate.admin
+      .from("accounting_entries")
+      .select(ENTRY_SELECT)
+      .eq("id", id)
+      .maybeSingle();
+    if (beforeError) throw beforeError;
+    if (!before) return NextResponse.json({ ok: false, error: "NOT_FOUND" }, { status: 404 });
+
+    if (!['manual', 'legacy_manual'].includes(String(before.source_system || 'manual'))) {
+      return NextResponse.json({ ok: false, error: "READ_ONLY_SOURCE" }, { status: 409 });
+    }
+
+    // Guardar trazabilidad antes del borrado físico.
+    await audit(gate.admin, gate.me, "movement", id, "delete", before, null);
+
+    const { error } = await gate.admin.from("accounting_entries").delete().eq("id", id);
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, deleted_id: id });
+  } catch (error: any) {
+    const message = String(error?.message || "FINANCE_DELETE_ERROR");
+    const status = message === "NOT_FOUND" ? 404 : message === "READ_ONLY_SOURCE" ? 409 : 500;
+    return NextResponse.json({ ok: false, error: message }, { status });
+  }
+}
+

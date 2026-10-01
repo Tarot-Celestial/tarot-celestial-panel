@@ -28,6 +28,7 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Trash2,
   Upload,
   WalletCards,
   X,
@@ -581,18 +582,27 @@ async function openDocument(path: string) {
 }
 
 function MovementRow({ row, onEdit, onChanged }: { row: FinanceMovement; onEdit: () => void; onChanged: () => void }) {
-  const archive = async () => {
-    if (!window.confirm("¿Archivar este movimiento? Se conservará en el histórico y dejará de entrar en los indicadores.")) return;
+  const remove = async () => {
+    const accepted = window.confirm(
+      `¿Eliminar definitivamente este movimiento?\n\n${row.category || row.concept} · ${money(row.amount, row.currency)}\n\nEsta opción está pensada para registros de prueba o creados por error. No se puede deshacer.`
+    );
+    if (!accepted) return;
     const headers = await authHeaders();
-    const response = await fetch("/api/admin/finance", { method: "PATCH", headers, body: JSON.stringify({ entity: "movement", id: row.source_id, archive: true }) });
-    const json = await safeJson(response); if (!response.ok || !json.ok) return window.alert(json.error || "No se pudo archivar"); onChanged();
+    const response = await fetch("/api/admin/finance", {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ entity: "movement", id: row.source_id }),
+    });
+    const json = await safeJson(response);
+    if (!response.ok || !json.ok) return window.alert(json.error || "No se pudo eliminar el movimiento");
+    onChanged();
   };
   return <tr>
     <td>{row.operation_date || "—"}</td><td><span className={`${styles.sourceBadge} ${styles.sourceManual}`}>Este apartado</span></td>
     <td><span className={styles.typeBadge} data-type={row.entry_type}>{row.entry_type === "income" ? "Ingreso" : row.entry_type === "expense" ? "Gasto" : "Traspaso"}</span></td>
     <td><b>{row.category || row.concept}</b><small className={styles.cellSub}>{row.description || row.reference || ""}</small></td><td>{row.business || "—"}</td><td>{row.payment_method || "—"}</td>
     <td><span className={styles.statusBadge} data-status={row.status}>{statusLabel(row.status)}</span></td><td className={styles.amount} data-type={row.entry_type}>{row.entry_type === "expense" ? "−" : row.entry_type === "income" ? "+" : ""}{money(row.amount, row.currency)}</td>
-    <td><div className={styles.rowActions}>{row.document_path ? <button onClick={() => void openDocument(row.document_path!)} title="Abrir justificante"><FileText size={14} /></button> : null}{row.read_only ? <span className={styles.readOnly}>Fuente real</span> : <><button onClick={onEdit} title="Editar"><Pencil size={14} /></button><button onClick={() => void archive()} title="Archivar"><Archive size={14} /></button></>}</div></td>
+    <td><div className={styles.rowActions}>{row.document_path ? <button onClick={() => void openDocument(row.document_path!)} title="Abrir justificante"><FileText size={14} /></button> : null}{row.read_only ? <span className={styles.readOnly}>Fuente real</span> : <><button onClick={onEdit} title="Editar"><Pencil size={14} /></button><button onClick={() => void remove()} title="Eliminar definitivamente"><Trash2 size={14} /></button></>}</div></td>
   </tr>;
 }
 
