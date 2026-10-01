@@ -660,3 +660,91 @@
 @media(max-width:1180px){.levels{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:860px){.levels{grid-template-columns:1fr}.wheelBox[data-level="4"]{width:min(100%,560px)}}
 @media(max-width:620px){.wheelBox[data-level="4"]{width:min(100%,500px)}.wheelBox[data-level="4"] .wheel{inset:10%}.wheelBox[data-level="4"] .pointer{top:5%;width:38px;height:46px}}
+
+/* Halloween 2026 · ruleta estacional, cálida y no terrorífica */
+.wrap{
+  --gold:#f5b45f;
+  --gold-strong:#ffd07b;
+  --gold-deep:#d4792d;
+  --violet:#8a5a98;
+  --violet-soft:#b47cc0;
+  --panel:#2a1b30;
+  --panel-2:#332039;
+  border-color:rgba(245,159,66,.42);
+  background:
+    radial-gradient(circle at 88% 6%,rgba(255,180,78,.20),transparent 27%),
+    radial-gradient(circle at 10% 88%,rgba(143,77,153,.16),transparent 32%),
+    linear-gradient(145deg,#3f263c 0%,#2a1c31 48%,#43263d 100%);
+  box-shadow:0 30px 70px rgba(0,0,0,.30),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.wrap::before{
+  background:
+    radial-gradient(circle at 15% 22%,rgba(255,228,180,.10) 0 1px,transparent 2px),
+    radial-gradient(circle at 72% 18%,rgba(255,228,180,.10) 0 1px,transparent 2px),
+    radial-gradient(circle at 88% 64%,rgba(255,228,180,.08) 0 1px,transparent 2px);
+}
+.wrap::after{
+  content:"🎃   🎁   🍂";
+  position:absolute;
+  right:24px;
+  top:18px;
+  z-index:0;
+  font-size:clamp(25px,3vw,46px);
+  letter-spacing:8px;
+  opacity:.18;
+  pointer-events:none;
+  filter:drop-shadow(0 10px 14px rgba(0,0,0,.24));
+}
+.hero{
+  border-color:rgba(255,180,87,.22);
+  background:
+    radial-gradient(circle at 95% 0,rgba(248,154,57,.14),transparent 31%),
+    linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.022));
+}
+.hero em{color:#ffd18a}
+.hero p,.controls p{color:rgba(255,241,222,.72)}
+.steps b,.levelIcon,.heroBalance{
+  border-color:rgba(255,184,90,.28);
+  background:rgba(245,144,44,.08);
+}
+.level{
+  border-color:rgba(211,129,154,.38);
+  background:linear-gradient(145deg,#4a2b48,#2d1e35);
+}
+.level::before{
+  content:"🎁";
+  position:absolute;
+  right:12px;
+  bottom:8px;
+  font-size:30px;
+  opacity:.13;
+}
+.level[data-selected=true]{
+  border-color:rgba(255,190,100,.88);
+  box-shadow:0 0 0 1px rgba(255,190,100,.12),0 18px 34px rgba(0,0,0,.20),inset 3px 0 0 #f5a247;
+  background:linear-gradient(145deg,#5a3447,#3d2447 62%,#2a1b31);
+}
+.level[data-level="2"],.level[data-level="3"]{
+  background:radial-gradient(circle at 90% 0,rgba(255,188,93,.12),transparent 34%),linear-gradient(145deg,#4a2d42,#2d1e35 64%,#24182c);
+}
+.stage{
+  border-color:rgba(255,184,89,.12);
+  background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(248,150,47,.025));
+}
+.controls{
+  border-color:rgba(178,103,159,.45);
+  background:linear-gradient(180deg,rgba(49,29,54,.96),rgba(38,25,44,.96));
+}
+.wheel{
+  border-color:#f5b45f;
+  box-shadow:0 0 0 3px #8b5226,0 0 0 8px rgba(245,180,95,.20),0 22px 55px rgba(0,0,0,.42),0 0 46px rgba(180,103,160,.08),inset 0 0 30px rgba(255,255,255,.03);
+}
+.core{
+  border-color:#f5b45f;
+  background:radial-gradient(circle at 42% 24%,rgba(255,219,153,.23),transparent 20%),radial-gradient(circle,#6d3d61 0,#462948 53%,#291b31 100%);
+  box-shadow:0 10px 30px rgba(0,0,0,.45),0 0 0 6px #3e253f,0 0 32px rgba(243,166,73,.22),inset 0 1px 0 rgba(255,255,255,.28);
+}
+.currentLevel,.heroBalance{
+  background:linear-gradient(180deg,rgba(249,156,58,.07),rgba(255,255,255,.025));
+}
+@media(max-width:700px){.wrap::after{display:none}}

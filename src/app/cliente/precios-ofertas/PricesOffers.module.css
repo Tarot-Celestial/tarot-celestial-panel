@@ -829,3 +829,94 @@
     transform: none;
   }
 }
+
+/* Halloween 2026 · tema estacional cálido */
+.shell {
+  --gold: #f1b45f;
+  --gold-soft: #ffd48a;
+  --purple: #8c5a99;
+}
+.hero {
+  overflow: hidden;
+  border-color: rgba(244, 155, 61, .34);
+  background:
+    radial-gradient(circle at 92% 0, rgba(255, 181, 82, .22), transparent 31%),
+    radial-gradient(circle at 7% 100%, rgba(147, 77, 150, .16), transparent 38%),
+    linear-gradient(135deg, rgba(72, 38, 65, .92), rgba(38, 24, 45, .96));
+}
+.hero::after {
+  content: "🎃  🎁  🍂";
+  position: absolute;
+  right: 22px;
+  bottom: 14px;
+  font-size: clamp(28px, 3vw, 50px);
+  letter-spacing: 9px;
+  opacity: .26;
+  pointer-events: none;
+  filter: drop-shadow(0 9px 14px rgba(0,0,0,.25));
+}
+.heroCopy span { color: #ffc677; }
+.heroCopy h1 { color: #fff1dc; }
+.heroCopy p { color: rgba(255,239,220,.74); }
+.heroSigil,
+.heroPromise {
+  border-color: rgba(255, 183, 92, .30);
+  background: linear-gradient(145deg, rgba(246, 149, 51, .11), rgba(139, 75, 151, .09));
+}
+.level {
+  border-color: rgba(245, 158, 63, .25);
+  background:
+    radial-gradient(circle at 93% 0, rgba(247, 153, 55, .13), transparent 33%),
+    linear-gradient(150deg, rgba(61, 38, 57, .86), rgba(26, 20, 34, .96));
+}
+.levelPremium,
+.levelCelestial {
+  border-color: rgba(255, 190, 98, .40);
+  background:
+    radial-gradient(circle at 84% 0, rgba(255, 176, 70, .18), transparent 34%),
+    radial-gradient(circle at 8% 110%, rgba(142, 75, 151, .18), transparent 36%),
+    linear-gradient(145deg, rgba(67, 39, 52, .94), rgba(30, 20, 36, .97));
+}
+.card {
+  overflow: hidden;
+  border-color: rgba(245, 157, 61, .23);
+  background:
+    radial-gradient(circle at 100% 0, rgba(247, 151, 49, .15), transparent 34%),
+    linear-gradient(155deg, rgba(60, 37, 56, .88), rgba(25, 19, 33, .96));
+}
+.card::before {
+  content: "🎃";
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  z-index: 0;
+  font-size: 34px;
+  opacity: .18;
+  pointer-events: none;
+}
+.featured::before { content: "🎁"; opacity: .28; }
+.price { color: #ffd38a; text-shadow: 0 0 18px rgba(243, 139, 42, .12); }
+.badge,
+.levelTag,
+.recommended {
+  border-color: rgba(255, 188, 96, .34);
+  color: #ffe5b7;
+  background: rgba(242, 139, 43, .09);
+}
+.recommended {
+  color: #2d1708;
+  background: linear-gradient(135deg, #ffd98e, #ef9b43);
+}
+.buyButton {
+  color: #2a1607;
+  border-color: rgba(255, 231, 168, .66);
+  background: linear-gradient(135deg, #ffd983, #f09c43 58%, #da792f);
+  box-shadow: inset 0 1px rgba(255,255,255,.42), 0 9px 22px rgba(150,75,18,.20);
+}
+.maintenanceNote {
+  border-color: rgba(244, 157, 62, .24);
+  background: linear-gradient(135deg, rgba(245,150,52,.07), rgba(127,72,143,.06));
+}
+@media (max-width: 720px) {
+  .hero::after { font-size: 30px; right: 12px; bottom: 10px; }
+}

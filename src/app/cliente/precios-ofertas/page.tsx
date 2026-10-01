@@ -168,13 +168,13 @@ export default function PreciosOfertasPage() {
         <section className={styles.hero}>
           <div className={styles.heroSigil}><Sparkles /></div>
           <div className={styles.heroCopy}>
-            <span>TAROT CELESTIAL · LA NUEVA ERA</span>
-            <h1>Cada consulta abre una nueva posibilidad</h1>
-            <p>Elige tus minutos al precio habitual y recibe un giro con opción a premios. Sin cambiar tus tarifas.</p>
+            <span>🎃 TAROT CELESTIAL · ESPECIAL DE OCTUBRE</span>
+            <h1>Halloween trae regalos a tus consultas</h1>
+            <p>Elige tus minutos al precio habitual y acompaña tu compra con giros, Coins y sorpresas de temporada. Las tarifas y saldos siguen funcionando exactamente igual.</p>
           </div>
           <div className={styles.heroPromise}>
             <Sparkles />
-            <div><strong>CADA COMPRA DESBLOQUEA UN GIRO</strong><small>Consulta + giro + premio posible</small></div>
+            <div><strong>CADA COMPRA PUEDE TRAER UN REGALO</strong><small>Minutos + giro + Coins + sorpresa Halloween</small></div>
           </div>
         </section>
 

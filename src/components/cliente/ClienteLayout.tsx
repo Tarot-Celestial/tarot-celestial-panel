@@ -5,7 +5,7 @@ import PanelTheme from "@/components/ui/PanelTheme";
 import { useClientPanelRank } from "@/hooks/useClientPanelRank";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star } from "lucide-react";
+import { BellRing, ChevronRight, Clock3, Coins, Gift, Home, LogOut, Medal, Sparkles, UserCircle2, WandSparkles, MoonStar, Tags, Star, Leaf } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { announceLeoCelestial, type LeoCelestialEventDetail } from "@/lib/leo-celestial-events";
@@ -256,12 +256,22 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
     router.replace("/cliente/login");
   }
 
+  const isHome = pathname === "/cliente/dashboard";
+
   return (
-    <PanelTheme rank={panelRank} className={`tc-wrap ${styles.premiumShell}`} data-home={pathname === "/cliente/dashboard" ? "true" : "false"}>
+    <PanelTheme rank={panelRank} className={`tc-wrap ${styles.premiumShell} ${styles.halloweenSeason}`} data-home={isHome ? "true" : "false"}>
       <div className={styles.spaceField} aria-hidden="true">
         <span />
         <span />
         <span />
+      </div>
+
+      <div className={styles.halloweenAmbient} aria-hidden="true">
+        <span className={styles.halloweenMoon} />
+        <span className={styles.halloweenLeafOne}>🍂</span>
+        <span className={styles.halloweenLeafTwo}>🍁</span>
+        <span className={styles.halloweenPumpkinOne}>🎃</span>
+        <span className={styles.halloweenPumpkinTwo}>🎃</span>
       </div>
 
       <div className={styles.celestialBackdrop} aria-hidden="true">
@@ -381,21 +391,53 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
                   ? "oracle"
                   : "default");
                 const hasAlert = tone === "alerts" && Number(item.value || 0) > 0;
+                const seasonalType = normalized.includes("coins") || normalized.includes("puntos")
+                  ? "coins"
+                  : normalized.includes("minutos")
+                  ? "minutes"
+                  : normalized.includes("giro") || normalized.includes("tiradas")
+                  ? "gift"
+                  : normalized.includes("rango")
+                  ? "rank"
+                  : "default";
+                const seasonalEmoji = seasonalType === "coins" ? "🎃" : seasonalType === "minutes" ? "🎁" : seasonalType === "gift" ? "🍬" : seasonalType === "rank" ? "🍂" : "✨";
                 const content = <div className={styles.summaryContent}>
                   <div className={styles.summaryCopy}>
                     <div className="tc-kpi-label">{item.label}</div>
                     <div className="tc-kpi-value">{item.value}</div>
                     {item.meta ? <div className="tc-kpi-meta">{item.meta}</div> : null}
                   </div>
-                  <SummaryIcon label={item.label} tone={tone} />
+                  <div className={styles.summaryDecor}>
+                    <span className={styles.seasonalGiftMark} data-kind={seasonalType}>{seasonalEmoji}</span>
+                    <SummaryIcon label={item.label} tone={tone} />
+                  </div>
                 </div>;
                 return item.href ? (
-                  <Link key={item.label} href={item.href} className="tc-kpi tc-kpi-link" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>{content}</Link>
+                  <Link key={item.label} href={item.href} className="tc-kpi tc-kpi-link" data-tone={tone} data-alert={hasAlert ? "true" : "false"} data-seasonal={seasonalType}>{content}</Link>
                 ) : (
-                  <div key={item.label} className="tc-kpi" data-tone={tone} data-alert={hasAlert ? "true" : "false"}>{content}</div>
+                  <div key={item.label} className="tc-kpi" data-tone={tone} data-alert={hasAlert ? "true" : "false"} data-seasonal={seasonalType}>{content}</div>
                 );
               })}
             </div>
+          ) : null}
+
+          {isHome ? (
+            <section className={styles.halloweenBanner} aria-label="Especial Halloween">
+              <div className={styles.halloweenBannerCopy}>
+                <span className={styles.halloweenBannerEyebrow}><Leaf size={14} /> ESPECIAL DE OCTUBRE</span>
+                <strong>Halloween llega a Tarot Celestial</strong>
+                <p>Minutos, Coins, giros y tiradas se visten de temporada con regalos, ventajas y sorpresas visuales durante todo el mes.</p>
+                <Link href="/cliente/precios-ofertas" className={styles.halloweenBannerButton}>
+                  <Gift size={16} /> Ver regalos y ofertas <ChevronRight size={15} />
+                </Link>
+              </div>
+              <div className={styles.halloweenBannerVisual} aria-hidden="true">
+                <span className={styles.bannerGift}>🎁</span>
+                <span className={styles.bannerPumpkin}>🎃</span>
+                <span className={styles.bannerCoins}>🪙</span>
+                <span className={styles.bannerLeaf}>🍂</span>
+              </div>
+            </section>
           ) : null}
 
           <div className="tc-row" style={{ marginTop: 16, color: "rgba(255,255,255,0.64)", fontSize: 13 }}>

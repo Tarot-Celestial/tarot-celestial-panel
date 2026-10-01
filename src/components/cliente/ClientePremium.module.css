@@ -1565,3 +1565,275 @@
 .premiumShell:global(.tc-rank-panel) :global(.tc-kpi) { border-radius:16px; }
 .premiumShell:global(.tc-rank-panel) :global(.tc-nav-link) { color:var(--panel-text); background:rgba(var(--rank-rgb),.04); border-color:rgba(var(--rank-rgb),.15); }
 .premiumShell:global(.tc-rank-panel) .particleIcon { color:var(--rank-accent); filter:none; }
+
+/* ==========================================================
+   CLIENTE · HALLOWEEN 2026
+   Tema estacional cálido, comercial y no terrorífico.
+   ========================================================== */
+.halloweenSeason {
+  --h-orange: #f28a2d;
+  --h-orange-soft: #ffb45e;
+  --h-gold: #f2c66d;
+  --h-plum: #5d2f67;
+  --h-violet: #7c4a91;
+  --h-cream: #fff2df;
+  --h-ink: #1b1322;
+  background:
+    radial-gradient(circle at 88% 9%, rgba(255, 185, 92, .18), transparent 25%),
+    radial-gradient(circle at 10% 82%, rgba(236, 105, 52, .10), transparent 30%),
+    radial-gradient(circle at 42% 4%, rgba(140, 84, 165, .14), transparent 34%),
+    linear-gradient(145deg, #17131f 0%, #15111d 38%, #241425 100%);
+}
+
+.halloweenSeason::before {
+  background:
+    radial-gradient(circle at 88% 7%, rgba(255, 205, 123, .17), transparent 13%),
+    radial-gradient(circle at 15% 18%, rgba(241, 116, 46, .09), transparent 24%),
+    radial-gradient(circle at 72% 76%, rgba(129, 74, 149, .11), transparent 28%),
+    linear-gradient(180deg, rgba(255,255,255,.012), transparent 30%);
+}
+
+.halloweenSeason .celestialBackdrop { opacity: .26; }
+.halloweenSeason .celestialLogoMain { opacity: .035 !important; filter: saturate(.8) sepia(.15) brightness(1.15); }
+.halloweenSeason .celestialLogoGhost { opacity: .018 !important; }
+.halloweenSeason .celestialOrbitOuter,
+.halloweenSeason .celestialOrbitInner { opacity: .18; border-color: rgba(244, 178, 87, .18); }
+.halloweenSeason .celestialAmbientGlow {
+  background: radial-gradient(circle, rgba(255,186,92,.14), rgba(128,72,143,.07) 38%, transparent 69%);
+}
+
+.halloweenAmbient {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+  contain: strict;
+}
+.halloweenAmbient > span { position: absolute; user-select: none; filter: drop-shadow(0 10px 20px rgba(0,0,0,.26)); }
+.halloweenMoon {
+  right: 3vw;
+  top: 7vh;
+  width: clamp(110px, 12vw, 210px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255,248,217,.9), rgba(255,209,130,.72) 40%, rgba(244,156,72,.34) 68%, transparent 72%);
+  opacity: .36;
+  box-shadow: 0 0 70px rgba(255,186,91,.16);
+}
+.halloweenLeafOne { left: 2vw; top: 19vh; font-size: clamp(30px, 3vw, 58px); opacity: .28; transform: rotate(-18deg); animation: halloweenLeafFloat 11s ease-in-out infinite alternate; }
+.halloweenLeafTwo { right: 9vw; top: 52vh; font-size: clamp(25px, 2.8vw, 50px); opacity: .24; transform: rotate(20deg); animation: halloweenLeafFloat 13s ease-in-out infinite alternate-reverse; }
+.halloweenPumpkinOne { left: 1.4vw; bottom: 5vh; font-size: clamp(52px, 6vw, 102px); opacity: .21; }
+.halloweenPumpkinTwo { right: 1.8vw; bottom: 8vh; font-size: clamp(46px, 5vw, 88px); opacity: .18; transform: rotate(8deg); }
+
+.halloweenSeason :global(.tc-client-hero) {
+  border-color: rgba(244, 174, 81, .34);
+  background:
+    radial-gradient(circle at 93% 0%, rgba(255, 170, 76, .17), transparent 27%),
+    radial-gradient(circle at 8% 8%, rgba(134, 78, 155, .18), transparent 30%),
+    linear-gradient(145deg, rgba(42, 25, 46, .96), rgba(20, 17, 30, .97));
+  box-shadow: 0 28px 76px rgba(0,0,0,.40), inset 0 1px 0 rgba(255,244,226,.08), 0 0 0 1px rgba(237,143,54,.05);
+}
+.halloweenSeason :global(.tc-client-hero)::before { border-color: rgba(255, 194, 115, .11); }
+.halloweenSeason :global(.tc-brand-overline) { color: #f8c979; }
+.halloweenSeason :global(.tc-brand-title) { color: #fff2df; text-shadow: 0 0 22px rgba(243,140,55,.17); }
+.halloweenSeason :global(.tc-brand-logo) {
+  border-color: rgba(244, 176, 88, .44);
+  background: radial-gradient(circle at 50% 35%, rgba(255,195,113,.22), transparent 48%), linear-gradient(145deg, rgba(116,70,139,.24), rgba(251,143,48,.07));
+  box-shadow: 0 0 0 5px rgba(242,139,45,.05), 0 0 28px rgba(241,151,62,.17), inset 0 1px 0 rgba(255,255,255,.09);
+}
+
+.halloweenSeason :global(.tc-nav) {
+  border-color: rgba(240, 157, 65, .25);
+  background: linear-gradient(180deg, rgba(47,27,50,.94), rgba(25,18,33,.95));
+}
+.halloweenSeason :global(.tc-nav)::before { background: linear-gradient(90deg, transparent, rgba(255,188,105,.66), transparent); }
+.halloweenSeason :global(.tc-nav-link) {
+  border-color: rgba(255,255,255,.045);
+  background: rgba(255,255,255,.022);
+}
+.halloweenSeason :global(.tc-nav-link:hover) {
+  border-color: rgba(246, 163, 73, .34);
+  background: linear-gradient(180deg, rgba(242,130,37,.12), rgba(131,79,152,.08));
+  box-shadow: 0 8px 22px rgba(0,0,0,.20), 0 0 17px rgba(240,139,45,.08);
+}
+.halloweenSeason :global(.tc-nav-link-active) {
+  color: #fff7ea;
+  border-color: rgba(255, 190, 101, .50);
+  background: linear-gradient(145deg, rgba(244,137,41,.24), rgba(113,65,133,.16));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 0 22px rgba(244,139,48,.12);
+}
+.halloweenSeason :global(.tc-nav-new-badge) {
+  color: #2a1710;
+  border-color: rgba(255,219,148,.78);
+  background: linear-gradient(135deg, #ffd993, #f19a42);
+  box-shadow: 0 4px 12px rgba(239,129,37,.18);
+}
+
+.summaryDecor { display: flex; align-items: center; gap: 9px; }
+.seasonalGiftMark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 12px;
+  font-size: 17px;
+  border: 1px solid rgba(255, 190, 108, .22);
+  background: linear-gradient(145deg, rgba(249,149,56,.15), rgba(113,68,136,.12));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 0 14px rgba(241,142,48,.07);
+}
+.seasonalGiftMark[data-kind="coins"] { background: linear-gradient(145deg, rgba(255,172,63,.19), rgba(107,68,124,.10)); }
+.seasonalGiftMark[data-kind="minutes"] { background: linear-gradient(145deg, rgba(255,203,119,.18), rgba(118,72,137,.12)); }
+.seasonalGiftMark[data-kind="gift"] { background: linear-gradient(145deg, rgba(245,125,64,.18), rgba(151,73,148,.14)); }
+
+.halloweenSeason :global(.tc-kpi) {
+  border-color: rgba(246, 163, 78, .22);
+  background:
+    radial-gradient(circle at 92% 0%, rgba(243,143,46,.14), transparent 34%),
+    radial-gradient(circle at 8% 100%, rgba(135,76,154,.12), transparent 38%),
+    linear-gradient(155deg, rgba(54,33,59,.74), rgba(27,20,36,.88));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 14px 32px rgba(0,0,0,.20);
+}
+.halloweenSeason :global(.tc-kpi)::before { background: linear-gradient(90deg, rgba(255,190,104,.82), transparent); }
+.halloweenSeason :global(.tc-kpi[data-seasonal="coins"]) { border-color: rgba(246,174,73,.35); }
+.halloweenSeason :global(.tc-kpi[data-seasonal="minutes"]) { border-color: rgba(234,162,98,.30); }
+.halloweenSeason :global(.tc-kpi[data-seasonal="gift"]) { border-color: rgba(200,116,171,.30); }
+.halloweenSeason :global(.tc-kpi-value) { color: #fff0d5; }
+.halloweenSeason :global(.tc-kpi-meta) { color: rgba(255,240,222,.65); }
+
+.halloweenBanner {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0,1.55fr) minmax(210px,.65fr);
+  gap: 18px;
+  margin-top: 18px;
+  padding: clamp(18px, 2vw, 26px);
+  border: 1px solid rgba(249, 164, 67, .42);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 88% 12%, rgba(255,185,81,.27), transparent 27%),
+    radial-gradient(circle at 42% 100%, rgba(149,76,145,.18), transparent 45%),
+    linear-gradient(120deg, rgba(78,39,66,.96), rgba(54,28,58,.94) 50%, rgba(94,49,45,.92));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 18px 38px rgba(0,0,0,.22), 0 0 26px rgba(241,137,43,.06);
+}
+.halloweenBanner::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 6% 14%, rgba(255,255,255,.08) 0 1px, transparent 2px),
+    radial-gradient(circle at 62% 22%, rgba(255,227,174,.12) 0 1px, transparent 2px),
+    radial-gradient(circle at 75% 72%, rgba(255,220,157,.10) 0 1px, transparent 2px);
+}
+.halloweenBannerCopy { position: relative; z-index: 1; display: grid; align-content: center; gap: 8px; }
+.halloweenBannerEyebrow { display: inline-flex; align-items: center; gap: 7px; color: #ffc06f; font-size: 10px; font-weight: 950; letter-spacing: .14em; }
+.halloweenBannerCopy strong { color: #fff3dd; font: 700 clamp(25px, 3vw, 39px)/1.05 Georgia, "Times New Roman", serif; letter-spacing: -.025em; }
+.halloweenBannerCopy p { max-width: 710px; margin: 0; color: rgba(255,239,222,.76); font-size: 12px; line-height: 1.55; }
+.halloweenBannerButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 40px;
+  margin-top: 3px;
+  padding: 0 15px;
+  border: 1px solid rgba(255,229,169,.62);
+  border-radius: 13px;
+  color: #2d1809;
+  background: linear-gradient(135deg, #ffd67f, #f49b3f 68%, #db762c);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.42), 0 9px 20px rgba(151,76,18,.18);
+  font-size: 11px;
+  font-weight: 950;
+  text-decoration: none;
+}
+.halloweenBannerVisual { position: relative; min-height: 118px; }
+.halloweenBannerVisual span { position: absolute; filter: drop-shadow(0 12px 16px rgba(0,0,0,.25)); }
+.bannerPumpkin { right: 16%; bottom: -8px; font-size: clamp(72px, 8vw, 122px); }
+.bannerGift { right: 53%; bottom: 2px; font-size: clamp(43px, 5vw, 78px); transform: rotate(-7deg); }
+.bannerCoins { right: 0; bottom: 15px; font-size: clamp(38px, 4vw, 64px); transform: rotate(8deg); }
+.bannerLeaf { right: 46%; top: -10px; font-size: clamp(25px, 3vw, 48px); transform: rotate(14deg); }
+
+.halloweenSeason :global(.tc-card),
+.halloweenSeason :global(.tc-pack-card),
+.halloweenSeason :global(.tc-mini-stat),
+.halloweenSeason :global(.tc-list-item),
+.halloweenSeason :global(.tc-callout-box) {
+  border-color: rgba(245, 158, 66, .18);
+  background-color: rgba(30,21,37,.76);
+}
+.halloweenSeason :global(.tc-golden-panel) {
+  border-color: rgba(249,174,76,.30);
+  background:
+    radial-gradient(circle at 95% 0%, rgba(245,155,58,.16), transparent 30%),
+    radial-gradient(circle at 10% 100%, rgba(131,75,149,.12), transparent 34%),
+    linear-gradient(155deg, rgba(56,34,59,.70), rgba(27,20,35,.88));
+}
+.halloweenSeason :global(.tc-mini-stat) {
+  background:
+    radial-gradient(circle at 95% 5%, rgba(247,149,50,.12), transparent 35%),
+    linear-gradient(135deg, rgba(126,73,145,.10), transparent 46%),
+    rgba(255,255,255,.027);
+}
+.halloweenSeason :global(.tc-pack-card) {
+  overflow: hidden;
+  border-color: rgba(249,163,66,.26);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(247,151,49,.17), transparent 31%),
+    linear-gradient(150deg, rgba(57,34,58,.84), rgba(28,20,36,.94));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.055), 0 15px 31px rgba(0,0,0,.20);
+}
+.halloweenSeason :global(.tc-pack-card)::before {
+  content: "🎃";
+  position: absolute;
+  right: 12px;
+  top: 9px;
+  font-size: 29px;
+  opacity: .28;
+  transform: rotate(7deg);
+  pointer-events: none;
+}
+.halloweenSeason :global(.tc-pack-card-highlight)::before { content: "🎁"; opacity: .42; }
+.halloweenSeason :global(.tc-pack-price) { color: #ffd891; text-shadow: 0 0 17px rgba(245,143,44,.14); }
+.halloweenSeason :global(.tc-btn-gold) {
+  color: #2b1708;
+  border-color: rgba(255,229,162,.62);
+  background: linear-gradient(135deg, #ffd77f, #ef983e 62%, #d8762c);
+  box-shadow: inset 0 1px rgba(255,255,255,.42), 0 9px 22px rgba(150,75,18,.20);
+}
+.halloweenSeason :global(.tc-progress-fill) {
+  background: linear-gradient(90deg, #a65b9e 0%, #d77888 31%, #f18d3e 66%, #ffd37f 100%);
+  box-shadow: 0 0 20px rgba(241,139,56,.24), 0 0 10px rgba(255,211,127,.16);
+}
+
+@keyframes halloweenLeafFloat {
+  0% { transform: translate3d(0,0,0) rotate(-18deg); }
+  100% { transform: translate3d(10px,18px,0) rotate(10deg); }
+}
+
+@media (max-width: 900px) {
+  .halloweenBanner { grid-template-columns: 1fr; }
+  .halloweenBannerVisual { min-height: 105px; }
+  .bannerPumpkin { right: 10%; }
+  .bannerGift { left: 12%; right: auto; }
+  .bannerLeaf { left: 46%; right: auto; }
+  .halloweenAmbient .halloweenPumpkinOne,
+  .halloweenAmbient .halloweenPumpkinTwo { opacity: .10; }
+}
+
+@media (max-width: 600px) {
+  .halloweenAmbient { display: none; }
+  .halloweenBanner { padding: 16px; border-radius: 20px; }
+  .halloweenBannerVisual { min-height: 86px; }
+  .bannerPumpkin { font-size: 72px; }
+  .bannerGift { font-size: 45px; }
+  .bannerCoins { font-size: 38px; }
+  .seasonalGiftMark { width: 28px; height: 28px; font-size: 15px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halloweenLeafOne,
+  .halloweenLeafTwo { animation: none !important; }
+}

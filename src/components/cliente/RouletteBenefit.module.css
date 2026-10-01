@@ -112,3 +112,44 @@
     linear-gradient(132deg, rgba(151, 94, 21, .20), rgba(67, 31, 87, .22) 58%, rgba(7, 5, 10, .34));
   box-shadow: inset 0 1px rgba(255,255,255,.08), 0 0 26px rgba(231,189,98,.08), 0 12px 24px rgba(0,0,0,.18);
 }
+
+/* Halloween 2026 · el giro/Coins/minutos se presentan como regalo de temporada */
+.benefit {
+  overflow: hidden;
+  border-color: rgba(247, 161, 65, .34);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 176, 72, .19), transparent 43%),
+    linear-gradient(138deg, rgba(80, 45, 71, .72), rgba(37, 25, 45, .92));
+}
+.benefit::before {
+  content: "🎃";
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  font-size: 28px;
+  opacity: .22;
+  pointer-events: none;
+}
+.benefit::after {
+  content: "🎁";
+  position: absolute;
+  right: 31px;
+  bottom: 9px;
+  font-size: 18px;
+  opacity: .20;
+  pointer-events: none;
+}
+.eyebrow { color: rgba(255, 221, 166, .72); }
+.benefit strong,
+.benefit a { color: #ffd28b; }
+.confirmed {
+  border-color: rgba(255, 187, 93, .20);
+  background: rgba(244, 143, 43, .08);
+}
+.benefit[data-premium="true"],
+.benefit[data-level="3"] {
+  border-color: rgba(255, 190, 99, .48);
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 183, 79, .22), transparent 42%),
+    linear-gradient(132deg, rgba(105, 54, 68, .34), rgba(70, 38, 78, .42) 58%, rgba(36, 24, 43, .70));
+}
