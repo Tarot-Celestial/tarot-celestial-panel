@@ -310,6 +310,7 @@ export async function POST(req: Request) {
       kind: entryType === "income" ? "ingresos" : "gastos",
       concept,
       amount,
+      amount_eur: amount,
       note: String(body.description || body.note || "").trim() || null,
       entry_date: date,
       movement: entryType === "income" ? "Ingreso" : entryType === "expense" ? "Gasto" : "Traspaso",
@@ -405,7 +406,10 @@ export async function PATCH(req: Request) {
     if (body.category !== undefined) { update.concept = String(body.category || "Otros").trim() || "Otros"; update.movement_type = update.concept; }
     const nextAmount = body.amount !== undefined ? roundFinanceMoney(body.amount) : roundFinanceMoney(before.amount);
     if (!(nextAmount > 0)) throw new Error("AMOUNT_REQUIRED");
-    if (body.amount !== undefined) update.amount = nextAmount;
+    if (body.amount !== undefined) {
+      update.amount = nextAmount;
+      update.amount_eur = nextAmount;
+    }
     if (body.entry_date !== undefined) { const date = cleanFinanceDate(body.entry_date, String(before.entry_date || madridTodayKey())); update.entry_date = date; update.month_key = date.slice(0, 7); }
     if (body.currency !== undefined) update.currency = cleanFinanceCurrency(body.currency);
     if (body.due_date !== undefined) update.due_date = /^\d{4}-\d{2}-\d{2}$/.test(String(body.due_date || "")) ? String(body.due_date) : null;
