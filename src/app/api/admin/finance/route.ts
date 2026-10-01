@@ -4,7 +4,6 @@ import {
   addCurrencyTotal,
   cleanFinanceCurrency,
   cleanFinanceDate,
-  loadFinanceOfficialPayments,
   matchesFinanceFilters,
   periodIso,
   previousEquivalentPeriod,
@@ -146,9 +145,7 @@ export async function GET(req: Request) {
     const currentRange = periodIso(from, to);
     const previousRange = periodIso(previous.from, previous.to);
 
-    const [officialCurrent, officialPrevious, manualCurrentRes, manualPreviousRes, receivablesRes, settlementsRes] = await Promise.all([
-      loadFinanceOfficialPayments(gate.admin, from, to),
-      loadFinanceOfficialPayments(gate.admin, previous.from, previous.to),
+    const [manualCurrentRes, manualPreviousRes, receivablesRes, settlementsRes] = await Promise.all([
       gate.admin.from("accounting_entries").select(ENTRY_SELECT).gte("entry_date", from).lte("entry_date", to).is("archived_at", null).order("entry_date", { ascending: false }),
       gate.admin.from("accounting_entries").select(ENTRY_SELECT).gte("entry_date", previous.from).lte("entry_date", previous.to).is("archived_at", null).order("entry_date", { ascending: false }),
       gate.admin.from("accounting_receivables").select(RECEIVABLE_SELECT).is("archived_at", null).order("created_at", { ascending: false }),
@@ -156,16 +153,16 @@ export async function GET(req: Request) {
     ]);
     for (const result of [manualCurrentRes, manualPreviousRes, receivablesRes, settlementsRes]) if (result.error) throw result.error;
 
+    // Este centro económico es deliberadamente independiente: solo consume sus propias
+    // tablas financieras (accounting_*). No lee Diario, CRM, pagos web ni otras fuentes.
     const manualCurrent = (manualCurrentRes.data || []).map(manualRow);
     const manualPrevious = (manualPreviousRes.data || []).map(manualRow);
-    const allCurrentRows = [...officialCurrent, ...manualCurrent].filter((row) => matchesFinanceFilters(row, filters));
-    const currentOfficialFiltered = officialCurrent.filter((row) => matchesFinanceFilters(row, filters));
+    const allCurrentRows = manualCurrent.filter((row) => matchesFinanceFilters(row, filters));
     const currentManualFiltered = manualCurrent.filter((row) => matchesFinanceFilters(row, filters));
-    const previousOfficialFiltered = officialPrevious.filter((row) => matchesFinanceFilters(row, filters));
     const previousManualFiltered = manualPrevious.filter((row) => matchesFinanceFilters(row, filters));
 
-    const currentTotals = buildPeriodTotals(currentOfficialFiltered, currentManualFiltered);
-    const previousTotals = buildPeriodTotals(previousOfficialFiltered, previousManualFiltered);
+    const currentTotals = buildPeriodTotals([], currentManualFiltered);
+    const previousTotals = buildPeriodTotals([], previousManualFiltered);
 
     const receivables = (receivablesRes.data || []).map(receivableRow).filter((row) => {
       if (filters.business !== "all" && String(row.business || "").toLowerCase() !== filters.business.toLowerCase()) return false;
@@ -217,7 +214,7 @@ export async function GET(req: Request) {
         currencies: unique([...allCurrentRows.map((row) => row.currency), ...receivables.map((row) => row.currency)]),
       },
       notes: {
-        source_of_truth: "Los cobros del Diario se leen directamente de crm_cliente_pagos y no se duplican en accounting_entries.",
+        source_of_truth: "Centro económico independiente: solo utiliza accounting_entries, accounting_receivables y accounting_settlements.",
         availability: "El saldo bancario disponible no se calcula sin conciliación. Las recepciones y retenciones se muestran por separado.",
       },
     });
@@ -245,17 +242,7 @@ export async function POST(req: Request) {
       const expectedDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.expected_date || "")) ? String(body.expected_date) : null;
       const expectedMonth = /^\d{4}-\d{2}$/.test(String(body.expected_month || "")) ? String(body.expected_month) : null;
       const idempotencyKey = String(body.idempotency_key || "").trim() || null;
-      const sourcePaymentId = String(body.source_payment_id || "").trim() || null;
-      if (sourcePaymentId) {
-        const [{ data: sourcePayment, error: sourcePaymentError }, { data: existingLink, error: existingLinkError }] = await Promise.all([
-          gate.admin.from("crm_cliente_pagos").select("id").eq("id", sourcePaymentId).maybeSingle(),
-          gate.admin.from("accounting_receivables").select("id").eq("source_payment_id", sourcePaymentId).is("archived_at", null).limit(1).maybeSingle(),
-        ]);
-        if (sourcePaymentError) throw sourcePaymentError;
-        if (existingLinkError) throw existingLinkError;
-        if (!sourcePayment) return NextResponse.json({ ok: false, error: "SOURCE_PAYMENT_NOT_FOUND" }, { status: 404 });
-        if (existingLink) return NextResponse.json({ ok: false, error: "SOURCE_PAYMENT_ALREADY_LINKED" }, { status: 409 });
-      }
+      const sourcePaymentId = null; // apartado independiente: no se vincula con pagos del Diario/CRM
       const feeAmount = Math.max(0, roundFinanceMoney(body.fee_amount || 0));
       const grossAmount = body.gross_amount === undefined || body.gross_amount === null || body.gross_amount === "" ? null : Math.max(0, roundFinanceMoney(body.gross_amount));
       const netAmount = body.net_amount === undefined || body.net_amount === null || body.net_amount === "" ? null : Math.max(0, roundFinanceMoney(body.net_amount));
@@ -306,14 +293,15 @@ export async function POST(req: Request) {
     const idempotencyKey = String(body.idempotency_key || "").trim() || null;
     const concept = String(body.category || body.concept || "Otros").trim() || "Otros";
     const reference = String(body.reference || "").trim() || null;
-    if (entryType === "income" && reference) {
-      const [{ data: officialDuplicate, error: officialDuplicateError }, { data: manualDuplicate, error: manualDuplicateError }] = await Promise.all([
-        gate.admin.from("crm_cliente_pagos").select("id,estado").eq("referencia_externa", reference).limit(1).maybeSingle(),
-        gate.admin.from("accounting_entries").select("id").eq("reference", reference).is("archived_at", null).limit(1).maybeSingle(),
-      ]);
-      if (officialDuplicateError) throw officialDuplicateError;
+    if (reference) {
+      const { data: manualDuplicate, error: manualDuplicateError } = await gate.admin
+        .from("accounting_entries")
+        .select("id")
+        .eq("reference", reference)
+        .is("archived_at", null)
+        .limit(1)
+        .maybeSingle();
       if (manualDuplicateError) throw manualDuplicateError;
-      if (officialDuplicate) return NextResponse.json({ ok: false, error: "INCOME_ALREADY_IN_DIARIO" }, { status: 409 });
       if (manualDuplicate) return NextResponse.json({ ok: false, error: "REFERENCE_ALREADY_REGISTERED" }, { status: 409 });
     }
     const payload = {
