@@ -400,9 +400,22 @@ export default function FinanceControlCenter() {
       });
       const json = await safeJson(response);
       if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo registrar el movimiento");
+
+      const savedDate = quickForm.entry_date || todayKey();
+      const savedMonth = savedDate.slice(0, 7);
+      const currentVisibleMonth = from.slice(0, 7);
+
       setQuickForm((current) => ({ ...current, amount: "", note: "", expected_month: "" }));
-      await load(true);
-      if (isRetained) setSection("pending");
+
+      if (isRetained) {
+        setSection("pending");
+        await load(true);
+      } else if (savedMonth !== currentVisibleMonth) {
+        setFrom(`${savedMonth}-01`);
+        setTo(monthEnd(savedMonth));
+      } else {
+        await load(true);
+      }
     } catch (error: any) {
       setQuickError(error?.message || "No se pudo guardar el movimiento.");
     } finally {

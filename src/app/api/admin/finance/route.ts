@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const ENTRY_SELECT = "id,kind,concept,amount,month_key,note,created_at,entry_date,movement,business,origin,destination,payment_method,movement_type,operation_mode,entry_type,currency,status,due_date,due_month,reference,counterparty,gross_amount,fee_amount,net_amount,settled_amount,source_system,source_id,is_transfer,document_path,archived_at,created_by,updated_by,updated_at,idempotency_key";
+const ENTRY_SELECT = "id,kind,concept,amount,amount_eur,month_key,note,created_at,entry_date,movement,business,origin,destination,payment_method,movement_type,operation_mode,entry_type,currency,status,due_date,due_month,reference,counterparty,gross_amount,fee_amount,net_amount,settled_amount,source_system,source_id,is_transfer,document_path,archived_at,created_by,updated_by,updated_at,idempotency_key";
 const RECEIVABLE_SELECT = "id,kind,business,concept,description,category,payment_method,provider,counterparty,currency,original_amount,gross_amount,fee_amount,net_amount,settled_amount,status,operation_date,expected_date,expected_month,source_payment_id,source_entry_id,reference,note,created_at,updated_at,created_by,updated_by,archived_at";
 
 function normalizeEntryType(row: any): "income" | "expense" | "transfer" {
@@ -31,7 +31,7 @@ function normalizeEntryType(row: any): "income" | "expense" | "transfer" {
 
 function manualRow(row: any) {
   const entryType = normalizeEntryType(row);
-  const amount = roundFinanceMoney(row.amount);
+  const amount = roundFinanceMoney(row.amount ?? row.amount_eur);
   const status = String(row.status || "settled").toLowerCase();
   const settledAmount = row.settled_amount == null
     ? (status === "settled" ? amount : 0)
