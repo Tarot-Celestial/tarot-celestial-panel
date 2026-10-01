@@ -127,6 +127,12 @@ function todayKey() {
 }
 
 function monthStart() { return `${todayKey().slice(0, 7)}-01`; }
+function monthEnd(month: string) {
+  const [year, monthValue] = String(month || todayKey().slice(0, 7)).split("-").map(Number);
+  const last = new Date(year, monthValue, 0);
+  const fixed = new Date(last.getTime() - last.getTimezoneOffset() * 60000);
+  return fixed.toISOString().slice(0, 10);
+}
 function money(value: number, currency = "EUR") {
   try { return (Number(value) || 0).toLocaleString("es-ES", { style: "currency", currency }); }
   catch { return `${(Number(value) || 0).toLocaleString("es-ES", { maximumFractionDigits: 2 })} ${currency}`; }
@@ -188,6 +194,21 @@ export default function FinanceControlCenter() {
   const [receivableOpen, setReceivableOpen] = useState(false);
   const [editingReceivable, setEditingReceivable] = useState<Receivable | null>(null);
   const [settlementTarget, setSettlementTarget] = useState<Receivable | null>(null);
+  const [movementTypeFilter, setMovementTypeFilter] = useState<"all" | EntryType>("all");
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [quickError, setQuickError] = useState("");
+  const [quickForm, setQuickForm] = useState({
+    entry_type: "income" as EntryType,
+    entry_date: todayKey(),
+    business: "",
+    origin: "",
+    destination: "",
+    payment_method: "",
+    category: "",
+    amount: "",
+    note: "",
+    currency: "EUR",
+  });
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -223,92 +244,316 @@ export default function FinanceControlCenter() {
     return () => { void supabaseBrowser().removeChannel(channel); };
   }, [load]);
 
+  const filterOptions = data?.filter_options || {};
+  const totals = data?.totals || {};
+  const previous = data?.previous_totals || {};
+  const receivables: Receivable[] = Array.isArray(data?.receivables) ? data.receivables : [];
+
+  function optionLabels(category: OptionCategory) {
+    return options.filter((item) => item.category === category && item.is_active).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)).map((item) => item.label);
+  }
+
+  const businessChoices = useMemo(() => Array.from(new Set([...(optionLabels("business") || []), ...((filterOptions.businesses || []) as string[])])).filter(Boolean), [options, filterOptions.businesses]);
+  const methodChoices = useMemo(() => Array.from(new Set([...(optionLabels("payment_method") || []), ...((filterOptions.methods || []) as string[])])).filter(Boolean), [options, filterOptions.methods]);
+  const categoryChoices = useMemo(() => Array.from(new Set([...(optionLabels("type") || []), ...((filterOptions.categories || []) as string[])])).filter(Boolean), [options, filterOptions.categories]);
+  const originChoices = useMemo(() => Array.from(new Set(optionLabels("origin"))).filter(Boolean), [options]);
+  const destinationChoices = useMemo(() => Array.from(new Set(optionLabels("destination"))).filter(Boolean), [options]);
+
+  useEffect(() => {
+    setQuickForm((current) => ({
+      ...current,
+      business: current.business || businessChoices[0] || "Flowly",
+      payment_method: current.payment_method || methodChoices[0] || "",
+      category: current.category || categoryChoices[0] || (current.entry_type === "income" ? "Venta" : "Gasto"),
+      origin: current.origin || originChoices[0] || "",
+      destination: current.destination || destinationChoices[0] || "",
+    }));
+  }, [businessChoices, methodChoices, categoryChoices, originChoices, destinationChoices]);
+
+  const visibleMonth = from.slice(0, 7);
+  const visibleMonthLabel = useMemo(() => {
+    const [year, monthValue] = visibleMonth.split("-").map(Number);
+    return new Date(year, monthValue - 1, 1).toLocaleDateString("es-ES", { month: "long", year: "numeric" });
+  }, [visibleMonth]);
+
   const movements: FinanceMovement[] = useMemo(() => {
     const rows = Array.isArray(data?.movements) ? data.movements : [];
     const normalized = query.trim().toLowerCase();
     return rows.filter((row: FinanceMovement) => {
       if (section === "income" && row.entry_type !== "income") return false;
       if (section === "expense" && row.entry_type !== "expense") return false;
+      if (movementTypeFilter !== "all" && row.entry_type !== movementTypeFilter) return false;
       if (!normalized) return true;
       return [row.concept, row.description, row.category, row.business, row.payment_method, row.reference, row.counterparty, row.origin, row.destination]
         .filter(Boolean).join(" ").toLowerCase().includes(normalized);
     });
-  }, [data?.movements, query, section]);
-  const receivables: Receivable[] = Array.isArray(data?.receivables) ? data.receivables : [];
-  const totals = data?.totals || {};
-  const previous = data?.previous_totals || {};
-  const filterOptions = data?.filter_options || {};
+  }, [data?.movements, query, section, movementTypeFilter]);
 
-  function optionLabels(category: OptionCategory) {
-    return options.filter((item) => item.category === category && item.is_active).sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0)).map((item) => item.label);
-  }
+  const movementSummary = useMemo(() => {
+    const income: CurrencyTotals = {};
+    const expense: CurrencyTotals = {};
+    const transfer: CurrencyTotals = {};
+    const add = (target: CurrencyTotals, currency: string, amount: number) => {
+      target[currency] = Number(target[currency] || 0) + Number(amount || 0);
+    };
+    for (const row of movements) {
+      const currency = String(row.currency || "EUR");
+      if (row.entry_type === "income") add(income, currency, row.amount);
+      if (row.entry_type === "expense") add(expense, currency, row.amount);
+      if (row.entry_type === "transfer") add(transfer, currency, row.amount);
+    }
+    const balance: CurrencyTotals = { ...income };
+    Object.entries(expense).forEach(([currency, amount]) => {
+      balance[currency] = Number(balance[currency] || 0) - Number(amount || 0);
+    });
+    return { count: movements.length, income, expense, transfer, balance };
+  }, [movements]);
+
+  const businessBreakdown = useMemo(() => {
+    const map = new Map<string, { business: string; count: number; income: CurrencyTotals; expense: CurrencyTotals; balance: CurrencyTotals }>();
+    for (const row of movements) {
+      const key = row.business || "Sin negocio";
+      if (!map.has(key)) map.set(key, { business: key, count: 0, income: {}, expense: {}, balance: {} });
+      const item = map.get(key)!;
+      item.count += 1;
+      const currency = String(row.currency || "EUR");
+      if (row.entry_type === "income") {
+        item.income[currency] = Number(item.income[currency] || 0) + Number(row.amount || 0);
+        item.balance[currency] = Number(item.balance[currency] || 0) + Number(row.amount || 0);
+      } else if (row.entry_type === "expense") {
+        item.expense[currency] = Number(item.expense[currency] || 0) + Number(row.amount || 0);
+        item.balance[currency] = Number(item.balance[currency] || 0) - Number(row.amount || 0);
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.count - a.count || a.business.localeCompare(b.business, "es"));
+  }, [movements]);
+
+  const setQuick = (key: keyof typeof quickForm, value: string) => setQuickForm((current) => ({ ...current, [key]: value }));
+
+  const saveQuickMovement = async () => {
+    setQuickError("");
+    const amount = Number(String(quickForm.amount || "0").replace(",", "."));
+    if (!(amount > 0)) {
+      setQuickError("Introduce un importe mayor que cero.");
+      return;
+    }
+    setQuickSaving(true);
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/admin/finance", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          action: "movement",
+          entry_type: quickForm.entry_type,
+          entry_date: quickForm.entry_date,
+          business: quickForm.business || businessChoices[0] || "Flowly",
+          origin: quickForm.origin || null,
+          destination: quickForm.destination || null,
+          payment_method: quickForm.payment_method || null,
+          category: quickForm.category || (quickForm.entry_type === "income" ? "Ingreso manual" : quickForm.entry_type === "expense" ? "Gasto manual" : "Traspaso"),
+          amount,
+          description: quickForm.note || null,
+          currency: quickForm.currency || "EUR",
+          status: quickForm.entry_type === "transfer" ? "settled" : "settled",
+          idempotency_key: crypto.randomUUID(),
+        }),
+      });
+      const json = await safeJson(response);
+      if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo registrar el movimiento");
+      setQuickForm((current) => ({ ...current, amount: "", note: "" }));
+      await load(true);
+    } catch (error: any) {
+      setQuickError(error?.message || "No se pudo guardar el movimiento.");
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
+  const mainSummaryCards = [
+    { icon: TrendingUp, label: "Ingresos del periodo", value: totalsText(totals.income), detail: comparisonLabel(totals.income || {}, previous.income || {}), tone: "positive" },
+    { icon: TrendingDown, label: "Gastos del periodo", value: totalsText(totals.expense), detail: comparisonLabel(totals.expense || {}, previous.expense || {}), tone: "negative" },
+    { icon: CircleDollarSign, label: "Resultado del periodo", value: totalsText(totals.result), detail: "Ingresos menos gastos", tone: "gold" },
+    { icon: Clock3, label: "Dinero retenido", value: totalsText(totals.retained), detail: "Cobrado pero pendiente de liquidación", tone: "violet" },
+    { icon: WalletCards, label: "Cobros pendientes", value: totalsText(totals.pendingCollections), detail: "Lo que aún debe el cliente", tone: "gold" },
+    { icon: Banknote, label: "Gastos pendientes", value: totalsText(totals.pendingExpenses), detail: "Pagos todavía no realizados", tone: "negative" },
+  ];
 
   return (
     <div className={styles.shell}>
-      <section className={styles.hero}>
-        <div className={styles.heroGlow} />
-        <div className={styles.heroTop}>
-          <div className={styles.heroIdentity}>
-            <div className={styles.heroIcon}><ReceiptText size={28} /></div>
-            <div><span className={styles.eyebrow}><Sparkles size={13} /> CONTROL ECONÓMICO · ADMIN</span><h2>Factura de gastos, ingresos y ganancias</h2><p>Una sola vista para Diario, movimientos manuales, gastos, pendientes y fondos retenidos.</p></div>
-          </div>
-          <div className={styles.heroActions}>
-            <button className={styles.secondaryButton} onClick={() => void load()} disabled={loading}><RefreshCw size={16} className={loading ? styles.spin : ""} /> Actualizar</button>
-            <button className={styles.primaryButton} onClick={() => { setEditingMovement(null); setMovementOpen(true); }}><Plus size={17} /> Nuevo movimiento</button>
-          </div>
-        </div>
-        <div className={styles.truthBar}><ShieldCheck size={15} /><span><b>Fuente única:</b> los cobros del Diario se leen directamente de <code>crm_cliente_pagos</code>. Las liquidaciones de Stripe/Mollie no vuelven a sumar el ingreso.</span></div>
-      </section>
-
-      <section className={styles.filters}>
-        <label><span>Desde</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
-        <label><span>Hasta</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
-        <FilterSelect label="Negocio" value={filters.business} values={filterOptions.businesses} onChange={(business) => setFilters((current) => ({ ...current, business }))} />
-        <FilterSelect label="Categoría" value={filters.category} values={filterOptions.categories} onChange={(category) => setFilters((current) => ({ ...current, category }))} />
-        <FilterSelect label="Método / proveedor" value={filters.method} values={filterOptions.methods} onChange={(method) => setFilters((current) => ({ ...current, method }))} />
-        <FilterSelect label="Estado" value={filters.status} values={filterOptions.statuses} onChange={(status) => setFilters((current) => ({ ...current, status }))} />
-        <FilterSelect label="Moneda" value={filters.currency} values={filterOptions.currencies} onChange={(currency) => setFilters((current) => ({ ...current, currency }))} />
-      </section>
-
-      {message ? <div className={styles.errorBox}>{message}</div> : null}
-
-      <section className={styles.kpiGrid}>
-        <Kpi icon={TrendingUp} label="Ingresos del periodo" value={totalsText(totals.income)} detail={comparisonLabel(totals.income || {}, previous.income || {})} tone="positive" />
-        <Kpi icon={TrendingDown} label="Gastos del periodo" value={totalsText(totals.expense)} detail={comparisonLabel(totals.expense || {}, previous.expense || {})} tone="negative" />
-        <Kpi icon={CircleDollarSign} label="Resultado del periodo" value={totalsText(totals.result)} detail={`Ingresos − gastos · ${comparisonLabel(totals.result || {}, previous.result || {})}`} tone="gold" />
-        <Kpi icon={CheckCircle2} label="Cobros confirmados" value={totalsText(totals.confirmedCollections)} detail="Cobros reales del Diario; no equivale a saldo bancario" tone="cyan" />
-        <Kpi icon={ArrowDownToLine} label="Recepciones registradas" value={totalsText(totals.registeredReceipts)} detail="Liquidaciones/recepciones registradas en este periodo" tone="positive" />
-        <Kpi icon={ArrowUpRight} label="Pagos realizados" value={totalsText(totals.registeredPayments)} detail="Pagos manuales y liquidaciones de gastos" tone="negative" />
-        <Kpi icon={Clock3} label="Dinero retenido" value={totalsText(totals.retained)} detail="No se presenta como disponible" tone="violet" />
-        <Kpi icon={WalletCards} label="Cobros pendientes" value={totalsText(totals.pendingCollections)} detail="Deudas de clientes, separadas de retenciones" tone="gold" />
-        <Kpi icon={Banknote} label="Gastos pendientes" value={totalsText(totals.pendingExpenses)} detail="Obligaciones todavía no pagadas" tone="negative" />
-      </section>
-
-      <div className={styles.reconciliationNote}><Landmark size={16} /><span><b>Saldo disponible:</b> no se inventa. Para calcular caja/banco real hace falta conciliación y saldos iniciales. Aquí se separan ingresos, cobros confirmados, recepciones, pendientes y retenciones.</span></div>
-
       <nav className={styles.tabs} aria-label="Secciones económicas">
         {([
-          ["summary", "Resumen económico", Coins], ["income", "Ingresos", TrendingUp], ["expense", "Gastos", TrendingDown], ["pending", "Pendientes y retenidos", Clock3], ["settings", "Categorías y métodos", Settings2],
+          ["summary", "Resumen y movimientos", Coins], ["income", "Solo ingresos", TrendingUp], ["expense", "Solo gastos", TrendingDown], ["pending", "Pendientes y retenidos", Clock3], ["settings", "Categorías y métodos", Settings2],
         ] as const).map(([key, label, Icon]) => <button key={key} className={section === key ? styles.tabActive : ""} onClick={() => setSection(key)}><Icon size={16} />{label}</button>)}
       </nav>
+
+      {message ? <div className={styles.errorBox}>{message}</div> : null}
 
       {section === "pending" ? (
         <PendingSection rows={receivables} settlements={Array.isArray(data?.settlements) ? data.settlements : []} onNew={() => { setEditingReceivable(null); setReceivableOpen(true); }} onEdit={(row) => { setEditingReceivable(row); setReceivableOpen(true); }} onSettle={setSettlementTarget} onChanged={() => void load(true)} />
       ) : section === "settings" ? (
         <OptionsSection options={options} onChanged={() => void load(true)} />
       ) : (
-        <section className={styles.tableCard}>
-          <div className={styles.tableHead}>
-            <div><span className={styles.eyebrow}>MOVIMIENTOS</span><h3>{section === "income" ? "Ingresos" : section === "expense" ? "Gastos" : "Registro económico consolidado"}</h3><p>Las filas “Diario” son de solo lectura. Los movimientos manuales pueden editarse o archivarse.</p></div>
-            <label className={styles.search}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar concepto, negocio, método…" /></label>
-          </div>
-          <div className={styles.tableWrap}>
-            <table><thead><tr><th>Fecha</th><th>Origen</th><th>Tipo</th><th>Concepto</th><th>Negocio</th><th>Método</th><th>Estado</th><th>Importe</th><th></th></tr></thead>
-              <tbody>{movements.map((row) => <MovementRow key={row.id} row={row} onEdit={() => { setEditingMovement(row); setMovementOpen(true); }} onChanged={() => void load(true)} />)}
-              {!movements.length ? <tr><td colSpan={9} className={styles.empty}>{loading ? "Cargando movimientos…" : "No hay movimientos con estos filtros."}</td></tr> : null}</tbody>
-            </table>
-          </div>
-        </section>
+        <>
+          <section className={styles.simpleTopGrid}>
+            <article className={styles.quickEntryCard}>
+              <div className={styles.quickEntryHeader}>
+                <div className={styles.quickEntryIcon}><Plus size={20} /></div>
+                <div>
+                  <h3>Nuevo movimiento</h3>
+                  <p>Añade ingresos, gastos o traspasos de forma rápida y visual.</p>
+                </div>
+              </div>
+              <div className={styles.quickEntryGrid}>
+                <Field label="Movimiento">
+                  <select value={quickForm.entry_type} onChange={(e) => setQuick("entry_type", e.target.value)}>
+                    <option value="income">Ingreso</option>
+                    <option value="expense">Gasto</option>
+                    <option value="transfer">Traspaso</option>
+                  </select>
+                </Field>
+                <Field label="Fecha">
+                  <input type="date" value={quickForm.entry_date} onChange={(e) => setQuick("entry_date", e.target.value)} />
+                </Field>
+                <Field label="Negocio">
+                  <select value={quickForm.business} onChange={(e) => setQuick("business", e.target.value)}>
+                    {businessChoices.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Origen del dinero">
+                  <input list="finance-origin-list" value={quickForm.origin} onChange={(e) => setQuick("origin", e.target.value)} />
+                </Field>
+                <Field label="Destino del dinero">
+                  <input list="finance-destination-list" value={quickForm.destination} onChange={(e) => setQuick("destination", e.target.value)} />
+                </Field>
+                <Field label="Por dónde se ingresa">
+                  <select value={quickForm.payment_method} onChange={(e) => setQuick("payment_method", e.target.value)}>
+                    {methodChoices.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </Field>
+                <Field label="Tipo">
+                  <input list="finance-category-list" value={quickForm.category} onChange={(e) => setQuick("category", e.target.value)} />
+                </Field>
+                <Field label="Importe">
+                  <input inputMode="decimal" value={quickForm.amount} onChange={(e) => setQuick("amount", e.target.value)} placeholder="0,00 €" />
+                </Field>
+                <Field label="Observación">
+                  <input value={quickForm.note} onChange={(e) => setQuick("note", e.target.value)} placeholder="Opcional" />
+                </Field>
+                <div className={styles.quickActionWrap}>
+                  <button className={styles.primaryButton} onClick={() => void saveQuickMovement()} disabled={quickSaving}>
+                    {quickSaving ? <LoaderCircle size={16} className={styles.spin} /> : <Plus size={16} />}
+                    {quickSaving ? "Guardando" : "Añadir"}
+                  </button>
+                </div>
+              </div>
+              {quickError ? <div className={styles.errorBox}>{quickError}</div> : null}
+              <datalist id="finance-origin-list">{originChoices.map((item) => <option key={item} value={item} />)}</datalist>
+              <datalist id="finance-destination-list">{destinationChoices.map((item) => <option key={item} value={item} />)}</datalist>
+              <datalist id="finance-category-list">{categoryChoices.map((item) => <option key={item} value={item} />)}</datalist>
+            </article>
+
+            <aside className={styles.periodCard}>
+              <span className={styles.eyebrow}>Mes visible</span>
+              <label className={styles.monthPicker}>
+                <span>{visibleMonthLabel}</span>
+                <input type="month" value={visibleMonth} onChange={(e) => { setFrom(`${e.target.value}-01`); setTo(monthEnd(e.target.value)); }} />
+              </label>
+              <div className={styles.periodMeta}>
+                <div><small>Desde</small><strong>{from}</strong></div>
+                <div><small>Hasta</small><strong>{to}</strong></div>
+              </div>
+              <button className={styles.secondaryButton} onClick={() => void load()} disabled={loading}>
+                <RefreshCw size={16} className={loading ? styles.spin : ""} /> Refrescar
+              </button>
+              <div className={styles.miniNotes}>
+                <div><ShieldCheck size={14} /><span>El Diario sigue siendo la fuente real de cobros.</span></div>
+                <div><Landmark size={14} /><span>Las liquidaciones no duplican ingresos ya registrados.</span></div>
+              </div>
+            </aside>
+          </section>
+
+          <section className={styles.kpiGrid}>
+            {mainSummaryCards.map((card) => <Kpi key={card.label} icon={card.icon} label={card.label} value={card.value} detail={card.detail} tone={card.tone} />)}
+          </section>
+
+          <section className={styles.tableCard}>
+            <div className={styles.tableHead}>
+              <div>
+                <span className={styles.eyebrow}>MOVIMIENTOS DEL MES</span>
+                <h3>{section === "income" ? "Ingresos del mes" : section === "expense" ? "Gastos del mes" : "Movimientos del mes"}</h3>
+                <p>Filtros simples, resumen claro y una sola tabla para entender rápido qué entra, qué sale y qué queda.</p>
+              </div>
+            </div>
+
+            <div className={styles.simpleFilters}>
+              <Field label="Fecha exacta">
+                <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); if (e.target.value > to) setTo(e.target.value); }} />
+              </Field>
+              <FilterSelect label="Negocio" value={filters.business} values={filterOptions.businesses} onChange={(business) => setFilters((current) => ({ ...current, business }))} />
+              <FilterSelect label="Origen" value={filters.category} values={filterOptions.categories} onChange={(category) => setFilters((current) => ({ ...current, category }))} />
+              <FilterSelect label="Medio" value={filters.method} values={filterOptions.methods} onChange={(method) => setFilters((current) => ({ ...current, method }))} />
+              <FilterSelect label="Estado" value={filters.status} values={filterOptions.statuses} onChange={(status) => setFilters((current) => ({ ...current, status }))} />
+              <FilterSelect label="Moneda" value={filters.currency} values={filterOptions.currencies} onChange={(currency) => setFilters((current) => ({ ...current, currency }))} />
+              <label className={styles.field}>
+                <span>Movimiento</span>
+                <select value={movementTypeFilter} onChange={(e) => setMovementTypeFilter(e.target.value as any)}>
+                  <option value="all">Todos</option>
+                  <option value="income">Ingresos</option>
+                  <option value="expense">Gastos</option>
+                  <option value="transfer">Traspasos</option>
+                </select>
+              </label>
+            </div>
+
+            <div className={styles.filteredSummary}>
+              <div className={styles.filteredSummaryText}>
+                <span className={styles.eyebrow}>Resumen de resultados filtrados</span>
+                <p>Período: <b>{visibleMonthLabel}</b> · Negocio: <b>{filters.business === "all" ? "Todos" : filters.business}</b> · Medio: <b>{filters.method === "all" ? "Todos" : filters.method}</b> · Movimiento: <b>{movementTypeFilter === "all" ? "Todos" : movementTypeFilter === "income" ? "Ingresos" : movementTypeFilter === "expense" ? "Gastos" : "Traspasos"}</b></p>
+              </div>
+              <div className={styles.filteredStat}><small>Movimientos</small><strong>{movementSummary.count}</strong></div>
+              <div className={styles.filteredStat}><small>Ingresos filtrados</small><strong>{totalsText(movementSummary.income)}</strong></div>
+              <div className={styles.filteredStat}><small>Gastos filtrados</small><strong>{totalsText(movementSummary.expense)}</strong></div>
+              <div className={styles.filteredStat}><small>Balance neto</small><strong>{totalsText(movementSummary.balance)}</strong></div>
+              <div className={styles.filteredStat}><small>Total traspasado</small><strong>{totalsText(movementSummary.transfer)}</strong></div>
+            </div>
+
+            <div className={styles.tableHead}>
+              <label className={styles.search}><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar concepto, negocio, método…" /></label>
+            </div>
+
+            <div className={styles.tableWrap}>
+              <table>
+                <thead>
+                  <tr><th>Fecha</th><th>Origen</th><th>Tipo</th><th>Concepto</th><th>Negocio</th><th>Método</th><th>Estado</th><th>Importe</th><th></th></tr>
+                </thead>
+                <tbody>
+                  {movements.map((row) => <MovementRow key={row.id} row={row} onEdit={() => { setEditingMovement(row); setMovementOpen(true); }} onChanged={() => void load(true)} />)}
+                  {!movements.length ? <tr><td colSpan={9} className={styles.empty}>{loading ? "Cargando movimientos…" : "No hay movimientos en este periodo."}</td></tr> : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          {!!businessBreakdown.length && (
+            <section className={styles.businessGrid}>
+              {businessBreakdown.map((item) => (
+                <article key={item.business} className={styles.businessCard}>
+                  <div className={styles.businessCardHead}>
+                    <span className={styles.eyebrow}>Negocio</span>
+                    <span className={styles.businessLines}>{item.count} líneas</span>
+                  </div>
+                  <h4>{item.business}</h4>
+                  <div className={styles.businessCardStats}>
+                    <div><small>Ingresos</small><strong>{totalsText(item.income)}</strong></div>
+                    <div><small>Gastos</small><strong>{totalsText(item.expense)}</strong></div>
+                    <div><small>Balance</small><strong>{totalsText(item.balance)}</strong></div>
+                  </div>
+                </article>
+              ))}
+            </section>
+          )}
+        </>
       )}
 
       {movementOpen ? <MovementModal movement={editingMovement} options={options} onClose={() => setMovementOpen(false)} onSaved={() => { setMovementOpen(false); void load(true); }} /> : null}
