@@ -28,7 +28,6 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
-  Trash2,
   Upload,
   WalletCards,
   X,
@@ -38,6 +37,7 @@ import styles from "./FinanceControlCenter.module.css";
 
 type Section = "summary" | "income" | "expense" | "pending" | "settings";
 type EntryType = "income" | "expense" | "transfer";
+type QuickMovementType = EntryType | "retained";
 type ReceivableKind = "platform_hold" | "client_receivable" | "payable";
 type OptionCategory = "movement" | "business" | "origin" | "destination" | "payment_method" | "type" | "operation_mode";
 type CurrencyTotals = Record<string, number>;
@@ -199,7 +199,7 @@ export default function FinanceControlCenter() {
   const [quickSaving, setQuickSaving] = useState(false);
   const [quickError, setQuickError] = useState("");
   const [quickForm, setQuickForm] = useState({
-    entry_type: "income" as EntryType,
+    entry_type: "income" as QuickMovementType,
     entry_date: todayKey(),
     business: "",
     origin: "",
@@ -209,6 +209,7 @@ export default function FinanceControlCenter() {
     amount: "",
     note: "",
     currency: "EUR",
+    expected_month: "",
   });
 
   const load = useCallback(async (silent = false) => {
@@ -330,6 +331,27 @@ export default function FinanceControlCenter() {
 
   const setQuick = (key: keyof typeof quickForm, value: string) => setQuickForm((current) => ({ ...current, [key]: value }));
 
+  const addQuickPaymentMethod = async () => {
+    const label = window.prompt("Nombre del nuevo método o proveedor (por ejemplo: PayPal)");
+    if (!label?.trim()) return;
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/admin/accounting/options", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ category: "payment_method", label: label.trim() }),
+      });
+      const json = await safeJson(response);
+      if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo añadir el método");
+      const option = json.option as AccountingOption | undefined;
+      if (option) setOptions((current) => [...current.filter((item) => item.id !== option.id), option]);
+      setQuick("payment_method", option?.label || label.trim());
+    } catch (error: any) {
+      setQuickError(error?.message === "OPTION_ALREADY_EXISTS" ? "Ese método ya existe. Puedes seleccionarlo en el desplegable." : (error?.message || "No se pudo añadir el método."));
+      await load(true);
+    }
+  };
+
   const saveQuickMovement = async () => {
     setQuickError("");
     const amount = Number(String(quickForm.amount || "0").replace(",", "."));
@@ -340,10 +362,27 @@ export default function FinanceControlCenter() {
     setQuickSaving(true);
     try {
       const headers = await authHeaders();
+      const isRetained = quickForm.entry_type === "retained";
       const response = await fetch("/api/admin/finance", {
         method: "POST",
         headers,
-        body: JSON.stringify({
+        body: JSON.stringify(isRetained ? {
+          action: "receivable",
+          kind: "platform_hold",
+          operation_date: quickForm.entry_date,
+          business: quickForm.business || businessChoices[0] || "Flowly",
+          payment_method: quickForm.payment_method || null,
+          provider: quickForm.payment_method || null,
+          counterparty: quickForm.payment_method || null,
+          category: quickForm.category || "Ingreso retenido",
+          concept: quickForm.category || "Pago retenido",
+          original_amount: amount,
+          gross_amount: amount,
+          currency: quickForm.currency || "EUR",
+          expected_month: quickForm.expected_month || null,
+          note: quickForm.note || null,
+          idempotency_key: crypto.randomUUID(),
+        } : {
           action: "movement",
           entry_type: quickForm.entry_type,
           entry_date: quickForm.entry_date,
@@ -355,14 +394,15 @@ export default function FinanceControlCenter() {
           amount,
           description: quickForm.note || null,
           currency: quickForm.currency || "EUR",
-          status: quickForm.entry_type === "transfer" ? "settled" : "settled",
+          status: "settled",
           idempotency_key: crypto.randomUUID(),
         }),
       });
       const json = await safeJson(response);
       if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo registrar el movimiento");
-      setQuickForm((current) => ({ ...current, amount: "", note: "" }));
+      setQuickForm((current) => ({ ...current, amount: "", note: "", expected_month: "" }));
       await load(true);
+      if (isRetained) setSection("pending");
     } catch (error: any) {
       setQuickError(error?.message || "No se pudo guardar el movimiento.");
     } finally {
@@ -410,6 +450,7 @@ export default function FinanceControlCenter() {
                     <option value="income">Ingreso</option>
                     <option value="expense">Gasto</option>
                     <option value="transfer">Traspaso</option>
+                    <option value="retained">Pago retenido</option>
                   </select>
                 </Field>
                 <Field label="Fecha">
@@ -426,9 +467,14 @@ export default function FinanceControlCenter() {
                 <Field label="Destino del dinero">
                   <input list="finance-destination-list" value={quickForm.destination} onChange={(e) => setQuick("destination", e.target.value)} />
                 </Field>
-                <Field label="Por dónde se ingresa">
-                  <select value={quickForm.payment_method} onChange={(e) => setQuick("payment_method", e.target.value)}>
+                <Field label={quickForm.entry_type === "retained" ? "Plataforma que retiene" : "Por dónde se ingresa"}>
+                  <select value={quickForm.payment_method} onChange={(e) => {
+                    if (e.target.value === "__add_new_method__") void addQuickPaymentMethod();
+                    else setQuick("payment_method", e.target.value);
+                  }}>
+                    <option value="">Seleccionar…</option>
                     {methodChoices.map((item) => <option key={item} value={item}>{item}</option>)}
+                    <option value="__add_new_method__">＋ Añadir nuevo método…</option>
                   </select>
                 </Field>
                 <Field label="Tipo">
@@ -437,6 +483,9 @@ export default function FinanceControlCenter() {
                 <Field label="Importe">
                   <input inputMode="decimal" value={quickForm.amount} onChange={(e) => setQuick("amount", e.target.value)} placeholder="0,00 €" />
                 </Field>
+                {quickForm.entry_type === "retained" ? <Field label="Liberación prevista">
+                  <input type="month" value={quickForm.expected_month} onChange={(e) => setQuick("expected_month", e.target.value)} />
+                </Field> : null}
                 <Field label="Observación">
                   <input value={quickForm.note} onChange={(e) => setQuick("note", e.target.value)} placeholder="Opcional" />
                 </Field>
@@ -582,27 +631,18 @@ async function openDocument(path: string) {
 }
 
 function MovementRow({ row, onEdit, onChanged }: { row: FinanceMovement; onEdit: () => void; onChanged: () => void }) {
-  const remove = async () => {
-    const accepted = window.confirm(
-      `¿Eliminar definitivamente este movimiento?\n\n${row.category || row.concept} · ${money(row.amount, row.currency)}\n\nEsta opción está pensada para registros de prueba o creados por error. No se puede deshacer.`
-    );
-    if (!accepted) return;
+  const archive = async () => {
+    if (!window.confirm("¿Archivar este movimiento? Se conservará en el histórico y dejará de entrar en los indicadores.")) return;
     const headers = await authHeaders();
-    const response = await fetch("/api/admin/finance", {
-      method: "DELETE",
-      headers,
-      body: JSON.stringify({ entity: "movement", id: row.source_id }),
-    });
-    const json = await safeJson(response);
-    if (!response.ok || !json.ok) return window.alert(json.error || "No se pudo eliminar el movimiento");
-    onChanged();
+    const response = await fetch("/api/admin/finance", { method: "PATCH", headers, body: JSON.stringify({ entity: "movement", id: row.source_id, archive: true }) });
+    const json = await safeJson(response); if (!response.ok || !json.ok) return window.alert(json.error || "No se pudo archivar"); onChanged();
   };
   return <tr>
     <td>{row.operation_date || "—"}</td><td><span className={`${styles.sourceBadge} ${styles.sourceManual}`}>Este apartado</span></td>
     <td><span className={styles.typeBadge} data-type={row.entry_type}>{row.entry_type === "income" ? "Ingreso" : row.entry_type === "expense" ? "Gasto" : "Traspaso"}</span></td>
     <td><b>{row.category || row.concept}</b><small className={styles.cellSub}>{row.description || row.reference || ""}</small></td><td>{row.business || "—"}</td><td>{row.payment_method || "—"}</td>
     <td><span className={styles.statusBadge} data-status={row.status}>{statusLabel(row.status)}</span></td><td className={styles.amount} data-type={row.entry_type}>{row.entry_type === "expense" ? "−" : row.entry_type === "income" ? "+" : ""}{money(row.amount, row.currency)}</td>
-    <td><div className={styles.rowActions}>{row.document_path ? <button onClick={() => void openDocument(row.document_path!)} title="Abrir justificante"><FileText size={14} /></button> : null}{row.read_only ? <span className={styles.readOnly}>Fuente real</span> : <><button onClick={onEdit} title="Editar"><Pencil size={14} /></button><button onClick={() => void remove()} title="Eliminar definitivamente"><Trash2 size={14} /></button></>}</div></td>
+    <td><div className={styles.rowActions}>{row.document_path ? <button onClick={() => void openDocument(row.document_path!)} title="Abrir justificante"><FileText size={14} /></button> : null}{row.read_only ? <span className={styles.readOnly}>Fuente real</span> : <><button onClick={onEdit} title="Editar"><Pencil size={14} /></button><button onClick={() => void archive()} title="Archivar"><Archive size={14} /></button></>}</div></td>
   </tr>;
 }
 
