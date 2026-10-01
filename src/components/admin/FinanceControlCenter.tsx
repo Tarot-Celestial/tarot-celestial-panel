@@ -28,6 +28,7 @@ import {
   Sparkles,
   TrendingDown,
   TrendingUp,
+  Trash2,
   Upload,
   WalletCards,
   X,
@@ -644,18 +645,25 @@ async function openDocument(path: string) {
 }
 
 function MovementRow({ row, onEdit, onChanged }: { row: FinanceMovement; onEdit: () => void; onChanged: () => void }) {
-  const archive = async () => {
-    if (!window.confirm("¿Archivar este movimiento? Se conservará en el histórico y dejará de entrar en los indicadores.")) return;
-    const headers = await authHeaders();
-    const response = await fetch("/api/admin/finance", { method: "PATCH", headers, body: JSON.stringify({ entity: "movement", id: row.source_id, archive: true }) });
-    const json = await safeJson(response); if (!response.ok || !json.ok) return window.alert(json.error || "No se pudo archivar"); onChanged();
+  const remove = async () => {
+    const label = `${row.entry_type === "income" ? "ingreso" : row.entry_type === "expense" ? "gasto" : "traspaso"} de ${money(row.amount, row.currency)} del ${row.operation_date || "día indicado"}`;
+    if (!window.confirm(`¿Eliminar definitivamente este ${label}?\n\nEsta acción es para registros erróneos o de prueba y no se puede deshacer.`)) return;
+    try {
+      const headers = await authHeaders();
+      const response = await fetch("/api/admin/finance", { method: "DELETE", headers, body: JSON.stringify({ entity: "movement", id: row.source_id }) });
+      const json = await safeJson(response);
+      if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo eliminar");
+      onChanged();
+    } catch (error: any) {
+      window.alert(error?.message || "No se pudo eliminar el movimiento.");
+    }
   };
   return <tr>
     <td>{row.operation_date || "—"}</td><td><span className={`${styles.sourceBadge} ${styles.sourceManual}`}>Este apartado</span></td>
     <td><span className={styles.typeBadge} data-type={row.entry_type}>{row.entry_type === "income" ? "Ingreso" : row.entry_type === "expense" ? "Gasto" : "Traspaso"}</span></td>
     <td><b>{row.category || row.concept}</b><small className={styles.cellSub}>{row.description || row.reference || ""}</small></td><td>{row.business || "—"}</td><td>{row.payment_method || "—"}</td>
     <td><span className={styles.statusBadge} data-status={row.status}>{statusLabel(row.status)}</span></td><td className={styles.amount} data-type={row.entry_type}>{row.entry_type === "expense" ? "−" : row.entry_type === "income" ? "+" : ""}{money(row.amount, row.currency)}</td>
-    <td><div className={styles.rowActions}>{row.document_path ? <button onClick={() => void openDocument(row.document_path!)} title="Abrir justificante"><FileText size={14} /></button> : null}{row.read_only ? <span className={styles.readOnly}>Fuente real</span> : <><button onClick={onEdit} title="Editar"><Pencil size={14} /></button><button onClick={() => void archive()} title="Archivar"><Archive size={14} /></button></>}</div></td>
+    <td><div className={styles.rowActions}>{row.document_path ? <button onClick={() => void openDocument(row.document_path!)} title="Abrir justificante"><FileText size={14} /></button> : null}{row.read_only ? <span className={styles.readOnly}>Fuente real</span> : <><button onClick={onEdit} title="Editar o cambiar fecha"><Pencil size={14} /></button><button onClick={() => void remove()} title="Eliminar definitivamente"><Trash2 size={14} /></button></>}</div></td>
   </tr>;
 }
 
@@ -681,7 +689,7 @@ function MovementModal({ movement, options, onClose, onSaved }: { movement: Fina
   const set = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
   const upload = async (file?: File) => { if (!file) return; setUploading(true); setError(""); try { const headers = await authHeaders(false); const body = new FormData(); body.append("file", file); const response = await fetch("/api/admin/finance/document", { method: "POST", headers, body }); const json = await safeJson(response); if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo subir"); set("document_path", json.path); } catch (e:any) { setError(e.message); } finally { setUploading(false); } };
   const save = async () => { setSaving(true); setError(""); try { const headers = await authHeaders(); const payload = { ...form, amount: Number(String(form.amount).replace(",", ".")), settled_amount: form.settled_amount === "" ? undefined : Number(String(form.settled_amount).replace(",", ".")), gross_amount: form.gross_amount === "" ? undefined : Number(String(form.gross_amount).replace(",", ".")), fee_amount: form.fee_amount === "" ? 0 : Number(String(form.fee_amount).replace(",", ".")), net_amount: form.net_amount === "" ? undefined : Number(String(form.net_amount).replace(",", ".")), idempotency_key: crypto.randomUUID() }; const response = await fetch("/api/admin/finance", { method: movement ? "PATCH" : "POST", headers, body: JSON.stringify(movement ? { entity: "movement", id: movement.source_id, ...payload } : payload) }); const json = await safeJson(response); if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo guardar"); onSaved(); } catch(e:any){ setError(e.message); } finally { setSaving(false); } };
-  return <Modal title={movement ? "Editar movimiento" : "Nuevo movimiento económico"} subtitle="Los traspasos entre cuentas propias no cuentan como ingreso ni gasto." onClose={onClose}>
+  return <Modal title={movement ? "Editar movimiento / cambiar fecha" : "Nuevo movimiento económico"} subtitle="Los traspasos entre cuentas propias no cuentan como ingreso ni gasto." onClose={onClose}>
     <div className={styles.formGrid}><Field label="Tipo"><select value={form.entry_type} onChange={(e)=>set("entry_type",e.target.value)} disabled={!!movement}><option value="income">Ingreso manual</option><option value="expense">Gasto</option><option value="transfer">Traspaso entre cuentas</option></select></Field><Field label="Fecha"><input type="date" value={form.entry_date} onChange={(e)=>set("entry_date",e.target.value)} /></Field><Field label="Negocio"><DatalistInput value={form.business} values={labels("business")} onChange={(v)=>set("business",v)} /></Field><Field label="Categoría"><DatalistInput value={form.category} values={labels("type")} onChange={(v)=>set("category",v)} /></Field><Field label="Método / proveedor"><DatalistInput value={form.payment_method} values={labels("payment_method")} onChange={(v)=>set("payment_method",v)} /></Field><Field label="Moneda"><select value={form.currency} onChange={(e)=>set("currency",e.target.value)}><option>EUR</option><option>USD</option><option>GBP</option></select></Field><Field label="Importe"><input inputMode="decimal" value={form.amount} onChange={(e)=>set("amount",e.target.value)} placeholder="0,00" /></Field><Field label="Estado"><select value={form.status} onChange={(e)=>set("status",e.target.value)}><option value="settled">Liquidado</option><option value="pending">Pendiente</option><option value="partial">Parcial</option><option value="cancelled">Cancelado</option><option value="refunded">Reembolsado</option></select></Field><Field label="Importe cobrado/pagado"><input inputMode="decimal" value={form.settled_amount} onChange={(e)=>set("settled_amount",e.target.value)} placeholder={form.status === "settled" ? "Automático" : "0,00"} /></Field><Field label="Cuenta origen"><DatalistInput value={form.origin} values={labels("origin")} onChange={(v)=>set("origin",v)} /></Field><Field label="Cuenta destino"><DatalistInput value={form.destination} values={labels("destination")} onChange={(v)=>set("destination",v)} /></Field><Field label="Cliente / proveedor"><input value={form.counterparty} onChange={(e)=>set("counterparty",e.target.value)} /></Field><Field label="Referencia"><input value={form.reference} onChange={(e)=>set("reference",e.target.value)} /></Field><Field label="Vencimiento exacto"><input type="date" value={form.due_date} onChange={(e)=>set("due_date",e.target.value)} /></Field><Field label="O solo mes previsto"><input type="month" value={form.due_month} onChange={(e)=>set("due_month",e.target.value)} /></Field><Field label="Bruto"><input inputMode="decimal" value={form.gross_amount} onChange={(e)=>set("gross_amount",e.target.value)} placeholder="Opcional" /></Field><Field label="Comisiones"><input inputMode="decimal" value={form.fee_amount} onChange={(e)=>set("fee_amount",e.target.value)} placeholder="0,00" /></Field><Field label="Neto"><input inputMode="decimal" value={form.net_amount} onChange={(e)=>set("net_amount",e.target.value)} placeholder="Opcional" /></Field></div>
     <Field label="Descripción / notas"><textarea rows={3} value={form.description} onChange={(e)=>set("description",e.target.value)} /></Field>
     <div className={styles.uploadBox}><div><FileText size={18}/><span>{form.document_path ? "Justificante adjunto" : "Factura o justificante opcional"}</span></div><label className={styles.secondaryButton}><Upload size={15}/>{uploading ? "Subiendo…" : "Adjuntar"}<input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" hidden disabled={uploading} onChange={(e)=>void upload(e.target.files?.[0])}/></label></div>
