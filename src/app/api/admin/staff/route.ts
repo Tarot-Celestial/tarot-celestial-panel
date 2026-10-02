@@ -24,7 +24,7 @@ async function uidFromBearer(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data } = getAuthUserFromRequest(req);
+  const { data } = await getAuthUserFromRequest(req);
   return { uid: data.user?.id || null };
 }
 

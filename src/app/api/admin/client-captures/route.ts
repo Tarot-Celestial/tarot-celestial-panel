@@ -10,7 +10,7 @@ const env = (name: string) => { const value = process.env[name]; if (!value) thr
 const adminClient = () => createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
 
 async function requireAdmin(req: Request) {
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const db = adminClient();
   const { data: worker, error: workerError } = await db.from("workers").select("id,role").eq("user_id", data.user.id).maybeSingle();

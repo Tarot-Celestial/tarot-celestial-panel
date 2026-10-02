@@ -17,7 +17,7 @@ async function requireAdmin(req: Request) {
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
 
-  const { data: user } = getAuthUserFromRequest(req);
+  const { data: user } = await getAuthUserFromRequest(req);
   const uid = user?.user?.id;
 
   const { data: me } = await admin

@@ -22,7 +22,7 @@ async function requireAdmin(req: Request) {
   if (!token) throw new Error("NO_AUTH");
 
   const admin = adminClient();
-  const { data: userData, error: userError } = getAuthUserFromRequest(req);
+  const { data: userData, error: userError } = await getAuthUserFromRequest(req);
   if (userError) throw userError;
 
   const uid = userData.user?.id;

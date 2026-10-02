@@ -10,7 +10,7 @@ function env(name: string) { const value = process.env[name]; if (!value) throw 
 function adminClient() { return createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } }); }
 
 async function authenticatedCentral(req: Request) {
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const admin = adminClient();
   const { data: rows, error: workerError } = await admin.from("workers").select("id,role,is_active").eq("user_id", data.user.id);

@@ -12,7 +12,7 @@ function adminClient() { return createClient(env("NEXT_PUBLIC_SUPABASE_URL"), en
 
 async function authenticatedWorker(req: Request) {
   if (!(req.headers.get("authorization") || "").startsWith("Bearer ")) return null;
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const admin = adminClient();
   const result = await admin.from("workers").select("id,role,is_active").eq("user_id", data.user.id);

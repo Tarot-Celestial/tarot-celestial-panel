@@ -16,7 +16,7 @@ function isUuid(value: unknown) {
 }
 
 async function requireCentral(req: Request) {
-  const user = getAuthUserFromRequest(req).data.user;
+  const user = (await getAuthUserFromRequest(req)).data.user;
   if (!user?.id) return { ok: false as const, status: 401, error: "NO_AUTH" };
 
   const admin = getServiceClient();

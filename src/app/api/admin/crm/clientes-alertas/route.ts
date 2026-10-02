@@ -24,7 +24,7 @@ async function uidFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error) throw error;
   return data.user?.id || null;
 }
