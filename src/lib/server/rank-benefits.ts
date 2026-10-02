@@ -1,3 +1,11 @@
+export type ClientRankBenefits = { rank_key: string | null; purchase_coins: number; ritual_access: boolean };
+export async function clientRankBenefits(admin: any, clientId: string): Promise<ClientRankBenefits> {
+  const { data, error } = await admin.rpc("tc_rank_phase_one_state", { p_cliente_id: clientId });
+  if (error) throw error;
+  if (!data || typeof data.ritual_access !== "boolean") throw new Error("RANK_BENEFITS_NOT_CONFIGURED");
+  return data;
+}
+
 import { pointsFromAmount } from "@/lib/server/cliente-platform";
 /** Database-owned purchase benefits. Never calculate eligibility in a browser. */
 export async function rankState(admin: any, clientId: string) {

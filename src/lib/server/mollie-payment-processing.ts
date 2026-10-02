@@ -194,7 +194,8 @@ export async function processMolliePayment(paymentId: string) {
       if (committed?.status !== "completed") throw new Error("PROMOTION_COMPLETION_RETRY");
       return okResponse();
     } else if (crmManualAmount) {
-      const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
+      const { data: transaction, error: transactionError } = await admin.rpc("tc_confirm_rank_purchase", {
+    p_kind: "manual",
         p: {
           cliente_id: locked.cliente_id,
           payment_ref: `mollie:${paymentId}`,

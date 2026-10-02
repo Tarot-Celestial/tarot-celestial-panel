@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowRight, Check, Clock3, Gem, Heart, LockKeyhole, MoonStar, Orbit, Shield, Sparkles, Sprout } from "lucide-react";
+import { ArrowRight, Check, Clock3, Gem, Heart, MoonStar, Orbit, Shield, Sparkles, Sprout } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { RITUAL_CHANGED } from "@/lib/ritual-sync";
@@ -16,7 +16,7 @@ type Ritual = {
   message?: string; advice?: string; phase?: Phase;
   ritual_types?: { nombre?: string; slug?: string; icono?: string; descripcion?: string; fases?: Phase[] } | null;
 };
-type ResponseData = { ok: boolean; diamond: boolean; rank?: string; ritual: Ritual | null; history: Ritual[] };
+type ResponseData = { ok: boolean; ritual_access: boolean; rank?: string; ritual: Ritual | null; history: Ritual[] };
 const sb = supabaseClienteBrowser();
 const icons: Record<string, typeof Shield> = { shield: Shield, heart: Heart, orbit: Orbit, gem: Gem, sprout: Sprout, sparkles: Sparkles };
 const statusNames: Record<string, string> = { pendiente: "Pendiente", activo: "En proceso", pausado: "Pausado", completado: "Completado", cancelado: "Cancelado" };
@@ -46,6 +46,7 @@ export default function RitualPage() {
       if (!result.ok) throw new Error("No se pudo cargar tu ritual.");
       if (!controller.signal.aborted) { setData(result); setError(""); setUpdated(new Date()); }
     } catch (cause) {
+      if (!controller.signal.aborted || controller.signal.reason === "timeout") setData(null);
       if (controller.signal.reason === "timeout") setError("La actualización está tardando demasiado. Inténtalo de nuevo.");
       else if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "No se pudo cargar tu ritual.");
     } finally {
@@ -73,12 +74,14 @@ export default function RitualPage() {
     };
   }, [load]);
 
+  if (data && !data.ritual_access) return <ClienteLayout title="Panel cliente"><></></ClienteLayout>;
+
   return <ClienteLayout title="Mi Ritual" subtitle="Tu espacio privado para seguir cada etapa de tu experiencia." eyebrow="Tarot Celestial · Experiencia privada">
     <div className={styles.root}>
       <div className={styles.refreshBar}><span>{updated ? `Actualizado a las ${updated.toLocaleTimeString("es-ES")}` : "Consultando tu ritual…"}</span><button type="button" onClick={() => void load()}>Actualizar</button></div>
       {error && <section className={styles.error} role="alert"><span>{error}{data ? " Se muestra la última información recibida." : ""}</span><button onClick={() => void load()}>Reintentar</button></section>}
       {loading ? <section className={styles.state} role="status">Preparando tu espacio ritual…</section>
-        : !data ? null : !data.diamond ? <Locked rank={data.rank} /> : <>
+        : !data?.ritual_access ? null : <>
           {data.ritual ? <Active key={data.ritual.id} ritual={data.ritual} /> : <Empty />}
           <History rituals={data.history || []} />
         </>}
@@ -86,11 +89,8 @@ export default function RitualPage() {
   </ClienteLayout>;
 }
 
-function Locked({ rank }: { rank?: string }) {
-  return <section className={styles.empty}><LockKeyhole size={42} /><span className={styles.eyebrow}>EXPERIENCIA EXCLUSIVA DIAMANTE</span><h2>Tu ritual merece una experiencia única</h2><p>Diamante desbloquea el seguimiento visual de tus rituales, sus fases y los consejos para cada momento.</p><small>Tu rango actual: {rank || "Sin rango"}</small></section>;
-}
 function Empty() {
-  return <section className={styles.empty}><Sparkles size={42} /><span className={styles.eyebrow}>RANGO DIAMANTE</span><h2>Tu espacio ritual está preparado</h2><p>Cuando tengas un ritual activo podrás seguir aquí cada etapa de su evolución.</p></section>;
+  return <section className={styles.empty}><Sparkles size={42} /><span className={styles.eyebrow}>TU ESPACIO PERSONAL</span><h2>Tu espacio ritual está preparado</h2><p>Cuando tengas un ritual activo podrás seguir aquí cada etapa de su evolución.</p></section>;
 }
 
 function Visual({ ritual, current, count }: { ritual: Ritual; current: number; count: number }) {

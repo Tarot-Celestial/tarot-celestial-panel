@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 
 export function getEnv(name: string): string {
@@ -74,7 +73,7 @@ export async function authUserFromBearer(req: Request): Promise<{
     auth: { persistSession: false },
   });
 
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await userClient.auth.getUser(token);
   if (error) throw error;
 
   const user: any = data.user || null;

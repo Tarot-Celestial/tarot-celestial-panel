@@ -249,73 +249,23 @@ export async function applyClientPurchase(
   const pack = getClientePack(params.packId);
   const packName = pack?.nombre || params.packId;
 
-  const { data: existingPayment, error: existingPaymentError } = await admin
-    .from("crm_cliente_pagos")
-    .select("id, referencia_externa, cliente_id")
-    .eq("referencia_externa", params.paymentRef)
-    .maybeSingle();
-  if (existingPaymentError) throw existingPaymentError;
-  if (existingPayment?.id) {
-    return { ok: true, duplicated: true, payment: existingPayment };
-  }
-
-  const { data: clienteActual, error: clienteError } = await admin
-    .from("crm_clientes")
-    .select("id, nombre, apellido, puntos, minutos_free_pendientes, minutos_normales_pendientes")
-    .eq("id", params.clienteId)
-    .maybeSingle();
-  if (clienteError) throw clienteError;
-  if (!clienteActual?.id) throw new Error("CLIENTE_NO_EXISTE");
-
   const amountUsd = Number(params.amountUsd || 0);
   const totalMinutes = Math.max(0, Math.floor(Number(params.totalMinutes || 0)));
   const minutesSplit = splitMinutes(totalMinutes);
-  const puntosGanados = pointsFromAmount(amountUsd);
-
-  const { data: pago, error: pagoError } = await admin
-    .from("crm_cliente_pagos")
-    .insert({
-      cliente_id: params.clienteId,
-      importe: amountUsd,
-      moneda: "USD",
-      metodo,
-      estado: "completed",
-      notas: params.notas || `Compra automatizada desde panel cliente · ${packName}`,
-      referencia_externa: params.paymentRef,
-      pack_id: params.packId,
-      pack_name: packName,
-      paid_minutes: pack ? Math.max(0, totalMinutes - Number(pack.bonusMinutes || 0)) : minutesSplit.normal,
-      bonus_minutes: pack ? Math.max(0, Number(pack.bonusMinutes || 0)) : minutesSplit.free,
-      stripe_session_id: params.stripeSessionId || null,
-      payment_intent: params.paymentIntent || null,
-      created_by_user_id: null,
-      created_by_role: "cliente_webhook",
-    })
-    .select("*")
-    .single();
-  if (pagoError) throw pagoError;
-
-  const nextFree = toNum(clienteActual.minutos_free_pendientes) + minutesSplit.free;
-  const nextNormal = toNum(clienteActual.minutos_normales_pendientes) + minutesSplit.normal;
-  const nextPoints = toNum(clienteActual.puntos) + puntosGanados;
-
-  await admin
-    .from("crm_clientes")
-    .update({
-      minutos_free_pendientes: nextFree,
-      minutos_normales_pendientes: nextNormal,
-      puntos: nextPoints,
-      updated_at: nowIso,
-    })
-    .eq("id", params.clienteId);
-
-  await admin.from("cliente_puntos_historial").insert({
-    cliente_id: params.clienteId,
-    tipo: "ganado",
-    puntos: puntosGanados,
-    descripcion: `Compra ${packName} (${amountUsd.toFixed(2)} USD) → +${puntosGanados} puntos.`,
-    created_at: nowIso,
+  const { data: transaction, error } = await admin.rpc("tc_confirm_rank_purchase", {
+    p_kind: "minutes", p: {
+      cliente_id: params.clienteId, payment_ref: params.paymentRef,
+      amount: amountUsd, currency: "USD", metodo, pack_id: params.packId, pack_name: packName,
+      free: minutesSplit.free, normal: minutesSplit.normal,
+      stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
+      created_by_role: "cliente_webhook", notas: params.notas || `Compra ${packName}`,
+    },
   });
+  if (error) throw error;
+  if (transaction.duplicated) return { ok: true, ...transaction };
+  const pago = transaction.payment;
+  const puntosGanados = Number(transaction.rank_coins || 0);
+  const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id",params.clienteId).maybeSingle();
 
   const { start, end } = monthRange(new Date());
   const { data: monthPayments, error: monthPaymentsError } = await admin

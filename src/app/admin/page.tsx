@@ -47,6 +47,7 @@ const AdminChatPanel = nextDynamic(() => import("@/components/admin/AdminChatPan
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { ssr:false });
 const CaptacionPanel = nextDynamic(() => import("@/components/captacion/CaptacionPanel"), { ssr:false });
 const CollaboratorBillingReport = nextDynamic(() => import("@/components/admin/CollaboratorBillingReport"), { ssr:false });
+const RankBenefitsPhaseOne = nextDynamic(() => import("@/components/admin/RankBenefitsPhaseOne"), { ssr:false });
 const WelldoneAdminPanel = nextDynamic(() => import("@/components/admin/WelldoneAdminPanel"), { ssr:false });
 const FinanceControlCenter = nextDynamic(() => import("@/components/admin/FinanceControlCenter"), { ssr:false });
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
@@ -73,6 +74,7 @@ const ADMIN_NAV = [
   { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
   { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
+  { key: "rank-benefits", icon: Sparkles, label: "Beneficios de rangos y paquetes", kicker: "Coins y accesos por rango", tone: "goldPurple" },
   { key: "finance-center", icon: ReceiptText, label: "Factura de gastos, ingresos y ganancias", kicker: "Control económico y pendientes", tone: "goldPurple" },
   { key: "editor", icon: BookOpen, label: "Editor", kicker: "Factura abierta", tone: "violet" },
   { key: "estadisticas", icon: BarChart3, label: "Estadísticas", kicker: "Rendimiento global", tone: "blue" },
@@ -177,6 +179,7 @@ type TabKey =
   | "panel"
   | "facturas"
   | "welldone"
+  | "rank-benefits"
   | "finance-center"
   | "editor"
   | "estadisticas"
@@ -3010,6 +3013,7 @@ function AdminPage() {
 
 
           {tab === "welldone" && <WelldoneAdminPanel />}
+          {tab === "rank-benefits" && <RankBenefitsPhaseOne />}
           {tab === "finance-center" && <FinanceControlCenter />}
 
           {tab === "clientes" && (

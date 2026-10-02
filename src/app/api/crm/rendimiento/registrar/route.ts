@@ -142,27 +142,8 @@ function rpcIsMissing(error: any, rpcName: string) {
 }
 
 async function registerCallAtomic(admin: any, payload: any) {
-  // v8 es la implementación actual. Si PostgREST todavía no la expone por una
-  // cache antigua, probamos únicamente versiones que sabemos que existen como
-  // compatibilidad. Cualquier error INTERNO de una RPC se devuelve de inmediato
-  // para no esconderlo detrás de un fallback engañoso.
-  const rpcCandidates = [
-    "crm_register_call_atomic_v8",
-    "crm_register_call_atomic_v4",
-    "crm_register_call_atomic_v2",
-  ];
-
-  let lastResult: any = null;
-
-  for (const rpcName of rpcCandidates) {
-    const result = await admin.rpc(rpcName, { p_payload: payload });
-    lastResult = { ...result, rpcName };
-
-    if (!result.error) return lastResult;
-    if (!rpcIsMissing(result.error, rpcName)) return lastResult;
-  }
-
-  return lastResult;
+  const result = await admin.rpc("tc_confirm_rank_purchase", { p_kind: "call", p: payload });
+  return { ...result, rpcName: "tc_confirm_rank_purchase" };
 }
 
 async function ensureSuperPromoSpin(

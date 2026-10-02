@@ -329,7 +329,7 @@ function formatPromoMoney(value: number, currency: string) {
 }
 
 function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel; busy: boolean; onBuy: () => void }) {
-  const rewardCoins = pack.rewardCoins ?? Math.round(pack.priceUsd * 10);
+  const rewardCoins = pack.rewardCoins ?? 0;
   return (
     <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`} data-level={level} data-highlight={pack.highlight ? "true" : "false"}>
       {pack.highlight ? <span className={styles.recommended}>{level === 3 ? "PREMIUM" : level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}

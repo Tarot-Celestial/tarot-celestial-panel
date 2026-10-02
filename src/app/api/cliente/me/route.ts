@@ -1,3 +1,5 @@
+import { clientRankBenefits } from "@/lib/server/rank-benefits";
+import { benefitLabels } from "@/lib/rank-benefit-config";
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
@@ -10,6 +12,7 @@ import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
 import { getActiveClientPaymentProvider } from "@/lib/server/client-payment-settings";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 type ClienteRow = Record<string, any> & {
   id: string;
@@ -23,8 +26,8 @@ type ClienteRow = Record<string, any> & {
 };
 
 function rankMeta(rank: string | null | undefined) {
-  const key = normalizeClientRank(rank) || "bronce";
-  const label = key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : "Bronce";
+  const key = normalizeClientRank(rank) || "sin_rango";
+  const label = key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : key === "bronce" ? "Bronce" : "Sin rango";
   const min = key === "diamante" ? 1000 : key === "oro" ? 500 : key === "plata" ? 100 : 1;
   const nextRank = key === "diamante" ? null : key === "oro" ? "diamante" : key === "plata" ? "oro" : "plata";
   const nextTarget = nextRank === "diamante" ? 1000 : nextRank === "oro" ? 500 : nextRank === "plata" ? 100 : null;
@@ -37,7 +40,7 @@ function rankMeta(rank: string | null | undefined) {
     nextLabel: nextRank === "diamante" ? "Diamante" : nextRank === "oro" ? "Oro" : nextRank === "plata" ? "Plata" : null,
     nextTarget,
     benefits: currentRankBenefits(key),
-    nextBenefits: nextRank ? currentRankBenefits(nextRank) : [],
+    nextBenefits: nextRank ? currentRankBenefits(nextRank).filter(label => !label.includes("Mi Ritual")) : [],
   };
 }
 
@@ -250,8 +253,8 @@ const rolling30Spend = spendPagos + spendLlamadas;
 
     const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
     const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
-    const effectiveRank = effectiveRankState.effective || normalizeClientRank(liveRank) || "bronce";
-
+    const configuredBenefits = await clientRankBenefits(gate.admin, cliente.id);
+    const effectiveRank = configuredBenefits.rank_key || "sin_rango";
     const clienteConRank = {
       ...cliente,
       rango_actual: effectiveRank,
@@ -265,6 +268,7 @@ const rolling30Spend = spendPagos + spendLlamadas;
 
     const rank = {
       ...rankMeta(effectiveRank),
+      benefits: [...currentRankBenefits(effectiveRank).filter(label => !label.includes("Mi Ritual")), ...benefitLabels(configuredBenefits)],
       automatic_rank: effectiveRankState.automatic || normalizeClientRank(liveRank),
       effective_rank: effectiveRank,
       has_override: Boolean(effectiveRankState.override),
@@ -298,11 +302,12 @@ const rolling30Spend = spendPagos + spendLlamadas;
       historial: historial || [],
       recompensas: recompensasUnicas,
       rank_info: rank,
+      rank_benefits: configuredBenefits,
       rank_progress: rankProgress,
       welcome_gift: welcomeState.welcomeGift,
-      packs: CLIENTE_MINUTE_PACKS,
+      packs: CLIENTE_MINUTE_PACKS.map(pack => ({ ...pack, rewardCoins: configuredBenefits.purchase_coins })),
       payment_provider: paymentProvider,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ME" }, { status: 500 });
   }

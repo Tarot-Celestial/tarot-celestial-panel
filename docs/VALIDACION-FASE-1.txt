@@ -1,0 +1,43 @@
+
+> test
+> node --test tests/*.test.cjs tests/*.integration.cjs
+
+✔ rejects unsafe links and images while allowing local and HTTPS destinations (1.6861ms)
+✔ WhatsApp is unavailable until an official transport is connected (0.3101ms)
+✔ rejects missing, expired and malformed content (0.2726ms)
+✔ audiences validate identifiers, bounds and discard inactive filters (0.643ms)
+✔ push endpoints cannot target arbitrary hosts or internal services (0.3738ms)
+✔ uses server tier keys independently of localized labels or numeric level (1.8613ms)
+✔ supports actual client and tarotista rank codes without changing their labels (0.2628ms)
+✔ missing, unknown and display labels cannot silently give a gold rank (0.165ms)
+✔ a rank change produces a new palette with no persisted account state (0.181ms)
+✔ rank labels remain readable on both light and dark panel backgrounds (0.5718ms)
+✔ A/B/G: saved 500 then 750, retries retain original result and never credit twice (2908.7474ms)
+✔ C/D/E: ritual access is configurable for every rank, including revocation (15.5071ms)
+✔ F: stale revision and invalid values roll back without overwriting saved state (10.7073ms)
+✔ transaction failure rolls back balance, payment and receipt, allowing a retry (6.2176ms)
+✔ no rank, rolling window, manual override and expiry resolve without UI defaults (11.6529ms)
+✔ manual, promotional and CRM purchases use same configured Coins (10.0286ms)
+✔ PayPal completion is atomic and repeated callbacks preserve the balance (5.4581ms)
+✔ cross-customer reference collision is rejected and clients have no direct administrative privileges (4.2449ms)
+✔ reapplying migrations preserves configured values, permissions and credited receipts (20.3608ms)
+✔ rejects malformed config, decimal/negative Coins and wrong permission types (1.3415ms)
+✔ F: Admin retains edits on failed save, shows error, then shows success only after acknowledgement (168.9668ms)
+✔ C/D/E: client navigation renders Mi ritual only when permission is true, regardless of rank (223.9017ms)
+✔ Admin endpoint rejects non-admins and propagates database failure without success (42.5648ms)
+✔ direct ritual API access without permission returns no ritual and never queries ritual rows (12.0932ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3223.6655
+
+
+> typecheck
+> tsc --noEmit
+
+
+Production build: completed successfully using local placeholder environment variables.

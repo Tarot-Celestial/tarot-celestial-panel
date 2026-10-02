@@ -2,7 +2,6 @@ import {
   computeCurrentRankFromSpend,
   createClientNotification,
   monthRange,
-  pointsFromAmount,
   splitMinutes,
   syncClientMonthTag,
   toNum,
@@ -38,23 +37,25 @@ export async function applyConfiguredMinutePurchase(
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("IMPORTE_CONFIRMADO_INVALIDO");
   const totalMinutes = Number(pack.totalMinutes);
   const minutesSplit = splitMinutes(totalMinutes);
-  const puntosGanados = pack.rewardCoins ?? pointsFromAmount(amount);
+  // Coins are resolved and credited inside the purchase transaction in Supabase.
   const rouletteLevel = rouletteLevelForPurchaseAmount(amount);
   const rouletteSpins = rouletteLevel ? Math.max(0, Number(pack.rouletteSpins || 0)) : 0;
 
-  const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v3", {
+  const { data: transaction, error: transactionError } = await admin.rpc("tc_confirm_rank_purchase", {
+    p_kind: "minutes",
     p: { cliente_id: params.clienteId, payment_ref: params.paymentRef,
       stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
       created_by_user_id: params.createdByUserId || null,
       created_by_role: params.createdByRole || "cliente_webhook",
       amount, currency, metodo, pack_id: pack.id, pack_name: pack.nombre,
-      free: minutesSplit.free, normal: minutesSplit.normal, points: puntosGanados,
+      free: minutesSplit.free, normal: minutesSplit.normal,
       oracle_credits: pack.oracleCredits || 0,
       roulette_level: rouletteLevel, roulette_spins: rouletteSpins,
       notas: params.notas || "Compra automatizada desde panel cliente · " + pack.nombre },
   });
   if (transactionError) throw transactionError;
   const pago = transaction.payment;
+  const puntosGanados = Number(transaction.rank_coins || 0);
   const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
   const { data: grantedSpins } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", pago.id).order("created_at", { ascending: true });
   if (transaction.duplicated) return { ok: true, ...transaction, creditedMinutes: splitMinutes(Number(pago.paid_minutes ?? totalMinutes)), spins: grantedSpins || [] };

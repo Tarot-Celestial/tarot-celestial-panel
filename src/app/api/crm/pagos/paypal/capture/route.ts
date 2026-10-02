@@ -71,6 +71,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "PAGO_NO_EXISTE" }, { status: 404 });
     }
 
+    if (String(pago.estado || "").toLowerCase() === "completed") {
+      return NextResponse.json({ ok: true, pago, status: "completed" });
+    }
+
     if (cancelled) {
       const { data: cancelledPago, error: cancelledError } = await admin
         .from("crm_cliente_pagos")
@@ -87,13 +91,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, pago: cancelledPago, status: "cancelled" });
     }
 
-    if (String(pago.estado || "").toLowerCase() === "completed") {
-      return NextResponse.json({ ok: true, pago, status: "completed" });
-    }
-
     const accessToken = await getPayPalAccessToken();
 
-    const captureRes = await fetch(`${paypalBaseUrl()}/v2/checkout/orders/${paypalOrderId}/capture`, {
+    let captureRes = await fetch(`${paypalBaseUrl()}/v2/checkout/orders/${paypalOrderId}/capture`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -102,8 +102,15 @@ export async function GET(req: Request) {
       cache: "no-store",
     });
 
-    const captureJson = await captureRes.json().catch(() => ({}));
+    let captureJson = await captureRes.json().catch(() => ({}));
 
+    // Recover a provider-confirmed capture if the previous database commit failed.
+    if (!captureRes.ok && captureJson?.details?.some((item: any) => item.issue === "ORDER_ALREADY_CAPTURED")) {
+      captureRes = await fetch(`${paypalBaseUrl()}/v2/checkout/orders/${paypalOrderId}`, {
+        headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store",
+      });
+      captureJson = await captureRes.json().catch(() => ({}));
+    }
     if (!captureRes.ok) {
       const { data: failedPago, error: failedError } = await admin
         .from("crm_cliente_pagos")
@@ -130,17 +137,17 @@ export async function GET(req: Request) {
 
     const payerId = captureJson?.payer?.payer_id || null;
 
-    const { data: completedPago, error: completedError } = await admin
-      .from("crm_cliente_pagos")
-      .update({
-        estado: "completed",
-        paypal_capture_id: captureId,
-        paypal_payer_id: payerId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", pago.id)
-      .select("*")
-      .single();
+    const capture = captureJson?.purchase_units?.[0]?.payments?.captures?.[0];
+    if (captureJson?.status !== "COMPLETED" || capture?.status !== "COMPLETED" || !captureId
+      || !Number.isFinite(Number(capture.amount?.value))
+      || Math.abs(Number(capture.amount?.value) - Number(pago.importe)) > 0.001
+      || String(capture.amount?.currency_code) !== String(pago.moneda)) {
+      throw new Error("PAYPAL_CAPTURE_NOT_CONFIRMED");
+    }
+    const { data: completed, error: completedError } = await admin.rpc("tc_confirm_rank_purchase", {
+      p_kind: "paypal", p: { cliente_id: pago.cliente_id, payment_id: pago.id, capture_id: captureId, payer_id: payerId },
+    });
+    const completedPago = completed?.payment;
 
     if (completedError) throw completedError;
 

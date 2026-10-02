@@ -273,12 +273,14 @@ export async function applyPromotionMinutePurchase(
   }
 
   const totalMinutes = snap.paid_minutes + snap.free_minutes;
-  const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_promocion_v1", {
-    p_attempt_id: params.attemptId,
+  const { data: transaction, error: transactionError } = await admin.rpc("tc_confirm_rank_purchase", {
+    p_kind: "promotion",
+    p: { attempt_id: params.attemptId, cliente_id: params.clienteId, payment_ref: params.paymentRef },
   });
   if (transactionError) throw transactionError;
 
   const payment = transaction?.payment;
+  snap.coins = Number(transaction?.rank_coins || 0);
   const paymentId = String(payment?.id || "");
   const grantedSpins = paymentId ? await ensurePromotionRouletteGrant(admin, {
     attemptId: params.attemptId,
