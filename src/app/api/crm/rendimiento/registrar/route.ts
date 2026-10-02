@@ -119,28 +119,50 @@ function isUuid(value: unknown): value is string {
   return UUID_PATTERN.test(String(value ?? "").trim());
 }
 
-function rpcIsMissing(error: any) {
+function rpcIsMissing(error: any, rpcName: string) {
   const code = String(error?.code || "").toUpperCase();
   const message = `${error?.message || ""} ${error?.details || ""}`.toUpperCase();
-  return code === "PGRST202"
-    || code === "42883"
-    || message.includes("COULD NOT FIND THE FUNCTION")
-    || (message.includes("DOES NOT EXIST") && message.includes("CRM_REGISTER_CALL_ATOMIC"));
+  const normalizedRpcName = String(rpcName || "").toUpperCase();
+
+  // PGRST202 es el error específico de PostgREST cuando una RPC no está
+  // disponible en su schema cache. No tratamos 42883 de forma genérica como
+  // "RPC inexistente": PostgreSQL usa también 42883 para errores reales como
+  // "operator does not exist: text = uuid". En ese caso debemos detenernos y
+  // devolver el fallo original en lugar de ocultarlo probando otra versión.
+  if (code === "PGRST202") return true;
+  if (message.includes("COULD NOT FIND THE FUNCTION")) return true;
+
+  // Compatibilidad con un error PostgreSQL de función realmente inexistente.
+  // Solo se considera fallback cuando el mensaje habla explícitamente de la RPC
+  // que acabamos de intentar, nunca por el código 42883 por sí solo.
+  return code === "42883"
+    && message.includes("FUNCTION")
+    && message.includes("DOES NOT EXIST")
+    && message.includes(normalizedRpcName);
 }
 
 async function registerCallAtomic(admin: any, payload: any) {
-  // v8 es la implementación actual. Algunas instalaciones de PostgREST pueden
-  // conservar una caché antigua y no exponer todavía v8/v4 aunque existan en
-  // PostgreSQL. En ese caso usamos v2 como puente estable: su firma ya está en
-  // la caché REST y en Supabase se redefine para delegar internamente en v8.
-  const v8 = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
-  if (!v8.error || !rpcIsMissing(v8.error)) return { ...v8, rpcName: "crm_register_call_atomic_v8" };
+  // v8 es la implementación actual. Si PostgREST todavía no la expone por una
+  // cache antigua, probamos únicamente versiones que sabemos que existen como
+  // compatibilidad. Cualquier error INTERNO de una RPC se devuelve de inmediato
+  // para no esconderlo detrás de un fallback engañoso.
+  const rpcCandidates = [
+    "crm_register_call_atomic_v8",
+    "crm_register_call_atomic_v4",
+    "crm_register_call_atomic_v2",
+  ];
 
-  const v4 = await admin.rpc("crm_register_call_atomic_v4", { p_payload: payload });
-  if (!v4.error || !rpcIsMissing(v4.error)) return { ...v4, rpcName: "crm_register_call_atomic_v4" };
+  let lastResult: any = null;
 
-  const v2 = await admin.rpc("crm_register_call_atomic_v2", { p_payload: payload });
-  return { ...v2, rpcName: "crm_register_call_atomic_v2" };
+  for (const rpcName of rpcCandidates) {
+    const result = await admin.rpc(rpcName, { p_payload: payload });
+    lastResult = { ...result, rpcName };
+
+    if (!result.error) return lastResult;
+    if (!rpcIsMissing(result.error, rpcName)) return lastResult;
+  }
+
+  return lastResult;
 }
 
 async function ensureSuperPromoSpin(
