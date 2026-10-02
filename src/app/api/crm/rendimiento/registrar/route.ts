@@ -119,31 +119,12 @@ function isUuid(value: unknown): value is string {
   return UUID_PATTERN.test(String(value ?? "").trim());
 }
 
-function rpcIsMissing(error: any, rpcName: string) {
-  const code = String(error?.code || "").toUpperCase();
-  const message = `${error?.message || ""} ${error?.details || ""}`.toUpperCase();
-  const normalizedRpcName = String(rpcName || "").toUpperCase();
-
-  // PGRST202 es el error específico de PostgREST cuando una RPC no está
-  // disponible en su schema cache. No tratamos 42883 de forma genérica como
-  // "RPC inexistente": PostgreSQL usa también 42883 para errores reales como
-  // "operator does not exist: text = uuid". En ese caso debemos detenernos y
-  // devolver el fallo original en lugar de ocultarlo probando otra versión.
-  if (code === "PGRST202") return true;
-  if (message.includes("COULD NOT FIND THE FUNCTION")) return true;
-
-  // Compatibilidad con un error PostgreSQL de función realmente inexistente.
-  // Solo se considera fallback cuando el mensaje habla explícitamente de la RPC
-  // que acabamos de intentar, nunca por el código 42883 por sí solo.
-  return code === "42883"
-    && message.includes("FUNCTION")
-    && message.includes("DOES NOT EXIST")
-    && message.includes(normalizedRpcName);
-}
-
 async function registerCallAtomic(admin: any, payload: any) {
-  const result = await admin.rpc("tc_confirm_rank_purchase", { p_kind: "call", p: payload });
-  return { ...result, rpcName: "tc_confirm_rank_purchase" };
+  // El registro de llamadas debe usar directamente la transacción v8.
+  // tc_confirm_rank_purchase es un adaptador de compras de la nueva Fase 1
+  // que no debe envolver v8 porque v8 ya aplica sus propios beneficios/rangos.
+  const result = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
+  return { ...result, rpcName: "crm_register_call_atomic_v8" };
 }
 
 async function ensureSuperPromoSpin(

@@ -41,14 +41,20 @@ declare client_id uuid; v_operation_key text; benefit jsonb; outcome jsonb; rece
   attempt public.cliente_payment_attempts; payment public.crm_cliente_pagos; coin_amount integer; starting_points bigint; final_points bigint;
 begin
   if p_kind not in ('minutes','manual','promotion','call','paypal') then raise exception 'INVALID_PURCHASE_KIND'; end if;
+
+  -- crm_register_call_atomic_v8 ya contiene la lógica transaccional real de
+  -- llamadas, pagos, minutos y beneficios/rangos. No debe envolverse con este
+  -- adaptador porque eso duplica el motor de beneficios y puede acreditar
+  -- Coins dos veces o validar contra un rango distinto.
+  if p_kind='call' then
+    return public.crm_register_call_atomic_v8(p);
+  end if;
+
   client_id=(p->>'cliente_id')::uuid;
   if client_id is null then raise exception 'CLIENTE_REQUIRED'; end if;
   -- Serialize all purchase types for one customer, including simultaneous callbacks.
   select coalesce(puntos,0) into starting_points from public.crm_clientes where id=client_id for update;
   if not found then raise exception 'CLIENTE_NO_EXISTE'; end if;
-  if p_kind='call' and not coalesce((p->>'cliente_compra_minutos')::boolean,false) then
-    return public.crm_register_call_atomic_v8(p);
-  end if;
   v_operation_key=case when p_kind='call' then 'registrar_llamada:'||(p->>'operation_id')
     when p_kind='paypal' then 'paypal:'||(p->>'payment_id') else p->>'payment_ref' end;
   if v_operation_key is null or length(trim(v_operation_key))=0 then raise exception 'PURCHASE_REFERENCE_REQUIRED'; end if;
@@ -74,11 +80,6 @@ begin
       where id=attempt.id;
     end if;
     outcome=public.cliente_confirmar_compra_promocion_v1(attempt.id);
-  elsif p_kind='call' then
-    if coalesce((p->>'importe')::numeric,0)<=0 or coalesce((p->>'misma_compra')::boolean,false) then coin_amount=0; end if;
-    p=p||jsonb_build_object('points_to_add',coin_amount,
-      'purchase_benefits',coalesce(p->'purchase_benefits','{}'::jsonb)||jsonb_build_object('coins',coin_amount));
-    outcome=public.crm_register_call_atomic_v8(p);
   else
     select * into payment from public.crm_cliente_pagos where id=(p->>'payment_id')::uuid for update;
     if not found or payment.cliente_id<>client_id then raise exception 'PURCHASE_CLIENT_MISMATCH'; end if;

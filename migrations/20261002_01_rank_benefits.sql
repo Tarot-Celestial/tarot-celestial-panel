@@ -71,35 +71,48 @@ end $$;
 -- Mirrors the active rolling 30-day engine (payments + calls, including legacy name matching).
 create or replace function public.tc_rank_phase_one_state(p_cliente_id uuid)
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
-declare c public.crm_clientes; v_rank_key text; spend numeric; benefit public.tc_client_rank_benefits;
+declare
+  v_state jsonb;
+  v_rank_key text;
+  benefit public.tc_client_rank_benefits;
 begin
-  select * into c from public.crm_clientes where id=p_cliente_id;
-  if not found then raise exception 'CLIENTE_NO_EXISTE'; end if;
-  select coalesce(sum(importe),0) into spend from public.crm_cliente_pagos
-  where cliente_id=p_cliente_id and estado='completed' and importe>0
-    and created_at between now()-interval '30 days' and now();
-  select spend+coalesce(sum(l.importe),0) into spend from public.rendimiento_llamadas l
-  where l.importe>0 and (l.fecha_hora>=now()-interval '30 days'
-    or l.created_at between now()-interval '30 days' and now())
-    and (l.cliente_id=p_cliente_id or (l.cliente_id is null and
-      lower(regexp_replace(translate(trim(l.cliente_nombre),'áéíóúüñÁÉÍÓÚÜÑ','aeiouunAEIOUUN'),'\s+',' ','g')) in (
-        lower(regexp_replace(translate(trim(concat_ws(' ',c.nombre,c.apellido)),'áéíóúüñÁÉÍÓÚÜÑ','aeiouunAEIOUUN'),'\s+',' ','g')),
-        lower(regexp_replace(translate(trim(c.nombre),'áéíóúüñÁÉÍÓÚÜÑ','aeiouunAEIOUUN'),'\s+',' ','g')))));
-  select r.rank_key into v_rank_key from public.tc_client_rank_benefits r
-    where round(spend,2)>=r.min_spend order by r.min_spend desc,r.sort_order desc limit 1;
-  if to_regclass('public.client_rank_overrides') is not null then
-    select coalesce((select o.assigned_rank from public.client_rank_overrides o
-      where o.client_id=p_cliente_id and o.active and o.starts_at<=now()
-        and (o.ends_at is null or o.ends_at>now()) order by o.created_at desc limit 1),v_rank_key) into v_rank_key;
+  -- Fuente única de verdad para el rango: reutilizamos el motor existente.
+  -- Evita duplicar el cálculo de compras/llamadas y, en particular, evita
+  -- comparar rendimiento_llamadas.cliente_id (TEXT) con un UUID.
+  if not exists (select 1 from public.crm_clientes where id = p_cliente_id) then
+    raise exception 'CLIENTE_NO_EXISTE';
   end if;
+
+  v_state := public.tc_client_rank_state(p_cliente_id);
+  v_rank_key := nullif(v_state->>'effective', '');
+
   if v_rank_key is null then
-    return jsonb_build_object('rank_key',null,'purchase_coins',0,'ritual_access',false);
+    return jsonb_build_object(
+      'rank_key', null,
+      'purchase_coins', 0,
+      'ritual_access', false
+    );
   end if;
-  select * into benefit from public.tc_client_rank_benefits r where r.rank_key=v_rank_key;
-  if not found then raise exception 'RANK_BENEFITS_NOT_CONFIGURED'; end if;
-  return jsonb_build_object('rank_key',v_rank_key,
-    'purchase_coins',case when benefit.coins_enabled and benefit.is_active then benefit.purchase_coins else 0 end,
-    'ritual_access',benefit.ritual_access and benefit.is_active);
+
+  select *
+    into benefit
+  from public.tc_client_rank_benefits r
+  where r.rank_key = v_rank_key;
+
+  if not found then
+    raise exception 'RANK_BENEFITS_NOT_CONFIGURED';
+  end if;
+
+  return jsonb_build_object(
+    'rank_key', v_rank_key,
+    'purchase_coins',
+      case
+        when benefit.coins_enabled and benefit.is_active then benefit.purchase_coins
+        else 0
+      end,
+    'ritual_access',
+      benefit.ritual_access and benefit.is_active
+  );
 end $$;
 
 revoke all on function public.tc_save_rank_phase_one(jsonb) from public,anon,authenticated;
