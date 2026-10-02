@@ -56,7 +56,7 @@ async function getWorker(req: Request, db: any) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data } = await getAuthUserFromRequest(req);
+  const { data } = getAuthUserFromRequest(req);
   const uid = data.user?.id || null;
   if (!uid) return null;
 

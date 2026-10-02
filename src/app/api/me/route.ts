@@ -33,7 +33,7 @@ async function uidFromBearer(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
   const metadata = data.user?.user_metadata || {};
   const avatarUrl = metadata.avatar_url || metadata.picture || metadata.photo_url || null;

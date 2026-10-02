@@ -24,7 +24,7 @@ async function getMeFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data } = await getAuthUserFromRequest(req);
+  const { data } = getAuthUserFromRequest(req);
   const uid = data?.user?.id || null;
   if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };
 

@@ -26,7 +26,7 @@ async function workerFromReq(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data: userRes, error: userError } = await getAuthUserFromRequest(req);
+  const { data: userRes, error: userError } = getAuthUserFromRequest(req);
   if (userError) throw userError;
   const uid = userRes.user?.id;
   if (!uid) return null;

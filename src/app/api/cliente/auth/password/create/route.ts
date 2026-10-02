@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       const {
         data: { user },
         error,
-      } = await getAuthUserFromRequest(req);
+      } = getAuthUserFromRequest(req);
 
       if (error || !user) {
         return NextResponse.json(

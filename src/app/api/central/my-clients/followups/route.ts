@@ -51,7 +51,7 @@ function adminClient() {
 }
 
 async function currentWorker(req: Request): Promise<Worker | null> {
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const admin = adminClient();
   const { data: worker, error: workerError } = await admin

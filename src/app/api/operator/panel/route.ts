@@ -517,7 +517,7 @@ return { ok: false as const, error: "NO_TOKEN" as const };
     auth: { persistSession: false },
   });
 
-  const { data: userData } = await getAuthUserFromRequest(req);
+  const { data: userData } = getAuthUserFromRequest(req);
   const uid = userData?.user?.id || null;
   const email = userData?.user?.email || null;
   if (!uid) return { ok: false as const, error: "BAD_TOKEN" as const };

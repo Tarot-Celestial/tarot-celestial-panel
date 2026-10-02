@@ -81,7 +81,7 @@ function adminClient() {
 }
 
 async function getWorker(req: Request) {
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error || !data.user?.id) throw new Error("NO_AUTH");
   const admin = adminClient();
   const { data: worker, error: workerError } = await admin

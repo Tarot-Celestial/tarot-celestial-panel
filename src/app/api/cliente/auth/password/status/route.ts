@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     const {
       data: { user },
       error,
-    } = await getAuthUserFromRequest(req);
+    } = getAuthUserFromRequest(req);
 
     if (error || !user) {
       return NextResponse.json({ ok: false }, { status: 401 });

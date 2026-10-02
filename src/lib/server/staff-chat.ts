@@ -10,7 +10,7 @@ export type StaffChatActor = {
 };
 
 export async function getStaffChatActor(req: Request) {
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error || !data.user?.id) throw new Error("NO_AUTH");
 
   const db = supabaseAdmin();
