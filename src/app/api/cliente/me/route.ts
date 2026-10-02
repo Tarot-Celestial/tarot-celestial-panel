@@ -1,8 +1,7 @@
+import { rankState, decoratePacks } from "@/lib/server/rank-benefits";
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
-  computeCurrentRankFromSpend,
-  currentRankBenefits,
   toNum,
 } from "@/lib/server/cliente-platform";
 import { loadEffectiveClientRank, normalizeClientRank } from "@/lib/server/client-rank-effective";
@@ -22,86 +21,13 @@ type ClienteRow = Record<string, any> & {
   regalo_bienvenida_otorgado?: boolean | null;
 };
 
-function rankMeta(rank: string | null | undefined) {
-  const key = normalizeClientRank(rank) || "bronce";
-  const label = key === "diamante" ? "Diamante" : key === "oro" ? "Oro" : key === "plata" ? "Plata" : "Bronce";
-  const min = key === "diamante" ? 1000 : key === "oro" ? 500 : key === "plata" ? 100 : 1;
-  const nextRank = key === "diamante" ? null : key === "oro" ? "diamante" : key === "plata" ? "oro" : "plata";
-  const nextTarget = nextRank === "diamante" ? 1000 : nextRank === "oro" ? 500 : nextRank === "plata" ? 100 : null;
-
-  return {
-    key,
-    label,
-    min,
-    nextRank,
-    nextLabel: nextRank === "diamante" ? "Diamante" : nextRank === "oro" ? "Oro" : nextRank === "plata" ? "Plata" : null,
-    nextTarget,
-    benefits: currentRankBenefits(key),
-    nextBenefits: nextRank ? currentRankBenefits(nextRank) : [],
-  };
+function configuredBenefits(c:any):string[] {
+  if(!c?.is_active) return [];
+  return [c.coins_enabled?`+${c.purchase_coins} Coins extra por compra`:null,
+    c.roulette_enabled?`${c.roulette_spins} tirada(s) extra en ${c.roulette_level===5?"Ruleta Diamante":`Ruleta Nivel ${c.roulette_level}`}`:null,
+    c.daily_bonus_enabled?"Acceso al bono exclusivo diario activo":null].filter(Boolean) as string[];
 }
-
-function buildRankProgress(last30DaysSpend: number, last30DaysPurchases: number, currentRank: string | null | undefined) {
-  const gasto = toNum(last30DaysSpend);
-  const compras = Math.max(0, Math.floor(toNum(last30DaysPurchases)));
-  const rank = String(currentRank || computeCurrentRankFromSpend(gasto, compras) || "sin_rango").toLowerCase();
-
-  if (rank === "diamante") {
-    return { current_rank:"diamante", current_label:"Diamante", progress_percent:100, current_value:gasto, next_rank:null, next_label:null, next_target:null, remaining_to_next:0, status_text:"Has alcanzado Diamante, el rango más exclusivo de Tarot Celestial.", monthly_requirement_text:`En los últimos 30 días llevas ${gasto.toFixed(2)} USD acumulados y mantienes Diamante.` };
-  }
-
-  if (rank === "oro") {
-    const target = 1000; const pct=Math.max(0,Math.min(100,((gasto-500)/(target-500))*100)); const remaining=Math.max(0,target-gasto);
-    return { current_rank:"oro", current_label:"Oro", progress_percent:Number(pct.toFixed(1)), current_value:gasto, next_rank:"diamante", next_label:"Diamante", next_target:target, remaining_to_next:Number(remaining.toFixed(2)), status_text: remaining>0?`Te faltan ${remaining.toFixed(2)} USD de gasto en los últimos 30 días para llegar a Diamante.`:"Ya cumples el objetivo de Diamante.", monthly_requirement_text:`Tu progreso a Diamante se calcula con ${gasto.toFixed(2)} USD gastados en los últimos 30 días.` };
-  }
-
-  if (rank === "plata") {
-    const target = 500;
-    const pct = Math.max(0, Math.min(100, (gasto / target) * 100));
-    const remaining = Math.max(0, target - gasto);
-
-    return {
-      current_rank: "plata",
-      current_label: "Plata",
-      progress_percent: Number(pct.toFixed(1)),
-      current_value: gasto,
-      next_rank: "oro",
-      next_label: "Oro",
-      next_target: target,
-      remaining_to_next: Number(remaining.toFixed(2)),
-      status_text:
-        remaining > 0
-          ? `Te faltan ${remaining.toFixed(2)} USD de gasto en los últimos 30 días para llegar a Oro.`
-          : "Ya cumples el objetivo de Oro.",
-      monthly_requirement_text: `Tu progreso actual se calcula con ${gasto.toFixed(2)} USD gastados en los últimos 30 días.`,
-    };
-  }
-
-  const target = 100;
-  const pct = Math.max(0, Math.min(100, (gasto / target) * 100));
-  const remaining = Math.max(0, target - gasto);
-
-  return {
-    current_rank: rank === "sin_rango" ? "sin_rango" : "bronce",
-    current_label: rank === "sin_rango" ? "Sin rango" : "Bronce",
-    progress_percent: Number(pct.toFixed(1)),
-    current_value: gasto,
-    next_rank: "plata",
-    next_label: "Plata",
-    next_target: target,
-    remaining_to_next: Number(remaining.toFixed(2)),
-    status_text:
-      compras <= 0
-        ? "Con una compra dentro del panel entrarás en Bronce."
-        : remaining > 0
-        ? `Te faltan ${remaining.toFixed(2)} USD de gasto en los últimos 30 días para subir a Plata.`
-        : "Ya cumples el objetivo de Plata.",
-    monthly_requirement_text:
-      compras <= 0
-        ? "Haz una compra desde la app para activar Bronce y comenzar a sumar ventajas."
-        : `Tu rango actual refleja ${gasto.toFixed(2)} USD y ${compras} compra(s) en los últimos 30 días.`,
-  };
-}
+function rankMeta(rank:any) {return {key:rank,label:rank,min:0,nextRank:null,nextLabel:null,nextTarget:null,benefits:[] as string[],nextBenefits:[] as string[]}}
 
 async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) {
   const cliente = gate.cliente;
@@ -193,65 +119,18 @@ export async function GET(req: Request) {
     const cliente = welcomeState.cliente;
     const minutosTotales = toNum(cliente.minutos_free_pendientes) + toNum(cliente.minutos_normales_pendientes);
 
-    const now = new Date();
-    const start30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-
-    const [
-      { data: historial },
-      { data: recompensas },
-      { data: pagos30Dias },
-      { data: llamadas30Dias },
-    ] = await Promise.all([
-  gate.admin
-    .from("cliente_puntos_historial")
-    .select("id, tipo, puntos, descripcion, created_at")
-    .eq("cliente_id", cliente.id)
-    .order("created_at", { ascending: false })
-    .limit(10),
-
-  gate.admin
-    .from("recompensas")
-    .select("id, nombre, puntos_coste, minutos_otorgados, activo")
-    .eq("activo", true)
-    .order("puntos_coste", { ascending: true }),
-
-  // 💳 PAGOS APP
-  gate.admin
-    .from("crm_cliente_pagos")
-    .select("importe, estado, created_at")
-    .eq("cliente_id", cliente.id)
-    .eq("estado", "completed")
-    .gte("created_at", start30.toISOString())
-    .lte("created_at", now.toISOString()),
-
-  // 📞 LLAMADAS (AQUÍ ESTÁ LA CLAVE)
-  gate.admin
-    .from("rendimiento_llamadas")
-    .select("importe, created_at")
-    .eq("cliente_id", cliente.id)
-    .gte("created_at", start30.toISOString())
-    .lte("created_at", now.toISOString()),
-]);
-
-    const spendPagos = (pagos30Dias || []).reduce(
-  (acc: number, row: any) => acc + toNum(row?.importe),
-  0
-);
-
-const spendLlamadas = (llamadas30Dias || []).reduce(
-  (acc: number, row: any) => acc + toNum(row?.importe),
-  0
-);
-
-const rolling30Spend = spendPagos + spendLlamadas;
-    
-    const rolling30Purchases =
-  (pagos30Dias?.length || 0) + (llamadas30Dias?.length || 0);
-
-    const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
-    const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
-    const effectiveRank = effectiveRankState.effective || normalizeClientRank(liveRank) || "bronce";
-
+    const [historyResult,rewardsResult,effectiveRankState,packs] = await Promise.all([
+      gate.admin.from("cliente_puntos_historial").select("id,tipo,puntos,descripcion,created_at").eq("cliente_id",cliente.id).order("created_at",{ascending:false}).limit(10),
+      gate.admin.from("recompensas").select("id,nombre,puntos_coste,minutos_otorgados,activo").eq("activo",true).order("puntos_coste"),
+      rankState(gate.admin,cliente.id),
+      decoratePacks(gate.admin,CLIENTE_MINUTE_PACKS),
+    ]);
+    if(historyResult.error) throw historyResult.error;
+    if(rewardsResult.error) throw rewardsResult.error;
+    const historial = historyResult.data, recompensas = rewardsResult.data;
+    const rolling30Spend=Number(effectiveRankState.total), rolling30Purchases=Number(effectiveRankState.compras);
+    const effectiveRank=effectiveRankState.effective;
+    const liveRank=effectiveRankState.automatic;
     const clienteConRank = {
       ...cliente,
       rango_actual: effectiveRank,
@@ -265,17 +144,26 @@ const rolling30Spend = spendPagos + spendLlamadas;
 
     const rank = {
       ...rankMeta(effectiveRank),
+      key: effectiveRank || "sin_rango", label: effectiveRankState.config?.label || "Sin rango",
+      min: effectiveRankState.config?.min_spend || 0,
+      nextRank: effectiveRankState.next?.rank_key || null,
+      nextLabel: effectiveRankState.next?.label || null,
+      nextTarget: effectiveRankState.next?.min_spend || null,
+      benefits: configuredBenefits(effectiveRankState.config),
+      nextBenefits: configuredBenefits(effectiveRankState.next),
       automatic_rank: effectiveRankState.automatic || normalizeClientRank(liveRank),
       effective_rank: effectiveRank,
       has_override: Boolean(effectiveRankState.override),
       override_type: effectiveRankState.override?.intervention_type || null,
       override_ends_at: effectiveRankState.override?.ends_at || null,
     };
-    const rankProgress = buildRankProgress(
-      rolling30Spend,
-      rolling30Purchases,
-      effectiveRank
-    );
+    const next=effectiveRankState.next;
+    const minimum=Number(effectiveRankState.config?.min_spend||0);
+    const rankProgress={current_rank:effectiveRank||"sin_rango",current_label:rank.label,current_value:rolling30Spend,
+      next_rank:next?.rank_key||null,next_label:next?.label||null,next_target:next?.min_spend||null,
+      remaining_to_next:next?Math.max(0,Number(next.min_spend)-rolling30Spend):0,
+      progress_percent:next?Math.max(0,Math.min(100,100*(rolling30Spend-minimum)/Math.max(.01,Number(next.min_spend)-minimum))):100,
+      status_text:next?`Tu próximo rango es ${next.label}.`:"Has alcanzado el rango más alto.",monthly_requirement_text:"Calculado con compras reales de los últimos 30 días."};
 
     const recompensasUnicas = Array.from(
       new Map(
@@ -300,7 +188,7 @@ const rolling30Spend = spendPagos + spendLlamadas;
       rank_info: rank,
       rank_progress: rankProgress,
       welcome_gift: welcomeState.welcomeGift,
-      packs: CLIENTE_MINUTE_PACKS,
+      packs,
       payment_provider: paymentProvider,
     });
   } catch (e: any) {

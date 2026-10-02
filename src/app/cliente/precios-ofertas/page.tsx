@@ -1,4 +1,5 @@
 "use client";
+import RankDailyBonus from "@/components/cliente/RankDailyBonus";
 import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import Link from "next/link";
@@ -14,30 +15,12 @@ const sb = supabaseClienteBrowser();
 
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
-type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean };
+type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; currency?:string; rouletteLevel: RouletteLevel|null; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean };
 type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number };
 type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
 // Standard packs use levels 1–3; level 4 belongs to special promotions.
 type StandardPackLevel = Extract<RouletteLevel, 1 | 2 | 3>;
-
-const LEVEL_BENEFITS: Record<StandardPackLevel, { icon: string; label: string }[]> = {
-  1: [
-    { icon: "🎡", label: "1 giro Nivel 1" },
-    { icon: "✨", label: "Hasta +60 min" },
-    { icon: "🪙", label: "Hasta 400 Coins" },
-  ],
-  2: [
-    { icon: "🎡", label: "1 giro Nivel 2" },
-    { icon: "✨", label: "Hasta +80 min" },
-    { icon: "🪙", label: "Hasta 1.000 Coins" },
-  ],
-  3: [
-    { icon: "🎡", label: "1–2 giros Nivel 3" },
-    { icon: "🪙", label: "Coins por compra" },
-    { icon: "🔮", label: "2 tiradas Oráculo" },
-  ],
-};
 
 export default function PreciosOfertasPage() {
   const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
@@ -148,6 +131,7 @@ export default function PreciosOfertasPage() {
   }
 
   const total = credits + (freeAvailable ? 1 : 0);
+  const unassignedPacks = minutePacks.filter(pack=>!pack.rouletteLevel);
   const levelOnePacks = minutePacks.filter((pack) => pack.rouletteLevel === 1);
   const levelTwoPacks = minutePacks.filter((pack) => pack.rouletteLevel === 2);
   const levelThreePacks = minutePacks.filter((pack) => pack.rouletteLevel === 3);
@@ -177,6 +161,8 @@ export default function PreciosOfertasPage() {
             <div><strong>CADA COMPRA PUEDE TRAER UN REGALO</strong><small>Minutos + giro + Coins + sorpresa Halloween</small></div>
           </div>
         </section>
+
+        <RankDailyBonus/>
 
         {promotion ? (
           <section className={styles.promoSection} data-leo-anchor="active-promotion">
@@ -226,6 +212,7 @@ export default function PreciosOfertasPage() {
             <Link className={styles.rouletteShortcut} href="/cliente/ruleta">Ver ruleta <ArrowRight /></Link>
           </div>
 
+          {unassignedPacks.length>0&&<div className={styles.grid}>{unassignedPacks.map(pack=><MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={null} busy={busy===pack.id} onBuy={()=>checkout("/api/cliente/pagos/checkout-v2",pack.id)}/>)}</div>}
           <div className={styles.levelStack}>
             <section className={styles.level} aria-labelledby="level-one-title">
               <div className={styles.levelHeader}>
@@ -235,7 +222,7 @@ export default function PreciosOfertasPage() {
                   <h3 id="level-one-title">Nivel 1</h3>
                   <p>Consultas rápidas + giro con premio. Paquetes configurados como Nivel 1.</p>
                 </div>
-                <LevelBenefitChips level={1} />
+                <LevelBenefitChips summary={rouletteSummary} level={1} />
               </div>
               <div className={styles.grid}>
                 {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={1} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
@@ -250,7 +237,7 @@ export default function PreciosOfertasPage() {
                   <h3 id="level-two-title">Nivel 2</h3>
                   <p>Más consulta. Premios superiores. Paquetes configurados como Nivel 2.</p>
                 </div>
-                <LevelBenefitChips level={2} />
+                <LevelBenefitChips summary={rouletteSummary} level={2} />
               </div>
               <div className={styles.grid}>
                 {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
@@ -276,7 +263,7 @@ export default function PreciosOfertasPage() {
                   <h3 id="level-three-title">Nivel 3</h3>
                   <p>Tu compra premium desbloquea nuestros premios más exclusivos.</p>
                 </div>
-                <LevelBenefitChips level={3} />
+                <LevelBenefitChips summary={rouletteSummary} level={3} />
               </div>
               <div className={`${styles.grid} ${styles.levelThreeGrid}`}>
                 {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
@@ -328,19 +315,19 @@ function formatPromoMoney(value: number, currency: string) {
   catch { return `${Number(value || 0).toFixed(2)} ${currency}`; }
 }
 
-function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel; busy: boolean; onBuy: () => void }) {
-  const rewardCoins = pack.rewardCoins ?? Math.round(pack.priceUsd * 10);
+function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel|null; busy: boolean; onBuy: () => void }) {
+  const rewardCoins = pack.rewardCoins || 0;
   return (
     <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`} data-level={level} data-highlight={pack.highlight ? "true" : "false"}>
       {pack.highlight ? <span className={styles.recommended}>{level === 3 ? "PREMIUM" : level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
       <div className={styles.cardAura} aria-hidden="true" />
       <div className={styles.serviceTop}>
         <div className={styles.icon}>{level === 3 ? <Crown /> : level === 2 ? <Gem /> : <ShoppingBag />}</div>
-        <span className={styles.levelTag}>GIRO NIVEL {level}</span>
+        <span className={styles.levelTag}>{level?`GIRO NIVEL ${level}`:"CONSULTA"}</span>
       </div>
       <div className={styles.productCopy}><h3>{pack.nombre}</h3><p>{pack.descripcion}</p></div>
       <div className={styles.priceRow}>
-        <strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong>
+        <strong className={styles.price}>{formatPromoMoney(pack.priceUsd,pack.currency||"EUR")}</strong>
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
       <div className={styles.visualCluster} aria-hidden="true">
@@ -356,27 +343,17 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
           <span className={styles.visualEmoji}>🔮</span>
           <small>{pack.oracleCredits || 0} tirada{(pack.oracleCredits || 0) === 1 ? "" : "s"}</small>
         </div> : null}
-        {level === 3 ? <div className={`${styles.visualToken} ${styles.orbToken}`}>
-          <span className={styles.visualEmoji}>{pack.highlight ? "🌙" : "✨"}</span>
-          <small>{pack.highlight ? "Orbe premium" : "Bonus místico"}</small>
-        </div> : null}
+
       </div>
-      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={rewardCoins} oracleCredits={pack.oracleCredits} />
+      {level&&pack.rouletteSpins>0?<RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={rewardCoins} oracleCredits={pack.oracleCredits} />:null}
       <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
     </article>
   );
 }
 
-function LevelBenefitChips({ level }: { level: StandardPackLevel }) {
-  return (
-    <div className={styles.levelBenefits}>
-      <strong>Tu compra incluye</strong>
-      {LEVEL_BENEFITS[level].map((item) => (
-        <span key={`${level}-${item.label}`} className={styles.levelBenefitChip}>
-          <i aria-hidden="true">{item.icon}</i>
-          {item.label}
-        </span>
-      ))}
-    </div>
-  );
+function LevelBenefitChips({level,summary}:{level:StandardPackLevel;summary:RouletteSummary|null}) {
+  const prizes=(summary?.catalogue||[]).filter(p=>p.nivel===level);
+  const minutes=Math.max(0,...prizes.filter(p=>p.reward_type==="minutes").map(p=>p.reward_value));
+  const coins=Math.max(0,...prizes.filter(p=>p.reward_type==="coins").map(p=>p.reward_value));
+  return <div className={styles.levelBenefits}><strong>Premios de esta ruleta</strong>{minutes>0&&<span className={styles.levelBenefitChip}>Hasta +{minutes} min</span>}{coins>0&&<span className={styles.levelBenefitChip}>Hasta +{coins} Coins</span>}{!prizes.length&&<span>Consulta el catálogo de premios</span>}</div>;
 }

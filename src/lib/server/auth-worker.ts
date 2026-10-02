@@ -23,7 +23,7 @@ export async function authFromBearer(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error) throw error;
   return {
     uid: data.user?.id || null,

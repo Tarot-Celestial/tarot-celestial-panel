@@ -52,6 +52,7 @@ const FinanceControlCenter = nextDynamic(() => import("@/components/admin/Financ
 const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/ClientRanksAdminPanel"), { ssr:false });
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ClientCampaignsPanel = nextDynamic(() => import("@/components/admin/ClientCampaignsPanel"), { ssr:false });
+const RankBenefitsAdminPanel = nextDynamic(() => import("@/components/admin/RankBenefitsAdminPanel"), { ssr: false });
 const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/ClientRouletteAdminPanel"), { ssr:false });
 const ClientRitualsAdminPanel = nextDynamic(() => import("@/components/admin/ClientRitualsAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
@@ -82,6 +83,7 @@ const ADMIN_NAV = [
   { key: "trabajadores", icon: KeyRound, label: "Trabajadores", kicker: "Roles y accesos", tone: "purple" },
   { key: "clientes", icon: Users, label: "Clientes", kicker: "Vista premium", tone: "violet" },
   { key: "pagos-web", icon: CreditCard, label: "Pagos web", kicker: "Mollie", tone: "gold" },
+  { key: "beneficios-rango", icon: Trophy, label: "Beneficios de rango", kicker: "Ventajas y automatización", tone: "blue" },
   { key: "precios-hoy", icon: Sparkles, label: "Precios de hoy", kicker: "Promociones y packs", tone: "goldPurple" },
   { key: "rangos-clientes", icon: Trophy, label: "Rangos de clientes", kicker: "Gestión y auditoría", tone: "goldPurple" },
   { key: "sistema-xp", icon: Sparkles, label: "Sistema de XP", kicker: "Niveles y recompensas", tone: "goldPurple" },
@@ -186,6 +188,7 @@ type TabKey =
   | "trabajadores"
   | "clientes"
   | "pagos-web"
+  | "beneficios-rango"
   | "precios-hoy"
   | "rangos-clientes"
   | "clientes-web"
@@ -3017,6 +3020,7 @@ function AdminPage() {
           )}
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
+          {tab === "beneficios-rango" && <RankBenefitsAdminPanel />}
           {tab === "ruletas-clientes" && <ClientRouletteAdminPanel />}
           {tab === "rituales-clientes" && <ClientRitualsAdminPanel />}
 

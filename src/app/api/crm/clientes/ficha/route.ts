@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { loadEffectiveClientRank } from "@/lib/server/client-rank-effective";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";

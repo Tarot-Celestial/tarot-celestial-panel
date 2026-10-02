@@ -1,6 +1,6 @@
-export type RouletteLevel = 1 | 2 | 3 | 4;
+export type RouletteLevel = 1 | 2 | 3 | 4 | 5;
 export type RouletteRarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "ultra" | "diamond" | "jackpot";
-export type RouletteRewardType = "minutes" | "coins" | "rank" | "ritual" | "streak_minutes" | "perk";
+export type RouletteRewardType = "minutes" | "coins" | "oracle_credits" | "rank" | "ritual" | "streak_minutes" | "perk";
 export type RouletteFulfillmentMode = "immediate" | "temporary" | "manual" | "claim" | "scheduled";
 
 export type RoulettePrize = {
@@ -66,10 +66,14 @@ export type RouletteSummary = {
   level_2_spins: number;
   level_3_spins: number;
   level_4_spins: number;
+  level_5_spins: number;
+  diamond_access: boolean;
+  bands?: Array<{currency:string;min_amount:number;max_amount:number|null;roulette_level:number;spins:number}>;
   next_spin_1: string | null;
   next_spin_2: string | null;
   next_spin_3: string | null;
   next_spin_4: string | null;
+  next_spin_5: string | null;
   next_level: RouletteLevel;
   level_2_from: number;
   level_3_from: number;
@@ -97,23 +101,6 @@ export type RouletteReward = {
 };
 
 
-export function rouletteLevelForPurchaseAmount(amount: unknown): 1 | 2 | 3 | null {
-  const value = Number(amount);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  if (value < 27) return 1;
-  if (value >= 27 && value < 37) return 2;
-  if (value >= 49 && value <= 99) return 3;
-  return null;
-}
-
-export function rouletteLevelBandLabel(level: 1 | 2 | 3 | 4 | null) {
-  if (level === 1) return 'Nivel 1 · compras inferiores a 27 €';
-  if (level === 2) return 'Nivel 2 · compras desde 27 € hasta menos de 37 €';
-  if (level === 3) return 'Nivel 3 · compras desde 49 € hasta 99 €';
-  if (level === 4) return 'Nivel Especial · solo promoción específica';
-  return 'Sin nivel automático definido';
-}
-
 export const rarityLabel: Record<RouletteRarity, string> = {
   common: "Común",
   uncommon: "Poco común",
@@ -130,6 +117,7 @@ export function prizeLabel(prize: Pick<RoulettePrize, "reward_type" | "reward_va
   if (anyPrize.reward_label) return String(anyPrize.reward_label);
   if (anyPrize.label) return String(anyPrize.label);
   if (anyPrize.name) return String(anyPrize.name);
+  if (prize.reward_type === "oracle_credits") return `+${prize.reward_value} tiradas Oráculo`;
   if (prize.reward_type === "coins") return `+${prize.reward_value} Coins`;
   if (prize.reward_type === "minutes") return `+${prize.reward_value} min`;
   if (prize.reward_type === "rank") return `Rango ${String(anyPrize.meta?.rank || anyPrize.reward_meta?.rank || "premium").toUpperCase()}`;

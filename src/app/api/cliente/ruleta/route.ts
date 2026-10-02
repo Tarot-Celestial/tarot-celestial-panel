@@ -13,6 +13,8 @@ function failure(error: unknown) {
   if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].some((code) => message.includes(code))) {
     return NextResponse.json({ ok: false, error: "Este giro ya no está disponible. Actualiza para ver tus giros actuales." }, { status: 409, headers });
   }
+  if (message.includes("RANK_BENEFIT_FORBIDDEN")) return NextResponse.json({ok:false,error:"Tu rango actual no permite usar esta ruleta."},{status:403,headers});
+  if (message.includes("DIAMOND_ROULETTE_PAUSED")) return NextResponse.json({ok:false,error:"La Ruleta Diamante está pausada."},{status:409,headers});
   if (message.includes("ROULETTE_NO_ACTIVE_CAMPAIGN")) {
     return NextResponse.json({ ok: false, error: "La Ruleta Ultra Sorpresas está temporalmente pausada." }, { status: 409, headers });
   }
@@ -27,10 +29,7 @@ async function loadSummary(gate: Awaited<ReturnType<typeof rouletteClient>>) {
   const modern = await gate.admin.rpc("cliente_ruleta_resumen_ultra_v1", { p_cliente_id: gate.cliente.id });
   if (!modern.error) return modern.data;
 
-  // Fallback temporal para despliegues donde el código llegue antes que el SQL.
-  const legacy = await gate.admin.rpc("cliente_ruleta_resumen_v4", { p_cliente_id: gate.cliente.id });
-  if (legacy.error) throw modern.error;
-  return { ...legacy.data, campaign: null, history: [], entitlements: [] };
+  throw modern.error;
 }
 
 export async function GET(req: Request) {
@@ -47,7 +46,7 @@ export async function POST(req: Request) {
   try {
     const gate = await rouletteClient(req);
     const body = await req.json().catch(() => null);
-    if (![1, 2, 3, 4].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
+    if (![1, 2, 3, 4, 5].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
       return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
 
@@ -57,16 +56,8 @@ export async function POST(req: Request) {
       p_level: body.level,
     });
     if (!modern.error) return NextResponse.json({ ok: true, ...modern.data }, { headers });
+    throw modern.error;
 
-    // Solo usamos el fallback si la función nueva todavía no existe.
-    if (modern.error.code !== "42883") throw modern.error;
-    const legacy = await gate.admin.rpc("cliente_girar_ruleta_v4", {
-      p_cliente_id: gate.cliente.id,
-      p_spin_id: body.spin_id,
-      p_level: body.level,
-    });
-    if (legacy.error) throw legacy.error;
-    return NextResponse.json({ ok: true, ...legacy.data, campaign: null, history: [], entitlements: [] }, { headers });
   } catch (error) {
     return failure(error);
   }

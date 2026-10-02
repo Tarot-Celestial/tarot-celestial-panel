@@ -129,83 +129,8 @@ function rpcIsMissing(error: any) {
 }
 
 async function registerCallAtomic(admin: any, payload: any) {
-  // v8 conserva la transacción histórica, pero aplica los saldos como DELTAS
-  // contra el saldo bloqueado en PostgreSQL. Así una ruleta/recompensa acreditada
-  // entre la lectura del modal y el guardado de la llamada nunca se pierde.
-  const v8 = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
-  if (!v8.error || !rpcIsMissing(v8.error)) return { ...v8, rpcName: "crm_register_call_atomic_v8" };
-
-  const v4 = await admin.rpc("crm_register_call_atomic_v4", { p_payload: payload });
-  if (!v4.error || !rpcIsMissing(v4.error)) return { ...v4, rpcName: "crm_register_call_atomic_v4" };
-
-  const v7 = await admin.rpc("crm_register_call_atomic_v7", { p_payload: payload });
-  return { ...v7, rpcName: "crm_register_call_atomic_v7" };
-}
-
-async function ensureSuperPromoSpin(
-  admin: any,
-  params: { clienteId: string; rendimientoId: string; purchaseMinutes?: number | null },
-) {
-  const paymentKey = `rendimiento:${params.rendimientoId}`;
-
-  const { data: existing, error: existingError } = await admin
-    .from("cliente_ruleta_giros")
-    .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-    .eq("payment_key", paymentKey)
-    .maybeSingle();
-  if (existingError) throw existingError;
-
-  // La compra normal puede haber generado ya N1/N2/N3 mediante trigger.
-  // Al pulsar SUPER PROMO RULETA ese MISMO giro se transforma en Nivel 4:
-  // nunca dejamos un giro normal + otro especial para la misma llamada.
-  if (existing) {
-    if (String(existing.estado || "") !== "pending") return existing;
-    if (Number(existing.nivel) === 4 && String(existing.source || "") === "super_promo_ruleta") return existing;
-
-    const { data: updated, error: updateError } = await admin
-      .from("cliente_ruleta_giros")
-      .update({ nivel: 4, source: "super_promo_ruleta" })
-      .eq("id", existing.id)
-      .eq("estado", "pending")
-      .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-      .maybeSingle();
-    if (updateError) throw updateError;
-    return updated || existing;
-  }
-
-  // Importes fuera de las franjas normales no generan giro automático.
-  // La clasificación especial sí debe conceder exactamente uno.
-  const insertPayload: any = {
-    cliente_id: params.clienteId,
-    payment_key: paymentKey,
-    source: "super_promo_ruleta",
-    nivel: 4,
-    estado: "pending",
-  };
-  const minutes = Number(params.purchaseMinutes || 0);
-  if (Number.isFinite(minutes) && minutes > 0) insertPayload.purchase_minutes = Math.floor(minutes);
-
-  const { data: created, error: createError } = await admin
-    .from("cliente_ruleta_giros")
-    .insert(insertPayload)
-    .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-    .single();
-
-  if (!createError) return created;
-
-  // Si dos peticiones concurrentes llegan a la vez, payment_key es único.
-  // Recuperamos el registro existente en vez de conceder un segundo giro.
-  if (String(createError.code || "") === "23505") {
-    const { data: raced, error: racedError } = await admin
-      .from("cliente_ruleta_giros")
-      .select("id,cliente_id,payment_key,source,nivel,estado,created_at")
-      .eq("payment_key", paymentKey)
-      .maybeSingle();
-    if (racedError) throw racedError;
-    if (raced) return raced;
-  }
-
-  throw createError;
+  const result = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
+  return { ...result, rpcName: "crm_register_call_atomic_v8" };
 }
 
 function clientIdentificationError() {
@@ -443,14 +368,8 @@ export async function POST(req: Request) {
         .maybeSingle();
       if (existingPaymentError) throw existingPaymentError;
       if (existingPayment) {
-        let specialSpin: any = null;
-        const linkedRendimientoId = String(existingPayment.source_rendimiento_id || "");
-        if (clasificacion === "super_promo_ruleta" && isUuid(linkedRendimientoId)) {
-          specialSpin = await ensureSuperPromoSpin(admin, {
-            clienteId,
-            rendimientoId: linkedRendimientoId,
-          });
-        }
+        if (existingPayment.cliente_id !== clienteId || Number(existingPayment.importe) !== importe) throw new Error("PAYMENT_REFERENCE_CONFLICT");
+        const specialSpin = null;
         return NextResponse.json({
           ok: true,
           duplicate_prevented: true,
@@ -648,6 +567,7 @@ export async function POST(req: Request) {
       created_by_role: me.role,
       points_to_add: clienteCompra && importe > 0 ? Number(purchaseBenefits?.coins || 0) : 0,
       purchase_benefits: purchaseBenefits,
+      super_promo_ruleta: superPromoRuleta,
       business: String(cliente?.origen || "celestial"),
     };
 
@@ -714,26 +634,10 @@ export async function POST(req: Request) {
     let specialSpin: any = null;
     const registeredCallId = String(result?.rendimiento?.id || "");
 
-    // SUPER PROMO RULETA: cuando la compra se guarda correctamente, la misma
-    // operación acredita exactamente 1 giro pendiente de Nivel Especial (4).
-    // Si el importe había creado N1/N2/N3, ese giro se CONVIERTE en N4; no se duplica.
-    if (registeredCallId && superPromoRuleta) {
-      try {
-        specialSpin = await ensureSuperPromoSpin(admin, {
-          clienteId,
-          rendimientoId: registeredCallId,
-          purchaseMinutes: tiempo,
-        });
-      } catch (grantError: any) {
-        console.error("[CRM registrar llamada] no se pudo acreditar Super Promo Ruleta", {
-          code: grantError?.code || null,
-          message: grantError?.message || null,
-          cliente_id: clienteId,
-          rendimiento_id: registeredCallId,
-        });
-        throw grantError;
-      }
-      if (result?.rendimiento) result.rendimiento.super_promo_ruleta = true;
+    if (economicPayment?.id && superPromoRuleta) {
+      const spins = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", economicPayment.id).eq("nivel", 4).limit(1);
+      if (spins.error) throw spins.error;
+      specialSpin = spins.data?.[0] || null;
     }
 
     // Toda gestión válida participa en la atribución histórica. La RPC decide la

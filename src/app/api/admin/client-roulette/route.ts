@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const rarities = new Set(["common","uncommon","rare","epic","legendary","ultra","diamond","jackpot"]);
-const rewardTypes = new Set(["minutes","coins","rank","ritual","streak_minutes","perk"]);
+const rewardTypes = new Set(["minutes","coins","oracle_credits","rank","ritual","streak_minutes","perk"]);
 const fulfillmentModes = new Set(["immediate","temporary","manual","claim","scheduled"]);
 const campaignStatuses = new Set(["draft","scheduled","active","inactive","finished","archived"]);
 
@@ -101,7 +101,10 @@ async function payload(admin: any) {
   }
   const mostAwarded = Object.entries(rewardCounts).sort((a,b)=>b[1]-a[1])[0] || null;
 
+  const ranks = await admin.from("tc_client_rank_benefits").select("rank_key,label").order("sort_order");
+  if(ranks.error) throw ranks.error;
   return {
+    ranks: ranks.data,
     campaigns: campaigns || [],
     active_campaign: activeCampaign,
     rewards: decoratedRewards,
@@ -115,18 +118,6 @@ async function payload(admin: any) {
       rarity_counts: rarityCounts,
     },
   };
-}
-
-async function audit(admin: any, gate: any, action: string, snapshot: any, campaignId?: string | null, rewardId?: string | null) {
-  try {
-    await admin.from("tc_client_roulette_audit").insert({
-      campaign_id: campaignId || null,
-      reward_id: rewardId || null,
-      actor_user_id: gate.me?.user_id || null,
-      action,
-      snapshot: { ...(snapshot || {}), actor: gate.me?.display_name || gate.me?.email || "Admin" },
-    });
-  } catch {}
 }
 
 export async function GET(req: Request) {
@@ -143,190 +134,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const gate = await requireAdmin(req);
-    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.error === "FORBIDDEN" ? 403 : 401 });
-    const body = await req.json().catch(() => ({}));
-    const action = String(body?.action || "");
-    const now = new Date().toISOString();
-
-    if (action === "create_campaign") {
-      const name = cleanText(body?.name, 120) || "Nueva Ruleta";
-      const { data, error } = await gate.admin.from("tc_client_roulette_campaigns").insert({
-        name,
-        title: cleanText(body?.title, 160) || name,
-        subtitle: cleanText(body?.subtitle, 300),
-        status: "draft",
-        active_until_disabled: true,
-        created_by: gate.me?.user_id || null,
-        updated_at: now,
-      }).select("*").single();
-      if (error) throw error;
-      await audit(gate.admin, gate, "campaign_created", data, data.id);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
+    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: 403 });
+    const body = await req.json();
+    if (body.action === "save_campaign") {
+      body.starts_at = asIso(body.starts_at); body.ends_at = asIso(body.ends_at);
     }
-
-    if (action === "save_campaign") {
-      const id = String(body?.id || "");
-      if (!id) return NextResponse.json({ ok: false, error: "CAMPAIGN_REQUIRED" }, { status: 400 });
-      const status = campaignStatuses.has(String(body?.status)) ? String(body.status) : "draft";
-      const startsAt = asIso(body?.starts_at);
-      const endsAt = body?.active_until_disabled ? null : asIso(body?.ends_at);
-      if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) return NextResponse.json({ ok: false, error: "FECHA_FIN_INVALIDA" }, { status: 400 });
-      const update = {
-        name: cleanText(body?.name, 120),
-        title: cleanText(body?.title, 160),
-        subtitle: cleanText(body?.subtitle, 300),
-        status,
-        starts_at: startsAt,
-        ends_at: endsAt,
-        active_until_disabled: Boolean(body?.active_until_disabled),
-        updated_at: now,
-      };
-      if (!update.name || !update.title) return NextResponse.json({ ok: false, error: "NOMBRE_Y_TITULO_REQUERIDOS" }, { status: 400 });
-      const { data, error } = await gate.admin.from("tc_client_roulette_campaigns").update(update).eq("id", id).select("*").single();
-      if (error) throw error;
-      await audit(gate.admin, gate, "campaign_updated", data, id);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    if (action === "activate_campaign") {
-      const id = String(body?.id || "");
-      if (!id) return NextResponse.json({ ok: false, error: "CAMPAIGN_REQUIRED" }, { status: 400 });
-      await gate.admin.from("tc_client_roulette_campaigns").update({ status: "inactive", updated_at: now }).eq("status", "active").neq("id", id);
-      const { data, error } = await gate.admin.from("tc_client_roulette_campaigns").update({ status: "active", starts_at: now, ends_at: null, active_until_disabled: true, updated_at: now }).eq("id", id).select("*").single();
-      if (error) throw error;
-      await audit(gate.admin, gate, "campaign_activated", data, id);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    if (action === "save_reward") {
-      const id = String(body?.id || "");
-      const campaignId = String(body?.campaign_id || "");
-      const level = Number(body?.nivel);
-      const rewardType = String(body?.reward_type || "minutes");
-      const rarity = String(body?.rarity || "common");
-      const fulfillmentMode = String(body?.fulfillment_mode || "immediate");
-      const name = cleanText(body?.name, 140);
-      const weight = Number(body?.weight || 0);
-      const rewardValue = Number(body?.reward_value || 0);
-      if (!campaignId || ![1,2,3,4].includes(level) || !name || !rewardTypes.has(rewardType) || !rarities.has(rarity) || !fulfillmentModes.has(fulfillmentMode) || !Number.isFinite(weight) || weight < 0 || !Number.isFinite(rewardValue) || rewardValue < 0) {
-        return NextResponse.json({ ok: false, error: "PREMIO_INVALIDO" }, { status: 400 });
-      }
-      const row = {
-        campaign_id: campaignId,
-        nivel: level,
-        name,
-        description: cleanText(body?.description, 500),
-        reward_type: rewardType,
-        reward_value: rewardValue,
-        rarity,
-        weight,
-        special: Boolean(body?.special),
-        fulfillment_mode: fulfillmentMode,
-        icon_key: cleanText(body?.icon_key, 50),
-        metadata: jsonMeta(body?.metadata),
-        is_active: body?.is_active !== false,
-        sort_order: Math.floor(Number(body?.sort_order || 0)),
-        updated_at: now,
-      };
-      const result = id
-        ? await gate.admin.from("tc_client_roulette_rewards").update(row).eq("id", id).select("*").single()
-        : await gate.admin.from("tc_client_roulette_rewards").insert(row).select("*").single();
-      if (result.error) throw result.error;
-      await audit(gate.admin, gate, id ? "reward_updated" : "reward_created", result.data, campaignId, result.data.id);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    if (action === "save_probabilities") {
-      const campaignId = String(body?.campaign_id || "");
-      const level = Number(body?.nivel);
-      const probabilities = Array.isArray(body?.probabilities) ? body.probabilities : [];
-      if (!campaignId || ![1,2,3,4].includes(level) || !probabilities.length) {
-        return NextResponse.json({ ok: false, error: "PROBABILIDADES_INVALIDAS" }, { status: 400 });
-      }
-
-      const parsed = probabilities.map((item: any) => ({
-        id: String(item?.id || ""),
-        probability: Number(item?.probability),
-      }));
-      if (parsed.some((item: any) => !item.id || !Number.isFinite(item.probability) || item.probability < 0 || item.probability > 100)) {
-        return NextResponse.json({ ok: false, error: "PROBABILIDAD_FUERA_DE_RANGO" }, { status: 400 });
-      }
-      const uniqueIds = new Set(parsed.map((item: any) => item.id));
-      if (uniqueIds.size !== parsed.length) {
-        return NextResponse.json({ ok: false, error: "PREMIOS_DUPLICADOS_EN_REPARTO" }, { status: 400 });
-      }
-      const total = parsed.reduce((sum: number, item: any) => sum + item.probability, 0);
-      if (Math.abs(total - 100) > 0.01) {
-        return NextResponse.json({ ok: false, error: `PROBABILIDADES_DEBEN_SUMAR_100:${total.toFixed(2)}` }, { status: 400 });
-      }
-
-      const { data: activeRewards, error: activeError } = await gate.admin
-        .from("tc_client_roulette_rewards")
-        .select("id,campaign_id,nivel,is_active")
-        .eq("campaign_id", campaignId)
-        .eq("nivel", level)
-        .eq("is_active", true);
-      if (activeError) throw activeError;
-      const activeIds = new Set((activeRewards || []).map((row: any) => String(row.id)));
-      if (activeIds.size !== parsed.length || parsed.some((item: any) => !activeIds.has(item.id))) {
-        return NextResponse.json({ ok: false, error: "REPARTO_DEBE_INCLUIR_TODOS_LOS_PREMIOS_ACTIVOS" }, { status: 409 });
-      }
-
-      for (const item of parsed) {
-        const { error: updateError } = await gate.admin
-          .from("tc_client_roulette_rewards")
-          .update({ weight: item.probability, updated_at: now })
-          .eq("id", item.id)
-          .eq("campaign_id", campaignId)
-          .eq("nivel", level)
-          .eq("is_active", true);
-        if (updateError) throw updateError;
-      }
-      await audit(gate.admin, gate, "probabilities_updated", { nivel: level, total, probabilities: parsed }, campaignId, null);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    if (action === "toggle_reward") {
-      const id = String(body?.id || "");
-      const { data, error } = await gate.admin.from("tc_client_roulette_rewards").update({ is_active: Boolean(body?.is_active), updated_at: now }).eq("id", id).select("*").single();
-      if (error) throw error;
-      await audit(gate.admin, gate, "reward_toggled", data, data.campaign_id, id);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    if (action === "delete_reward") {
-      const id = String(body?.id || "");
-      const { data: reward, error: findError } = await gate.admin.from("tc_client_roulette_rewards").select("*").eq("id", id).single();
-      if (findError) throw findError;
-      const { count, error: usedError } = await gate.admin.from("cliente_ruleta_giros").select("id", { count: "exact", head: true }).eq("reward_id", id);
-      if (usedError) throw usedError;
-      if ((count || 0) > 0) {
-        const { error } = await gate.admin.from("tc_client_roulette_rewards").update({ is_active: false, updated_at: now }).eq("id", id);
-        if (error) throw error;
-        await audit(gate.admin, gate, "reward_archived", reward, reward.campaign_id, id);
-      } else {
-        const { error } = await gate.admin.from("tc_client_roulette_rewards").delete().eq("id", id);
-        if (error) throw error;
-        await audit(gate.admin, gate, "reward_deleted", reward, reward.campaign_id, id);
-      }
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    if (action === "complete_entitlement") {
-      const id = String(body?.id || "");
-      const { data, error } = await gate.admin.from("tc_client_roulette_entitlements").update({ status: "completed", updated_at: now }).eq("id", id).select("*").single();
-      if (error) throw error;
-      await audit(gate.admin, gate, "entitlement_completed", data, data.campaign_id, data.reward_id);
-      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
-    }
-
-    return NextResponse.json({ ok: false, error: "ACTION_NOT_SUPPORTED" }, { status: 400 });
-  } catch (error: any) {
-    console.error("[admin/client-roulette:post]", error);
-    const message = String(error?.message || "");
-    if (message.includes("relation") && message.includes("does not exist")) {
-      return NextResponse.json({ ok: false, error: "FALTA_EJECUTAR_SQL_RULETA_ULTRA" }, { status: 409 });
-    }
-    return NextResponse.json({ ok: false, error: message || "RULETA_ADMIN_ACTION_FAILED" }, { status: 500 });
+    const result = await gate.admin.rpc("tc_save_roulette_config", { p_actor: gate.me.user_id, p_data: body });
+    if (result.error) throw result.error;
+    return NextResponse.json({ ok: true, ...(await payload(gate.admin)) }, { headers: { "Cache-Control": "private, no-store" } });
+  } catch(error: any) {
+    return NextResponse.json({ ok: false, error: error?.message || "No se pudo guardar la ruleta." }, { status: 409 });
   }
 }

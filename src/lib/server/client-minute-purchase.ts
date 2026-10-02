@@ -1,5 +1,5 @@
+import { rankState } from "@/lib/server/rank-benefits";
 import {
-  computeCurrentRankFromSpend,
   createClientNotification,
   monthRange,
   pointsFromAmount,
@@ -8,7 +8,7 @@ import {
   toNum,
 } from "@/lib/server/cliente-platform";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+
 
 export type ClientPurchaseCurrency = "USD" | "EUR";
 
@@ -39,8 +39,7 @@ export async function applyConfiguredMinutePurchase(
   const totalMinutes = Number(pack.totalMinutes);
   const minutesSplit = splitMinutes(totalMinutes);
   const puntosGanados = pack.rewardCoins ?? pointsFromAmount(amount);
-  const rouletteLevel = rouletteLevelForPurchaseAmount(amount);
-  const rouletteSpins = rouletteLevel ? Math.max(0, Number(pack.rouletteSpins || 0)) : 0;
+
 
   const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_ruleta_v3", {
     p: { cliente_id: params.clienteId, payment_ref: params.paymentRef,
@@ -50,7 +49,7 @@ export async function applyConfiguredMinutePurchase(
       amount, currency, metodo, pack_id: pack.id, pack_name: pack.nombre,
       free: minutesSplit.free, normal: minutesSplit.normal, points: puntosGanados,
       oracle_credits: pack.oracleCredits || 0,
-      roulette_level: rouletteLevel, roulette_spins: rouletteSpins,
+
       notas: params.notas || "Compra automatizada desde panel cliente · " + pack.nombre },
   });
   if (transactionError) throw transactionError;
@@ -59,28 +58,13 @@ export async function applyConfiguredMinutePurchase(
   const { data: grantedSpins } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", pago.id).order("created_at", { ascending: true });
   if (transaction.duplicated) return { ok: true, ...transaction, creditedMinutes: splitMinutes(Number(pago.paid_minutes ?? totalMinutes)), spins: grantedSpins || [] };
 
-  const { start, end } = monthRange(new Date());
-  const { data: monthPayments, error: monthPaymentsError } = await admin
-    .from("crm_cliente_pagos")
-    .select("id, importe, estado")
-    .eq("cliente_id", params.clienteId)
-    .eq("estado", "completed")
-    .gte("created_at", start.toISOString())
-    .lt("created_at", end.toISOString());
-  if (monthPaymentsError) throw monthPaymentsError;
-
-  const monthlySpend = (monthPayments || []).reduce(
-    (acc: number, row: any) => acc + toNum(row?.importe),
-    0,
-  );
-  const monthlyPurchases = (monthPayments || []).length;
-  const nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+  const currentRank = await rankState(admin, params.clienteId);
+  const monthlySpend = Number(currentRank.total), monthlyPurchases = Number(currentRank.compras);
+  const nextRank = currentRank.effective;
 
   await syncClientMonthTag(admin, params.clienteId);
 
-  const rouletteBenefit = rouletteLevel && rouletteSpins > 0
-    ? ` y ${rouletteSpins} giro${rouletteSpins === 1 ? "" : "s"} Ultra Sorpresas · Nivel ${rouletteLevel}`
-    : "";
+  const rouletteBenefit = (grantedSpins || []).length ? ` y ${(grantedSpins || []).length} giro(s) de ruleta` : "";
 
   await createClientNotification(admin, {
     cliente_id: params.clienteId,
@@ -91,8 +75,7 @@ export async function applyConfiguredMinutePurchase(
       pack_id: pack.id,
       pack_name: pack.nombre,
       total_minutes: totalMinutes,
-      roulette_level: rouletteLevel,
-      roulette_spins: rouletteSpins,
+      roulette_spins: (grantedSpins || []).length,
       oracle_credits: pack.oracleCredits || 0,
       coins: puntosGanados,
       payment_intent: params.paymentIntent || null,

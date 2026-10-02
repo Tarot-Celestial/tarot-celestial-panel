@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
@@ -26,7 +26,7 @@ async function uidFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error) throw error;
   return data.user?.id || null;
 }
@@ -96,7 +96,7 @@ async function runRecalc() {
   let compras30d = 0;
 
   for (const [clienteId, info] of totals.entries()) {
-    const rank = calcClientRank(info.total);
+    const rank = info.effective;
     if (!rank) continue;
 
     if (rank === "bronce") bronce += 1;

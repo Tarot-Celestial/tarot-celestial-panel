@@ -22,7 +22,7 @@ async function getWorker(req: Request, admin: any) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data } = getAuthUserFromRequest(req);
+  const { data } = await getAuthUserFromRequest(req);
   const uid = data.user?.id || null;
   if (!uid) return null;
   const { data: me, error } = await admin.from("workers").select("id,role").eq("user_id", uid).maybeSingle();

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { effectivePromotionStatus, normalizePromotionDate } from "@/lib/server/client-promotions";
-import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+import { decoratePacks } from "@/lib/server/rank-benefits";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,7 @@ async function audit(admin: any, promotionId: string | null, action: string, act
 async function payload(admin: any) {
   const { data: promotions, error } = await admin
     .from("tc_client_promotions")
-    .select("*")
+    .select("*").eq("promotion_kind", "standard")
     .order("created_at", { ascending: false });
   if (error) throw error;
 
@@ -50,7 +50,7 @@ async function payload(admin: any) {
     if (packageResult.error) throw packageResult.error;
     if (auditResult.error) throw auditResult.error;
     if (attemptResult.error) throw attemptResult.error;
-    packages = packageResult.data || [];
+    packages = await decoratePacks(admin, packageResult.data || []);
     audits = auditResult.data || [];
     attempts = attemptResult.data || [];
   }
@@ -132,6 +132,13 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "").trim();
     const now = new Date().toISOString();
+    const targetPromotionId=body?.id || body?.promotion_id;
+    if(targetPromotionId) {
+      const target=await gate.admin.from("tc_client_promotions").select("promotion_kind").eq("id",targetPromotionId).maybeSingle();
+      if(target.error)throw target.error;
+      if(target.data?.promotion_kind==="rank_bonus") return NextResponse.json({ok:false,error:"Usa el editor de bonos exclusivos."},{status:409});
+    }
+
     const actor = String(gate.me?.user_id || "") || null;
     const actorName = String(gate.me?.display_name || gate.me?.email || "Admin");
 
@@ -174,7 +181,7 @@ export async function POST(req: Request) {
     if (action === "activate") {
       const id = String(body?.id || "");
       if (!id) return NextResponse.json({ ok: false, error: "PROMOTION_ID_REQUIRED" }, { status: 400 });
-      await gate.admin.from("tc_client_promotions").update({ status: "inactive", deactivated_at: now, updated_at: now }).eq("status", "active").neq("id", id);
+      await gate.admin.from("tc_client_promotions").update({ status: "inactive", deactivated_at: now, updated_at: now }).eq("promotion_kind", "standard").eq("status", "active").neq("id", id);
       const { data, error } = await gate.admin.from("tc_client_promotions").update({ status: "active", activated_at: now, activated_by: actor, deactivated_at: null, starts_at: body?.keep_schedule ? undefined : now, updated_at: now }).eq("id", id).select("*").single();
       if (error) throw error;
       await audit(gate.admin, id, "activated", actor, data, actorName);
@@ -215,7 +222,7 @@ export async function POST(req: Request) {
           price: pack.price,
           regular_price: pack.regular_price,
           currency: pack.currency,
-          roulette_level: Number(pack.roulette_level) === 4 ? 4 : rouletteLevelForPurchaseAmount(pack.price),
+          roulette_level: Number(pack.roulette_level) === 4 ? 4 : null,
           roulette_spins: pack.roulette_spins,
           coins: pack.coins,
           oracle_credits: pack.oracle_credits,
@@ -244,7 +251,7 @@ export async function POST(req: Request) {
       }
       const rouletteSpins = Math.max(0, Math.floor(Number(body?.roulette_spins || 0)));
       const requestedSpecial = Number(body?.roulette_level) === 4;
-      const automaticRouletteLevel = rouletteLevelForPurchaseAmount(price);
+      const automaticRouletteLevel = null;
       const rouletteLevel = rouletteSpins > 0 ? (requestedSpecial ? 4 : automaticRouletteLevel) : null;
       const row = {
         promotion_id: promotionId,
@@ -287,7 +294,7 @@ export async function POST(req: Request) {
         price: source.price,
         regular_price: source.regular_price,
         currency: source.currency,
-        roulette_level: Number(source.roulette_level) === 4 ? 4 : rouletteLevelForPurchaseAmount(source.price),
+        roulette_level: Number(source.roulette_level) === 4 ? 4 : null,
         roulette_spins: source.roulette_spins,
         coins: source.coins,
         oracle_credits: source.oracle_credits,

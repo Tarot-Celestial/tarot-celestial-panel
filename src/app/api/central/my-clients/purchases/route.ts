@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
-import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { loadEffectiveClientRank } from "@/lib/server/client-rank-effective";
 
 export const runtime = "nodejs";
@@ -20,7 +20,7 @@ function adminClient() {
 }
 
 async function authenticatedWorker(req: Request) {
-  const { data, error } = getAuthUserFromRequest(req);
+  const { data, error } = await getAuthUserFromRequest(req);
   if (error || !data.user?.id) return null;
   const admin = adminClient();
   const { data: worker, error: workerError } = await admin

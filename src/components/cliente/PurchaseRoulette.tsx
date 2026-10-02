@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import CrystalEmblem from "@/components/benefits/CrystalEmblem";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2, Gem, CalendarCheck2, Flame, Award } from "lucide-react";
@@ -48,6 +49,7 @@ function arrangeWheelPrizes(input: RoulettePrize[], level: RouletteLevel) {
   return arranged;
 }
 function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: number }) {
+  if (type === "oracle_credits") return <Sparkles size={size}/>;
   if (type === "coins") return <Coins size={size}/>;
   if (type === "rank") return <Crown size={size}/>;
   if (type === "ritual") return <ShieldCheck size={size}/>;
@@ -56,6 +58,7 @@ function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: num
   return <Clock3 size={size}/>;
 }
 function wheelValue(prize: RoulettePrize) {
+  if (prize.reward_type === "oracle_credits") return {main:String(prize.reward_value),sub:"ORÁCULO"};
   if (prize.reward_type === "coins") return { main: String(prize.reward_value), sub: "COINS" };
   if (prize.reward_type === "minutes") return { main: String(prize.reward_value), sub: "MIN" };
   if (prize.reward_type === "rank") return { main: String(prize.meta?.rank || "RANGO").toUpperCase(), sub: "RANGO" };
@@ -97,7 +100,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       setSummary(json);
       try {
         const saved = JSON.parse(sessionStorage.getItem(storageKey(json.cliente_id)) || "null");
-        if (saved?.spin_id && [1, 2, 3, 4].includes(saved.level)) {
+        if (saved?.spin_id && [1, 2, 3, 4, 5].includes(saved.level)) {
           pendingRef.current = saved; setPending(saved); setLevel(saved.level);
           setMessage("Hay un giro pendiente de comprobar. Recupera su resultado sin gastar otro giro.");
         }
@@ -109,7 +112,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   useEffect(() => {
     mounted.current = true;
     const requestedLevel = Number(new URLSearchParams(window.location.search).get("nivel"));
-    if ([1, 2, 3, 4].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
+    if ([1, 2, 3, 4, 5].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
     void load();
     return () => { mounted.current = false; if (animation.current) clearTimeout(animation.current); };
   }, [load]);
@@ -118,13 +121,14 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
   const wheelPrizes = useMemo(() => arrangeWheelPrizes(prizes, level), [prizes, level]);
   const levelMeta = useMemo(() => ({
-    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "2 · 3 · 4 · 5 · 60 min · 400 Coins" },
-    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "6 · 8 · 10 · 12 · 14 · 16 · 80 min · 1.000 Coins" },
-    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "12 · 20 · 25 · 28 · 35 · 100 min · 2.000 Coins" },
+    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "Premios configurados para este nivel" },
+    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "Premios configurados para este nivel" },
+    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "Premios configurados para este nivel" },
+    5: { name: "Ruleta Diamante", icon: Gem, tone: "diamond", cap: "Una ventaja de tu rango actual" },
     4: { name: "Super Ruleta", icon: Gem, tone: "special", cap: "Todos los premios especiales · Solo con promo activa" },
   } as const), []);
-  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins, 4: summary.level_4_spins } : null;
-  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3, 4: summary.next_spin_4 } : null;
+  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins, 4: summary.level_4_spins, 5:summary.level_5_spins } : null;
+  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3, 4: summary.next_spin_4, 5:summary.next_spin_5 } : null;
   const available = spinsByLevel?.[level] ?? null;
   const selectedMeta = levelMeta[level];
   const SelectedLevelIcon = selectedMeta.icon;
@@ -170,7 +174,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       });
       const json = await response.json();
       if (!response.ok || !json.ok) {
-        if (response.status === 409) {
+        if (response.status === 409 || response.status === 403) {
           pendingRef.current = null; setPending(null);
           try { sessionStorage.removeItem(storageKey(summary.cliente_id)); } catch {}
         }
@@ -254,7 +258,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       </header>
 
       <div className={styles.levels} aria-label="Elige el nivel de tu giro">
-        {([1, 2, 3, 4] as const).map(n => {
+        {([1, 2, 3, 4, 5] as const).filter(n=>n!==5||summary?.diamond_access).map(n => {
           const meta = levelMeta[n];
           const LevelIcon = meta.icon;
           const count = spinsByLevel?.[n] ?? null;
@@ -270,12 +274,12 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             data-tone={meta.tone}
           >
             <div className={styles.levelTop}>
-              <span className={styles.levelIcon}><LevelIcon size={19}/></span>
+              <span className={styles.levelIcon}>{n===5?<CrystalEmblem size={44}/>:<LevelIcon size={19}/>}</span>
               <span className={styles.levelStatus}>{n === 4 ? (Number(count || 0) > 0 ? "PROMO ACTIVA" : "SOLO PROMO") : Number(count || 0) > 0 ? "DISPONIBLE" : level === n ? "EXPLORANDO" : "SIN GIROS"}</span>
             </div>
             <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
-            <div className={styles.levelMain}><strong>{n === 4 ? "Nivel Especial" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
-            <span>{n === 1 ? "Compras inferiores a 27 €" : n === 2 ? "Compras desde 27 € hasta menos de 37 €" : n === 3 ? "Compras desde 49 € hasta 99 €" : "Disponible exclusivamente con la promoción que active Administración"}</span>
+            <div className={styles.levelMain}><strong>{n === 5 ? "Diamante" : n === 4 ? "Nivel Especial" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
+            <span>{n===5?"Exclusiva para tu rango actual":n===4?"Promociones especiales":(summary?.bands||[]).filter(b=>b.roulette_level===n).map(b=>`${b.min_amount}–${b.max_amount??"∞"} ${b.currency}`).join(" · ")||"Sin tramo activo"}</span>
             <small className={styles.levelCap}>{meta.cap}</small>
           </button>;
         })}

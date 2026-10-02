@@ -15,7 +15,7 @@ const rarityNames: Record<string,string> = {
   legendary:"Legendario", ultra:"Ultra", diamond:"Diamante", jackpot:"Jackpot",
 };
 const rewardTypeNames: Record<string,string> = {
-  minutes:"Minutos FREE", coins:"Coins", rank:"Rango cliente", ritual:"Ritual",
+  minutes:"Minutos FREE", coins:"Coins", oracle_credits:"Tiradas de Oráculo", rank:"Rango cliente", ritual:"Ritual",
   streak_minutes:"Premio diario", perk:"Ventaja especial",
 };
 
@@ -37,7 +37,7 @@ export default function ClientRouletteAdminPanel() {
   const [busy,setBusy] = useState("");
   const [message,setMessage] = useState("");
   const [selectedCampaignId,setSelectedCampaignId] = useState("");
-  const [level,setLevel] = useState<1|2|3|4>(1);
+  const [level,setLevel] = useState<1|2|3|4|5>(1);
   const [view,setView] = useState<"rewards"|"history"|"benefits">("rewards");
   const [campaignForm,setCampaignForm] = useState<any>(null);
   const [editingReward,setEditingReward] = useState<any>(null);
@@ -79,6 +79,7 @@ export default function ClientRouletteAdminPanel() {
       id:campaign.id,name:campaign.name||"",title:campaign.title||"",subtitle:campaign.subtitle||"",
       status:campaign.status||"draft",starts_at:localDate(campaign.starts_at),ends_at:localDate(campaign.ends_at),
       active_until_disabled:Boolean(campaign.active_until_disabled),
+      diamond_enabled:Boolean(campaign.diamond_enabled), diamond_rank:campaign.diamond_rank||"diamante",
     });
   },[campaign]);
 
@@ -156,6 +157,8 @@ export default function ClientRouletteAdminPanel() {
         <div className={styles.cardHead}><div><span className={styles.eyebrow}>CAMPAÑA</span><h2>Ruleta activa</h2></div><button className={styles.secondary} onClick={()=>void mutate({action:"create_campaign",name:"Nueva Ultra Sorpresas",title:"Ruleta Ultra Sorpresas"},"new-campaign")}><Plus size={14}/> Nueva</button></div>
         <label>Campaña<select value={selectedCampaignId} onChange={e=>setSelectedCampaignId(e.target.value)}>{(data.campaigns||[]).map((c:any)=><option key={c.id} value={c.id}>{c.name} · {c.status}</option>)}</select></label>
         {campaignForm?<div className={styles.formGrid}>
+          <label className={styles.check}><input type="checkbox" checked={campaignForm.diamond_enabled} onChange={e=>setCampaignForm({...campaignForm,diamond_enabled:e.target.checked})}/> Ruleta Diamante activa</label>
+          <label>Rango permitido en Diamante<select value={campaignForm.diamond_rank} onChange={e=>setCampaignForm({...campaignForm,diamond_rank:e.target.value})}>{(data.ranks||[]).map((r:any)=><option key={r.rank_key} value={r.rank_key}>{r.label}</option>)}</select></label>
           <label>Nombre<input value={campaignForm.name} onChange={e=>setCampaignForm({...campaignForm,name:e.target.value})}/></label>
           <label>Estado<select value={campaignForm.status} onChange={e=>setCampaignForm({...campaignForm,status:e.target.value})}><option value="draft">Borrador</option><option value="scheduled">Programada</option><option value="active">Activa</option><option value="inactive">Inactiva</option><option value="finished">Finalizada</option></select></label>
           <label className={styles.span2}>Título cliente<input value={campaignForm.title} onChange={e=>setCampaignForm({...campaignForm,title:e.target.value})}/></label>
@@ -187,10 +190,10 @@ export default function ClientRouletteAdminPanel() {
         <div><span className={styles.eyebrow}>CATÁLOGO CONFIGURABLE</span><h2>Premios de la Ruleta Ultra</h2></div>
         <button className={styles.gold} disabled={!selectedCampaignId} onClick={()=>setEditingReward(blankReward())}><Plus/> Añadir premio</button>
       </div>
-      <div className={styles.levelTabs}>{([1,2,3,4] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===4?"NIVEL ESPECIAL":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
+      <div className={styles.levelTabs}>{([1,2,3,4,5] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===5?"DIAMANTE":n===4?"NIVEL ESPECIAL":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
       <div className={styles.probabilityControl} data-valid={probabilityValid}>
         <div>
-          <span className={styles.eyebrow}><Percent size={13}/> REPARTO DEL NIVEL {level===4?"ESPECIAL":level}</span>
+          <span className={styles.eyebrow}><Percent size={13}/> REPARTO DEL NIVEL {level===5?"DIAMANTE":level===4?"ESPECIAL":level}</span>
           <strong>{probabilityTotal.toFixed(2)}% / 100%</strong>
           <small>{probabilityValid?"Reparto válido · listo para guardar":probabilityRemaining>0?`Te queda ${probabilityRemaining.toFixed(2)}% por repartir`:`Te has pasado ${Math.abs(probabilityRemaining).toFixed(2)}%`}</small>
         </div>
@@ -230,7 +233,7 @@ function RewardModal({reward,busy,onClose,onSave}:{reward:any;busy:string;onClos
       <label>Rareza<select value={form.rarity} onChange={e=>setForm({...form,rarity:e.target.value})}>{rarityOrder.map(r=><option value={r} key={r}>{rarityNames[r]}</option>)}</select></label>
       <label>Valor<input type="number" min="0" step="1" value={form.reward_value} onChange={e=>setForm({...form,reward_value:Number(e.target.value)})}/></label>
       <div className={styles.probabilityModalNote}><Percent size={15}/><span>La probabilidad se edita directamente en la lista de premios del nivel. Guarda primero el premio y después asigna su porcentaje exacto.</span></div>
-      <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Nivel Especial</option></select></label>
+      <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Nivel Especial</option><option value={5}>Ruleta Diamante</option></select></label>
       <label>Entrega<select value={form.fulfillment_mode} onChange={e=>setForm({...form,fulfillment_mode:e.target.value})}><option value="immediate">Inmediata</option><option value="temporary">Temporal</option><option value="manual">Manual supervisada</option><option value="claim">Reclamación</option><option value="scheduled">Programada</option></select></label>
       <label className={styles.span2}>Descripción<textarea rows={2} value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
       {form.reward_type==="rank"?<><label>Rango<select value={metadata.rank||"plata"} onChange={e=>setForm({...form,metadata:{...metadata,rank:e.target.value}})}><option value="plata">Plata</option><option value="oro">Oro</option></select></label><label>Duración días <small>(0 = permanente)</small><input type="number" min="0" value={metadata.duration_days??30} onChange={e=>setForm({...form,metadata:{...metadata,duration_days:Number(e.target.value)}})}/></label></>:null}
