@@ -129,17 +129,18 @@ function rpcIsMissing(error: any) {
 }
 
 async function registerCallAtomic(admin: any, payload: any) {
-  // v8 conserva la transacción histórica, pero aplica los saldos como DELTAS
-  // contra el saldo bloqueado en PostgreSQL. Así una ruleta/recompensa acreditada
-  // entre la lectura del modal y el guardado de la llamada nunca se pierde.
+  // v8 es la implementación actual. Algunas instalaciones de PostgREST pueden
+  // conservar una caché antigua y no exponer todavía v8/v4 aunque existan en
+  // PostgreSQL. En ese caso usamos v2 como puente estable: su firma ya está en
+  // la caché REST y en Supabase se redefine para delegar internamente en v8.
   const v8 = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
   if (!v8.error || !rpcIsMissing(v8.error)) return { ...v8, rpcName: "crm_register_call_atomic_v8" };
 
   const v4 = await admin.rpc("crm_register_call_atomic_v4", { p_payload: payload });
   if (!v4.error || !rpcIsMissing(v4.error)) return { ...v4, rpcName: "crm_register_call_atomic_v4" };
 
-  const v7 = await admin.rpc("crm_register_call_atomic_v7", { p_payload: payload });
-  return { ...v7, rpcName: "crm_register_call_atomic_v7" };
+  const v2 = await admin.rpc("crm_register_call_atomic_v2", { p_payload: payload });
+  return { ...v2, rpcName: "crm_register_call_atomic_v2" };
 }
 
 async function ensureSuperPromoSpin(
