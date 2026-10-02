@@ -1,0 +1,1099 @@
+"use client";
+import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Crown,
+  Gift,
+  ShieldAlert,
+  Sparkles,
+  Star,
+  WandSparkles,
+  ShoppingBag,
+  ChevronRight,
+  LockKeyhole,
+  Coins,
+  Medal,
+  CheckCircle2,
+  Clock3,
+} from "lucide-react";
+import ClienteLayout from "@/components/cliente/ClienteLayout";
+import OnboardingModal from "@/components/cliente/OnboardingModal";
+import CanjePuntos from "@/components/cliente/CanjePuntos";
+import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import RouletteBenefit from "@/components/cliente/RouletteBenefit";
+import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
+import { announceLeoCelestial } from "@/lib/leo-celestial-events";
+import rewardStyles from "./reward.module.css";
+
+const sb = supabaseClienteBrowser();
+
+type Cliente = {
+  id: string;
+  nombre?: string | null;
+  apellido?: string | null;
+  email?: string | null;
+  telefono?: string | null;
+  telefono_normalizado?: string | null;
+  fecha_nacimiento?: string | null;
+  rango_actual?: string | null;
+  rango_gasto_mes_anterior?: number | null;
+  rango_compras_mes_anterior?: number | null;
+  rango_automatico?: string | null;
+  rango_es_temporal?: boolean | null;
+  rango_override_tipo?: string | null;
+  rango_override_fin?: string | null;
+  puntos?: number | null;
+  minutos_free_pendientes?: number | null;
+  minutos_normales_pendientes?: number | null;
+  minutos_totales?: number | null;
+  onboarding_completado?: boolean | null;
+};
+
+type Recompensa = {
+  id: string;
+  nombre: string;
+  puntos_coste: number;
+  minutos_otorgados: number;
+};
+
+type RankInfo = {
+  key?: string;
+  label: string;
+  benefits: string[];
+  nextRank?: string | null;
+  nextLabel?: string | null;
+  nextTarget?: number | null;
+  nextBenefits?: string[];
+  automatic_rank?: string | null;
+  effective_rank?: string | null;
+  has_override?: boolean;
+  override_type?: string | null;
+  override_ends_at?: string | null;
+};
+
+type RankProgress = {
+  current_label: string;
+  next_label?: string | null;
+  next_target?: number | null;
+  progress_percent: number;
+  remaining_to_next?: number;
+  status_text?: string;
+  monthly_requirement_text?: string;
+};
+
+type ClienteNotif = {
+  id: string;
+  titulo?: string | null;
+  mensaje?: string | null;
+  tipo?: string | null;
+  leida?: boolean | null;
+  created_at?: string | null;
+};
+
+type ClientePack = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  priceUsd: number;
+  totalMinutes: number;
+  bonusMinutes: number;
+  rouletteLevel: RouletteLevel;
+  rouletteSpins: number;
+  rewardCoins?: number;
+  oracleCredits?: number;
+  highlight?: boolean;
+};
+
+type OraclePack = {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  priceEur: number;
+  credits: number;
+};
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" });
+}
+
+function getRankBadge(rango: string | null | undefined) {
+  const key = String(rango || "bronce").toLowerCase();
+  if (key === "diamante") return { label: "Diamante", key: "diamond" };
+  if (key === "oro") return { label: "Oro", key: "gold" };
+  if (key === "plata") return { label: "Plata", key: "silver" };
+  return { label: "Bronce", key: "bronze" };
+}
+
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
+export default function ClienteDashboardPage() {
+  const [cliente, setCliente] = useState<Cliente | null>(null);
+  const [recompensas, setRecompensas] = useState<Recompensa[]>([]);
+  const [rankInfo, setRankInfo] = useState<RankInfo | null>(null);
+  const [rankProgress, setRankProgress] = useState<RankProgress | null>(null);
+  const [notificaciones, setNotificaciones] = useState<ClienteNotif[]>([]);
+  const [packs, setPacks] = useState<ClientePack[]>([]);
+  const [paymentProvider, setPaymentProvider] = useState<"stripe" | "redsys">("stripe");
+  const [oraclePacks, setOraclePacks] = useState<OraclePack[]>([]);
+  const [oracleCredits, setOracleCredits] = useState(0);
+  const [rouletteSpins, setRouletteSpins] = useState<number | null>(null);
+  const [rouletteSummary, setRouletteSummary] = useState<RouletteSummary | null>(null);
+  const [rewardHighlight, setRewardHighlight] = useState("");
+  const [oracleFreeAvailable, setOracleFreeAvailable] = useState(false);
+  const [oracleNextFreeAt, setOracleNextFreeAt] = useState<string | null>(null);
+  const [oracleFreeCountdown, setOracleFreeCountdown] = useState(0);
+  const [buyingOraclePackId, setBuyingOraclePackId] = useState("");
+  const [buyingMinutePackId, setBuyingMinutePackId] = useState("");
+  const [showWelcomeGift, setShowWelcomeGift] = useState(false);
+  const [welcomeGiftMinutes, setWelcomeGiftMinutes] = useState(10);
+  const [loading, setLoading] = useState(true);
+  const [savingOnboarding, setSavingOnboarding] = useState(false);
+  const [redeeming, setRedeeming] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(
+    typeof window === "undefined" || !("Notification" in window) ? "unsupported" : Notification.permission
+  );
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  const [checkingPasswordStatus, setCheckingPasswordStatus] = useState(false);
+  const [showCreatePassword, setShowCreatePassword] = useState(false);
+  const [creatingPassword, setCreatingPassword] = useState(false);
+  const [passwordCreate, setPasswordCreate] = useState("");
+  const [passwordCreateConfirm, setPasswordCreateConfirm] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState("");
+
+  const loadingDataRef = useRef(false);
+  const queuedDataRef = useRef(false);
+  const redemptionOperationIdsRef = useRef(new Map<string, string>());
+  const loadData = useCallback(async () => {
+    if (loadingDataRef.current) { queuedDataRef.current = true; return; }
+    loadingDataRef.current = true;
+    try {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) {
+      window.location.href = "/cliente/login";
+      return;
+    }
+
+    const res = await fetch("/api/cliente/me", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+    });
+    const json = await res.json().catch(() => null);
+
+    if (!json?.ok) {
+      setMsg(json?.error || "No hemos podido cargar tu panel.");
+      setLoading(false);
+      return;
+    }
+
+    setCliente(json.cliente || null);
+    setRecompensas(Array.isArray(json.recompensas) ? json.recompensas : []);
+    setRankInfo(json.rank_info || null);
+    setRankProgress(json.rank_progress || null);
+    setNotificaciones(Array.isArray(json.cliente_notificaciones) ? json.cliente_notificaciones : []);
+    setPacks(Array.isArray(json.packs) ? json.packs : []);
+    setPaymentProvider(json.payment_provider === "redsys" ? "redsys" : "stripe");
+    if (json.welcome_gift?.granted) {
+      setWelcomeGiftMinutes(Number(json.welcome_gift?.minutes || 10));
+      setShowWelcomeGift(true);
+    }
+    setLoading(false);
+    } catch {
+      setMsg("No se ha podido comprobar el saldo. Conservamos los últimos datos confirmados; vuelve a intentarlo.");
+    } finally {
+      loadingDataRef.current = false;
+      setLoading(false);
+      if (queuedDataRef.current) { queuedDataRef.current = false; void loadData(); }
+    }
+  }, []);
+
+  const loadOracle = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const res = await fetch("/api/cliente/oraculo", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    const json = await res.json().catch(() => null);
+    if (json?.ok) {
+      setOracleCredits(Number(json.credits || 0));
+      setOracleFreeAvailable(Boolean(json.freeDailyAvailable ?? json.freeAvailable));
+      setOracleNextFreeAt(json.freeState?.nextFreeAt || null);
+      setOracleFreeCountdown(Number(json.freeState?.remainingSeconds || 0));
+      setOraclePacks(Array.isArray(json.packs) ? json.packs : []);
+    }
+  }, []);
+
+  const loadRouletteSummary = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const res = await fetch("/api/cliente/ruleta", {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+    const json = await res.json().catch(() => null);
+    if (json?.ok) { setRouletteSpins(Number(json.available_spins)); setRouletteSummary(json); }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    void loadOracle().catch(() => {});
+    void loadRouletteSummary().catch(() => {});
+  }, [loadData, loadOracle, loadRouletteSummary]);
+
+  useEffect(() => {
+    if (oracleFreeAvailable || !oracleNextFreeAt) { setOracleFreeCountdown(0); return; }
+    const tick = () => setOracleFreeCountdown(Math.max(0, Math.ceil((new Date(oracleNextFreeAt).getTime() - Date.now()) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [oracleFreeAvailable, oracleNextFreeAt]);
+
+  useEffect(() => {
+    const channel = typeof window !== "undefined" && "BroadcastChannel" in window ? new BroadcastChannel("tc-oracle-balance") : null;
+    const refresh = () => {
+      if (!document.hidden) void loadOracle().catch(() => {});
+    };
+    channel?.addEventListener("message", refresh);
+    window.addEventListener("focus", refresh);
+    return () => { channel?.close(); window.removeEventListener("focus", refresh); };
+  }, [loadOracle]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    const oracleCheckout = params.get("oracle_checkout");
+    if (checkout === "ok") {
+      setMsg("Estamos comprobando tu pago. Tus minutos y beneficios se actualizarán cuando se confirme.");
+      window.history.replaceState({}, "", "/cliente/dashboard");
+      window.setTimeout(() => {
+        loadData();
+        loadRouletteSummary();
+      }, 1200);
+    }
+    if (checkout === "cancelled") {
+      setMsg("Has cancelado el pago. Puedes volver a intentarlo cuando quieras.");
+      window.history.replaceState({}, "", "/cliente/dashboard");
+    }
+    if (oracleCheckout === "ok") {
+      setMsg("Estamos comprobando tu pago. Tus tiradas se actualizarán cuando se confirme.");
+      window.history.replaceState({}, "", "/cliente/dashboard#comprar-tiradas");
+      window.setTimeout(() => loadOracle(), 1200);
+    }
+    if (oracleCheckout === "cancelled") {
+      setMsg("Has cancelado la compra de tiradas.");
+      window.history.replaceState({}, "", "/cliente/dashboard#comprar-tiradas");
+    }
+  }, [loadData, loadOracle, loadRouletteSummary]);
+
+  useEffect(() => {
+    if (cliente && !cliente.onboarding_completado) {
+      setShowOnboarding(true);
+    }
+  }, [cliente]);
+
+  useEffect(() => {
+    async function checkPasswordStatus() {
+      try {
+        if (!cliente?.id) return;
+        if (!cliente?.onboarding_completado) return;
+        if (showOnboarding) return;
+
+        setCheckingPasswordStatus(true);
+        setPasswordMsg("");
+
+        const { data } = await sb.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) return;
+
+        const res = await fetch("/api/cliente/auth/password/status", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
+
+        const json = await res.json().catch(() => null);
+        if (!res.ok || !json?.ok) return;
+
+        if (!json?.hasPassword) {
+          setShowCreatePassword(true);
+        } else {
+          setShowCreatePassword(false);
+        }
+      } catch {
+      } finally {
+        setCheckingPasswordStatus(false);
+      }
+    }
+
+    checkPasswordStatus();
+  }, [cliente?.id, cliente?.onboarding_completado, showOnboarding]);
+
+  useRouletteSignal(sb, cliente?.id, async () => { await Promise.all([loadData(), loadRouletteSummary()]); });
+  useEffect(() => {
+    if (!cliente?.id) return;
+    let channel: ReturnType<typeof sb.channel> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = () => {
+      if (document.hidden || timer) return;
+      timer = setTimeout(() => { timer = null; void loadData().catch(() => {}); }, 600);
+    };
+    const visibility = () => {
+      if (document.hidden) { if (channel) void sb.removeChannel(channel); channel = null; }
+      else if (!channel) channel = sb.channel("cliente-rank-" + cliente.id)
+        .on("postgres_changes", { event: "*", schema: "public", table: "client_rank_overrides", filter: "client_id=eq." + cliente.id }, refresh)
+        .subscribe();
+    };
+    visibility(); document.addEventListener("visibilitychange", visibility);
+    return () => { if (channel) void sb.removeChannel(channel); if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
+  }, [cliente?.id, loadData]);
+  useEffect(() => {
+    if (loading || !cliente) return;
+    const reward = new URLSearchParams(window.location.search).get("reward");
+    if (reward !== "coins" && reward !== "minutes") return;
+    setRewardHighlight(reward);
+    const timer = setTimeout(() => document.getElementById("saldo-" + reward)?.scrollIntoView({
+      block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    }), 150);
+    // The query only selects a highlight. Amounts always come from /me.
+    window.history.replaceState({}, "", "/cliente/dashboard#saldo-" + reward);
+    const clear = setTimeout(() => setRewardHighlight(""), 9000);
+    return () => { clearTimeout(timer); clearTimeout(clear); };
+  }, [loading, cliente?.id]);
+
+  useEffect(() => {
+    async function checkPush() {
+      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+        setPushPermission("unsupported");
+        return;
+      }
+      setPushPermission(Notification.permission);
+      try {
+        const reg = await navigator.serviceWorker.getRegistration("/");
+        const sub = await reg?.pushManager.getSubscription();
+        setPushEnabled(Boolean(sub));
+      } catch {
+        setPushEnabled(false);
+      }
+    }
+    checkPush();
+  }, []);
+
+  const nombre = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
+  const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
+  const rankBadge = getRankBadge(rankInfo?.label || cliente?.rango_actual);
+  const totalMinutes = Number(cliente?.minutos_totales || 0);
+  const freeMinutes = Number(cliente?.minutos_free_pendientes || 0);
+  const normalMinutes = Number(cliente?.minutos_normales_pendientes || 0);
+  const totalPoints = Number(cliente?.puntos || 0);
+  const rankSpend30 = Number(cliente?.rango_gasto_mes_anterior || 0);
+  const rankPurchases30 = Number(cliente?.rango_compras_mes_anterior || 0);
+  const unreadNotifs = notificaciones.filter((item) => !item.leida).length;
+
+  const oracleRechargeLabel = useMemo(() => {
+    const total = Math.max(0, oracleFreeCountdown);
+    const h = Math.floor(total / 3600); const m = Math.floor((total % 3600) / 60);
+    return `${String(h).padStart(2, "0")} h ${String(m).padStart(2, "0")} min`;
+  }, [oracleFreeCountdown]);
+
+  const summaryItems = useMemo(
+    () => [
+      {
+        label: "Rango actual",
+        value: rankBadge.label,
+        meta: rankProgress?.monthly_requirement_text || "Se calcula con tus compras activas del mes",
+      },
+      {
+        label: "Giros disponibles",
+        value: rouletteSpins === null ? "—" : String(rouletteSpins),
+        meta: rouletteSummary ? `Nivel 1: ${rouletteSummary.level_1_spins} · Nivel 2: ${rouletteSummary.level_2_spins} · Nivel 3: ${rouletteSummary.level_3_spins}${rouletteSummary.level_5_spins ? ` · Diamante: ${rouletteSummary.level_5_spins}` : ""}${rouletteSummary.level_4_spins ? ` · Especial: ${rouletteSummary.level_4_spins}` : ""}` : "Consulta tus giros en Ruleta",
+        href: "/cliente/ruleta",
+        tone: "oracle" as const,
+      },
+      {
+        label: "Coins disponibles",
+        value: String(totalPoints),
+        meta: "Tu saldo real de recompensas",
+      },
+      {
+        label: "Minutos disponibles",
+        value: String(totalMinutes),
+        meta: "Tu saldo disponible ahora mismo",
+      },
+      {
+        label: "Notificaciones",
+        value: String(unreadNotifs),
+        meta: unreadNotifs ? "Tienes novedades pendientes" : "Todo al día",
+      },
+      {
+        label: "Tiradas disponibles",
+        value: String(oracleCredits + (oracleFreeAvailable ? 1 : 0)),
+        meta: oracleFreeAvailable
+          ? `1 gratis ahora · ${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`
+          : `Gratis en ${oracleRechargeLabel} · ${oracleCredits} comprada${oracleCredits === 1 ? "" : "s"}`,
+        href: "/cliente/oraculo",
+        tone: "oracle" as const,
+      },
+    ],
+    [rankBadge.label, rankProgress?.monthly_requirement_text, rouletteSpins, rouletteSummary, totalPoints, totalMinutes, unreadNotifs, oracleCredits, oracleFreeAvailable, oracleRechargeLabel]
+  );
+
+  async function saveOnboarding(payload: {
+  nombre: string;
+  apellido: string;
+  email: string;
+  fecha_nacimiento: string;
+  onboarding_completado: boolean;
+}) {
+  try {
+    setSavingOnboarding(true);
+    setMsg("");
+
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error("Sesión no válida");
+
+    const res = await fetch("/api/cliente/perfil", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json().catch(() => null);
+
+    if (!json?.ok) {
+      throw new Error(json?.error || "No hemos podido guardar tus datos");
+    }
+
+    await loadData();
+    setShowOnboarding(false);
+
+  } catch (e: any) {
+    setMsg(e?.message || "No hemos podido guardar tus datos");
+  } finally {
+    setSavingOnboarding(false);
+  }
+}
+
+  async function createPasswordNow() {
+    try {
+      const pass = String(passwordCreate || "").trim();
+      const confirm = String(passwordCreateConfirm || "").trim();
+
+      if (!pass || pass.length < 6) {
+        throw new Error("La contraseña debe tener al menos 6 caracteres.");
+      }
+      if (pass !== confirm) {
+        throw new Error("Las contraseñas no coinciden.");
+      }
+
+      setCreatingPassword(true);
+      setPasswordMsg("");
+
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+
+      const res = await fetch("/api/cliente/auth/password/create", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          password: pass,
+          password_confirm: confirm,
+        }),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || "No hemos podido guardar tu contraseña.");
+      }
+
+      setPasswordCreate("");
+      setPasswordCreateConfirm("");
+      setShowCreatePassword(false);
+      setPasswordMsg("");
+      setMsg("✅ Contraseña creada correctamente. La próxima vez podrás entrar con teléfono y contraseña.");
+      await loadData();
+    } catch (e: any) {
+      setPasswordMsg(e?.message || "No hemos podido guardar tu contraseña.");
+    } finally {
+      setCreatingPassword(false);
+    }
+  }
+
+  async function redeemReward(recompensaId: string) {
+    const reward = recompensas.find((item) => item.id === recompensaId);
+    try {
+      setRedeeming(true);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+
+      const operationId = redemptionOperationIdsRef.current.get(recompensaId) || crypto.randomUUID();
+      redemptionOperationIdsRef.current.set(recompensaId, operationId);
+      const res = await fetch("/api/cliente/canjear", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          recompensa_id: recompensaId,
+          operation_id: operationId,
+        }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No hemos podido canjear tus Coins");
+      redemptionOperationIdsRef.current.delete(recompensaId);
+      setMsg("✨ Recompensa desbloqueada. Tus minutos ya están actualizados.");
+      await loadData();
+      announceLeoCelestial({
+        id: `coins:${operationId}`,
+        reaction: "coins",
+        title: "Recompensa desbloqueada",
+        message: reward
+          ? `Has transformado ${Number(reward.puntos_coste).toLocaleString("es-ES")} Coins en ${Number(reward.minutos_otorgados)} minutos.`
+          : "El canje se ha confirmado y tus minutos ya están disponibles.",
+        href: "/cliente/dashboard#saldo-minutes",
+        actionLabel: "Ver mis minutos",
+      });
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido canjear tus Coins");
+      throw e;
+    } finally {
+      setRedeeming(false);
+    }
+  }
+
+  async function buyOraclePack(packId: string) {
+    try {
+      setBuyingOraclePackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/oraculo/checkout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingOraclePackId("");
+    }
+  }
+
+  async function buyMinutePack(packId: string) {
+    try {
+      setBuyingMinutePackId(packId);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+      const res = await fetch("/api/cliente/pagos/checkout-v2", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ pack_id: packId }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok || !json?.url) throw new Error(json?.error || "No hemos podido iniciar el pago");
+      window.location.href = json.url;
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido iniciar el pago");
+    } finally {
+      setBuyingMinutePackId("");
+    }
+  }
+
+  async function enablePushNotifications() {
+    try {
+      if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+        throw new Error("Tu dispositivo no soporta notificaciones web.");
+      }
+      setPushBusy(true);
+      setMsg("");
+      const { data } = await sb.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Sesión no válida");
+
+      let permission = Notification.permission;
+      if (permission !== "granted") {
+        permission = await Notification.requestPermission();
+      }
+      setPushPermission(permission);
+      if (permission !== "granted") {
+        throw new Error("Necesitas aceptar el permiso de notificaciones en tu navegador.");
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || ""),
+        }));
+
+      const res = await fetch("/api/cliente/push/register", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(subscription),
+      });
+      const json = await res.json().catch(() => null);
+      if (!json?.ok) throw new Error(json?.error || "No hemos podido activar las notificaciones.");
+      setPushEnabled(true);
+      setMsg("🔔 Notificaciones activadas en este dispositivo.");
+    } catch (e: any) {
+      setMsg(e?.message || "No hemos podido activar las notificaciones.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <ClienteLayout title="Cargando tu panel..." subtitle="Estamos preparando tu área personal." summaryItems={[]}>
+        <div className="tc-card">Cargando...</div>
+      </ClienteLayout>
+    );
+  }
+
+  if (!cliente) return <ClienteLayout title="Tu panel cliente"><p role="alert">{msg || "No se ha podido comprobar tu cuenta."}</p><button type="button" onClick={() => void loadData()}>Volver a cargar</button></ClienteLayout>;
+  return (
+    <>
+      <ClienteLayout
+        title={`Hola ${nombre}`}
+        subtitle="Tu panel cliente reúne compra, minutos, llamadas, Coins, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
+        summaryItems={summaryItems}
+      >
+        {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <a
+            className="tc-btn tc-btn-gold"
+            href="/cliente/oraculo"
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 12px" }}
+          >
+            <WandSparkles size={15} /> Abrir Oráculo <ChevronRight size={14} />
+          </a>
+        </div>
+
+        <div className="tc-dashboard-grid">
+          <div className="tc-stack">
+            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 16 }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Tu estado actual</div>
+                  <div className="tc-panel-sub">Tu actividad, tus minutos y tus ventajas, todo reunido aquí.</div>
+                </div>
+                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <Crown size={14} /> Rango {rankBadge.label}
+                </div>
+              </div>
+
+              <div className="tc-status-grid">
+                <div id="saldo-coins" className={`tc-mini-stat ${rewardHighlight === "coins" ? rewardStyles.highlight : ""}`}>
+                  <div className="tc-kpi-label">Coins disponibles</div>
+                  <strong>{totalPoints}</strong>
+                  <div className="tc-kpi-meta">Tu saldo real de recompensas para desbloquear minutos.</div>
+                  <div className="tc-client-resource-split">
+                    <span className="tc-client-resource-pill"><Coins size={12} /> Moneda de recompensa</span>
+                  </div>
+                </div>
+                <div id="saldo-minutes" className={`tc-mini-stat ${rewardHighlight === "minutes" ? rewardStyles.highlight : ""}`}>
+                  <div className="tc-kpi-label">Minutos disponibles</div>
+                  <strong>{totalMinutes}</strong>
+                  <div className="tc-kpi-meta">Todo tu saldo disponible para consultar cuando quieras.</div>
+                  <div className="tc-client-resource-split">
+                    <span className="tc-client-resource-pill">Free: {freeMinutes}</span>
+                    <span className="tc-client-resource-pill">Normales: {normalMinutes}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className={`tc-rank-card tc-rank-card-${rankBadge.key}`}>
+                <div className="tc-rank-hero">
+                  <div className={`tc-rank-emblem tc-rank-emblem-${rankBadge.key}`}><Medal size={30} /></div>
+                  <div className="tc-rank-identity">
+                    <span>RANGO ACTUAL</span>
+                    <strong>{rankBadge.label.toUpperCase()}</strong>
+                    {rankInfo?.has_override ? (
+                      <div className="tc-rank-override"><Clock3 size={13} /> {rankInfo.override_type === "permanent" ? "Asignación administrativa" : "Rango temporal"}{rankInfo.override_ends_at ? ` · hasta ${new Date(rankInfo.override_ends_at).toLocaleDateString("es-ES")}` : ""}</div>
+                    ) : null}
+                  </div>
+                  <div className="tc-rank-live-stats">
+                    <div><span>Gasto · 30 días</span><strong>{rankSpend30.toFixed(2)} USD</strong></div>
+                    <div><span>Compras</span><strong>{rankPurchases30}</strong></div>
+                  </div>
+                </div>
+
+                <div className="tc-rank-progress-head">
+                  <div>
+                    <span className="tc-rank-progress-label">{rankProgress?.next_label ? "PROGRESO DE RANGO" : "PROGRESIÓN COMPLETA"}</span>
+                    <div className="tc-rank-path"><strong>{rankBadge.label}</strong>{rankProgress?.next_label ? <><span>→</span><strong>{rankProgress.next_label}</strong></> : <span className="tc-rank-max"><Crown size={14} /> Rango máximo alcanzado</span>}</div>
+                  </div>
+                  <strong className="tc-rank-percent">{progressPercent.toFixed(0)}%</strong>
+                </div>
+                <div className="tc-progress-track tc-progress-track-large">
+                  <div className="tc-progress-fill" style={{ width: `${progressPercent}%` }} />
+                </div>
+                <div className="tc-rank-progress-copy">
+                  <span>{rankProgress?.status_text || "Tu progreso se actualiza con tus compras confirmadas."}</span>
+                  {rankProgress?.next_target ? <strong>Meta: {Number(rankProgress.next_target).toFixed(0)} USD / 30 días</strong> : <strong>Todos los beneficios actuales desbloqueados</strong>}
+                </div>
+              </div>            </section>
+
+            <section className="tc-card tc-purchase-panel">
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Comprar minutos desde la app</div>
+                  <div className="tc-panel-sub">Consulta los packs disponibles y elige los minutos que necesitas.</div>
+                </div>
+                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <ShoppingBag size={14} /> Precio app
+                </div>
+              </div>
+              <div className="tc-pack-grid">
+                {packs.map((pack) => (
+                  <div key={pack.id} className={`tc-pack-card ${pack.highlight ? "tc-pack-card-highlight" : ""}`}>
+                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div>
+                        <div className="tc-list-item-title">{pack.nombre}</div>
+                        <div className="tc-list-item-sub">{pack.descripcion}</div>
+                      </div>
+                      {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
+                    </div>
+                    <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
+                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
+                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits}/>
+                    <ClientPurchaseAction className="tc-btn tc-btn-gold"><button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
+                      {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
+                    </button></ClientPurchaseAction>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+
+            <section id="comprar-tiradas" className="tc-card tc-purchase-panel" style={{ borderColor: "rgba(167, 111, 255, .22)" }}>
+              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div className="tc-panel-title">Comprar tiradas de cartas</div>
+                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. Consulta los packs disponibles y sus beneficios.</div>
+                </div>
+                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  <WandSparkles size={14} /> Tiradas disponibles: {oracleCredits}
+                </div>
+              </div>
+              <div className="tc-pack-grid">
+                {oraclePacks.map((pack, index) => (
+                  <div key={pack.id} className={`tc-pack-card ${index === 1 ? "tc-pack-card-highlight" : ""}`}>
+                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div>
+                        <div className="tc-list-item-title">{index === 0 ? "🔮" : "✨"} {pack.nombre.toUpperCase()}</div>
+                        <div className="tc-list-item-sub">{pack.descripcion}</div>
+                      </div>
+                      <div className="tc-chip">{pack.credits} tiradas</div>
+                    </div>
+                    <div className="tc-pack-price">${pack.priceEur.toFixed(2).replace(".", ",")}</div>
+                    <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
+                    <ClientPurchaseAction className="tc-btn tc-btn-gold"><button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
+                      {buyingOraclePackId === pack.id ? "Conectando…" : "COMPRAR"}
+                    </button></ClientPurchaseAction>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="tc-rank-perks-layout">
+              <div className={`tc-card tc-perks-card tc-perks-active tc-perks-${rankBadge.key}`}>
+                <div className="tc-perks-header">
+                  <div className={`tc-rank-emblem tc-rank-emblem-${rankBadge.key}`}><Medal size={23} /></div>
+                  <div>
+                    <span>TUS BENEFICIOS ACTUALES</span>
+                    <strong>{rankBadge.label.toUpperCase()}</strong>
+                  </div>
+                  {rankInfo?.has_override ? <span className="tc-perks-temp"><Clock3 size={12} /> {rankInfo.override_type === "permanent" ? "ADMIN" : "TEMPORAL"}</span> : null}
+                </div>
+                <div className="tc-perks-list">
+                  {(rankInfo?.benefits || []).map((item) => (
+                    <div key={item} className="tc-perk tc-perk-unlocked">
+                      <span className="tc-perk-icon"><CheckCircle2 size={16} /></span>
+                      <span>{item}</span>
+                      <small>DESBLOQUEADO</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {rankInfo?.nextLabel ? (
+                <div className="tc-card tc-perks-card tc-perks-next">
+                  <div className="tc-perks-header">
+                    <div className={`tc-rank-emblem tc-rank-emblem-${String(rankInfo.nextRank || "plata") === "diamante" ? "diamond" : String(rankInfo.nextRank || "plata") === "oro" ? "gold" : "silver"}`}><Medal size={23} /></div>
+                    <div>
+                      <span>PRÓXIMO RANGO</span>
+                      <strong>{rankInfo.nextLabel.toUpperCase()}</strong>
+                    </div>
+                    {rankInfo.nextTarget ? <span className="tc-perks-target">{Number(rankInfo.nextTarget).toFixed(0)} USD / 30 días</span> : null}
+                  </div>
+                  <div className="tc-perks-list">
+                    {(rankInfo?.nextBenefits || []).map((item) => (
+                      <div key={item} className="tc-perk tc-perk-locked">
+                        <span className="tc-perk-icon"><LockKeyhole size={16} /></span>
+                        <span>{item}</span>
+                        <small>BLOQUEADO</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="tc-card tc-perks-card tc-perks-max">
+                  <div className="tc-perks-max-crown"><Crown size={28} /></div>
+                  <span>RANGO MÁXIMO ALCANZADO</span>
+                  <strong>ORO</strong>
+                  <p>Has desbloqueado todos los beneficios actuales.</p>
+                </div>
+              )}
+            </section>
+
+            <CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} />
+          </div>
+
+        </div>
+      </ClienteLayout>
+
+      <OnboardingModal
+        open={showOnboarding}
+        cliente={cliente}
+        saving={savingOnboarding}
+        onSave={saveOnboarding}
+      />
+
+      <BonusBienvenidaModal
+        open={showWelcomeGift}
+        minutes={welcomeGiftMinutes}
+        onClose={() => setShowWelcomeGift(false)}
+      />
+
+      {showCreatePassword && !showOnboarding ? (
+        <>
+          <div className="tc-password-overlay" />
+          <div className="tc-password-modal-wrap">
+            <div className="tc-password-modal">
+              <div className="tc-password-icon">
+                <ShieldAlert size={20} />
+              </div>
+
+              <div style={{ display: "grid", gap: 6 }}>
+                <div className="tc-password-title">Protege tu acceso</div>
+                <div className="tc-password-sub">
+                  Has entrado con código correctamente, pero todavía no tienes una contraseña creada.
+                  Guárdala ahora para poder acceder la próxima vez con tu teléfono y contraseña.
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <label className="tc-password-label">Nueva contraseña</label>
+                <div className="tc-password-input-wrap">
+                  <LockKeyhole size={16} />
+                  <input
+                    className="tc-password-input"
+                    type="password"
+                    placeholder="Escribe tu nueva contraseña"
+                    value={passwordCreate}
+                    onChange={(e) => setPasswordCreate(e.target.value)}
+                    disabled={creatingPassword || checkingPasswordStatus}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 10 }}>
+                <label className="tc-password-label">Confirmar contraseña</label>
+                <div className="tc-password-input-wrap">
+                  <LockKeyhole size={16} />
+                  <input
+                    className="tc-password-input"
+                    type="password"
+                    placeholder="Repite la contraseña"
+                    value={passwordCreateConfirm}
+                    onChange={(e) => setPasswordCreateConfirm(e.target.value)}
+                    disabled={creatingPassword || checkingPasswordStatus}
+                  />
+                </div>
+              </div>
+
+              {passwordMsg ? <div className="tc-password-error">{passwordMsg}</div> : null}
+
+              <button
+                className="tc-password-btn"
+                onClick={createPasswordNow}
+                disabled={creatingPassword || checkingPasswordStatus}
+              >
+                {creatingPassword ? "Guardando contraseña..." : "Guardar contraseña"}
+              </button>
+            </div>
+          </div>
+
+          <style jsx>{`
+            .tc-password-overlay {
+              position: fixed;
+              inset: 0;
+              background: rgba(8, 7, 12, 0.72);
+              backdrop-filter: blur(6px);
+              z-index: 9998;
+            }
+
+            .tc-password-modal-wrap {
+              position: fixed;
+              inset: 0;
+              z-index: 9999;
+              display: grid;
+              place-items: center;
+              padding: 18px;
+            }
+
+            .tc-password-modal {
+              width: min(520px, 100%);
+              border-radius: 24px;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              background:
+                radial-gradient(circle at top, rgba(247, 197, 94, 0.14), transparent 34%),
+                rgba(19, 14, 22, 0.96);
+              box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+              padding: 24px;
+              display: grid;
+              gap: 16px;
+              color: #fff7ea;
+            }
+
+            .tc-password-icon {
+              width: 46px;
+              height: 46px;
+              border-radius: 999px;
+              display: grid;
+              place-items: center;
+              background: rgba(247, 197, 94, 0.14);
+              color: var(--tc-gold-2);
+              border: 1px solid rgba(247, 197, 94, 0.22);
+            }
+
+            .tc-password-title {
+              font-size: 24px;
+              font-weight: 900;
+              line-height: 1.1;
+            }
+
+            .tc-password-sub {
+              color: rgba(255, 247, 234, 0.8);
+              line-height: 1.5;
+            }
+
+            .tc-password-label {
+              font-size: 13px;
+              font-weight: 800;
+              color: rgba(255, 247, 234, 0.84);
+            }
+
+            .tc-password-input-wrap {
+              min-height: 50px;
+              display: grid;
+              grid-template-columns: auto 1fr;
+              gap: 10px;
+              align-items: center;
+              border-radius: 16px;
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              background: rgba(255, 255, 255, 0.05);
+              padding: 0 14px;
+            }
+
+            .tc-password-input-wrap :global(svg) {
+              color: rgba(255, 247, 234, 0.65);
+            }
+
+            .tc-password-input {
+              min-width: 0;
+              width: 100%;
+              height: 48px;
+              border: 0;
+              outline: none;
+              background: transparent;
+              color: #fff7ea;
+              font-size: 15px;
+            }
+
+            .tc-password-input::placeholder {
+              color: rgba(255, 247, 234, 0.42);
+            }
+
+            .tc-password-error {
+              border-radius: 14px;
+              padding: 12px 14px;
+              background: rgba(255, 99, 99, 0.12);
+              border: 1px solid rgba(255, 99, 99, 0.22);
+              color: #ffd4d4;
+              line-height: 1.45;
+            }
+
+            .tc-password-btn {
+              min-height: 52px;
+              border: 0;
+              border-radius: 16px;
+              cursor: pointer;
+              font-weight: 900;
+              transition: transform 0.18s ease, opacity 0.18s ease;
+              background: linear-gradient(135deg, #f7c55e, #ffdf9a);
+              color: #24180f;
+            }
+
+            .tc-password-btn:disabled {
+              opacity: 0.7;
+              cursor: not-allowed;
+            }
+
+            @media (max-width: 640px) {
+              .tc-password-modal {
+                padding: 18px;
+                border-radius: 20px;
+              }
+
+              .tc-password-title {
+                font-size: 21px;
+              }
+            }
+          `}</style>
+        </>
+      ) : null}
+    </>
+  );
+}

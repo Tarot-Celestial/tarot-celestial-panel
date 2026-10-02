@@ -1,0 +1,747 @@
+
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
+
+export const runtime = "nodejs";
+
+const MONTH_TAGS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+async function syncClienteMonthTag(admin: any, clienteId: string) {
+  const fecha = new Date();
+
+const monthName = `${MONTH_TAGS[fecha.getMonth()]} ${fecha.getFullYear()}`;
+
+  const { data: allTags } = await admin
+    .from("crm_etiquetas")
+    .select("id,nombre");
+
+  const monthTags = (allTags || []).filter((t: any) =>
+    MONTH_TAGS.some((m) =>   String(t?.nombre || '').toLowerCase().startsWith(m.toLowerCase()) )
+  );
+
+  let currentMonthTag = monthTags.find((t: any) =>
+    String(t?.nombre || '').toLowerCase() === monthName.toLowerCase()
+  );
+
+  if (!currentMonthTag) {
+    const { data: createdTag } = await admin
+      .from("crm_etiquetas")
+      .insert({ nombre: monthName })
+      .select("id,nombre")
+      .single();
+
+    currentMonthTag = createdTag;
+  }
+
+  const monthTagIds = monthTags
+    .map((t: any) => t.id)
+    .filter(Boolean);
+
+  if (monthTagIds.length > 0) {
+    await admin
+      .from("crm_cliente_etiquetas")
+      .delete()
+      .eq("cliente_id", clienteId)
+      .in("etiqueta_id", monthTagIds);
+  }
+
+  if (currentMonthTag?.id) {
+    await admin
+      .from("crm_cliente_etiquetas")
+      .upsert({
+        cliente_id: clienteId,
+        etiqueta_id: currentMonthTag.id,
+      }, {
+        onConflict: 'cliente_id,etiqueta_id'
+      });
+  }
+}
+
+
+function getEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+function adminClient() {
+  return createClient(
+    getEnv("NEXT_PUBLIC_SUPABASE_URL"),
+    getEnv("SUPABASE_SERVICE_ROLE_KEY"),
+    { auth: { persistSession: false } }
+  );
+}
+
+async function uidFromBearer(req: Request) {
+  const url = getEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const anon = getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+  const auth = req.headers.get("authorization") || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return null;
+
+  const sb = createClient(url, anon, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false },
+  });
+
+  const { data } = await sb.auth.getUser(token);
+  return data.user?.id || null;
+}
+
+async function workerFromReq(req: Request) {
+  const uid = await uidFromBearer(req);
+  if (!uid) return null;
+  const admin = adminClient();
+  const { data, error } = await admin
+    .from("workers")
+    .select("id, user_id, role, display_name, email, is_active")
+    .eq("user_id", uid)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.is_active === false ? null : data || null;
+}
+
+function toNum(v: any) {
+  const n = Number(String(v ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function cleanText(v: any) {
+  const s = String(v ?? "").trim();
+  return s || null;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown): value is string {
+  return UUID_PATTERN.test(String(value ?? "").trim());
+}
+
+function rpcIsMissing(error: any) {
+  const code = String(error?.code || "").toUpperCase();
+  const message = `${error?.message || ""} ${error?.details || ""}`.toUpperCase();
+  return code === "PGRST202"
+    || code === "42883"
+    || message.includes("COULD NOT FIND THE FUNCTION")
+    || (message.includes("DOES NOT EXIST") && message.includes("CRM_REGISTER_CALL_ATOMIC"));
+}
+
+async function registerCallAtomic(admin: any, payload: any) {
+  const result = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
+  return { ...result, rpcName: "crm_register_call_atomic_v8" };
+}
+
+function clientIdentificationError() {
+  return NextResponse.json(
+    { ok: false, error: "CLIENTE_UUID_INVALID" },
+    { status: 400 }
+  );
+}
+
+function joinClienteName(cliente: any) {
+  return [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || cliente?.telefono || "Cliente";
+}
+
+function codigoText(mins: number, code: string | null) {
+  if (!mins || mins <= 0 || !code) return "";
+  return `${mins} ${String(code).toLowerCase()}`;
+}
+
+function pointsFromAmount(amount: number) {
+  return Math.max(0, Math.floor(Number(amount || 0) * 10));
+}
+
+async function resolveManualPurchaseBenefits(admin: any, amount: number) {
+  const fallback = {
+    source: "legacy_amount" as const,
+    coins: pointsFromAmount(amount),
+    oracle_credits: 0,
+    roulette_level: null as number | null,
+    roulette_spins: 0,
+    promotion_id: null as string | null,
+    promotion_name: null as string | null,
+    package_id: null as string | null,
+    package_name: null as string | null,
+  };
+
+  try {
+    const promotion = await loadActivePromotion(admin);
+    if (!promotion) return fallback;
+
+    const exact = (promotion.packages || []).filter((pack: any) => {
+      const currency = String(pack?.currency || "EUR").toUpperCase();
+      return pack?.is_active !== false
+        && currency === "EUR"
+        && Math.abs(Number(pack?.price || 0) - Number(amount || 0)) < 0.001;
+    });
+    if (exact.length !== 1) return fallback;
+
+    const snap = promotionPackageSnapshot(promotion, exact[0]);
+    return {
+      source: "active_promotion" as const,
+      coins: Math.max(0, Math.floor(Number(snap.coins || 0))),
+      oracle_credits: Math.max(0, Math.floor(Number(snap.oracle_credits || 0))),
+      roulette_level: snap.roulette_level ? Number(snap.roulette_level) : null,
+      roulette_spins: Math.max(0, Math.floor(Number(snap.roulette_spins || 0))),
+      promotion_id: String(snap.promotion_id),
+      promotion_name: String(snap.promotion_name),
+      package_id: String(snap.package_id),
+      package_name: String(snap.package_name),
+    };
+  } catch (error) {
+    console.error("[CRM registrar llamada] no se pudo resolver beneficios activos; se conserva la regla base", error);
+    return fallback;
+  }
+}
+
+function buildNota({
+  clienteCompra,
+  usoTipo,
+  importe,
+  formaPago,
+  guardadosFree,
+  guardadosNormales,
+  resumenCodigo,
+  tarotistaNombre,
+  nextFree,
+  nextNormales,
+  origenColaborador,
+  clasificacion,
+}: any) {
+  const origen = origenColaborador ? ` Origen: ${origenColaborador}.` : "";
+  if (!clienteCompra && usoTipo === "7free") {
+    return `Cliente usa 7 free con ${tarotistaNombre || "tarotista sin indicar"}.${origen}`;
+  }
+  if (!clienteCompra && usoTipo === "minutos") {
+    return `Cliente usa ${resumenCodigo || "minutos"} con ${tarotistaNombre || "tarotista sin indicar"}. Pendiente CRM: ${nextFree || 0} free y ${nextNormales || 0} normales.${origen}`;
+  }
+  const partes = [
+    `Compra registrada por ${Number(importe || 0).toFixed(2)} € vía ${formaPago || "sin método"}.`,
+    `Guarda ${guardadosFree || 0} free y ${guardadosNormales || 0} normales.`,
+  ];
+  if (resumenCodigo) partes.push(`Uso actual: ${resumenCodigo}.`);
+  partes.push(`Tarotista: ${tarotistaNombre || "sin indicar"}.`);
+  if (origenColaborador) partes.push(`Origen: ${origenColaborador}.`);
+  if (clasificacion === "super_promo_ruleta") partes.push("Clasificación: Super Promo Ruleta (+1 giro exclusivo Nivel Especial).");
+  return partes.join(" ").replace(/\s+/g, " ").trim();
+}
+
+export async function GET(req: Request) {
+  try {
+    const me = await workerFromReq(req);
+    if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!["admin", "central"].includes(String(me.role || ""))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    const clienteId = String(new URL(req.url).searchParams.get("cliente_id") || "");
+    if (!isUuid(clienteId)) return clientIdentificationError();
+
+    const admin = adminClient();
+    const [clientResult, ruleResult, eventsResult, assignmentResult] = await Promise.all([
+      admin.from("crm_clientes").select("id").eq("id", clienteId).maybeSingle(),
+      admin.from("worker_xp_rules").select("action_key,xp_reward,enabled,frequency,integration_status").eq("action_key", "client_capture").maybeSingle(),
+      admin.from("worker_xp_events").select("id,worker_id,reference_id,metadata,status").eq("action_key", "client_capture").eq("reference_id", `crm_client:${clienteId}`).eq("status", "applied"),
+      admin.from("crm_client_capture_assignments").select("candidate_worker_id,captured_by_worker_id,status").eq("client_id", clienteId).maybeSingle(),
+    ]);
+    if (clientResult.error || !clientResult.data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+    if (ruleResult.error) throw ruleResult.error;
+    if (eventsResult.error) throw eventsResult.error;
+    if (assignmentResult.error) throw assignmentResult.error;
+    const alreadyAwarded = (eventsResult.data || []).length > 0;
+    const ownerWorkerId = String(
+      assignmentResult.data?.captured_by_worker_id
+      || assignmentResult.data?.candidate_worker_id
+      || "",
+    );
+    const { data: ownerWorker, error: ownerError } = ownerWorkerId
+      ? await admin.from("workers").select("id,display_name,email").eq("id", ownerWorkerId).maybeSingle()
+      : { data: null, error: null };
+    if (ownerError) throw ownerError;
+    return NextResponse.json({
+      ok: true,
+      capture_xp: {
+        enabled: ruleResult.data?.enabled === true && ruleResult.data?.integration_status === "connected",
+        xp: Number(ruleResult.data?.xp_reward) || 0,
+        frequency: String(ruleResult.data?.frequency || ""),
+        eligible: ruleResult.data?.enabled === true
+          && ruleResult.data?.integration_status === "connected"
+          && !alreadyAwarded
+          && assignmentResult.data?.status !== "confirmed"
+          && Boolean(ownerWorkerId),
+        already_awarded: alreadyAwarded,
+        owner_worker_id: ownerWorkerId || null,
+        owner_name: ownerWorker?.display_name || ownerWorker?.email || null,
+        current_worker_is_owner: ownerWorkerId === String(me.id),
+        status: assignmentResult.data?.status || "pending",
+      },
+    });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const me = await workerFromReq(req);
+    if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
+    if (!["admin", "central"].includes(String(me.role || ""))) {
+      return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const requestedClienteId = String(body?.cliente_id || "").trim();
+    if (!requestedClienteId) return NextResponse.json({ ok: false, error: "CLIENTE_REQUIRED" }, { status: 400 });
+    if (!isUuid(requestedClienteId)) {
+      console.error("[CRM registrar llamada] cliente_id recibido no es un UUID válido", {
+        cliente_id: requestedClienteId,
+        collaborator_source: body?.collaborator_source || null,
+      });
+      return clientIdentificationError();
+    }
+
+    const clienteCompra = Boolean(body?.cliente_compra_minutos);
+    const operationId = String(body?.operation_id || "").trim();
+    const usoTipo = String(body?.uso_tipo || "").trim();
+    const codigo1 = cleanText(body?.codigo_1);
+    const codigo2 = cleanText(body?.codigo_2);
+    const minutos1 = toNum(body?.minutos_1);
+    const minutos2 = toNum(body?.minutos_2);
+    const guardadosFree = toNum(body?.guardados_free);
+    const guardadosNormales = toNum(body?.guardados_normales);
+    const tarotistaWorkerId = cleanText(body?.tarotista_worker_id);
+    const tarotistaManualCall = cleanText(body?.tarotista_manual_call);
+    const collaboratorSource = cleanText(body?.collaborator_source);
+    const formaPago = cleanText(body?.forma_pago);
+    const importe = toNum(body?.importe);
+    const clasificacion = String(body?.clasificacion || "nada").trim();
+    const clasificacionesValidas = new Set(["nada", "promo", "captado", "recuperado", "super_promo_ruleta"]);
+    if (!clasificacionesValidas.has(clasificacion)) {
+      return NextResponse.json({ ok: false, error: "CLASIFICACION_INVALIDA" }, { status: 400 });
+    }
+    if (clasificacion === "super_promo_ruleta" && !clienteCompra) {
+      return NextResponse.json({ ok: false, error: "SUPER_PROMO_REQUIERE_COMPRA" }, { status: 400 });
+    }
+
+    if (!clienteCompra && usoTipo !== "minutos" && usoTipo !== "7free") {
+      return NextResponse.json({ ok: false, error: "USO_TIPO_INVALIDO" }, { status: 400 });
+    }
+    if (clienteCompra && !(formaPago && importe > 0)) {
+      return NextResponse.json({ ok: false, error: "PAGO_REQUIRED" }, { status: 400 });
+    }
+    if (collaboratorSource && collaboratorSource !== "CALL_MARIO") {
+      return NextResponse.json({ ok: false, error: "COLLABORATOR_SOURCE_INVALID" }, { status: 400 });
+    }
+    if (collaboratorSource === "CALL_MARIO" && !tarotistaWorkerId) {
+      return NextResponse.json({ ok: false, error: "MARIO_TAROTISTA_REQUIRED" }, { status: 400 });
+    }
+
+    const admin = adminClient();
+    const { data: cliente, error: clienteError } = await admin
+      .from("crm_clientes")
+.select("id, nombre, apellido, telefono, origen, minutos_free_pendientes, minutos_normales_pendientes, puntos")
+      .eq("id", requestedClienteId)
+      .maybeSingle();
+    if (clienteError) {
+      console.error("[CRM registrar llamada] error resolviendo el cliente", clienteError);
+      return clientIdentificationError();
+    }
+    if (!cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+
+    // A partir de aquí se usa exclusivamente el ID devuelto por crm_clientes.
+    // Así cliente, colaborador y tarotista nunca comparten el mismo identificador.
+    const clienteId = String(cliente.id || "").trim();
+    if (!isUuid(clienteId)) {
+      console.error("[CRM registrar llamada] crm_clientes devolvió un ID no UUID", { cliente_id: clienteId });
+      return clientIdentificationError();
+    }
+
+    if (!isUuid(operationId)) {
+      return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
+    }
+
+    if (clienteCompra) {
+      const operationReference = `registrar_llamada:${operationId}`;
+      const { data: existingPayment, error: existingPaymentError } = await admin
+        .from("crm_cliente_pagos")
+        .select("id, cliente_id, importe, estado, referencia_externa, source_rendimiento_id")
+        .eq("referencia_externa", operationReference)
+        .maybeSingle();
+      if (existingPaymentError) throw existingPaymentError;
+      if (existingPayment) {
+        if (existingPayment.cliente_id !== clienteId || Number(existingPayment.importe) !== importe) throw new Error("PAYMENT_REFERENCE_CONFLICT");
+        const specialSpin = null;
+        return NextResponse.json({
+          ok: true,
+          duplicate_prevented: true,
+          payment: existingPayment,
+          special_spin: specialSpin,
+          message: "✅ La operación ya estaba registrada; no se creó un cobro duplicado" + (specialSpin ? " · Super Promo Ruleta: +1 giro Nivel Especial confirmado." : ""),
+        });
+      }
+    }
+
+    let billingCollaboratorId: string | null = null;
+    let sourceTagId: string | null = null;
+    let collaboratorDisplayName: string | null = null;
+
+    if (collaboratorSource === "CALL_MARIO") {
+      const { data: activeCollaborators, error: collaboratorError } = await admin
+        .from("billing_collaborators")
+        .select("id, display_name, tag_id, is_active")
+        .eq("is_active", true);
+      if (collaboratorError) throw collaboratorError;
+
+      const configuredTagIds = Array.from(new Set(
+        (activeCollaborators || []).map((row: any) => String(row?.tag_id || "")).filter(Boolean)
+      ));
+      if (!configuredTagIds.length) {
+        return NextResponse.json({ ok: false, error: "MARIO_COLLABORATOR_NOT_CONFIGURED" }, { status: 409 });
+      }
+
+      const { data: marioTags, error: marioTagError } = await admin
+        .from("crm_etiquetas")
+        .select("id, nombre")
+        .in("id", configuredTagIds)
+        .ilike("nombre", "CALL MARIO")
+        .limit(1);
+      if (marioTagError) throw marioTagError;
+
+      const marioTag = marioTags?.[0] || null;
+      if (!marioTag?.id) {
+        return NextResponse.json({ ok: false, error: "CALL_MARIO_TAG_NOT_CONFIGURED" }, { status: 409 });
+      }
+
+      const collaborator = (activeCollaborators || []).find(
+        (row: any) => String(row?.tag_id || "") === String(marioTag.id)
+      );
+      if (!collaborator?.id) {
+        return NextResponse.json({ ok: false, error: "MARIO_COLLABORATOR_NOT_CONFIGURED" }, { status: 409 });
+      }
+
+      billingCollaboratorId = String(collaborator.id);
+      sourceTagId = String(marioTag.id);
+      collaboratorDisplayName = String(collaborator.display_name || marioTag.nombre || "Mario");
+    }
+
+    let tarotistaNombre: string | null = null;
+    if (tarotistaWorkerId) {
+      const { data: tarotista, error: tarotistaError } = await admin
+        .from("workers")
+        .select("display_name, is_active, role")
+        .eq("id", tarotistaWorkerId)
+        .maybeSingle();
+      if (tarotistaError) throw tarotistaError;
+      if (!tarotista || tarotista.is_active === false || String(tarotista.role || "") !== "tarotista") {
+        return NextResponse.json({ ok: false, error: "TAROTISTA_INACTIVA" }, { status: 400 });
+      }
+      tarotistaNombre = tarotista?.display_name || null;
+    }
+    if (!tarotistaNombre && tarotistaManualCall) tarotistaNombre = tarotistaManualCall;
+
+    const currentFree = toNum(cliente?.minutos_free_pendientes);
+    const currentNormales = toNum(cliente?.minutos_normales_pendientes);
+    const usedFree = (codigo1 === "FREE" ? minutos1 : 0) + (codigo2 === "FREE" ? minutos2 : 0);
+    const usedNormales = (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) + (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
+
+    if (!clienteCompra && usoTipo === "7free" && currentFree < 7) {
+      return NextResponse.json({
+        ok: false,
+        error: "INSUFFICIENT_FREE_MINUTES",
+        available_free: currentFree,
+        requested_free: 7,
+      }, { status: 409 });
+    }
+    if (!clienteCompra && usoTipo === "minutos" && usedFree > currentFree) {
+      return NextResponse.json({
+        ok: false,
+        error: "INSUFFICIENT_FREE_MINUTES",
+        available_free: currentFree,
+        requested_free: usedFree,
+      }, { status: 409 });
+    }
+    if (!clienteCompra && usoTipo === "minutos" && usedNormales > currentNormales) {
+      return NextResponse.json({
+        ok: false,
+        error: "INSUFFICIENT_NORMAL_MINUTES",
+        available_normal: currentNormales,
+        requested_normal: usedNormales,
+      }, { status: 409 });
+    }
+
+    const freeDelta = clienteCompra
+      ? (Boolean(body?.guarda_minutos) ? guardadosFree : 0)
+      : usoTipo === "7free" ? -7
+      : usoTipo === "minutos" ? -usedFree
+      : 0;
+    const normalDelta = clienteCompra
+      ? (Boolean(body?.guarda_minutos) ? guardadosNormales : 0)
+      : usoTipo === "minutos" ? -usedNormales
+      : 0;
+
+    // Solo se usa para previsualizar la nota. PostgreSQL vuelve a calcular el
+    // resultado contra el saldo REAL bloqueado dentro de la transacción v8.
+    let nextFree = Math.max(0, currentFree + freeDelta);
+    let nextNormales = Math.max(0, currentNormales + normalDelta);
+
+    const tiempo = !clienteCompra && usoTipo === "7free" ? 7 : minutos1 + minutos2;
+    const resumenCodigo = [codigoText(minutos1, codigo1), codigoText(minutos2, codigo2)].filter(Boolean).join(" · ") || (!clienteCompra && usoTipo === "7free" ? "7 free" : null);
+    const clienteNombre = joinClienteName(cliente);
+    const esCall = Boolean(tarotistaManualCall);
+    const promo = clasificacion === "promo";
+    const captado = clasificacion === "captado";
+    const recuperado = clasificacion === "recuperado";
+    const superPromoRuleta = clasificacion === "super_promo_ruleta";
+    const mismaCompra = Boolean(body?.misma_compra);
+
+    const notaTexto = buildNota({
+      clienteCompra,
+      usoTipo,
+      importe,
+      formaPago,
+      guardadosFree,
+      guardadosNormales,
+      resumenCodigo,
+      tarotistaNombre,
+      nextFree,
+      nextNormales,
+      origenColaborador: collaboratorDisplayName ? "CALL MARIO" : null,
+      clasificacion,
+    });
+
+    const normalizedPaymentMethod = (() => {
+      const method = String(formaPago || "").trim().toUpperCase();
+      if (method === "PAYPAL") return "paypal_manual";
+      if (method === "TPV") return "tpv";
+      if (method === "BIZUM") return "bizum";
+      return method ? method.toLowerCase() : "otros";
+    })();
+
+    const purchaseBenefits = clienteCompra
+      ? await resolveManualPurchaseBenefits(admin, importe)
+      : null;
+
+    const atomicPayload = {
+      operation_id: operationId || null,
+      cliente_id: clienteId,
+      cliente_nombre: clienteNombre,
+      telefonista_worker_id: me.id,
+      telefonista_nombre: me.display_name || me.email || "Central",
+      tarotista_worker_id: tarotistaWorkerId,
+      tarotista_nombre: tarotistaNombre,
+      tarotista_manual_call: tarotistaManualCall,
+      llamada_call: esCall,
+      billing_collaborator_id: billingCollaboratorId,
+      source_tag_id: sourceTagId,
+      tipo_registro: clienteCompra ? "compra" : usoTipo,
+      cliente_compra_minutos: clienteCompra,
+      usa_7_free: !clienteCompra && usoTipo === "7free",
+      usa_minutos: !clienteCompra && usoTipo === "minutos",
+      misma_compra: mismaCompra,
+      guarda_minutos: Boolean(body?.guarda_minutos),
+      minutos_guardados_free: guardadosFree,
+      minutos_guardados_normales: guardadosNormales,
+      codigo_1: codigo1,
+      minutos_1: minutos1,
+      codigo_2: codigo2,
+      minutos_2: minutos2,
+      resumen_codigo: resumenCodigo,
+      tiempo,
+      forma_pago: normalizedPaymentMethod,
+      importe,
+      promo,
+      // La atribución se decide después mediante register_client_capture_contact.
+      // Evita que la función histórica conceda XP solo por marcar la opción visual.
+      captado: false,
+      recuperado,
+      next_free: nextFree,
+      next_normales: nextNormales,
+      expected_free: currentFree,
+      expected_normal: currentNormales,
+      free_delta: freeDelta,
+      normal_delta: normalDelta,
+      note_text: notaTexto,
+      note_author_user_id: me.user_id || null,
+      note_author_name: me.display_name || me.email || "Central",
+      note_author_email: me.email || null,
+      created_by_user_id: me.user_id || null,
+      created_by_role: me.role,
+      points_to_add: clienteCompra && importe > 0 ? Number(purchaseBenefits?.coins || 0) : 0,
+      purchase_benefits: purchaseBenefits,
+      super_promo_ruleta: superPromoRuleta,
+      business: String(cliente?.origen || "celestial"),
+    };
+
+    const { data: atomicResult, error: atomicError, rpcName } = await registerCallAtomic(
+      admin,
+      atomicPayload,
+    );
+
+    if (atomicError) {
+      console.error("[CRM registrar llamada] fallo transaccional", {
+        code: atomicError.code,
+        message: atomicError.message,
+        details: atomicError.details,
+        hint: atomicError.hint,
+        function: rpcName,
+        cliente_id: clienteId,
+        operation_id: operationId || null,
+        metodo_normalizado: normalizedPaymentMethod,
+        payload_sanitizado: {
+          operation_id: operationId || null,
+          cliente_id: clienteId,
+          telefonista_worker_id: me.id,
+          tarotista_worker_id: tarotistaWorkerId,
+          cliente_compra_minutos: clienteCompra,
+          uso_tipo: usoTipo,
+          importe,
+          forma_pago: normalizedPaymentMethod,
+          minutos_1: minutos1,
+          codigo_1: codigo1,
+          minutos_2: minutos2,
+          codigo_2: codigo2,
+          next_free: nextFree,
+          next_normales: nextNormales,
+          business: String(cliente?.origen || "celestial"),
+        },
+      });
+
+      const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
+      const knownBalanceError = [
+        "BALANCE_CHANGED",
+        "INSUFFICIENT_FREE_MINUTES",
+        "INSUFFICIENT_NORMAL_MINUTES",
+        "INSUFFICIENT_MINUTES",
+      ].find((code) => technicalMessage.includes(code));
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error: knownBalanceError || (clienteCompra ? "PAYMENT_REGISTER_FAILED" : "CALL_REGISTER_FAILED"),
+          diagnostic_code: atomicError.code || null,
+          diagnostic_message: process.env.NODE_ENV === "development" ? atomicError.message : null,
+          diagnostic_details: process.env.NODE_ENV === "development" ? atomicError.details : null,
+          diagnostic_hint: process.env.NODE_ENV === "development" ? atomicError.hint : null,
+          request_id: operationId || null,
+        },
+        { status: knownBalanceError ? 409 : 500 },
+      );
+    }
+
+    const result = atomicResult && typeof atomicResult === "object" ? atomicResult as any : {};
+    const inserted = result?.rendimiento ? [result.rendimiento] : [];
+    const economicPayment = result?.payment || null;
+    let captureAssignment: any = null;
+    let specialSpin: any = null;
+    const registeredCallId = String(result?.rendimiento?.id || "");
+
+    if (economicPayment?.id && superPromoRuleta) {
+      const spins = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", economicPayment.id).eq("nivel", 4).limit(1);
+      if (spins.error) throw spins.error;
+      specialSpin = spins.data?.[0] || null;
+    }
+
+    // Toda gestión válida participa en la atribución histórica. La RPC decide la
+    // primera gestora real y solo confirma la captación cuando existe una compra.
+    if (registeredCallId) {
+      const { data: captureResult, error: captureError } = await admin.rpc("register_client_capture_contact", {
+        p_client_id: clienteId,
+        p_worker_id: me.id,
+        p_call_id: registeredCallId,
+        p_used_initial_free: !clienteCompra && usoTipo === "7free",
+        p_classification: superPromoRuleta ? "nada" : clasificacion,
+        p_business: String(cliente?.origen || "celestial"),
+      });
+      if (captureError) {
+        // La clasificación Super Promo Ruleta no depende del subsistema de captación.
+        // La compra y su giro especial ya han quedado persistidos correctamente, por
+        // lo que un fallo de atribución no debe mostrar falsamente "no se aplicaron cambios".
+        if (superPromoRuleta) {
+          console.error("[CRM registrar llamada] atribución de captación omitida en Super Promo Ruleta", {
+            code: captureError.code || null,
+            message: captureError.message || null,
+            cliente_id: clienteId,
+            rendimiento_id: registeredCallId,
+          });
+        } else {
+          throw captureError;
+        }
+      }
+      captureAssignment = captureError ? null : captureResult;
+      if (captado && captureResult?.status === "confirmed") {
+        const { error: classificationError } = await admin.from("rendimiento_llamadas").update({ captado: true }).eq("id", registeredCallId);
+        if (classificationError) throw classificationError;
+        if (result?.rendimiento) result.rendimiento.captado = true;
+      }
+    }
+
+    // El HUD representa únicamente el evento XP que ya haya persistido la operación
+    // atómica. Nunca calcula XP desde la configuración ni concede experiencia aquí.
+    let persistedXpEvent: any = null;
+    let paymentCountToday: number | null = null;
+    if ((clienteCompra && economicPayment?.id) || captado) {
+      const eventSince = new Date(Date.now() - 60_000).toISOString();
+      const { data: recentXpEvents } = await admin
+        .from("worker_xp_events")
+        .select("id,worker_id,action_key,xp_amount,reference_id,reference_label,origin,status,metadata,created_at")
+        .eq("worker_id", me.id)
+        .eq("status", "applied")
+        .gte("created_at", eventSince)
+        .order("created_at", { ascending: false })
+        .limit(12);
+      persistedXpEvent = (recentXpEvents || []).find((event: any) => {
+        const metadata = event?.metadata && typeof event.metadata === "object" ? event.metadata : {};
+        const references = [event?.reference_id, metadata.payment_id, metadata.pago_id, metadata.rendimiento_id, metadata.operation_id]
+          .map((value) => String(value || ""));
+        return (economicPayment?.id && references.includes(String(economicPayment.id)))
+          || (event.action_key === "client_capture" && references.some((value) => value.replace(/^cliente:/, "") === clienteId))
+          || references.includes(String(result?.rendimiento?.id || ""))
+          || references.includes(String(operationId || ""));
+      }) || null;
+
+      const paymentDay = String(result?.rendimiento?.fecha || "");
+      if (paymentDay) {
+        const countResult = await admin
+          .from("rendimiento_llamadas")
+          .select("id", { count: "exact", head: true })
+          .eq("fecha", paymentDay)
+          .gt("importe", 0);
+        if (!countResult.error) paymentCountToday = Number(countResult.count || 0);
+      }
+    }
+
+    await syncClienteMonthTag(admin, clienteId);
+
+    const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
+      ? await admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
+      : { data: null };
+    return NextResponse.json({
+      ok: true,
+      data: inserted,
+      payment: economicPayment,
+      operation_id: operationId || null,
+      rendimiento_id: result?.rendimiento?.id || null,
+      payment_id: result?.payment?.id || null,
+      client_name: joinClienteName(cliente),
+      amount: economicPayment ? Number(economicPayment.importe || importe || 0) : null,
+      currency: String(economicPayment?.moneda || "EUR"),
+      payment_count_today: paymentCountToday,
+      xp_event: persistedXpEvent,
+      capture_assignment: captureAssignment,
+      special_spin: specialSpin,
+      created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),
+      business: String(cliente?.origen || "celestial"),
+      message: (collaboratorDisplayName
+        ? "✅ Llamada registrada y vinculada a CALL MARIO"
+        : "✅ Llamada registrada correctamente") + (superPromoRuleta
+          ? " · Super Promo Ruleta: +1 giro exclusivo Nivel Especial disponible para el cliente."
+          : awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
+    });
+  } catch (e: any) {
+    console.error("🔥 ERROR GENERAL:", e);
+    const technicalMessage = String(e?.message || "");
+    if (/cliente_id/i.test(technicalMessage) && /uuid/i.test(technicalMessage)) {
+      return clientIdentificationError();
+    }
+    return NextResponse.json({ ok: false, error: "CALL_REGISTER_FAILED" }, { status: 500 });
+  }
+}
