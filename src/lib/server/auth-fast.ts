@@ -1,26 +1,58 @@
-import { createClient, type User } from "@supabase/supabase-js";
-export type FastAuthUser = User;
+export type FastAuthUser = {
+  id: string;
+  email?: string;
+  role?: string;
+  app_metadata?: Record<string, any>;
+  user_metadata?: Record<string, any>;
+  aud?: string;
+  exp?: number;
+  [key: string]: any;
+};
+
+function base64UrlDecode(input: string): string {
+  const padded = input.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(input.length / 4) * 4, "=");
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
 export function getBearerToken(req: Request): string {
-  return req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
+  const auth = req.headers.get("authorization") || req.headers.get("Authorization") || "";
+  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  return "";
 }
-const requests = new WeakMap<Request, Promise<{ data: { user: User | null }; error: Error | null }>>();
-/** Request-local deduplication; identity is verified by Supabase Auth, never decoded on trust. */
-export function getAuthUserFromRequest(req: Request) {
-  let result = requests.get(req);
-  if (!result) {
-    result = (async () => {
-      const token = getBearerToken(req);
-      if (!token) return { data: { user: null }, error: new Error("UNAUTHENTICATED") };
-      const client = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data, error } = await client.auth.getUser(token);
-      return { data: { user: data.user }, error };
-    })();
-    requests.set(req, result);
+
+export function decodeSupabaseUserFromToken(token: string): FastAuthUser | null {
+  try {
+    const [, payload] = token.split(".");
+    if (!payload) return null;
+    const claims = JSON.parse(base64UrlDecode(payload));
+    const exp = Number(claims.exp || 0);
+    if (exp && exp * 1000 < Date.now()) return null;
+    const id = String(claims.sub || "");
+    if (!id) return null;
+    return {
+      id,
+      email: claims.email,
+      role: claims.role,
+      app_metadata: claims.app_metadata || {},
+      user_metadata: claims.user_metadata || {},
+      aud: claims.aud,
+      exp: claims.exp,
+      ...claims,
+    };
+  } catch {
+    return null;
   }
-  return result;
 }
-export async function getAuthUserIdFromRequest(req: Request): Promise<string | null> {
-  return (await getAuthUserFromRequest(req)).data.user?.id || null;
+
+export function getAuthUserFromRequest(req: Request): { data: { user: FastAuthUser | null }; error: Error | null } {
+  const token = getBearerToken(req);
+  const user = token ? decodeSupabaseUserFromToken(token) : null;
+  return {
+    data: { user },
+    error: user ? null : new Error("UNAUTHENTICATED"),
+  };
+}
+
+export function getAuthUserIdFromRequest(req: Request): string | null {
+  return getAuthUserFromRequest(req).data.user?.id || null;
 }

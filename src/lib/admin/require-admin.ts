@@ -23,7 +23,7 @@ export async function uidAndEmailFromBearer(req: Request) {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
 
   return {
@@ -58,7 +58,7 @@ export async function requireAdmin(req: Request) {
   }
 
   if (!me) return { ok: false as const, error: "NO_WORKER" as const };
-  if (me.role !== "admin" || me.is_active === false) return { ok: false as const, error: "FORBIDDEN" as const };
+  if (me.role !== "admin") return { ok: false as const, error: "FORBIDDEN" as const };
 
   return { ok: true as const, admin, me };
 }

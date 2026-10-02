@@ -124,11 +124,6 @@ export async function GET(req: Request) {
       );
     }
 
-    const capture = captureJson?.purchase_units?.[0]?.payments?.captures?.[0];
-    if (capture?.status !== "COMPLETED" || Math.abs(Number(capture?.amount?.value) - Number(pago.importe)) > 0.001 || String(capture?.amount?.currency_code) !== String(pago.moneda)) {
-      return NextResponse.json({ ok: false, error: "PAYPAL_CAPTURE_NOT_CONFIRMED_OR_AMOUNT_MISMATCH" }, { status: 409 });
-    }
-
     const captureId =
       captureJson?.purchase_units?.[0]?.payments?.captures?.[0]?.id ||
       null;

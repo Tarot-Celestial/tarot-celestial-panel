@@ -7,6 +7,16 @@ export function normalizeRankClientName(v: any) {
     .trim();
 }
 
+export const CLIENT_RANK_THRESHOLDS = { bronce: 0.01, plata: 100, oro: 500, diamante: 1000 } as const;
+
+export function calcClientRank(total: number) {
+  if (total >= CLIENT_RANK_THRESHOLDS.diamante) return "diamante";
+  if (total >= CLIENT_RANK_THRESHOLDS.oro) return "oro";
+  if (total >= 100) return "plata";
+  if (total > 0) return "bronce";
+  return null;
+}
+
 export function roundMoney(n: any) {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
@@ -29,8 +39,66 @@ export async function loadRolling30ClientTotals(
   sinceIso: string,
   nowIso: string
 ) {
-  const { data, error } = await admin.rpc("tc_client_rank_states", { p_client_ids: clientes.map(c => c.id) });
-  if (error) throw error;
-  return new Map<string, any>((data || []).map((r: any) =>
-    [String(r.cliente_id), { total: Number(r.total), compras: Number(r.compras), pagos: 0, llamadas: 0, state:r, automatic:r.automatic, effective:r.effective }]));
+  const byName = buildClienteNameMap(clientes);
+
+  const [llamadasFechaRes, llamadasCreatedRes, pagosRes] = await Promise.all([
+    admin
+      .from("rendimiento_llamadas")
+      .select("id, cliente_id, cliente_nombre, importe, fecha_hora, created_at")
+      .gte("fecha_hora", sinceIso),
+    admin
+      .from("rendimiento_llamadas")
+      .select("id, cliente_id, cliente_nombre, importe, fecha_hora, created_at")
+      .gte("created_at", sinceIso)
+      .lte("created_at", nowIso),
+    admin
+      .from("crm_cliente_pagos")
+      .select("id, cliente_id, importe, created_at, estado")
+      .eq("estado", "completed")
+      .gte("created_at", sinceIso)
+      .lte("created_at", nowIso),
+  ]);
+
+  if (llamadasFechaRes.error) throw llamadasFechaRes.error;
+  if (llamadasCreatedRes.error) throw llamadasCreatedRes.error;
+  if (pagosRes.error) throw pagosRes.error;
+
+  const llamadasMap = new Map<string, any>();
+  for (const row of [...(llamadasFechaRes.data || []), ...(llamadasCreatedRes.data || [])]) {
+    const key = String(row?.id || `${row?.cliente_id || ""}:${row?.cliente_nombre || ""}:${row?.fecha_hora || row?.created_at || ""}:${row?.importe || 0}`);
+    if (!llamadasMap.has(key)) llamadasMap.set(key, row);
+  }
+
+  const totals = new Map<string, { total: number; compras: number; pagos: number; llamadas: number }>();
+
+  for (const row of llamadasMap.values()) {
+    const amount = Number(row?.importe || 0);
+    if (!(amount > 0)) continue;
+    let clienteId = String(row?.cliente_id || "").trim();
+    if (!clienteId) clienteId = byName.get(normalizeRankClientName(row?.cliente_nombre)) || "";
+    if (!clienteId) continue;
+    const prev = totals.get(clienteId) || { total: 0, compras: 0, pagos: 0, llamadas: 0 };
+    prev.total += amount;
+    prev.compras += 1;
+    prev.llamadas += 1;
+    totals.set(clienteId, prev);
+  }
+
+  for (const row of pagosRes.data || []) {
+    const amount = Number(row?.importe || 0);
+    const clienteId = String(row?.cliente_id || "").trim();
+    if (!clienteId || !(amount > 0)) continue;
+    const prev = totals.get(clienteId) || { total: 0, compras: 0, pagos: 0, llamadas: 0 };
+    prev.total += amount;
+    prev.compras += 1;
+    prev.pagos += 1;
+    totals.set(clienteId, prev);
+  }
+
+  for (const [clienteId, info] of totals.entries()) {
+    info.total = roundMoney(info.total);
+    totals.set(clienteId, info);
+  }
+
+  return totals;
 }

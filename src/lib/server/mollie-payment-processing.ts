@@ -7,7 +7,7 @@ import { getOraclePack, grantOracleCredits } from "@/lib/server/oracle-premium";
 import { getOracleQuestionPack, grantOracleQuestions } from "@/lib/server/oracle-questions";
 import { applyPromotionMinutePurchase, type PromotionPackageSnapshot } from "@/lib/server/client-promotions";
 import { pointsFromAmount, splitMinutes } from "@/lib/server/cliente-platform";
-
+import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
 
 
 
@@ -204,7 +204,7 @@ export async function processMolliePayment(paymentId: string) {
           free: 0,
           normal: 0,
           points: pointsFromAmount(paymentAmount),
-
+          roulette_level: rouletteLevelForPurchaseAmount(paymentAmount),
           notas: String(metadata.notes || "Cobro personalizado iniciado desde CRM"),
           created_by_user_id: metadata.initiated_by_worker_id || null,
           created_by_role: metadata.initiated_by_role || "central",
@@ -213,18 +213,23 @@ export async function processMolliePayment(paymentId: string) {
       if (transactionError) throw transactionError;
       duplicated = Boolean(transaction?.duplicated);
       completedPaymentId = String(transaction?.payment?.id || "");
-    } else if (questionPack || oraclePack) {
-      const selected = questionPack || oraclePack!;
-      const { data: purchase, error: purchaseError } = await admin.rpc("cliente_confirmar_compra_oraculo_v1", { p: {
-        cliente_id: locked.cliente_id, payment_ref: `mollie:${paymentId}`,
-        amount: paymentAmount, currency: paymentCurrency, metodo: "mollie_oracle",
-        pack_id: selected.id, pack_name: selected.nombre, notas: `Mollie completado · ${selected.nombre}`,
-        created_by_role: "cliente_webhook", oracle_kind: questionPack ? "questions" : "credits",
-        quantity: questionPack ? questionPack.questions : oraclePack!.credits,
-      } });
-      if (purchaseError) throw purchaseError;
-      duplicated = Boolean(purchase.duplicated);
-      completedPaymentId = String(purchase.payment.id);
+    } else if (questionPack) {
+      await grantOracleQuestions(admin, {
+        clienteId: locked.cliente_id,
+        questions: questionPack.questions,
+        reference: `mollie:${paymentId}`,
+        notes: `Mollie completado · ${questionPack.nombre}`,
+        meta: { mollie_payment_id: paymentId, amount_eur: paymentAmount },
+      });
+    } else if (oraclePack) {
+      await grantOracleCredits(admin, {
+        clienteId: locked.cliente_id,
+        credits: oraclePack.credits,
+        reference: `mollie:${paymentId}`,
+        packId: oraclePack.id,
+        notes: `Mollie completado · ${oraclePack.nombre}`,
+        meta: { mollie_payment_id: paymentId, amount_eur: paymentAmount },
+      });
     } else {
       const purchase = await applyConfiguredMinutePurchase(admin, {
         clienteId: locked.cliente_id,

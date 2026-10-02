@@ -104,7 +104,7 @@ async function uidFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
 
-  const { data } = await getAuthUserFromRequest(req);
+  const { data } = getAuthUserFromRequest(req);
   return { uid: data.user?.id || null };
 }
 

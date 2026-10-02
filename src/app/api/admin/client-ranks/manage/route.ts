@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
-import { normalizeClientRank } from "@/lib/server/client-rank-effective";
+import { normalizeClientRank, rankProgress, rankThresholds } from "@/lib/server/client-rank-effective";
 import { loadEffectiveRanksBatch, loadRecentRankClients, loadRecentRankTotals } from "@/lib/server/client-rank-admin-data";
 
 export const runtime = "nodejs";
@@ -54,11 +54,11 @@ export async function GET(req: Request) {
     const rows = [] as any[];
     for (const client of filteredClients) {
       const info = totals.get(String(client.id)) || { total: 0, compras: 0 };
-      const rank = effectiveRanks.get(String(client.id)) || { automatic: null, effective: null, override: null, config:null, next:null };
+      const rank = effectiveRanks.get(String(client.id)) || { automatic: null, effective: null, override: null };
       if (rankFilter && rank.effective !== rankFilter) continue;
       if (assignment === "automatic" && rank.override) continue;
       if (assignment === "manual" && !rank.override) continue;
-      const thresholds = {next:rank.next?.rank_key||null,nextMin:rank.next?.min_spend||null};
+      const thresholds = rankThresholds(rank.automatic);
       rows.push({
         id: client.id,
         name: [client.nombre, client.apellido].filter(Boolean).join(" ").trim() || "Sin nombre",
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
         purchases_30d: Number(info.compras || 0),
         next_rank: thresholds.next,
         next_rank_amount: thresholds.nextMin,
-        progress: rank.next ? Math.max(0,Math.min(100,100*(Number(info.total||0)-Number(rank.config?.min_spend||0))/Math.max(.01,Number(rank.next.min_spend)-Number(rank.config?.min_spend||0)))) : 100,
+        progress: Number(rankProgress(Number(info.total || 0), rank.automatic).toFixed(1)),
         override: rank.override,
       });
     }

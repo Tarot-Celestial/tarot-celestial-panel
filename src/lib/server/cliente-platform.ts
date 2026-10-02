@@ -90,6 +90,49 @@ export function getCallTarget(phoneLike: string | null | undefined) {
   return { market, label: "España", displayNumber: "930 502 586", telHref: "tel:+34930502586" };
 }
 
+export function computeCurrentRankFromSpend(spend: number, purchases: number) {
+  const total = toNum(spend);
+  const count = Math.max(0, Math.floor(toNum(purchases)));
+  if (total >= 1000) return "diamante";
+  if (total >= 500) return "oro";
+  if (total >= 100) return "plata";
+  if (count >= 1 || total > 0) return "bronce";
+  return null;
+}
+
+export function currentRankBenefits(rank: string | null | undefined) {
+  const key = String(rank || "").toLowerCase();
+  if (key === "diamante") {
+    return [
+      "Acceso exclusivo a Mi Ritual y seguimiento visual de rituales",
+      "12 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+12 minutos GRATIS permanentes en cada compra a precio regular",
+      "Participación automática en sorteos activos (1 número por sorteo)",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "Seguimiento energético durante 1 mes post rituales",
+    ];
+  }
+  if (key === "oro") {
+    return [
+      "12 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+12 minutos GRATIS permanentes en cada compra a precio regular",
+      "Participación automática en sorteos activos (1 número por sorteo)",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "Seguimiento energético durante 1 mes post rituales",
+    ];
+  }
+  if (key === "plata") {
+    return [
+      "10 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+10 minutos GRATIS permanentes en cada compra a precio regular",
+      "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
+      "Seguimiento energético durante 1 mes post rituales",
+    ];
+  }
+  return ["3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses"];
+}
+
+
 const CRM_MONTH_TAGS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
 export async function syncClientMonthTag(admin: any, clienteId: string) {
@@ -201,17 +244,137 @@ export async function applyClientPurchase(
     notas?: string;
   }
 ) {
-  const minutes = splitMinutes(params.totalMinutes);
-  const { data, error } = await admin.rpc("cliente_confirmar_compra_ruleta_v3", { p: {
-    cliente_id: params.clienteId, payment_ref: params.paymentRef, amount: params.amountUsd, currency: "USD",
-    free: minutes.free, normal: minutes.normal, points: pointsFromAmount(params.amountUsd),
-    pack_id: params.packId, pack_name: getClientePack(params.packId)?.nombre || params.packId,
-    metodo: params.metodo || "stripe_checkout", notas: params.notas || null,
-    stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
-    created_by_role: "cliente_webhook",
-  } });
-  if (error) throw error;
-  return { ok: true, ...data };
+  const nowIso = new Date().toISOString();
+  const metodo = String(params.metodo || "stripe_checkout");
+  const pack = getClientePack(params.packId);
+  const packName = pack?.nombre || params.packId;
+
+  const { data: existingPayment, error: existingPaymentError } = await admin
+    .from("crm_cliente_pagos")
+    .select("id, referencia_externa, cliente_id")
+    .eq("referencia_externa", params.paymentRef)
+    .maybeSingle();
+  if (existingPaymentError) throw existingPaymentError;
+  if (existingPayment?.id) {
+    return { ok: true, duplicated: true, payment: existingPayment };
+  }
+
+  const { data: clienteActual, error: clienteError } = await admin
+    .from("crm_clientes")
+    .select("id, nombre, apellido, puntos, minutos_free_pendientes, minutos_normales_pendientes")
+    .eq("id", params.clienteId)
+    .maybeSingle();
+  if (clienteError) throw clienteError;
+  if (!clienteActual?.id) throw new Error("CLIENTE_NO_EXISTE");
+
+  const amountUsd = Number(params.amountUsd || 0);
+  const totalMinutes = Math.max(0, Math.floor(Number(params.totalMinutes || 0)));
+  const minutesSplit = splitMinutes(totalMinutes);
+  const puntosGanados = pointsFromAmount(amountUsd);
+
+  const { data: pago, error: pagoError } = await admin
+    .from("crm_cliente_pagos")
+    .insert({
+      cliente_id: params.clienteId,
+      importe: amountUsd,
+      moneda: "USD",
+      metodo,
+      estado: "completed",
+      notas: params.notas || `Compra automatizada desde panel cliente · ${packName}`,
+      referencia_externa: params.paymentRef,
+      pack_id: params.packId,
+      pack_name: packName,
+      paid_minutes: pack ? Math.max(0, totalMinutes - Number(pack.bonusMinutes || 0)) : minutesSplit.normal,
+      bonus_minutes: pack ? Math.max(0, Number(pack.bonusMinutes || 0)) : minutesSplit.free,
+      stripe_session_id: params.stripeSessionId || null,
+      payment_intent: params.paymentIntent || null,
+      created_by_user_id: null,
+      created_by_role: "cliente_webhook",
+    })
+    .select("*")
+    .single();
+  if (pagoError) throw pagoError;
+
+  const nextFree = toNum(clienteActual.minutos_free_pendientes) + minutesSplit.free;
+  const nextNormal = toNum(clienteActual.minutos_normales_pendientes) + minutesSplit.normal;
+  const nextPoints = toNum(clienteActual.puntos) + puntosGanados;
+
+  await admin
+    .from("crm_clientes")
+    .update({
+      minutos_free_pendientes: nextFree,
+      minutos_normales_pendientes: nextNormal,
+      puntos: nextPoints,
+      updated_at: nowIso,
+    })
+    .eq("id", params.clienteId);
+
+  await admin.from("cliente_puntos_historial").insert({
+    cliente_id: params.clienteId,
+    tipo: "ganado",
+    puntos: puntosGanados,
+    descripcion: `Compra ${packName} (${amountUsd.toFixed(2)} USD) → +${puntosGanados} puntos.`,
+    created_at: nowIso,
+  });
+
+  const { start, end } = monthRange(new Date());
+  const { data: monthPayments, error: monthPaymentsError } = await admin
+    .from("crm_cliente_pagos")
+    .select("id, importe, estado")
+    .eq("cliente_id", params.clienteId)
+    .eq("estado", "completed")
+    .gte("created_at", start.toISOString())
+    .lt("created_at", end.toISOString());
+  if (monthPaymentsError) throw monthPaymentsError;
+
+  const monthlySpend = (monthPayments || []).reduce((acc: number, row: any) => acc + toNum(row?.importe), 0);
+  const monthlyPurchases = (monthPayments || []).length;
+  const nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+
+  // No persistimos aquí el rango CRM para no sobrescribir el recálculo manual del panel.
+  // El rango puede seguir mostrándose en vivo en la experiencia cliente sin tocar los KPIs de CRM.
+
+  await syncClientMonthTag(admin, params.clienteId);
+
+  const nombre = [clienteActual?.nombre, clienteActual?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
+
+  await createClientNotification(admin, {
+    cliente_id: params.clienteId,
+    tipo: "purchase_completed",
+    titulo: "Pago confirmado",
+    mensaje: `Tu compra ${packName} ya está activa. Hemos añadido ${totalMinutes} minutos y +${puntosGanados} puntos a tu cuenta.`,
+    meta: {
+      pack_id: params.packId,
+      pack_name: packName,
+      total_minutes: totalMinutes,
+      free_minutes: minutesSplit.free,
+      normal_minutes: minutesSplit.normal,
+      payment_intent: params.paymentIntent || null,
+      stripe_session_id: params.stripeSessionId || null,
+    },
+  });
+
+  try {
+    await admin.from("notifications").insert({
+      type: "cliente_payment_completed",
+      title: "Compra completada en panel cliente",
+      message: `${nombre} compró ${packName} por ${amountUsd.toFixed(2)} USD.`,
+      cliente_id: params.clienteId,
+      read: false,
+      created_at: nowIso,
+    });
+  } catch {
+    // notificación interna opcional
+  }
+
+  return {
+    ok: true,
+    duplicated: false,
+    payment: pago,
+    rank: nextRank,
+    monthlySpend,
+    monthlyPurchases,
+  };
 }
 
 export function pickDailyOracle(topic: string, clientId: string, rank: string | null | undefined) {

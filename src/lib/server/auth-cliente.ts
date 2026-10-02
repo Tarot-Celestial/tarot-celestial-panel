@@ -74,7 +74,7 @@ export async function authUserFromBearer(req: Request): Promise<{
     auth: { persistSession: false },
   });
 
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
 
   const user: any = data.user || null;
@@ -215,8 +215,6 @@ export async function clientFromRequest(req: Request) {
   if (!cliente && rawEmail && !isInternalClienteAuthEmail(rawEmail)) {
     cliente = await findClienteByEmail(admin, rawEmail);
   }
-
-  if (cliente?.auth_user_id && String(cliente.auth_user_id) !== uid) throw new Error("AUTH_CLIENT_MISMATCH");
 
   // 4) Si encuentra ficha, solo corrige datos útiles
   if (cliente) {

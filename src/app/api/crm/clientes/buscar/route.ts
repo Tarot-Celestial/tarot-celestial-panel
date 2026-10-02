@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { loadRolling30ClientTotals } from "@/lib/server/client-ranks";
+import { calcClientRank, loadRolling30ClientTotals } from "@/lib/server/client-ranks";
 import { normalizeClientRank } from "@/lib/server/client-rank-effective";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
@@ -26,7 +26,7 @@ async function uidFromBearer(req: Request) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false },
   });
-  const { data, error } = await getAuthUserFromRequest(req);
+  const { data, error } = getAuthUserFromRequest(req);
   if (error) throw error;
   return data.user?.id || null;
 }
@@ -200,7 +200,7 @@ export async function GET(req: Request) {
       .map((c: any) => {
         const clientId = String(c.id);
         const rankInfo = totals.get(clientId) || { total: 0, compras: 0 };
-        const automaticRank = rankInfo.automatic || null;
+        const automaticRank = normalizeClientRank(calcClientRank(rankInfo.total));
         const override = overrideByClient.get(clientId) || null;
         const effectiveRank = override?.assigned_rank || automaticRank;
         return {

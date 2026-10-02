@@ -3,7 +3,7 @@ import { loadEffectiveRanksBatch, loadRecentRankTotals, type RankAdminClient } f
 export type FidelityPurchase = { id?: string | null; created_at?: string | null; importe?: number | string | null };
 export type FidelityActivity = { created_at?: string | null; closed_at?: string | null; estado?: string | null };
 export type FidelityFollowUp = FidelityActivity & { completed_at?: string | null; result?: string | null };
-export type FidelityRank = string | null;
+export type FidelityRank = "bronce" | "plata" | "oro" | "diamante" | null;
 
 export type ClientFidelityInput = {
   capturedAt?: string | null;

@@ -24,7 +24,7 @@ async function getAdminFromToken(req: Request) {
     auth: { persistSession: false },
   });
 
-  const { data: u } = await getAuthUserFromRequest(req);
+  const { data: u } = getAuthUserFromRequest(req);
   const uid = u?.user?.id || null;
   const email = u?.user?.email || null;
 
