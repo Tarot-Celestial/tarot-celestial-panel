@@ -209,8 +209,12 @@ export default function ClienteDashboardPage() {
       return;
     }
 
-    const res = await fetch("/api/cliente/me", {
-      headers: { Authorization: `Bearer ${token}` },
+    const res = await fetch(`/api/cliente/me?fresh=${Date.now()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
       cache: "no-store",
       signal: AbortSignal.timeout(15000),
     });
@@ -608,7 +612,11 @@ export default function ClienteDashboardPage() {
 
       redemptionOperationIdsRef.current.delete(recompensaId);
       setMsg("✨ Recompensa desbloqueada. Tus minutos ya están actualizados.");
-      await loadData();
+
+      // No volvemos a consultar /me de forma inmediata aquí. El resultado del RPC es la
+      // fuente de verdad del canje confirmado; una respuesta intermedia/cacheada no debe
+      // poder restaurar el saldo anterior justo después de la operación. El siguiente
+      // refresco normal del panel ya pedirá /me con cache-busting.
       announceLeoCelestial({
         id: `coins:${operationId}`,
         reaction: "coins",

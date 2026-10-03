@@ -31,10 +31,39 @@ export async function POST(req: Request) {
     });
     if (redeemError) throw redeemError;
 
-    return NextResponse.json({
-      ok: true,
-      ...result,
-    });
+    // Leemos de nuevo la ficha tras el RPC. Así la respuesta HTTP siempre devuelve
+    // el saldo persistido en base de datos, aunque el objeto inicial de autenticación
+    // se hubiera cargado antes del canje.
+    const { data: freshCliente, error: freshError } = await gate.admin
+      .from("crm_clientes")
+      .select("*")
+      .eq("id", gate.cliente.id)
+      .maybeSingle();
+    if (freshError) throw freshError;
+    if (!freshCliente) throw new Error("CLIENTE_NO_ENCONTRADO");
+
+    const minutosTotales =
+      Number(freshCliente.minutos_free_pendientes || 0) +
+      Number(freshCliente.minutos_normales_pendientes || 0);
+
+    return NextResponse.json(
+      {
+        ok: true,
+        ...result,
+        cliente: {
+          ...freshCliente,
+          minutos_totales: minutosTotales,
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+          Vary: "Authorization",
+        },
+      }
+    );
   } catch (e: any) {
     const message = String(e?.message || "ERR_CLIENTE_CANJEAR");
     const clientError = [

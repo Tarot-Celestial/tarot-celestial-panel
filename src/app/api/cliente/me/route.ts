@@ -192,7 +192,21 @@ export async function GET(req: Request) {
     }
 
     const welcomeState = await maybeGrantWelcomeGift(gate as any);
-    const cliente = welcomeState.cliente;
+
+    // La ficha que devuelve clientFromRequest se leyó al principio de la petición.
+    // Volvemos a leerla justo antes de construir el dashboard para garantizar que
+    // Coins/minutos reflejan la última escritura confirmada (canjes, compras, etc.).
+    const { data: freshCliente, error: freshClienteError } = await gate.admin
+      .from("crm_clientes")
+      .select("*")
+      .eq("id", gate.cliente.id)
+      .maybeSingle();
+    if (freshClienteError) throw freshClienteError;
+    if (!freshCliente) {
+      return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+    }
+
+    const cliente = freshCliente as ClienteRow;
     const minutosTotales = toNum(cliente.minutos_free_pendientes) + toNum(cliente.minutos_normales_pendientes);
 
     const now = new Date();
@@ -310,7 +324,14 @@ const rolling30Spend = spendPagos + spendLlamadas;
       welcome_gift: welcomeState.welcomeGift,
       packs: packsWithRankBenefits,
       payment_provider: paymentProvider,
-    }, { headers: { "Cache-Control": "private, no-store" } });
+    }, {
+      headers: {
+        "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",
+        Pragma: "no-cache",
+        Expires: "0",
+        Vary: "Authorization",
+      },
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR_CLIENTE_ME" }, { status: 500 });
   }
