@@ -125,8 +125,8 @@ const itemProperties = {
   caption: { type: "string" },
   hashtags: { type: "array", items: { type: "string" }, maxItems: 12 },
   cta: { type: "string" },
-  visual_prompt: { type: "string" },
-  reel_script: { type: "string" },
+  visual_prompt: { type: "string", maxLength: 700 },
+  reel_script: { type: "string", maxLength: 850 },
   requires_video: { type: "boolean" },
 };
 
@@ -141,8 +141,8 @@ const singleSchema = {
     caption: { type: "string" },
     hashtags: { type: "array", items: { type: "string" }, maxItems: 12 },
     cta: { type: "string" },
-    visual_prompt: { type: "string" },
-    reel_script: { type: "string" },
+    visual_prompt: { type: "string", maxLength: 700 },
+    reel_script: { type: "string", maxLength: 850 },
   },
 };
 
@@ -167,8 +167,8 @@ const seriesSchema = {
           caption: { type: "string" },
           hashtags: { type: "array", items: { type: "string" }, maxItems: 12 },
           cta: { type: "string" },
-          visual_prompt: { type: "string" },
-          reel_script: { type: "string" },
+          visual_prompt: { type: "string", maxLength: 700 },
+          reel_script: { type: "string", maxLength: 850 },
         },
       },
     },
@@ -1268,6 +1268,34 @@ export async function generateTarotVideoStudio(input: {
   });
 }
 
+const AUTOMATIC_RUNWAY_PROMPT_MAX = 950;
+
+function compactAutomaticRunwayPrompt(rawPrompt: string) {
+  const brand =
+    "Tarot Celestial. Vídeo premium y realista para redes sociales, estética violeta, negro y dorado, iluminación cinematográfica, movimientos humanos naturales, manos y cartas anatómicamente correctas, sin texto ilegible ni fantasía exagerada.";
+  const cleaned = String(rawPrompt || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const available = Math.max(0, AUTOMATIC_RUNWAY_PROMPT_MAX - brand.length - 1);
+  let content = cleaned;
+  if (content.length > available) {
+    const candidate = content.slice(0, available);
+    // Intentar cortar al final de una frase para no dejar instrucciones a medias.
+    const lastBoundary = Math.max(
+      candidate.lastIndexOf(". "),
+      candidate.lastIndexOf("! "),
+      candidate.lastIndexOf("? "),
+      candidate.lastIndexOf("; ")
+    );
+    content = lastBoundary >= Math.floor(available * 0.55)
+      ? candidate.slice(0, lastBoundary + 1)
+      : candidate;
+  }
+
+  return `${brand} ${content}`.trim().slice(0, AUTOMATIC_RUNWAY_PROMPT_MAX);
+}
+
 export async function generateAndStoreSocialVideo(input: {
   provider: SocialProvider;
   prompt: string;
@@ -1283,11 +1311,13 @@ export async function generateAndStoreSocialVideo(input: {
   // `promptImage` para /v1/image_to_video, por lo que aquí debemos usar
   // text-to-video. Usar image-to-video sin promptImage provoca el 400
   // "Validation of body failed".
+  const promptText = compactAutomaticRunwayPrompt(input.prompt);
+
   const created = await runwayRequest("/v1/text_to_video", {
     method: "POST",
     body: JSON.stringify({
       model: runwayModel(),
-      promptText: `${BRAND_RULES}\nGenera un vídeo corto para redes sociales. ${input.prompt}`,
+      promptText,
       ratio,
       duration,
     }),
@@ -1327,6 +1357,8 @@ export async function generateAndStoreSocialVideo(input: {
       ai_generated: true,
       model: runwayModel(),
       prompt: input.prompt,
+      runway_prompt: promptText,
+      runway_prompt_length: promptText.length,
       format: input.format || "vertical",
       duration,
       engine: "runway-rest",
