@@ -24,6 +24,7 @@ import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
+import RankDailyBonus from "@/components/cliente/RankDailyBonus";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import rewardStyles from "./reward.module.css";
@@ -93,6 +94,8 @@ type ClienteNotif = {
   created_at?: string | null;
 };
 
+type RankPackBenefit = { enabled?: boolean; coins?: number; oracle_credits?: number; roulette_level_1_spins?: number; roulette_level_2_spins?: number; roulette_level_3_spins?: number; roulette_special_spins?: number };
+
 type ClientePack = {
   id: string;
   nombre: string;
@@ -105,6 +108,8 @@ type ClientePack = {
   rewardCoins?: number;
   oracleCredits?: number;
   highlight?: boolean;
+  packageLevel?: 1 | 2 | 3 | null;
+  rankBenefits?: RankPackBenefit | null;
 };
 
 type OraclePack = {
@@ -135,6 +140,18 @@ function urlBase64ToUint8Array(base64String: string) {
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
   const rawData = window.atob(base64);
   return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
+function rankPackBenefitSummary(value: RankPackBenefit) {
+  const parts = [
+    Number(value.coins || 0) > 0 ? `+${Number(value.coins).toLocaleString("es-ES")} Coins` : null,
+    Number(value.oracle_credits || 0) > 0 ? `+${Number(value.oracle_credits)} Oráculo` : null,
+    Number(value.roulette_level_1_spins || 0) > 0 ? `+${Number(value.roulette_level_1_spins)} giro N1` : null,
+    Number(value.roulette_level_2_spins || 0) > 0 ? `+${Number(value.roulette_level_2_spins)} giro N2` : null,
+    Number(value.roulette_level_3_spins || 0) > 0 ? `+${Number(value.roulette_level_3_spins)} giro N3` : null,
+    Number(value.roulette_special_spins || 0) > 0 ? `+${Number(value.roulette_special_spins)} giro Especial` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Sin beneficio adicional";
 }
 
 export default function ClienteDashboardPage() {
@@ -698,6 +715,7 @@ export default function ClienteDashboardPage() {
         summaryItems={summaryItems}
       >
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
+        <RankDailyBonus />
 
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <a
@@ -796,6 +814,7 @@ export default function ClienteDashboardPage() {
                     </div>
                     <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
                     <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
+                    {pack.rankBenefits?.enabled ? <div className={rewardStyles.packRankBenefit}><strong>Por tu rango</strong><span>{rankPackBenefitSummary(pack.rankBenefits)}</span></div> : null}
                     <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits}/>
                     <ClientPurchaseAction className="tc-btn tc-btn-gold"><button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
                       {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}

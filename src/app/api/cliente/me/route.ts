@@ -1,5 +1,4 @@
-import { clientRankBenefits } from "@/lib/server/rank-benefits";
-import { benefitLabels } from "@/lib/rank-benefit-config";
+import { clientRankBenefits, rankPackageBenefitsForPacks } from "@/lib/server/rank-benefits";
 import { NextResponse } from "next/server";
 import { clientFromRequest } from "@/lib/server/auth-cliente";
 import {
@@ -255,6 +254,7 @@ const rolling30Spend = spendPagos + spendLlamadas;
     const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
     const configuredBenefits = await clientRankBenefits(gate.admin, cliente.id);
     const effectiveRank = configuredBenefits.rank_key || "sin_rango";
+    const packsWithRankBenefits = await rankPackageBenefitsForPacks(gate.admin, cliente.id, CLIENTE_MINUTE_PACKS);
     const clienteConRank = {
       ...cliente,
       rango_actual: effectiveRank,
@@ -268,7 +268,10 @@ const rolling30Spend = spendPagos + spendLlamadas;
 
     const rank = {
       ...rankMeta(effectiveRank),
-      benefits: [...currentRankBenefits(effectiveRank).filter(label => !label.includes("Mi Ritual")), ...benefitLabels(configuredBenefits)],
+      benefits: [
+        ...currentRankBenefits(effectiveRank).filter(label => !label.includes("Mi Ritual")),
+        ...(configuredBenefits.ritual_access ? ["Acceso a Mi ritual"] : []),
+      ],
       automatic_rank: effectiveRankState.automatic || normalizeClientRank(liveRank),
       effective_rank: effectiveRank,
       has_override: Boolean(effectiveRankState.override),
@@ -305,7 +308,7 @@ const rolling30Spend = spendPagos + spendLlamadas;
       rank_benefits: configuredBenefits,
       rank_progress: rankProgress,
       welcome_gift: welcomeState.welcomeGift,
-      packs: CLIENTE_MINUTE_PACKS.map(pack => ({ ...pack, rewardCoins: configuredBenefits.purchase_coins })),
+      packs: packsWithRankBenefits,
       payment_provider: paymentProvider,
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e: any) {

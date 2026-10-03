@@ -273,14 +273,15 @@ export async function applyPromotionMinutePurchase(
   }
 
   const totalMinutes = snap.paid_minutes + snap.free_minutes;
-  const { data: transaction, error: transactionError } = await admin.rpc("tc_confirm_rank_purchase", {
-    p_kind: "promotion",
-    p: { attempt_id: params.attemptId, cliente_id: params.clienteId, payment_ref: params.paymentRef },
+  const { data: transaction, error: transactionError } = await admin.rpc("cliente_confirmar_compra_promocion_v1", {
+    p_attempt_id: params.attemptId,
   });
   if (transactionError) throw transactionError;
 
   const payment = transaction?.payment;
-  snap.coins = Number(transaction?.rank_coins || 0);
+  // El pack conserva las Coins prometidas por la promoción. Los beneficios adicionales
+  // de rango se acreditan y auditan por separado en Supabase.
+  snap.coins = Math.max(0, Math.floor(Number(originalSnap.coins || 0)));
   const paymentId = String(payment?.id || "");
   const grantedSpins = paymentId ? await ensurePromotionRouletteGrant(admin, {
     attemptId: params.attemptId,

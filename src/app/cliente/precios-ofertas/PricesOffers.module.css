@@ -920,3 +920,4 @@
 @media (max-width: 720px) {
   .hero::after { font-size: 30px; right: 12px; bottom: 10px; }
 }
+.rankBenefitExtra{display:grid;gap:5px;padding:10px 12px;border-radius:12px;border:1px solid rgba(217,177,83,.2);background:linear-gradient(135deg,rgba(217,177,83,.08),rgba(116,74,176,.08));margin-top:8px}.rankBenefitExtra strong{font-size:11px;color:#f2d68f;text-transform:uppercase;letter-spacing:.06em}.rankBenefitExtra span{font-size:12px;color:#d5cfe0;line-height:1.45}
