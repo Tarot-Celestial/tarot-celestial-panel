@@ -194,10 +194,13 @@ export default function ClienteDashboardPage() {
 
   const loadingDataRef = useRef(false);
   const queuedDataRef = useRef(false);
+  // Evita que una carga iniciada antes de un canje confirmado vuelva a pintar saldos antiguos.
+  const dataRevisionRef = useRef(0);
   const redemptionOperationIdsRef = useRef(new Map<string, string>());
   const loadData = useCallback(async () => {
     if (loadingDataRef.current) { queuedDataRef.current = true; return; }
     loadingDataRef.current = true;
+    const requestRevision = dataRevisionRef.current;
     try {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
@@ -216,6 +219,11 @@ export default function ClienteDashboardPage() {
     if (!json?.ok) {
       setMsg(json?.error || "No hemos podido cargar tu panel.");
       setLoading(false);
+      return;
+    }
+
+    if (requestRevision !== dataRevisionRef.current) {
+      queuedDataRef.current = true;
       return;
     }
 
@@ -584,7 +592,20 @@ export default function ClienteDashboardPage() {
         }),
       });
       const json = await res.json().catch(() => null);
-      if (!json?.ok) throw new Error(json?.error || "No hemos podido canjear tus Coins");
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "No hemos podido canjear tus Coins");
+
+      // El RPC devuelve la fila real ya actualizada. La aplicamos de inmediato para que
+      // Coins y minutos cambien en pantalla en el mismo instante del canje.
+      const updatedClient = json?.cliente as Partial<Cliente> | undefined;
+      if (!updatedClient?.id) throw new Error("CANJE_SIN_SALDO_ACTUALIZADO");
+      dataRevisionRef.current += 1;
+      setCliente((current) => {
+        const merged = { ...(current || ({} as Cliente)), ...updatedClient } as Cliente;
+        const free = Number(merged.minutos_free_pendientes || 0);
+        const normal = Number(merged.minutos_normales_pendientes || 0);
+        return { ...merged, minutos_totales: free + normal };
+      });
+
       redemptionOperationIdsRef.current.delete(recompensaId);
       setMsg("✨ Recompensa desbloqueada. Tus minutos ya están actualizados.");
       await loadData();
