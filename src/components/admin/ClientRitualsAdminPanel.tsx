@@ -41,7 +41,14 @@ export default function ClientRitualsAdminPanel() {
     try {
       const auth = await headers();
       if (controller.signal.aborted) return;
-      const response = await fetch(`/api/admin/client-rituals?q=${encodeURIComponent(query)}`, { headers: auth, cache: "no-store", signal: controller.signal });
+      const url = `/api/admin/client-rituals?q=${encodeURIComponent(query)}`;
+      let response = await fetch(url, { headers: auth, cache: "no-store", signal: controller.signal });
+      if (response.status === 401) {
+        const refreshed = await sb.auth.refreshSession();
+        const token = refreshed.data.session?.access_token;
+        if (!token || refreshed.error) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión; los rituales y sus progresos siguen guardados.");
+        response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal });
+      }
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error || "No se pudo cargar el panel.");
       if (!controller.signal.aborted) { setData(result); setUpdated(new Date()); setError(""); }
@@ -53,8 +60,8 @@ export default function ClientRitualsAdminPanel() {
     const refresh = () => { if (!document.hidden && !writing.current) void load(); };
     const storage = (event: StorageEvent) => { if (event.key === RITUAL_CHANGED) refresh(); };
     const timer = window.setInterval(refresh, 20000);
-    window.addEventListener("focus", refresh); window.addEventListener("storage", storage);
-    return () => { clearTimeout(debounce); clearInterval(timer); request.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("storage", storage); };
+    window.addEventListener("focus", refresh); window.addEventListener("online", refresh); window.addEventListener("storage", storage);
+    return () => { clearTimeout(debounce); clearInterval(timer); request.current?.abort(); window.removeEventListener("focus", refresh); window.removeEventListener("online", refresh); window.removeEventListener("storage", storage); };
   }, [load]);
   const send: Send = async body => {
     if (writing.current) return false;
@@ -76,7 +83,7 @@ export default function ClientRitualsAdminPanel() {
   const current = data.rituals.find(r => r.id === selected);
   return <section className={styles.root}>
     <header className={styles.hero}><div><span className={styles.eyebrow}>EXPERIENCIA DIAMANTE · CONTROL DE RITUALES</span><h1>Una intención. Cada etapa bajo control.</h1><p>Asigna rituales, ajusta su evolución y cuida lo que ve cada cliente.</p></div><button className={styles.secondary} onClick={() => void load()} disabled={busy}><RefreshCw size={15} /> Actualizar</button></header>
-    <div className={styles.metrics}><div><Sparkles /><strong>{open.filter(r => r.estado === "activo").length}</strong><span>En proceso</span></div><div><Pause /><strong>{open.filter(r => r.estado === "pausado").length}</strong><span>En pausa</span></div><div><Check /><strong>{data.rituals.filter(r => r.estado === "completado").length}</strong><span>Completados</span></div><div><Clock3 /><strong>{updated ? updated.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—"}</strong><span>Última actualización</span></div></div>
+    <div className={styles.metrics}><div><Sparkles /><strong>{updated ? open.filter(r => r.estado === "activo").length : "—"}</strong><span>En proceso</span></div><div><Pause /><strong>{updated ? open.filter(r => r.estado === "pausado").length : "—"}</strong><span>En pausa</span></div><div><Check /><strong>{updated ? data.rituals.filter(r => r.estado === "completado").length : "—"}</strong><span>Completados</span></div><div><Clock3 /><strong>{updated ? updated.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "—"}</strong><span>Última actualización</span></div></div>
     <p className={styles.caption}>Resumen de los últimos {data.rituals.length} rituales cargados · máximo 150. Actualización cada 20 segundos.</p>
     {message && <div className={styles.success} role="status"><Check size={18} />{message}</div>}
     {error && <div className={styles.error} role="alert">{error}</div>}
@@ -86,7 +93,7 @@ export default function ClientRitualsAdminPanel() {
         <section className={styles.card}>
           <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>SEGUIMIENTO</span><h2>Rituales de tus clientes</h2></div><span className={styles.count}>{visible.length}</span></div>
           <div className={styles.toolbar}><div className={styles.tabs}>{[["open", "Abiertos"], ["closed", "Historial"], ["all", "Todos"]].map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div><label className={styles.search}><Search size={16} /><input aria-label="Filtrar rituales por cliente o nombre" placeholder="Cliente o ritual…" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
-          <div className={styles.list}>{loading && !data.rituals.length ? <p>Cargando rituales…</p> : !visible.length ? <div className={styles.empty}><Sparkles /><p>No hay rituales en esta vista.</p></div> : visible.map(ritual => <button type="button" className={styles.ritualRow} key={ritual.id} aria-pressed={selected === ritual.id} onClick={() => setSelected(ritual.id)}><span className={styles.symbol}>{ritual.ritual_types?.icono === "gem" ? <Gem /> : ritual.ritual_types?.icono === "shield" ? <Shield /> : <Sparkles />}</span><span className={styles.rowCopy}><b>{clientName(ritual.cliente)}</b><span>{ritualName(ritual)}</span><small>{ritual.phase.name || "Sin fase"} · {ritual.progress}%</small></span><span className={styles.badge} data-status={ritual.estado}>{ritualStatus[ritual.estado]}</span><ChevronRight size={16} /></button>)}</div>
+          <div className={styles.list}>{loading && !data.rituals.length ? <p>Cargando rituales…</p> : !updated && error ? <div className={styles.empty}><p>No se han podido consultar los rituales. No se ha modificado ningún progreso.</p><button type="button" onClick={()=>void load()}>Reintentar</button></div> : !visible.length ? <div className={styles.empty}><Sparkles /><p>No hay rituales en esta vista.</p></div> : visible.map(ritual => <button type="button" className={styles.ritualRow} key={ritual.id} aria-pressed={selected === ritual.id} onClick={() => setSelected(ritual.id)}><span className={styles.symbol}>{ritual.ritual_types?.icono === "gem" ? <Gem /> : ritual.ritual_types?.icono === "shield" ? <Shield /> : <Sparkles />}</span><span className={styles.rowCopy}><b>{clientName(ritual.cliente)}</b><span>{ritualName(ritual)}</span><small>{ritual.phase.name || "Sin fase"} · {ritual.progress}%</small></span><span className={styles.badge} data-status={ritual.estado}>{ritualStatus[ritual.estado]}</span><ChevronRight size={16} /></button>)}</div>
         </section>
         {current ? <Editor key={current.id} ritual={current} busy={busy} send={send} /> : <section className={`${styles.card} ${styles.empty}`}><Settings2 size={32} /><h2>Elige un ritual para gestionarlo</h2><p>Revisa su fase, personaliza sus mensajes y consulta los cambios registrados.</p></section>}
       </div>

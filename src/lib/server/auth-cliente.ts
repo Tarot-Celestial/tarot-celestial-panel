@@ -74,7 +74,10 @@ export async function authUserFromBearer(req: Request): Promise<{
   });
 
   const { data, error } = await userClient.auth.getUser(token);
-  if (error) throw error;
+  if (error) {
+    if (error.status === 400 || error.status === 401 || error.status === 403) return { uid: null, phone: null, email: null, realEmail: null };
+    throw error;
+  }
 
   const user: any = data.user || null;
   const rawEmail = normalizeEmail(user?.email || null);

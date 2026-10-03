@@ -2,7 +2,7 @@
 import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowRight, ArrowUp, Crown, Gift, Gem, PhoneCall, ShoppingBag, Sparkles, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
@@ -34,6 +34,9 @@ export default function PreciosOfertasPage() {
   const [credits, setCredits] = useState(0);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [promotionError, setPromotionError] = useState("");
+  const loading = useRef(false);
   const [showLevelThree, setShowLevelThree] = useState(false);
 
   const loadPromotion = useCallback(async () => {
@@ -41,9 +44,10 @@ export default function PreciosOfertasPage() {
     const token = data.session?.access_token;
     if (!token) return;
     const response = await fetch("/api/cliente/promotions/active", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
-    if (!response?.ok) return;
-    const json = await response.json().catch(() => null);
-    if (json?.ok) setPromotion(json.promotion || null);
+    const json = await response?.json().catch(() => null);
+    if (!response?.ok || !json?.ok) { setPromotionError("No hemos podido actualizar la promoción. Puedes reintentar."); return; }
+    setPromotion(json.promotion || null);
+    setPromotionError("");
   }, []);
 
   const load = useCallback(async () => {
@@ -54,15 +58,24 @@ export default function PreciosOfertasPage() {
       return;
     }
 
-    const [rouletteResponse, oracleResponse, customerResponse] = await Promise.all([
-      fetch("/api/cliente/ruleta", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
-      fetch("/api/cliente/oraculo", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
-      fetch("/api/cliente/me", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }),
+    if (loading.current) return;
+    loading.current = true;
+    try {
+    let refresh: ReturnType<typeof sb.auth.refreshSession> | undefined;
+    const read = async (url: string) => {
+      try {
+        let response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        if (response.status === 401) {
+          const session = (await (refresh ??= sb.auth.refreshSession())).data.session;
+          if (!session) return null;
+          response = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` }, cache: "no-store" });
+        }
+        return response.ok ? await response.json() : null;
+      } catch { return null; }
+    };
+    const [roulette, oracle, customer] = await Promise.all([
+      read("/api/cliente/ruleta"), read("/api/cliente/oraculo"), read("/api/cliente/me"),
     ]);
-
-    const roulette = await rouletteResponse.json().catch(() => null);
-    const oracle = await oracleResponse.json().catch(() => null);
-    const customer = await customerResponse.json().catch(() => null);
 
     if (roulette?.ok) setRouletteSummary(roulette);
     if (oracle?.ok) {
@@ -72,7 +85,9 @@ export default function PreciosOfertasPage() {
       setFreeAvailable(Boolean(oracle.freeDailyAvailable ?? oracle.freeAvailable));
     }
     if (customer?.ok) setMinutePacks(Array.isArray(customer.packs) ? customer.packs : []);
+    setLoadError(!customer?.ok ? "No hemos podido cargar los precios. Reintenta; si tu sesión ha caducado, vuelve a entrar." : !oracle?.ok || !roulette?.ok ? "Algunos beneficios no se han podido actualizar. Los precios disponibles se mantienen." : "");
     await loadPromotion();
+    } finally { loading.current = false; }
   }, [loadPromotion]);
 
   useEffect(() => { load(); }, [load]);
@@ -82,11 +97,12 @@ export default function PreciosOfertasPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotions" }, () => { void loadPromotion(); })
       .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotion_packages" }, () => { void loadPromotion(); })
       .subscribe();
-    const focus = () => void loadPromotion();
+    const focus = () => void load();
     const timer = window.setInterval(() => { void loadPromotion(); }, 30000);
     window.addEventListener("focus", focus);
-    return () => { window.clearInterval(timer); window.removeEventListener("focus", focus); void sb.removeChannel(channel); };
-  }, [loadPromotion]);
+    window.addEventListener("online", focus);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", focus); window.removeEventListener("online", focus); void sb.removeChannel(channel); };
+  }, [loadPromotion, load]);
 
   async function checkout(endpoint: string, packId: string) {
     try {
@@ -149,6 +165,7 @@ export default function PreciosOfertasPage() {
       ]}
     >
       <div className={styles.shell}>
+        {(loadError || promotionError) && <div className={styles.message} role="alert">{loadError || promotionError} <button type="button" onClick={()=>void load()}>Reintentar</button></div>}
         {message ? <div className={styles.message}>{message}</div> : null}
 
         <section className={styles.hero}>

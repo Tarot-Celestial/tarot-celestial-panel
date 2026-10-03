@@ -23,7 +23,10 @@ export async function uidAndEmailFromBearer(req: Request) {
   });
 
   const { data, error } = await userClient.auth.getUser(token);
-  if (error) throw error;
+  if (error) {
+    if (error.status === 400 || error.status === 401 || error.status === 403) return { uid: null, email: null };
+    throw error;
+  }
 
   return {
     uid: data.user?.id || null,
