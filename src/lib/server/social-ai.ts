@@ -302,14 +302,14 @@ export async function generateSocialCalendarPlan(input: {
   storiesPerDay: number;
   campaign?: any;
 }) {
-  const days = Math.max(1, Math.min(31, Number(input.days || 7)));
+  const days = Math.max(1, Math.min(90, Number(input.days || 7)));
   const postsPerDay = Math.max(0, Math.min(6, Number(input.postsPerDay || 0)));
   const reelsPerDay = Math.max(0, Math.min(6, Number(input.reelsPerDay || 0)));
   const storiesPerDay = Math.max(0, Math.min(10, Number(input.storiesPerDay || 0)));
   const total = days * (postsPerDay + reelsPerDay + storiesPerDay);
   if (input.provider !== "instagram") throw new Error("El planificador flexible está preparado para Instagram.");
   if (total <= 0) throw new Error("Indica al menos una pieza por día.");
-  if (total > 90) throw new Error("El máximo permitido por plan es 90 piezas. Reduce días o cantidades por día.");
+  if (total > 120) throw new Error("El máximo permitido por plan es 120 piezas. Reduce días o cantidades por día.");
 
   const result = await structuredResponse(
     "tarot_celestial_social_calendar_plan",

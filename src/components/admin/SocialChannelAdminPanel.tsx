@@ -111,6 +111,7 @@ type FlexiblePlan = {
 };
 
 type Props = { provider: Provider };
+type AiStudioTab = "creator" | "video" | "planner";
 
 const sections: Array<{ key: Section; label: string; icon: any }> = [
   { key: "resumen", label: "Resumen", icon: LayoutDashboard },
@@ -308,14 +309,17 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
   });
   const [campaignDraft, setCampaignDraft] = useState<any>({ name: "", objective: "", status: "active", starts_at: "", ends_at: "", notes: "" });
   const [libraryDraft, setLibraryDraft] = useState<any>({ label: "", media_type: "image", url: "" });
+  const [aiStudioTab, setAiStudioTab] = useState<AiStudioTab>(provider === "instagram" ? "creator" : "video");
   const [aiSingle, setAiSingle] = useState<any>({
     brief: "",
-    objective: "ventas y engagement",
-    tone: "premium, cercano y celestial",
+    objective: "crecimiento, interacción y conversión",
+    tone: "premium, cercano, místico y moderno",
     cta: "",
     content_type: provider === "instagram" ? "post" : "photo",
     campaign_id: "",
     quantity: 1,
+    image_quality: "medium",
+    reel_duration: 8,
   });
   const [aiIdea, setAiIdea] = useState<AiIdea | null>(null);
   const [aiSeries, setAiSeries] = useState<AiIdea[]>([]);
@@ -336,11 +340,12 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     objective: "crecimiento, interacción y conversión",
     preferred_time: "19:30",
     campaign_id: "",
-    days: 7,
-    posts_per_day: 1,
+    days: 30,
+    posts_per_day: 0,
     reels_per_day: 0,
     stories_per_day: 1,
     generate_media: true,
+    reel_duration: 8,
   });
   const [flexPlan, setFlexPlan] = useState<FlexiblePlan | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(currentMonthValue());
@@ -724,7 +729,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
           prompt: idea.reel_script || idea.visual_prompt || idea.caption || idea.title,
           label: idea.title || "Reel IA",
           format: "vertical",
-          duration: 5,
+          duration: Number(aiSingle.reel_duration || 8),
           content_type: idea.content_type,
         }),
       });
@@ -739,7 +744,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
         prompt: idea.visual_prompt || idea.caption || idea.title,
         label: idea.title || "Creatividad IA",
         format,
-        quality: "medium",
+        quality: aiSingle.image_quality === "high" || aiSingle.image_quality === "low" ? aiSingle.image_quality : "medium",
         content_type: idea.content_type,
       }),
     });
@@ -1119,7 +1124,7 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
                 prompt: item.reel_script || item.visual_prompt,
                 label: item.title,
                 format: "vertical",
-                duration: 5,
+                duration: Number(flexDraft.reel_duration || 8),
               }),
             });
             mediaUrl = videoResult.asset.url;
@@ -1245,10 +1250,17 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
             <section className={styles.card}>
               <h3><Sparkles size={18} /> Centro inteligente</h3>
               <div className={styles.flow}>
-                <div><b>1</b><span>IA dirige el concepto del vídeo de tarot</span></div>
-                <div><b>2</b><span>Runway genera el clip con tus referencias</span></div>
-                <div><b>3</b><span>Puedes crear hasta 60 s en dos escenas</span></div>
-                <div><b>4</b><span>El resultado queda listo para editar o enviar</span></div>
+                {provider === "instagram" ? <>
+                  <div><b>1</b><span>Genera Posts, Stories y Reels desde un único configurador</span></div>
+                  <div><b>2</b><span>Vídeo PRO mantiene Runway, referencias y clips largos</span></div>
+                  <div><b>3</b><span>El Planificador IA prepara semanas o meses completos</span></div>
+                  <div><b>4</b><span>Programa en calendario y publica automáticamente</span></div>
+                </> : <>
+                  <div><b>1</b><span>IA dirige el concepto del vídeo de tarot</span></div>
+                  <div><b>2</b><span>Runway genera el clip con tus referencias</span></div>
+                  <div><b>3</b><span>Puedes crear hasta 60 s en dos escenas</span></div>
+                  <div><b>4</b><span>El resultado queda listo para editar o enviar</span></div>
+                </>}
               </div>
               <button className={styles.aiCta} onClick={() => setSection("ia")}><Sparkles size={16} /> Abrir IA Studio</button>
             </section>
@@ -1275,37 +1287,154 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       )}
 
       {section === "ia" && (
-        <TarotVideoStudio
-          provider={provider}
-          connected={Boolean(connection)}
-          onRefresh={load}
-          onUseInEditor={(studioResult) => {
-            setDraft({
-              id: "",
-              content_type: provider === "instagram" ? "reel" : "video",
-              title: studioResult.title || "Vídeo IA Studio",
-              caption: "",
-              media: studioResult.url,
-              scheduled_at: "",
-              campaign_id: "",
-              privacy_level: "SELF_ONLY",
-              publish_mode: provider === "tiktok" ? "inbox" : "direct",
-              share_to_feed: true,
-              disable_comment: false,
-              disable_duet: false,
-              disable_stitch: false,
-              is_aigc: true,
-              ai_meta: {
-                source: "tarot_video_studio",
-                model: studioResult.model,
-                duration: studioResult.duration,
-                prompt: studioResult.prompt,
-                long_mode: studioResult.long_mode,
-              },
-            });
-            setSection("crear");
-          }}
-        />
+        provider === "instagram" ? (
+          <div className={styles.instagramAiStudio}>
+            <section className={styles.aiWorkspaceHero}>
+              <div>
+                <span>INSTAGRAM · IA STUDIO</span>
+                <h3>Tu estudio completo de contenido</h3>
+                <p>Genera Posts, Stories y Reels con IA, crea vídeos avanzados con referencias y prepara calendarios completos para las próximas semanas o meses.</p>
+              </div>
+              <Sparkles size={34} />
+            </section>
+
+            <div className={styles.aiWorkspaceTabs}>
+              <button className={aiStudioTab === "creator" ? styles.aiWorkspaceTabActive : ""} onClick={() => setAiStudioTab("creator")}><ImageIcon size={16} /> Generador IA</button>
+              <button className={aiStudioTab === "video" ? styles.aiWorkspaceTabActive : ""} onClick={() => setAiStudioTab("video")}><Video size={16} /> Vídeo PRO</button>
+              <button className={aiStudioTab === "planner" ? styles.aiWorkspaceTabActive : ""} onClick={() => setAiStudioTab("planner")}><CalendarClock size={16} /> Planificador IA</button>
+            </div>
+
+            {aiStudioTab === "creator" && <div className={styles.aiCreatorLayout}>
+              <section className={styles.card}>
+                <div className={styles.cardTitle}><div><h3><Sparkles size={18} /> Generador de contenido Instagram</h3><p>Una pieza o una serie completa. La IA crea concepto, copy y creatividad final.</p></div><span className={styles.aiBadge}>INSTAGRAM AI</span></div>
+
+                <div className={styles.aiFormatPicker}>
+                  {[
+                    { key: "post", label: "Post", text: "Imagen 1:1 + copy", icon: ImageIcon },
+                    { key: "story", label: "Story", text: "9:16 con texto integrado", icon: PlayCircle },
+                    { key: "reel", label: "Reel", text: "Vídeo vertical IA", icon: Video },
+                  ].map((option) => {
+                    const FormatIcon = option.icon;
+                    return <button key={option.key} type="button" className={aiSingle.content_type === option.key ? styles.aiFormatActive : ""} onClick={() => setAiSingle({ ...aiSingle, content_type: option.key })}>
+                      <FormatIcon size={19} /><b>{option.label}</b><span>{option.text}</span>
+                    </button>;
+                  })}
+                  <button type="button" onClick={() => setAiStudioTab("video")}><Video size={19} /><b>Vídeo PRO</b><span>Runway · referencias · hasta 60 s</span></button>
+                </div>
+
+                <div className={styles.formGrid}>
+                  <label className={styles.full}>Qué quieres crear<textarea rows={6} value={aiSingle.brief} onChange={(e) => setAiSingle({ ...aiSingle, brief: e.target.value })} placeholder="Ej. Crea contenido viral sobre la carta del día, amor, rituales sencillos, horóscopos o una promoción real de Tarot Celestial…" /></label>
+                  <label>Objetivo<input value={aiSingle.objective} onChange={(e) => setAiSingle({ ...aiSingle, objective: e.target.value })} placeholder="Engagement, reservas, alcance…" /></label>
+                  <label>Tono<input value={aiSingle.tone} onChange={(e) => setAiSingle({ ...aiSingle, tone: e.target.value })} /></label>
+                  <label>CTA opcional<input value={aiSingle.cta} onChange={(e) => setAiSingle({ ...aiSingle, cta: e.target.value })} placeholder="Ej. Guarda este ritual" /></label>
+                  <label>Promoción<select value={aiSingle.campaign_id} onChange={(e) => setAiSingle({ ...aiSingle, campaign_id: e.target.value })}><option value="">Sin promoción</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+                  <label>Cantidad<input type="number" min={1} max={20} value={aiSingle.quantity} onChange={(e) => setAiSingle({ ...aiSingle, quantity: Math.max(1, Math.min(20, Number(e.target.value || 1))) })} /><small>1 = una pieza · hasta 20 = serie temática</small></label>
+                  {!isVideoType(aiSingle.content_type) && <label>Calidad visual<select value={aiSingle.image_quality} onChange={(e) => setAiSingle({ ...aiSingle, image_quality: e.target.value })}><option value="low">Borrador</option><option value="medium">Equilibrada</option><option value="high">Alta</option></select></label>}
+                  {isVideoType(aiSingle.content_type) && <label>Duración Reel<select value={aiSingle.reel_duration} onChange={(e) => setAiSingle({ ...aiSingle, reel_duration: Number(e.target.value) })}><option value={5}>5 segundos</option><option value={8}>8 segundos</option><option value={10}>10 segundos</option></select><small>Para vídeos largos y referencias usa Vídeo PRO.</small></label>}
+                </div>
+
+                <div className={styles.aiCreatorActions}>
+                  <button className={styles.primary} disabled={busy === "ai-single" || !aiSingle.brief.trim()} onClick={() => void generateSingleIdea()}>{busy === "ai-single" ? <RefreshCw className={styles.spin} size={16} /> : <Sparkles size={16} />} Generar {Number(aiSingle.quantity || 1) > 1 ? `${aiSingle.quantity} piezas` : contentLabel(provider, aiSingle.content_type)}</button>
+                  {isVideoType(aiSingle.content_type) && <button className={styles.secondary} onClick={() => setAiStudioTab("video")}><Video size={16} /> Abrir Vídeo PRO</button>}
+                </div>
+              </section>
+
+              <section className={styles.card}>
+                <div className={styles.cardTitle}><div><h3>Resultado IA</h3><p>Previsualiza, regenera, edita, programa o publica.</p></div></div>
+                {aiIdea ? <div className={styles.aiResult}>
+                  {aiIdea.media_url ? (aiIdea.media_kind === "video" ? <video src={aiIdea.media_url} controls playsInline /> : <img src={aiIdea.media_url} alt={aiIdea.title || "Creatividad IA"} />) : null}
+                  <span>{contentLabel(provider, aiIdea.content_type)}</span>
+                  <h4>{aiIdea.title}</h4>
+                  {aiIdea.hook && <b>{aiIdea.hook}</b>}
+                  {publishCaptionForIdea(aiIdea) && <p>{publishCaptionForIdea(aiIdea)}</p>}
+                  {!!aiIdea.hashtags?.length && <div className={styles.hashes}>{aiIdea.hashtags.map((tag, index) => <em key={`${tag}-${index}`}>{tag.startsWith("#") ? tag : `#${tag}`}</em>)}</div>}
+                  <details><summary>Dirección creativa IA</summary><p>{aiIdea.visual_prompt}</p>{aiIdea.reel_script && <p>{aiIdea.reel_script}</p>}</details>
+                  <div className={styles.aiResultActions}>
+                    <button className={styles.secondary} disabled={busy === "ai-image"} onClick={() => void generateMediaForIdea()}><RefreshCw size={15} /> Regenerar media</button>
+                    <button className={styles.secondary} onClick={sendIdeaToEditor}><CalendarClock size={15} /> Editar / programar</button>
+                    <button className={styles.secondary} disabled={busy === "ai-save"} onClick={() => void createIdeaAsContent(aiIdea, false)}><FolderOpen size={15} /> Guardar</button>
+                    <button className={styles.primary} disabled={!connection || busy === "ai-publish"} onClick={() => void createIdeaAsContent(aiIdea, true)}><Send size={15} /> Publicar ahora</button>
+                  </div>
+                </div> : aiSeries.length ? <div className={styles.aiSeriesWrap}>
+                  <div className={styles.seriesHeader}><div><strong>{aiSeries.length} piezas generadas</strong><span>{aiSeriesSummary}</span></div><div className={styles.aiResultActions}><button className={styles.secondary} onClick={() => void saveSeriesToDrafts()}><FolderOpen size={15} /> Guardar serie</button><button className={styles.primary} disabled={!connection} onClick={() => void publishSeries()}><Send size={15} /> Publicar serie</button></div></div>
+                  <div className={styles.aiSeriesGrid}>{aiSeries.map((idea, index) => <article key={`${idea.title}-${index}`} className={styles.aiSeriesCard}>
+                    {idea.media_url ? (idea.media_kind === "video" ? <video src={idea.media_url} controls playsInline /> : <img src={idea.media_url} alt={idea.title || "Creatividad IA"} />) : null}
+                    <span>{index + 1} · {contentLabel(provider, idea.content_type)}</span><h4>{idea.title}</h4><p>{idea.caption}</p><button className={styles.secondary} onClick={() => pushIdeaToEditor(idea)}><CalendarClock size={14} /> Editar / programar</button>
+                  </article>)}</div>
+                </div> : <div className={styles.aiEmpty}><Sparkles size={32} /><b>Tu creatividad aparecerá aquí</b><span>Selecciona formato, escribe el briefing y genera.</span></div>}
+              </section>
+            </div>}
+
+            {aiStudioTab === "video" && <TarotVideoStudio
+              provider={provider}
+              connected={Boolean(connection)}
+              onRefresh={load}
+              onUseInEditor={(studioResult) => {
+                setDraft({
+                  id: "", content_type: "reel", title: studioResult.title || "Vídeo IA Studio", caption: "", media: studioResult.url, scheduled_at: "", campaign_id: "", privacy_level: "SELF_ONLY", publish_mode: "direct", share_to_feed: true, disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: true,
+                  ai_meta: { source: "tarot_video_studio", model: studioResult.model, duration: studioResult.duration, prompt: studioResult.prompt, long_mode: studioResult.long_mode },
+                });
+                setSection("crear");
+              }}
+            />}
+
+            {aiStudioTab === "planner" && <div className={styles.aiPlannerLayout}>
+              <section className={styles.card}>
+                <div className={styles.cardTitle}><div><h3><CalendarClock size={18} /> Planificador IA de Instagram</h3><p>Prepara contenido durante semanas o meses y déjalo guardado en el calendario para publicación automática.</p></div><span className={styles.aiBadge}>HASTA 90 DÍAS</span></div>
+
+                <div className={styles.aiHorizonPicker}>{[7, 14, 30, 60, 90].map((days) => <button key={days} type="button" className={Number(flexDraft.days) === days ? styles.aiHorizonActive : ""} onClick={() => setFlexDraft({ ...flexDraft, days })}>{days === 7 ? "1 semana" : days === 14 ? "2 semanas" : `${days} días`}</button>)}</div>
+
+                <div className={styles.formGrid}>
+                  <label>Fecha de inicio<input type="date" value={flexDraft.start_date} onChange={(e) => setFlexDraft({ ...flexDraft, start_date: e.target.value })} /></label>
+                  <label>Hora orientativa<input type="time" value={flexDraft.preferred_time} onChange={(e) => setFlexDraft({ ...flexDraft, preferred_time: e.target.value })} /></label>
+                  <label className={styles.full}>Briefing del calendario<textarea rows={6} value={flexDraft.brief} onChange={(e) => setFlexDraft({ ...flexDraft, brief: e.target.value })} placeholder="Ej. Durante el próximo mes combina carta del día, consejos de amor, horóscopos, rituales sencillos, engagement y promociones reales. Evita repetir temas…" /></label>
+                  <label className={styles.full}>Objetivo<input value={flexDraft.objective} onChange={(e) => setFlexDraft({ ...flexDraft, objective: e.target.value })} /></label>
+                  <label>Posts / día<input type="number" min={0} max={6} value={flexDraft.posts_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, posts_per_day: Math.max(0, Math.min(6, Number(e.target.value || 0))) })} /></label>
+                  <label>Reels / día<input type="number" min={0} max={6} value={flexDraft.reels_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, reels_per_day: Math.max(0, Math.min(6, Number(e.target.value || 0))) })} /></label>
+                  <label>Stories / día<input type="number" min={0} max={10} value={flexDraft.stories_per_day} onChange={(e) => setFlexDraft({ ...flexDraft, stories_per_day: Math.max(0, Math.min(10, Number(e.target.value || 0))) })} /></label>
+                  <label>Duración Reels<select value={flexDraft.reel_duration} onChange={(e) => setFlexDraft({ ...flexDraft, reel_duration: Number(e.target.value) })}><option value={5}>5 s</option><option value={8}>8 s</option><option value={10}>10 s</option></select></label>
+                  <label>Promoción<select value={flexDraft.campaign_id} onChange={(e) => setFlexDraft({ ...flexDraft, campaign_id: e.target.value })}><option value="">Sin promoción</option>{campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+                  <label className={styles.checkLabel}><input type="checkbox" checked={Boolean(flexDraft.generate_media)} onChange={(e) => setFlexDraft({ ...flexDraft, generate_media: e.target.checked })} /> Generar también imágenes y vídeos antes de programar</label>
+                </div>
+
+                <div className={styles.aiPlanStats}>
+                  <div><span>Horizonte</span><b>{flexDraft.days} días</b></div>
+                  <div><span>Piezas / día</span><b>{Number(flexDraft.posts_per_day || 0) + Number(flexDraft.reels_per_day || 0) + Number(flexDraft.stories_per_day || 0)}</b></div>
+                  <div><span>Total previsto</span><b>{Number(flexDraft.days || 0) * (Number(flexDraft.posts_per_day || 0) + Number(flexDraft.reels_per_day || 0) + Number(flexDraft.stories_per_day || 0))}</b></div>
+                </div>
+
+                {Number(flexDraft.days || 0) * (Number(flexDraft.posts_per_day || 0) + Number(flexDraft.reels_per_day || 0) + Number(flexDraft.stories_per_day || 0)) > 120 && <div className={styles.aiPlanOverLimit}>Has superado el máximo de 120 piezas. Reduce los días o la cantidad diaria.</div>}
+                <div className={styles.actions}><button className={styles.primary} disabled={busy === "ai-flex-plan" || !flexDraft.brief.trim() || Number(flexDraft.days || 0) * (Number(flexDraft.posts_per_day || 0) + Number(flexDraft.reels_per_day || 0) + Number(flexDraft.stories_per_day || 0)) > 120} onClick={() => void generateFlexiblePlan()}>{busy === "ai-flex-plan" ? <RefreshCw className={styles.spin} size={16} /> : <Sparkles size={16} />} Crear calendario con IA</button></div>
+                <div className={styles.aiPlannerNote}>El plan puede abarcar hasta 90 días y un máximo de 120 piezas por generación. Una vez programadas, quedan en Supabase y el worker social las publica cuando llega su fecha.</div>
+              </section>
+
+              <section className={styles.card}>
+                <div className={styles.cardTitle}><div><h3>Plan generado</h3><p>Revisa la estrategia y las fechas antes de crear los medios y programarlo.</p></div>{flexPlan?.items?.length ? <span className={styles.pill}>{flexPlan.items.length} PIEZAS</span> : null}</div>
+                {flexPlan?.items?.length ? <div className={styles.aiPlanResult}>
+                  <div className={styles.weekSummary}>{flexPlan.strategy_summary}</div>
+                  <div className={styles.aiPlanList}>{[...flexPlan.items].sort((a,b) => a.day_offset - b.day_offset || String(a.time).localeCompare(String(b.time))).map((item, index) => <article key={`${item.day_offset}-${item.time}-${index}`}>
+                    <div><b>{dayName(flexDraft.start_date, item.day_offset)}</b><span>{item.time} · {contentLabel(provider, item.content_type)}</span></div>
+                    <strong>{item.title}</strong><p>{item.hook || item.caption}</p>
+                  </article>)}</div>
+                  <div className={styles.aiPlanScheduleBox}><div><b>{flexDraft.generate_media ? "Generar medios y programar todo" : "Guardar planificación"}</b><span>{flexDraft.generate_media ? "Se generará cada creatividad y después quedará programada en su fecha." : "Sin media, las piezas que lo necesiten quedarán como borrador para revisión."}</span></div><button className={styles.primary} disabled={busy === "ai-flex-schedule"} onClick={() => void scheduleFlexiblePlan()}>{busy === "ai-flex-schedule" ? <RefreshCw className={styles.spin} size={16} /> : <CalendarClock size={16} />} Programar {flexPlan.items.length} piezas</button></div>
+                </div> : <div className={styles.aiEmpty}><CalendarClock size={32} /><b>Aún no hay calendario generado</b><span>Define el horizonte y la mezcla de contenidos.</span></div>}
+              </section>
+            </div>}
+          </div>
+        ) : (
+          <TarotVideoStudio
+            provider={provider}
+            connected={Boolean(connection)}
+            onRefresh={load}
+            onUseInEditor={(studioResult) => {
+              setDraft({
+                id: "", content_type: "video", title: studioResult.title || "Vídeo IA Studio", caption: "", media: studioResult.url, scheduled_at: "", campaign_id: "", privacy_level: "SELF_ONLY", publish_mode: "inbox", share_to_feed: true, disable_comment: false, disable_duet: false, disable_stitch: false, is_aigc: true,
+                ai_meta: { source: "tarot_video_studio", model: studioResult.model, duration: studioResult.duration, prompt: studioResult.prompt, long_mode: studioResult.long_mode },
+              });
+              setSection("crear");
+            }}
+          />
+        )
       )}
 
       {section === "programadas" && <section className={styles.card}><div className={styles.cardTitle}><div><h3>Calendario y programadas</h3><p>Todo lo que saldrá automáticamente mediante el worker.</p></div><button className={styles.secondary} onClick={() => setSection("crear")}><Plus size={15} />Nueva</button></div><ContentTable rows={scheduled} /></section>}
