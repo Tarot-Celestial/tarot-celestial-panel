@@ -2,6 +2,13 @@ export type RankBenefitConfig = {
   rank_key: string;
   label: string;
   sort_order: number;
+  is_active?: boolean;
+  coins_enabled?: boolean;
+  purchase_coins?: number;
+  roulette_enabled?: boolean;
+  roulette_level?: number;
+  roulette_spins?: number;
+  daily_bonus_enabled?: boolean;
   ritual_access: boolean;
   revision: number;
   updated_at?: string | null;

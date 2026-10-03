@@ -252,11 +252,12 @@ export async function applyClientPurchase(
   const amountUsd = Number(params.amountUsd || 0);
   const totalMinutes = Math.max(0, Math.floor(Number(params.totalMinutes || 0)));
   const minutesSplit = splitMinutes(totalMinutes);
-  const { data: transaction, error } = await admin.rpc("tc_confirm_rank_purchase", {
-    p_kind: "minutes", p: {
+  const { data: transaction, error } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
+    p: {
       cliente_id: params.clienteId, payment_ref: params.paymentRef,
       amount: amountUsd, currency: "USD", metodo, pack_id: params.packId, pack_name: packName,
       free: minutesSplit.free, normal: minutesSplit.normal,
+      points: pointsFromAmount(amountUsd),
       stripe_session_id: params.stripeSessionId || null, payment_intent: params.paymentIntent || null,
       created_by_role: "cliente_webhook", notas: params.notas || `Compra ${packName}`,
     },
@@ -264,7 +265,7 @@ export async function applyClientPurchase(
   if (error) throw error;
   if (transaction.duplicated) return { ok: true, ...transaction };
   const pago = transaction.payment;
-  const puntosGanados = Number(transaction.rank_coins || 0);
+  const puntosGanados = pointsFromAmount(amountUsd);
   const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id",params.clienteId).maybeSingle();
 
   const { start, end } = monthRange(new Date());

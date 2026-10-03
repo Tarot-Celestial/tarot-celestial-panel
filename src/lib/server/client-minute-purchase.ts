@@ -1,5 +1,4 @@
 import {
-  computeCurrentRankFromSpend,
   createClientNotification,
   monthRange,
   splitMinutes,
@@ -8,6 +7,7 @@ import {
 } from "@/lib/server/cliente-platform";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+import { rankState } from "@/lib/server/rank-benefits";
 
 export type ClientPurchaseCurrency = "USD" | "EUR";
 
@@ -75,7 +75,8 @@ export async function applyConfiguredMinutePurchase(
     0,
   );
   const monthlyPurchases = (monthPayments || []).length;
-  const nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+  const effectiveRankState = await rankState(admin, params.clienteId);
+  const nextRank = effectiveRankState?.effective || null;
 
   await syncClientMonthTag(admin, params.clienteId);
 

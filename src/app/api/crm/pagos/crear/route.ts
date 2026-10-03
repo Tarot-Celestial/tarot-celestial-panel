@@ -120,8 +120,7 @@ export async function POST(req: Request) {
     let pago: any;
     if (estado === "completed") {
       if (!referencia_externa) return NextResponse.json({ ok: false, error: "La referencia del cobro es obligatoria." }, { status: 400 });
-      const { data: transaction, error } = await admin.rpc("tc_confirm_rank_purchase", {
-    p_kind: "manual",
+      const { data: transaction, error } = await admin.rpc("cliente_confirmar_compra_ruleta_v2", {
         p: { cliente_id, payment_ref: referencia_externa, amount: importe, currency: moneda, metodo,
           free: 0, normal: 0, points: pointsFromAmount(importe), roulette_level: rouletteLevelForPurchaseAmount(importe), notas,
           created_by_user_id: worker.id, created_by_role: worker.role },

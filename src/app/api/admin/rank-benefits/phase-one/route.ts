@@ -35,7 +35,7 @@ export async function GET(req: Request) {
     if (!gate.ok) return reply({ ok: false, error: gate.error }, 403);
 
     const [ranks, matrix, assignments, promotionPacks, bonus, events, audit] = await Promise.all([
-      gate.admin.from("tc_client_rank_benefits").select("rank_key,label,sort_order,ritual_access,revision,updated_at,updated_by").order("sort_order"),
+      gate.admin.from("tc_client_rank_benefits").select("rank_key,label,sort_order,is_active,coins_enabled,purchase_coins,roulette_enabled,roulette_level,roulette_spins,daily_bonus_enabled,ritual_access,revision,updated_at,updated_by").order("sort_order"),
       gate.admin.from("tc_rank_package_benefits").select("*").order("rank_key").order("package_level"),
       gate.admin.from("tc_purchase_package_levels").select("*").order("package_source").order("package_label"),
       gate.admin.from("tc_client_promotion_packages").select("id,name,promotion_id,is_active,price,currency,coins,oracle_credits,roulette_level,roulette_spins").order("created_at", { ascending: false }),
@@ -116,8 +116,19 @@ export async function POST(req: Request) {
       args = { p_actor: gate.me.user_id, p_edit: data };
     } else if (action === "preview") {
       data = validateRankPackageBenefitEdit(body.data);
-      rpc = "tc_preview_rank_package_benefit";
-      args = { p_rank_key: data.rank_key, p_package_level: data.package_level };
+      const packageSource = String(body?.package_source || "");
+      const packageKey = String(body?.package_key || "").trim();
+      if (!["standard", "promotion"].includes(packageSource) || !packageKey) {
+        return reply({ ok: false, error: "Selecciona un paquete asignado a este nivel para la vista previa." }, 400);
+      }
+      rpc = "tc_resolve_rank_package_benefit";
+      args = {
+        p_cliente_id: null,
+        p_rank_key_override: data.rank_key,
+        p_package_source: packageSource,
+        p_package_key: packageKey,
+        p_config_override: data,
+      };
     } else {
       return reply({ ok: false, error: "Acción no válida." }, 400);
     }

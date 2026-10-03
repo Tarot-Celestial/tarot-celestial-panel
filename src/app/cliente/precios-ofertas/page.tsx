@@ -15,8 +15,8 @@ const sb = supabaseClienteBrowser();
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
 type RankPackBenefit = { enabled?: boolean; coins?: number; oracle_credits?: number; roulette_level_1_spins?: number; roulette_level_2_spins?: number; roulette_level_3_spins?: number; roulette_special_spins?: number };
-type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null };
-type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null };
+type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null; rankBenefitsStatus?: string };
+type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null; rankBenefitsStatus?: string };
 type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
 // Standard packs use levels 1–3; level 4 belongs to special promotions.
@@ -98,7 +98,7 @@ export default function PreciosOfertasPage() {
       .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotion_packages" }, () => { void loadPromotion(); })
       .subscribe();
     const focus = () => void load();
-    const timer = window.setInterval(() => { void loadPromotion(); }, 30000);
+    const timer = window.setInterval(() => { void load(); }, 30000);
     window.addEventListener("focus", focus);
     window.addEventListener("online", focus);
     return () => { window.clearInterval(timer); window.removeEventListener("focus", focus); window.removeEventListener("online", focus); void sb.removeChannel(channel); };
@@ -149,10 +149,11 @@ export default function PreciosOfertasPage() {
   }
 
   const total = credits + (freeAvailable ? 1 : 0);
-  const packageLevel = (pack: MinutePack): StandardPackLevel => (pack.packageLevel || pack.rouletteLevel) as StandardPackLevel;
+  const packageLevel = (pack: MinutePack): StandardPackLevel | null => pack.packageLevel ?? null;
   const levelOnePacks = minutePacks.filter((pack) => packageLevel(pack) === 1);
   const levelTwoPacks = minutePacks.filter((pack) => packageLevel(pack) === 2);
   const levelThreePacks = minutePacks.filter((pack) => packageLevel(pack) === 3);
+  const unassignedPacks = minutePacks.filter((pack) => packageLevel(pack) === null);
 
   return (
     <ClienteLayout
@@ -211,6 +212,8 @@ export default function PreciosOfertasPage() {
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
                     {pack.extra_benefit ? <span>✦ {pack.extra_benefit}</span> : null}
                     {pack.rankBenefits?.enabled ? <span><strong>Por tu rango:</strong> {rankBenefitSummary(pack.rankBenefits)}</span> : null}
+                    {pack.rankBenefitsStatus === "unavailable" ? <span><strong>Beneficios de rango:</strong> no disponibles temporalmente. El pack y su precio siguen disponibles.</span> : null}
+                    {pack.rankBenefitsStatus === "unmapped_package" ? <span><strong>Beneficios de rango:</strong> esta promoción aún no tiene nivel asignado.</span> : null}
                   </div>
                   <ClientPurchaseAction className={styles.promoBuy}><button className={styles.promoBuy} disabled={busy === `promo:${pack.id}`} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
                 </article>
@@ -225,7 +228,7 @@ export default function PreciosOfertasPage() {
             <div>
               <span>CONSULTAS CELESTIALES</span>
               <h2>Elige el nivel de tu experiencia</h2>
-              <p>Los precios actuales se mantienen. El nivel determina la categoría del giro incluido.</p>
+              <p>Los precios actuales se mantienen. El nivel agrupa el paquete; cada giro conserva su nivel real configurado.</p>
             </div>
             <Link className={styles.rouletteShortcut} href="/cliente/ruleta">Ver ruleta <ArrowRight /></Link>
           </div>
@@ -242,7 +245,7 @@ export default function PreciosOfertasPage() {
                 <LevelBenefitChips />
               </div>
               <div className={styles.grid}>
-                {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={1} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={1} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
 
@@ -257,7 +260,7 @@ export default function PreciosOfertasPage() {
                 <LevelBenefitChips />
               </div>
               <div className={styles.grid}>
-                {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
 
@@ -283,10 +286,21 @@ export default function PreciosOfertasPage() {
                 <LevelBenefitChips />
               </div>
               <div className={`${styles.grid} ${styles.levelThreeGrid}`}>
-                {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} level={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section> : null}
           </div>
+
+          {unassignedPacks.length ? <section className={styles.level} aria-labelledby="unassigned-packs-title">
+            <div className={styles.levelHeader}>
+              <div className={styles.levelMedallion}><ShoppingBag /></div>
+              <div className={styles.levelIdentity}><span>OTROS PACKS</span><h3 id="unassigned-packs-title">Sin nivel adicional asignado</h3><p>Siguen disponibles con sus minutos y beneficios propios. Admin debe asignar Nivel 1, 2 o 3 para aplicar extras de rango.</p></div>
+              <LevelBenefitChips />
+            </div>
+            <div className={styles.grid}>
+              {unassignedPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={null} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+            </div>
+          </section> : null}
 
           <div className={styles.maintenanceNote}>
             <PhoneCall />
@@ -332,15 +346,15 @@ function formatPromoMoney(value: number, currency: string) {
   catch { return `${Number(value || 0).toFixed(2)} ${currency}`; }
 }
 
-function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; level: RouletteLevel; busy: boolean; onBuy: () => void }) {
-  const rewardCoins = pack.rewardCoins ?? 0;
+function MinuteCard({ pack, summary, packageLevel, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; packageLevel: StandardPackLevel | null; busy: boolean; onBuy: () => void }) {
+  const rewardCoins = Number(pack.rewardCoins || 0);
   return (
-    <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`} data-level={level} data-highlight={pack.highlight ? "true" : "false"}>
-      {pack.highlight ? <span className={styles.recommended}>{level === 3 ? "PREMIUM" : level === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
+    <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`} data-level={packageLevel || undefined} data-highlight={pack.highlight ? "true" : "false"}>
+      {pack.highlight ? <span className={styles.recommended}>{packageLevel === 3 ? "PREMIUM" : packageLevel === 2 ? "MÁS ELEGIDO" : "RECOMENDADO"}</span> : null}
       <div className={styles.cardAura} aria-hidden="true" />
       <div className={styles.serviceTop}>
-        <div className={styles.icon}>{level === 3 ? <Crown /> : level === 2 ? <Gem /> : <ShoppingBag />}</div>
-        <span className={styles.levelTag}>GIRO NIVEL {level}</span>
+        <div className={styles.icon}>{packageLevel === 3 ? <Crown /> : packageLevel === 2 ? <Gem /> : <ShoppingBag />}</div>
+        <span className={styles.levelTag}>{packageLevel ? `PAQUETE NIVEL ${packageLevel}` : "SIN NIVEL DE PAQUETE"}</span>
       </div>
       <div className={styles.productCopy}><h3>{pack.nombre}</h3><p>{pack.descripcion}</p></div>
       <div className={styles.priceRow}>
@@ -348,28 +362,27 @@ function MinuteCard({ pack, summary, level, busy, onBuy }: { pack: MinutePack; s
         <small>{pack.totalMinutes} minutos totales</small>
       </div>
       <div className={styles.visualCluster} aria-hidden="true">
-        <div className={`${styles.visualToken} ${styles.coinsToken}`}>
+        {rewardCoins > 0 ? <div className={`${styles.visualToken} ${styles.coinsToken}`}>
           <span className={styles.visualEmoji}>🪙</span>
-          <small>+{rewardCoins.toLocaleString("es-ES")} Coins</small>
-        </div>
-        <div className={`${styles.visualToken} ${styles.rouletteToken}`}>
+          <small>+{rewardCoins.toLocaleString("es-ES")} Coins propias</small>
+        </div> : null}
+        {pack.rouletteSpins > 0 && pack.rouletteLevel ? <div className={`${styles.visualToken} ${styles.rouletteToken}`}>
           <span className={styles.visualEmoji}>🎰</span>
-          <small>{pack.rouletteSpins} giro{pack.rouletteSpins === 1 ? "" : "s"}</small>
-        </div>
+          <small>{pack.rouletteSpins} giro{pack.rouletteSpins === 1 ? "" : "s"} · Ruleta N{pack.rouletteLevel}</small>
+        </div> : null}
         {(pack.oracleCredits || 0) > 0 ? <div className={`${styles.visualToken} ${styles.oracleToken}`}>
           <span className={styles.visualEmoji}>🔮</span>
           <small>{pack.oracleCredits || 0} tirada{(pack.oracleCredits || 0) === 1 ? "" : "s"}</small>
         </div> : null}
-        {level === 3 ? <div className={`${styles.visualToken} ${styles.orbToken}`}>
+        {packageLevel === 3 ? <div className={`${styles.visualToken} ${styles.orbToken}`}>
           <span className={styles.visualEmoji}>{pack.highlight ? "🌙" : "✨"}</span>
           <small>{pack.highlight ? "Orbe premium" : "Bonus místico"}</small>
         </div> : null}
       </div>
-      {pack.rankBenefits?.enabled ? <div className={styles.rankBenefitExtra}>
-        <strong>Beneficios adicionales por tu rango</strong>
-        <span>{rankBenefitSummary(pack.rankBenefits)}</span>
-      </div> : null}
-      <RouletteBenefit level={level} summary={summary} spins={pack.rouletteSpins} rewardCoins={rewardCoins} oracleCredits={pack.oracleCredits} />
+      {pack.rankBenefits?.enabled ? <div className={styles.rankBenefitExtra}><strong>Beneficios adicionales por tu rango</strong><span>{rankBenefitSummary(pack.rankBenefits)}</span></div> : null}
+      {pack.rankBenefitsStatus === "unavailable" ? <div className={styles.rankBenefitExtra}><strong>Beneficios de rango temporalmente no disponibles</strong><span>No se muestran como 0. El precio, los minutos y los beneficios propios del pack siguen disponibles.</span></div> : null}
+      {pack.rankBenefitsStatus === "unmapped_package" ? <div className={styles.rankBenefitExtra}><strong>Sin nivel de paquete asignado</strong><span>Este pack conserva sus beneficios propios; no se aplican extras de rango hasta que Admin lo asigne.</span></div> : null}
+      <RouletteBenefit level={pack.rouletteLevel} summary={summary} spins={pack.rouletteSpins} rewardCoins={rewardCoins} oracleCredits={pack.oracleCredits} />
       <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
     </article>
   );

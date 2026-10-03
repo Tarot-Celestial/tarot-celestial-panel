@@ -1,6 +1,6 @@
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
+import { rankState } from "@/lib/server/rank-benefits";
 import {
-  computeCurrentRankFromSpend,
   createClientNotification,
   monthRange,
   syncClientMonthTag,
@@ -294,7 +294,7 @@ export async function applyPromotionMinutePurchase(
 
   let monthlySpend = 0;
   let monthlyPurchases = 0;
-  let nextRank = computeCurrentRankFromSpend(0, 0);
+  let nextRank: string | null = null;
   try {
     const { start, end } = monthRange(new Date());
     const { data: monthPayments } = await admin
@@ -306,7 +306,8 @@ export async function applyPromotionMinutePurchase(
       .lt("created_at", end.toISOString());
     monthlySpend = (monthPayments || []).reduce((acc: number, row: any) => acc + toNum(row?.importe), 0);
     monthlyPurchases = (monthPayments || []).length;
-    nextRank = computeCurrentRankFromSpend(monthlySpend, monthlyPurchases);
+    const effectiveRankState = await rankState(admin, params.clienteId);
+    nextRank = effectiveRankState?.effective || null;
     await syncClientMonthTag(admin, params.clienteId);
   } catch (error) {
     console.error("[client-promotions/post-purchase-stats]", error);

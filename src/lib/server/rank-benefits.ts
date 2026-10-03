@@ -1,6 +1,28 @@
 import { pointsFromAmount } from "@/lib/server/cliente-platform";
 
-export type ClientRankBenefits = { rank_key: string | null; ritual_access: boolean };
+export type ClientRankBenefits = {
+  rank_key: string | null;
+  ritual_access: boolean;
+};
+
+export type RankPackageResolutionStatus =
+  | "ready"
+  | "disabled"
+  | "unmapped_package"
+  | "no_effective_rank"
+  | "config_missing"
+  | "unavailable";
+
+export type RankPackageResolution = {
+  status: RankPackageResolutionStatus;
+  rank_key: string | null;
+  package_source: "standard" | "promotion";
+  package_key: string;
+  package_level: 1 | 2 | 3 | null;
+  rank_benefits: any | null;
+  legacy_purchase_benefits?: any | null;
+  legacy_general_applies?: boolean;
+};
 
 export async function clientRankBenefits(admin: any, clientId: string): Promise<ClientRankBenefits> {
   const { data, error } = await admin.rpc("tc_client_rank_state", { p_cliente_id: clientId });
@@ -19,7 +41,9 @@ export async function rankState(admin: any, clientId: string) {
 
 export async function purchaseQuote(admin: any, amount: number, currency: string, clientId?: string) {
   const { data, error } = await admin.rpc("tc_purchase_benefit_quote", {
-    p_amount: amount, p_currency: currency, p_cliente_id: clientId || null,
+    p_amount: amount,
+    p_currency: currency,
+    p_cliente_id: clientId || null,
   });
   if (error) throw error;
   return data;
@@ -27,16 +51,17 @@ export async function purchaseQuote(admin: any, amount: number, currency: string
 
 export async function decoratePacks(admin: any, packs: any[], currency = "EUR") {
   const { data, error } = await admin.rpc("tc_purchase_benefit_quotes", {
-    p_packs: packs.map(p => ({ id: p.id, amount: Number(p.price ?? p.priceUsd), currency: p.currency || currency })),
+    p_packs: packs.map((p) => ({ id: p.id, amount: Number(p.price ?? p.priceUsd), currency: p.currency || currency })),
   });
   if (error) throw error;
   const quotes = new Map<string, any>((data || []).map((q: any) => [String(q.id), q]));
-  return packs.map(pack => {
+  return packs.map((pack) => {
     const quote = quotes.get(String(pack.id));
     const special = Number(pack.roulette_level) === 4;
-    return { ...pack,
-      currency:pack.currency || currency,
-      rewardCoins:pack.rewardCoins ?? pointsFromAmount(Number(pack.price ?? pack.priceUsd)),
+    return {
+      ...pack,
+      currency: pack.currency || currency,
+      rewardCoins: pack.rewardCoins ?? pointsFromAmount(Number(pack.price ?? pack.priceUsd)),
       rouletteLevel: quote?.roulette_level || null,
       rouletteSpins: quote?.roulette_spins || 0,
       roulette_level: special ? 4 : quote?.roulette_level || null,
@@ -45,39 +70,68 @@ export async function decoratePacks(admin: any, packs: any[], currency = "EUR") 
   });
 }
 
-function isMissingMatrix(error: any) {
+function isResolverMissing(error: any) {
   const text = `${error?.code || ""} ${error?.message || ""} ${error?.details || ""}`;
-  return /42P01|PGRST205|tc_purchase_package_levels|tc_rank_package_benefits/i.test(text);
+  return /PGRST202|42883|tc_resolve_rank_package_benefits|tc_resolve_rank_package_benefit/i.test(text);
 }
 
 /**
- * Adds the DB-owned package level and rank×level benefit preview to real standard packs.
- * It does not grant anything. Supabase remains the only source of truth for delivery.
+ * Resolves the exact rank×package benefit that Supabase will use when the
+ * corresponding purchase is confirmed. This RPC is also consumed by the
+ * database delivery path, so client display and accreditation share one evaluator.
  */
-export async function rankPackageBenefitsForPacks(admin: any, clientId: string, packs: any[], packageSource: "standard" | "promotion" = "standard") {
-  const rank = await rankState(admin, clientId);
-  const effective = String(rank?.effective || "").trim() || null;
-  if (!effective) return packs.map((pack) => ({ ...pack, packageLevel: null, rankBenefits: null }));
+export async function rankPackageBenefitsForPacks(
+  admin: any,
+  clientId: string,
+  packs: any[],
+  packageSource: "standard" | "promotion" = "standard",
+) {
+  if (!packs.length) return [];
 
-  const packIds = packs.map((pack) => String(pack.id));
-  const [mappingResult, benefitResult] = await Promise.all([
-    admin.from("tc_purchase_package_levels").select("package_key,package_level").eq("package_source", packageSource).in("package_key", packIds),
-    admin.from("tc_rank_package_benefits").select("*").eq("rank_key", effective),
-  ]);
-  if (mappingResult.error) {
-    if (isMissingMatrix(mappingResult.error)) return packs.map((pack) => ({ ...pack, packageLevel: null, rankBenefits: null }));
-    throw mappingResult.error;
-  }
-  if (benefitResult.error) {
-    if (isMissingMatrix(benefitResult.error)) return packs.map((pack) => ({ ...pack, packageLevel: null, rankBenefits: null }));
-    throw benefitResult.error;
+  const input = packs.map((pack) => ({
+    package_source: packageSource,
+    package_key: String(pack.id),
+  }));
+
+  const { data, error } = await admin.rpc("tc_resolve_rank_package_benefits", {
+    p_cliente_id: clientId,
+    p_rank_key_override: null,
+    p_packages: input,
+  });
+
+  if (error) {
+    // The catalogue must remain usable if the additional-benefits resolver is
+    // temporarily unavailable. Never replace that failure with a fake zero.
+    console.error("[rank-benefits/resolve-packages]", error);
+    if (!isResolverMissing(error)) {
+      return packs.map((pack) => ({
+        ...pack,
+        packageLevel: null,
+        rankBenefits: null,
+        rankBenefitsStatus: "unavailable" as const,
+      }));
+    }
+    return packs.map((pack) => ({
+      ...pack,
+      packageLevel: null,
+      rankBenefits: null,
+      rankBenefitsStatus: "unavailable" as const,
+    }));
   }
 
-  const mapping = new Map((mappingResult.data || []).map((row: any) => [String(row.package_key), Number(row.package_level) || null]));
-  const matrix = new Map((benefitResult.data || []).map((row: any) => [Number(row.package_level), row]));
+  const rows = Array.isArray(data) ? data : [];
+  const byKey = new Map<string, RankPackageResolution>(
+    rows.map((row: RankPackageResolution) => [`${row.package_source}:${row.package_key}`, row]),
+  );
+
   return packs.map((pack) => {
-    const packageLevel = mapping.get(String(pack.id)) || null;
-    const rankBenefits = packageLevel ? matrix.get(packageLevel) || null : null;
-    return { ...pack, packageLevel, rankBenefits };
+    const resolution = byKey.get(`${packageSource}:${String(pack.id)}`) || null;
+    return {
+      ...pack,
+      packageLevel: resolution?.package_level ?? null,
+      rankBenefits: resolution?.rank_benefits ?? null,
+      rankBenefitsStatus: resolution?.status ?? "unavailable",
+      rankBenefitsResolution: resolution,
+    };
   });
 }

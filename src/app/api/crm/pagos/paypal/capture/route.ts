@@ -144,12 +144,26 @@ export async function GET(req: Request) {
       || String(capture.amount?.currency_code) !== String(pago.moneda)) {
       throw new Error("PAYPAL_CAPTURE_NOT_CONFIRMED");
     }
-    const { data: completed, error: completedError } = await admin.rpc("tc_confirm_rank_purchase", {
-      p_kind: "paypal", p: { cliente_id: pago.cliente_id, payment_id: pago.id, capture_id: captureId, payer_id: payerId },
-    });
-    const completedPago = completed?.payment;
+    const { data: completedPago, error: completedError } = await admin
+      .from("crm_cliente_pagos")
+      .update({
+        estado: "completed",
+        paypal_capture_id: captureId,
+        paypal_payer_id: payerId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", pago.id)
+      .neq("estado", "completed")
+      .select("*")
+      .maybeSingle();
 
     if (completedError) throw completedError;
+
+    if (!completedPago) {
+      const { data: alreadyCompleted, error: reloadError } = await admin.from("crm_cliente_pagos").select("*").eq("id", pago.id).single();
+      if (reloadError) throw reloadError;
+      return NextResponse.json({ ok: true, pago: alreadyCompleted, status: "completed" });
+    }
 
     return NextResponse.json({ ok: true, pago: completedPago, status: "completed" });
   } catch (e: any) {

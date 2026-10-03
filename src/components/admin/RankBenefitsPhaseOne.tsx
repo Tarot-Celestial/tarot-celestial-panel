@@ -56,6 +56,7 @@ export default function RankBenefitsPhaseOne() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [historyTab, setHistoryTab] = useState<"deliveries" | "audit">("deliveries");
+  const [section, setSection] = useState<"rank" | "purchase">("purchase");
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -71,6 +72,8 @@ export default function RankBenefitsPhaseOne() {
   useEffect(() => { void load(); }, [load]);
   const rank = data?.ranks.find((row) => row.rank_key === selectedRank) || null;
   const matrix = data?.matrix.find((row) => row.rank_key === selectedRank && Number(row.package_level) === level) || emptyMatrix(selectedRank, level);
+  const assignmentMap = useMemo(() => new Map((data?.assignments || []).map((row) => [`${row.package_source}:${row.package_key}`, row])), [data?.assignments]);
+  const packagesForLevel = useMemo(() => (data?.packages || []).filter((pkg) => Number(assignmentMap.get(`${pkg.package_source}:${pkg.package_key}`)?.package_level) === level), [data?.packages, assignmentMap, level]);
 
   const saveResult = useCallback((text: string) => { setMessage(text); window.setTimeout(() => setMessage(""), 3500); }, []);
 
@@ -89,19 +92,24 @@ export default function RankBenefitsPhaseOne() {
       <nav className={styles.tabs} aria-label="Rangos">
         {data.ranks.map((item) => <button key={item.rank_key} aria-pressed={selectedRank === item.rank_key} onClick={() => setSelectedRank(item.rank_key)}>{item.label}{item.rank_key === "diamante" ? " 💎" : ""}</button>)}
       </nav>
+      <div className={styles.levelTabs} aria-label="Sección de beneficios">
+        <button type="button" aria-pressed={section === "rank"} onClick={() => setSection("rank")}>Beneficios y accesos del rango</button>
+        <button type="button" aria-pressed={section === "purchase"} onClick={() => setSection("purchase")}>Beneficios por compra y paquete</button>
+      </div>
 
       <section className={styles.rankAdminGrid}>
         <div className={styles.rankAdminMain}>
-          <div className={styles.rankCard} data-rank={selectedRank}>
-            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>Los beneficios de paquete son adicionales a lo que el propio pack o promoción ya promete. Cada entrega queda registrada por compra.</p></div></div>
-
+          {section === "purchase" ? <div className={styles.rankCard} data-rank={selectedRank}>
+            <div className={styles.rankHeader}><CrystalEmblem tone={selectedRank}/><div><h2>{rank?.label || selectedRank}</h2><p className={styles.note}>Los beneficios de esta matriz son adicionales a lo que el pack o promoción promete por sí mismo. El nivel del paquete y el nivel de ruleta son independientes.</p></div></div>
             <div className={styles.rankSectionTitle}><span><Gift size={17}/> Beneficios por compra</span><small>Nivel del paquete ≠ nivel de ruleta</small></div>
             <div className={styles.levelTabs}>{([1,2,3] as const).map((value) => <button key={value} type="button" aria-pressed={level === value} onClick={() => setLevel(value)}>Nivel {value}</button>)}</div>
-            <MatrixEditor key={`${selectedRank}-${level}-${matrix.revision}`} row={matrix} onSaved={load} notify={saveResult}/>
-          </div>
-
-          {rank && <RitualEditor key={`${rank.rank_key}-${rank.revision}`} row={rank} onSaved={load} notify={saveResult}/>} 
-          {selectedRank === "diamante" && data.diamond_bonus && <DiamondBonusEditor key={`${data.diamond_bonus.id}-${data.diamond_bonus.revision}`} row={data.diamond_bonus} timezone={data.business_timezone} onSaved={load} notify={saveResult}/>} 
+            <PackagesUsingLevel packages={packagesForLevel} />
+            <MatrixEditor key={`${selectedRank}-${level}-${matrix.revision}`} row={matrix} packages={packagesForLevel} onSaved={load} notify={saveResult}/>
+          </div> : <>
+            {rank && <GeneralRankSummary row={rank}/>}
+            {rank && <RitualEditor key={`${rank.rank_key}-${rank.revision}`} row={rank} onSaved={load} notify={saveResult}/>}
+            {selectedRank === "diamante" && data.diamond_bonus && <DiamondBonusEditor key={`${data.diamond_bonus.id}-${data.diamond_bonus.revision}`} row={data.diamond_bonus} timezone={data.business_timezone} onSaved={load} notify={saveResult}/>}
+          </>}
         </div>
 
         <aside className={styles.rankAdminAside}>
@@ -109,15 +117,13 @@ export default function RankBenefitsPhaseOne() {
             <div className={styles.rankSectionTitle}><span><ShieldCheck size={17}/> Resumen</span></div>
             <div className={styles.rankSummaryList}>
               <div><span>Rango</span><strong>{rank?.label || "—"}</strong></div>
-              <div><span>Paquete</span><strong>Nivel {level}</strong></div>
-              <div><span>Entrega</span><strong>{matrix.enabled ? "Activa" : "Desactivada"}</strong></div>
+              {section === "purchase" ? <><div><span>Paquete</span><strong>Nivel {level}</strong></div><div><span>Entrega</span><strong>{matrix.enabled ? "Activa" : "Desactivada"}</strong></div></> : null}
               <div><span>Mi ritual</span><strong>{rank?.ritual_access ? "Permitido" : "Oculto"}</strong></div>
-              <div><span>Última edición</span><strong>{fmt(matrix.updated_at || rank?.updated_at)}</strong></div><div><span>Responsable</span><strong>{(matrix as any).updated_by_name || rank?.updated_by_name || "Sistema / migración"}</strong></div>
+              <div><span>Última edición</span><strong>{fmt(section === "purchase" ? matrix.updated_at || rank?.updated_at : rank?.updated_at)}</strong></div><div><span>Responsable</span><strong>{section === "purchase" ? (matrix as any).updated_by_name || rank?.updated_by_name || "Sistema / migración" : rank?.updated_by_name || "Sistema / migración"}</strong></div>
             </div>
-            <div className={styles.rankBenefitPills}>{matrixBenefitLabels(matrix).map((label) => <span key={label}>{label}</span>)}</div>
+            {section === "purchase" ? <div className={styles.rankBenefitPills}>{matrixBenefitLabels(matrix).map((label) => <span key={label}>{label}</span>)}</div> : null}
           </section>
-
-          <PackageMappings data={data} onSaved={load} notify={saveResult}/>
+          {section === "purchase" ? <PackageMappings data={data} onSaved={load} notify={saveResult}/> : null}
         </aside>
       </section>
 
@@ -129,7 +135,28 @@ export default function RankBenefitsPhaseOne() {
   </section>;
 }
 
-function MatrixEditor({ row, onSaved, notify }: { row: RankPackageBenefitConfig; onSaved: () => Promise<void>; notify: (text: string) => void }) {
+function nativeBenefitSummary(value: any) {
+  const parts = [
+    Number(value?.coins || 0) > 0 ? `+${Number(value.coins).toLocaleString("es-ES")} Coins` : null,
+    Number(value?.oracle_credits || 0) > 0 ? `+${Number(value.oracle_credits)} Oráculo` : null,
+    Number(value?.roulette_spins || 0) > 0 && value?.roulette_level ? `+${Number(value.roulette_spins)} giro N${Number(value.roulette_level) === 4 ? "Especial" : Number(value.roulette_level)}` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "Sin beneficio propio adicional";
+}
+
+function PackagesUsingLevel({ packages }: { packages: AdminData["packages"] }) {
+  return <div className={styles.rankPreview}><strong>Paquetes que usan este nivel</strong>{packages.length ? packages.map((pkg) => <span key={`${pkg.package_source}:${pkg.package_key}`}><b>{pkg.package_label}</b> · {pkg.package_source === "promotion" ? "Promoción" : "Estándar"} · propio: {nativeBenefitSummary(pkg.native_benefits)}</span>) : <span>Ningún paquete está asignado todavía. La configuración se conserva, pero no se aplicará hasta asignar un paquete.</span>}</div>;
+}
+
+function GeneralRankSummary({ row }: { row: RankBenefitConfig }) {
+  const legacy = [
+    row.coins_enabled && Number(row.purchase_coins || 0) > 0 ? `+${Number(row.purchase_coins).toLocaleString("es-ES")} Coins por compra` : null,
+    row.roulette_enabled && Number(row.roulette_spins || 0) > 0 ? `+${Number(row.roulette_spins)} giro(s) de ruleta N${row.roulette_level}` : null,
+  ].filter(Boolean);
+  return <section className={styles.rankCard}><div className={styles.rankSectionTitle}><span><ShieldCheck size={17}/> Beneficios y accesos generales</span></div><p className={styles.note}>La matriz rango × nivel sustituye estos beneficios generales de compra cuando el paquete tiene un nivel administrado. Si un paquete queda sin asignar, conserva la lógica general histórica.</p><div className={styles.rankBenefitPills}>{legacy.length ? legacy.map((label) => <span key={label}>{label}</span>) : <span>Sin beneficios generales de compra activos</span>}</div></section>;
+}
+
+function MatrixEditor({ row, packages, onSaved, notify }: { row: RankPackageBenefitConfig; packages: AdminData["packages"]; onSaved: () => Promise<void>; notify: (text: string) => void }) {
   const [form, setForm] = useState({ ...row });
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<any>(null);
@@ -143,9 +170,13 @@ function MatrixEditor({ row, onSaved, notify }: { row: RankPackageBenefitConfig;
     finally { setBusy(false); }
   }
   async function showPreview() {
+    const pkg = packages[0];
+    if (!pkg) { setError("No hay ningún paquete asignado a este nivel. Asigna uno para previsualizar la evaluación real."); return; }
     setBusy(true); setError("");
-    try { const result = await request("POST", { action: "preview", data: form }); setPreview(result.saved); }
-    catch (cause: any) { setError(cause.message); }
+    try {
+      const result = await request("POST", { action: "preview", data: form, package_source: pkg.package_source, package_key: pkg.package_key });
+      setPreview(result.saved);
+    } catch (cause: any) { setError(cause.message); }
     finally { setBusy(false); }
   }
   return <div className={styles.matrixEditor}>
@@ -158,7 +189,7 @@ function MatrixEditor({ row, onSaved, notify }: { row: RankPackageBenefitConfig;
       <label>Ruleta nivel 3<input type="number" min="0" step="1" value={form.roulette_level_3_spins} onChange={(e) => number("roulette_level_3_spins", e.target.value)}/></label>
       <label>Ruleta especial<input type="number" min="0" step="1" value={form.roulette_special_spins} onChange={(e) => number("roulette_special_spins", e.target.value)}/></label>
     </div>
-    {preview && <div className={styles.rankPreview}><strong>Vista previa · sin acreditar nada</strong><span>Rango: {preview.rank_key} · Nivel {preview.package_level}</span><div className={styles.rankBenefitPills}>{(preview.labels || []).map((label: string) => <span key={label}>{label}</span>)}</div></div>}
+    {preview && <div className={styles.rankPreview}><strong>Vista previa real · sin acreditar nada</strong><span>{preview.package_source === "promotion" ? "Promoción" : "Pack estándar"} · {preview.package_key} · {preview.rank_key || "Sin rango"} · {preview.package_level ? `Nivel ${preview.package_level}` : "Sin nivel"}</span><div className={styles.rankBenefitPills}>{matrixBenefitLabels(preview.rank_benefits).map((label) => <span key={label}>{label}</span>)}</div></div>}
     {error && <div className={styles.message} role="alert">{error}</div>}
     <div className={styles.toolbar}><button type="button" className={styles.primary} disabled={busy || !dirty} onClick={() => void save()}><Save size={16}/>{busy ? "Guardando…" : dirty ? "Guardar cambios" : "Sin cambios"}</button><button type="button" className={styles.secondary} disabled={busy} onClick={() => void showPreview()}><Eye size={16}/> Vista previa</button></div>
   </div>;
