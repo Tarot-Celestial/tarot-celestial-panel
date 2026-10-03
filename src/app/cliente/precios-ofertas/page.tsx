@@ -16,7 +16,7 @@ type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: n
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
 type RankPackBenefit = { enabled?: boolean; coins?: number; oracle_credits?: number; roulette_level_1_spins?: number; roulette_level_2_spins?: number; roulette_level_3_spins?: number; roulette_special_spins?: number };
 type MinutePack = { id: string; nombre: string; descripcion: string; priceUsd: number; totalMinutes: number; bonusMinutes: number; rouletteLevel: RouletteLevel; rouletteSpins: number; rewardCoins?: number; oracleCredits?: number; highlight?: boolean; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null };
-type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number };
+type PromotionPack = { id: string; name: string; description?: string | null; paid_minutes: number; free_minutes: number; price: number; regular_price?: number | null; currency: "EUR" | "USD"; roulette_level?: RouletteLevel | null; roulette_spins: number; coins: number; oracle_credits: number; extra_benefit?: string | null; is_recommended: boolean; is_active: boolean; sort_order: number; packageLevel?: 1 | 2 | 3 | null; rankBenefits?: RankPackBenefit | null };
 type ActivePromotion = { id: string; name: string; subtitle?: string | null; description?: string | null; effective_status: string; starts_at?: string | null; ends_at?: string | null; active_until_disabled: boolean; packages: PromotionPack[] };
 
 // Standard packs use levels 1–3; level 4 belongs to special promotions.
@@ -193,6 +193,7 @@ export default function PreciosOfertasPage() {
                     {pack.roulette_spins > 0 && pack.roulette_level ? <span>{Number(pack.roulette_level) === 4 ? `🎰 +${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} SUPER RULETA · Nivel Especial` : `🎡 +${pack.roulette_spins} giro${pack.roulette_spins === 1 ? "" : "s"} Nivel ${pack.roulette_level}`}</span> : null}
                     {pack.oracle_credits > 0 ? <span>🔮 +{pack.oracle_credits} tirada{pack.oracle_credits === 1 ? "" : "s"} del Oráculo</span> : null}
                     {pack.extra_benefit ? <span>✦ {pack.extra_benefit}</span> : null}
+                    {pack.rankBenefits?.enabled ? <span><strong>Por tu rango:</strong> {rankBenefitSummary(pack.rankBenefits)}</span> : null}
                   </div>
                   <ClientPurchaseAction className={styles.promoBuy}><button className={styles.promoBuy} disabled={busy === `promo:${pack.id}`} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
                 </article>

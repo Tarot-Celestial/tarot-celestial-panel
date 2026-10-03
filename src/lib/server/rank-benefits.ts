@@ -54,14 +54,14 @@ function isMissingMatrix(error: any) {
  * Adds the DB-owned package level and rank×level benefit preview to real standard packs.
  * It does not grant anything. Supabase remains the only source of truth for delivery.
  */
-export async function rankPackageBenefitsForPacks(admin: any, clientId: string, packs: any[]) {
+export async function rankPackageBenefitsForPacks(admin: any, clientId: string, packs: any[], packageSource: "standard" | "promotion" = "standard") {
   const rank = await rankState(admin, clientId);
   const effective = String(rank?.effective || "").trim() || null;
   if (!effective) return packs.map((pack) => ({ ...pack, packageLevel: null, rankBenefits: null }));
 
   const packIds = packs.map((pack) => String(pack.id));
   const [mappingResult, benefitResult] = await Promise.all([
-    admin.from("tc_purchase_package_levels").select("package_key,package_level").eq("package_source", "standard").in("package_key", packIds),
+    admin.from("tc_purchase_package_levels").select("package_key,package_level").eq("package_source", packageSource).in("package_key", packIds),
     admin.from("tc_rank_package_benefits").select("*").eq("rank_key", effective),
   ]);
   if (mappingResult.error) {
