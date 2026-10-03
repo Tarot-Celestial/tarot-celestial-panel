@@ -491,8 +491,18 @@ async function runwayRequest(pathname: string, init?: RequestInit) {
   });
   const json: any = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = json?.error?.message || json?.message || json?.error || `Runway API ${response.status}`;
-    throw new Error(typeof message === "string" ? message : JSON.stringify(message));
+    const baseMessage = json?.error?.message || json?.message || json?.error || `Runway API ${response.status}`;
+    const issues = Array.isArray(json?.issues)
+      ? json.issues
+          .map((issue: any) => {
+            const path = Array.isArray(issue?.path) && issue.path.length ? ` (${issue.path.join(".")})` : "";
+            const detail = String(issue?.message || issue?.code || "").trim();
+            return detail ? `${detail}${path}` : "";
+          })
+          .filter(Boolean)
+      : [];
+    const message = typeof baseMessage === "string" ? baseMessage : JSON.stringify(baseMessage);
+    throw new Error(issues.length ? `${message}: ${issues.join(" · ")}` : message);
   }
   return json;
 }
@@ -1269,7 +1279,11 @@ export async function generateAndStoreSocialVideo(input: {
   const ratio = input.format === "landscape" ? "1280:720" : input.format === "square" ? "1080:1080" : "720:1280";
   const duration = [5, 8, 10].includes(Number(input.duration)) ? Number(input.duration) : 5;
 
-  const created = await runwayRequest("/v1/image_to_video", {
+  // Este generador automático no recibe una imagen de referencia. Runway exige
+  // `promptImage` para /v1/image_to_video, por lo que aquí debemos usar
+  // text-to-video. Usar image-to-video sin promptImage provoca el 400
+  // "Validation of body failed".
+  const created = await runwayRequest("/v1/text_to_video", {
     method: "POST",
     body: JSON.stringify({
       model: runwayModel(),
