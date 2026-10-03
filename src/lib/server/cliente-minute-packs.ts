@@ -86,7 +86,6 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     bonusMinutes: 0,
     rouletteLevel: 3,
     rouletteSpins: 1,
-    rewardCoins: 500,
     oracleCredits: 1,
   },
   {
@@ -98,7 +97,6 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     bonusMinutes: 0,
     rouletteLevel: 3,
     rouletteSpins: 1,
-    rewardCoins: 800,
     oracleCredits: 2,
     highlight: true,
   },
@@ -111,7 +109,6 @@ export const CLIENTE_MINUTE_PACKS: ClienteMinutePack[] = [
     bonusMinutes: 0,
     rouletteLevel: 3,
     rouletteSpins: 2,
-    rewardCoins: 1500,
     oracleCredits: 3,
   },
 ];

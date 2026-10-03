@@ -55,7 +55,19 @@ export async function applyConfiguredMinutePurchase(
   });
   if (transactionError) throw transactionError;
   const pago = transaction.payment;
-  const puntosGanados = Number(pack.rewardCoins || 0);
+  const { data: appliedBenefitEvents } = await admin
+    .from("tc_client_benefit_events")
+    .select("benefit_type,benefit_key,coins,oracle_credits,package_level,snapshot")
+    .eq("payment_id", pago.id);
+
+  const puntosGanados = (appliedBenefitEvents || []).reduce(
+    (acc: number, row: any) => acc + Math.max(0, Number(row?.coins || 0)),
+    0,
+  );
+  const oracleGanado = (appliedBenefitEvents || []).reduce(
+    (acc: number, row: any) => acc + Math.max(0, Number(row?.oracle_credits || 0)),
+    0,
+  );
   const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
   const { data: grantedSpins } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", pago.id).order("created_at", { ascending: true });
   if (transaction.duplicated) return { ok: true, ...transaction, creditedMinutes: splitMinutes(Number(pago.paid_minutes ?? totalMinutes)), spins: grantedSpins || [] };
@@ -88,14 +100,14 @@ export async function applyConfiguredMinutePurchase(
     cliente_id: params.clienteId,
     tipo: "purchase_completed",
     titulo: "Pago confirmado",
-    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos, +${puntosGanados} Coins${pack.oracleCredits ? `, +${pack.oracleCredits} tirada${pack.oracleCredits === 1 ? "" : "s"} de Oráculo` : ""}${rouletteBenefit}.`,
+    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos${puntosGanados > 0 ? `, +${puntosGanados} Coins` : ""}${oracleGanado > 0 ? `, +${oracleGanado} tirada${oracleGanado === 1 ? "" : "s"} de Oráculo` : ""}${rouletteBenefit}.`,
     meta: {
       pack_id: pack.id,
       pack_name: pack.nombre,
       total_minutes: totalMinutes,
       roulette_level: rouletteLevel,
       roulette_spins: rouletteSpins,
-      oracle_credits: pack.oracleCredits || 0,
+      oracle_credits: oracleGanado,
       coins: puntosGanados,
       payment_intent: params.paymentIntent || null,
       stripe_session_id: params.stripeSessionId || null,

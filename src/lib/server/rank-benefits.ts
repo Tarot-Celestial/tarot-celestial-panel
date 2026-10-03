@@ -1,5 +1,3 @@
-import { pointsFromAmount } from "@/lib/server/cliente-platform";
-
 export type ClientRankBenefits = {
   rank_key: string | null;
   ritual_access: boolean;
@@ -61,7 +59,7 @@ export async function decoratePacks(admin: any, packs: any[], currency = "EUR") 
     return {
       ...pack,
       currency: pack.currency || currency,
-      rewardCoins: pack.rewardCoins ?? pointsFromAmount(Number(pack.price ?? pack.priceUsd)),
+      rewardCoins: Number(pack.rewardCoins || 0),
       rouletteLevel: quote?.roulette_level || null,
       rouletteSpins: quote?.roulette_spins || 0,
       roulette_level: special ? 4 : quote?.roulette_level || null,
