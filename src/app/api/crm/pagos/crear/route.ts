@@ -132,8 +132,24 @@ export async function POST(req: Request) {
       if (error) throw error;
       pago = data;
     }
-    const { data: awardedSpin } = await admin.from("cliente_ruleta_giros").select("id,nivel")
-      .eq("payment_key", "crm_pago:" + pago.id).maybeSingle();
+    // Verificación real de beneficios: los giros actuales se relacionan con purchase_id,
+    // no con el payment_key legado "crm_pago:<id>". La consulta antigua hacía que el
+    // panel dijera que no había giro aunque Supabase ya lo hubiera concedido.
+    const [{ data: awardedSpins }, { data: benefitEvents }] = await Promise.all([
+      admin.from("cliente_ruleta_giros")
+        .select("id,nivel,estado,source,purchase_id,created_at")
+        .eq("purchase_id", pago.id)
+        .order("created_at", { ascending: true }),
+      admin.from("tc_client_benefit_events")
+        .select("benefit_type,benefit_key,coins,oracle_credits,spin_id,created_at")
+        .eq("payment_id", pago.id)
+        .order("created_at", { ascending: true }),
+    ]);
+
+    const spins = awardedSpins || [];
+    const events = benefitEvents || [];
+    const awardedCoins = events.reduce((sum: number, event: any) => sum + Number(event?.coins || 0), 0);
+    const awardedOracle = events.reduce((sum: number, event: any) => sum + Number(event?.oracle_credits || 0), 0);
 
     let persistedXpEvent: any = null;
     if (String(estado) === "completed") {
@@ -158,7 +174,17 @@ export async function POST(req: Request) {
       pago,
       client_name: [cliente.nombre, cliente.apellido].filter(Boolean).join(" ").trim() || "Clienta",
       xp_event: persistedXpEvent,
-      msg: "Pago creado correctamente" + (awardedSpin ? " · +1 giro Nivel " + awardedSpin.nivel + " disponible para el cliente." : ""),
+      benefits: {
+        spins,
+        coins: awardedCoins,
+        oracle_credits: awardedOracle,
+      },
+      msg: [
+        "Pago creado correctamente",
+        spins.length ? `+${spins.length} giro(s) ${spins.map((spin: any) => `N${spin.nivel}`).join(", ")} disponible(s)` : null,
+        awardedCoins > 0 ? `+${awardedCoins} Coins` : null,
+        awardedOracle > 0 ? `+${awardedOracle} tirada(s) de Oráculo` : null,
+      ].filter(Boolean).join(" · "),
     });
 
   } catch (e: any) {
