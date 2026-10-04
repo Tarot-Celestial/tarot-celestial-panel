@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
-import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
 import {
   validateDiamondDailyBonus,
   validatePackageLevelAssignment,
@@ -11,7 +10,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const headers = { "Cache-Control": "private, no-store" };
+const headers = { "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate", Pragma: "no-cache", Expires: "0", Vary: "Authorization" };
 const reply = (body: unknown, status = 200) => NextResponse.json(body, { status, headers });
 
 function failure(error: any) {
@@ -24,42 +23,40 @@ function failure(error: any) {
 
 
 async function clientState(admin: any, clienteId: string) {
-  const { data: client, error: clientError } = await admin
-    .from("crm_clientes")
-    .select("id,nombre,apellido,email,telefono,telefono_normalizado,puntos,minutos_free_pendientes,minutos_normales_pendientes")
-    .eq("id", clienteId)
-    .maybeSingle();
+  const [{ data: client, error: clientError }, snapshotResult] = await Promise.all([
+    admin
+      .from("crm_clientes")
+      .select("id,nombre,apellido,email,telefono,telefono_normalizado")
+      .eq("id", clienteId)
+      .maybeSingle(),
+    admin.rpc("tc_client_state_snapshot", { p_cliente_id: clienteId }),
+  ]);
   if (clientError) throw clientError;
   if (!client) throw new Error("CLIENT_NOT_FOUND");
+  if (snapshotResult.error) throw snapshotResult.error;
 
-  const [rankResult, spinResult, oracleCredits] = await Promise.all([
-    admin.rpc("tc_client_rank_state", { p_cliente_id: clienteId }),
-    admin.from("cliente_ruleta_giros").select("nivel,estado").eq("cliente_id", clienteId).eq("estado", "pending"),
-    getOracleCreditBalance(admin, clienteId),
-  ]);
-  if (rankResult.error) throw rankResult.error;
-  if (spinResult.error) throw spinResult.error;
-  const spins = { level_1: 0, level_2: 0, level_3: 0, diamond: 0 };
-  for (const row of spinResult.data || []) {
-    const level = Number(row.nivel);
-    if (level === 1) spins.level_1 += 1;
-    else if (level === 2) spins.level_2 += 1;
-    else if (level === 3) spins.level_3 += 1;
-    else if (level === 4) spins.diamond += 1;
-  }
+  const snapshot = snapshotResult.data || {};
+  const spins = snapshot.spins || {};
   return {
     id: String(client.id),
     name: [client.nombre, client.apellido].filter(Boolean).join(" ").trim() || client.telefono || "Cliente",
     email: client.email || null,
     phone: client.telefono || client.telefono_normalizado || null,
-    coins: Math.max(0, Number(client.puntos || 0)),
-    minutes_free: Math.max(0, Number(client.minutos_free_pendientes || 0)),
-    minutes_normal: Math.max(0, Number(client.minutos_normales_pendientes || 0)),
-    minutes_total: Math.max(0, Number(client.minutos_free_pendientes || 0)) + Math.max(0, Number(client.minutos_normales_pendientes || 0)),
-    oracle_credits: Math.max(0, Number(oracleCredits || 0)),
-    effective_rank: String(rankResult.data?.effective || "") || null,
-    automatic_rank: String(rankResult.data?.automatic || "") || null,
-    spins,
+    coins: Math.max(0, Number(snapshot.coins || 0)),
+    minutes_free: Math.max(0, Number(snapshot.minutes_free || 0)),
+    minutes_normal: Math.max(0, Number(snapshot.minutes_normal || 0)),
+    minutes_total: Math.max(0, Number(snapshot.minutes_total || 0)),
+    oracle_credits: Math.max(0, Number(snapshot.oracle_credits || 0)),
+    effective_rank: String(snapshot.effective_rank || "") || null,
+    automatic_rank: String(snapshot.automatic_rank || "") || null,
+    spins: {
+      level_1: Math.max(0, Number(spins.level_1 || 0)),
+      level_2: Math.max(0, Number(spins.level_2 || 0)),
+      level_3: Math.max(0, Number(spins.level_3 || 0)),
+      diamond: Math.max(0, Number(spins.diamond || 0)),
+    },
+    refreshed_at: snapshot.refreshed_at || null,
+    signal_updated_at: snapshot.signal_updated_at || null,
   };
 }
 

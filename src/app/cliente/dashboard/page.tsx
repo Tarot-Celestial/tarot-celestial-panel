@@ -240,6 +240,8 @@ export default function ClienteDashboardPage() {
       const normal = Number(wallet.minutes_normal ?? incomingCliente.minutos_normales_pendientes ?? 0);
       const points = Number(wallet.coins ?? incomingCliente.puntos ?? 0);
       const effectiveRank = String(wallet.effective_rank || incomingCliente.rango_actual || "sin_rango");
+      if (Number.isFinite(Number(wallet.oracle_credits))) setOracleCredits(Math.max(0, Number(wallet.oracle_credits)));
+      if (Number.isFinite(Number(wallet.spins?.total))) setRouletteSpins(Math.max(0, Number(wallet.spins.total)));
       setCliente({
         ...incomingCliente,
         puntos: points,
@@ -394,7 +396,7 @@ export default function ClienteDashboardPage() {
     checkPasswordStatus();
   }, [cliente?.id, cliente?.onboarding_completado, showOnboarding]);
 
-  useRouletteSignal(sb, cliente?.id, async () => { await Promise.all([loadData(), loadRouletteSummary()]); });
+  useRouletteSignal(sb, cliente?.id, async () => { await Promise.all([loadData(), loadOracle(), loadRouletteSummary()]); });
   useEffect(() => {
     if (!cliente?.id) return;
     let channel: ReturnType<typeof sb.channel> | null = null;
@@ -427,15 +429,15 @@ export default function ClienteDashboardPage() {
       }, 350);
     };
 
+    // La señal general de cartera ya se escucha en useRouletteSignal. Aquí añadimos
+    // notificaciones (tabla publicada en Realtime) y mantenemos polling de respaldo.
     const channel = sb.channel("cliente-wallet-live-" + cliente.id)
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_clientes", filter: "id=eq." + cliente.id }, scheduleRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_puntos_historial", filter: "cliente_id=eq." + cliente.id }, scheduleRefresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_oracle_credit_movements", filter: "cliente_id=eq." + cliente.id }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_notificaciones", filter: "cliente_id=eq." + cliente.id }, scheduleRefresh)
       .subscribe();
 
     const interval = window.setInterval(() => {
       if (!document.hidden) scheduleRefresh();
-    }, 15000);
+    }, 10000);
     window.addEventListener("focus", scheduleRefresh);
 
     return () => {

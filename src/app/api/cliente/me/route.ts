@@ -206,8 +206,18 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
     }
 
-    const cliente = freshCliente as ClienteRow;
-    const minutosTotales = toNum(cliente.minutos_free_pendientes) + toNum(cliente.minutos_normales_pendientes);
+    const { data: stateSnapshot, error: stateSnapshotError } = await gate.admin
+      .rpc("tc_client_state_snapshot", { p_cliente_id: gate.cliente.id });
+    if (stateSnapshotError) throw stateSnapshotError;
+
+    const snapshot = stateSnapshot || {};
+    const cliente = {
+      ...(freshCliente as ClienteRow),
+      puntos: toNum(snapshot.coins),
+      minutos_free_pendientes: toNum(snapshot.minutes_free),
+      minutos_normales_pendientes: toNum(snapshot.minutes_normal),
+    } as ClienteRow;
+    const minutosTotales = Math.max(0, toNum(snapshot.minutes_total));
 
     const now = new Date();
     const start30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -217,6 +227,7 @@ export async function GET(req: Request) {
       { data: recompensas },
       { data: pagos30Dias },
       { data: llamadas30Dias },
+      { data: clienteNotificaciones },
     ] = await Promise.all([
   gate.admin
     .from("cliente_puntos_historial")
@@ -247,6 +258,13 @@ export async function GET(req: Request) {
     .eq("cliente_id", cliente.id)
     .gte("created_at", start30.toISOString())
     .lte("created_at", now.toISOString()),
+
+  gate.admin
+    .from("cliente_notificaciones")
+    .select("id,titulo,mensaje,tipo,leida,created_at")
+    .eq("cliente_id", cliente.id)
+    .order("created_at", { ascending: false })
+    .limit(20),
 ]);
 
     const spendPagos = (pagos30Dias || []).reduce(
@@ -259,9 +277,7 @@ export async function GET(req: Request) {
     // rendimiento_llamadas, aunque en muchos casos representan la misma compra.
     // Eso duplicaba el gasto (por ejemplo 2.602 -> 5.204) y podía desincronizar
     // el rango mostrado respecto al rango real.
-    const { data: canonicalRankState, error: canonicalRankError } = await gate.admin
-      .rpc("tc_client_rank_state", { p_cliente_id: cliente.id });
-    if (canonicalRankError) throw canonicalRankError;
+    const canonicalRankState = snapshot.rank_state || {};
 
     const rolling30Spend = Number.isFinite(Number(canonicalRankState?.total))
       ? Math.max(0, Number(canonicalRankState?.total || 0))
@@ -273,7 +289,7 @@ export async function GET(req: Request) {
     const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
     const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
     const configuredBenefits = await clientRankBenefits(gate.admin, cliente.id);
-    const effectiveRank = String(canonicalRankState?.effective || configuredBenefits.rank_key || "sin_rango");
+    const effectiveRank = String(snapshot.effective_rank || canonicalRankState?.effective || configuredBenefits.rank_key || "sin_rango");
 
     // rango_actual es un campo legado/cache. Lo mantenemos alineado con el rango
     // efectivo para que vistas antiguas del CRM no enseñen Oro/Plata mientras el
@@ -334,6 +350,7 @@ export async function GET(req: Request) {
         puntos: toNum(cliente.puntos),
       },
       historial: historial || [],
+      cliente_notificaciones: clienteNotificaciones || [],
       recompensas: recompensasUnicas,
       rank_info: rank,
       rank_benefits: configuredBenefits,
@@ -342,12 +359,17 @@ export async function GET(req: Request) {
       packs: packsWithRankBenefits,
       payment_provider: paymentProvider,
       wallet: {
-        coins: toNum(cliente.puntos),
-        minutes_free: Math.max(0, toNum(cliente.minutos_free_pendientes)),
-        minutes_normal: Math.max(0, toNum(cliente.minutos_normales_pendientes)),
-        minutes_total: Math.max(0, minutosTotales),
+        coins: Math.max(0, toNum(snapshot.coins)),
+        minutes_free: Math.max(0, toNum(snapshot.minutes_free)),
+        minutes_normal: Math.max(0, toNum(snapshot.minutes_normal)),
+        minutes_total: Math.max(0, toNum(snapshot.minutes_total)),
+        oracle_credits: Math.max(0, toNum(snapshot.oracle_credits)),
+        spins: snapshot.spins || { level_1: 0, level_2: 0, level_3: 0, diamond: 0, total: 0 },
         effective_rank: effectiveRank,
-        refreshed_at: new Date().toISOString(),
+        automatic_rank: snapshot.automatic_rank || null,
+        client_updated_at: snapshot.client_updated_at || cliente.updated_at || null,
+        signal_updated_at: snapshot.signal_updated_at || null,
+        refreshed_at: snapshot.refreshed_at || new Date().toISOString(),
       },
     }, {
       headers: {
