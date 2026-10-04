@@ -54,16 +54,22 @@ export async function GET(req: Request) {
     if (!gate.uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401, headers });
     if (!gate.cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers });
 
-    const [{ data: authData }, oracleCredits, rouletteResult, avatarUrl] = await Promise.all([
+    const [{ data: freshCliente, error: freshClienteError }, { data: authData }, oracleCredits, rouletteResult, rankResult] = await Promise.all([
+      gate.admin.from("crm_clientes").select("*").eq("id", gate.cliente.id).maybeSingle(),
       gate.admin.auth.admin.getUserById(gate.uid),
       getOracleCreditBalance(gate.admin, gate.cliente.id).catch(() => 0),
       gate.admin.rpc("cliente_ruleta_resumen_v4", { p_cliente_id: gate.cliente.id }),
-      signedAvatarUrl(gate.admin, gate.cliente.avatar_path),
+      gate.admin.rpc("tc_client_rank_state", { p_cliente_id: gate.cliente.id }),
     ]);
+    if (freshClienteError) throw freshClienteError;
+    if (!freshCliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers });
+
     const authUser = authData?.user || null;
     const authEmail = String(authUser?.email || "");
     const authPhone = String(authUser?.phone || "");
-    const cliente = gate.cliente;
+    const cliente = freshCliente;
+    const avatarUrl = await signedAvatarUrl(gate.admin, cliente.avatar_path);
+    const effectiveRank = rankResult?.error ? (cliente.rango_actual || "sin_rango") : String(rankResult?.data?.effective || cliente.rango_actual || "sin_rango");
 
     return NextResponse.json({
       ok: true,
@@ -80,7 +86,7 @@ export async function GET(req: Request) {
         created_at: cliente.created_at || null,
         updated_at: cliente.updated_at || null,
         avatar_url: avatarUrl,
-        rango_actual: cliente.rango_actual || "sin_rango",
+        rango_actual: effectiveRank,
         puntos: Math.max(0, Number(cliente.puntos || 0)),
         minutos_totales: Math.max(0, Number(cliente.minutos_free_pendientes || 0)) + Math.max(0, Number(cliente.minutos_normales_pendientes || 0)),
         giros_totales: rouletteResult?.error ? 0 : rouletteTotal(rouletteResult?.data),

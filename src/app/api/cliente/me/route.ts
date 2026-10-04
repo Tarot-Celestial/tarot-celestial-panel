@@ -254,20 +254,37 @@ export async function GET(req: Request) {
   0
 );
 
-const spendLlamadas = (llamadas30Dias || []).reduce(
-  (acc: number, row: any) => acc + toNum(row?.importe),
-  0
-);
+    // Fuente canónica del rango: la misma función PostgreSQL que usa el resto del
+    // ecosistema de beneficios. Antes se sumaban crm_cliente_pagos +
+    // rendimiento_llamadas, aunque en muchos casos representan la misma compra.
+    // Eso duplicaba el gasto (por ejemplo 2.602 -> 5.204) y podía desincronizar
+    // el rango mostrado respecto al rango real.
+    const { data: canonicalRankState, error: canonicalRankError } = await gate.admin
+      .rpc("tc_client_rank_state", { p_cliente_id: cliente.id });
+    if (canonicalRankError) throw canonicalRankError;
 
-const rolling30Spend = spendPagos + spendLlamadas;
-    
-    const rolling30Purchases =
-  (pagos30Dias?.length || 0) + (llamadas30Dias?.length || 0);
+    const rolling30Spend = Number.isFinite(Number(canonicalRankState?.total))
+      ? Math.max(0, Number(canonicalRankState?.total || 0))
+      : spendPagos;
+    const rolling30Purchases = Number.isFinite(Number(canonicalRankState?.compras))
+      ? Math.max(0, Math.floor(Number(canonicalRankState?.compras || 0)))
+      : (pagos30Dias?.length || 0);
 
     const liveRank = computeCurrentRankFromSpend(rolling30Spend, rolling30Purchases);
     const effectiveRankState = await loadEffectiveClientRank(gate.admin, cliente.id, rolling30Spend);
     const configuredBenefits = await clientRankBenefits(gate.admin, cliente.id);
-    const effectiveRank = configuredBenefits.rank_key || "sin_rango";
+    const effectiveRank = String(canonicalRankState?.effective || configuredBenefits.rank_key || "sin_rango");
+
+    // rango_actual es un campo legado/cache. Lo mantenemos alineado con el rango
+    // efectivo para que vistas antiguas del CRM no enseñen Oro/Plata mientras el
+    // motor real ya considera al cliente Diamante.
+    if (effectiveRank !== "sin_rango" && String(cliente.rango_actual || "") !== effectiveRank) {
+      const { error: syncRankError } = await gate.admin
+        .from("crm_clientes")
+        .update({ rango_actual: effectiveRank, updated_at: new Date().toISOString() })
+        .eq("id", cliente.id);
+      if (!syncRankError) cliente.rango_actual = effectiveRank;
+    }
     const packsWithRankBenefits = await rankPackageBenefitsForPacks(gate.admin, cliente.id, CLIENTE_MINUTE_PACKS);
     const clienteConRank = {
       ...cliente,

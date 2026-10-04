@@ -231,7 +231,15 @@ export default function ClienteDashboardPage() {
       return;
     }
 
-    setCliente(json.cliente || null);
+    const incomingCliente = json.cliente || null;
+    if (incomingCliente) {
+      const free = Number(incomingCliente.minutos_free_pendientes || 0);
+      const normal = Number(incomingCliente.minutos_normales_pendientes || 0);
+      // Nunca confiamos en un total derivado/cacheado: el saldo real son FREE + normales.
+      setCliente({ ...incomingCliente, minutos_totales: free + normal });
+    } else {
+      setCliente(null);
+    }
     setRecompensas(Array.isArray(json.recompensas) ? json.recompensas : []);
     setRankInfo(json.rank_info || null);
     setRankProgress(json.rank_progress || null);
@@ -393,6 +401,40 @@ export default function ClienteDashboardPage() {
     visibility(); document.addEventListener("visibilitychange", visibility);
     return () => { if (channel) void sb.removeChannel(channel); if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
   }, [cliente?.id, loadData]);
+
+  // Sincronización defensiva del panel: Coins, minutos, rango y beneficios pueden
+  // cambiar desde CRM/Admin sin que el cliente navegue. Realtime acelera el cambio
+  // y el polling visible actúa como respaldo si alguna tabla no tiene Realtime activo.
+  useEffect(() => {
+    if (!cliente?.id) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (document.hidden || refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void Promise.all([loadData(), loadOracle(), loadRouletteSummary()]).catch(() => {});
+      }, 350);
+    };
+
+    const channel = sb.channel("cliente-wallet-live-" + cliente.id)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_clientes", filter: "id=eq." + cliente.id }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_puntos_historial", filter: "cliente_id=eq." + cliente.id }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_oracle_credit_movements", filter: "cliente_id=eq." + cliente.id }, scheduleRefresh)
+      .subscribe();
+
+    const interval = window.setInterval(() => {
+      if (!document.hidden) scheduleRefresh();
+    }, 15000);
+    window.addEventListener("focus", scheduleRefresh);
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      window.clearInterval(interval);
+      window.removeEventListener("focus", scheduleRefresh);
+      void sb.removeChannel(channel);
+    };
+  }, [cliente?.id, loadData, loadOracle, loadRouletteSummary]);
+
   useEffect(() => {
     if (loading || !cliente) return;
     const reward = new URLSearchParams(window.location.search).get("reward");
@@ -428,9 +470,9 @@ export default function ClienteDashboardPage() {
   const nombre = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Cliente";
   const progressPercent = Math.max(0, Math.min(100, Number(rankProgress?.progress_percent || 0)));
   const rankBadge = getRankBadge(rankInfo?.label || cliente?.rango_actual);
-  const totalMinutes = Number(cliente?.minutos_totales || 0);
   const freeMinutes = Number(cliente?.minutos_free_pendientes || 0);
   const normalMinutes = Number(cliente?.minutos_normales_pendientes || 0);
+  const totalMinutes = Math.max(0, freeMinutes) + Math.max(0, normalMinutes);
   const totalPoints = Number(cliente?.puntos || 0);
   const rankSpend30 = Number(cliente?.rango_gasto_mes_anterior || 0);
   const rankPurchases30 = Number(cliente?.rango_compras_mes_anterior || 0);
