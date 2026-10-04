@@ -19,6 +19,9 @@ function failure(error: unknown) {
   if (message.includes("ROULETTE_NO_REWARDS")) {
     return NextResponse.json({ ok: false, error: "Este nivel todavía no tiene premios activos configurados." }, { status: 409, headers });
   }
+  if (["DIAMOND_ROULETTE_PAUSED", "RANK_BENEFIT_FORBIDDEN"].some(code => message.includes(code))) {
+    return NextResponse.json({ ok: false, error: "Esta ruleta no está disponible con tu acceso actual. Tus giros no se han consumido." }, { status: 403, headers });
+  }
   console.error("[ruleta-ultra]", error);
   return NextResponse.json({ ok: false, error: "No hemos podido confirmar la operación. Puedes reintentar con seguridad." }, { status: 503, headers });
 }
@@ -26,6 +29,8 @@ function failure(error: unknown) {
 async function loadSummary(gate: Awaited<ReturnType<typeof rouletteClient>>) {
   const modern = await gate.admin.rpc("cliente_ruleta_resumen_ultra_v1", { p_cliente_id: gate.cliente.id });
   if (!modern.error) return modern.data;
+
+  if (!["42883", "PGRST202"].includes(modern.error.code || "")) throw modern.error;
 
   // Fallback temporal para despliegues donde el código llegue antes que el SQL.
   const legacy = await gate.admin.rpc("cliente_ruleta_resumen_v4", { p_cliente_id: gate.cliente.id });
@@ -47,7 +52,7 @@ export async function POST(req: Request) {
   try {
     const gate = await rouletteClient(req);
     const body = await req.json().catch(() => null);
-    if (![1, 2, 3, 4].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
+    if (![1, 2, 3, 4, 5].includes(body?.level) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body?.spin_id || "")) {
       return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
 
@@ -59,7 +64,7 @@ export async function POST(req: Request) {
     if (!modern.error) return NextResponse.json({ ok: true, ...modern.data }, { headers });
 
     // Solo usamos el fallback si la función nueva todavía no existe.
-    if (modern.error.code !== "42883") throw modern.error;
+    if (body.level === 5 || !["42883", "PGRST202"].includes(modern.error.code || "")) throw modern.error;
     const legacy = await gate.admin.rpc("cliente_girar_ruleta_v4", {
       p_cliente_id: gate.cliente.id,
       p_spin_id: body.spin_id,

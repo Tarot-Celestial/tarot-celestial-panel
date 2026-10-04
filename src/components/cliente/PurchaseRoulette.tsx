@@ -14,21 +14,13 @@ const sb = supabaseClienteBrowser();
 type Pending = { spin_id: string; level: RouletteLevel };
 const storageKey = (id: string) => "tc-ruleta-pending:" + id;
 
-const rarityColors: Record<string,string> = {
-  common: "#4a315f", uncommon: "#257b67", rare: "#276d9e", epic: "#6d3a9b",
-  legendary: "#b4872a", ultra: "#9e294b", diamond: "#248a99", jackpot: "#b83a2d",
-};
-const diamondRarityColors: Record<string,string> = {
-  common: "#243c6c", uncommon: "#1b6f83", rare: "#368dcb", epic: "#6d58d6",
-  legendary: "#8aa8ff", ultra: "#7b6dff", diamond: "#8be8ff", jackpot: "#c0b3ff",
-};
 const rarityPower: Record<string, number> = {
   common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, ultra: 5, diamond: 6, jackpot: 7,
 };
 
 function arrangeWheelPrizes(input: RoulettePrize[], level: RouletteLevel) {
   const prizes = [...input].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0));
-  if (level !== 4 || prizes.length < 4) return prizes;
+  if (level < 4 || prizes.length < 4) return prizes;
 
   const strong = prizes
     .filter((p) => Boolean(p.special) || (rarityPower[String(p.rarity || "common")] || 0) >= 4)
@@ -78,7 +70,6 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<Pending | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
-  const [clientRank, setClientRank] = useState<string | null>(null);
   const mounted = useRef(true), inFlight = useRef(false), loadingRef = useRef(false);
   const animation = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Pending | null>(null);
@@ -95,30 +86,18 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       const { data } = await sb.auth.getSession();
       if (!data.session) { router.replace("/cliente/login?next=ruleta"); return; }
 
-      const [rouletteResponse, rankResponse] = await Promise.all([
-        fetch("/api/cliente/ruleta", {
-          headers: { Authorization: "Bearer " + data.session.access_token }, cache: "no-store", signal: AbortSignal.timeout(15000),
-        }),
-        fetch("/api/cliente/rank-benefits", {
-          headers: { Authorization: "Bearer " + data.session.access_token }, cache: "no-store", signal: AbortSignal.timeout(15000),
-        }).catch(() => null),
-      ]);
+      const rouletteResponse = await fetch("/api/cliente/ruleta", {
+        headers: { Authorization: "Bearer " + data.session.access_token }, cache: "no-store", signal: AbortSignal.timeout(15000),
+      });
 
       const json = await rouletteResponse.json();
       if (!rouletteResponse.ok || !json.ok) throw new Error(json.error || "No hemos podido cargar tus giros.");
       if (!mounted.current) return;
       setSummary(json);
 
-      if (rankResponse) {
-        try {
-          const rankJson = await rankResponse.json();
-          if (rankResponse.ok && rankJson?.ok) setClientRank(String(rankJson.rank?.effective || "") || null);
-        } catch {}
-      }
-
       try {
         const saved = JSON.parse(sessionStorage.getItem(storageKey(json.cliente_id)) || "null");
-        if (saved?.spin_id && [1, 2, 3, 4].includes(saved.level)) {
+        if (saved?.spin_id && [1, 2, 3, 4, 5].includes(saved.level)) {
           pendingRef.current = saved;
           setPending(saved);
           setLevel(saved.level);
@@ -136,7 +115,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   useEffect(() => {
     mounted.current = true;
     const requestedLevel = Number(new URLSearchParams(window.location.search).get("nivel"));
-    if ([1, 2, 3, 4].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
+    if ([1, 2, 3, 4, 5].includes(requestedLevel)) setLevel(requestedLevel as RouletteLevel);
     void load();
     return () => {
       mounted.current = false;
@@ -149,50 +128,42 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
   const wheelPrizes = useMemo(() => arrangeWheelPrizes(prizes, level), [prizes, level]);
   const levelMeta = useMemo(() => ({
-    1: { name: "Destello Celestial", icon: Sparkles, tone: "warm", cap: "2 · 3 · 4 · 5 · 60 min · 400 Coins" },
-    2: { name: "Constelación Dorada", icon: Star, tone: "violet", cap: "6 · 8 · 10 · 12 · 14 · 16 · 80 min · 1.000 Coins" },
-    3: { name: "Corona Astral Premium", icon: Crown, tone: "premium", cap: "12 · 20 · 25 · 28 · 35 · 100 min · 2.000 Coins" },
-    4: { name: "Ruleta Diamante", icon: Diamond, tone: "diamond", cap: "Beneficio exclusivo · 1 giro con cada compra válida siendo Diamante" },
+    1: { name: "Bronce Celestial", icon: Sparkles, tone: "warm" },
+    2: { name: "Plata Celestial", icon: Star, tone: "silver" },
+    3: { name: "Corona Astral", icon: Crown, tone: "premium" },
+    4: { name: "Ruleta Especial", icon: Gift, tone: "special" },
+    5: { name: "Ruleta Diamante", icon: Diamond, tone: "diamond" },
   } as const), []);
-  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins, 4: summary.level_4_spins } : null;
-  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3, 4: summary.next_spin_4 } : null;
-  const isDiamondRank = clientRank === "diamante";
-  const diamondOwned = Number(spinsByLevel?.[4] || 0) > 0;
-  const showDiamondLevel = isDiamondRank || diamondOwned;
-  const retainedDiamondAccess = !isDiamondRank && diamondOwned;
-  const visibleLevels = useMemo(() => ([1, 2, 3, 4] as const).filter((n) => n !== 4 || showDiamondLevel), [showDiamondLevel]);
+  const spinsByLevel = summary ? { 1: summary.level_1_spins, 2: summary.level_2_spins, 3: summary.level_3_spins, 4: summary.level_4_spins, 5: summary.level_5_spins } : null;
+  const nextSpinByLevel = summary ? { 1: summary.next_spin_1, 2: summary.next_spin_2, 3: summary.next_spin_3, 4: summary.next_spin_4, 5: summary.next_spin_5 } : null;
+  const visibleLevels = [1, 2, 3, 4, 5] as const;
   const available = spinsByLevel?.[level] ?? null;
   const selectedMeta = levelMeta[level];
   const SelectedLevelIcon = selectedMeta.icon;
-  const isDiamondView = level === 4;
-
-  useEffect(() => {
-    if (!showDiamondLevel && level === 4) setLevel(1);
-  }, [showDiamondLevel, level]);
+  const isDiamondView = level === 5;
 
   const selectedMaxMinutes = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedMaxCoins = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedSpecial = useMemo(() => prizes.find(p => p.special) || null, [prizes]);
   const gradient = useMemo(() => {
     if (!wheelPrizes.length) return isDiamondView ? "conic-gradient(#122341 0deg 360deg)" : "conic-gradient(#24172d 0deg 360deg)";
-    const palette = isDiamondView ? diamondRarityColors : rarityColors;
+    const skins: Record<RouletteLevel, readonly string[]> = {
+      1: ["#573925", "#855638"], 2: ["#394655", "#657384"],
+      3: ["#3d235e", "#674091"], 4: ["#30221a", "#765624"],
+      5: ["#153858", "#32658c"],
+    };
     return "conic-gradient(" + wheelPrizes.map((p, i) => {
-      const base = palette[String(p.rarity || "common")] || (i % 2 ? (isDiamondView ? "#355d98" : "#362050") : (isDiamondView ? "#7b70e3" : "#70409b"));
-      const color = p.special && !p.rarity ? (isDiamondView ? "#8be8ff" : "#b58a30") : base;
+      const color = p.special ? (level === 5 ? "#5087ab" : level === 3 ? "#9060ae" : "#a27839") : skins[level][i % 2];
       return color + " " + i * 360 / wheelPrizes.length + "deg " + (i + 1) * 360 / wheelPrizes.length + "deg";
     }).join(",") + ")";
-  }, [wheelPrizes, isDiamondView]);
+  }, [wheelPrizes, isDiamondView, level]);
 
-  const heroEyebrow = isDiamondView ? (isDiamondRank ? "BENEFICIO EXCLUSIVO · RANGO DIAMANTE" : "GIROS DIAMANTE CONSERVADOS") : "ULTRA SORPRESAS · EDICIÓN PROMOCIONAL";
-  const heroTitle = isDiamondView ? "Ruleta Nivel Diamante" : (summary?.campaign?.title || "Ruleta Ultra Sorpresas");
+  const heroEyebrow = isDiamondView ? "BENEFICIO EXCLUSIVO · DIAMANTE" : "TAROT CELESTIAL · TUS RULETAS";
+  const heroTitle = selectedMeta.name;
   const heroSubtitle = isDiamondView
-    ? (isDiamondRank
-      ? "Tus beneficios de Diamante: consigue tu giro con cualquier compra válida y disfruta de una ruleta premium con premios reales."
-      : "Estos giros Diamante fueron ganados legítimamente. Aunque hayas perdido temporalmente el rango, tu recompensa ya conseguida sigue siendo tuya.")
-    : (summary?.campaign?.subtitle || "Compra una promo, consigue tu giro y descubre premios reales: minutos, Coins, rangos, rituales y sorpresas especiales.");
-  const steps = isDiamondView
-    ? ["Compra válida", "Gira Diamante", "Recibe tu premio"]
-    : ["Compra promo", "Gira", "Gana"];
+    ? "Consulta los giros y premios disponibles según tus beneficios actuales."
+    : "Cada ruleta conserva sus propios giros. Elige un nivel y descubre sus premios configurados.";
+  const steps = ["Consulta tus giros", "Elige tu ruleta", "Recibe tu premio"];
 
   const goToBalance = useCallback(() => {
     if (!result) return;
@@ -232,7 +203,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       });
       const json = await response.json();
       if (!response.ok || !json.ok) {
-        if (response.status === 409) {
+        if (response.status === 409 || response.status === 403) {
           pendingRef.current = null;
           setPending(null);
           try { sessionStorage.removeItem(storageKey(summary.cliente_id)); } catch {}
@@ -311,7 +282,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <div className={styles.brand} data-diamond={isDiamondView ? "true" : "false"} aria-hidden="true"><Image src="/Nuevo-logo-tarot.png" alt="" width={126} height={126} priority/><span/></div>
           <div className={styles.heroBalance} data-diamond={isDiamondView ? "true" : "false"}>
             <small>{isDiamondView ? "GIROS DIAMANTE DISPONIBLES" : "GIROS DISPONIBLES"}</small>
-            <strong>{summary?.available_spins ?? "—"}</strong>
+            <strong>{available ?? "—"}</strong>
             <span>{isDiamondView ? "Saldo real de giros Diamante" : "Saldo real de giros"}</span>
           </div>
         </div>
@@ -322,20 +293,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           const meta = levelMeta[n];
           const LevelIcon = meta.icon;
           const count = spinsByLevel?.[n] ?? null;
-          const status = n === 4
-            ? isDiamondRank
-              ? Number(count || 0) > 0 ? "DIAMANTE ACTIVO" : "EXCLUSIVA DIAMANTE"
-              : Number(count || 0) > 0 ? "SALDO CONSERVADO" : "SOLO DIAMANTE"
-            : Number(count || 0) > 0 ? "DISPONIBLE" : level === n ? "EXPLORANDO" : "SIN GIROS";
-          const description = n === 1
-            ? "Compras inferiores a 27 €"
-            : n === 2
-              ? "Compras desde 27 € hasta menos de 37 €"
-              : n === 3
-                ? "Compras desde 49 € hasta 99 €"
-                : isDiamondRank
-                  ? "Cualquier compra válida siendo Diamante te concede 1 giro"
-                  : "Tus giros Diamante ya ganados siguen siendo tuyos aunque el rango cambie temporalmente";
+          const status = !summary ? "CARGANDO" : n === 5 && !summary.diamond_access
+            ? "NO DISPONIBLE" : Number(count || 0) > 0 ? "DISPONIBLE" : "SIN GIROS";
+          const description = n === 5 ? "Acceso según rango y campaña activa"
+            : n === 4 ? "Giros Especial independientes" : "Giros incluidos en tus beneficios de compra";
+          const catalogueCount = summary?.catalogue.filter(p => p.nivel === n).length;
           return <button
             type="button"
             key={n}
@@ -346,15 +308,16 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             data-selected={level === n}
             data-level={n}
             data-tone={meta.tone}
+            data-available={Number(count || 0) > 0}
           >
             <div className={styles.levelTop}>
               <span className={styles.levelIcon}><LevelIcon size={19}/></span>
               <span className={styles.levelStatus}>{status}</span>
             </div>
             <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
-            <div className={styles.levelMain}><strong>{n === 4 ? "Nivel Diamante" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
+            <div className={styles.levelMain}><strong>{n === 5 ? "Diamante" : n === 4 ? "Especial" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
             <span>{description}</span>
-            <small className={styles.levelCap}>{meta.cap}</small>
+            <small className={styles.levelCap}>{catalogueCount == null ? "Consultando premios…" : `${catalogueCount} premios visibles`}</small>
           </button>;
         })}
       </div>
@@ -362,7 +325,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
 
       {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div className={styles.arena}>
-        <div className={styles.stage} data-special={isDiamondView ? "true" : "false"}>
+        <div className={styles.stage} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
           <div className={styles.stageHead}>
             <span className={styles.stageLabel}>{isDiamondView ? `RULETA DIAMANTE · ${wheelPrizes.length} PREMIOS` : `RULETA NIVEL ${level} · ${wheelPrizes.length} PREMIOS`}</span>
             <small>{selectedMeta.name}</small>
@@ -396,20 +359,20 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina y acredita de forma segura antes de mostrar el resultado.</small>
         </div>
 
-        <aside className={styles.controls} data-special={isDiamondView ? "true" : "false"}>
+        <aside className={styles.controls} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
           <div className={styles.controlsHead}>
             <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
             <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> {isDiamondView ? "Ruleta Diamante" : `Nivel ${level}`}</span>
           </div>
-          <h3>{isDiamondView ? (available ? "Tu privilegio Diamante está listo" : isDiamondRank ? "Consigue tu próximo giro con tu próxima compra" : "Has conservado tus giros Diamante") : (available ? "Tu próximo premio te espera" : "Desbloquea tu próximo giro")}</h3>
-          <p>{isDiamondView ? (isDiamondRank ? "Beneficio exclusivo del rango Diamante. Cada compra válida genera 1 giro Diamante y el servidor acredita el premio real antes de enseñártelo." : "Estos giros fueron ganados legítimamente siendo Diamante. Puedes usarlos con normalidad, aunque ahora mismo no estés en ese rango, pero no generarás nuevos hasta recuperarlo.") : "Cada paquete acredita los giros indicados al confirmar el pago. Puedes acumularlos y cada premio consume solo uno."}</p>
+          <h3>{available ? "Tu próximo premio te espera" : "Consulta tus beneficios disponibles"}</h3>
+          <p>{isDiamondView && !summary?.diamond_access ? "La ruleta Diamante requiere acceso vigente y una campaña habilitada." : "Cada giro consume únicamente el saldo de esta ruleta. El premio se confirma y acredita en el servidor."}</p>
           <div className={styles.prizeTitle}><Gift size={16}/><span>{isDiamondView ? "Premios de la Ruleta Diamante" : "Premios de este nivel"}</span><b>{prizes.length}</b></div>
           <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special} data-rarity={p.rarity || "common"}>
             <span className={styles.prizeIcon}><RewardGlyph type={p.reward_type} size={18}/></span>
             <span>{prizeLabel(p)}<small>{rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel]}{p.special ? " · PREMIO DESTACADO" : ""}</small></span>
             {p.special && <Star size={14} className={styles.specialStar}/>}
           </li>)}</ul>
-          <button type="button" className={styles.spin} data-special={isDiamondView ? "true" : "false"} disabled={busy || prizes.length === 0 || (!pending && !available)} onClick={() => void spin()}>
+          <button type="button" className={styles.spin} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"} disabled={busy || prizes.length === 0 || (!pending && !available)} onClick={() => void spin()}>
             {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : isDiamondView ? "GIRAR · DIAMANTE" : "Girar · Nivel " + level}
           </button>
           {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">{isDiamondView ? "Ver consultas · Conseguir giro Diamante" : "Ver consultas · Desbloquear un giro"} <ArrowRight size={17}/></Link>}
@@ -432,7 +395,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <span className={styles.infoIcon}><RotateCw size={18}/></span>
           <div><span className={styles.eyebrow}>CÓMO FUNCIONA</span><h4>{isDiamondView ? "Compra, gira y disfruta tu privilegio" : "Compra, gira y descubre"}</h4></div>
           <ol>
-            <li><b>1</b><span><strong>{isDiamondView ? "Haz una compra válida" : "Compra promo"}</strong><small>{isDiamondView ? "Si eres Diamante, cada compra válida te concede 1 giro Diamante." : "La promoción elegible acredita tu giro."}</small></span></li>
+            <li><b>1</b><span><strong>{isDiamondView ? "Haz una compra válida" : "Compra promo"}</strong><small>{isDiamondView ? "Los giros dependen de los beneficios configurados para tu compra." : "La promoción elegible acredita tu giro."}</small></span></li>
             <li><b>2</b><span><strong>{isDiamondView ? "Gira tu Ruleta Diamante" : "Gira"}</strong><small>{isDiamondView ? "Utiliza un giro Diamante disponible." : "Utiliza un giro del nivel disponible."}</small></span></li>
             <li><b>3</b><span><strong>Gana</strong><small>El servidor acredita o registra el premio antes de mostrarlo.</small></span></li>
           </ol>
@@ -447,7 +410,6 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             <div><small>Hasta Coins</small><strong>{selectedMaxCoins}</strong></div>
           </div>
           {selectedSpecial && <div className={styles.specialHint}><Star size={15}/><span>{isDiamondView ? "La Ruleta Diamante incluye premios premium y configurados desde Administración." : "Este nivel contiene al menos un premio especial."}</span></div>}
-          {isDiamondView && retainedDiamondAccess && <div className={styles.specialHint}><Diamond size={15}/><span>Tus giros Diamante ya ganados se conservan aunque pierdas temporalmente el rango.</span></div>}
         </article>
 
         <article className={styles.infoCard}>
@@ -477,7 +439,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         <div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIAL</span><h3>Tus últimos premios</h3></div><Gift size={18}/></div>
         <div className={styles.historyList}>{summary.history.slice(0,8).map((item)=><article key={item.spin_id} data-rarity={item.rarity || "common"}>
           <span className={styles.historyIcon}><RewardGlyph type={item.reward_type} size={17}/></span>
-          <div><strong>{item.reward_label}</strong><small>{item.level === 4 ? "Ruleta Diamante" : `Nivel ${item.level}`} · {new Date(item.used_at || item.created_at).toLocaleString("es-ES")}</small></div>
+          <div><strong>{item.reward_label}</strong><small>{item.level === 5 ? "Ruleta Diamante" : item.level === 4 ? "Ruleta Especial" : `Nivel ${item.level}`} · {new Date(item.used_at || item.created_at).toLocaleString("es-ES")}</small></div>
           <span className={styles.historyRarity}>{rarityLabel[(item.rarity || "common") as keyof typeof rarityLabel]}</span>
         </article>)}</div>
       </section> : null}

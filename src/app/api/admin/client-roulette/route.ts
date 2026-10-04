@@ -179,6 +179,7 @@ export async function POST(req: Request) {
         starts_at: startsAt,
         ends_at: endsAt,
         active_until_disabled: Boolean(body?.active_until_disabled),
+        ...(typeof body?.diamond_enabled === "boolean" ? { diamond_enabled: body.diamond_enabled } : {}),
         updated_at: now,
       };
       if (!update.name || !update.title) return NextResponse.json({ ok: false, error: "NOMBRE_Y_TITULO_REQUERIDOS" }, { status: 400 });
@@ -208,7 +209,7 @@ export async function POST(req: Request) {
       const name = cleanText(body?.name, 140);
       const weight = Number(body?.weight || 0);
       const rewardValue = Number(body?.reward_value || 0);
-      if (!campaignId || ![1,2,3,4].includes(level) || !name || !rewardTypes.has(rewardType) || !rarities.has(rarity) || !fulfillmentModes.has(fulfillmentMode) || !Number.isFinite(weight) || weight < 0 || !Number.isFinite(rewardValue) || rewardValue < 0) {
+      if (!campaignId || ![1,2,3,4,5].includes(level) || !name || !rewardTypes.has(rewardType) || !rarities.has(rarity) || !fulfillmentModes.has(fulfillmentMode) || !Number.isFinite(weight) || weight < 0 || !Number.isFinite(rewardValue) || rewardValue < 0) {
         return NextResponse.json({ ok: false, error: "PREMIO_INVALIDO" }, { status: 400 });
       }
       const row = {
@@ -240,7 +241,7 @@ export async function POST(req: Request) {
       const campaignId = String(body?.campaign_id || "");
       const level = Number(body?.nivel);
       const probabilities = Array.isArray(body?.probabilities) ? body.probabilities : [];
-      if (!campaignId || ![1,2,3,4].includes(level) || !probabilities.length) {
+      if (!campaignId || ![1,2,3,4,5].includes(level) || !probabilities.length) {
         return NextResponse.json({ ok: false, error: "PROBABILIDADES_INVALIDAS" }, { status: 400 });
       }
 

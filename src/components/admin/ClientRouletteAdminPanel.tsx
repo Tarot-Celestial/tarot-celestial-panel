@@ -37,7 +37,7 @@ export default function ClientRouletteAdminPanel() {
   const [busy,setBusy] = useState("");
   const [message,setMessage] = useState("");
   const [selectedCampaignId,setSelectedCampaignId] = useState("");
-  const [level,setLevel] = useState<1|2|3|4>(1);
+  const [level,setLevel] = useState<1|2|3|4|5>(1);
   const [view,setView] = useState<"rewards"|"history"|"benefits">("rewards");
   const [campaignForm,setCampaignForm] = useState<any>(null);
   const [editingReward,setEditingReward] = useState<any>(null);
@@ -78,7 +78,7 @@ export default function ClientRouletteAdminPanel() {
     setCampaignForm({
       id:campaign.id,name:campaign.name||"",title:campaign.title||"",subtitle:campaign.subtitle||"",
       status:campaign.status||"draft",starts_at:localDate(campaign.starts_at),ends_at:localDate(campaign.ends_at),
-      active_until_disabled:Boolean(campaign.active_until_disabled),
+      active_until_disabled:Boolean(campaign.active_until_disabled), diamond_enabled:Boolean(campaign.diamond_enabled),
     });
   },[campaign]);
 
@@ -163,6 +163,7 @@ export default function ClientRouletteAdminPanel() {
           <label>Inicio<input type="datetime-local" value={campaignForm.starts_at} onChange={e=>setCampaignForm({...campaignForm,starts_at:e.target.value})}/></label>
           <label>Fin<input type="datetime-local" disabled={campaignForm.active_until_disabled} value={campaignForm.ends_at} onChange={e=>setCampaignForm({...campaignForm,ends_at:e.target.value})}/></label>
           <label className={styles.check}><input type="checkbox" checked={campaignForm.active_until_disabled} onChange={e=>setCampaignForm({...campaignForm,active_until_disabled:e.target.checked})}/> Activa hasta desactivarla</label>
+          <label className={styles.check}><input type="checkbox" checked={Boolean(campaignForm.diamond_enabled)} onChange={e=>setCampaignForm({...campaignForm,diamond_enabled:e.target.checked})}/> Habilitar Diamante (requiere premios activos y rango autorizado)</label>
           <div className={styles.actions}><button className={styles.primary} disabled={busy==="campaign"} onClick={()=>void mutate({action:"save_campaign",...campaignForm},"campaign")}><Save size={14}/> Guardar</button>{campaign?.status!=="active"?<button className={styles.gold} onClick={()=>void mutate({action:"activate_campaign",id:campaign.id},"activate")}><Flame size={14}/> Activar ahora</button>:<span className={styles.live}><span/> EN VIVO</span>}</div>
         </div>:null}
       </article>
@@ -184,19 +185,19 @@ export default function ClientRouletteAdminPanel() {
 
     {view==="rewards"?<section className={styles.card}>
       <div className={styles.rewardToolbar}>
-        <div><span className={styles.eyebrow}>CATÁLOGO CONFIGURABLE</span><h2>{level===4?"Premios de la Ruleta Diamante":"Premios de las ruletas clientes"}</h2></div>
+        <div><span className={styles.eyebrow}>CATÁLOGO CONFIGURABLE</span><h2>{level===5?"Premios de la Ruleta Diamante":"Premios de las ruletas clientes"}</h2></div>
         <button className={styles.gold} disabled={!selectedCampaignId} onClick={()=>setEditingReward(blankReward())}><Plus/> Añadir premio</button>
       </div>
-      <div className={styles.levelTabs}>{([1,2,3,4] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===4?"RULETA DIAMANTE":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
+      <div className={styles.levelTabs}>{([1,2,3,4,5] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===5?"RULETA DIAMANTE":n===4?"RULETA ESPECIAL":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
       <div className={styles.probabilityControl} data-valid={probabilityValid}>
         <div>
-          <span className={styles.eyebrow}><Percent size={13}/> REPARTO DE LA {level===4?"RULETA DIAMANTE":"RULETA NIVEL "+level}</span>
+          <span className={styles.eyebrow}><Percent size={13}/> REPARTO DE LA {level===5?"RULETA DIAMANTE":"RULETA NIVEL "+level}</span>
           <strong>{probabilityTotal.toFixed(2)}% / 100%</strong>
           <small>{probabilityValid?"Reparto válido · listo para guardar":probabilityRemaining>0?`Te queda ${probabilityRemaining.toFixed(2)}% por repartir`:`Te has pasado ${Math.abs(probabilityRemaining).toFixed(2)}%`}</small>
         </div>
         <button className={styles.gold} disabled={!probabilityValid||busy==="probabilities"} onClick={()=>void saveProbabilities()}><Save size={14}/>{busy==="probabilities"?"Guardando…":"Guardar probabilidades"}</button>
       </div>
-      <div className={styles.levelSummary}><span>Premios activos <b>{rewards.filter((r:any)=>r.is_active).length}</b></span><span>{level===4?"La Ruleta Diamante usa este reparto real y mantiene su catálogo separado del resto.":"El total de probabilidades activas debe ser exactamente 100%"}</span></div>
+      <div className={styles.levelSummary}><span>Premios activos <b>{rewards.filter((r:any)=>r.is_active).length}</b></span><span>{level===5?"La Ruleta Diamante usa este reparto real y mantiene su catálogo separado del resto.":"El total de probabilidades activas debe ser exactamente 100%"}</span></div>
       <div className={styles.rewardList}>{rewards.length?rewards.map((r:any)=><article className={styles.reward} key={r.id} data-rarity={r.rarity} data-disabled={!r.is_active}>
         <div className={styles.rewardRarity}><span>{rarityNames[r.rarity]||r.rarity}</span>{r.special?<b>PREMIO FUERTE</b>:null}</div>
         <div className={styles.rewardMain}><div className={styles.rewardIcon}>{r.rarity==="diamond"?<Diamond/>:r.rarity==="jackpot"?<Flame/>:r.reward_type==="coins"?<Coins/>:r.reward_type==="rank"?<Crown/>:<Gift/>}</div><div><h3>{r.name}</h3><p>{r.description||rewardTypeNames[r.reward_type]}</p></div><div className={styles.probabilityEditor}><label>PROBABILIDAD DE GANAR</label><div><input aria-label={`Probabilidad de ${r.name}`} type="number" min="0" max="100" step="0.01" disabled={!r.is_active} value={probabilityDraft[String(r.id)]??Number(r.probability||0).toFixed(2)} onChange={e=>setProbabilityDraft(current=>({...current,[String(r.id)]:e.target.value}))}/><span>%</span></div></div></div>
@@ -207,7 +208,7 @@ export default function ClientRouletteAdminPanel() {
 
     {view==="history"?<section className={styles.card}>
       <div className={styles.cardHead}><div><span className={styles.eyebrow}>AUDITORÍA REAL</span><h2>Últimos giros</h2></div><span className={styles.live}><span/> DATOS REALES</span></div>
-      <div className={styles.tableWrap}><table><thead><tr><th>Cliente</th><th>Nivel</th><th>Premio</th><th>Rareza</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>{(data.history||[]).map((row:any)=><tr key={row.id}><td><strong>{row.client_name}</strong></td><td>{row.nivel===4?"Diamante":`N${row.nivel}`}</td><td>{row.reward_label||"Premio"}</td><td><span className={styles.tableRarity} data-rarity={row.reward_rarity||"common"}>{rarityNames[row.reward_rarity]||row.reward_rarity||"Común"}</span></td><td>{row.result_status||"credited"}</td><td>{fmt(row.used_at||row.created_at)}</td></tr>)}</tbody></table></div>
+      <div className={styles.tableWrap}><table><thead><tr><th>Cliente</th><th>Nivel</th><th>Premio</th><th>Rareza</th><th>Estado</th><th>Fecha</th></tr></thead><tbody>{(data.history||[]).map((row:any)=><tr key={row.id}><td><strong>{row.client_name}</strong></td><td>{row.nivel===5?"Diamante":row.nivel===4?"Especial":`N${row.nivel}`}</td><td>{row.reward_label||"Premio"}</td><td><span className={styles.tableRarity} data-rarity={row.reward_rarity||"common"}>{rarityNames[row.reward_rarity]||row.reward_rarity||"Común"}</span></td><td>{row.result_status||"credited"}</td><td>{fmt(row.used_at||row.created_at)}</td></tr>)}</tbody></table></div>
     </section>:null}
 
     {view==="benefits"?<section className={styles.card}>
@@ -230,7 +231,7 @@ function RewardModal({reward,busy,onClose,onSave}:{reward:any;busy:string;onClos
       <label>Rareza<select value={form.rarity} onChange={e=>setForm({...form,rarity:e.target.value})}>{rarityOrder.map(r=><option value={r} key={r}>{rarityNames[r]}</option>)}</select></label>
       <label>Valor<input type="number" min="0" step="1" value={form.reward_value} onChange={e=>setForm({...form,reward_value:Number(e.target.value)})}/></label>
       <div className={styles.probabilityModalNote}><Percent size={15}/><span>La probabilidad se edita directamente en la lista de premios del nivel. Guarda primero el premio y después asigna su porcentaje exacto.</span></div>
-      <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Ruleta Diamante</option></select></label>
+      <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Ruleta Especial</option><option value={5}>Ruleta Diamante</option></select></label>
       <label>Entrega<select value={form.fulfillment_mode} onChange={e=>setForm({...form,fulfillment_mode:e.target.value})}><option value="immediate">Inmediata</option><option value="temporary">Temporal</option><option value="manual">Manual supervisada</option><option value="claim">Reclamación</option><option value="scheduled">Programada</option></select></label>
       <label className={styles.span2}>Descripción<textarea rows={2} value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
       {form.reward_type==="rank"?<><label>Rango<select value={metadata.rank||"plata"} onChange={e=>setForm({...form,metadata:{...metadata,rank:e.target.value}})}><option value="plata">Plata</option><option value="oro">Oro</option></select></label><label>Duración días <small>(0 = permanente)</small><input type="number" min="0" value={metadata.duration_days??30} onChange={e=>setForm({...form,metadata:{...metadata,duration_days:Number(e.target.value)}})}/></label></>:null}
