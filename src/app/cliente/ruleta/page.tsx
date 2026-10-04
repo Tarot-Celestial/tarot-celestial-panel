@@ -1,28 +1,45 @@
-import { Gift } from "lucide-react";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import ClienteLayout from "@/components/cliente/ClienteLayout";
 import PurchaseRoulette from "@/components/cliente/PurchaseRoulette";
-import PanelShell from "@/components/cliente/PanelShell";
-import { requireClienteProfile } from "@/lib/server/require-cliente-profile";
-import { panelThemeVars } from "@/lib/panel-theme";
+import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 
-export const dynamic = "force-dynamic";
+const sb = supabaseClienteBrowser();
 
-export default async function ClienteRuletaPage() {
-  const profile = await requireClienteProfile();
+export default function ClienteRuletaPage() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    sb.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      if (!data.session?.user) {
+        router.replace("/cliente/login?next=ruleta");
+        return;
+      }
+      setReady(true);
+    });
+    return () => { active = false; };
+  }, [router]);
+
   return (
-    <PanelShell>
-      <section style={{ ...panelThemeVars(profile.rango_actual || profile.rango, true), display: "grid", gap: 18 }}>
-        <div className="tc-card" style={{ padding: 18 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <Gift size={18} />
-            <strong>Ruletas clientes</strong>
-          </div>
-          <p style={{ margin: 0, color: "var(--muted)" }}>
-            Compra, gana giros y descubre premios reales. Si eres cliente Diamante, además disfrutas de la
-            Ruleta Diamante: un beneficio premium con 1 giro por cada compra válida.
-          </p>
-        </div>
-        <PurchaseRoulette />
-      </section>
-    </PanelShell>
+    <ClienteLayout
+      title="Ruletas clientes"
+      subtitle="Compra, gana giros y descubre premios reales. Si eres cliente Diamante, además disfrutas de la Ruleta Diamante: 1 giro por cada compra válida."
+      eyebrow="Experiencia Celestial"
+    >
+      <div style={{ marginTop: 18 }}>
+        {ready ? (
+          <PurchaseRoulette />
+        ) : (
+          <section className="tc-card" style={{ minHeight: 260, display: "grid", placeItems: "center" }}>
+            Preparando tus ruletas…
+          </section>
+        )}
+      </div>
+    </ClienteLayout>
   );
 }
