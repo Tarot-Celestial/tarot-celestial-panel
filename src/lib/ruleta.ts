@@ -110,7 +110,7 @@ export function rouletteLevelBandLabel(level: 1 | 2 | 3 | 4 | null) {
   if (level === 1) return 'Nivel 1 · compras inferiores a 27 €';
   if (level === 2) return 'Nivel 2 · compras desde 27 € hasta menos de 37 €';
   if (level === 3) return 'Nivel 3 · compras desde 49 € hasta 99 €';
-  if (level === 4) return 'Nivel Especial · solo promoción específica';
+  if (level === 4) return 'Ruleta Diamante · 1 giro por compra válida siendo Diamante';
   return 'Sin nivel automático definido';
 }
 

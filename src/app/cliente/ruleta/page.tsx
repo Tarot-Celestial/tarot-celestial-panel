@@ -1,45 +1,28 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import ClienteLayout from "@/components/cliente/ClienteLayout";
+import { Gift } from "lucide-react";
 import PurchaseRoulette from "@/components/cliente/PurchaseRoulette";
-import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import PanelShell from "@/components/cliente/PanelShell";
+import { requireClienteProfile } from "@/lib/server/require-cliente-profile";
+import { panelThemeVars } from "@/lib/panel-theme";
 
-const sb = supabaseClienteBrowser();
+export const dynamic = "force-dynamic";
 
-export default function ClienteRuletaPage() {
-  const router = useRouter();
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    sb.auth.getSession().then(({ data }) => {
-      if (!active) return;
-      if (!data.session?.user) {
-        router.replace("/cliente/login?next=ruleta");
-        return;
-      }
-      setReady(true);
-    });
-    return () => { active = false; };
-  }, [router]);
-
+export default async function ClienteRuletaPage() {
+  const profile = await requireClienteProfile();
   return (
-    <ClienteLayout
-      title="Ruleta Ultra Sorpresas"
-      subtitle="Compra una promo, consigue tu giro y descubre minutos, Coins, rangos, rituales y premios especiales."
-      eyebrow="Experiencia Celestial"
-    >
-      <div style={{ marginTop: 18 }}>
-        {ready ? (
-          <PurchaseRoulette />
-        ) : (
-          <section className="tc-card" style={{ minHeight: 260, display: "grid", placeItems: "center" }}>
-            Preparando tu Ruleta Ultra Sorpresas…
-          </section>
-        )}
-      </div>
-    </ClienteLayout>
+    <PanelShell>
+      <section style={{ ...panelThemeVars(profile.rango_actual || profile.rango, true), display: "grid", gap: 18 }}>
+        <div className="tc-card" style={{ padding: 18 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <Gift size={18} />
+            <strong>Ruletas clientes</strong>
+          </div>
+          <p style={{ margin: 0, color: "var(--muted)" }}>
+            Compra, gana giros y descubre premios reales. Si eres cliente Diamante, además disfrutas de la
+            Ruleta Diamante: un beneficio premium con 1 giro por cada compra válida.
+          </p>
+        </div>
+        <PurchaseRoulette />
+      </section>
+    </PanelShell>
   );
 }
