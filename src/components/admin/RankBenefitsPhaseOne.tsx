@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Eye, Gift, RefreshCw, Save, ShieldCheck, Sparkles } from "lucide-react";
+import { CheckCircle2, Coins, Diamond, Eye, Gift, PlusCircle, RefreshCw, RotateCw, Save, Search, ShieldCheck, Sparkles } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import {
   matrixBenefitLabels,
@@ -83,6 +83,8 @@ export default function RankBenefitsPhaseOne() {
       <CrystalEmblem size={104}/>
     </header>
 
+    <ManualBenefitsGrantPanel/>
+
     {error && <div className={styles.message} role="alert">{error}</div>}
     {message && <div className={styles.message} data-success="true" role="status"><CheckCircle2 size={16}/> {message}</div>}
     {loading && <div className={styles.rankAdminLoading}>Cargando configuración real de Supabase…</div>}
@@ -132,6 +134,117 @@ export default function RankBenefitsPhaseOne() {
         {historyTab === "deliveries" ? <HistoryRows rows={data.deliveries} kind="delivery"/> : <HistoryRows rows={data.audit} kind="audit"/>}
       </section>
     </>}
+  </section>;
+}
+
+
+function ManualBenefitsGrantPanel() {
+  const [open,setOpen]=useState(false);
+  const [query,setQuery]=useState("");
+  const [searching,setSearching]=useState(false);
+  const [results,setResults]=useState<any[]>([]);
+  const [selected,setSelected]=useState<any|null>(null);
+  const [state,setState]=useState<any|null>(null);
+  const [busy,setBusy]=useState(false);
+  const [error,setError]=useState("");
+  const [message,setMessage]=useState("");
+  const [grant,setGrant]=useState({ level1:0, level2:0, level3:0, diamond:0, coins:0, oracle:0, reason:"" });
+
+  const loadState=useCallback(async(clientId:string)=>{
+    try {
+      const response=await request("POST",{action:"client_state",cliente_id:clientId});
+      setState(response.client);
+      setSelected((current:any)=>current?.id===clientId?{...current,...response.client}:current);
+    } catch(cause:any) { setError(cause.message||"No se pudo actualizar el cliente."); }
+  },[]);
+
+  useEffect(()=>{
+    if(!open||!selected?.id) return;
+    let timer:number|undefined;
+    const refresh=()=>{window.clearTimeout(timer);timer=window.setTimeout(()=>void loadState(selected.id),250)};
+    const sb=supabaseBrowser();
+    const channel=sb.channel(`manual-benefits-${selected.id}`)
+      .on("postgres_changes",{event:"*",schema:"public",table:"crm_clientes",filter:`id=eq.${selected.id}`},refresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"cliente_ruleta_giros",filter:`cliente_id=eq.${selected.id}`},refresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"cliente_puntos_historial",filter:`cliente_id=eq.${selected.id}`},refresh)
+      .on("postgres_changes",{event:"*",schema:"public",table:"cliente_oracle_credit_movements",filter:`cliente_id=eq.${selected.id}`},refresh)
+      .subscribe();
+    return()=>{window.clearTimeout(timer);void sb.removeChannel(channel)};
+  },[open,selected?.id,loadState]);
+
+  async function searchClients() {
+    const term=query.trim();
+    if(term.length<2){setError("Escribe al menos 2 caracteres del nombre, teléfono o email.");return}
+    setSearching(true);setError("");setMessage("");
+    try{
+      const response=await request("POST",{action:"search_clients",query:term});
+      setResults(response.clients||[]);
+      if(!(response.clients||[]).length) setError("No se han encontrado clientes con esa búsqueda.");
+    }catch(cause:any){setError(cause.message||"No se pudo buscar clientes.")}
+    finally{setSearching(false)}
+  }
+
+  async function chooseClient(client:any){
+    setSelected(client);setState(null);setError("");setMessage("");
+    await loadState(client.id);
+  }
+
+  async function grantBenefits(){
+    if(!selected?.id) return;
+    const values={
+      roulette_level_1_spins:Math.max(0,Number(grant.level1)||0),
+      roulette_level_2_spins:Math.max(0,Number(grant.level2)||0),
+      roulette_level_3_spins:Math.max(0,Number(grant.level3)||0),
+      roulette_diamond_spins:Math.max(0,Number(grant.diamond)||0),
+      coins:Math.max(0,Number(grant.coins)||0),
+      oracle_credits:Math.max(0,Number(grant.oracle)||0),
+      reason:grant.reason.trim(),
+    };
+    if(!Object.entries(values).some(([key,value])=>key!=="reason"&&Number(value)>0)){setError("Indica al menos un beneficio para regalar.");return}
+    setBusy(true);setError("");setMessage("");
+    try{
+      const response=await request("POST",{action:"grant_manual_benefits",cliente_id:selected.id,grant:values});
+      setState(response.client);
+      setSelected((current:any)=>current?{...current,...response.client}:current);
+      setGrant({ level1:0, level2:0, level3:0, diamond:0, coins:0, oracle:0, reason:"" });
+      setMessage(`Beneficios acreditados a ${response.client?.name||selected.name}. Los saldos ya están sincronizados.`);
+    }catch(cause:any){setError(cause.message||"No se pudieron acreditar los beneficios.")}
+    finally{setBusy(false)}
+  }
+
+  return <section className={styles.manualGrantShell}>
+    <button type="button" className={styles.manualGrantButton} onClick={()=>setOpen(value=>!value)} aria-expanded={open}>
+      <PlusCircle size={18}/><span><strong>Otorgar beneficios a un cliente</strong><small>Ruletas · Diamante · Coins · Oráculo · datos reales</small></span>
+    </button>
+    {open?<div className={styles.manualGrantPanel}>
+      <div className={styles.manualGrantHeader}><div><span className={styles.eyebrow}>GESTIÓN MANUAL · TIEMPO REAL</span><h2>Regalar beneficios reales</h2><p className={styles.note}>Busca al cliente, comprueba sus saldos actuales y acredita únicamente lo que necesites. Cada entrega queda registrada en Supabase.</p></div><ShieldCheck size={30}/></div>
+      <div className={styles.manualSearchRow}><label><span>Buscar cliente</span><div><Search size={16}/><input value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")void searchClients()}} placeholder="Nombre, teléfono o email"/></div></label><button className={styles.secondary} disabled={searching} onClick={()=>void searchClients()}>{searching?"Buscando…":"Buscar"}</button></div>
+      {error?<div className={styles.message} role="alert">{error}</div>:null}
+      {message?<div className={styles.message} data-success="true" role="status"><CheckCircle2 size={16}/>{message}</div>:null}
+      {results.length?<div className={styles.manualClientResults}>{results.map(client=><button key={client.id} type="button" data-selected={selected?.id===client.id} onClick={()=>void chooseClient(client)}><span><strong>{client.name}</strong><small>{[client.phone,client.email].filter(Boolean).join(" · ")||"Sin contacto"}</small></span><em>{client.effective_rank||"sin rango"}</em></button>)}</div>:null}
+      {selected?<div className={styles.manualSelected}>
+        <div className={styles.manualSelectedHead}><div><span className={styles.eyebrow}>CLIENTE SELECCIONADO</span><h3>{state?.name||selected.name}</h3><small>{state?.phone||selected.phone||""}{(state?.email||selected.email)?` · ${state?.email||selected.email}`:""}</small></div><button className={styles.iconButton} title="Actualizar saldos" onClick={()=>void loadState(selected.id)}><RefreshCw size={16}/></button></div>
+        {state?<div className={styles.manualLiveStats}>
+          <div><span>Rango</span><strong>{state.effective_rank||"Sin rango"}</strong></div>
+          <div><span>Coins</span><strong>{Number(state.coins||0).toLocaleString("es-ES")}</strong></div>
+          <div><span>Oráculo</span><strong>{Number(state.oracle_credits||0)}</strong></div>
+          <div><span>Ruleta N1</span><strong>{Number(state.spins?.level_1||0)}</strong></div>
+          <div><span>Ruleta N2</span><strong>{Number(state.spins?.level_2||0)}</strong></div>
+          <div><span>Ruleta N3</span><strong>{Number(state.spins?.level_3||0)}</strong></div>
+          <div data-diamond="true"><span>Diamante</span><strong>{Number(state.spins?.diamond||0)}</strong></div>
+        </div>:<div className={styles.rankAdminLoading}>Leyendo saldos reales…</div>}
+        <div className={styles.manualGrantGrid}>
+          <label><span><RotateCw size={14}/> Giros Nivel 1</span><input type="number" min="0" max="100" value={grant.level1} onChange={e=>setGrant({...grant,level1:Number(e.target.value)})}/></label>
+          <label><span><RotateCw size={14}/> Giros Nivel 2</span><input type="number" min="0" max="100" value={grant.level2} onChange={e=>setGrant({...grant,level2:Number(e.target.value)})}/></label>
+          <label><span><RotateCw size={14}/> Giros Nivel 3</span><input type="number" min="0" max="100" value={grant.level3} onChange={e=>setGrant({...grant,level3:Number(e.target.value)})}/></label>
+          <label className={styles.manualDiamondField}><span><Diamond size={14}/> Giros Ruleta Diamante</span><input type="number" min="0" max="100" value={grant.diamond} onChange={e=>setGrant({...grant,diamond:Number(e.target.value)})}/></label>
+          <label><span><Coins size={14}/> Coins</span><input type="number" min="0" max="1000000" value={grant.coins} onChange={e=>setGrant({...grant,coins:Number(e.target.value)})}/></label>
+          <label><span><Sparkles size={14}/> Tiradas de Oráculo</span><input type="number" min="0" max="10000" value={grant.oracle} onChange={e=>setGrant({...grant,oracle:Number(e.target.value)})}/></label>
+          <label className={styles.manualReason}><span>Motivo / nota administrativa</span><textarea rows={2} value={grant.reason} onChange={e=>setGrant({...grant,reason:e.target.value})} placeholder="Ej. Compensación por incidencia en pago de 35 €"/></label>
+        </div>
+        <button type="button" className={styles.primary} disabled={busy} onClick={()=>void grantBenefits()}><Gift size={17}/>{busy?"Acreditando en Supabase…":"Acreditar beneficios ahora"}</button>
+      </div>:null}
+    </div>:null}
   </section>;
 }
 

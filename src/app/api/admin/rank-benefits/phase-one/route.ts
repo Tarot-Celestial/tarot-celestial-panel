@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { CLIENTE_MINUTE_PACKS } from "@/lib/server/cliente-minute-packs";
+import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
 import {
   validateDiamondDailyBonus,
   validatePackageLevelAssignment,
@@ -16,9 +17,83 @@ const reply = (body: unknown, status = 200) => NextResponse.json(body, { status,
 function failure(error: any) {
   const raw = String(error?.message || error?.details || "No se pudo completar la operación.");
   if (/CONFIG_CONFLICT/i.test(raw)) return reply({ ok: false, error: "Otra sesión modificó esta configuración. Recarga y revisa los cambios antes de guardar." }, 409);
-  if (/42P01|PGRST205|does not exist|schema cache/i.test(raw)) return reply({ ok: false, error: "Faltan migraciones de Beneficios de rangos en Supabase. Aplica las migraciones 20261003 en orden." }, 409);
+  if (/42P01|PGRST205|does not exist|schema cache/i.test(raw)) return reply({ ok: false, error: "Faltan migraciones de Beneficios de rangos en Supabase. Aplica las migraciones pendientes en orden." }, 409);
   if (/INVALID_|BONUS_REWARD_REQUIRED/i.test(raw)) return reply({ ok: false, error: raw }, 400);
   return reply({ ok: false, error: raw }, 500);
+}
+
+
+async function clientState(admin: any, clienteId: string) {
+  const { data: client, error: clientError } = await admin
+    .from("crm_clientes")
+    .select("id,nombre,apellido,email,telefono,telefono_normalizado,puntos")
+    .eq("id", clienteId)
+    .maybeSingle();
+  if (clientError) throw clientError;
+  if (!client) throw new Error("CLIENT_NOT_FOUND");
+
+  const [rankResult, spinResult, oracleCredits] = await Promise.all([
+    admin.rpc("tc_client_rank_state", { p_cliente_id: clienteId }),
+    admin.from("cliente_ruleta_giros").select("nivel,estado").eq("cliente_id", clienteId).eq("estado", "pending"),
+    getOracleCreditBalance(admin, clienteId),
+  ]);
+  if (rankResult.error) throw rankResult.error;
+  if (spinResult.error) throw spinResult.error;
+  const spins = { level_1: 0, level_2: 0, level_3: 0, diamond: 0 };
+  for (const row of spinResult.data || []) {
+    const level = Number(row.nivel);
+    if (level === 1) spins.level_1 += 1;
+    else if (level === 2) spins.level_2 += 1;
+    else if (level === 3) spins.level_3 += 1;
+    else if (level === 4) spins.diamond += 1;
+  }
+  return {
+    id: String(client.id),
+    name: [client.nombre, client.apellido].filter(Boolean).join(" ").trim() || client.telefono || "Cliente",
+    email: client.email || null,
+    phone: client.telefono || client.telefono_normalizado || null,
+    coins: Math.max(0, Number(client.puntos || 0)),
+    oracle_credits: Math.max(0, Number(oracleCredits || 0)),
+    effective_rank: String(rankResult.data?.effective || "") || null,
+    automatic_rank: String(rankResult.data?.automatic || "") || null,
+    spins,
+  };
+}
+
+async function searchClients(admin: any, rawQuery: unknown) {
+  const query = String(rawQuery || "").trim().slice(0, 120);
+  if (query.length < 2) return [];
+  const first = query.split(/\s+/)[0];
+  const terms = [...new Set([query, first].filter((value) => value.length >= 2))];
+  const columns = ["nombre", "apellido", "email", "telefono", "telefono_normalizado"] as const;
+  const requests = terms.flatMap((term) => columns.map((column) => admin
+    .from("crm_clientes")
+    .select("id,nombre,apellido,email,telefono,telefono_normalizado,puntos")
+    .ilike(column, `%${term}%`)
+    .limit(15)));
+  const settled = await Promise.all(requests);
+  const merged = new Map<string, any>();
+  for (const result of settled) {
+    if (result.error) throw result.error;
+    for (const row of result.data || []) merged.set(String(row.id), row);
+  }
+  const normalized = query.toLocaleLowerCase("es");
+  const candidates = [...merged.values()].filter((row) => {
+    const haystack = [row.nombre, row.apellido, row.email, row.telefono, row.telefono_normalizado].filter(Boolean).join(" ").toLocaleLowerCase("es");
+    return haystack.includes(normalized) || query.split(/\s+/).every((piece) => haystack.includes(piece.toLocaleLowerCase("es")));
+  }).slice(0, 20);
+  return Promise.all(candidates.map(async (row) => {
+    const rank = await admin.rpc("tc_client_rank_state", { p_cliente_id: row.id });
+    if (rank.error) throw rank.error;
+    return {
+      id: String(row.id),
+      name: [row.nombre, row.apellido].filter(Boolean).join(" ").trim() || row.telefono || "Cliente",
+      email: row.email || null,
+      phone: row.telefono || row.telefono_normalizado || null,
+      coins: Math.max(0, Number(row.puntos || 0)),
+      effective_rank: String(rank.data?.effective || "") || null,
+    };
+  }));
 }
 
 async function actorNames(admin: any, rows: any[]) {
@@ -98,7 +173,35 @@ export async function POST(req: Request) {
     let rpc = "";
     let args: Record<string, unknown> = {};
 
-    if (action === "save_matrix") {
+    if (action === "search_clients") {
+      return reply({ ok: true, clients: await searchClients(gate.admin, body?.query) });
+    } else if (action === "client_state") {
+      const clienteId = String(body?.cliente_id || "");
+      if (!/^[0-9a-f-]{36}$/i.test(clienteId)) return reply({ ok: false, error: "Cliente no válido." }, 400);
+      return reply({ ok: true, client: await clientState(gate.admin, clienteId) });
+    } else if (action === "grant_manual_benefits") {
+      const clienteId = String(body?.cliente_id || "");
+      if (!/^[0-9a-f-]{36}$/i.test(clienteId)) return reply({ ok: false, error: "Cliente no válido." }, 400);
+      const grant = body?.grant && typeof body.grant === "object" ? body.grant : {};
+      const safeGrant = {
+        roulette_level_1_spins: Math.min(100, Math.max(0, Math.trunc(Number(grant.roulette_level_1_spins || 0)))),
+        roulette_level_2_spins: Math.min(100, Math.max(0, Math.trunc(Number(grant.roulette_level_2_spins || 0)))),
+        roulette_level_3_spins: Math.min(100, Math.max(0, Math.trunc(Number(grant.roulette_level_3_spins || 0)))),
+        roulette_diamond_spins: Math.min(100, Math.max(0, Math.trunc(Number(grant.roulette_diamond_spins || 0)))),
+        coins: Math.min(1000000, Math.max(0, Math.trunc(Number(grant.coins || 0)))),
+        oracle_credits: Math.min(10000, Math.max(0, Math.trunc(Number(grant.oracle_credits || 0)))),
+        reason: String(grant.reason || "").trim().slice(0, 300),
+      };
+      const total = safeGrant.roulette_level_1_spins + safeGrant.roulette_level_2_spins + safeGrant.roulette_level_3_spins + safeGrant.roulette_diamond_spins + safeGrant.coins + safeGrant.oracle_credits;
+      if (total <= 0) return reply({ ok: false, error: "Indica al menos un beneficio para acreditar." }, 400);
+      const { data: granted, error: grantError } = await gate.admin.rpc("tc_admin_grant_client_benefits", {
+        p_actor: gate.me.user_id,
+        p_cliente_id: clienteId,
+        p_grant: safeGrant,
+      });
+      if (grantError) throw grantError;
+      return reply({ ok: true, granted, client: await clientState(gate.admin, clienteId) });
+    } else if (action === "save_matrix") {
       data = validateRankPackageBenefitEdit(body.data);
       rpc = "tc_save_rank_package_benefit";
       args = { p_actor: gate.me.user_id, p_edit: data };
