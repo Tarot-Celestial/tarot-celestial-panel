@@ -148,7 +148,7 @@ function ManualBenefitsGrantPanel() {
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const [message,setMessage]=useState("");
-  const [grant,setGrant]=useState({ level1:0, level2:0, level3:0, diamond:0, coins:0, oracle:0, reason:"" });
+  const [grant,setGrant]=useState({ level1:0, level2:0, level3:0, diamond:0, coins:0, oracle:0, giftMinutes:0, reason:"" });
 
   const loadState=useCallback(async(clientId:string)=>{
     try {
@@ -198,6 +198,7 @@ function ManualBenefitsGrantPanel() {
       roulette_diamond_spins:Math.max(0,Number(grant.diamond)||0),
       coins:Math.max(0,Number(grant.coins)||0),
       oracle_credits:Math.max(0,Number(grant.oracle)||0),
+      gift_minutes:Math.max(0,Number(grant.giftMinutes)||0),
       reason:grant.reason.trim(),
     };
     if(!Object.entries(values).some(([key,value])=>key!=="reason"&&Number(value)>0)){setError("Indica al menos un beneficio para regalar.");return}
@@ -206,7 +207,7 @@ function ManualBenefitsGrantPanel() {
       const response=await request("POST",{action:"grant_manual_benefits",cliente_id:selected.id,grant:values});
       setState(response.client);
       setSelected((current:any)=>current?{...current,...response.client}:current);
-      setGrant({ level1:0, level2:0, level3:0, diamond:0, coins:0, oracle:0, reason:"" });
+      setGrant({ level1:0, level2:0, level3:0, diamond:0, coins:0, oracle:0, giftMinutes:0, reason:"" });
       setMessage(`Beneficios acreditados a ${response.client?.name||selected.name}. Los saldos ya están sincronizados.`);
     }catch(cause:any){setError(cause.message||"No se pudieron acreditar los beneficios.")}
     finally{setBusy(false)}
@@ -227,6 +228,7 @@ function ManualBenefitsGrantPanel() {
         {state?<div className={styles.manualLiveStats}>
           <div><span>Rango</span><strong>{state.effective_rank||"Sin rango"}</strong></div>
           <div><span>Coins</span><strong>{Number(state.coins||0).toLocaleString("es-ES")}</strong></div>
+          <div><span>Minutos reales</span><strong>{Number(state.minutes_total||0)}</strong><small>{Number(state.minutes_free||0)} regalo · {Number(state.minutes_normal||0)} normales</small></div>
           <div><span>Oráculo</span><strong>{Number(state.oracle_credits||0)}</strong></div>
           <div><span>Ruleta N1</span><strong>{Number(state.spins?.level_1||0)}</strong></div>
           <div><span>Ruleta N2</span><strong>{Number(state.spins?.level_2||0)}</strong></div>
@@ -240,6 +242,7 @@ function ManualBenefitsGrantPanel() {
           <label className={styles.manualDiamondField}><span><Diamond size={14}/> Giros Ruleta Diamante</span><input type="number" min="0" max="100" value={grant.diamond} onChange={e=>setGrant({...grant,diamond:Number(e.target.value)})}/></label>
           <label><span><Coins size={14}/> Coins</span><input type="number" min="0" max="1000000" value={grant.coins} onChange={e=>setGrant({...grant,coins:Number(e.target.value)})}/></label>
           <label><span><Sparkles size={14}/> Tiradas de Oráculo</span><input type="number" min="0" max="10000" value={grant.oracle} onChange={e=>setGrant({...grant,oracle:Number(e.target.value)})}/></label>
+          <label><span><Gift size={14}/> Minutos de regalo</span><input type="number" min="0" max="100000" value={grant.giftMinutes} onChange={e=>setGrant({...grant,giftMinutes:Number(e.target.value)})}/><small>Se suman a minutos FREE sin sustituir los minutos normales.</small></label>
           <label className={styles.manualReason}><span>Motivo / nota administrativa</span><textarea rows={2} value={grant.reason} onChange={e=>setGrant({...grant,reason:e.target.value})} placeholder="Ej. Compensación por incidencia en pago de 35 €"/></label>
         </div>
         <button type="button" className={styles.primary} disabled={busy} onClick={()=>void grantBenefits()}><Gift size={17}/>{busy?"Acreditando en Supabase…":"Acreditar beneficios ahora"}</button>

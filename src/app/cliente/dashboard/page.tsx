@@ -233,10 +233,21 @@ export default function ClienteDashboardPage() {
 
     const incomingCliente = json.cliente || null;
     if (incomingCliente) {
-      const free = Number(incomingCliente.minutos_free_pendientes || 0);
-      const normal = Number(incomingCliente.minutos_normales_pendientes || 0);
-      // Nunca confiamos en un total derivado/cacheado: el saldo real son FREE + normales.
-      setCliente({ ...incomingCliente, minutos_totales: free + normal });
+      // Fuente canónica de cartera devuelta por el servidor en la misma lectura fresca.
+      // Si una vista antigua trae un campo derivado desfasado, estos valores prevalecen.
+      const wallet = json.wallet || {};
+      const free = Number(wallet.minutes_free ?? incomingCliente.minutos_free_pendientes ?? 0);
+      const normal = Number(wallet.minutes_normal ?? incomingCliente.minutos_normales_pendientes ?? 0);
+      const points = Number(wallet.coins ?? incomingCliente.puntos ?? 0);
+      const effectiveRank = String(wallet.effective_rank || incomingCliente.rango_actual || "sin_rango");
+      setCliente({
+        ...incomingCliente,
+        puntos: points,
+        rango_actual: effectiveRank,
+        minutos_free_pendientes: free,
+        minutos_normales_pendientes: normal,
+        minutos_totales: free + normal,
+      });
     } else {
       setCliente(null);
     }
@@ -506,7 +517,7 @@ export default function ClienteDashboardPage() {
       {
         label: "Minutos disponibles",
         value: String(totalMinutes),
-        meta: "Tu saldo disponible ahora mismo",
+        meta: `${Math.max(0, freeMinutes)} regalo + ${Math.max(0, normalMinutes)} normales · total real`,
       },
       {
         label: "Notificaciones",

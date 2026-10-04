@@ -341,6 +341,14 @@ export async function GET(req: Request) {
       welcome_gift: welcomeState.welcomeGift,
       packs: packsWithRankBenefits,
       payment_provider: paymentProvider,
+      wallet: {
+        coins: toNum(cliente.puntos),
+        minutes_free: Math.max(0, toNum(cliente.minutos_free_pendientes)),
+        minutes_normal: Math.max(0, toNum(cliente.minutos_normales_pendientes)),
+        minutes_total: Math.max(0, minutosTotales),
+        effective_rank: effectiveRank,
+        refreshed_at: new Date().toISOString(),
+      },
     }, {
       headers: {
         "Cache-Control": "private, no-store, no-cache, max-age=0, must-revalidate",

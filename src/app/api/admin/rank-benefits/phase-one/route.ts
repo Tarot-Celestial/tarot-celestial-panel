@@ -26,7 +26,7 @@ function failure(error: any) {
 async function clientState(admin: any, clienteId: string) {
   const { data: client, error: clientError } = await admin
     .from("crm_clientes")
-    .select("id,nombre,apellido,email,telefono,telefono_normalizado,puntos")
+    .select("id,nombre,apellido,email,telefono,telefono_normalizado,puntos,minutos_free_pendientes,minutos_normales_pendientes")
     .eq("id", clienteId)
     .maybeSingle();
   if (clientError) throw clientError;
@@ -53,6 +53,9 @@ async function clientState(admin: any, clienteId: string) {
     email: client.email || null,
     phone: client.telefono || client.telefono_normalizado || null,
     coins: Math.max(0, Number(client.puntos || 0)),
+    minutes_free: Math.max(0, Number(client.minutos_free_pendientes || 0)),
+    minutes_normal: Math.max(0, Number(client.minutos_normales_pendientes || 0)),
+    minutes_total: Math.max(0, Number(client.minutos_free_pendientes || 0)) + Math.max(0, Number(client.minutos_normales_pendientes || 0)),
     oracle_credits: Math.max(0, Number(oracleCredits || 0)),
     effective_rank: String(rankResult.data?.effective || "") || null,
     automatic_rank: String(rankResult.data?.automatic || "") || null,
@@ -190,9 +193,10 @@ export async function POST(req: Request) {
         roulette_diamond_spins: Math.min(100, Math.max(0, Math.trunc(Number(grant.roulette_diamond_spins || 0)))),
         coins: Math.min(1000000, Math.max(0, Math.trunc(Number(grant.coins || 0)))),
         oracle_credits: Math.min(10000, Math.max(0, Math.trunc(Number(grant.oracle_credits || 0)))),
+        gift_minutes: Math.min(100000, Math.max(0, Math.trunc(Number(grant.gift_minutes || 0)))),
         reason: String(grant.reason || "").trim().slice(0, 300),
       };
-      const total = safeGrant.roulette_level_1_spins + safeGrant.roulette_level_2_spins + safeGrant.roulette_level_3_spins + safeGrant.roulette_diamond_spins + safeGrant.coins + safeGrant.oracle_credits;
+      const total = safeGrant.roulette_level_1_spins + safeGrant.roulette_level_2_spins + safeGrant.roulette_level_3_spins + safeGrant.roulette_diamond_spins + safeGrant.coins + safeGrant.oracle_credits + safeGrant.gift_minutes;
       if (total <= 0) return reply({ ok: false, error: "Indica al menos un beneficio para acreditar." }, 400);
       const { data: granted, error: grantError } = await gate.admin.rpc("tc_admin_grant_client_benefits", {
         p_actor: gate.me.user_id,
