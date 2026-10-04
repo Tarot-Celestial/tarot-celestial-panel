@@ -196,7 +196,59 @@ export default function ClienteDashboardPage() {
   const queuedDataRef = useRef(false);
   // Evita que una carga iniciada antes de un canje confirmado vuelva a pintar saldos antiguos.
   const dataRevisionRef = useRef(0);
+  // Versión de la última cartera aplicada. Evita que una respuesta antigua de /me
+  // pise un snapshot más reciente recibido por Realtime/polling.
+  const walletAppliedAtRef = useRef(0);
   const redemptionOperationIdsRef = useRef(new Map<string, string>());
+
+  const applyWalletSnapshot = useCallback((wallet: any, incomingCliente?: Cliente | null) => {
+    const version = Date.parse(String(wallet?.refreshed_at || wallet?.state_version || "")) || Date.now();
+    const stale = version < walletAppliedAtRef.current;
+
+    setCliente((current) => {
+      const base = incomingCliente ? { ...(current || {} as Cliente), ...incomingCliente } : current;
+      if (!base) return base;
+      if (stale) return base;
+
+      const free = Math.max(0, Number(wallet?.minutes_free ?? base.minutos_free_pendientes ?? 0));
+      const normal = Math.max(0, Number(wallet?.minutes_normal ?? base.minutos_normales_pendientes ?? 0));
+      const points = Math.max(0, Number(wallet?.coins ?? base.puntos ?? 0));
+      const effectiveRank = String(wallet?.effective_rank || base.rango_actual || "sin_rango");
+
+      return {
+        ...base,
+        puntos: points,
+        rango_actual: effectiveRank,
+        minutos_free_pendientes: free,
+        minutos_normales_pendientes: normal,
+        minutos_totales: free + normal,
+      };
+    });
+
+    if (stale) return false;
+    walletAppliedAtRef.current = version;
+    if (Number.isFinite(Number(wallet?.oracle_credits))) setOracleCredits(Math.max(0, Number(wallet.oracle_credits)));
+    if (Number.isFinite(Number(wallet?.spins?.total))) setRouletteSpins(Math.max(0, Number(wallet.spins.total)));
+    return true;
+  }, []);
+
+  const loadWalletState = useCallback(async () => {
+    const { data } = await sb.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return;
+    const res = await fetch(`/api/cliente/state?fresh=${Date.now()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Cache-Control": "no-cache, no-store, max-age=0",
+        Pragma: "no-cache",
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json?.ok || !json?.state) return;
+    applyWalletSnapshot(json.state);
+  }, [applyWalletSnapshot]);
   const loadData = useCallback(async () => {
     if (loadingDataRef.current) { queuedDataRef.current = true; return; }
     loadingDataRef.current = true;
@@ -233,23 +285,9 @@ export default function ClienteDashboardPage() {
 
     const incomingCliente = json.cliente || null;
     if (incomingCliente) {
-      // Fuente canónica de cartera devuelta por el servidor en la misma lectura fresca.
-      // Si una vista antigua trae un campo derivado desfasado, estos valores prevalecen.
-      const wallet = json.wallet || {};
-      const free = Number(wallet.minutes_free ?? incomingCliente.minutos_free_pendientes ?? 0);
-      const normal = Number(wallet.minutes_normal ?? incomingCliente.minutos_normales_pendientes ?? 0);
-      const points = Number(wallet.coins ?? incomingCliente.puntos ?? 0);
-      const effectiveRank = String(wallet.effective_rank || incomingCliente.rango_actual || "sin_rango");
-      if (Number.isFinite(Number(wallet.oracle_credits))) setOracleCredits(Math.max(0, Number(wallet.oracle_credits)));
-      if (Number.isFinite(Number(wallet.spins?.total))) setRouletteSpins(Math.max(0, Number(wallet.spins.total)));
-      setCliente({
-        ...incomingCliente,
-        puntos: points,
-        rango_actual: effectiveRank,
-        minutos_free_pendientes: free,
-        minutos_normales_pendientes: normal,
-        minutos_totales: free + normal,
-      });
+      // /me y /state comparten la misma fuente canónica. La marca refreshed_at evita
+      // carreras: una petición antigua nunca puede pisar un saldo más reciente.
+      applyWalletSnapshot(json.wallet || {}, incomingCliente);
     } else {
       setCliente(null);
     }
@@ -271,7 +309,7 @@ export default function ClienteDashboardPage() {
       setLoading(false);
       if (queuedDataRef.current) { queuedDataRef.current = false; void loadData(); }
     }
-  }, []);
+  }, [applyWalletSnapshot]);
 
   const loadOracle = useCallback(async () => {
     const { data } = await sb.auth.getSession();
@@ -302,9 +340,10 @@ export default function ClienteDashboardPage() {
 
   useEffect(() => {
     loadData();
+    void loadWalletState().catch(() => {});
     void loadOracle().catch(() => {});
     void loadRouletteSummary().catch(() => {});
-  }, [loadData, loadOracle, loadRouletteSummary]);
+  }, [loadData, loadWalletState, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
     if (oracleFreeAvailable || !oracleNextFreeAt) { setOracleFreeCountdown(0); return; }
@@ -396,7 +435,9 @@ export default function ClienteDashboardPage() {
     checkPasswordStatus();
   }, [cliente?.id, cliente?.onboarding_completado, showOnboarding]);
 
-  useRouletteSignal(sb, cliente?.id, async () => { await Promise.all([loadData(), loadOracle(), loadRouletteSummary()]); });
+  useRouletteSignal(sb, cliente?.id, async () => {
+    await Promise.all([loadWalletState(), loadData(), loadOracle(), loadRouletteSummary()]);
+  });
   useEffect(() => {
     if (!cliente?.id) return;
     let channel: ReturnType<typeof sb.channel> | null = null;
@@ -415,38 +456,45 @@ export default function ClienteDashboardPage() {
     return () => { if (channel) void sb.removeChannel(channel); if (timer) clearTimeout(timer); document.removeEventListener("visibilitychange", visibility); };
   }, [cliente?.id, loadData]);
 
-  // Sincronización defensiva del panel: Coins, minutos, rango y beneficios pueden
-  // cambiar desde CRM/Admin sin que el cliente navegue. Realtime acelera el cambio
-  // y el polling visible actúa como respaldo si alguna tabla no tiene Realtime activo.
+  // Sincronización defensiva de la cartera. El endpoint /state es pequeño y solo
+  // devuelve la fotografía canónica de Supabase, por lo que funciona incluso si
+  // alguna sección secundaria de /me falla. Realtime da inmediatez y este polling
+  // de respaldo evita que un móvil se quede mostrando un saldo viejo.
   useEffect(() => {
     if (!cliente?.id) return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleRefresh = () => {
+    const scheduleWalletRefresh = () => {
       if (document.hidden || refreshTimer) return;
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void Promise.all([loadData(), loadOracle(), loadRouletteSummary()]).catch(() => {});
-      }, 350);
+        void loadWalletState().catch(() => {});
+      }, 150);
     };
 
-    // La señal general de cartera ya se escucha en useRouletteSignal. Aquí añadimos
-    // notificaciones (tabla publicada en Realtime) y mantenemos polling de respaldo.
     const channel = sb.channel("cliente-wallet-live-" + cliente.id)
-      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_notificaciones", filter: "cliente_id=eq." + cliente.id }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "cliente_notificaciones", filter: "cliente_id=eq." + cliente.id }, scheduleWalletRefresh)
       .subscribe();
 
     const interval = window.setInterval(() => {
-      if (!document.hidden) scheduleRefresh();
-    }, 10000);
-    window.addEventListener("focus", scheduleRefresh);
+      if (!document.hidden) void loadWalletState().catch(() => {});
+    }, 5000);
+    const visibility = () => { if (!document.hidden) void loadWalletState().catch(() => {}); };
+    window.addEventListener("focus", scheduleWalletRefresh);
+    window.addEventListener("online", scheduleWalletRefresh);
+    document.addEventListener("visibilitychange", visibility);
+
+    // Primera comprobación al montar la vigilancia, sin esperar al siguiente tick.
+    void loadWalletState().catch(() => {});
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       window.clearInterval(interval);
-      window.removeEventListener("focus", scheduleRefresh);
+      window.removeEventListener("focus", scheduleWalletRefresh);
+      window.removeEventListener("online", scheduleWalletRefresh);
+      document.removeEventListener("visibilitychange", visibility);
       void sb.removeChannel(channel);
     };
-  }, [cliente?.id, loadData, loadOracle, loadRouletteSummary]);
+  }, [cliente?.id, loadWalletState]);
 
   useEffect(() => {
     if (loading || !cliente) return;
