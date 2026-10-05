@@ -319,7 +319,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               </div>
             </div>
 
-            <div className="tc-nav">
+            <div className="tc-nav" data-leo-anchor="navigation">
               <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
                 <HologramIcon compact><Home size={15} /></HologramIcon> Inicio
               </Link>
@@ -452,7 +452,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
           </div>
         </section>
 
-        {children}
+        <div data-leo-anchor="page-content" data-leo-page={pathname}>{children}</div>
       </div>
 
       <LeoCelestialGuide promoActive={promoActive} />

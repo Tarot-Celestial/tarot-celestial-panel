@@ -48,7 +48,7 @@ async function loadFacts(gate: Awaited<ReturnType<typeof clientFromRequest>>): P
       .select("id,name,status,starts_at,ends_at,active_until_disabled")
       .in("status", ["active", "scheduled"])
       .order("created_at", { ascending: false }),
-    getOracleCreditBalance(gate.admin, gate.cliente.id).catch(() => 0),
+    getOracleCreditBalance(gate.admin, gate.cliente.id).catch(() => null),
   ]);
 
   if (spinsResult.error) throw spinsResult.error;
@@ -60,7 +60,7 @@ async function loadFacts(gate: Awaited<ReturnType<typeof clientFromRequest>>): P
       ? { id: String(activePromotion.id), name: String(activePromotion.name || "Promoción de hoy") }
       : null,
     pendingSpins: Math.max(0, Number(spinsResult.count || 0)),
-    oracleCredits: Math.max(0, Number(oracleResult || 0)),
+    oracleCredits: oracleResult == null ? null : Math.max(0, Number(oracleResult)),
     coins: Math.max(0, Number(gate.cliente.puntos || 0)),
     minutes: Math.max(0, Number(gate.cliente.minutos_free_pendientes || 0) + Number(gate.cliente.minutos_normales_pendientes || 0)),
   };

@@ -8,6 +8,7 @@ import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { prizeLabel, rarityLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward, type RoulettePrize, type RouletteRewardType } from "@/lib/ruleta";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
+import { LEO_SELECT_ROULETTE } from "@/lib/leo-guide";
 import styles from "./PurchaseRoulette.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -125,6 +126,15 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   }, [load]);
 
   useRouletteSignal(sb, summary?.cliente_id, load);
+  useEffect(() => {
+    const select = (event: Event) => {
+      const requested = Number((event as CustomEvent).detail?.level);
+      if (inFlight.current || pendingRef.current || ![1,2,3,4,5].includes(requested)) return;
+      setLevel(requested as RouletteLevel); setResult(null); setRotation(0); setCountdown(null);
+    };
+    window.addEventListener(LEO_SELECT_ROULETTE, select);
+    return () => window.removeEventListener(LEO_SELECT_ROULETTE, select);
+  }, []);
 
   const prizes = useMemo(() => summary?.catalogue.filter(p => p.nivel === level) || [], [summary, level]);
   const wheelPrizes = useMemo(() => arrangeWheelPrizes(prizes, level), [prizes, level]);
@@ -312,7 +322,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             if (reveal) requestAnimationFrame(() =>
               arenaRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
           };
-          return <article key={n} className={styles.level}
+          return <article key={n} data-leo-anchor={`roulette-${n}`} className={styles.level}
             data-selected={level === n} data-level={n} data-tone={meta.tone}
             data-available={Number(count || 0) > 0 && !locked} data-locked={locked}>
             <button type="button" className={styles.cardSelect}
@@ -345,11 +355,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               <small className={styles.levelCap}>{catalogue == null ? "Consultando premios…" : `${catalogue.length} premios`}</small>
             </div>
             <div className={styles.cardActions}>
-              {canSpin && <button type="button" className={styles.cardSpin}
+              {canSpin && <button type="button" className={styles.cardSpin} data-leo-spin="true"
                 disabled={busy || !!pending} onClick={() => void spin(n)}>
                 <Sparkles size={16}/>{busy && level === n ? "Girando…" : "Girar ahora"}
               </button>}
-              <button type="button" className={styles.cardExplore} disabled={busy || !!pending}
+              <button type="button" className={styles.cardExplore} data-leo-explore="true" disabled={busy || !!pending}
                 onClick={() => selectLevel(true)}>
                 {locked ? <><LockKeyhole size={14}/> Ver condiciones</> : <>Explorar premios <ArrowRight size={14}/></>}
               </button>
@@ -384,6 +394,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               className={styles.core}
               disabled={busy || prizes.length === 0 || (!pending && !available)}
               onClick={() => void spin()}
+              data-leo-anchor={pending ? "roulette-recovery" : undefined}
               aria-label={prizes.length === 0 ? "No hay premios configurados para este nivel" : pending ? "Comprobar giro pendiente" : available ? (isDiamondView ? "Girar Ruleta Diamante" : `Girar ruleta Nivel ${level}`) : "No hay giros disponibles"}
             >
               {busy ? <RotateCw size={25}/> : isDiamondView ? <Diamond size={25}/> : <RotateCw size={25}/>} 
@@ -458,7 +469,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         </article>
       </section>}
 
-      {summary?.entitlements?.length ? <section className={styles.benefitsPanel}>
+      {summary?.entitlements?.length ? <section className={styles.benefitsPanel} data-leo-anchor="roulette-entitlements">
         <div className={styles.sectionHead}><div><span className={styles.eyebrow}>PREMIOS ACTIVOS</span><h3>Tus sorpresas especiales</h3></div><span className={styles.sectionCount}>{summary.entitlements.length}</span></div>
         <div className={styles.benefitGrid}>{summary.entitlements.map((e) => {
           const ready = e.reward_type === "streak_minutes" && e.status === "active" && (!e.next_claim_at || new Date(e.next_claim_at).getTime() <= Date.now());
@@ -470,7 +481,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         })}</div>
       </section> : null}
 
-      {summary?.history?.length ? <section className={styles.historyPanel}>
+      {summary?.history?.length ? <section className={styles.historyPanel} data-leo-anchor="roulette-history">
         <div className={styles.sectionHead}><div><span className={styles.eyebrow}>HISTORIAL</span><h3>Tus últimos premios</h3></div><Gift size={18}/></div>
         <div className={styles.historyList}>{summary.history.slice(0,8).map((item)=><article key={item.spin_id} data-rarity={item.rarity || "common"}>
           <span className={styles.historyIcon}><RewardGlyph type={item.reward_type} size={17}/></span>

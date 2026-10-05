@@ -60,7 +60,7 @@ export default function RankDailyBonus() {
 
   if (!state?.bonuses?.length && !message) return null;
 
-  return <div className={styles.wrap}>
+  return <div className={styles.wrap} data-leo-anchor="daily-bonus">
     {message && <div role={success ? "status" : "alert"} className={styles.message} data-success={success}>{success && <Check size={18}/>} {message}</div>}
     {(state?.bonuses || []).map((bonus: any) => {
       const claimed = bonus.claimed_today === true;

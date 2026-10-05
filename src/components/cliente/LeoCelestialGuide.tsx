@@ -1,433 +1,225 @@
 "use client";
-
-import Link from "next/link";
-import { Eye, EyeOff, Sparkles, Volume2, VolumeX } from "lucide-react";
-import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import {
-  isLeoCelestialEventDetail, LEO_CELESTIAL_EVENT,
-  type LeoCelestialEventDetail, type LeoCelestialReaction,
-} from "@/lib/leo-celestial-events";
-import { leoContextForPath, type LeoPersonalizedRecommendation } from "@/lib/leo-celestial-intelligence";
-import {
-  getLeoContextTips, getLeoMessageVariants,
-  type LeoPersonalityMessage, type LeoPose,
-} from "@/lib/leo-celestial-personality";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { ArrowRight, Check, Compass, EyeOff, Footprints, Gift, MessageCircle, RotateCw, Send, Sparkles, X, BellOff, Bell, ChevronLeft } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import { isLeoCelestialEventDetail, LEO_CELESTIAL_EVENT, type LeoCelestialEventDetail } from "@/lib/leo-celestial-events";
+import { leoContextForPath } from "@/lib/leo-celestial-intelligence";
+import { emptyLeoSnapshot, leoAction, leoHelp, leoQuestion, leoSection, leoSelector, leoSpins, safeLeoPath, validLeoAction, LEO_SECTIONS, LEO_SELECT_ROULETTE, type LeoAction, type LeoSnapshot, type LeoTopic } from "@/lib/leo-guide";
 import styles from "./LeoCelestialGuide.module.css";
+const sb = supabaseClienteBrowser();
+const TOPICS: Array<[LeoTopic,string]> = [['roulette','Mis giros'],['balance','Mi saldo'],['rank','Mi rango'],['daily','Bono diario'],['oracle','Oráculo'],['prizes','Mis premios']];
+type Point = { x: number; y: number };
+type Highlight = { left:number; top:number; width:number; height:number };
+type Journey = { action: LeoAction; stage: 'looking'|'walking'|'arrived'|'missing'; tour: boolean; index: number };
+export default function LeoCelestialGuide({ promoActive }: { promoActive: boolean }) {
+  const pathname = usePathname(), router = useRouter();
+  const [data,setData] = useState<LeoSnapshot>(emptyLeoSnapshot);
+  const [open,setOpen] = useState(false), [hidden,setHidden] = useState(false), [muted,setMuted] = useState(false);
+  const [motion,setMotion] = useState(false), [visible,setVisible] = useState(true), [loading,setLoading] = useState(false);
+  const [topic,setTopic] = useState<LeoTopic>('context'), [question,setQuestion] = useState('');
+  const [journey,setJourney] = useState<Journey|null>(null), [position,setPosition] = useState<Point|null>(null), [highlight,setHighlight] = useState<Highlight|null>(null);
+  const [reaction,setReaction] = useState<LeoCelestialEventDetail|null>(null), [sleeping,setSleeping] = useState(false);
+  const [uid,setUid] = useState<string|null>(null), [ready,setReady] = useState(false);
+  const [imageFailed,setImageFailed] = useState(false);
+  const abort = useRef<AbortController|null>(null), epoch = useRef(0), userRef = useRef<string|null>(null), readyRef = useRef(false);
+  const focusReturn = useRef<HTMLElement|null>(null), panelRef = useRef<HTMLElement|null>(null), characterRef = useRef<HTMLButtonElement|null>(null);
+  const lastReaction = useRef(''), prefEdited = useRef(false);
+  const section = leoSection(pathname);
+  const help = useMemo(()=>leoHelp(data,pathname,topic),[data,pathname,topic]);
+  const spins = useMemo(()=>leoSpins(data.roulette),[data.roulette]);
+  const usable = spins.filter(s=>s.playable).reduce((n,s)=>n+s.amount,0);
+  const storageKey = (id:string) => `tc-leonaris-preferences:${id}`;
+  const journeyKey = (id:string) => `tc-leonaris-journey:${id}`;
 
-const STORAGE_KEY = "tc-leo-celestial-v1";
-const MESSAGE_ROTATION_KEY = "tc-leo-message-rotation-v1";
-const TIP_ROTATION_KEY = "tc-leo-tip-rotation-v1";
-const PROMOTION_ANCHOR = "[data-leo-anchor='promotion-featured'], [data-leo-anchor='active-promotion']";
-const DESKTOP_QUERY = "(min-width: 900px)";
-const IDLE_DELAY = 45_000;
-const BUBBLE_VISIBLE_MS = 7_000;
-
-type Props = { promoActive: boolean };
-type AnchorPosition = { left: number; top: number };
-type JourneyPhase = "idle" | "departing" | "travelling" | "arrived";
-type LeoSignal = {
-  action: "visit" | "interaction" | "preference";
-  pathname: string;
-  context?: string;
-  hidden?: boolean;
-  muted?: boolean;
-};
-
-const REACTION_LABELS: Record<LeoCelestialReaction, string> = {
-  purchase: "BENEFICIOS ACREDITADOS", roulette: "PREMIO CONFIRMADO",
-  coins: "CANJE COMPLETADO", oracle: "EL ORÁCULO HA HABLADO",
-  gift: "REGALO CELESTIAL", promotion: "NOVEDAD ACTIVA",
-};
-
-function reactionMood(reaction: LeoCelestialReaction): LeoPersonalityMessage["mood"] {
-  if (reaction === "oracle") return "oracle";
-  if (reaction === "promotion") return "promo";
-  return "reward";
-}
-
-function reactionPose(reaction: LeoCelestialReaction): LeoPose {
-  if (reaction === "oracle") return "oracle";
-  if (reaction === "promotion") return "guide";
-  return "proud";
-}
-
-function nextSessionIndex(storageKey: string, itemKey: string, length: number) {
-  if (length <= 1) return 0;
-  try {
-    const stored = JSON.parse(window.sessionStorage.getItem(storageKey) || "{}") as Record<string, number>;
-    const previous = Number(stored[itemKey]);
-    const next = Number.isInteger(previous) ? (previous + 1) % length : 0;
-    stored[itemKey] = next;
-    window.sessionStorage.setItem(storageKey, JSON.stringify(stored));
-    return next;
-  } catch { return 0; }
-}
-
-function LeoHologram() {
-  return (
-    <svg className={styles.hologramLion} viewBox="0 0 96 96" role="img" aria-label="Leo Celestial">
-      <g className={styles.holoBody}>
-        <path className={styles.holoTail} d="M68 55c13-4 16 7 9 13-3 3-7 2-8-1" />
-        <path d="M31 52c5-9 28-11 38 0 5 6 3 17-3 21H34c-8-5-9-14-3-21Z" />
-        <path className={styles.holoLegBack} d="M38 68v14m-5 0h10" />
-        <path className={styles.holoLegFront} d="M61 68v14m-5 0h10" />
-      </g>
-      <g className={styles.holoHead}>
-        <path className={styles.holoMane} d="M27 30c-1-10 8-19 21-19s23 9 22 20c5 5 4 14-2 18-2 9-10 15-20 15S30 58 28 49c-7-4-7-14-1-19Z" />
-        <path className={styles.holoEar} d="M33 24 27 15c8-1 12 3 13 8m23 1 6-9c-8-1-12 3-13 8" />
-        <path className={styles.holoFace} d="M37 28c5-5 17-5 22 0 5 5 4 18-1 23-5 5-15 5-20 0-6-6-6-17-1-23Z" />
-        <path className={styles.holoEyes} d="M40 36h4m8 0h4" />
-        <path className={styles.holoMuzzle} d="m45 43 3 2 3-2m-3 2v5m-5 0c3 3 7 3 10 0" />
-      </g>
-      <path className={styles.holoScan} d="M17 39h62M22 50h54M27 61h44" />
-    </svg>
-  );
-}
-
-export default function LeoCelestialGuide({ promoActive }: Props) {
-  const pathname = usePathname();
-  const [hidden, setHidden] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [attention, setAttention] = useState(false);
-  const [sleeping, setSleeping] = useState(false);
-  const [anchor, setAnchor] = useState<AnchorPosition | null>(null);
-  const [roamPosition, setRoamPosition] = useState<AnchorPosition | null>(null);
-  const [journey, setJourney] = useState<JourneyPhase>("idle");
-  const [activeEvent, setActiveEvent] = useState<LeoCelestialEventDetail | null>(null);
-  const [contextTip, setContextTip] = useState<LeoPersonalityMessage | null>(null);
-  const [personalizedGuide, setPersonalizedGuide] = useState<LeoPersonalizedRecommendation | null>(null);
-  const [bubbleOpen, setBubbleOpen] = useState(true);
-  const [routeGuide, setRouteGuide] = useState<LeoPersonalityMessage>(() => getLeoMessageVariants(pathname, promoActive)[0]);
-  const [expression, setExpression] = useState<"neutral" | "survey" | "curious">("neutral");
-  const [pageVisible, setPageVisible] = useState(true);
-  const [motionEnabled, setMotionEnabled] = useState(false);
-  const [finePointer, setFinePointer] = useState(false);
-  const [compactViewport, setCompactViewport] = useState(false);
-  const guideRef = useRef<HTMLElement>(null);
-  const movementTimers = useRef<number[]>([]);
-  const eventTimer = useRef<number | null>(null);
-  const eventAttentionTimer = useRef<number | null>(null);
-  const lastEventId = useRef("");
-  const effectivePosition = anchor || roamPosition;
-  const guide = useMemo<LeoPersonalityMessage>(() => activeEvent ? {
-    title: activeEvent.title, message: activeEvent.message,
-    mood: reactionMood(activeEvent.reaction), pose: reactionPose(activeEvent.reaction),
-    href: activeEvent.href, actionLabel: activeEvent.actionLabel,
-  } : contextTip || personalizedGuide || routeGuide, [activeEvent, contextTip, personalizedGuide, routeGuide]);
-
-  const clearMovementTimers = useCallback(() => {
-    movementTimers.current.forEach(window.clearTimeout);
-    movementTimers.current = [];
-  }, []);
-
-  const sendSignal = useCallback(async (signal: LeoSignal) => {
+  const signal = useCallback(async (action:string, extra:Record<string,unknown>={})=>{
     try {
-      const { data } = await supabaseClienteBrowser().auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) return null;
-      const response = await fetch("/api/cliente/leo", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(signal),
-      });
-      return response.ok ? await response.json() : null;
-    } catch { return null; }
-  }, []);
-
-  const locatePromotion = useCallback((force = false, animate = false) => {
-    if (pathname !== "/cliente/precios-ofertas" || !promoActive || !window.matchMedia(DESKTOP_QUERY).matches) {
-      setAnchor(null);
-      return;
-    }
-    const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
-    if (!target) return;
-    const rect = target.getBoundingClientRect();
-    const visible = rect.bottom > 96 && rect.top < window.innerHeight - 72;
-    if (!visible && !force) { setAnchor(null); setJourney("idle"); return; }
-    const next = {
-      left: Math.round(Math.min(Math.max(238, rect.left + rect.width / 2 - 32), window.innerWidth - 76)),
-      top: Math.round(Math.min(Math.max(90, rect.top - 78), window.innerHeight - 96)),
-    };
-    const place = () => setAnchor((current) => current && Math.abs(current.left - next.left) < 2 && Math.abs(current.top - next.top) < 2 ? current : next);
-    if (!animate || !motionEnabled) { place(); return; }
-    clearMovementTimers();
-    setJourney("departing");
-    movementTimers.current.push(window.setTimeout(() => { setJourney("travelling"); place(); }, 170));
-    movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 1_850));
-    movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 2_450));
-  }, [clearMovementTimers, motionEnabled, pathname, promoActive]);
-
-  useEffect(() => {
+      const session=(await sb.auth.getSession()).data.session;
+      if(!session) return;
+      await fetch('/api/cliente/leo',{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`,'Content-Type':'application/json'},body:JSON.stringify({action,pathname,context:leoContextForPath(pathname),...extra}),signal:AbortSignal.timeout(10000)});
+    }catch{ /* Preferences also survive locally. */ }
+  },[pathname]);
+  const refresh = useCallback(async()=>{
+    abort.current?.abort(); const controller=new AbortController();abort.current=controller;
+    const version=++epoch.current;setLoading(true);
+    const timeout=window.setTimeout(()=>controller.abort(),14000);
     try {
-      const stored = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "{}") as { hidden?: boolean; minimized?: boolean; muted?: boolean };
-      setHidden(Boolean(stored.hidden ?? stored.minimized));
-      setMuted(Boolean(stored.muted));
-    } catch { /* El almacenamiento local es opcional. */ }
-    setReady(true);
-  }, []);
-
-  useEffect(() => {
-    const motionQuery = window.matchMedia("(prefers-reduced-motion: no-preference)");
-    const pointerQuery = window.matchMedia("(pointer: fine)");
-    const compactQuery = window.matchMedia("(max-width: 480px), (max-height: 560px)");
-    const syncPreferences = () => {
-      setMotionEnabled(motionQuery.matches);
-      setFinePointer(pointerQuery.matches);
-      setCompactViewport(compactQuery.matches);
-    };
-    const syncVisibility = () => setPageVisible(document.visibilityState === "visible");
-    syncPreferences(); syncVisibility();
-    motionQuery.addEventListener("change", syncPreferences);
-    pointerQuery.addEventListener("change", syncPreferences);
-    compactQuery.addEventListener("change", syncPreferences);
-    document.addEventListener("visibilitychange", syncVisibility);
-    return () => {
-      motionQuery.removeEventListener("change", syncPreferences);
-      pointerQuery.removeEventListener("change", syncPreferences);
-      compactQuery.removeEventListener("change", syncPreferences);
-      document.removeEventListener("visibilitychange", syncVisibility);
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void sendSignal({ action: "visit", pathname, context: leoContextForPath(pathname) }).then((payload) => {
-      if (cancelled || !payload?.ok) return;
-      if (payload.profile) {
-        const next = { hidden: Boolean(payload.profile.hidden), muted: Boolean(payload.profile.muted) };
-        setHidden(next.hidden); setMuted(next.muted);
-        try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* optional */ }
+      const session=(await sb.auth.getSession()).data.session;
+      if(!session){ if(version===epoch.current){setData(emptyLeoSnapshot());setUid(null);userRef.current=null;} return; }
+      if(userRef.current!==session.user.id){
+        userRef.current=session.user.id;setUid(session.user.id);setData(emptyLeoSnapshot());readyRef.current=false;prefEdited.current=false;
       }
-      setPersonalizedGuide(payload.recommendation || null);
-    });
-    return () => { cancelled = true; };
-  }, [pathname, sendSignal]);
+      const get=async(path:string)=>{
+        try {const r=await fetch(path,{headers:{Authorization:`Bearer ${session.access_token}`},cache:'no-store',signal:controller.signal}); const json=await r.json();return r.ok&&json.ok?json:null;} catch{return null;}
+      };
+      const [leo,roulette,ranks,bonus,oracle]=await Promise.all([get('/api/cliente/leo'),get('/api/cliente/ruleta'),get('/api/cliente/rangos'),get('/api/cliente/rank-benefits'),pathname==='/cliente/oraculo'?get('/api/cliente/oraculo'):Promise.resolve(null)]);
+      if(version!==epoch.current) return;
+      if(controller.signal.aborted){setData(emptyLeoSnapshot());return;}
+      let pending: {level:number}|null=null;
+      try { const saved=roulette?.cliente_id && JSON.parse(sessionStorage.getItem('tc-ruleta-pending:'+roulette.cliente_id)||'null');if(saved?.spin_id && [1,2,3,4,5].includes(saved.level))pending={level:saved.level}; }catch{}
+      setData({pending,wallet:leo?.facts||null,roulette,ranks,bonuses:bonus?.bonuses||null,oracle:oracle?{credits:oracle.credits,freeAvailable:!!oracle.freeAvailable}:null,updatedAt:Date.now()});
+      if(!readyRef.current){
+        readyRef.current=true;
+        let prefs=leo?.profile;
+        try {const saved=localStorage.getItem(storageKey(session.user.id));if(saved)prefs=JSON.parse(saved);}catch{}
+        if(!prefEdited.current){setHidden(!!prefs?.hidden);setMuted(!!prefs?.muted);}
+        try {
+          const pending=JSON.parse(sessionStorage.getItem(journeyKey(session.user.id))||'null');
+          if(pending?.expires>Date.now()&&pending?.action?.path?.split('?')[0]===pathname&&validLeoAction(pending.action)){
+            sessionStorage.removeItem(journeyKey(session.user.id));setJourney({action:pending.action,stage:'looking',tour:false,index:0});setOpen(true);setHidden(false);
+          }
+        }catch{}
+      }
+    } catch {
+      if(version===epoch.current)setData(emptyLeoSnapshot());
+    } finally {
+      window.clearTimeout(timeout);
+      if(version===epoch.current){setLoading(false);setReady(true);}
+    }
+  },[pathname]);
+  useEffect(()=>{void refresh();return()=>{++epoch.current;abort.current?.abort();};},[refresh]);
+  useRouletteSignal(sb,hidden?null:data.ranks?.cliente_id,refresh);
+  useEffect(()=>{
+    const {data:subscription}=sb.auth.onAuthStateChange((event)=>{
+      if(event==='SIGNED_OUT'){++epoch.current;abort.current?.abort();setData(emptyLeoSnapshot());setUid(null);setJourney(null);setOpen(false);setReady(false);userRef.current=null;}
+      if(event==='SIGNED_IN')void refresh();
+    });return()=>subscription.subscription.unsubscribe();
+  },[refresh]);
+  useEffect(()=>{
+    const media=window.matchMedia('(prefers-reduced-motion: no-preference)');
+    const update=()=>setMotion(media.matches), visibility=()=>{setVisible(!document.hidden);if(!document.hidden)void refresh();};
+    update();setVisible(!document.hidden);media.addEventListener('change',update);document.addEventListener('visibilitychange',visibility);
+    const balances=()=>void refresh();window.addEventListener('tc-client-balances-changed',balances);
+    let channel:BroadcastChannel|null=null;
+    try{channel=new BroadcastChannel('tc-oracle-balance');channel.onmessage=balances;}catch{}
+    return()=>{media.removeEventListener('change',update);document.removeEventListener('visibilitychange',visibility);window.removeEventListener('tc-client-balances-changed',balances);channel?.close();};
+  },[refresh]);
+  useEffect(()=>{
+    let timer:ReturnType<typeof setTimeout>;
+    const react=(event:Event)=>{const detail=(event as CustomEvent).detail;if(!isLeoCelestialEventDetail(detail)||detail.id&&detail.id===lastReaction.current)return;lastReaction.current=detail.id||'';setReaction(detail);setSleeping(false);void refresh();clearTimeout(timer);timer=setTimeout(()=>setReaction(null),10000);};
+    window.addEventListener(LEO_CELESTIAL_EVENT,react);return()=>{clearTimeout(timer);window.removeEventListener(LEO_CELESTIAL_EVENT,react);};
+  },[refresh]);
+  useEffect(()=>{
+    setTopic('context');setJourney(null);setPosition(null);setHighlight(null);setReaction(null);readyRef.current=false;
+  },[pathname]);
+  useEffect(()=>{
+    const image=new window.Image();image.src='/leonaris-sprites.png';image.onerror=()=>setImageFailed(true);
+    const timer=window.setTimeout(()=>setSleeping(true),60000);return()=>window.clearTimeout(timer);
+  },[open,pathname]);
+  useEffect(()=>{
+    if(!open)return;
+    const key=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);setJourney(null);focusReturn.current?.focus();}};
+    window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
+  },[open]);
 
-  useEffect(() => {
-    const variants = getLeoMessageVariants(pathname, promoActive, new Date().getHours());
-    const key = `${pathname}:${promoActive ? "promo" : "standard"}`;
-    setRouteGuide(variants[nextSessionIndex(MESSAGE_ROTATION_KEY, key, variants.length)]);
-    setContextTip(null);
-  }, [pathname, promoActive]);
-
-  useEffect(() => {
-    setAttention(true);
-    setBubbleOpen(true);
-    const timer = window.setTimeout(() => setAttention(false), 2_400);
-    const bubbleTimer = window.setTimeout(() => setBubbleOpen(false), BUBBLE_VISIBLE_MS);
-    return () => { window.clearTimeout(timer); window.clearTimeout(bubbleTimer); };
-  }, [pathname, promoActive]);
-
-  useEffect(() => {
-    const react = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail;
-      if (!isLeoCelestialEventDetail(detail) || (detail.id && detail.id === lastEventId.current)) return;
-      lastEventId.current = detail.id || "";
-      if (eventTimer.current) window.clearTimeout(eventTimer.current);
-      if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
-      setSleeping(false); setContextTip(null); setActiveEvent(detail); setAttention(true); setBubbleOpen(true);
-      eventAttentionTimer.current = window.setTimeout(() => setAttention(false), 2_400);
-      eventTimer.current = window.setTimeout(() => { setActiveEvent(null); setBubbleOpen(false); }, Math.min(12_000, Math.max(4_000, Number(detail.duration) || 7_000)));
+  // A route may still be loading. Observe briefly, then explain a missing target.
+  useEffect(()=>{
+    if(!journey)return;
+    const action=journey.action,selector=leoSelector(action.anchor);if(!selector)return;
+    let target:HTMLElement|null=null,raf=0,disposed=false,scrolled=false;
+    const timers:Array<ReturnType<typeof setTimeout>>=[];
+    const place=()=>{
+      if(!target?.isConnected){setHighlight(null);return;}
+      const rect=target.getBoundingClientRect(),screenW=window.innerWidth,screenH=window.innerHeight;
+      if(rect.bottom<0||rect.top>screenH){setHighlight(null);setPosition(null);return;}
+      setHighlight({left:Math.max(4,rect.left-5),top:Math.max(4,rect.top-5),width:Math.min(rect.width+10,screenW-8),height:Math.min(rect.bottom,screenH-5)-Math.max(4,rect.top)+5});
+      let x=rect.top>145?rect.left+rect.width/2-66:rect.left>145?rect.left-137:Math.min(screenW-135,rect.right-118);
+      let y=rect.top>145?rect.top-133:Math.max(8,Math.min(screenH-145,rect.top+12));
+      const panel=panelRef.current?.getBoundingClientRect();
+      if(panel && x+132>panel.left && x<panel.right && y+142>panel.top && y<panel.bottom)y=Math.max(6,panel.top-145);
+      setPosition({x:Math.max(6,x),y:Math.max(6,y)});
     };
-    window.addEventListener(LEO_CELESTIAL_EVENT, react);
-    return () => {
-      window.removeEventListener(LEO_CELESTIAL_EVENT, react);
-      if (eventTimer.current) window.clearTimeout(eventTimer.current);
-      if (eventAttentionTimer.current) window.clearTimeout(eventAttentionTimer.current);
+    const find=()=>{
+      if(disposed||scrolled)return;
+      target=selector.split(',').map(part=>document.querySelector<HTMLElement>(part.trim())).find(el=>!!el && el.getBoundingClientRect().height>=8)||null;
+      if(!target||target.getBoundingClientRect().height<8)return;
+      scrolled=true;observer.disconnect();
+      if(action.level)window.dispatchEvent(new CustomEvent(LEO_SELECT_ROULETTE,{detail:{level:action.level}}));
+      target.scrollIntoView({behavior:motion?'smooth':'auto',block:'center'});
+      setJourney(j=>j?{...j,stage:'walking'}:null);
+      timers.push(setTimeout(place,motion?380:0));
+      timers.push(setTimeout(()=>{if(!disposed){
+        const control=target?.querySelector<HTMLElement>('[data-leo-spin], [data-leo-explore]');
+        const panel=panelRef.current?.getBoundingClientRect();
+        if(window.innerWidth<=600 && control && panel){const button=control.getBoundingClientRect();if(button.bottom>panel.top-18)window.scrollBy({top:button.bottom-panel.top+24,behavior:'auto'});}
+        place();setJourney(j=>j?{...j,stage:'arrived'}:null);
+      }},motion?1550:20));
     };
-  }, []);
+    const observer=new MutationObserver(()=>{if(!raf)raf=requestAnimationFrame(()=>{raf=0;find();});});
+    observer.observe(document.body,{childList:true,subtree:true});find();
+    timers.push(setTimeout(()=>{observer.disconnect();if(!scrolled&&!disposed){setJourney(j=>j?{...j,stage:'missing'}:null);setHighlight(null);setPosition(null);}},8500));
+    const adjust=()=>{if(!raf)raf=requestAnimationFrame(()=>{raf=0;place();});};
+    window.addEventListener('resize',adjust);window.addEventListener('scroll',adjust,{passive:true});
+    return()=>{disposed=true;observer.disconnect();cancelAnimationFrame(raf);timers.forEach(clearTimeout);window.removeEventListener('resize',adjust);window.removeEventListener('scroll',adjust);};
+  },[journey?.action.id,journey?.index,motion]);
+  useEffect(()=>{if(!journey){setPosition(null);setHighlight(null);}},[journey]);
 
-  useEffect(() => {
-    if (activeEvent || sleeping || muted || hidden || !pageVisible) return;
-    const tips = getLeoContextTips(pathname, promoActive);
-    if (!tips.length) return;
-    const routeKey = `${pathname}:${promoActive ? "promo" : "standard"}`;
-    const timer = window.setTimeout(() => {
-      setContextTip(tips[nextSessionIndex(TIP_ROTATION_KEY, routeKey, tips.length)]);
-      setAttention(true);
-      setBubbleOpen(true);
-    }, 12_000);
-    const attentionTimer = window.setTimeout(() => setAttention(false), 14_400);
-    const dismissTimer = window.setTimeout(() => { setContextTip(null); setBubbleOpen(false); }, 20_000);
-    return () => { window.clearTimeout(timer); window.clearTimeout(attentionTimer); window.clearTimeout(dismissTimer); };
-  }, [activeEvent, hidden, muted, pageVisible, pathname, promoActive, sleeping]);
-
-  useEffect(() => {
-    if (activeEvent || sleeping || journey !== "idle" || !motionEnabled || !pageVisible) { setExpression("neutral"); return; }
-    let expressionTimer = 0;
-    let resetTimer = 0;
-    let nextExpression: "survey" | "curious" = "survey";
-    const schedule = () => {
-      expressionTimer = window.setTimeout(() => {
-        setExpression(nextExpression);
-        nextExpression = nextExpression === "survey" ? "curious" : "survey";
-        resetTimer = window.setTimeout(() => { setExpression("neutral"); schedule(); }, 2_200);
-      }, 8_800);
-    };
-    schedule();
-    return () => { window.clearTimeout(expressionTimer); window.clearTimeout(resetTimer); };
-  }, [activeEvent, journey, motionEnabled, pageVisible, pathname, sleeping]);
-
-  useEffect(() => {
-    if (!pageVisible) { clearMovementTimers(); setJourney("idle"); return; }
-    const initialTimer = window.setTimeout(() => locatePromotion(false, true), 260);
-    let frame = 0;
-    const refresh = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => { frame = 0; locatePromotion(); });
-    };
-    const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
-    const observer = target && "ResizeObserver" in window ? new ResizeObserver(refresh) : null;
-    if (target && observer) observer.observe(target);
-    window.addEventListener("scroll", refresh, { passive: true });
-    window.addEventListener("resize", refresh, { passive: true });
-    return () => {
-      window.clearTimeout(initialTimer);
-      if (frame) window.cancelAnimationFrame(frame);
-      observer?.disconnect();
-      window.removeEventListener("scroll", refresh);
-      window.removeEventListener("resize", refresh);
-      clearMovementTimers();
-    };
-  }, [clearMovementTimers, locatePromotion, pageVisible]);
-
-  useEffect(() => {
-    if (!motionEnabled || !finePointer || !pageVisible || hidden || activeEvent) { setRoamPosition(null); return; }
-    let point = 0;
-    const move = () => {
-      const points = [
-        { left: Math.max(238, window.innerWidth - 82), top: Math.max(92, window.innerHeight - 104) },
-        { left: Math.max(238, Math.round(window.innerWidth * .58)), top: Math.max(110, Math.round(window.innerHeight * .62)) },
-        { left: Math.max(238, window.innerWidth - 104), top: 112 },
-        { left: Math.max(238, Math.round(window.innerWidth * .4)), top: Math.max(130, Math.round(window.innerHeight * .38)) },
-      ];
-      const next = points[point % points.length];
-      point += 1;
-      clearMovementTimers(); setAnchor(null); setBubbleOpen(false); setJourney("departing");
-      movementTimers.current.push(window.setTimeout(() => { setJourney("travelling"); setRoamPosition(next); }, 170));
-      movementTimers.current.push(window.setTimeout(() => setJourney("arrived"), 1_850));
-      movementTimers.current.push(window.setTimeout(() => setJourney("idle"), 2_450));
-    };
-    const initial = window.setTimeout(move, 3_500);
-    const interval = window.setInterval(move, 9_000);
-    return () => { window.clearTimeout(initial); window.clearInterval(interval); clearMovementTimers(); };
-  }, [activeEvent, clearMovementTimers, finePointer, hidden, motionEnabled, pageVisible, pathname]);
-
-  useEffect(() => {
-    if (!pageVisible) { setSleeping(true); return; }
-    let idleTimer = 0;
-    const wake = () => {
-      setSleeping(false); window.clearTimeout(idleTimer);
-      idleTimer = window.setTimeout(() => setSleeping(true), IDLE_DELAY);
-    };
-    const activityEvents: Array<keyof WindowEventMap> = ["pointerdown", "keydown", "touchstart"];
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, wake, { passive: true }));
-    wake();
-    return () => { window.clearTimeout(idleTimer); activityEvents.forEach((eventName) => window.removeEventListener(eventName, wake)); };
-  }, [pageVisible, pathname]);
-
-  useEffect(() => {
-    if (!pageVisible || !motionEnabled || !finePointer || hidden) return;
-    let frame = 0; let pointerX = 0; let pointerY = 0;
-    const followPointer = (event: PointerEvent) => {
-      pointerX = event.clientX; pointerY = event.clientY;
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        const element = guideRef.current;
-        if (!element) return;
-        const rect = element.getBoundingClientRect();
-        const x = Math.min(2.2, Math.max(-2.2, (pointerX - (rect.left + rect.width * .82)) / 140));
-        const y = Math.min(1.5, Math.max(-1.5, (pointerY - (rect.top + rect.height * .24)) / 170));
-        element.style.setProperty("--leo-gaze-x", `${x.toFixed(2)}px`);
-        element.style.setProperty("--leo-gaze-y", `${y.toFixed(2)}px`);
-      });
-    };
-    window.addEventListener("pointermove", followPointer, { passive: true });
-    return () => { if (frame) window.cancelAnimationFrame(frame); window.removeEventListener("pointermove", followPointer); };
-  }, [finePointer, hidden, motionEnabled, pageVisible]);
-
-  function saveState(next: { hidden: boolean; muted: boolean }) {
-    try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* La preferencia sigue en esta sesión. */ }
+  function preferences(next:{hidden?:boolean;muted?:boolean}){
+    const value={hidden:next.hidden??hidden,muted:next.muted??muted};prefEdited.current=true;setHidden(value.hidden);setMuted(value.muted);
+    if(value.hidden){setOpen(false);setJourney(null);}
+    try{if(uid)localStorage.setItem(storageKey(uid),JSON.stringify(value));}catch{}
+    void signal('preference',value);
   }
-
-  function setVisibility(nextHidden: boolean) {
-    setHidden(nextHidden); saveState({ hidden: nextHidden, muted });
-    void sendSignal({ action: "preference", pathname, context: leoContextForPath(pathname), hidden: nextHidden, muted });
+  function show(){focusReturn.current=document.activeElement as HTMLElement;setOpen(true);setSleeping(false);setReaction(null);setTimeout(()=>panelRef.current?.focus(),20);}
+  function go(action:LeoAction,tour=false,index=0){
+    if(!validLeoAction(action))return;
+    setSleeping(false);setReaction(null);setOpen(true);
+    if(action.path.split('?')[0]!==pathname){
+      if(uid)try{sessionStorage.setItem(journeyKey(uid),JSON.stringify({action,expires:Date.now()+30000}));}catch{}
+      router.push(action.path);return;
+    }
+    setJourney({action,stage:'looking',tour,index});
   }
-
-  function toggleMuted() {
-    const next = !muted;
-    setMuted(next); saveState({ hidden, muted: next });
-    void sendSignal({ action: "preference", pathname, context: leoContextForPath(pathname), hidden, muted: next });
-  }
-
-  function registerGuideInteraction(targetPath = pathname) {
-    void sendSignal({ action: "interaction", pathname: targetPath, context: leoContextForPath(targetPath) });
-  }
-
-  function focusPromotion() {
-    registerGuideInteraction("/cliente/precios-ofertas");
-    const target = document.querySelector<HTMLElement>(PROMOTION_ANCHOR);
-    if (!target) return;
-    setSleeping(false);
-    target.scrollIntoView({ behavior: motionEnabled ? "smooth" : "auto", block: "center" });
-    window.setTimeout(() => locatePromotion(true, true), 650);
-  }
-
-  if (hidden) {
-    return (
-      <button type="button" className={`${styles.restore} ${ready ? styles.ready : ""}`}
-        data-reaction={activeEvent?.reaction || "none"} data-paused={!pageVisible || !motionEnabled ? "true" : "false"}
-        onClick={() => setVisibility(false)} aria-label="Mostrar a Leo Celestial">
-        <span className={styles.miniAura} aria-hidden="true" />
-        <span className={styles.miniLion} aria-hidden="true"><LeoHologram /></span>
-        {activeEvent ? <span className={styles.miniEventDot} aria-hidden="true" /> : null}
-        <span>Mostrar Leo</span><Eye size={14} aria-hidden="true" />
+  const tourSteps=useMemo(()=>{
+    const intro=leoAction('navigation','Tus accesos',pathname,'navigation','Estas son tus pestañas. Puedes moverte entre ellas y volver a pedirme ayuda en cualquiera.');
+    if(section.key==='roulette')return [intro,...leoHelp(data,pathname,'roulette').actions];
+    if(section.key==='ranks')return [intro,...leoHelp(data,pathname,'rank').actions.map(a=>({...a,path:pathname})),leoAction('ranks-content','Todos los rangos',pathname,'content','Cada tarjeta explica cómo alcanzar ese rango y sus ventajas. Abre «Extras según tu paquete» para ver el detalle.')];
+    if(section.key==='dashboard')return [intro,...leoHelp(data,pathname,'balance').actions];
+    return [intro,leoAction('section-content',section.label,pathname,'content',section.hint)];
+  },[pathname,section.key,spins,data]);
+  function ask(event:React.FormEvent){event.preventDefault();if(!question.trim())return;const intent=leoQuestion(question);setQuestion('');setJourney(null);setReaction(null);if(intent.startsWith('/')){const action=leoHelp(data,intent,'context').actions[0];if(action)go(action);}else{setTopic(intent as LeoTopic);void refresh();}}
+  if(!ready||!uid)return null;
+  if(hidden)return <button type="button" className={styles.restore} onClick={()=>{preferences({hidden:false});show();}}><Compass size={17}/> Mostrar Leonaris</button>;
+  const walking=journey?.stage==='walking',pose=walking?'walk':reaction&&!muted?'celebrate':journey?.stage==='arrived'?'point':sleeping&&!open?'sleep':'idle';
+  return <aside className={styles.guide} data-paused={!motion||!visible} data-journey={!!journey} aria-label="Leonaris, tu guía celestial">
+    {highlight&&<div className={styles.highlight} style={highlight} aria-hidden="true"><span>✦ AQUÍ ES</span></div>}
+    {open&&<section ref={panelRef} tabIndex={-1} className={styles.panel} aria-label="Ayuda de Leonaris">
+      <header className={styles.header}><div className={styles.seal}><Sparkles size={19}/></div><div><strong>LEONARIS</strong><span>Tu guía celestial <i/></span></div><div className={styles.controls}>
+        <button type="button" onClick={()=>preferences({muted:!muted})} aria-label={muted?'Activar avisos de Leonaris':'Silenciar avisos de Leonaris'} aria-pressed={muted} title={muted?'Activar avisos':'Silenciar avisos'}>{muted?<BellOff size={16}/>:<Bell size={16}/>}</button>
+        <button type="button" onClick={()=>preferences({hidden:true})} aria-label="Ocultar Leonaris" title="Ocultar mascota"><EyeOff size={16}/></button>
+        <button type="button" onClick={()=>{setOpen(false);setJourney(null);characterRef.current?.focus();}} aria-label="Cerrar ayuda"><X size={18}/></button>
+      </div></header>
+      {journey?<div className={styles.journeyBody}>
+        <span className={styles.eyebrow}><Footprints size={13}/>{journey.tour?`PASO ${journey.index+1} DE ${tourSteps.length}`:'VAMOS JUNTAS'}</span>
+        <h2>{journey.stage==='looking'?'Buscando tu recuadro…':journey.stage==='walking'?'Sígueme, es por aquí':journey.stage==='missing'?'Este recuadro no está disponible':journey.action.label}</h2>
+        <p role="status">{journey.stage==='missing'?'Puede que esta sección todavía esté cargando o no tenga contenido para tu cuenta. Puedes actualizar la página o seguir explorando.':journey.action.explanation}</p>
+        <div className={styles.journeyButtons}>{journey.tour&&journey.index>0&&<button onClick={()=>go(tourSteps[journey.index-1],true,journey.index-1)} aria-label="Paso anterior"><ChevronLeft size={17}/></button>}
+          {journey.tour&&journey.index<tourSteps.length-1?<button className={styles.primary} onClick={()=>go(tourSteps[journey.index+1],true,journey.index+1)}>Siguiente <ArrowRight size={16}/></button>:<button className={styles.primary} onClick={()=>{setJourney(null);setOpen(false);}}>Ya lo tengo <Check size={16}/></button>}
+          <button onClick={()=>setJourney(null)}>Terminar guía</button></div>
+      </div>:<>
+        <div className={styles.context}><span><i/> ESTÁS EN {section.label.toUpperCase()}</span><button type="button" onClick={()=>void refresh()} disabled={loading} aria-label="Actualizar información de Leonaris"><RotateCw size={13} className={loading?styles.refreshing:''}/></button></div>
+        <div className={styles.topicGrid}>{TOPICS.map(([key,label])=><button key={key} type="button" data-active={topic===key} onClick={()=>{setTopic(key);setReaction(null);if(Date.now()-data.updatedAt>15000)void refresh();}}>{label}</button>)}</div>
+        <div className={styles.answer} aria-busy={loading}>
+          <span className={styles.eyebrow}><Sparkles size={12}/>{loading?'CONSULTANDO TU CUENTA':'UN PASO CADA VEZ'}</span>
+          <h2>{reaction&&!muted?reaction.title:help.title}</h2>
+          <p>{reaction&&!muted?reaction.message:help.message}</p>
+          <div className={styles.actions}>{(reaction&&!muted&&safeLeoPath(reaction.href)?[leoAction('reaction',reaction.actionLabel||'Ver detalle',reaction.href,'content','Aquí puedes consultar el detalle de esta novedad.')]:help.actions).map((action,index)=><button type="button" key={action.id} className={index===0?styles.primary:styles.secondary} onClick={()=>go(action)}>{action.label}<ArrowRight size={15}/></button>)}</div>
+          {help.note&&<small className={styles.note}>{help.note}</small>}
+        </div>
+        <div className={styles.tools}><button type="button" onClick={()=>go(tourSteps[0],true,0)}><Footprints size={16}/> Guíame aquí</button><button type="button" onClick={()=>setTopic('sections')}><Compass size={16}/> Explorar panel</button></div>
+        <form className={styles.ask} onSubmit={ask}><label className={styles.srOnly} htmlFor="leonaris-question">¿En qué te ayudo?</label><input id="leonaris-question" value={question} onChange={e=>setQuestion(e.target.value)} maxLength={180} placeholder="¿Qué giro tengo? ¿Dónde está mi premio?" autoComplete="off"/><button type="submit" disabled={!question.trim()} aria-label="Consultar a Leonaris"><Send size={17}/></button></form>
+        <footer className={styles.footer}>Guía del panel · {loading?'actualizando':data.updatedAt?'consulta '+new Date(data.updatedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'información pendiente'}</footer>
+      </>}
+    </section>}
+    <div className={styles.companion} style={position?{left:position.x,top:position.y,right:'auto',bottom:'auto'}:undefined}>
+      {!open&&!journey&&!muted&&<button type="button" className={styles.teaser} onClick={show}>{reaction?<><Gift size={15}/>{reaction.title}</>:<><MessageCircle size={15}/>{data.pending?'Resultado por comprobar':usable?`${usable} giro${usable===1?'':'s'} · Te llevo`:'¿Te acompaño?'}</>}<span/></button>}
+      <button ref={characterRef} type="button" className={styles.character} onClick={()=>{if(open){setOpen(false);setJourney(null);}else show();}} aria-label={open?'Minimizar ayuda de Leonaris':'Abrir ayuda de Leonaris'} aria-expanded={open}>
+        <span className={styles.floor} aria-hidden="true"/>
+        {imageFailed?<span className={styles.fallback} aria-hidden="true">🦁</span>:<span className={styles.sprite} data-pose={pose} aria-hidden="true"/>}
+        <span className={styles.name}>LEONARIS <Sparkles size={9}/></span>
       </button>
-    );
-  }
-
-  return (
-    <aside ref={guideRef} className={`${styles.guide} ${ready ? styles.ready : ""}`}
-      data-mood={guide.mood} data-attention={attention ? "true" : "false"}
-      data-anchored={anchor ? "true" : "false"} data-roaming={!anchor && roamPosition ? "true" : "false"}
-      data-journey={journey} data-sleeping={sleeping ? "true" : "false"}
-      data-reaction={activeEvent?.reaction || "none"} data-pose={guide.pose} data-expression={expression}
-      data-compact={compactViewport ? "true" : "false"} data-paused={!pageVisible || !motionEnabled ? "true" : "false"}
-      style={effectivePosition ? ({ "--leo-left": `${effectivePosition.left}px`, "--leo-top": `${effectivePosition.top}px` } as CSSProperties) : undefined}
-      aria-label="Leo Celestial, guía inteligente del panel">
-      {bubbleOpen && !muted ? (
-        <div className={styles.bubble} aria-live="polite" aria-atomic="true">
-          <div className={styles.bubbleTop}>
-            <span><Sparkles size={12} /> LEO CELESTIAL</span>
-            <div className={styles.controls}>
-              <button type="button" onClick={toggleMuted} aria-label="Silenciar mensajes de Leo" title="Silenciar mensajes" aria-pressed={false}><Volume2 size={14} /></button>
-              <button type="button" className={styles.hideButton} onClick={() => setVisibility(true)} aria-label="Ocultar a Leo Celestial"><EyeOff size={13} /> Ocultar</button>
-            </div>
-          </div>
-          {activeEvent ? <span className={styles.reactionBadge}>{REACTION_LABELS[activeEvent.reaction]}</span> : null}
-          {!activeEvent && contextTip ? <span className={styles.tipBadge}><Sparkles size={9} /> SUGERENCIA DEL GUÍA</span> : null}
-          <strong>{guide.title}</strong><p>{guide.message}</p>
-          {guide.href && guide.actionLabel ? <Link href={guide.href} onClick={() => registerGuideInteraction(guide.href!)}>{guide.actionLabel}</Link> : null}
-          {!guide.href && guide.actionLabel ? <button type="button" className={styles.action} onClick={focusPromotion}>{guide.actionLabel}</button> : null}
-        </div>
-      ) : bubbleOpen ? (
-        <div className={styles.silentControls}>
-          <button type="button" onClick={toggleMuted} aria-label="Activar mensajes de Leo" title="Activar mensajes" aria-pressed={true}><VolumeX size={14} /></button>
-          <button type="button" className={styles.hideButton} onClick={() => setVisibility(true)} aria-label="Ocultar a Leo Celestial"><EyeOff size={13} /> Ocultar</button>
-        </div>
-      ) : null}
-      <button type="button" className={styles.character} onClick={() => { registerGuideInteraction(); setBubbleOpen((current) => !current); }} aria-label={bubbleOpen ? "Cerrar mensaje de Leo" : "Hablar con Leo Celestial"}>
-        <span className={styles.travelTrail} /><span className={styles.aura} />
-        <span className={`${styles.spark} ${styles.sparkOne}`} /><span className={`${styles.spark} ${styles.sparkTwo}`} /><span className={`${styles.spark} ${styles.sparkThree}`} />
-        <div className={styles.lionBody} aria-hidden="true">
-          <LeoHologram />
-        </div>
-      </button>
-    </aside>
-  );
+    </div>
+    <span className={styles.srOnly} role="status">{journey?.stage==='arrived'?journey.action.explanation:''}</span>
+  </aside>;
 }

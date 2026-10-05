@@ -24,7 +24,7 @@ export type LeoMemoryProfile = {
 export type LeoLiveFacts = {
   activePromotion: { id: string; name: string } | null;
   pendingSpins: number;
-  oracleCredits: number;
+  oracleCredits: number | null;
   coins: number;
   minutes: number;
 };
@@ -75,7 +75,7 @@ export function buildLeoRecommendation(
     };
   }
 
-  if (favorite === "oracle" && facts.oracleCredits > 0) {
+  if (favorite === "oracle" && facts.oracleCredits != null && facts.oracleCredits > 0) {
     return {
       key: `oracle-interest:${facts.oracleCredits}`,
       reason: "available_benefit",

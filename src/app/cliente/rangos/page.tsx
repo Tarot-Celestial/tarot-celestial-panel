@@ -91,7 +91,7 @@ export default function ClientRanksPage() {
       </section>}
       {loading && !guide && <section className={styles.loading} role="status">Consultando tu rango y sus condiciones…</section>}
       {guide && progress && <>
-        <section className={styles.journey} aria-labelledby="rank-journey-title" aria-busy={loading}>
+        <section className={styles.journey} data-leo-anchor="rank-progress" aria-labelledby="rank-journey-title" aria-busy={loading}>
           <div className={styles.journeyCopy}>
             <span className={styles.eyebrow}><Sparkles size={14}/> CADA PASO SUMA</span>
             <h2 id="rank-journey-title">Tu camino entre las estrellas</h2>
