@@ -37,7 +37,9 @@ const sb = supabaseClienteBrowser();
 type LoginMode = "password" | "setup";
 
 function getRedirectPath() {
-  return new URLSearchParams(window.location.search).get("next") === "ruleta"
+  const next = new URLSearchParams(window.location.search).get("next");
+  if (next === "rangos") return "/cliente/rangos";
+  return next === "ruleta"
     ? "/cliente/ruleta"
     : "/cliente/dashboard";
 }

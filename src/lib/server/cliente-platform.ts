@@ -105,8 +105,10 @@ export function currentRankBenefits(rank: string | null | undefined) {
   if (key === "diamante") {
     return [
       "Acceso exclusivo a Mi Ritual y seguimiento visual de rituales",
-      "12 minutos GRATIS cuando se incorpora una nueva tarotista",
-      "+12 minutos GRATIS permanentes en cada compra a precio regular",
+      "15 minutos GRATIS cuando se incorpora una nueva tarotista",
+      "+15 minutos GRATIS permanentes en cada compra",
+      "+500 Coins por cada compra de paquete de nivel 1, 2 o 3",
+      "Acceso a una promoción diaria exclusiva de un solo uso",
       "Participación automática en sorteos activos (1 número por sorteo)",
       "3 pases GRATIS de 7 minutos cada 30 días, con alguna compra confirmada en los últimos 4 meses",
       "Seguimiento energético durante 1 mes post rituales",

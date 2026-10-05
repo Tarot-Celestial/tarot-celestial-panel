@@ -1,0 +1,76 @@
+.wrap{display:grid;gap:28px;margin-top:22px;color:#ece6f6}
+.wrap *{box-sizing:border-box}
+.wrap h2,.wrap h3,.current strong{font-family:Georgia,"Times New Roman",serif}
+.eyebrow{display:inline-flex;align-items:center;gap:7px;color:#cfc0ec;font-size:10px;font-weight:700;letter-spacing:.16em}
+.journey{display:grid;grid-template-columns:1.1fr 1fr;gap:36px;padding:34px;border:1px solid #9474cd55;border-radius:28px;background:radial-gradient(ellipse at 0 0,#6b329c32,transparent 65%),radial-gradient(ellipse at 100% 100%,#346b9330,transparent 65%),#0b1024;overflow:hidden}
+.journeyCopy{align-self:center}
+.journey h2{font-weight:400;font-size:clamp(30px,3.3vw,46px);line-height:1.12;color:#e4ceff;margin:14px 0}
+.journeyCopy>p{font-size:13px;line-height:1.8;color:#c9c3da;max-width:470px}
+.current{display:flex;align-items:center;gap:16px;margin-top:24px}
+.current small,.current strong,.current span{display:block}
+.current small{color:#b8b0cd;font-size:11px}
+.current strong{font-weight:400;font-size:32px;color:#f2dcad;margin:4px 0}
+.current span{font-size:11px;color:#c7b4ef}
+.progressPanel{padding:24px;border:1px solid #9578bf44;border-radius:22px;background:#070b1ca6}
+.progressTop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.progressTop>span{display:flex;align-items:center;gap:6px;color:#bfb5d3;font-size:11px}
+.progressTop button,.error button{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #a17fc45c;background:#251b3c;color:#e6d7fa;padding:8px;border-radius:10px;cursor:pointer}
+.progressTop button:disabled{opacity:.5;cursor:wait}
+.spend{display:block;font-family:Georgia,serif;font-size:clamp(29px,3vw,42px);color:#efddff;margin:16px 0 5px}
+.spendCaption{font-size:11px;color:#b7accb}
+.progressLabels{display:flex;justify-content:space-between;gap:12px;margin:22px 0 10px;font-size:10px;color:#cbc0dd}
+.progressLabels strong{color:#e4d5ff}
+.progressTrack{height:10px;background:#27213d;border-radius:999px;overflow:hidden}
+.progressTrack>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#a078e8,#ad76fe,#88dfff);box-shadow:0 0 18px #c280ff}
+.remaining{font-size:12px;line-height:1.7;color:#cfc6df}
+.remaining strong{color:#f1e5ff}
+.override{padding:10px;border:1px solid #d2a75955;border-radius:12px;font-size:11px;line-height:1.6;color:#e5d3b4}
+.primary{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px 14px;margin-top:16px;border:1px solid #bb96fa;border-radius:999px;background:linear-gradient(135deg,#854bca,#4c248d);color:#fff;text-decoration:none;font-size:12px;font-weight:700}
+.sectionHead{display:flex;align-items:end;justify-content:space-between;gap:14px;margin-bottom:20px}
+.sectionHead h2,.faq h2{margin:9px 0 0;font-size:29px;font-weight:400;color:#e5d0ff}
+.period{color:#aea3c1;font-size:10px}
+.ranks{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;align-items:stretch}
+.rankCard{--accent:#efbd8d;--glow:180,111,64;position:relative;display:flex;flex-direction:column;min-width:0;padding:0 18px 18px;overflow:hidden;border:1px solid rgba(var(--glow),.7);border-radius:24px;background:radial-gradient(ellipse at 50% 0,rgba(var(--glow),.23),transparent 50%),#0c1020;scroll-margin-top:24px}
+.rankCard[data-rank="plata"]{--accent:#dadcff;--glow:144,124,212}
+.rankCard[data-rank="oro"]{--accent:#f9d389;--glow:207,158,49}
+.rankCard[data-rank="diamante"]{--accent:#bbf0ff;--glow:74,183,231}
+.rankCard[data-current="true"]{border-color:var(--accent);box-shadow:0 0 0 1px rgba(var(--glow),.2),0 0 24px rgba(var(--glow),.2)}
+.rankArt{position:relative;display:flex;align-items:center;justify-content:center;min-height:190px;padding-top:35px}
+.rankArt::before{content:"";position:absolute;width:142px;height:142px;border:1px solid rgba(var(--glow),.3);border-radius:50%;background:radial-gradient(circle,rgba(var(--glow),.25),transparent 70%);box-shadow:0 0 0 10px rgba(var(--glow),.04)}
+.rankArt svg{position:relative;filter:drop-shadow(0 0 20px rgba(var(--glow),.3))!important}
+.rankBadge{position:absolute;top:16px;font-size:9px;padding:5px 9px;border:1px solid rgba(var(--glow),.4);border-radius:999px;background:rgba(var(--glow),.12);color:var(--accent);text-align:center}
+.rankNumber{position:absolute;bottom:0;display:grid;place-items:center;width:34px;height:34px;border:1px solid var(--accent);border-radius:50%;background:#131327;font-family:Georgia,serif;color:var(--accent)}
+.rankCard h3{font-weight:400;font-size:30px;letter-spacing:.02em;text-align:center;color:var(--accent);margin:16px 0}
+.requirement{padding:14px 8px;border:1px solid rgba(var(--glow),.3);border-radius:15px;background:#070b17b3;text-align:center}
+.requirement small,.requirement span{display:block;font-size:10px;line-height:1.6;color:#c5bacd}
+.requirement strong{display:block;font-family:Georgia,serif;font-size:24px;white-space:nowrap;color:var(--accent);margin:5px 0}
+.band{font-size:10px;line-height:1.7;text-align:center;color:#bcb2ca;margin:11px 0 20px}
+.benefitHeading{display:flex;align-items:center;gap:6px;color:var(--accent);font-size:11px;font-weight:700;padding-bottom:11px;border-bottom:1px solid rgba(var(--glow),.2)}
+.benefits{display:grid;gap:13px;list-style:none;padding:15px 0;margin:0 0 8px}
+.benefits li{display:flex;align-items:flex-start;gap:8px;font-size:11px;line-height:1.65;color:#d5cde0}
+.benefits svg{flex:0 0 13px;margin-top:3px;color:var(--accent)}
+.extras{margin-top:auto;border-top:1px solid rgba(var(--glow),.3);font-size:11px;line-height:1.7}
+.extras summary{cursor:pointer;padding:14px 0;color:var(--accent);font-weight:700}
+.package{padding:9px 0;border-top:1px solid #ffffff0a}
+.package strong{font-size:11px}
+.package p{margin:4px 0;font-size:10px;color:#c7bbd7}
+.extraNote{color:#a79bb7;font-size:10px}
+.conditionsLink{display:flex;align-items:center;gap:7px;justify-content:center;border:1px solid rgba(var(--glow),.5);border-radius:999px;padding:10px 6px;color:var(--accent);font-size:10px;text-decoration:none;margin-top:8px}
+.diamond{display:flex;align-items:center;gap:24px;padding:26px;border:1px solid #91d9f455;border-radius:24px;background:radial-gradient(ellipse at 0 0,#29758b35,transparent 65%),#0c142b}
+.diamond h2{font-weight:400;font-size:29px;color:#c4eaff;margin:8px 0}
+.diamond p{font-size:12px;line-height:1.8;color:#c6c8e1;margin:8px 0}
+.diamond small{display:block;font-size:10px;color:#aaaeca;line-height:1.8}
+.bonusLabels{display:flex;flex-wrap:wrap;gap:8px;margin:13px 0}
+.bonusLabels span{padding:6px 10px;border:1px solid #98d9fb33;border-radius:999px;color:#d9f4ff;font-size:11px;background:#1b3d6233}
+.faq{padding:26px;border:1px solid #9172a93c;border-radius:24px;background:#0e1021;scroll-margin-top:24px}
+.faq h2{margin-bottom:18px}
+.faq details{border-top:1px solid #a98ac626;padding:15px 0}
+.faq summary{cursor:pointer;font-size:13px;line-height:1.6;color:#e4d5f6}
+.faq p{font-size:12px;line-height:1.9;color:#bfb4ce;max-width:880px;margin-bottom:0}
+.loading,.error,.notice{padding:26px;border:1px solid #9475b344;border-radius:20px;background:#141128;color:#d7c9e8;font-size:13px}
+.error{border-color:#c9808755}
+.notice,.muted{font-size:12px;line-height:1.8}
+.wrap button:focus-visible,.wrap a:focus-visible,.wrap summary:focus-visible{outline:2px solid #d7b4ff;outline-offset:4px}
+@media(max-width:1100px){.ranks{grid-template-columns:repeat(2,minmax(0,1fr))}.rankCard{padding-left:22px;padding-right:22px}.journey{gap:22px;padding:26px}}
+@media(max-width:700px){.journey{grid-template-columns:1fr;padding:22px;gap:20px}.progressPanel{padding:20px}.sectionHead{align-items:flex-start;flex-direction:column}.diamond{gap:14px;padding:20px;align-items:flex-start}.diamond>svg{width:60px;height:60px}.faq{padding:20px}.sectionHead h2,.faq h2{font-size:25px}.rankCard{padding-left:14px;padding-right:14px}.requirement strong{font-size:22px}}
+@media(max-width:520px){.ranks{grid-template-columns:1fr}.rankCard{padding:0 22px 22px}.rankArt{min-height:190px}.benefits li{font-size:13px}.benefits{gap:14px}.rankBadge,.requirement small,.requirement span,.band,.conditionsLink{font-size:11px}.requirement strong{font-size:30px}.extras{font-size:12px}.diamond{flex-direction:column}.diamond>svg{width:80px;height:80px}.progressLabels{flex-wrap:wrap;font-size:11px}.primary{font-size:13px}.period{font-size:11px}}

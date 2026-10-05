@@ -290,7 +290,14 @@ export async function applyPromotionMinutePurchase(
     totalMinutes,
     snapshot: snap,
   }) : [];
-  if (transaction?.duplicated) return { ok: true, ...transaction, spins: grantedSpins };
+  const { data: appliedBenefitEvents } = paymentId
+    ? await admin.from("tc_client_benefit_events").select("benefit_key,minutes").eq("payment_id", paymentId)
+    : { data: [] };
+  const rankFreeMinutes = (appliedBenefitEvents || []).reduce(
+    (sum: number, row: any) => sum + (row?.benefit_key === "diamond_purchase_minutes" ? Math.max(0, Number(row.minutes || 0)) : 0), 0,
+  );
+  const creditedTotalMinutes = totalMinutes + rankFreeMinutes;
+  if (transaction?.duplicated) return { ok: true, ...transaction, totalMinutes: creditedTotalMinutes, spins: grantedSpins };
 
   let monthlySpend = 0;
   let monthlyPurchases = 0;
@@ -316,6 +323,7 @@ export async function applyPromotionMinutePurchase(
   const benefitBits = [
     `${snap.paid_minutes} min`,
     snap.free_minutes ? `+${snap.free_minutes} min GRATIS` : null,
+    rankFreeMinutes ? `+${rankFreeMinutes} min GRATIS Diamante` : null,
     snap.coins ? `+${snap.coins} Coins` : null,
     snap.roulette_spins && snap.roulette_level ? `+${snap.roulette_spins} giro${snap.roulette_spins === 1 ? "" : "s"} ${snap.roulette_level === 4 ? "Super Ruleta · Nivel Especial" : `Ultra Sorpresas · Nivel ${snap.roulette_level}`}` : null,
     snap.oracle_credits ? `+${snap.oracle_credits} tirada${snap.oracle_credits === 1 ? "" : "s"} de Oráculo` : null,
@@ -331,6 +339,8 @@ export async function applyPromotionMinutePurchase(
         promotion_id: snap.promotion_id,
         package_id: snap.package_id,
         snapshot: snap,
+        total_minutes: creditedTotalMinutes,
+        rank_free_minutes: rankFreeMinutes,
         roulette_level: snap.roulette_level,
         roulette_spins: snap.roulette_spins,
         roulette_assignment: snap.roulette_assignment || null,
@@ -358,7 +368,7 @@ export async function applyPromotionMinutePurchase(
     // Notificación interna opcional.
   }
 
-  return { ok: true, duplicated: false, payment, rank: nextRank, monthlySpend, monthlyPurchases, totalMinutes };
+  return { ok: true, duplicated: false, payment, rank: nextRank, monthlySpend, monthlyPurchases, totalMinutes: creditedTotalMinutes };
 }
 
 export function normalizePromotionDate(value: unknown) {

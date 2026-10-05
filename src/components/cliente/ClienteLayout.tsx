@@ -326,6 +326,9 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               <Link className={`tc-nav-link ${promoActive ? "tc-nav-oracle-new" : ""} ${pathname === "/cliente/precios-ofertas" ? "tc-nav-link-active" : ""}`} href="/cliente/precios-ofertas">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact><Tags size={15} /></HologramIcon> Precios y ofertas {promoActive ? <span className="tc-nav-new-badge">🔥 HOY</span> : null}</span>
               </Link>
+              <Link className={`tc-nav-link ${pathname === "/cliente/rangos" ? "tc-nav-link-active" : ""}`} href="/cliente/rangos" aria-current={pathname === "/cliente/rangos" ? "page" : undefined}>
+                <HologramIcon compact tone="rank"><Medal size={15} /></HologramIcon> Rangos del cliente
+              </Link>
               <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                   <HologramIcon compact tone="gold"><WandSparkles size={15} /></HologramIcon> Oráculo <span className="tc-nav-new-badge">NUEVO</span>

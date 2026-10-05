@@ -57,7 +57,7 @@ export async function applyConfiguredMinutePurchase(
   const pago = transaction.payment;
   const { data: appliedBenefitEvents } = await admin
     .from("tc_client_benefit_events")
-    .select("benefit_type,benefit_key,coins,oracle_credits,package_level,snapshot")
+    .select("benefit_type,benefit_key,coins,minutes,oracle_credits,package_level,snapshot")
     .eq("payment_id", pago.id);
 
   const puntosGanados = (appliedBenefitEvents || []).reduce(
@@ -68,9 +68,17 @@ export async function applyConfiguredMinutePurchase(
     (acc: number, row: any) => acc + Math.max(0, Number(row?.oracle_credits || 0)),
     0,
   );
+  const rankFreeMinutes = (appliedBenefitEvents || []).reduce(
+    (acc: number, row: any) => acc + (row?.benefit_key === "diamond_purchase_minutes" ? Math.max(0, Number(row.minutes || 0)) : 0), 0,
+  );
+  // On retries use the saved purchase, even if the pack has since changed.
+  const creditedMinutes = {
+    normal: Math.max(0, Number(pago.paid_minutes ?? minutesSplit.normal)),
+    free: Math.max(0, Number(pago.bonus_minutes ?? minutesSplit.free)) + rankFreeMinutes,
+  };
   const { data: clienteActual } = await admin.from("crm_clientes").select("nombre,apellido").eq("id", params.clienteId).maybeSingle();
   const { data: grantedSpins } = await admin.from("cliente_ruleta_giros").select("id,nivel").eq("purchase_id", pago.id).order("created_at", { ascending: true });
-  if (transaction.duplicated) return { ok: true, ...transaction, creditedMinutes: splitMinutes(Number(pago.paid_minutes ?? totalMinutes)), spins: grantedSpins || [] };
+  if (transaction.duplicated) return { ok: true, ...transaction, creditedMinutes, spins: grantedSpins || [] };
 
   const { start, end } = monthRange(new Date());
   const { data: monthPayments, error: monthPaymentsError } = await admin
@@ -100,11 +108,11 @@ export async function applyConfiguredMinutePurchase(
     cliente_id: params.clienteId,
     tipo: "purchase_completed",
     titulo: "Pago confirmado",
-    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes} minutos${puntosGanados > 0 ? `, +${puntosGanados} Coins` : ""}${oracleGanado > 0 ? `, +${oracleGanado} tirada${oracleGanado === 1 ? "" : "s"} de Oráculo` : ""}${rouletteBenefit}.`,
+    mensaje: `Tu compra ${pack.nombre} ya está activa. Hemos añadido ${totalMinutes + rankFreeMinutes} minutos${puntosGanados > 0 ? `, +${puntosGanados} Coins` : ""}${oracleGanado > 0 ? `, +${oracleGanado} tirada${oracleGanado === 1 ? "" : "s"} de Oráculo` : ""}${rouletteBenefit}.`,
     meta: {
       pack_id: pack.id,
       pack_name: pack.nombre,
-      total_minutes: totalMinutes,
+      total_minutes: totalMinutes + rankFreeMinutes,
       roulette_level: rouletteLevel,
       roulette_spins: rouletteSpins,
       oracle_credits: oracleGanado,
@@ -138,7 +146,7 @@ export async function applyConfiguredMinutePurchase(
     ok: true,
     duplicated: false,
     payment: pago,
-    creditedMinutes: minutesSplit,
+    creditedMinutes,
     rank: nextRank,
     monthlySpend,
     monthlyPurchases,
