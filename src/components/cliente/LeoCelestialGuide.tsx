@@ -17,6 +17,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
   const pathname = usePathname(), router = useRouter();
   const [data,setData] = useState<LeoSnapshot>(emptyLeoSnapshot);
   const [open,setOpen] = useState(false), [hidden,setHidden] = useState(false), [muted,setMuted] = useState(false);
+  const [expanded,setExpanded] = useState(false);
   const [motion,setMotion] = useState(false), [visible,setVisible] = useState(true), [loading,setLoading] = useState(false);
   const [topic,setTopic] = useState<LeoTopic>('context'), [question,setQuestion] = useState('');
   const [journey,setJourney] = useState<Journey|null>(null), [position,setPosition] = useState<Point|null>(null), [highlight,setHighlight] = useState<Highlight|null>(null);
@@ -161,9 +162,10 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
     try{if(uid)localStorage.setItem(storageKey(uid),JSON.stringify(value));}catch{}
     void signal('preference',value);
   }
-  function show(){focusReturn.current=document.activeElement as HTMLElement;setOpen(true);setSleeping(false);setReaction(null);setTimeout(()=>panelRef.current?.focus(),20);}
+  function show(){setExpanded(false);focusReturn.current=document.activeElement as HTMLElement;setOpen(true);setSleeping(false);setReaction(null);setTimeout(()=>panelRef.current?.focus(),20);}
   function go(action:LeoAction,tour=false,index=0){
     if(!validLeoAction(action))return;
+    setExpanded(false);
     setSleeping(false);setReaction(null);setOpen(true);
     if(action.path.split('?')[0]!==pathname){
       if(uid)try{sessionStorage.setItem(journeyKey(uid),JSON.stringify({action,expires:Date.now()+30000}));}catch{}
@@ -184,12 +186,14 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
   const walking=journey?.stage==='walking',pose=walking?'walk':reaction&&!muted?'celebrate':journey?.stage==='arrived'?'point':sleeping&&!open?'sleep':'idle';
   return <aside className={styles.guide} data-paused={!motion||!visible} data-journey={!!journey} aria-label="Leonaris, tu guía celestial">
     {highlight&&<div className={styles.highlight} style={highlight} aria-hidden="true"><span>✦ AQUÍ ES</span></div>}
-    {open&&<section ref={panelRef} tabIndex={-1} className={styles.panel} aria-label="Ayuda de Leonaris">
+    {open&&<section ref={panelRef} tabIndex={-1} className={styles.panel} data-expanded={expanded} aria-label="Ayuda de Leonaris">
       <header className={styles.header}><div className={styles.seal}><Sparkles size={19}/></div><div><strong>LEONARIS</strong><span>Tu guía celestial <i/></span></div><div className={styles.controls}>
+        <button type="button" className={styles.resizeButton} onClick={()=>setExpanded(current=>!current)} aria-expanded={expanded} aria-label={expanded?"Reducir ayuda":"Ampliar ayuda"}>{expanded?"Reducir":"Ampliar"}</button>
         <button type="button" onClick={()=>preferences({muted:!muted})} aria-label={muted?'Activar avisos de Leonaris':'Silenciar avisos de Leonaris'} aria-pressed={muted} title={muted?'Activar avisos':'Silenciar avisos'}>{muted?<BellOff size={16}/>:<Bell size={16}/>}</button>
         <button type="button" onClick={()=>preferences({hidden:true})} aria-label="Ocultar Leonaris" title="Ocultar mascota"><EyeOff size={16}/></button>
         <button type="button" onClick={()=>{setOpen(false);setJourney(null);characterRef.current?.focus();}} aria-label="Cerrar ayuda"><X size={18}/></button>
       </div></header>
+      <div className={styles.content}>
       {journey?<div className={styles.journeyBody}>
         <span className={styles.eyebrow}><Footprints size={13}/>{journey.tour?`PASO ${journey.index+1} DE ${tourSteps.length}`:'VAMOS JUNTAS'}</span>
         <h2>{journey.stage==='looking'?'Buscando tu recuadro…':journey.stage==='walking'?'Sígueme, es por aquí':journey.stage==='missing'?'Este recuadro no está disponible':journey.action.label}</h2>
@@ -211,6 +215,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
         <form className={styles.ask} onSubmit={ask}><label className={styles.srOnly} htmlFor="leonaris-question">¿En qué te ayudo?</label><input id="leonaris-question" value={question} onChange={e=>setQuestion(e.target.value)} maxLength={180} placeholder="¿Qué giro tengo? ¿Dónde está mi premio?" autoComplete="off"/><button type="submit" disabled={!question.trim()} aria-label="Consultar a Leonaris"><Send size={17}/></button></form>
         <footer className={styles.footer}>Guía del panel · {loading?'actualizando':data.updatedAt?'consulta '+new Date(data.updatedAt).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'información pendiente'}</footer>
       </>}
+      </div>
     </section>}
     <div className={styles.companion} style={position?{left:position.x,top:position.y,right:'auto',bottom:'auto'}:undefined}>
       {!open&&!journey&&!muted&&<button type="button" className={styles.teaser} onClick={show}>{reaction?<><Gift size={15}/>{reaction.title}</>:<><MessageCircle size={15}/>{data.pending?'Resultado por comprobar':usable?`${usable} giro${usable===1?'':'s'} · Te llevo`:'¿Te acompaño?'}</>}<span/></button>}

@@ -106,3 +106,48 @@ to{opacity:1;transform:translateY(0)}
 .header{position:sticky;top:0;z-index:2;background:#201a30f5;backdrop-filter:blur(18px)}
 }
 
+
+/* Compact by default on phones; expansion is always an explicit choice. */
+.controls .resizeButton { display: none; }
+@media (max-width: 600px) {
+  .panel {
+    display: flex;
+    flex-direction: column;
+    bottom: max(105px, calc(env(safe-area-inset-bottom) + 95px));
+    max-height: min(33dvh, 275px);
+    border-radius: 17px;
+  }
+  .header { flex-shrink: 0; min-height: 43px; padding: 4px 10px; gap: 8px; }
+  .seal { width: 25px; height: 25px; border-radius: 9px; }
+  .seal svg { width: 15px; height: 15px; }
+  .header strong { font-size: 10px; letter-spacing: 1.5px; }
+  .panel[data-expanded=false] .header span { display: none; }
+  .controls { gap: 3px; }
+  .controls .resizeButton { display: flex; align-items: center; justify-content: center; width: auto; min-width: 53px; padding: 0 7px; font-size: 11px; color: #e6cdfc; background: #b891e513; border: 1px solid #ccb0ea29; }
+  .panel[data-expanded=false] .controls button:not(.resizeButton):not(:last-child) { display: none; }
+  .content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #9673ad transparent; }
+  .context { padding: 3px 12px; }
+  .context span { font-size: 8px; }
+  .panel[data-expanded=false] .topicGrid,
+  .panel[data-expanded=false] .tools,
+  .panel[data-expanded=false] .note,
+  .panel[data-expanded=false] .footer,
+  .panel[data-expanded=false] .answer > .eyebrow { display: none; }
+  .answer { padding: 0 12px 9px; }
+  .answer h2, .journeyBody h2 { font-size: 18px; line-height: 1.18; margin: 4px 0 7px; }
+  .answer p, .journeyBody p { font-size: 12px; line-height: 1.42; margin-bottom: 9px; }
+  .primary, .secondary { min-height: 40px; padding: 8px 10px; font-size: 11px !important; }
+  .actions { gap: 5px; }
+  .ask { margin: 0 12px 9px; }
+  .ask input { font-size: 16px; padding: 10px; }
+  .guide[data-journey=true] .panel { max-height: min(27dvh, 205px); bottom: max(8px, env(safe-area-inset-bottom)); }
+  .journeyBody { padding: 7px 12px 8px; }
+  .journeyBody .eyebrow { font-size: 8px; line-height: 1.2; letter-spacing: .7px; }
+  .journeyBody .eyebrow svg { height: 10px; width: 10px; }
+  .panel[data-expanded=false] .journeyBody p { max-height: 4.26em; overflow-y: auto; }
+  .journeyButtons { gap: 6px; position: sticky; bottom: 0; background: #171426; padding-top: 3px; }
+  .journeyButtons > button { padding: 7px 10px; min-height: 40px; font-size: 10px; }
+  .panel[data-expanded=true] { max-height: calc(100dvh - 145px); }
+  .guide[data-journey=true] .panel[data-expanded=true] { max-height: min(65dvh, 450px); }
+  .panel[data-expanded=true] .topicGrid { margin-top: 5px; }
+}

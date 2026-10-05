@@ -11,6 +11,7 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { announceLeoCelestial, type LeoCelestialEventDetail } from "@/lib/leo-celestial-events";
 import styles from "./ClientePremium.module.css";
 import LeoCelestialGuide from "./LeoCelestialGuide";
+import ClienteNavigation from "./ClienteNavigation";
 
 const sb = supabaseClienteBrowser();
 const LEO_NOTIFICATION_KEY = "tc-leo-celestial-last-notification-v1";
@@ -319,63 +320,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
               </div>
             </div>
 
-            <div className="tc-nav" data-leo-anchor="navigation">
-              <Link className={`tc-nav-link ${pathname === "/cliente/dashboard" ? "tc-nav-link-active" : ""}`} href="/cliente/dashboard">
-                <HologramIcon compact><Home size={15} /></HologramIcon> Inicio
-              </Link>
-              <Link className={`tc-nav-link ${promoActive ? "tc-nav-oracle-new" : ""} ${pathname === "/cliente/precios-ofertas" ? "tc-nav-link-active" : ""}`} href="/cliente/precios-ofertas">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact><Tags size={15} /></HologramIcon> Precios y ofertas {promoActive ? <span className="tc-nav-new-badge">🔥 HOY</span> : null}</span>
-              </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/rangos" ? "tc-nav-link-active" : ""}`} href="/cliente/rangos" aria-current={pathname === "/cliente/rangos" ? "page" : undefined}>
-                <HologramIcon compact tone="rank"><Medal size={15} /></HologramIcon> Rangos del cliente
-              </Link>
-              <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/oraculo" ? "tc-nav-link-active" : ""}`} href="/cliente/oraculo">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="gold"><WandSparkles size={15} /></HologramIcon> Oráculo <span className="tc-nav-new-badge">NUEVO</span>
-                </span>
-              </Link>
-              <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/ruleta" ? "tc-nav-link-active" : ""}`} href="/cliente/ruleta">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="oracle"><Sparkles size={15} /></HologramIcon> Ruleta <span className="tc-nav-new-badge">NUEVO</span>
-                </span>
-              </Link>
-              <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/sorteo" ? "tc-nav-link-active" : ""}`} href="/cliente/sorteo">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="gold"><Gift size={15} /></HologramIcon> Sorteo <span className="tc-nav-new-badge">NUEVO</span>
-                </span>
-              </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/tarotistas" ? "tc-nav-link-active" : ""}`} href="/cliente/tarotistas">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="cyan"><MoonStar size={15} /></HologramIcon> Tarotistas
-                </span>
-              </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/resenas" ? "tc-nav-link-active" : ""}`} href="/cliente/resenas">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact><Star size={15} /></HologramIcon> Reseñas</span>
-              </Link>
-              {ritualAccess && <Link className={`tc-nav-link tc-nav-oracle-new ${pathname === "/cliente/ritual" ? "tc-nav-link-active" : ""}`} href="/cliente/ritual">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><HologramIcon compact tone="gold"><Sparkles size={15} /></HologramIcon> Mi ritual</span>
-              </Link>}
-              <Link className={`tc-nav-link ${pathname === "/cliente/notificaciones" ? "tc-nav-link-active" : ""}`} href="/cliente/notificaciones">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="rose"><BellRing size={15} /></HologramIcon> Notificaciones
-                  {unreadNotifications > 0 ? (
-                    <span className={styles.notificationBadge} aria-label={`${unreadNotifications} notificaciones sin leer`}>
-                      {unreadNotifications > 99 ? "99+" : unreadNotifications}
-                    </span>
-                  ) : null}
-                </span>
-              </Link>
-              <Link className={`tc-nav-link ${pathname === "/cliente/perfil" ? "tc-nav-link-active" : ""}`} href="/cliente/perfil">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="cyan"><UserCircle2 size={15} /></HologramIcon> Perfil
-                </span>
-              </Link>
-              <button type="button" className="tc-nav-link" onClick={logout}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
-                  <HologramIcon compact tone="rose"><LogOut size={15} /></HologramIcon> Salir
-                </span>
-              </button>
-            </div>
+            <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>
           </div>
 
           {summaryItems.length ? (

@@ -11,6 +11,10 @@ function load(file,mocks={},globals={}) {
  vm.runInNewContext(code,{exports,require:name=>{
    if(Object.hasOwn(mocks,name)) return mocks[name];
    if(name.endsWith('.module.css')) return {default:new Proxy({},{get:(_,key)=>String(key)}),__esModule:true};
+   if(name.startsWith('.')) {
+     const target=path.join(path.dirname(file),name)+'.tsx';
+     if(fs.existsSync(path.join(__dirname,'../',target)))return load(target,mocks,globals);
+   }
    return require(name);
  },console,Request,Response,URL,setTimeout,clearTimeout,...globals});
  return exports;
