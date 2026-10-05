@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import CelestialWheel, { WHEEL_SPIN_MS } from "./CelestialWheel";
+import RouletteRewardArt from "./RouletteRewardArt";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2, Gem, CalendarCheck2, Flame, Award, Diamond, LockKeyhole } from "lucide-react";
@@ -51,20 +53,13 @@ function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: num
   return <Clock3 size={size}/>;
 }
 
-function wheelValue(prize: RoulettePrize) {
-  if (prize.reward_type === "coins") return { main: String(prize.reward_value), sub: "COINS" };
-  if (prize.reward_type === "minutes") return { main: String(prize.reward_value), sub: "MIN" };
-  if (prize.reward_type === "rank") return { main: String(prize.meta?.rank || "RANGO").toUpperCase(), sub: "RANGO" };
-  if (prize.reward_type === "ritual") return { main: "RITUAL", sub: "PREMIO" };
-  if (prize.reward_type === "streak_minutes") return { main: `${Number(prize.meta?.daily_minutes || prize.reward_value || 10)} MIN`, sub: `×${Number(prize.meta?.days_total || 7)} DÍAS` };
-  return { main: "EXTRA", sub: "PREMIO" };
-}
 
 export default function PurchaseRoulette({ onReward }: { onReward?: () => void | Promise<void> }) {
   const router = useRouter();
   const [summary, setSummary] = useState<RouletteSummary | null>(null);
   const [level, setLevel] = useState<RouletteLevel>(1);
   const [busy, setBusy] = useState(false);
+  const [spinning, setSpinning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState<RouletteReward | null>(null);
@@ -78,7 +73,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (result) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (result) resultRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
   }, [result]);
 
   const load = useCallback(async () => {
@@ -156,18 +151,6 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const selectedMaxMinutes = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedMaxCoins = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedSpecial = useMemo(() => prizes.find(p => p.special) || null, [prizes]);
-  const gradient = useMemo(() => {
-    if (!wheelPrizes.length) return isDiamondView ? "conic-gradient(#122341 0deg 360deg)" : "conic-gradient(#24172d 0deg 360deg)";
-    const skins: Record<RouletteLevel, readonly string[]> = {
-      1: ["#573925", "#855638"], 2: ["#394655", "#657384"],
-      3: ["#3d235e", "#674091"], 4: ["#30221a", "#765624"],
-      5: ["#153858", "#32658c"],
-    };
-    return "conic-gradient(" + wheelPrizes.map((p, i) => {
-      const color = p.special ? (level === 5 ? "#5087ab" : level === 3 ? "#9060ae" : "#a27839") : skins[level][i % 2];
-      return color + " " + i * 360 / wheelPrizes.length + "deg " + (i + 1) * 360 / wheelPrizes.length + "deg";
-    }).join(",") + ")";
-  }, [wheelPrizes, isDiamondView, level]);
 
   const heroEyebrow = isDiamondView ? "BENEFICIO EXCLUSIVO · DIAMANTE" : "TAROT CELESTIAL · TUS RULETAS";
   const heroTitle = "Tus ruletas celestiales";
@@ -197,6 +180,8 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     setLevel(request.level);
     inFlight.current = true;
     setBusy(true);
+    setSpinning(false);
+    requestAnimationFrame(() => arenaRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
     setResult(null);
     setCountdown(null);
     setMessage("");
@@ -227,10 +212,14 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       const index = awardedPrizes.findIndex((p: RoulettePrize) => p.id === json.reward_id);
       setSummary(json);
       setLevel(request.level);
-      if (index >= 0) setRotation(previous => winningRotation(previous, index, awardedPrizes.length));
+      if (index >= 0) {
+        setSpinning(true);
+        setRotation(previous => winningRotation(previous, index, awardedPrizes.length));
+      }
       const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       animation.current = setTimeout(() => {
         if (!mounted.current) return;
+        setSpinning(false);
         setResult(json);
         setBusy(false);
         inFlight.current = false;
@@ -249,11 +238,12 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         });
         void Promise.resolve(onReward?.()).catch(() => {});
         void load();
-      }, reduced || index < 0 ? 50 : 3800);
+      }, reduced || index < 0 ? 50 : WHEEL_SPIN_MS + 120);
     } catch (error) {
       if (mounted.current) {
         setMessage(error instanceof Error && !["TimeoutError", "AbortError"].includes(error.name) ? error.message : "Conexión interrumpida. Comprueba el mismo giro sin gastar otro.");
         setBusy(false);
+        setSpinning(false);
       }
       inFlight.current = false;
     }
@@ -345,7 +335,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
                   return <div key={prize?.id || i} className={styles.rewardSlot}
                     data-empty={!prize} data-rarity={prize?.rarity}
                     title={prize ? prizeLabel(prize) : locked ? "Ruleta bloqueada" : "Sin premio configurado"}>
-                    {prize ? <><span className={styles.rewardArtwork} data-type={prize.reward_type} aria-hidden="true"/>
+                    {prize ? <><RouletteRewardArt type={prize.reward_type} className={styles.cardTreasure}/>
                       <span className={styles.rewardCaption}>{prizeLabel(prize)}</span></> :
                       <><span className={styles.emptyReward} aria-hidden="true">{locked ? <LockKeyhole size={23}/> : "✦"}</span>
                         <span className={styles.rewardCaption}>{!summary ? "Cargando…" : locked ? "Bloqueado" : "—"}</span></>}
@@ -369,57 +359,34 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       </div>
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
 
-      {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div ref={arenaRef} className={styles.arena}>
+      {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div ref={arenaRef} className={styles.arena} data-level={level}>
         <div className={styles.stage} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
           <div className={styles.stageHead}>
-            <span className={styles.stageLabel}>{isDiamondView ? `RULETA DIAMANTE · ${wheelPrizes.length} PREMIOS` : `RULETA NIVEL ${level} · ${wheelPrizes.length} PREMIOS`}</span>
+            <span className={styles.stageLabel}>{isDiamondView ? `RULETA DIAMANTE · ${wheelPrizes.length} PREMIOS` : `${level === 4 ? "RULETA ESPECIAL" : "RULETA NIVEL " + level} · ${wheelPrizes.length} PREMIOS`}</span>
             <small>{selectedMeta.name}</small>
           </div>
-          <div className={styles.wheelBox} data-level={level}>
-            <div className={styles.orbitRing} aria-hidden="true"/>
-            <div className={styles.pointer} aria-hidden="true"/>
-            <div className={styles.wheel} style={{ background: gradient, transform: "rotate(" + rotation + "deg)" }} aria-hidden="true">
-              {wheelPrizes.map((p, i) => {
-                const angle = (i + .5) * 2 * Math.PI / wheelPrizes.length;
-                const visual = wheelValue(p);
-                const radius = isDiamondView ? 37 : 34;
-                return <span key={p.id} className={styles.sector} data-winner={result?.reward_id === p.id} data-special={p.special} data-rarity={p.rarity || "common"}
-                  style={{ left: (50 + radius * Math.sin(angle)) + "%", top: (50 - radius * Math.cos(angle)) + "%", transform: "translate(-50%,-50%) rotate(" + (-rotation) + "deg)" }}>
-                  <RewardGlyph type={p.reward_type} size={18}/><b>{visual.main}</b><small>{visual.sub}</small>
-                </span>;
-              })}
-            </div>
-            <button
-              type="button"
-              className={styles.core}
-              disabled={busy || prizes.length === 0 || (!pending && !available)}
-              onClick={() => void spin()}
-              data-leo-anchor={pending ? "roulette-recovery" : undefined}
-              aria-label={prizes.length === 0 ? "No hay premios configurados para este nivel" : pending ? "Comprobar giro pendiente" : available ? (isDiamondView ? "Girar Ruleta Diamante" : `Girar ruleta Nivel ${level}`) : "No hay giros disponibles"}
-            >
-              {busy ? <RotateCw size={25}/> : isDiamondView ? <Diamond size={25}/> : <RotateCw size={25}/>} 
-              <strong>{busy ? "…" : prizes.length === 0 ? "SIN PREMIOS" : pending ? "COMPROBAR" : available ? "GIRAR" : "SIN GIROS"}</strong>
-              <small>{isDiamondView ? "DIAMANTE" : `NIVEL ${level}`}</small>
-            </button>
-          </div>
+          <CelestialWheel prizes={wheelPrizes} level={level} rotation={rotation} busy={busy} spinning={spinning}
+            pending={!!pending} available={available} winner={result?.reward_id}
+            disabled={busy || (!pending && (prizes.length === 0 || !available || !nextSpinByLevel?.[level] || (isDiamondView && !summary.diamond_access)))}
+            onSpin={() => void spin()}/>
           <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina y acredita de forma segura antes de mostrar el resultado.</small>
         </div>
 
         <aside className={styles.controls} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
           <div className={styles.controlsHead}>
             <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
-            <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> {isDiamondView ? "Ruleta Diamante" : `Nivel ${level}`}</span>
+            <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> {isDiamondView ? "Ruleta Diamante" : level === 4 ? "Especial" : `Nivel ${level}`}</span>
           </div>
-          <h3>{available ? "Tu próximo premio te espera" : "Consulta tus beneficios disponibles"}</h3>
-          <p>{isDiamondView && !summary?.diamond_access ? "La ruleta Diamante requiere acceso vigente y una campaña habilitada." : "Cada giro consume únicamente el saldo de esta ruleta. El premio se confirma y acredita en el servidor."}</p>
+          <h3>Tesoros de tu ruleta</h3>
+          <p>{isDiamondView && !summary?.diamond_access ? "La ruleta Diamante requiere acceso vigente y una campaña habilitada." : "Minutos, Coins y sorpresas de tu nivel. Cada giro utiliza únicamente el saldo de la ruleta seleccionada."}</p>
           <div className={styles.prizeTitle}><Gift size={16}/><span>{isDiamondView ? "Premios de la Ruleta Diamante" : "Premios de este nivel"}</span><b>{prizes.length}</b></div>
           <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special} data-rarity={p.rarity || "common"}>
-            <span className={styles.prizeIcon}><RewardGlyph type={p.reward_type} size={18}/></span>
+            <span className={styles.prizeIcon}><RouletteRewardArt type={p.reward_type}/></span>
             <span>{prizeLabel(p)}<small>{rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel]}{p.special ? " · PREMIO DESTACADO" : ""}</small></span>
             {p.special && <Star size={14} className={styles.specialStar}/>}
           </li>)}</ul>
-          <button type="button" className={styles.spin} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"} disabled={busy || prizes.length === 0 || (!pending && !available)} onClick={() => void spin()}>
-            {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : isDiamondView ? "GIRAR · DIAMANTE" : "Girar · Nivel " + level}
+          <button type="button" className={styles.spin} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"} disabled={busy || (!pending && (prizes.length === 0 || !available || !nextSpinByLevel?.[level] || (isDiamondView && !summary.diamond_access)))} onClick={() => void spin()}>
+            {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : isDiamondView ? "GIRAR · DIAMANTE" : level === 4 ? "Girar · Especial" : "Girar · Nivel " + level}
           </button>
           {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">{isDiamondView ? "Ver consultas · Conseguir giro Diamante" : "Ver consultas · Desbloquear un giro"} <ArrowRight size={17}/></Link>}
           <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
@@ -427,7 +394,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       </div>}
 
       {result && <section ref={resultRef} className={styles.result} data-special={result.special} data-level={result.spin_level} data-rarity={result.reward_rarity || "common"} role="status" aria-live="polite">
-        <div className={styles.rewardIcon}><RewardGlyph type={result.reward_type} size={38}/></div>
+        <div className={styles.rewardIcon}><RouletteRewardArt type={result.reward_type}/></div>
         <span className={styles.eyebrow}>{["legendary","ultra","diamond","jackpot"].includes(String(result.reward_rarity || "")) ? "¡PREMIO EXTRAORDINARIO!" : result.special ? "¡PREMIO ESPECIAL CELESTIAL!" : "¡TU PREMIO YA ES TUYO!"}</span>
         <h3>{prizeLabel(result)}</h3>
         <p>{result.reward_type === "coins" || result.reward_type === "minutes" ? "Premio acreditado automáticamente en tu saldo real." : result.reward_type === "streak_minutes" ? "Tu premio diario ya está activo. Vuelve cada día para reclamarlo." : "Premio registrado en tu cuenta. Puedes seguir su estado aquí mismo."}</p>

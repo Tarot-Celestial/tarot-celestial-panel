@@ -1,0 +1,9 @@
+.art { display:block; width:100%; aspect-ratio:1; flex-shrink:0; background-image:url('/images/roulette/reward-treasures.png'); background-repeat:no-repeat; background-size:300% 200%; background-position:0 0; filter:drop-shadow(0 3px 5px #0006); }
+.art[data-reward-art=coins] { background-position:50% 0; }
+.art[data-reward-art=rank] { background-position:100% 0; }
+.art[data-reward-art=ritual] { background-position:0 100%; }
+.art[data-reward-art=streak_minutes] { background-position:50% 100%; }
+.art[data-reward-art=perk] { background-position:100% 100%; }
+
+.oracle { display:block; width:100%; aspect-ratio:1; flex-shrink:0; filter:drop-shadow(0 3px 5px #0006); }
+.oracle svg { display:block; width:100%; height:100%; }
