@@ -906,3 +906,69 @@
   .wheelBox .sector b { font-size:9px; line-height:1.1; }
   .wheelBox .sector small { font-size:6px; line-height:1.1; }
 }
+
+/* Celestial tarot cards. Artwork is decorative; all labels and rewards are live. */
+.wrap{background:radial-gradient(ellipse at 50% 0,rgba(93,53,184,.2),transparent 55%),radial-gradient(ellipse at 100% 30%,rgba(35,114,177,.14),transparent 40%),#080c20;border-color:rgba(150,122,221,.35)}
+.wrap::after{content:none}
+.hero,.hero[data-diamond="true"]{background:transparent;border:0;box-shadow:none;padding:8px 0 24px;grid-template-columns:1fr}
+.heroCopy{text-align:center}
+.heroCopy .eyebrow{color:#bcb0e3;font-size:9px}
+.hero h2{max-width:none;margin:12px 0;font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:clamp(30px,4.3vw,60px);letter-spacing:-.035em;color:#ead8ff;text-shadow:0 0 28px #8a41de66}
+.hero p{color:#c6c2e9;font-size:12px;letter-spacing:.18em;text-transform:uppercase}
+.steps{justify-content:center;flex-wrap:wrap;margin-top:16px}
+.heroSide{display:none}
+.levels{grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;margin:0 0 28px;align-items:stretch}
+.level{--accent:#edb86b;--glow:211,145,49;display:flex;flex-direction:column;gap:0;padding:0;min-height:0;border-radius:22px;border:1px solid var(--accent);background:linear-gradient(180deg,#161326,#090c18)!important;color:#e8e1f5;box-shadow:inset 0 0 20px rgba(var(--glow),.1)!important;cursor:default;filter:none!important;isolation:isolate}
+.level[data-level="2"]{--accent:#c2a6ff;--glow:139,65,248}
+.level[data-level="3"]{--accent:#db93d3;--glow:185,67,165}
+.level[data-level="4"]{--accent:#ffc16a;--glow:232,146,34}
+.level[data-level="5"]{--accent:#91e5ff;--glow:60,167,241}
+.level::before,.level::after{content:none}
+.level[data-selected="true"]{border-color:var(--accent);box-shadow:0 0 0 2px rgba(var(--glow),.3),0 0 26px rgba(var(--glow),.32),inset 0 0 20px rgba(var(--glow),.12)!important}
+.level[data-level="2"][data-available="true"]{border-color:#dcc7ff;box-shadow:0 0 0 1px #ac77ff,0 0 24px #8d42ff55!important}
+.cardSelect{position:relative;display:flex;flex-direction:column;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.cardSelect:disabled,.cardSpin:disabled,.cardExplore:disabled{cursor:wait;opacity:.65}
+.cardSelect:focus-visible,.cardSpin:focus-visible,.cardExplore:focus-visible{outline:2px solid #fff;outline-offset:-4px;border-radius:16px}
+.cardArtwork{display:block;width:100%;aspect-ratio:1;background-image:url("/images/roulette/celestial-art.png");background-repeat:no-repeat;background-size:534.337% 267.169%;background-position:2.08% 22.52%;mask-image:linear-gradient(#000 0 86%,transparent 100%);-webkit-mask-image:linear-gradient(#000 0 86%,transparent 100%)}
+.level[data-level="2"] .cardArtwork{background-position:26.07% 22.52%}
+.level[data-level="3"] .cardArtwork{background-position:50.07% 22.52%}
+.level[data-level="4"] .cardArtwork{background-position:74.06% 22.52%}
+.level[data-level="5"] .cardArtwork{background-position:98.06% 22.52%}
+.level .levelStatus{position:absolute;top:10px;right:8px;display:inline-flex;align-items:center;gap:3px;max-width:calc(100% - 16px);padding:5px 7px;color:#f5eeff;background:#090c20dc;border:1px solid rgba(var(--glow),.6);font-size:8px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;box-shadow:none}
+.level[data-available="true"] .levelStatus{color:#fff;background:linear-gradient(135deg,#5e3298,#231b45)}
+.cardName{display:block;width:100%;padding:0 8px 12px;text-align:center;font-family:Georgia,"Times New Roman",serif;font-size:clamp(12px,1.2vw,19px);letter-spacing:.035em;text-transform:uppercase;color:var(--accent)}
+.cardInfo{display:block;margin:0 10px;padding:12px 10px;min-height:100px;border:1px solid rgba(var(--glow),.35);border-radius:15px;background:linear-gradient(150deg,rgba(var(--glow),.09),#080c18)}
+.level .levelMain{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:0 0 8px;flex-wrap:wrap}
+.level .levelMain strong{font-family:Georgia,"Times New Roman",serif;font-size:clamp(22px,2vw,32px);font-weight:500;letter-spacing:-.03em;color:var(--accent);text-shadow:0 0 18px rgba(var(--glow),.32)}
+.level .levelMain b{font-size:24px;color:var(--accent);white-space:nowrap}
+.level .levelMain b small{font-size:10px;color:#cbc8df;font-weight:400}
+.cardDescription{display:block;color:#cfcbdf;font-size:11px;line-height:1.5}
+.cardRewards{padding:14px 10px 0}
+.rewardHeading{display:block;text-align:center;color:var(--accent);font-size:9px;text-transform:uppercase;letter-spacing:.2em;margin:0 0 10px}
+.rewardSlots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.rewardSlot{min-width:0;text-align:center}
+.rewardArtwork{display:block;width:100%;aspect-ratio:1;border:1px solid rgba(var(--glow),.65);border-radius:12px;background-color:#080c17;background-image:url("/images/roulette/celestial-art.png");background-repeat:no-repeat;background-size:1971.111% 985.556%;background-position:3.325% 80.678%}
+.rewardArtwork[data-type="oracle_credits"]{background-position:23.991% 80.678%}
+.rewardArtwork[data-type="coins"]{background-size:2861.29% 1430.645%;background-position:25.7% 47%}
+.rewardArtwork[data-type="minutes"]{background-size:3695.833% 1847.917%;background-position:14.54% 37.54%}
+.rewardArtwork[data-type="rank"]{background-position:56.235% 80.678%}
+.rewardArtwork[data-type="ritual"]{background-position:77.672% 80.678%}
+.rewardArtwork[data-type="streak_minutes"]{background-position:35.629% 80.678%}
+.rewardArtwork[data-type="perk"]{background-position:29.692% 80.678%}
+.rewardCaption{display:block;margin-top:5px;font-size:10px;color:#e2ddeb;line-height:1.4;overflow-wrap:anywhere}
+.emptyReward{display:grid;place-items:center;aspect-ratio:1;border:1px solid #66779930;border-radius:12px;background:#090e1d;color:#646f93;font-size:28px}
+.rewardSlot[data-rarity="legendary"] .rewardArtwork,.rewardSlot[data-rarity="jackpot"] .rewardArtwork{border-color:#ffcc72;box-shadow:0 0 12px #ffbe3922}
+.level .levelCap{display:block;text-align:center;margin:10px 0 0;color:#d9d3e9;font-size:11px}
+.cardActions{display:grid;gap:7px;margin-top:auto;padding:12px 10px 14px}
+.cardSpin,.cardExplore{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:40px;padding:8px;border:1px solid var(--accent);border-radius:999px;font-size:12px;cursor:pointer}
+.cardSpin{background:linear-gradient(180deg,#a15bfc,#7028d4 65%,#4f1ba1);color:#fff;font-weight:800;box-shadow:0 0 14px #995aff55,inset 0 1px 3px #eee6ff88}
+.cardExplore{background:linear-gradient(180deg,rgba(var(--glow),.2),rgba(var(--glow),.06));color:#f0e8fc}
+.cardExplore:hover{background:rgba(var(--glow),.25)}
+.cardSpin:hover{filter:brightness(1.13)}
+.arena{scroll-margin-top:24px}
+@media(max-width:1180px){.levels{grid-template-columns:repeat(3,minmax(0,1fr))}.cardName{font-size:18px}}
+@media(max-width:760px){.levels{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.wrap{padding:16px}.hero p{font-size:10px;line-height:1.7}.cardName{font-size:14px}.cardInfo{padding:10px 8px;margin:0 8px}.cardRewards{padding:12px 8px 0}.cardActions{padding:12px 8px}.level .levelMain strong{font-size:25px}.rewardCaption{font-size:9px}.cardDescription{font-size:10px}}
+@media(max-width:380px){.levels{grid-template-columns:1fr}.cardArtwork{max-height:300px}.cardName{font-size:19px}.hero h2{font-size:29px}}
+@media(prefers-reduced-motion:reduce){.arena{scroll-behavior:auto}}
+.hero p{max-width:none;margin-left:auto;margin-right:auto}
+@media(max-width:540px){.levels{grid-template-columns:1fr}.cardName{font-size:20px}.level .levelMain strong{font-size:30px}.cardDescription{font-size:12px}.rewardCaption{font-size:11px}.cardSpin,.cardExplore{font-size:13px}.cardInfo{min-height:96px}.rewardHeading{font-size:10px}.level .levelStatus{font-size:9px}}

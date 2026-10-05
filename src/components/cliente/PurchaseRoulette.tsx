@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2, Gem, CalendarCheck2, Flame, Award, Diamond } from "lucide-react";
+import { Coins, Clock3, Sparkles, ShieldCheck, ArrowRight, RotateCw, Crown, Gift, Star, CheckCircle2, Gem, CalendarCheck2, Flame, Award, Diamond, LockKeyhole } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { prizeLabel, rarityLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward, type RoulettePrize, type RouletteRewardType } from "@/lib/ruleta";
@@ -74,6 +74,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const animation = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRef = useRef<Pending | null>(null);
   const resultRef = useRef<HTMLElement | null>(null);
+  const arenaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (result) resultRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -159,7 +160,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   }, [wheelPrizes, isDiamondView, level]);
 
   const heroEyebrow = isDiamondView ? "BENEFICIO EXCLUSIVO · DIAMANTE" : "TAROT CELESTIAL · TUS RULETAS";
-  const heroTitle = selectedMeta.name;
+  const heroTitle = "Tus ruletas celestiales";
   const heroSubtitle = isDiamondView
     ? "Consulta los giros y premios disponibles según tus beneficios actuales."
     : "Cada ruleta conserva sus propios giros. Elige un nivel y descubre sus premios configurados.";
@@ -179,10 +180,11 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     return () => clearTimeout(timer);
   }, [countdown, goToBalance]);
 
-  async function spin() {
+  async function spin(targetLevel: RouletteLevel = level) {
     if (inFlight.current || !summary) return;
-    const request = pendingRef.current || { spin_id: nextSpinByLevel?.[level] || "", level };
+    const request = pendingRef.current || { spin_id: nextSpinByLevel?.[targetLevel] || "", level: targetLevel };
     if (!request.spin_id) return;
+    setLevel(request.level);
     inFlight.current = true;
     setBusy(true);
     setResult(null);
@@ -272,8 +274,8 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       <header className={styles.hero} data-diamond={isDiamondView ? "true" : "false"}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>{heroEyebrow}</span>
-          <h2>{heroTitle}<em>{isDiamondView ? "Tu compra Diamante tiene premio." : "Tu compra tiene premio."}</em></h2>
-          <p>{heroSubtitle}</p>
+          <h2>{heroTitle}</h2>
+          <p>Elige tu ruleta y descubre sus tesoros</p>
           <div className={styles.steps} aria-label="Cómo funciona la Ruleta Ultra Sorpresas">
             <span><b>01</b> {steps[0]}</span><ArrowRight size={14}/><span><b>02</b> {steps[1]}</span><ArrowRight size={14}/><span><b>03</b> {steps[2]}</span>
           </div>
@@ -291,40 +293,73 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       <div className={styles.levels} aria-label="Elige el nivel de tu giro">
         {visibleLevels.map(n => {
           const meta = levelMeta[n];
-          const LevelIcon = meta.icon;
           const count = spinsByLevel?.[n] ?? null;
-          const status = !summary ? "CARGANDO" : n === 5 && !summary.diamond_access
-            ? "NO DISPONIBLE" : Number(count || 0) > 0 ? "DISPONIBLE" : "SIN GIROS";
-          const description = n === 5 ? "Acceso según rango y campaña activa"
-            : n === 4 ? "Giros Especial independientes" : "Giros incluidos en tus beneficios de compra";
-          const catalogueCount = summary?.catalogue.filter(p => p.nivel === n).length;
-          return <button
-            type="button"
-            key={n}
-            aria-pressed={level === n}
-            disabled={busy || !!pending}
-            onClick={() => { setLevel(n); setRotation(0); setResult(null); setCountdown(null); }}
-            className={styles.level}
-            data-selected={level === n}
-            data-level={n}
-            data-tone={meta.tone}
-            data-available={Number(count || 0) > 0}
-          >
-            <div className={styles.levelTop}>
-              <span className={styles.levelIcon}><LevelIcon size={19}/></span>
-              <span className={styles.levelStatus}>{status}</span>
+          const locked = !!summary && n === 5 && !summary.diamond_access;
+          const catalogue = summary?.catalogue.filter(p => p.nivel === n);
+          const highlights = [...(catalogue || [])]
+            .sort((a, b) => Number(Boolean(b.special)) - Number(Boolean(a.special)) ||
+              Number(a.sort_order || 0) - Number(b.sort_order || 0))
+            .slice(0, 3);
+          const canSpin = !locked && Number(count || 0) > 0 &&
+            !!catalogue?.length && !!nextSpinByLevel?.[n];
+          const status = !summary ? "Cargando" : locked ? "No disponible" :
+            Number(count || 0) > 0 ? "Disponible" : "Sin giros";
+          const description = n === 5 ? "Acceso según rango y campaña activa" :
+            n === 4 ? "Giros Especial independientes" : "Giros incluidos en tus beneficios de compra";
+          const title = n === 5 ? "Diamante" : n === 4 ? "Especial" : `Nivel ${n}`;
+          const selectLevel = (reveal = false) => {
+            setLevel(n); setRotation(0); setResult(null); setCountdown(null);
+            if (reveal) requestAnimationFrame(() =>
+              arenaRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
+          };
+          return <article key={n} className={styles.level}
+            data-selected={level === n} data-level={n} data-tone={meta.tone}
+            data-available={Number(count || 0) > 0 && !locked} data-locked={locked}>
+            <button type="button" className={styles.cardSelect}
+              aria-pressed={level === n} aria-label={`Seleccionar ${meta.name}: ${status}, ${count ?? "consultando"} giros`}
+              disabled={busy || !!pending} onClick={() => selectLevel()}>
+              <span className={styles.cardArtwork} aria-hidden="true"/>
+              <span className={styles.levelStatus}>{locked && <LockKeyhole size={11}/>} {status}</span>
+              <span className={styles.cardName}>{meta.name}</span>
+              <span className={styles.cardInfo}>
+                <span className={styles.levelMain}><strong>{title}</strong>
+                  <b>{count ?? "—"} <small>{count === 1 ? "giro" : "giros"}</small></b></span>
+                <span className={styles.cardDescription}>{description}</span>
+              </span>
+            </button>
+            <div className={styles.cardRewards}>
+              <span className={styles.rewardHeading}>Premios destacados</span>
+              <div className={styles.rewardSlots}>
+                {[0, 1, 2].map(i => {
+                  const prize = locked ? undefined : highlights[i];
+                  return <div key={prize?.id || i} className={styles.rewardSlot}
+                    data-empty={!prize} data-rarity={prize?.rarity}
+                    title={prize ? prizeLabel(prize) : locked ? "Ruleta bloqueada" : "Sin premio configurado"}>
+                    {prize ? <><span className={styles.rewardArtwork} data-type={prize.reward_type} aria-hidden="true"/>
+                      <span className={styles.rewardCaption}>{prizeLabel(prize)}</span></> :
+                      <><span className={styles.emptyReward} aria-hidden="true">{locked ? <LockKeyhole size={23}/> : "✦"}</span>
+                        <span className={styles.rewardCaption}>{!summary ? "Cargando…" : locked ? "Bloqueado" : "—"}</span></>}
+                  </div>;
+                })}
+              </div>
+              <small className={styles.levelCap}>{catalogue == null ? "Consultando premios…" : `${catalogue.length} premios`}</small>
             </div>
-            <span className={styles.eyebrow}>{meta.name.toUpperCase()}</span>
-            <div className={styles.levelMain}><strong>{n === 5 ? "Diamante" : n === 4 ? "Especial" : `Nivel ${n}`}</strong><b>{count ?? "—"} <small>giros</small></b></div>
-            <span>{description}</span>
-            <small className={styles.levelCap}>{catalogueCount == null ? "Consultando premios…" : `${catalogueCount} premios visibles`}</small>
-          </button>;
+            <div className={styles.cardActions}>
+              {canSpin && <button type="button" className={styles.cardSpin}
+                disabled={busy || !!pending} onClick={() => void spin(n)}>
+                <Sparkles size={16}/>{busy && level === n ? "Girando…" : "Girar ahora"}
+              </button>}
+              <button type="button" className={styles.cardExplore} disabled={busy || !!pending}
+                onClick={() => selectLevel(true)}>
+                {locked ? <><LockKeyhole size={14}/> Ver condiciones</> : <>Explorar premios <ArrowRight size={14}/></>}
+              </button>
+            </div>
+          </article>;
         })}
       </div>
-
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
 
-      {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div className={styles.arena}>
+      {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div ref={arenaRef} className={styles.arena}>
         <div className={styles.stage} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
           <div className={styles.stageHead}>
             <span className={styles.stageLabel}>{isDiamondView ? `RULETA DIAMANTE · ${wheelPrizes.length} PREMIOS` : `RULETA NIVEL ${level} · ${wheelPrizes.length} PREMIOS`}</span>
