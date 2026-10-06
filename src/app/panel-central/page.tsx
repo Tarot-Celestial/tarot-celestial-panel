@@ -17,6 +17,7 @@ import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import { useCentralFidelityData } from "@/features/central/useCentralFidelityData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
+import ClientRecoveryPanel from "@/features/central/ClientRecoveryPanel";
 import MyClientsList, { type MyClientsView } from "@/features/central/MyClientsList";
 import CentralNewClientModal from "@/features/central/CentralNewClientModal";
 import MyClientProfile from "@/features/central/MyClientProfile";
@@ -44,7 +45,7 @@ import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import CentralTeamLivePanel from "@/features/central/CentralTeamLivePanel";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
 
 const sb = supabaseBrowser();
 const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralRafflePanel"), {
@@ -55,6 +56,7 @@ const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralR
 const TABS = [
   "central",
   "mis-clientas",
+  "recuperar-clientes",
   "notificaciones",
   "mi-factura",
   "tu-sistema-xp",
@@ -85,6 +87,7 @@ const HIDDEN_TELEPHONIST_TABS = new Set<TabKey>(["diario", "llamadas"]);
 const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
   { key: "central", label: "Central", icon: LayoutDashboard },
   { key: "mis-clientas", label: "Mis clientas", icon: UsersRound },
+  { key: "recuperar-clientes", label: "Recuperar clientes", icon: RotateCcw, kicker: "Reencuentro · 75 XP" },
   { key: "notificaciones", label: "Notificaciones", icon: Bell },
   { key: "mi-factura", label: "Mi factura", icon: BadgeEuro },
   {
@@ -1260,6 +1263,7 @@ function CentralPage() {
           {tab === "central" && <CentralDateSelector value={selectedDate} today={todayKey} loading={xpFeed.busy} onChange={(date) => { const params=new URLSearchParams(searchParams?.toString()||""); params.set("tab","central"); params.set("date",date); router.push(`${pathname}?${params.toString()}`,{scroll:false}); }} />}
 
           <div className="tc-main-content">
+          {tab === "recuperar-clientes" && <ClientRecoveryPanel onXpChange={() => void xpFeed.load()} />}
           {tab === "mis-clientas" && (
             <>
               <MyClientsStatsCards data={myClientsStats} clientsLoading={!myClientsRealStats} xpLoading={!xpData} onLevel={() => handleSidebarTabChange("tu-sistema-xp-niveles")} onActive={() => setMyClientsView("active")} onFollowUp={() => setMyClientsView("followup")} onCoins={() => handleSidebarTabChange("tu-sistema-xp-coins")} />
@@ -1991,3 +1995,5 @@ export default function Page() {
     </Suspense>
   );
 }
+
+
