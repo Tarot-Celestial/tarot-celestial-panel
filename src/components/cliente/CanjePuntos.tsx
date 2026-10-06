@@ -1,5 +1,6 @@
 "use client";
 
+import RouletteRewardArt from "./RouletteRewardArt";
 import { useMemo, useState } from "react";
 import { CheckCircle2, Coins, Gift, LockKeyhole, Sparkles, X } from "lucide-react";
 
@@ -45,7 +46,7 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
         <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
           <div style={{ display: "grid", gap: 6 }}>
             <div className="tc-panel-title">Canjear Coins por minutos</div>
-            <div className="tc-panel-sub">Convierte tu saldo real de Coins en minutos free. El canje utiliza exactamente el sistema actual de recompensas.</div>
+            <div className="tc-panel-sub">Elige tu recompensa. Tus Coins se convierten en minutos gratis.</div>
           </div>
           <div className="tc-coin-balance-mini"><Coins size={16} /> {puntos.toLocaleString("es-ES")} Coins</div>
         </div>
@@ -61,6 +62,7 @@ export default function CanjePuntos({ puntos, recompensas, loading, onRedeem }: 
                   <span className="tc-reward-kicker"><Gift size={14} /> Recompensa</span>
                   {affordable ? <Sparkles size={16} /> : <LockKeyhole size={16} />}
                 </div>
+                <div className="tc-reward-illustration"><RouletteRewardArt type="minutes"/></div>
                 <div className="tc-reward-minutes">{Number(item.minutos_otorgados || 0)} <span>MINUTOS</span></div>
                 <div className="tc-reward-name">{item.nombre}</div>
                 <div className="tc-reward-cost"><Coins size={15} /> {cost.toLocaleString("es-ES")} Coins</div>

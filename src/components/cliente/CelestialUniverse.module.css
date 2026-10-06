@@ -1,0 +1,12 @@
+.universe{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;background:#020813;--depth-far:0px;--depth-near:0px;--pointer-x:0px;--pointer-y:0px}
+.sky{position:absolute;inset:-180px -5%;background:url('/images/universe/deep-space.png') center/cover no-repeat;transform:translate3d(calc(var(--pointer-x) * -.3),var(--depth-far),0);opacity:.8}
+.stars{position:absolute;inset:-50%;background-image:radial-gradient(1px 1px at 30px 70px,#efcf91 65%,transparent),radial-gradient(1px 1px at 130px 130px,#d8eaff 65%,transparent);background-size:233px 271px,347px 293px;opacity:.5;transform:translate3d(var(--pointer-x),var(--depth-near),0)}
+.depth{position:absolute;width:min(78vw,1080px);aspect-ratio:1;top:110px;right:-13vw;transform:translate3d(var(--pointer-x),calc(var(--depth-near) + var(--pointer-y)),0)}
+.arriving,.departing{position:absolute;inset:0}.planet,.departing{width:100%;height:100%;background-image:url('/images/universe/planets.png');background-size:400% 300%;background-repeat:no-repeat;filter:drop-shadow(0 0 32px color-mix(in srgb,var(--planet-glow) 24%,transparent))}
+.arriving[data-travel=true]{animation:arrival .85s cubic-bezier(.2,.7,.2,1) both}.departing{animation:departure .7s ease both}
+.constellation{position:absolute;inset:-5%;width:110%;height:110%;opacity:.32;transform:rotate(-12deg)}
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,#0208139c,transparent 70%),linear-gradient(0deg,#02081369,transparent 65%)}
+@keyframes arrival{from{opacity:0;transform:translateX(100px) scale(.8)}to{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes departure{to{opacity:0;transform:translateX(-100px) scale(1.12)}}
+@media(max-width:700px){.depth{width:125vw;right:-53vw;top:240px;opacity:.7}.sky{opacity:.65}.shade{background:linear-gradient(90deg,#02081399,#02081330)}.constellation{opacity:.24}}
+@media(prefers-reduced-motion:reduce){.arriving[data-travel=true],.departing{animation:none}.departing{display:none}.sky,.stars,.depth{transform:none}}

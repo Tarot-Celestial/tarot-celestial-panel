@@ -1,4 +1,5 @@
 "use client";
+import HomeObservatory from "@/components/cliente/HomeObservatory";
 import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -844,204 +845,15 @@ export default function ClienteDashboardPage() {
       <ClienteLayout
         title={`Hola ${nombre}`}
         subtitle="Tu panel cliente reúne compra, minutos, llamadas, Coins, notificaciones y ventajas en un solo lugar para que todo sea rápido y cómodo."
-        summaryItems={summaryItems}
+        summaryItems={[]}
       >
         {msg ? <div className="tc-card tc-golden-panel">{msg}</div> : null}
-        <RankDailyBonus />
-
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <a
-            className="tc-btn tc-btn-gold"
-            href="/cliente/oraculo"
-            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 12px" }}
-          >
-            <WandSparkles size={15} /> Abrir Oráculo <ChevronRight size={14} />
-          </a>
-        </div>
-
-        <div className="tc-dashboard-grid">
-          <div className="tc-stack">
-            <section className="tc-card tc-golden-panel" style={{ display: "grid", gap: 16 }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="tc-panel-title">Tu estado actual</div>
-                  <div className="tc-panel-sub">Tu actividad, tus minutos y tus ventajas, todo reunido aquí.</div>
-                </div>
-                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <Crown size={14} /> Rango {rankBadge.label}
-                </div>
-              </div>
-
-              <div className="tc-status-grid">
-                <div id="saldo-coins" className={`tc-mini-stat ${rewardHighlight === "coins" ? rewardStyles.highlight : ""}`}>
-                  <div className="tc-kpi-label">Coins disponibles</div>
-                  <strong>{totalPoints}</strong>
-                  <div className="tc-kpi-meta">Tu saldo real de recompensas para desbloquear minutos.</div>
-                  <div className="tc-client-resource-split">
-                    <span className="tc-client-resource-pill"><Coins size={12} /> Moneda de recompensa</span>
-                  </div>
-                </div>
-                <div id="saldo-minutes" className={`tc-mini-stat ${rewardHighlight === "minutes" ? rewardStyles.highlight : ""}`}>
-                  <div className="tc-kpi-label">Minutos disponibles</div>
-                  <strong>{totalMinutes}</strong>
-                  <div className="tc-kpi-meta">Todo tu saldo disponible para consultar cuando quieras.</div>
-                  <div className="tc-client-resource-split">
-                    <span className="tc-client-resource-pill">Free: {freeMinutes}</span>
-                    <span className="tc-client-resource-pill">Normales: {normalMinutes}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`tc-rank-card tc-rank-card-${rankBadge.key}`}>
-                <div className="tc-rank-hero">
-                  <div className={`tc-rank-emblem tc-rank-emblem-${rankBadge.key}`}><Medal size={30} /></div>
-                  <div className="tc-rank-identity">
-                    <span>RANGO ACTUAL</span>
-                    <strong>{rankBadge.label.toUpperCase()}</strong>
-                    {rankInfo?.has_override ? (
-                      <div className="tc-rank-override"><Clock3 size={13} /> {rankInfo.override_type === "permanent" ? "Asignación administrativa" : "Rango temporal"}{rankInfo.override_ends_at ? ` · hasta ${new Date(rankInfo.override_ends_at).toLocaleDateString("es-ES")}` : ""}</div>
-                    ) : null}
-                  </div>
-                  <div className="tc-rank-live-stats">
-                    <div><span>Gasto · 30 días</span><strong>{rankSpend30.toFixed(2)} USD</strong></div>
-                    <div><span>Compras</span><strong>{rankPurchases30}</strong></div>
-                  </div>
-                </div>
-
-                <div className="tc-rank-progress-head">
-                  <div>
-                    <span className="tc-rank-progress-label">{rankProgress?.next_label ? "PROGRESO DE RANGO" : "PROGRESIÓN COMPLETA"}</span>
-                    <div className="tc-rank-path"><strong>{rankBadge.label}</strong>{rankProgress?.next_label ? <><span>→</span><strong>{rankProgress.next_label}</strong></> : <span className="tc-rank-max"><Crown size={14} /> Rango máximo alcanzado</span>}</div>
-                  </div>
-                  <strong className="tc-rank-percent">{progressPercent.toFixed(0)}%</strong>
-                </div>
-                <div className="tc-progress-track tc-progress-track-large">
-                  <div className="tc-progress-fill" style={{ width: `${progressPercent}%` }} />
-                </div>
-                <div className="tc-rank-progress-copy">
-                  <span>{rankProgress?.status_text || "Tu progreso se actualiza con tus compras confirmadas."}</span>
-                  {rankProgress?.next_target ? <strong>Meta: {Number(rankProgress.next_target).toFixed(0)} USD / 30 días</strong> : <strong>Todos los beneficios actuales desbloqueados</strong>}
-                </div>
-              </div>            </section>
-
-            <section className="tc-card tc-purchase-panel">
-              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="tc-panel-title">Comprar minutos desde la app</div>
-                  <div className="tc-panel-sub">Consulta los packs disponibles y elige los minutos que necesitas.</div>
-                </div>
-                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <ShoppingBag size={14} /> Precio app
-                </div>
-              </div>
-              <div className="tc-pack-grid">
-                {packs.map((pack) => (
-                  <div key={pack.id} className={`tc-pack-card ${pack.highlight ? "tc-pack-card-highlight" : ""}`}>
-                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                      <div>
-                        <div className="tc-list-item-title">{pack.nombre}</div>
-                        <div className="tc-list-item-sub">{pack.descripcion}</div>
-                      </div>
-                      {pack.highlight ? <div className="tc-chip">Recomendado</div> : null}
-                    </div>
-                    <div className="tc-pack-price">{`$${pack.priceUsd.toFixed(2).replace(".", ",")}`}</div>
-                    <div className="tc-pack-meta">{pack.totalMinutes} minutos totales</div>
-                    {pack.rankBenefits?.enabled ? <div className={rewardStyles.packRankBenefit}><strong>Por tu rango</strong><span>{rankPackBenefitSummary(pack.rankBenefits)}</span></div> : null}
-                    <RouletteBenefit level={pack.rouletteLevel} summary={rouletteSummary} spins={pack.rouletteSpins} rewardCoins={pack.rewardCoins} oracleCredits={pack.oracleCredits}/>
-                    <ClientPurchaseAction className="tc-btn tc-btn-gold"><button type="button" className="tc-btn tc-btn-gold" disabled={buyingMinutePackId === pack.id} onClick={() => buyMinutePack(pack.id)}>
-                      {buyingMinutePackId === pack.id ? "Conectando…" : "Comprar ahora"}
-                    </button></ClientPurchaseAction>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-
-            <section id="comprar-tiradas" className="tc-card tc-purchase-panel" style={{ borderColor: "rgba(167, 111, 255, .22)" }}>
-              <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="tc-panel-title">Comprar tiradas de cartas</div>
-                  <div className="tc-panel-sub">Desbloquea nuevas tiradas del Oráculo. Consulta los packs disponibles y sus beneficios.</div>
-                </div>
-                <div className="tc-chip" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <WandSparkles size={14} /> Tiradas disponibles: {oracleCredits}
-                </div>
-              </div>
-              <div className="tc-pack-grid">
-                {oraclePacks.map((pack, index) => (
-                  <div key={pack.id} className={`tc-pack-card ${index === 1 ? "tc-pack-card-highlight" : ""}`}>
-                    <div className="tc-row" style={{ justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
-                      <div>
-                        <div className="tc-list-item-title">{index === 0 ? "🔮" : "✨"} {pack.nombre.toUpperCase()}</div>
-                        <div className="tc-list-item-sub">{pack.descripcion}</div>
-                      </div>
-                      <div className="tc-chip">{pack.credits} tiradas</div>
-                    </div>
-                    <div className="tc-pack-price">${pack.priceEur.toFixed(2).replace(".", ",")}</div>
-                    <div className="tc-pack-meta">Créditos exclusivos del Oráculo · no usa Coins ni minutos</div>
-                    <ClientPurchaseAction className="tc-btn tc-btn-gold"><button className="tc-btn tc-btn-gold" disabled={buyingOraclePackId === pack.id} onClick={() => buyOraclePack(pack.id)}>
-                      {buyingOraclePackId === pack.id ? "Conectando…" : "COMPRAR"}
-                    </button></ClientPurchaseAction>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="tc-rank-perks-layout">
-              <div className={`tc-card tc-perks-card tc-perks-active tc-perks-${rankBadge.key}`}>
-                <div className="tc-perks-header">
-                  <div className={`tc-rank-emblem tc-rank-emblem-${rankBadge.key}`}><Medal size={23} /></div>
-                  <div>
-                    <span>TUS BENEFICIOS ACTUALES</span>
-                    <strong>{rankBadge.label.toUpperCase()}</strong>
-                  </div>
-                  {rankInfo?.has_override ? <span className="tc-perks-temp"><Clock3 size={12} /> {rankInfo.override_type === "permanent" ? "ADMIN" : "TEMPORAL"}</span> : null}
-                </div>
-                <div className="tc-perks-list">
-                  {(rankInfo?.benefits || []).map((item) => (
-                    <div key={item} className="tc-perk tc-perk-unlocked">
-                      <span className="tc-perk-icon"><CheckCircle2 size={16} /></span>
-                      <span>{item}</span>
-                      <small>DESBLOQUEADO</small>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {rankInfo?.nextLabel ? (
-                <div className="tc-card tc-perks-card tc-perks-next">
-                  <div className="tc-perks-header">
-                    <div className={`tc-rank-emblem tc-rank-emblem-${String(rankInfo.nextRank || "plata") === "diamante" ? "diamond" : String(rankInfo.nextRank || "plata") === "oro" ? "gold" : "silver"}`}><Medal size={23} /></div>
-                    <div>
-                      <span>PRÓXIMO RANGO</span>
-                      <strong>{rankInfo.nextLabel.toUpperCase()}</strong>
-                    </div>
-                    {rankInfo.nextTarget ? <span className="tc-perks-target">{Number(rankInfo.nextTarget).toFixed(0)} USD / 30 días</span> : null}
-                  </div>
-                  <div className="tc-perks-list">
-                    {(rankInfo?.nextBenefits || []).map((item) => (
-                      <div key={item} className="tc-perk tc-perk-locked">
-                        <span className="tc-perk-icon"><LockKeyhole size={16} /></span>
-                        <span>{item}</span>
-                        <small>BLOQUEADO</small>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="tc-card tc-perks-card tc-perks-max">
-                  <div className="tc-perks-max-crown"><Crown size={28} /></div>
-                  <span>RANGO MÁXIMO ALCANZADO</span>
-                  <strong>ORO</strong>
-                  <p>Has desbloqueado todos los beneficios actuales.</p>
-                </div>
-              )}
-            </section>
-
-            <CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward} />
-          </div>
-
-        </div>
+        <HomeObservatory name={nombre} rank={rankBadge.label} minutes={totalMinutes} free={freeMinutes} normal={normalMinutes} coins={totalPoints}
+          oracleCredits={oracleCredits} oracleFree={oracleFreeAvailable} oracleCountdown={oracleRechargeLabel} roulette={rouletteSummary} highlight={rewardHighlight}
+          benefits={rankInfo?.benefits || []} rankProgress={rankProgress} overrideLabel={rankInfo?.has_override ? (rankInfo.override_type === "permanent" ? "Asignación administrativa" : "Rango temporal" + (rankInfo.override_ends_at ? " · hasta " + new Date(rankInfo.override_ends_at).toLocaleDateString("es-ES") : "")) : undefined}>
+          <RankDailyBonus/>
+          <section id="canjear-coins" aria-label="Canjear Coins por minutos"><CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward}/></section>
+        </HomeObservatory>
       </ClienteLayout>
 
       <OnboardingModal

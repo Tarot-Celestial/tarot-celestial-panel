@@ -12,6 +12,8 @@ import { announceLeoCelestial, type LeoCelestialEventDetail } from "@/lib/leo-ce
 import styles from "./ClientePremium.module.css";
 import LeoCelestialGuide from "./LeoCelestialGuide";
 import ClienteNavigation from "./ClienteNavigation";
+import CelestialUniverse, { universeDestination } from "./CelestialUniverse";
+import universeStyles from "./ClienteUniverseLayout.module.css";
 
 const sb = supabaseClienteBrowser();
 const LEO_NOTIFICATION_KEY = "tc-leo-celestial-last-notification-v1";
@@ -259,148 +261,19 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
 
   const isHome = pathname === "/cliente/dashboard";
 
-  return (
-    <PanelTheme rank={panelRank} className={`tc-wrap ${styles.premiumShell} ${styles.halloweenSeason}`} data-home={isHome ? "true" : "false"}>
-      <div className={styles.spaceField} aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-
-      <div className={styles.halloweenAmbient} aria-hidden="true">
-        <span className={styles.halloweenMoon} />
-        <span className={styles.halloweenLeafOne}>🍂</span>
-        <span className={styles.halloweenLeafTwo}>🍁</span>
-        <span className={styles.halloweenPumpkinOne}>🎃</span>
-        <span className={styles.halloweenPumpkinTwo}>🎃</span>
-      </div>
-
-      <div className={styles.celestialBackdrop} aria-hidden="true">
-        <span className={styles.celestialAmbientGlow} />
-        <span className={styles.celestialOrbitOuter} />
-        <span className={styles.celestialOrbitInner} />
-        <div className={styles.celestialLogoGhost}>
-          <Image
-            src="/tarot-celestial-logo-4k.webp"
-            alt=""
-            fill
-            sizes="(max-width: 800px) 92vw, (max-width: 1500px) 72vw, 1180px"
-            aria-hidden="true"
-          />
-        </div>
-        <div className={styles.celestialLogoMain}>
-          <Image
-            src="/tarot-celestial-logo-4k.webp"
-            alt=""
-            fill
-            sizes="(max-width: 800px) 86vw, (max-width: 1500px) 64vw, 1040px"
-            aria-hidden="true"
-          />
-        </div>
-        <span className={styles.celestialLightSweep} />
-      </div>
-
-      <div className="tc-container tc-client-shell">
-        <section className="tc-client-hero">
-          <div className="tc-hero-top">
-            <div style={{ display: "grid", gap: 14 }}>
-              <div className="tc-brand-badge">
-                <div className="tc-brand-logo">
-                  <Image src="/Nuevo-logo-tarot.png" alt="Tarot Celestial" width={58} height={58} priority style={{ width: "100%", height: "100%", objectFit: "contain" }} />
-                </div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  <div className="tc-brand-overline">{eyebrow}</div>
-                  <div className="tc-brand-title">{title}</div>
-                  {subtitle ? <div className="tc-brand-copy">{subtitle}</div> : null}
-                </div>
-              </div>
-
-              <div className="tc-chip" style={{ width: "fit-content", display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <Sparkles size={14} /> Tu espacio privado para consultar Coins, minutos, compras y ventajas
-              </div>
-            </div>
-
-            <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>
-          </div>
-
-          {summaryItems.length ? (
-            <div className="tc-hero-summary">
-              {summaryItems.map((item) => {
-                const normalized = item.label.toLowerCase();
-                const tone = item.tone || (normalized.includes("rango")
-                  ? "rank"
-                  : normalized.includes("puntos") || normalized.includes("coins")
-                  ? "points"
-                  : normalized.includes("minutos")
-                  ? "minutes"
-                  : normalized.includes("notificaciones")
-                  ? "alerts"
-                  : normalized.includes("tiradas")
-                  ? "oracle"
-                  : "default");
-                const hasAlert = tone === "alerts" && Number(item.value || 0) > 0;
-                const seasonalType = normalized.includes("coins") || normalized.includes("puntos")
-                  ? "coins"
-                  : normalized.includes("minutos")
-                  ? "minutes"
-                  : normalized.includes("giro") || normalized.includes("tiradas")
-                  ? "gift"
-                  : normalized.includes("rango")
-                  ? "rank"
-                  : "default";
-                const seasonalEmoji = seasonalType === "coins" ? "🎃" : seasonalType === "minutes" ? "🎁" : seasonalType === "gift" ? "🍬" : seasonalType === "rank" ? "🍂" : "✨";
-                const content = <div className={styles.summaryContent}>
-                  <div className={styles.summaryCopy}>
-                    <div className="tc-kpi-label">{item.label}</div>
-                    <div className="tc-kpi-value">{item.value}</div>
-                    {item.meta ? <div className="tc-kpi-meta">{item.meta}</div> : null}
-                  </div>
-                  <div className={styles.summaryDecor}>
-                    <span className={styles.seasonalGiftMark} data-kind={seasonalType}>{seasonalEmoji}</span>
-                    <SummaryIcon label={item.label} tone={tone} />
-                  </div>
-                </div>;
-                return item.href ? (
-                  <Link key={item.label} href={item.href} className="tc-kpi tc-kpi-link" data-tone={tone} data-alert={hasAlert ? "true" : "false"} data-seasonal={seasonalType}>{content}</Link>
-                ) : (
-                  <div key={item.label} className="tc-kpi" data-tone={tone} data-alert={hasAlert ? "true" : "false"} data-seasonal={seasonalType}>{content}</div>
-                );
-              })}
-            </div>
-          ) : null}
-
-          {isHome ? (
-            <section className={styles.halloweenBanner} aria-label="Especial Halloween">
-              <div className={styles.halloweenBannerCopy}>
-                <span className={styles.halloweenBannerEyebrow}><Leaf size={14} /> ESPECIAL DE OCTUBRE</span>
-                <strong>Halloween llega a Tarot Celestial</strong>
-                <p>Minutos, Coins, giros y tiradas se visten de temporada con regalos, ventajas y sorpresas visuales durante todo el mes.</p>
-                <Link href="/cliente/precios-ofertas" className={styles.halloweenBannerButton}>
-                  <Gift size={16} /> Ver regalos y ofertas <ChevronRight size={15} />
-                </Link>
-              </div>
-              <div className={styles.halloweenBannerVisual} aria-hidden="true">
-                <span className={styles.bannerGift}>🎁</span>
-                <span className={styles.bannerPumpkin}>🎃</span>
-                <span className={styles.bannerCoins}>🪙</span>
-                <span className={styles.bannerLeaf}>🍂</span>
-              </div>
-            </section>
-          ) : null}
-
-          <div className="tc-row" style={{ marginTop: 16, color: "rgba(255,255,255,0.64)", fontSize: 13 }}>
-            <span>Diseñado para que tengas todo claro, rápido y en un solo lugar.</span>
-            <ChevronRight size={15} />
-            <span>Panel privado</span>
-            <ChevronRight size={15} />
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><BellRing size={14} /> acceso protegido</span>
-          </div>
-        </section>
-
-        <div data-leo-anchor="page-content" data-leo-page={pathname}>{children}</div>
-      </div>
-
-      <LeoCelestialGuide promoActive={promoActive} />
-    </PanelTheme>
-  );
+  const destination = universeDestination(pathname);
+  return <PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell} data-home={isHome ? "true" : "false"}>
+    <CelestialUniverse pathname={pathname}/>
+    <div className={universeStyles.container}>
+      <header className={universeStyles.header}>
+        <Link href="/cliente/dashboard" className={universeStyles.brand}><Image src="/Nuevo-logo-tarot.png" alt="" width={34} height={34}/><span>TAROT CELESTIAL</span></Link>
+        <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>
+      </header>
+      {!isHome && <section className={universeStyles.intro}><span>{eyebrow} · {destination.name}</span><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</section>}
+      {!isHome && summaryItems.length>0 && <div className={universeStyles.summary}>{summaryItems.map(item=><div key={item.label}><small>{item.label}</small><strong>{item.value}</strong>{item.meta && <p>{item.meta}</p>}</div>)}</div>}
+      <main data-leo-anchor="page-content" data-leo-page={pathname}>{children}</main>
+      <footer className={universeStyles.footer}>Tarot Celestial <span>✦</span> Tu espacio personal · {destination.name}</footer>
+    </div>
+    <LeoCelestialGuide promoActive={promoActive}/>
+  </PanelTheme>;
 }

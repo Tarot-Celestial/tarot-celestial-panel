@@ -308,7 +308,7 @@ export default function PreciosOfertasPage() {
           </div>
         </section>
 
-        <section className={styles.section}>
+        <section id="oraculo-packs" className={styles.section}>
           <div className={styles.heading}>
             <div className={styles.headingIcon}><WandSparkles /></div>
             <div><span>ORÁCULO</span><h2>Tiradas y preguntas</h2><p>Experiencias independientes de tus Coins y minutos.</p></div>
