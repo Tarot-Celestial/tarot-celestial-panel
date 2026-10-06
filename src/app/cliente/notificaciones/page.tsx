@@ -44,6 +44,9 @@ function formatDate(value?: string | null) {
 
 function presentation(item: NotificationItem): NotificationPresentation {
   if (item.tipo === "campaign" && UUID.test(String(item.meta?.campaign_id || ""))) return { label: "Promoción", href: `/cliente/campanas/${item.meta!.campaign_id}?delivery=${item.id}`, action: "Ver promoción", tone: "gold", icon: BellRing };
+  if (item.tipo === "diamond_roulette_reward" || item.tipo === "diamond_roulette_daily") {
+    return { label: "Premio Diamante", href: "/cliente/dashboard#premios-diamante", action: "Ver mi premio", tone: "violet", icon: Trophy };
+  }
   const content = `${item.tipo || ""} ${item.titulo || ""} ${item.mensaje || ""}`.toLowerCase();
   if (content.includes("sorteo") || content.includes("premiad")) {
     return { label: "Sorteo", href: "/cliente/sorteo", action: "Ver premio", tone: "green", icon: Trophy };

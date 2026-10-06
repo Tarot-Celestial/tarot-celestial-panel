@@ -26,6 +26,7 @@ import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import RankDailyBonus from "@/components/cliente/RankDailyBonus";
+import DiamondRewardBenefits from "@/components/cliente/DiamondRewardBenefits";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import rewardStyles from "./reward.module.css";
@@ -852,6 +853,7 @@ export default function ClienteDashboardPage() {
           oracleCredits={oracleCredits} oracleFree={oracleFreeAvailable} oracleCountdown={oracleRechargeLabel} roulette={rouletteSummary} highlight={rewardHighlight}
           benefits={rankInfo?.benefits || []} rankProgress={rankProgress} overrideLabel={rankInfo?.has_override ? (rankInfo.override_type === "permanent" ? "Asignación administrativa" : "Rango temporal" + (rankInfo.override_ends_at ? " · hasta " + new Date(rankInfo.override_ends_at).toLocaleDateString("es-ES") : "")) : undefined}>
           <RankDailyBonus/>
+          <DiamondRewardBenefits/>
           <section id="canjear-coins" aria-label="Canjear Coins por minutos"><CanjePuntos puntos={totalPoints} recompensas={recompensas} loading={redeeming} onRedeem={redeemReward}/></section>
         </HomeObservatory>
       </ClienteLayout>

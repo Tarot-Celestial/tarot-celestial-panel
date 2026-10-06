@@ -1,6 +1,6 @@
 export type RouletteLevel = 1 | 2 | 3 | 4 | 5;
 export type RouletteRarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "ultra" | "diamond" | "jackpot";
-export type RouletteRewardType = "minutes" | "coins" | "oracle_credits" | "rank" | "ritual" | "streak_minutes" | "perk";
+export type RouletteRewardType = "minutes" | "coins" | "oracle_credits" | "roulette_spins" | "rank" | "ritual" | "streak_minutes" | "perk";
 export type RouletteFulfillmentMode = "immediate" | "temporary" | "manual" | "claim" | "scheduled";
 
 export type RoulettePrize = {

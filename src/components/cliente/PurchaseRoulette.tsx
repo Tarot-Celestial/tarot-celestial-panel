@@ -11,6 +11,8 @@ import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { prizeLabel, rarityLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward, type RoulettePrize, type RouletteRewardType } from "@/lib/ruleta";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import { LEO_SELECT_ROULETTE } from "@/lib/leo-guide";
+import { rouletteRewardMessage } from "@/lib/diamond-roulette";
+import DiamondRewardBenefits, { DiamondPrizeContact } from "./DiamondRewardBenefits";
 import styles from "./PurchaseRoulette.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -46,6 +48,8 @@ function arrangeWheelPrizes(input: RoulettePrize[], level: RouletteLevel) {
 
 function RewardGlyph({ type, size = 18 }: { type: RouletteRewardType; size?: number }) {
   if (type === "coins") return <Coins size={size}/>;
+  if (type === "roulette_spins") return <RotateCw size={size}/>;
+  if (type === "oracle_credits") return <Sparkles size={size}/>;
   if (type === "rank") return <Crown size={size}/>;
   if (type === "ritual") return <ShieldCheck size={size}/>;
   if (type === "streak_minutes") return <CalendarCheck2 size={size}/>;
@@ -231,12 +235,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           id: `roulette:${json.spin_id}`,
           reaction: "roulette",
           title: ["legendary","ultra","diamond","jackpot"].includes(String(json.reward_rarity || "")) ? "¡Premio extraordinario!" : "¡Tu premio ya es tuyo!",
-          message: instant ? `${prizeLabel(json)} ya está acreditado en tu cuenta.` : `${prizeLabel(json)} ha quedado activado y registrado en tu cuenta.`,
+          message: `${prizeLabel(json)}. ${rouletteRewardMessage(json)}`,
           href: instant ? `/cliente/dashboard?reward=${json.reward_type}&spin=${encodeURIComponent(json.spin_id)}#saldo-${json.reward_type}` : "/cliente/ruleta",
           actionLabel: instant ? "Ver mi nuevo saldo" : "Ver mi premio",
           duration: 9_000,
         });
         void Promise.resolve(onReward?.()).catch(() => {});
+        window.dispatchEvent(new Event("tc-client-balances-changed"));
         void load();
       }, reduced || index < 0 ? 50 : WHEEL_SPIN_MS + 120);
     } catch (error) {
@@ -389,7 +394,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : isDiamondView ? "GIRAR · DIAMANTE" : level === 4 ? "Girar · Especial" : "Girar · Nivel " + level}
           </button>
           {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">{isDiamondView ? "Ver consultas · Conseguir giro Diamante" : "Ver consultas · Desbloquear un giro"} <ArrowRight size={17}/></Link>}
-          <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
+          <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se registra de forma segura antes de mostrar el resultado.</span></div>
         </aside>
       </div>}
 
@@ -397,7 +402,9 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         <div className={styles.rewardIcon}><RouletteRewardArt type={result.reward_type}/></div>
         <span className={styles.eyebrow}>{["legendary","ultra","diamond","jackpot"].includes(String(result.reward_rarity || "")) ? "¡PREMIO EXTRAORDINARIO!" : result.special ? "¡PREMIO ESPECIAL CELESTIAL!" : "¡TU PREMIO YA ES TUYO!"}</span>
         <h3>{prizeLabel(result)}</h3>
-        <p>{result.reward_type === "coins" || result.reward_type === "minutes" ? "Premio acreditado automáticamente en tu saldo real." : result.reward_type === "streak_minutes" ? "Tu premio diario ya está activo. Vuelve cada día para reclamarlo." : "Premio registrado en tu cuenta. Puedes seguir su estado aquí mismo."}</p>
+        {result.fulfillment_mode === "manual" ? <DiamondPrizeContact reference={result.spin_id}/> : <p>{rouletteRewardMessage(result)}</p>}
+        {result.reward_type === "oracle_credits" && <Link className={styles.buy} href="/cliente/oraculo">Usar mis tiradas del Oráculo</Link>}
+        {result.reward_type === "roulette_spins" && [1, 2, 4].includes(Number(result.reward_meta?.roulette_level)) && <button type="button" className={styles.buy} onClick={() => { setLevel(Number(result.reward_meta?.roulette_level) as RouletteLevel); setResult(null); setRotation(0); }}>Usar mi giro ganado</button>}
         {(result.reward_type === "coins" || result.reward_type === "minutes")
           ? <><div className={styles.balance}><span>Antes <b>{result.balance_before}</b></span><ArrowRight/><span>Después <b>{result.balance_after}</b></span></div><button type="button" className={styles.spin} onClick={goToBalance}>Ver mi nuevo saldo <ArrowRight size={18}/></button></>
           : <div className={styles.specialResult}><Award size={18}/><span>{result.reward_rarity ? rarityLabel[result.reward_rarity] : "Premio especial"} · {result.fulfillment_mode || "registrado"}</span></div>}
@@ -431,11 +438,12 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           <ul className={styles.securityList}>
             <li><CheckCircle2 size={15}/> El giro se valida en servidor.</li>
             <li><CheckCircle2 size={15}/> Un giro solo puede consumirse una vez.</li>
-            <li><CheckCircle2 size={15}/> El saldo se actualiza antes de mostrar el premio.</li>
+            <li><CheckCircle2 size={15}/> Los premios automáticos se acreditan al ganar.</li>
           </ul>
         </article>
       </section>}
 
+      <DiamondRewardBenefits/>
       {summary?.entitlements?.length ? <section className={styles.benefitsPanel} data-leo-anchor="roulette-entitlements">
         <div className={styles.sectionHead}><div><span className={styles.eyebrow}>PREMIOS ACTIVOS</span><h3>Tus sorpresas especiales</h3></div><span className={styles.sectionCount}>{summary.entitlements.length}</span></div>
         <div className={styles.benefitGrid}>{summary.entitlements.map((e) => {

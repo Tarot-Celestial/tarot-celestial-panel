@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
+import { loadRouletteSummary } from "@/lib/server/diamond-roulette";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,9 @@ function failure(error: unknown) {
   if (message.includes("ROULETTE_NO_REWARDS")) {
     return NextResponse.json({ ok: false, error: "Este nivel todavía no tiene premios activos configurados." }, { status: 409, headers });
   }
+  if (message.includes("DIAMOND_INVALID_CATALOGUE")) {
+    return NextResponse.json({ ok: false, error: "El reparto de premios Diamante necesita revisión. Tu giro no se ha consumido." }, { status: 409, headers });
+  }
   if (["DIAMOND_ROULETTE_PAUSED", "RANK_BENEFIT_FORBIDDEN"].some(code => message.includes(code))) {
     return NextResponse.json({ ok: false, error: "Esta ruleta no está disponible con tu acceso actual. Tus giros no se han consumido." }, { status: 403, headers });
   }
@@ -27,15 +31,7 @@ function failure(error: unknown) {
 }
 
 async function loadSummary(gate: Awaited<ReturnType<typeof rouletteClient>>) {
-  const modern = await gate.admin.rpc("cliente_ruleta_resumen_ultra_v1", { p_cliente_id: gate.cliente.id });
-  if (!modern.error) return modern.data;
-
-  if (!["42883", "PGRST202"].includes(modern.error.code || "")) throw modern.error;
-
-  // Fallback temporal para despliegues donde el código llegue antes que el SQL.
-  const legacy = await gate.admin.rpc("cliente_ruleta_resumen_v4", { p_cliente_id: gate.cliente.id });
-  if (legacy.error) throw modern.error;
-  return { ...legacy.data, campaign: null, history: [], entitlements: [] };
+  return loadRouletteSummary(gate.admin, gate.cliente.id);
 }
 
 export async function GET(req: Request) {
@@ -56,15 +52,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Selecciona un giro disponible." }, { status: 400, headers });
     }
 
+    if (body.level === 5) {
+      const result = await gate.admin.rpc("tc_diamond_roulette_spin_v1", { p_cliente_id: gate.cliente.id, p_spin_id: body.spin_id });
+      if (result.error) throw result.error;
+      // A summary failure can safely be retried: the receipt preserves the exact award.
+      return NextResponse.json({ ok: true, ...(await loadSummary(gate)), ...result.data }, { headers });
+    }
     const modern = await gate.admin.rpc("cliente_girar_ruleta_ultra_v1", {
       p_cliente_id: gate.cliente.id,
       p_spin_id: body.spin_id,
       p_level: body.level,
     });
-    if (!modern.error) return NextResponse.json({ ok: true, ...modern.data }, { headers });
+    if (!modern.error) return NextResponse.json({ ok: true, ...modern.data, ...(await loadSummary(gate)) }, { headers });
 
     // Solo usamos el fallback si la función nueva todavía no existe.
-    if (body.level === 5 || !["42883", "PGRST202"].includes(modern.error.code || "")) throw modern.error;
+    if (!["42883", "PGRST202"].includes(modern.error.code || "")) throw modern.error;
     const legacy = await gate.admin.rpc("cliente_girar_ruleta_v4", {
       p_cliente_id: gate.cliente.id,
       p_spin_id: body.spin_id,

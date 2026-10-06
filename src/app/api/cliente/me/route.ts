@@ -207,7 +207,7 @@ export async function GET(req: Request) {
     }
 
     const { data: stateSnapshot, error: stateSnapshotError } = await gate.admin
-      .rpc("tc_client_state_snapshot", { p_cliente_id: gate.cliente.id });
+      .rpc("tc_client_state_snapshot_diamond_v1", { p_cliente_id: gate.cliente.id });
     if (stateSnapshotError) throw stateSnapshotError;
 
     const snapshot = stateSnapshot || {};

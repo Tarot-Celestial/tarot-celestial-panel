@@ -50,7 +50,7 @@ export async function GET(req: Request) {
     const [{ data: freshCliente, error: freshClienteError }, { data: authData }, snapshotResult] = await Promise.all([
       gate.admin.from("crm_clientes").select("*").eq("id", gate.cliente.id).maybeSingle(),
       gate.admin.auth.admin.getUserById(gate.uid),
-      gate.admin.rpc("tc_client_state_snapshot", { p_cliente_id: gate.cliente.id }),
+      gate.admin.rpc("tc_client_state_snapshot_diamond_v1", { p_cliente_id: gate.cliente.id }),
     ]);
     if (freshClienteError) throw freshClienteError;
     if (!freshCliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers });

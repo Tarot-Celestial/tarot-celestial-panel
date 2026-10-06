@@ -29,7 +29,7 @@ async function clientState(admin: any, clienteId: string) {
       .select("id,nombre,apellido,email,telefono,telefono_normalizado")
       .eq("id", clienteId)
       .maybeSingle(),
-    admin.rpc("tc_client_state_snapshot", { p_cliente_id: clienteId }),
+    admin.rpc("tc_client_state_snapshot_diamond_v1", { p_cliente_id: clienteId }),
   ]);
   if (clientError) throw clientError;
   if (!client) throw new Error("CLIENT_NOT_FOUND");

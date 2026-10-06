@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { diamondRewardStorage, diamondRewardType } from "@/lib/diamond-roulette";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const rarities = new Set(["common","uncommon","rare","epic","legendary","ultra","diamond","jackpot"]);
-const rewardTypes = new Set(["minutes","coins","rank","ritual","streak_minutes","perk"]);
+const rewardTypes = new Set(["minutes","coins","rank","ritual","streak_minutes","perk","oracle_credits","roulette_spins"]);
 const fulfillmentModes = new Set(["immediate","temporary","manual","claim","scheduled"]);
 const campaignStatuses = new Set(["draft","scheduled","active","inactive","finished","archived"]);
 
@@ -62,11 +63,12 @@ async function payload(admin: any) {
     const total = Number(totals.get(`${reward.campaign_id}:${reward.nivel}`) || 0);
     return {
       ...reward,
+      reward_type: Number(reward.nivel) === 5 ? diamondRewardType(reward) : reward.reward_type,
       probability: total > 0 && reward.is_active ? Number(((Number(reward.weight || 0) / total) * 100).toFixed(4)) : 0,
     };
   });
 
-  const [spinResult, entitlementResult] = await Promise.all([
+  const [spinResult, entitlementResult, diamondBenefits] = await Promise.all([
     admin.from("cliente_ruleta_giros")
       .select("id,cliente_id,nivel,estado,created_at,used_at,reward_id,reward_type,reward_value,reward_label,reward_rarity,result_status,campaign_id")
       .eq("estado", "used")
@@ -76,11 +78,14 @@ async function payload(admin: any) {
       .select("id,cliente_id,reward_name,reward_type,status,fulfillment_mode,claims_used,total_claims,created_at,expires_at")
       .order("created_at", { ascending: false })
       .limit(80),
+    admin.from("tc_diamond_roulette_benefits").select("*").order("created_at", { ascending: false }).limit(80),
   ]);
   if (spinResult.error) throw spinResult.error;
   if (entitlementResult.error) throw entitlementResult.error;
+  if (diamondBenefits.error) throw diamondBenefits.error;
+  const allEntitlements = [...(entitlementResult.data || []), ...(diamondBenefits.data || []).map((row: any) => ({ ...row, diamond: true, reward_type: row.delivery_kind === "manual" ? "perk" : "streak_minutes", fulfillment_mode: row.delivery_kind === "manual" ? "manual" : "claim", status: row.status === "active" && row.expires_at && new Date(row.expires_at) <= new Date() ? "expired" : row.status }))];
 
-  const clientIds = Array.from(new Set((spinResult.data || []).map((row: any) => String(row.cliente_id || "")).filter(Boolean)));
+  const clientIds = Array.from(new Set([...(spinResult.data || []), ...allEntitlements].map((row: any) => String(row.cliente_id || "")).filter(Boolean)));
   const clientMap = new Map<string, string>();
   if (clientIds.length) {
     const clients = await admin.from("crm_clientes").select("id,nombre,apellido,telefono").in("id", clientIds);
@@ -106,11 +111,11 @@ async function payload(admin: any) {
     active_campaign: activeCampaign,
     rewards: decoratedRewards,
     history,
-    entitlements: entitlementResult.data || [],
+    entitlements: allEntitlements.map((row: any) => ({ ...row, client_name: clientMap.get(String(row.cliente_id)) || "Cliente" })),
     stats: {
       total_spins_loaded: totalSpins,
       special_spins: history.filter((row: any) => ["epic","legendary","ultra","diamond","jackpot"].includes(String(row.reward_rarity || ""))).length,
-      pending_fulfillment: (entitlementResult.data || []).filter((row: any) => ["pending","active"].includes(String(row.status))).length,
+      pending_fulfillment: allEntitlements.filter((row: any) => ["pending","active"].includes(String(row.status))).length,
       most_awarded: mostAwarded ? { name: mostAwarded[0], count: mostAwarded[1] } : null,
       rarity_counts: rarityCounts,
     },
@@ -147,6 +152,12 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const action = String(body?.action || "");
     const now = new Date().toISOString();
+
+    if (action === "seed_diamond") {
+      const result = await gate.admin.rpc("tc_seed_diamond_roulette", { p_campaign_id: String(body?.campaign_id || ""), p_actor: gate.me?.user_id });
+      if (result.error) throw result.error;
+      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
+    }
 
     if (action === "create_campaign") {
       const name = cleanText(body?.name, 120) || "Nueva Ruleta";
@@ -212,19 +223,32 @@ export async function POST(req: Request) {
       if (!campaignId || ![1,2,3,4,5].includes(level) || !name || !rewardTypes.has(rewardType) || !rarities.has(rarity) || !fulfillmentModes.has(fulfillmentMode) || !Number.isFinite(weight) || weight < 0 || !Number.isFinite(rewardValue) || rewardValue < 0) {
         return NextResponse.json({ ok: false, error: "PREMIO_INVALIDO" }, { status: 400 });
       }
+      const metadata = jsonMeta(body?.metadata);
+      if (level !== 5 && ["oracle_credits", "roulette_spins"].includes(rewardType)) {
+        return NextResponse.json({ ok: false, error: "TIPO_RESERVADO_A_DIAMANTE" }, { status: 400 });
+      }
+      if (level === 5 && (
+        !["minutes", "oracle_credits", "roulette_spins", "streak_minutes", "perk", "ritual"].includes(rewardType) ||
+        !Number.isInteger(rewardValue) || rewardValue > 1000 ||
+        (["minutes", "oracle_credits", "roulette_spins", "streak_minutes"].includes(rewardType) && rewardValue < 1) ||
+        (rewardType === "roulette_spins" && ![1, 2, 4].includes(Number(metadata.roulette_level))) ||
+        (rewardType === "streak_minutes" && (Number(metadata.days_total) !== 7 || rewardValue !== 10)) ||
+        fulfillmentMode !== (rewardType === "streak_minutes" ? "claim" : ["perk", "ritual"].includes(rewardType) ? "manual" : "immediate")
+      )) return NextResponse.json({ ok: false, error: "Configura una entrega automática, un premio manual o el bono de 10 minutos diarios durante 7 días." }, { status: 400 });
+      const storage = level === 5 ? diamondRewardStorage(rewardType, metadata) : { reward_type: rewardType, metadata };
       const row = {
         campaign_id: campaignId,
         nivel: level,
         name,
         description: cleanText(body?.description, 500),
-        reward_type: rewardType,
+        reward_type: storage.reward_type,
         reward_value: rewardValue,
         rarity,
         weight,
         special: Boolean(body?.special),
         fulfillment_mode: fulfillmentMode,
         icon_key: cleanText(body?.icon_key, 50),
-        metadata: jsonMeta(body?.metadata),
+        metadata: storage.metadata,
         is_active: body?.is_active !== false,
         sort_order: Math.floor(Number(body?.sort_order || 0)),
         updated_at: now,
@@ -257,7 +281,7 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "PREMIOS_DUPLICADOS_EN_REPARTO" }, { status: 400 });
       }
       const total = parsed.reduce((sum: number, item: any) => sum + item.probability, 0);
-      if (Math.abs(total - 100) > 0.01) {
+      if (Math.abs(total - 100) > 1e-8) {
         return NextResponse.json({ ok: false, error: `PROBABILIDADES_DEBEN_SUMAR_100:${total.toFixed(2)}` }, { status: 400 });
       }
 
@@ -273,17 +297,10 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "REPARTO_DEBE_INCLUIR_TODOS_LOS_PREMIOS_ACTIVOS" }, { status: 409 });
       }
 
-      for (const item of parsed) {
-        const { error: updateError } = await gate.admin
-          .from("tc_client_roulette_rewards")
-          .update({ weight: item.probability, updated_at: now })
-          .eq("id", item.id)
-          .eq("campaign_id", campaignId)
-          .eq("nivel", level)
-          .eq("is_active", true);
-        if (updateError) throw updateError;
-      }
-      await audit(gate.admin, gate, "probabilities_updated", { nivel: level, total, probabilities: parsed }, campaignId, null);
+      const saved = await gate.admin.rpc("tc_save_roulette_probabilities_v1", {
+        p_campaign_id: campaignId, p_level: level, p_probabilities: parsed, p_actor: gate.me?.user_id,
+      });
+      if (saved.error) throw saved.error;
       return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
     }
 
@@ -310,6 +327,12 @@ export async function POST(req: Request) {
         if (error) throw error;
         await audit(gate.admin, gate, "reward_deleted", reward, reward.campaign_id, id);
       }
+      return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
+    }
+
+    if (action === "complete_diamond_entitlement") {
+      const result = await gate.admin.rpc("tc_complete_diamond_benefit_v1", { p_id: String(body?.id || ""), p_actor: gate.me?.user_id });
+      if (result.error) throw result.error;
       return NextResponse.json({ ok: true, ...(await payload(gate.admin)) });
     }
 

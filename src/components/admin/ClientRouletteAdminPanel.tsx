@@ -16,7 +16,7 @@ const rarityNames: Record<string,string> = {
 };
 const rewardTypeNames: Record<string,string> = {
   minutes:"Minutos FREE", coins:"Coins", rank:"Rango cliente", ritual:"Ritual",
-  streak_minutes:"Premio diario", perk:"Ventaja especial",
+  streak_minutes:"Premio diario", perk:"Ventaja / premio manual", oracle_credits:"Tiradas del Oráculo", roulette_spins:"Giros de ruleta",
 };
 
 function localDate(value?: string | null) {
@@ -95,7 +95,7 @@ export default function ClientRouletteAdminPanel() {
     return sum+(Number.isFinite(value)?Math.max(0,value):0);
   },0),[rewards,probabilityDraft]);
   const probabilityRemaining=100-probabilityTotal;
-  const probabilityValid=rewards.some((r:any)=>r.is_active) && Math.abs(probabilityTotal-100)<=0.01;
+  const probabilityValid=rewards.some((r:any)=>r.is_active) && Math.abs(probabilityTotal-100)<1e-8;
 
   async function mutate(payload:any,key="save") {
     setBusy(key);setMessage("");
@@ -186,6 +186,7 @@ export default function ClientRouletteAdminPanel() {
     {view==="rewards"?<section className={styles.card}>
       <div className={styles.rewardToolbar}>
         <div><span className={styles.eyebrow}>CATÁLOGO CONFIGURABLE</span><h2>{level===5?"Premios de la Ruleta Diamante":"Premios de las ruletas clientes"}</h2></div>
+        {level===5 && !(data.rewards||[]).some((r:any)=>String(r.campaign_id)===selectedCampaignId&&r.metadata?.catalogue_version==="diamond-20261006") && <button className={styles.gold} disabled={!selectedCampaignId||!!busy} onClick={()=>void mutate({action:"seed_diamond",campaign_id:selectedCampaignId},"seed-diamond")}>{busy==="seed-diamond"?"Instalando catálogo…":"Cargar los 16 premios Diamante"}</button>}
         <button className={styles.gold} disabled={!selectedCampaignId} onClick={()=>setEditingReward(blankReward())}><Plus/> Añadir premio</button>
       </div>
       <div className={styles.levelTabs}>{([1,2,3,4,5] as const).map(n=><button key={n} data-active={level===n} onClick={()=>setLevel(n)}><span>{n===5?"RULETA DIAMANTE":n===4?"RULETA ESPECIAL":"NIVEL "+n}</span><strong>{(data.rewards||[]).filter((r:any)=>String(r.campaign_id)===selectedCampaignId&&Number(r.nivel)===n&&r.is_active).length} premios</strong></button>)}</div>
@@ -213,7 +214,7 @@ export default function ClientRouletteAdminPanel() {
 
     {view==="benefits"?<section className={styles.card}>
       <div className={styles.cardHead}><div><span className={styles.eyebrow}>FULFILLMENT</span><h2>Rituales, rangos y beneficios activos</h2></div><span className={styles.counter}>{(data.entitlements||[]).length}</span></div>
-      <div className={styles.benefitList}>{(data.entitlements||[]).length?(data.entitlements||[]).map((e:any)=><article key={e.id}><div><strong>{e.reward_name}</strong><span>{e.reward_type} · {e.fulfillment_mode}</span></div><div><span className={styles.status}>{e.status}</span>{["pending","active"].includes(e.status)?<button className={styles.secondary} onClick={()=>void mutate({action:"complete_entitlement",id:e.id},`ent:${e.id}`)}>Marcar completado</button>:null}</div></article>):<div className={styles.empty}>No hay premios especiales pendientes.</div>}</div>
+      <div className={styles.benefitList}>{(data.entitlements||[]).length?(data.entitlements||[]).map((e:any)=><article key={e.id}><div><strong>{e.reward_name}</strong><span>{e.client_name} · {e.fulfillment_mode === "manual" ? "Gestión manual" : "Reclamación diaria"}</span>{e.diamond && <small>Referencia: {e.spin_id} · {e.claims_used}/{e.total_claims} días</small>}</div><div><span className={styles.status}>{e.status}</span>{["pending","active"].includes(e.status)&&(!e.diamond||e.delivery_kind==="manual")?<button className={styles.secondary} onClick={()=>void mutate({action:e.diamond?"complete_diamond_entitlement":"complete_entitlement",id:e.id},`ent:${e.id}`)}>Marcar completado</button>:null}</div></article>):<div className={styles.empty}>No hay premios especiales pendientes.</div>}</div>
     </section>:null}
 
     {editingReward?<RewardModal reward={editingReward} busy={busy} onClose={()=>setEditingReward(null)} onSave={async(form)=>{const result=await mutate({action:"save_reward",...form},"reward");if(result)setEditingReward(null)}}/>:null}
@@ -223,19 +224,29 @@ export default function ClientRouletteAdminPanel() {
 function RewardModal({reward,busy,onClose,onSave}:{reward:any;busy:string;onClose:()=>void;onSave:(v:any)=>Promise<void>}) {
   const [form,setForm]=useState<any>({...reward,metadata:reward.metadata||{}});
   const metadata=form.metadata||{};
+  function selectType(type: string) {
+    if (Number(form.nivel)!==5) { setForm({...form,reward_type:type}); return; }
+    const daily=type==="streak_minutes";
+    const manual=["perk","ritual"].includes(type);
+    setForm({...form,reward_type:type,fulfillment_mode:daily?"claim":manual?"manual":"immediate",
+      ...(daily?{reward_value:10}:{}),
+      metadata:{...metadata,...(daily?{days_total:7,daily_minutes:10}:{}),...(type==="roulette_spins"?{roulette_level:1}:{})},
+    });
+  }
   return <div className={styles.modalBackdrop} onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}><div className={styles.modal} data-rarity={form.rarity}>
     <div className={styles.cardHead}><div><span className={styles.eyebrow}>CONFIGURAR PREMIO</span><h2>{form.id?"Editar premio":"Nuevo premio"}</h2></div><button className={styles.close} onClick={onClose}>×</button></div>
     <div className={styles.formGrid}>
       <label className={styles.span2}>Nombre<input value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></label>
-      <label>Tipo<select value={form.reward_type} onChange={e=>setForm({...form,reward_type:e.target.value})}>{Object.entries(rewardTypeNames).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label>
+      <label>Tipo<select value={form.reward_type} onChange={e=>selectType(e.target.value)}>{Object.entries(rewardTypeNames).filter(([type])=>Number(form.nivel)===5?!["coins","rank"].includes(type):!["oracle_credits","roulette_spins"].includes(type)).map(([v,l])=><option value={v} key={v}>{l}</option>)}</select></label>
       <label>Rareza<select value={form.rarity} onChange={e=>setForm({...form,rarity:e.target.value})}>{rarityOrder.map(r=><option value={r} key={r}>{rarityNames[r]}</option>)}</select></label>
-      <label>Valor<input type="number" min="0" step="1" value={form.reward_value} onChange={e=>setForm({...form,reward_value:Number(e.target.value)})}/></label>
+      <label>Valor<input type="number" min="0" step="1" disabled={Number(form.nivel)===5&&form.reward_type==="streak_minutes"} value={form.reward_value} onChange={e=>setForm({...form,reward_value:Number(e.target.value)})}/></label>
       <div className={styles.probabilityModalNote}><Percent size={15}/><span>La probabilidad se edita directamente en la lista de premios del nivel. Guarda primero el premio y después asigna su porcentaje exacto.</span></div>
       <label>Nivel<select value={form.nivel} onChange={e=>setForm({...form,nivel:Number(e.target.value)})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={3}>Nivel 3</option><option value={4}>Ruleta Especial</option><option value={5}>Ruleta Diamante</option></select></label>
-      <label>Entrega<select value={form.fulfillment_mode} onChange={e=>setForm({...form,fulfillment_mode:e.target.value})}><option value="immediate">Inmediata</option><option value="temporary">Temporal</option><option value="manual">Manual supervisada</option><option value="claim">Reclamación</option><option value="scheduled">Programada</option></select></label>
+      <label>Entrega<select disabled={Number(form.nivel)===5} value={form.fulfillment_mode} onChange={e=>setForm({...form,fulfillment_mode:e.target.value})}><option value="immediate">Inmediata</option><option value="temporary">Temporal</option><option value="manual">Manual supervisada</option><option value="claim">Reclamación</option><option value="scheduled">Programada</option></select></label>
       <label className={styles.span2}>Descripción<textarea rows={2} value={form.description||""} onChange={e=>setForm({...form,description:e.target.value})}/></label>
+      {form.reward_type==="roulette_spins"?<label>Ruleta del giro ganado<select value={metadata.roulette_level??1} onChange={e=>setForm({...form,metadata:{...metadata,roulette_level:Number(e.target.value)}})}><option value={1}>Nivel 1</option><option value={2}>Nivel 2</option><option value={4}>Nivel Especial</option></select></label>:null}
       {form.reward_type==="rank"?<><label>Rango<select value={metadata.rank||"plata"} onChange={e=>setForm({...form,metadata:{...metadata,rank:e.target.value}})}><option value="plata">Plata</option><option value="oro">Oro</option></select></label><label>Duración días <small>(0 = permanente)</small><input type="number" min="0" value={metadata.duration_days??30} onChange={e=>setForm({...form,metadata:{...metadata,duration_days:Number(e.target.value)}})}/></label></>:null}
-      {form.reward_type==="streak_minutes"?<><label>Minutos diarios<input type="number" min="1" value={metadata.daily_minutes??10} onChange={e=>setForm({...form,reward_value:Number(e.target.value),metadata:{...metadata,daily_minutes:Number(e.target.value)}})}/></label><label>Días<input type="number" min="1" value={metadata.days_total??7} onChange={e=>setForm({...form,metadata:{...metadata,days_total:Number(e.target.value)}})}/></label></>:null}
+      {form.reward_type==="streak_minutes"?<><label>Minutos diarios<input type="number" min="1" disabled={Number(form.nivel)===5} value={metadata.daily_minutes??10} onChange={e=>setForm({...form,reward_value:Number(e.target.value),metadata:{...metadata,daily_minutes:Number(e.target.value)}})}/></label><label>Días<input type="number" min="1" disabled={Number(form.nivel)===5} value={metadata.days_total??7} onChange={e=>setForm({...form,metadata:{...metadata,days_total:Number(e.target.value)}})}/></label></>:null}
       {form.reward_type==="ritual"?<label className={styles.span2}>Código ritual<input value={metadata.ritual||"proteccion"} onChange={e=>setForm({...form,metadata:{...metadata,ritual:e.target.value}})}/></label>:null}
       <label>Orden<input type="number" value={form.sort_order||0} onChange={e=>setForm({...form,sort_order:Number(e.target.value)})}/></label>
       <label className={styles.check}><input type="checkbox" checked={Boolean(form.special)} onChange={e=>setForm({...form,special:e.target.checked})}/> Premio fuerte / destacado</label>

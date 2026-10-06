@@ -20,7 +20,7 @@ export async function GET(req: Request) {
 
     // Endpoint deliberadamente pequeño: no depende del resto de módulos del dashboard.
     // Administración y Cliente leen exactamente la misma función SQL canónica.
-    const { data: state, error } = await gate.admin.rpc("tc_client_state_snapshot", {
+    const { data: state, error } = await gate.admin.rpc("tc_client_state_snapshot_diamond_v1", {
       p_cliente_id: gate.cliente.id,
     });
     if (error) throw error;
