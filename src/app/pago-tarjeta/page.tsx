@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import styles from "./payment.module.css";
 
 type Session = { amount: number; currency: string; description: string; status: string; remote_status: string;
-  can_pay: boolean; client_id?: string; client_token?: string; environment?: string };
+  can_pay: boolean; client_id?: string; client_token?: string; environment?: string; last_error?: string | null };
 type CardFields = { isEligible: () => boolean; NameField: (options?: object) => Field;
   NumberField: (options?: object) => Field; ExpiryField: (options?: object) => Field; CVVField: (options?: object) => Field;
   submit: (options?: object) => Promise<void>; getState: () => Promise<{ isFormValid: boolean }> };
@@ -34,8 +34,16 @@ export default function CardPayment() {
     setSession(data);
     setPhase(data.status === "completed" ? "completed" : data.status === "cancelled" ? "cancelled" : "pending");
     setMessage(data.status === "completed" ? "Tu compra está registrada. Gracias por confiar en Tarot Celestial."
-      : data.status === "cancelled" ? "El cobro no se ha completado. Contacta con tu central."
+      : data.status === "cancelled" ? data.last_error || "Pago rechazado. PayPal no ha facilitado el motivo específico. Contacta con tu central."
       : "Estamos comprobando el resultado. No repitas el pago; consulta su estado en unos instantes.");
+  }
+  async function paymentError(fallback = "No se pudo completar el proceso. Comprueba el estado antes de volver a introducir tu tarjeta.") {
+    try {
+      const data: Session = await api("status");
+      if (!alive.current) return;
+      showResult(data);
+      if (data.status !== "completed" && data.status !== "cancelled") setMessage(data.last_error || fallback);
+    } catch { if (alive.current) { setPhase("pending"); setMessage(fallback); } }
   }
   async function check() {
     if (busy.current) return;
@@ -79,8 +87,8 @@ export default function CardPayment() {
           return result.order_id;
         },
         onApprove: async () => { try { showResult(await api("capture")); }
-          catch { if (!stopped) { setPhase("pending"); setMessage("Tu banco ha respondido. Estamos comprobando el cobro; no repitas el pago."); } } },
-        onError: () => { if (!stopped) { setPhase("pending"); setMessage("No se pudo completar el proceso. Comprueba el estado antes de volver a introducir tu tarjeta."); } },
+          catch (error: any) { if (!stopped) await paymentError(error.message); } },
+        onError: async () => { if (!stopped) await paymentError(); },
       });
       if (!card.isEligible()) throw new Error("El pago directo con tarjeta no está disponible en este momento. Contacta con tu central; no necesitas crear una cuenta PayPal.");
       fields.current = card;
@@ -104,7 +112,7 @@ export default function CardPayment() {
       setPhase("paying"); setMessage("Confirma el pago en tu banco si te lo solicita. Mantén esta página abierta.");
       await fields.current.submit(billingOpen ? { billingAddress: billing } : undefined);
     } catch {
-      if (alive.current) { setPhase("pending"); setMessage("El proceso se ha interrumpido. Comprueba el estado para evitar repetir el cobro."); }
+      if (alive.current) await paymentError();
     } finally { busy.current = false; }
   }
   const money = session ? new Intl.NumberFormat("es-ES", { style: "currency", currency: session.currency }).format(session.amount) : "";
@@ -113,7 +121,7 @@ export default function CardPayment() {
     <div className={styles.brand}><span aria-hidden="true">✦</span> TAROT CELESTIAL</div>
     <section className={styles.card} aria-labelledby="payment-title">
       <div className={styles.topline}><span>PAGO SEGURO</span><span>Tarjeta de crédito o débito</span></div>
-      <h1 id="payment-title">{phase === "completed" ? "Pago confirmado" : "Tu consulta, a un paso"}</h1>
+      <h1 id="payment-title">{phase === "completed" ? "Pago confirmado" : phase === "cancelled" ? session?.remote_status === "CANCELLED_BY_STAFF" ? "Enlace cancelado" : "Pago no completado" : "Tu consulta, a un paso"}</h1>
       <p className={styles.intro}>Paga con tu tarjeta. No necesitas una cuenta PayPal.</p>
       {session && <div className={styles.summary}><span>{session.description}<small>Importe total</small></span><strong>{money}</strong></div>}
       {session?.environment === "sandbox" && <p className={styles.notice}>Modo de pruebas · No se cobra dinero real.</p>}

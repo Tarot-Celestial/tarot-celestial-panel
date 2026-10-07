@@ -18,6 +18,7 @@ function harness(){
  class PayPalError extends Error{constructor(m,status=502){super(m);this.status=status;}}
  const paypal={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>({environment:'sandbox',origin:'https://panel.test'}),
    testPayPalConnection:async()=>{authChecks++;return {environment:'sandbox',message:'OAuth OK'};},
+   cancelPayPalLink:async(_,a)=>{a.status='cancelled';a.remote_status='CANCELLED_BY_STAFF';return a;},
    paypalRequest:async()=>{remoteCreates++;return {id:'ORDER10',status:'CREATED'};},approvalUrl:()=> 'https://www.sandbox.paypal.com/checkoutnow?token=ORDER10',reconcilePayPal:async(_,a)=>a};
  const packs={CLIENTE_MINUTE_PACKS:[{id:'pack_20',nombre:'20 minutos',priceUsd:22,totalMinutes:20,rouletteSpins:1}],getConfiguredMinutePack:k=>packs.CLIENTE_MINUTE_PACKS.find(p=>p.id===k)};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/pagos/paypal/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console,require:n=>({
@@ -55,4 +56,10 @@ test('Creation failure preserves operation and payload for retry; old request ne
 });
 test('Other workers cannot read the payment, even with its UUID',async()=>{
  const h=harness();await h.post();h.worker.id=id(3);const response=await h.api.GET(new Request('https://panel.test/api/crm/pagos/paypal?attempt_id='+id(10),{headers:{authorization:'Bearer good'}}));assert.equal(response.status,404);
+});
+test('Cancellation requires verified staff and is restricted to the creator or an admin',async()=>{
+ const h=harness();await h.post();const body={action:'cancel',attempt_id:id(10)};
+ assert.equal((await h.post(body,'forged')).status,401);
+ h.worker.id=id(3);assert.equal((await h.post(body)).status,404);assert.equal(h.rows.get(id(10)).status,'pending');
+ h.worker.role='admin';const response=await h.post(body);assert.equal(response.status,200);assert.equal((await response.json()).attempt.remote_status,'CANCELLED_BY_STAFF');
 });

@@ -4,7 +4,7 @@ import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { pointsFromAmount, splitMinutes } from "@/lib/server/cliente-platform";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
-import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection } from "@/lib/server/paypal-crm";
+import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection, cancelPayPalLink } from "@/lib/server/paypal-crm";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -52,6 +52,16 @@ export async function POST(req: Request) {
     // Staff-only OAuth check: no purchase, no WhatsApp, no database mutations.
     if (body.action === "test_connection") return NextResponse.json({ ok: true, ...await testPayPalConnection() }, { headers });
     const config = paypalConfig();
+    if (body.action === "cancel") {
+      if (!uuid.test(body.attempt_id || "")) throw new PayPalError("Cobro no válido.", 400);
+      let query = admin.from(PAYPAL_TABLE).select("*").eq("id", body.attempt_id).eq("environment", config.environment);
+      if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
+      const { data, error } = await query.maybeSingle();
+      if (error) throw error;
+      if (!data) throw new PayPalError("Cobro no encontrado.", 404);
+      const cancelled = await cancelPayPalLink(admin, data);
+      return NextResponse.json({ ok: true, attempt: publicAttempt(cancelled) }, { headers });
+    }
     if (!uuid.test(body.request_id || "") || !uuid.test(body.cliente_id || "")) throw new PayPalError("Identificador no válido.", 400);
     const id = body.request_id;
     const pack = getConfiguredMinutePack(body.pack_id);

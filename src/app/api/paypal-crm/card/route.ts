@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     // Never accept an order ID, price, client ID or benefits supplied by the browser.
     const current = await reconcilePayPal(admin, attempt, body.action === "capture");
     const summary = { status: current.status, remote_status: current.remote_status,
-      amount: Number(current.amount), currency: current.currency, description: current.pack_name };
+      amount: Number(current.amount), currency: current.currency, description: current.pack_name, last_error: current.last_error || null };
     const canPay = current.status === "pending" && current.remote_status === "CREATED";
     if (body.action === "status" || body.action === "capture" || !canPay)
       return NextResponse.json({ ...summary, can_pay: false }, { headers });
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ...summary, can_pay: true, client_id: config.client,
       client_token: token.client_token, environment: config.environment }, { headers });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof PayPalError && error.status === 409 ? error.message
+    return NextResponse.json({ error: error instanceof PayPalError && (error.status === 409 || error.paymentReason) ? error.message
       : "No se pudo preparar o confirmar el pago. Si ya has pulsado Pagar, comprueba su estado antes de intentarlo de nuevo." },
       { status: error instanceof PayPalError && error.status === 409 ? 409 : 503, headers });
   }

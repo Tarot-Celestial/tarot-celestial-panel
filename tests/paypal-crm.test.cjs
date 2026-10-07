@@ -15,7 +15,7 @@ function harness(remoteOrder,options={}){
   return {ok:true,json:async()=>remoteOrder};
  };
  const admin={rpc:async()=>{credits++;state={...state,status:'completed'};return {error:null};},from:()=>{
-  let patch,filters=[];const q={select:()=>q,eq:(k,v)=>{filters.push([k,v,true]);return q;},neq:(k,v)=>{filters.push([k,v,false]);return q;},update:p=>{patch=p;return q;},single:async()=>({data:state}),then:resolve=>{if(patch&&filters.every(([k,v,e])=>e?state[k]===v:state[k]!==v))state={...state,...patch};return Promise.resolve({error:null}).then(resolve);}};return q;
+  let patch,filters=[];const q={select:()=>q,eq:(k,v)=>{filters.push([k,v,true]);return q;},neq:(k,v)=>{filters.push([k,v,false]);return q;},update:p=>{patch=p;return q;},single:()=>q,maybeSingle:()=>q,then:resolve=>{const matches=filters.every(([k,v,e])=>e?state[k]===v:state[k]!==v);if(patch&&matches)state={...state,...patch};return Promise.resolve({data:matches?{...state}:null,error:null}).then(resolve);}};return q;
  }};
  const api=load('src/lib/server/paypal-crm.ts',{'@supabase/supabase-js':{}},{fetch});return {api,admin,calls,credits:()=>credits,state:()=>state};
 }

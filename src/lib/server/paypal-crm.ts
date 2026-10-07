@@ -2,7 +2,26 @@ import { createClient } from "@supabase/supabase-js";
 
 export const PAYPAL_TABLE = "crm_paypal_orders";
 export class PayPalError extends Error {
-  constructor(message: string, public status = 502) { super(message); }
+  constructor(message: string, public status = 502, public paymentReason?: string) { super(message); }
+}
+// Translate only documented codes, never arbitrary provider descriptions or card data.
+export function paymentFailureReason(value: any): string | undefined {
+  const codes: Record<string, string> = {
+    "5120": "Saldo insuficiente. Prueba otra tarjeta o consulta con tu banco.",
+    "5110": "El código de seguridad (CVV) no coincide. Revisa los datos de la tarjeta.",
+    "5400": "La tarjeta está caducada. Utiliza una tarjeta vigente.",
+    "5100": "El emisor ha rechazado la tarjeta sin indicar un motivo específico. Consulta con tu banco.",
+    INSTRUMENT_DECLINED: "El medio de pago ha sido rechazado. PayPal no ha facilitado el motivo concreto.",
+    CARD_EXPIRED: "La tarjeta está caducada. Utiliza una tarjeta vigente.",
+    CARD_NUMBER_INVALID: "El número de tarjeta no es válido. Revisa los datos.",
+    TRANSACTION_REFUSED: "La operación ha sido rechazada. PayPal no ha facilitado un motivo más concreto.",
+    PAYER_CANNOT_PAY: "PayPal no permite completar este pago con el medio seleccionado.",
+  };
+  const code = value?.processor_response?.response_code;
+  if (typeof code === "string" && /^[A-Z0-9]{4}$/.test(code) && code !== "0000")
+    return `${codes[code] || "Pago rechazado. PayPal no ha facilitado una explicación específica para este código."} (PayPal: ${code})`;
+  const issue = value?.details?.find((d: any) => codes[d?.issue])?.issue;
+  return issue ? `${codes[issue]} (PayPal: ${issue})` : undefined;
 }
 function configuredValue(name: string) {
   let value = (process.env[name] || "").trim();
@@ -72,7 +91,8 @@ export async function paypalRequest(path: string, body?: unknown, requestId?: st
   if (!response.ok) {
     // Never expose provider payloads, tokens or payer information to a browser.
     const issue = data.details?.[0]?.issue;
-    throw new PayPalError(`PayPal no pudo completar la operación (${String(issue || data.name || response.status).replace(/[^A-Z0-9_]/g, "").slice(0, 80)}).`);
+    const reason = paymentFailureReason(data);
+    throw new PayPalError(reason || `PayPal no pudo completar la operación (${String(issue || data.name || response.status).replace(/[^A-Z0-9_]/g, "").slice(0, 80)}).`, 502, reason);
   }
   return data;
 }
@@ -112,13 +132,32 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
   if (attempt.environment !== paypalConfig().environment) throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
   let order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`);
   validateOrder(attempt, order);
-  if (order.status === "APPROVED" && captureApproved) {
+  if (order.status === "APPROVED" && captureApproved && attempt.status === "pending") {
     validateCardAuthentication(attempt, order);
+    // Atomic competition with cancellation. A stale callback cannot capture a
+    // cancelled link. Passive polling must never clear this in-flight marker.
+    const claim = await admin.from(PAYPAL_TABLE).update({ remote_status: "CAPTURE_REQUESTED" })
+      .eq("id", attempt.id).eq("status", "pending").eq("remote_status", attempt.remote_status).select("*").maybeSingle();
+    if (claim.error) throw claim.error;
+    if (!claim.data) {
+      const latest = await admin.from(PAYPAL_TABLE).select("*").eq("id", attempt.id).single();
+      if (latest.error) throw latest.error;
+      return latest.data;
+    }
+    attempt = claim.data;
     try { await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}/capture`, {}, `capture-${attempt.id}`); }
     catch (error) {
       // A concurrent callback or a timeout may already have captured this order.
       order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`);
-      if (order.status !== "COMPLETED") throw error;
+      validateOrder(attempt, order);
+      if (order.status !== "COMPLETED") {
+        if (error instanceof PayPalError && error.paymentReason && !order.purchase_units?.[0]?.payments?.captures?.length) {
+          const saved = await admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: "CAPTURE_REJECTED", last_error: error.paymentReason })
+            .eq("id", attempt.id).eq("status", "pending").eq("remote_status", "CAPTURE_REQUESTED");
+          if (saved.error) throw saved.error;
+        }
+        throw error;
+      }
     }
     order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`);
   }
@@ -135,14 +174,36 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
     }
   } else {
     const rejected = ["DECLINED", "FAILED", "DENIED"].includes(capture?.status) || order.status === "VOIDED";
-    const { error } = await admin.from(PAYPAL_TABLE).update({ remote_status: capture ? `CAPTURE_${capture.status}` : order.status,
-      ...(rejected ? { status: "cancelled" } : {}), last_error: null, checked_at: new Date().toISOString() })
-      .eq("id", attempt.id).neq("status", "completed").neq("remote_status", "CAPTURE_COMPLETED");
+    const manuallyCancelled = attempt.remote_status === "CANCELLED_BY_STAFF";
+    const remoteStatus = manuallyCancelled ? attempt.remote_status : capture ? `CAPTURE_${capture.status}`
+      : attempt.remote_status === "CAPTURE_REQUESTED" ? "CAPTURE_REQUESTED"
+      : attempt.status === "cancelled" ? attempt.remote_status : order.status;
+    const reason = manuallyCancelled ? attempt.last_error : rejected
+      ? paymentFailureReason(capture) || attempt.last_error || "Pago rechazado o anulado. PayPal no ha facilitado el motivo específico."
+      : attempt.last_error;
+    const { error } = await admin.from(PAYPAL_TABLE).update({ remote_status: remoteStatus,
+      ...(rejected ? { status: "cancelled" } : {}), last_error: reason, checked_at: new Date().toISOString() })
+      .eq("id", attempt.id).eq("remote_status", attempt.remote_status).neq("status", "completed").neq("remote_status", "CAPTURE_COMPLETED");
     if (error) throw error;
   }
   const { data, error } = await admin.from(PAYPAL_TABLE).select("*").eq("id", attempt.id).single();
   if (error) throw error;
   return data;
+}
+export async function cancelPayPalLink(admin: any, attempt: any) {
+  // No PayPal capture is requested while checking whether cancellation is safe.
+  const current = await reconcilePayPal(admin, attempt, false);
+  if (current.status === "completed" || ["CAPTURE_REQUESTED", "CAPTURE_PENDING", "CAPTURE_COMPLETED"].includes(current.remote_status))
+    throw new PayPalError("El pago ya está cobrado o procesándose. Comprueba su estado; no se puede cancelar ni cambiar de tarifa todavía.", 409);
+  if (current.status === "cancelled") return current;
+  if (!current.order_id || !["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status))
+    throw new PayPalError("No se ha podido confirmar que el cobro esté sin procesar. Comprueba su estado antes de cancelar.", 409);
+  const saved = await admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: "CANCELLED_BY_STAFF",
+    last_error: "Enlace cancelado por la central. Solicita un nuevo enlace si deseas continuar." })
+    .eq("id", current.id).eq("status", "pending").eq("remote_status", current.remote_status).select("*").maybeSingle();
+  if (saved.error) throw saved.error;
+  if (!saved.data) throw new PayPalError("El estado cambió mientras cancelabas. Pulsa Comprobar antes de crear otro cobro.", 409);
+  return saved.data;
 }
 export async function verifyPayPalWebhook(req: Request, event: any) {
   const fields = ["auth-algo", "cert-url", "transmission-id", "transmission-sig", "transmission-time"];

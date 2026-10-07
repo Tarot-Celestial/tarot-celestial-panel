@@ -107,6 +107,8 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   const [checkingConnection, setCheckingConnection] = useState(false);
   const [connectionMessage, setConnectionMessage] = useState("");
   const connectionBusy = useRef(false);
+  const cancelBusy = useRef(false);
+  const paymentRevision = useRef(0);
 
   const getTokenRef = useRef(getToken);
 
@@ -206,7 +208,8 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   }, [open, cliente?.id, paymentStorageKey]);
 
   async function refreshStatus(silent = false, reconcile = true) {
-    if (!payment?.attempt_id || payment.cliente_id !== contextRef.current || refreshBusy.current) return;
+    if (!payment?.attempt_id || payment.cliente_id !== contextRef.current || refreshBusy.current || cancelBusy.current) return;
+    const revision = paymentRevision.current;
     const expectedId = payment.attempt_id;
     refreshBusy.current = true;
     try {
@@ -219,7 +222,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       });
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo comprobar el pago.");
-      if (currentAttempt.current !== expectedId || payment.cliente_id !== contextRef.current) return;
+      if (currentAttempt.current !== expectedId || payment.cliente_id !== contextRef.current || revision !== paymentRevision.current) return;
       const attempt = json.attempt || {};
       setPayment((current) => current ? {
         ...current,
@@ -349,6 +352,40 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
     }
   }
 
+  function resetPayment() {
+    currentAttempt.current = "";
+    operationIds.current = {};
+    try {
+      Object.keys(sessionStorage).filter(k => k.startsWith(`${paymentStorageKey}:operation:`)).forEach(k => sessionStorage.removeItem(k));
+      sessionStorage.removeItem(paymentStorageKey);
+    } catch {}
+    notifiedPaid.current = false;
+    setPayment(null);
+  }
+
+  async function cancelPayment(changeTariff: boolean) {
+    if (!payment || cancelBusy.current || loading) return;
+    cancelBusy.current = true;
+    paymentRevision.current++;
+    const expectedClient = contextRef.current, expectedId = payment.attempt_id;
+    setLoading(true);
+    try {
+      const token = await getTokenRef.current();
+      if (!token) throw new Error("Tu sesión ha caducado.");
+      const response = await fetch("/api/crm/pagos/paypal", { method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cancel", attempt_id: expectedId }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo cancelar. Comprueba el estado.");
+      if (contextRef.current !== expectedClient || currentAttempt.current !== expectedId) return;
+      if (changeTariff) resetPayment();
+      else setPayment(previous => previous ? { ...previous, status: data.attempt.status, remote_status: data.attempt.remote_status, last_error: data.attempt.last_error } : null);
+      setMessage(changeTariff ? "Enlace anterior cancelado. Elige otra tarifa y genera un nuevo enlace." : "Enlace cancelado. Ya no se puede cobrar desde el panel. Esta acción no es un reembolso.");
+    } catch (error: any) {
+      if (contextRef.current === expectedClient) setMessage(error.message);
+    } finally { cancelBusy.current = false; setLoading(false); }
+  }
+
   function openWhatsApp() {
     if (!payment?.url) return;
     if (!whatsappPhone) {
@@ -462,7 +499,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
                 {visualPaymentState === "success"
                   ? "PAGO REALIZADO CORRECTAMENTE"
                   : visualPaymentState === "rejected"
-                    ? (payment.remote_status === "expired" ? "PAGO CADUCADO" : ["canceled", "cancelled"].includes(payment.remote_status || "") ? "PAGO CANCELADO" : "PAGO RECHAZADO")
+                    ? (payment.remote_status === "expired" ? "PAGO CADUCADO" : ["canceled", "cancelled", "CANCELLED_BY_STAFF"].includes(payment.remote_status || "") ? "PAGO CANCELADO" : "PAGO RECHAZADO")
                     : visualPaymentState === "review" ? "PAGO RECIBIDO · PROCESAMIENTO PENDIENTE"
                     : visualPaymentState === "processing" ? "PAGO CONFIRMADO · PROCESANDO COMPRA"
                     : "ESPERANDO PAGO…"}
@@ -493,10 +530,14 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               <button type="button" disabled={visualPaymentState !== "waiting"} onClick={() => void copyLink()}><Copy /> Copiar enlace</button>
               {visualPaymentState === "waiting" && <a href={payment.url} target="_blank" rel="noreferrer"><ExternalLink /> Abrir pago</a>}
               <button type="button" onClick={() => void refreshStatus()} disabled={loading}><RefreshCw className={loading ? styles.spinIcon : ""} /> Comprobar</button>
+              {visualPaymentState === "waiting" && <>
+                <button type="button" disabled={loading} onClick={() => void cancelPayment(false)}><X /> Cancelar enlace</button>
+                <button type="button" disabled={loading} onClick={() => void cancelPayment(true)}>Cambiar tarifa</button>
+              </>}
             </div>
 
             <p className={styles.help}>Abrir WhatsApp prepara el mensaje. La central debe pulsar Enviar; no se envía automáticamente.</p>
-            {["success", "rejected"].includes(visualPaymentState) && <button className={styles.generate} onClick={() => { operationIds.current = {}; try { Object.keys(sessionStorage).filter(k => k.startsWith(`${paymentStorageKey}:operation:`)).forEach(k => sessionStorage.removeItem(k)); sessionStorage.removeItem(paymentStorageKey); } catch {} notifiedPaid.current = false; setPayment(null); }}>Nuevo cobro</button>}
+            {["success", "rejected"].includes(visualPaymentState) && <button className={styles.generate} disabled={loading} onClick={() => { resetPayment(); setMessage("Elige el paquete para el nuevo cobro."); }}>Elegir tarifa · Nuevo cobro</button>}
             <p className={styles.help}>El envío por WhatsApp abrirá la conversación con el mensaje y el enlace ya preparados. La central solo tiene que pulsar <b>Enviar</b>. El servidor verifica el pago en PayPal y registra la compra automáticamente.</p>
           </div>
         )}

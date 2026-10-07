@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     if (error) throw error;
     if (!data) return NextResponse.json({ error: "Enlace no encontrado." }, { status: 404, headers });
     const current = await reconcilePayPal(admin, data, body.cancel !== true);
-    return NextResponse.json({ status: current.status, remote_status: current.remote_status, amount: Number(current.amount), currency: current.currency }, { headers });
+    return NextResponse.json({ status: current.status, remote_status: current.remote_status, amount: Number(current.amount), currency: current.currency, last_error: current.last_error || null }, { headers });
   } catch {
     return NextResponse.json({ error: "No hemos podido confirmar el estado. No repitas el pago; vuelve a comprobarlo o contacta con tu central." }, { status: 503, headers });
   }
