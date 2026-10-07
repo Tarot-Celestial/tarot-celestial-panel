@@ -123,8 +123,8 @@ async function registerCallAtomic(admin: any, payload: any) {
   // El adaptador vincula pagos existentes y delega el registro operativo en v8.
   // tc_confirm_rank_purchase es un adaptador de compras de la nueva Fase 1
   // que no debe envolver v8 porque v8 ya aplica sus propios beneficios/rangos.
-  const result = await admin.rpc("tc_register_call_with_payment", { p_payload: payload });
-  return { ...result, rpcName: "tc_register_call_with_payment" };
+  const result = await admin.rpc("tc_register_call_minutes", { p_payload: payload });
+  return { ...result, rpcName: "tc_register_call_minutes" };
 }
 
 async function ensureSuperPromoSpin(
@@ -539,31 +539,7 @@ export async function POST(req: Request) {
     const usedFree = (codigo1 === "FREE" ? minutos1 : 0) + (codigo2 === "FREE" ? minutos2 : 0);
     const usedNormales = (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) + (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
 
-    if (!existingPaymentId && !clienteCompra && usoTipo === "7free" && currentFree < 7) {
-      return NextResponse.json({
-        ok: false,
-        error: "INSUFFICIENT_FREE_MINUTES",
-        available_free: currentFree,
-        requested_free: 7,
-      }, { status: 409 });
-    }
-    if (!existingPaymentId && !clienteCompra && usoTipo === "minutos" && usedFree > currentFree) {
-      return NextResponse.json({
-        ok: false,
-        error: "INSUFFICIENT_FREE_MINUTES",
-        available_free: currentFree,
-        requested_free: usedFree,
-      }, { status: 409 });
-    }
-    if (!existingPaymentId && !clienteCompra && usoTipo === "minutos" && usedNormales > currentNormales) {
-      return NextResponse.json({
-        ok: false,
-        error: "INSUFFICIENT_NORMAL_MINUTES",
-        available_normal: currentNormales,
-        requested_normal: usedNormales,
-      }, { status: 409 });
-    }
-
+    // PostgreSQL validates balance after checking operation replay; a retry must not fail because its first call consumed the saldo.
     const freeDelta = clienteCompra
       ? (Boolean(body?.guarda_minutos) ? guardadosFree : 0)
       : usoTipo === "7free" ? -7
@@ -709,6 +685,7 @@ export async function POST(req: Request) {
         "PAYMENT_OPERATION_CONFLICT",
         "EXISTING_PAYMENT_INVALID",
         "EXISTING_PAYMENT_CALL_ONLY",
+        "INVALID_CALL_MINUTES",
         "BALANCE_CHANGED",
         "INSUFFICIENT_FREE_MINUTES",
         "INSUFFICIENT_NORMAL_MINUTES",
@@ -841,6 +818,7 @@ export async function POST(req: Request) {
       existing_payment_id: result.existing_payment_id || null,
       payment_linked: result.payment_linked === true,
       duplicate_prevented: result.duplicate_prevented === true,
+      balances: result.balances || null,
       operation_id: operationId || null,
       rendimiento_id: result?.rendimiento?.id || null,
       payment_id: result?.payment?.id || null,

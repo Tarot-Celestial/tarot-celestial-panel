@@ -279,6 +279,7 @@ function isUuid(value: unknown) {
 
 function friendlySubmitError(error: unknown) {
   const message = String(error || "").trim();
+  if (message === "INVALID_CALL_MINUTES") return "Revisa los minutos: deben ser positivos, con su código. Si guarda toda la compra para después, los utilizados pueden ser 0.";
   if (message === "PAYPAL_PAYMENT_ALREADY_CONFIRMED") return "Ya hay un pago PayPal confirmado de este importe. Vuelve al primer paso y selecciónalo. Si es otra compra distinta, confírmalo expresamente en el paso Importe.";
   if (message === "PAYMENT_ALREADY_LINKED") return "Ese pago ya tiene una llamada vinculada. Vuelve a abrir la ficha; para otra llamada utiliza los minutos pendientes.";
   if (message === "EXISTING_PAYMENT_INVALID") return "El pago ya no está disponible o no pertenece a esta clienta. Vuelve a abrir el formulario.";
@@ -457,7 +458,7 @@ export default function RegistrarLlamadaModal({
     if (clienteCompra === "si") {
       list.push({ key: "compra_destino", title: "¿Usa todos los minutos o guarda?", subtitle: "Si guarda, esos minutos quedarán pendientes en su CRM." });
       if (compraDestino === "guardar") {
-        list.push({ key: "guardar", title: "¿Cuántos minutos guarda?", subtitle: "Se guardarán como free y normales dentro del CRM." });
+        list.push({ key: "guardar", title: "¿Cuántos minutos quedan de esta compra?", subtitle: "Escribe solo los restantes después de esta llamada. Se sumarán al saldo anterior; no incluyas minutos ya disponibles en CRM." });
       }
       if (compraDestino) {
         list.push({ key: "codigos", title: "¿Qué código de minutos usa?", subtitle: "Registra aquí los minutos utilizados en esta llamada." });
@@ -547,7 +548,9 @@ export default function RegistrarLlamadaModal({
       case "guardar":
         return toNum(guardarFree) >= 0 && toNum(guardarNormales) >= 0;
       case "codigos":
-        return minutosConsumidos > 0 && (toNum(minutos2) <= 0 || Boolean(codigo2));
+        return toNum(minutos1) >= 0 && toNum(minutos2) >= 0
+          && (minutosConsumidos > 0 || (clienteCompra === "si" && compraDestino === "guardar" && toNum(guardarFree) + toNum(guardarNormales) > 0))
+          && (toNum(minutos2) <= 0 || Boolean(codigo2));
       case "tarotista":
         return Boolean(tarotistaId);
       case "call_manual":
@@ -796,6 +799,7 @@ export default function RegistrarLlamadaModal({
 
             {current?.key === "codigos" && (
               <div style={{ display: "grid", gap: 14, marginTop: 18 }}>
+                {clienteCompra === "si" && compraDestino === "guardar" && <p>Si todavía no ha hablado, deja 0 minutos utilizados. No hace falta registrar un minuto para guardar la compra.</p>}
                 <div className="tc-grid-2">
                   <div>
                     <div className="tc-sub">Minutos bloque 1</div>
@@ -905,6 +909,19 @@ export default function RegistrarLlamadaModal({
 
             {current?.key === "resumen" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+                <div className={styles.confirmedPayments}>
+                  <strong>Así quedarán sus minutos</strong>
+                  <span>Saldo anterior: {freePend} free + {normalesPend} normales = {freePend + normalesPend} min</span>
+                  {clienteCompra === "si" ? <>
+                    <span>Compra registrada: {minutosConsumidos + (compraDestino === "guardar" ? toNum(guardarFree) + toNum(guardarNormales) : 0)} min en total · {minutosConsumidos} utilizados ahora.</span>
+                    <span>Se añaden al saldo solo los restantes: {compraDestino === "guardar" ? toNum(guardarFree) : 0} free + {compraDestino === "guardar" ? toNum(guardarNormales) : 0} normales.</span>
+                    <strong>Saldo previsto: {freePend + normalesPend + (compraDestino === "guardar" ? toNum(guardarFree) + toNum(guardarNormales) : 0)} min</strong>
+                  </> : <>
+                    <span>Se descuentan {minutosConsumidos} min de esta llamada.</span>
+                    <strong>Saldo previsto: {freePend + normalesPend - minutosConsumidos} min</strong>
+                  </>}
+                  <small>La base de datos comprueba el saldo real al guardar. Los premios nuevos se registran aparte.</small>
+                </div>
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
                   <div className="tc-sub">Cliente</div>
                   <div style={{ marginTop: 4 }}>{clienteNombre}</div>

@@ -18,7 +18,7 @@ function harness(){
     const selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
     return Promise.resolve({data:one?selected[0]||null:selected,error:null}).then(resolve);}};return q;
  },rpc:async(name,{p_payload})=>{h.rpcCalls.push({name,payload:p_payload});
-  if(name==='tc_register_call_with_payment')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
+  if(name==='tc_register_call_minutes')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
   return {data:{status:'pending'},error:null};
  }};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/rendimiento/registrar/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console:{error:()=>{}},process:{env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.test',SUPABASE_SERVICE_ROLE_KEY:'test',NEXT_PUBLIC_SUPABASE_ANON_KEY:'test'}},require:n=>({
@@ -41,7 +41,7 @@ test('Candidates belong to requested client and exclude payments already linked 
 });
 test('A linked call uses atomic adapter, no purchase benefits; retries reach adapter even with zero remaining balance',async()=>{
  const h=harness();const response=await h.post();assert.equal(response.status,200);const json=await response.json();assert.equal(json.payment,null);assert.equal(json.payment_linked,true);assert.equal(json.duplicate_prevented,true);
- const call=h.rpcCalls[0];assert.equal(call.name,'tc_register_call_with_payment');assert.equal(call.payload.existing_payment_id,id(3));assert.equal(call.payload.normal_delta,-20);assert.equal(call.payload.points_to_add,0);assert.equal(call.payload.purchase_benefits,null);
+ const call=h.rpcCalls[0];assert.equal(call.name,'tc_register_call_minutes');assert.equal(call.payload.existing_payment_id,id(3));assert.equal(call.payload.normal_delta,-20);assert.equal(call.payload.points_to_add,0);assert.equal(call.payload.purchase_benefits,null);
 });
 test('Malformed payment and attempts to combine existing payment with a new purchase fail before RPC',async()=>{
  const h=harness();assert.equal((await h.post({...h.body,existing_payment_id:'bad'})).status,400);

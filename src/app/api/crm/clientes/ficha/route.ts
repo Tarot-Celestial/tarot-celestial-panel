@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 function getEnv(name: string) {
   const v = process.env[name];
@@ -111,7 +112,7 @@ export async function GET(req: Request) {
       rango_actual_hasta: new Date().toISOString().slice(0, 10),
     };
 
-    return NextResponse.json({ ok: true, cliente, window_days: 30 });
+    return NextResponse.json({ ok: true, cliente, window_days: 30 }, { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
   }

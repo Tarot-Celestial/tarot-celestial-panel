@@ -17,7 +17,7 @@
   isolation: isolate;
   width: min(760px, 96vw);
   max-height: 90vh;
-  overflow: hidden;
+  overflow: clip;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   border: 1px solid rgba(238, 211, 151, 0.28);

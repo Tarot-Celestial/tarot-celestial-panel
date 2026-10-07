@@ -90,6 +90,7 @@ export default function ClienteSidebar({
       </div>
 
       <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+        <InfoRow label="Total minutos disponibles" value={`${free + normales} min`} />
         <InfoRow label="Rango" value={cliente?.rango_actual || "Sin rango"} />
         <InfoRow label="Origen" value={cliente?.origen || "—"} />
         <InfoRow label="Última interacción" value={dateLabel(latestActivity)} />

@@ -369,6 +369,8 @@ export default function CRMClientesPanel({
   const [crmEditMinFree, setCrmEditMinFree] = useState("0");
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
   const balanceConflict = useRef(false);
+  const fichaFetchVersion = useRef(0);
+  const fichaOpening = useRef(false);
   const visibleClientRef = useRef<string | null>(null);
   visibleClientRef.current = crmClienteFicha?.id || null;
   const [crmSaveLoading, setCrmSaveLoading] = useState(false);
@@ -1347,6 +1349,8 @@ export default function CRMClientesPanel({
   const liveCrmBalance = useRef({ cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales });
   liveCrmBalance.current = { cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales };
   async function refreshCrmBenefits() {
+    if (fichaOpening.current) return;
+    const requestVersion = ++fichaFetchVersion.current;
     const clientId = String(crmClienteFicha?.id || "");
     const token = await getTokenOrLogin();
     if (!clientId || !token) return;
@@ -1354,7 +1358,7 @@ export default function CRMClientesPanel({
       headers: { Authorization: "Bearer " + token }, cache: "no-store",
     });
     const json = await safeJson(response);
-    if (!json?.ok || visibleClientRef.current !== clientId) return;
+    if (!json?.ok || visibleClientRef.current !== clientId || requestVersion !== fichaFetchVersion.current) return;
     const current = json.cliente;
     if (!current) return;
     const latest = liveCrmBalance.current;
@@ -1398,6 +1402,8 @@ export default function CRMClientesPanel({
 
   async function openCRMFicha(id: string) {
     if (!id) return;
+    const requestVersion = ++fichaFetchVersion.current;
+    fichaOpening.current = true;
     balanceConflict.current = false;
 
     try {
@@ -1411,10 +1417,12 @@ export default function CRMClientesPanel({
       if (!token) return;
 
       const r = await fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(id)}`, {
+        cache: "no-store",
         headers: { Authorization: `Bearer ${token}` },
       });
 
       const j = await safeJson(r);
+      if (requestVersion !== fichaFetchVersion.current) return;
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       const c = j.cliente;
@@ -1458,10 +1466,14 @@ export default function CRMClientesPanel({
       ]);
     } catch (e: any) {
       console.error("ERROR FICHA", e);
+      if (requestVersion !== fichaFetchVersion.current) return;
       setCrmClienteFicha(null);
       setCrmFichaMsg(`❌ ${e?.message || "Error cargando ficha"}`);
     } finally {
-      setCrmFichaLoading(false);
+      if (requestVersion === fichaFetchVersion.current) {
+        fichaOpening.current = false;
+        setCrmFichaLoading(false);
+      }
     }
   }
 
