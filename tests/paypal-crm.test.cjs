@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=r
 function load(file,overrides={},extras={}){
  const exports={};const source=fs.readFileSync(path.join(__dirname,'..',file),'utf8');
  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,
- {exports,require:n=>overrides[n]||require(n),URL,Buffer,AbortSignal,console,Date,process:{env:{PAYPAL_ENVIRONMENT:'sandbox',PAYPAL_CLIENT_ID:'test',PAYPAL_CLIENT_SECRET:'test',PAYPAL_WEBHOOK_ID:'WH',PAYPAL_PUBLIC_BASE_URL:'https://panel.test'}},...extras});return exports;
+ {exports,require:n=>overrides[n]||require(n),URL,Buffer,AbortSignal,console,Date,process:{env:{PAYPAL_ENVIRONMENT:'sandbox',PAYPAL_CLIENT_ID:'test',PAYPAL_CLIENT_SECRET:'test-secret',PAYPAL_WEBHOOK_ID:'WH',PAYPAL_PUBLIC_BASE_URL:'https://panel.test'}},...extras});return exports;
 }
 const attempt={id:'00000000-0000-4000-8000-000000000010',order_id:'ORDER10',environment:'sandbox',amount:22,currency:'EUR',status:'pending'};
 function order(status='CREATED',captureStatus){return {id:'ORDER10',intent:'CAPTURE',status,purchase_units:[{custom_id:attempt.id,invoice_id:'TC-'+attempt.id,amount:{currency_code:'EUR',value:'22.00'},...(captureStatus?{payments:{captures:[{id:'CAP10',status:captureStatus,amount:{currency_code:'EUR',value:'22.00'}}]}}:{})}]};}
@@ -51,3 +51,4 @@ test('Reject non-PayPal approval links',()=>{
  assert.equal(h.api.approvalUrl({links:[{rel:'approve',href:'https://www.sandbox.paypal.com/checkoutnow?token=ORDER'}]}),'https://www.sandbox.paypal.com/checkoutnow?token=ORDER');
 });
 module.exports={load};
+

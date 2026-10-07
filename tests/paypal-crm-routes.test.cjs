@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
 const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
 function harness(){
- const rows=new Map();let remoteCreates=0,api;
+ const rows=new Map();let remoteCreates=0,authChecks=0,api;
  const worker={id:id(1),role:'central'},client={id:id(2)};
  const admin={from:table=>{
    let filters=[],mode='read',value,one=false,lim;
@@ -17,6 +17,7 @@ function harness(){
  }};
  class PayPalError extends Error{constructor(m,status=502){super(m);this.status=status;}}
  const paypal={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>({environment:'sandbox',origin:'https://panel.test'}),
+   testPayPalConnection:async()=>{authChecks++;return {environment:'sandbox',message:'OAuth OK'};},
    paypalRequest:async()=>{remoteCreates++;return {id:'ORDER10',status:'CREATED'};},approvalUrl:()=> 'https://www.sandbox.paypal.com/checkoutnow?token=ORDER10',reconcilePayPal:async(_,a)=>a};
  const packs={CLIENTE_MINUTE_PACKS:[{id:'pack_20',nombre:'20 minutos',priceUsd:22,totalMinutes:20,rouletteSpins:1}],getConfiguredMinutePack:k=>packs.CLIENTE_MINUTE_PACKS.find(p=>p.id===k)};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/pagos/paypal/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console,require:n=>({
@@ -25,8 +26,12 @@ function harness(){
  '@/lib/server/cliente-minute-packs':packs,'@/lib/server/cliente-platform':{pointsFromAmount:n=>n*10,splitMinutes:n=>({free:Math.floor(n/2),normal:n-Math.floor(n/2)})},
  '@/lib/ruleta':{rouletteLevelForPurchaseAmount:()=>1},'@/lib/server/paypal-crm':paypal})[n]});api=exports;
  const post=(overrides={},token='good')=>api.POST(new Request('https://panel.test/api/crm/pagos/paypal',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({request_id:id(10),cliente_id:id(2),pack_id:'pack_20',...overrides})}));
- return {post,api,rows,worker,paypal,remoteCreates:()=>remoteCreates};
+ return {post,api,rows,worker,paypal,remoteCreates:()=>remoteCreates,authChecks:()=>authChecks};
 }
+test('Connection check is staff-only and never creates a database record or PayPal order',async()=>{
+ const h=harness();assert.equal((await h.post({action:'test_connection'},'forged')).status,401);assert.equal(h.authChecks(),0);
+ assert.equal((await h.post({action:'test_connection'})).status,200);assert.equal(h.authChecks(),1);assert.equal(h.rows.size,0);assert.equal(h.remoteCreates(),0);
+});
 test('PayPal creation requires verified staff access',async()=>{
  const h=harness();assert.equal((await h.post({},'forged')).status,401);assert.equal(h.remoteCreates(),0);
 });

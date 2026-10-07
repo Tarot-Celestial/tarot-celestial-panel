@@ -4,7 +4,7 @@ import { rouletteStaff } from "@/lib/server/ruleta-access";
 import { CLIENTE_MINUTE_PACKS, getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
 import { pointsFromAmount, splitMinutes } from "@/lib/server/cliente-platform";
 import { rouletteLevelForPurchaseAmount } from "@/lib/ruleta";
-import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, approvalUrl, reconcilePayPal } from "@/lib/server/paypal-crm";
+import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, approvalUrl, reconcilePayPal, testPayPalConnection } from "@/lib/server/paypal-crm";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
@@ -48,8 +48,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const { admin, worker } = await rouletteStaff(req);
-    const config = paypalConfig();
     const body = await req.json();
+    // Staff-only OAuth check: no purchase, no WhatsApp, no database mutations.
+    if (body.action === "test_connection") return NextResponse.json({ ok: true, ...await testPayPalConnection() }, { headers });
+    const config = paypalConfig();
     if (!uuid.test(body.request_id || "") || !uuid.test(body.cliente_id || "")) throw new PayPalError("Identificador no válido.", 400);
     const id = body.request_id;
     const pack = getConfiguredMinutePack(body.pack_id);

@@ -104,6 +104,9 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   currentAttempt.current = payment?.attempt_id || "";
   const [environment, setEnvironment] = useState("");
   const [initializing, setInitializing] = useState(true);
+  const [checkingConnection, setCheckingConnection] = useState(false);
+  const [connectionMessage, setConnectionMessage] = useState("");
+  const connectionBusy = useRef(false);
 
   const getTokenRef = useRef(getToken);
 
@@ -112,6 +115,25 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
   }, [getToken]);
 
   const paymentStorageKey = cliente?.id ? `tc:crm:paypal:pending:${cliente.id}` : "";
+
+  async function checkConnection() {
+    if (connectionBusy.current) return;
+    const expectedClient = contextRef.current;
+    connectionBusy.current = true;
+    setCheckingConnection(true);
+    setConnectionMessage("Comprobando la autenticación con PayPal…");
+    try {
+      const token = await getTokenRef.current();
+      if (!token) throw new Error("Tu sesión ha caducado. Vuelve a entrar.");
+      const response = await fetch("/api/crm/pagos/paypal", { method: "POST", cache: "no-store",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ action: "test_connection" }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.error || "No se pudo comprobar la conexión.");
+      if (contextRef.current === expectedClient) setConnectionMessage(data.message);
+    } catch (error: any) {
+      if (contextRef.current === expectedClient) setConnectionMessage(error.message || "No se pudo comprobar la conexión.");
+    } finally { connectionBusy.current = false; setCheckingConnection(false); }
+  }
 
   const nombre = useMemo(
     () => [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ").trim() || "Clienta",
@@ -142,6 +164,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
     setManualAmount("");
     setNotes("");
     setMessage("");
+    setConnectionMessage("");
     notifiedPaid.current = false;
 
     let cancelled = false;
@@ -360,6 +383,13 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
           <span className={styles.secure}><ShieldCheck /> Seguro</span>
         </header>
 
+        <div className={styles.actions}>
+          <button type="button" disabled={checkingConnection || loading} onClick={() => void checkConnection()}>
+            <RefreshCw className={checkingConnection ? styles.spinIcon : ""} /> {checkingConnection ? "Comprobando…" : "Comprobar conexión PayPal"}
+          </button>
+        </div>
+        <p className={styles.help}>Comprueba el acceso sin generar un cobro ni abrir WhatsApp.</p>
+        {connectionMessage && <p className={styles.message} role="status">{connectionMessage}</p>}
         {environment === "sandbox" && <p className={styles.message}>MODO PRUEBAS · PayPal Sandbox. No se cobra dinero real.</p>}
         {!payment ? (
           <>
