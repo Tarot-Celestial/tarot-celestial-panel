@@ -75,6 +75,9 @@ export async function POST(req: Request) {
         description: `Tarot Celestial · ${pack?.nombre || "Importe personalizado"}`,
         amount: { currency_code: "EUR", value: amount.toFixed(2) } }], payment_source: { paypal: { experience_context: {
         brand_name: "Tarot Celestial", shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW",
+        // Ask PayPal for card entry without account login. Availability is still
+        // controlled by PayPal's guest-checkout eligibility for this buyer.
+        landing_page: "GUEST_CHECKOUT",
         return_url: `${config.origin}/pago-paypal?ref=${token}`, cancel_url: `${config.origin}/pago-paypal?ref=${token}&cancel=1`,
       } } } };
       const insert = await admin.from(PAYPAL_TABLE).insert({ id, cliente_id: client.id, worker_id: worker.id, environment: config.environment,

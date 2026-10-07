@@ -39,6 +39,7 @@ test('Server chooses pack price, snapshots benefits and reuses one remote order'
  const h=harness();assert.equal((await h.post({manual_amount:0.01})).status,200);assert.equal((await h.post()).status,200);assert.equal(h.remoteCreates(),1);
  const row=h.rows.get(id(10));assert.equal(row.amount,22);assert.equal(row.purchase_payload.free,10);assert.equal(row.create_payload.purchase_units[0].custom_id,id(10));assert.equal(row.create_payload.purchase_units[0].amount.value,'22.00');
  assert.ok(row.create_payload.payment_source.paypal.experience_context.return_url.startsWith('https://panel.test/pago-paypal?ref='));
+ assert.equal(row.create_payload.payment_source.paypal.experience_context.landing_page,'GUEST_CHECKOUT');
 });
 test('Request ID cannot be reused for another worker or amount',async()=>{
  const h=harness();await h.post();h.worker.id=id(3);assert.equal((await h.post()).status,409);assert.equal(h.remoteCreates(),1);
