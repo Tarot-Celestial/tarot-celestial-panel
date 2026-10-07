@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import RegistrarLlamadaModal from "@/components/crm/RegistrarLlamadaModal";
 import ClienteSidebar from "@/components/crm/ClienteSidebar";
 import ClienteTimeline from "@/components/crm/ClienteTimeline";
-import MollieCrmPaymentModal from "@/components/crm/MollieCrmPaymentModal";
+import PayPalCrmPaymentModal from "@/components/crm/PayPalCrmPaymentModal";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { BellRing, CalendarClock, Clock3, ShieldCheck, Sparkles } from "lucide-react";
 import { tcToast } from "@/lib/tc-toast";
@@ -2697,7 +2697,7 @@ export default function CRMClientesPanel({
         : null}
 
 
-      <MollieCrmPaymentModal
+      <PayPalCrmPaymentModal
         open={crmMollieOpen}
         onClose={() => setCrmMollieOpen(false)}
         cliente={crmClienteFicha ? {

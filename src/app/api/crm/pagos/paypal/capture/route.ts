@@ -59,6 +59,12 @@ export async function GET(req: Request) {
 
     const admin = adminClient();
 
+    // New CRM orders use a private return token and verified webhooks. They must
+    // never be exposed or modified through this legacy order-ID-only endpoint.
+    const { data: crmOrder, error: crmOrderError } = await admin.from("crm_paypal_orders")
+      .select("id").eq("order_id", paypalOrderId).maybeSingle();
+    if (crmOrderError || crmOrder) return NextResponse.json({ ok: false, error: "UTILIZA_EL_ENLACE_DE_CONFIRMACION" }, { status: 404, headers: { "Cache-Control": "no-store" } });
+
     const { data: pago, error: pagoError } = await admin
       .from("crm_cliente_pagos")
       .select("*")
