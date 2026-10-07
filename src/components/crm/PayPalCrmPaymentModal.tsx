@@ -428,7 +428,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
             </div>
 
             <button className={styles.generate} type="button" disabled={loading || initializing || requestedAmount <= 0} onClick={() => void createPayment()}>
-              {loading ? <RefreshCw className={styles.spinIcon} /> : <CreditCard />} {loading ? "Generando..." : "Crear pago PayPal y abrir WhatsApp"}
+              {loading ? <RefreshCw className={styles.spinIcon} /> : <CreditCard />} {loading ? "Generando..." : "Crear pago con tarjeta y abrir WhatsApp"}
             </button>
           </>
         ) : (
@@ -486,7 +486,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
               ) : null}
             </div>
 
-            <div className={styles.linkBox}><span>Enlace seguro PayPal</span><code>{payment.url}</code></div>
+            <div className={styles.linkBox}><span>Enlace de pago seguro</span><code>{payment.url}</code></div>
 
             <div className={styles.actions}>
               <button className={styles.whatsapp} type="button" onClick={openWhatsApp} disabled={!whatsappPhone || visualPaymentState !== "waiting"}><MessageCircle /> Envío manual · Abrir WhatsApp</button>

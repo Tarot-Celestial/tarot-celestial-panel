@@ -93,12 +93,27 @@ export function validateOrder(attempt: any, order: any) {
   }
   return unit;
 }
+// Applied centrally: staff reconciliation, callbacks and webhooks cannot bypass 3DS.
+export function validateCardAuthentication(attempt: any, order: any) {
+  if (!attempt.create_payload?.payment_source?.card) return;
+  const card = order.payment_source?.card;
+  if (!card) throw new PayPalError("PayPal no ha confirmado la tarjeta de este pago.", 409);
+  const result = card.authentication_result;
+  // With SCA_WHEN_REQUIRED, PayPal may not require authentication for this card.
+  if (!result) return;
+  const auth = result.three_d_secure?.authentication_status;
+  const enrollment = result.three_d_secure?.enrollment_status;
+  if (result.liability_shift === "POSSIBLE" && (!auth || ["Y", "A"].includes(auth))) return;
+  if (result.liability_shift === "NO" && ["N", "U", "B"].includes(enrollment) && !auth) return;
+  throw new PayPalError("La verificación bancaria no se ha completado. No se ha solicitado la captura del pago.", 409);
+}
 export async function reconcilePayPal(admin: any, attempt: any, captureApproved = true) {
   if (attempt.status === "completed" || !attempt.order_id) return attempt;
   if (attempt.environment !== paypalConfig().environment) throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
   let order = await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}`);
   validateOrder(attempt, order);
   if (order.status === "APPROVED" && captureApproved) {
+    validateCardAuthentication(attempt, order);
     try { await paypalRequest(`/v2/checkout/orders/${encodeURIComponent(attempt.order_id)}/capture`, {}, `capture-${attempt.id}`); }
     catch (error) {
       // A concurrent callback or a timeout may already have captured this order.

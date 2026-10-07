@@ -73,11 +73,9 @@ export async function POST(req: Request) {
         created_by_role: worker.role, notas: `PayPal · CRM · ${String(body.notes || "").slice(0, 500)}` };
       const createPayload = { intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, invoice_id: `TC-${id}`,
         description: `Tarot Celestial · ${pack?.nombre || "Importe personalizado"}`,
-        amount: { currency_code: "EUR", value: amount.toFixed(2) } }], payment_source: { paypal: { experience_context: {
-        brand_name: "Tarot Celestial", shipping_preference: "NO_SHIPPING", user_action: "PAY_NOW",
-        // Ask PayPal for card entry without account login. Availability is still
-        // controlled by PayPal's guest-checkout eligibility for this buyer.
-        landing_page: "GUEST_CHECKOUT",
+        amount: { currency_code: "EUR", value: amount.toFixed(2) } }], payment_source: { card: {
+        attributes: { verification: { method: "SCA_WHEN_REQUIRED" } }, experience_context: {
+        shipping_preference: "NO_SHIPPING",
         return_url: `${config.origin}/pago-paypal?ref=${token}`, cancel_url: `${config.origin}/pago-paypal?ref=${token}&cancel=1`,
       } } } };
       const insert = await admin.from(PAYPAL_TABLE).insert({ id, cliente_id: client.id, worker_id: worker.id, environment: config.environment,
@@ -93,7 +91,9 @@ export async function POST(req: Request) {
       if (Date.now() - Date.parse(attempt.created_at) > 5 * 60 * 60 * 1000) throw new PayPalError("Creación interrumpida antigua. Administración debe revisar PayPal antes de generar otro cobro.", 409);
       const order = await paypalRequest("/v2/checkout/orders", attempt.create_payload, `create-${id}`);
       if (!/^[A-Z0-9]+$/.test(order.id || "")) throw new PayPalError("PayPal devolvió una referencia inválida.");
-      const url = approvalUrl(order);
+      // Existing wallet attempts retain their original payload and approval link.
+      const url = attempt.create_payload?.payment_source?.card
+        ? `${config.origin}/pago-tarjeta?ref=${attempt.public_token}` : approvalUrl(order);
       const saved = await admin.from(PAYPAL_TABLE).update({ order_id: order.id, approval_url: url, remote_status: order.status }).eq("id", id).is("order_id", null);
       if (saved.error) throw saved.error;
       const current = await admin.from(PAYPAL_TABLE).select("*").eq("id", id).single();
