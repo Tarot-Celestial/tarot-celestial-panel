@@ -237,7 +237,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
 
       if (attempt.status === "completed" && !notifiedPaid.current) {
         notifiedPaid.current = true;
-        setMessage("✅ Pago confirmado por PayPal. El CRM y los beneficios ya se han actualizado.");
+        setMessage("✅ Pago confirmado y registrado. Ahora abre «Registrar llamada» y elige este pago en «Pago PayPal ya confirmado».");
         await Promise.resolve(onPaid?.());
       }
     } catch (error: any) {

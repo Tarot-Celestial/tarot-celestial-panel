@@ -120,11 +120,11 @@ function isUuid(value: unknown): value is string {
 }
 
 async function registerCallAtomic(admin: any, payload: any) {
-  // El registro de llamadas debe usar directamente la transacción v8.
+  // El adaptador vincula pagos existentes y delega el registro operativo en v8.
   // tc_confirm_rank_purchase es un adaptador de compras de la nueva Fase 1
   // que no debe envolver v8 porque v8 ya aplica sus propios beneficios/rangos.
-  const result = await admin.rpc("crm_register_call_atomic_v8", { p_payload: payload });
-  return { ...result, rpcName: "crm_register_call_atomic_v8" };
+  const result = await admin.rpc("tc_register_call_with_payment", { p_payload: payload });
+  return { ...result, rpcName: "tc_register_call_with_payment" };
 }
 
 async function ensureSuperPromoSpin(
@@ -297,6 +297,24 @@ export async function GET(req: Request) {
     if (!isUuid(clienteId)) return clientIdentificationError();
 
     const admin = adminClient();
+    if (new URL(req.url).searchParams.get("mode") === "payments") {
+      const { data: orders, error } = await admin.from("crm_paypal_orders")
+        .select("payment_id,pack_name,completed_at").eq("cliente_id", clienteId)
+        .eq("status", "completed").not("payment_id", "is", null)
+        .order("completed_at", { ascending: false });
+      if (error) throw error;
+      const ids = (orders || []).map((order: any) => order.payment_id);
+      const { data: payments, error: paymentError } = ids.length
+        ? await admin.from("crm_cliente_pagos").select("id,importe,moneda,created_at")
+          .eq("cliente_id", clienteId).eq("estado", "completed")
+          .is("source_rendimiento_id", null).in("id", ids)
+        : { data: [], error: null };
+      if (paymentError) throw paymentError;
+      return NextResponse.json({ ok: true, payments: (orders || []).flatMap((order: any) => {
+        const payment = (payments || []).find((p: any) => p.id === order.payment_id);
+        return payment ? [{ ...payment, pack_name: order.pack_name, paid_at: order.completed_at || payment.created_at }] : [];
+      }) }, { headers: { "Cache-Control": "no-store" } });
+    }
     const [clientResult, ruleResult, eventsResult, assignmentResult] = await Promise.all([
       admin.from("crm_clientes").select("id").eq("id", clienteId).maybeSingle(),
       admin.from("worker_xp_rules").select("action_key,xp_reward,enabled,frequency,integration_status").eq("action_key", "client_capture").maybeSingle(),
@@ -359,13 +377,25 @@ export async function POST(req: Request) {
       return clientIdentificationError();
     }
 
+    const existingPaymentId = String(body?.existing_payment_id || "").trim();
+    if (existingPaymentId && !isUuid(existingPaymentId)) {
+      return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_INVALID" }, { status: 400 });
+    }
     const clienteCompra = Boolean(body?.cliente_compra_minutos);
+    if (existingPaymentId && (clienteCompra || body?.uso_tipo !== "minutos")) {
+      return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_CALL_ONLY" }, { status: 400 });
+    }
     const operationId = String(body?.operation_id || "").trim();
     const usoTipo = String(body?.uso_tipo || "").trim();
     const codigo1 = cleanText(body?.codigo_1);
     const codigo2 = cleanText(body?.codigo_2);
     const minutos1 = toNum(body?.minutos_1);
     const minutos2 = toNum(body?.minutos_2);
+    if (existingPaymentId && (minutos1 < 0 || minutos2 < 0 || minutos1 + minutos2 <= 0
+      || (minutos1 > 0 && !["FREE", "RUEDA", "CLIENTE", "REPITE", "CALL"].includes(codigo1 || ""))
+      || (minutos2 > 0 && !["FREE", "RUEDA", "CLIENTE", "REPITE", "CALL"].includes(codigo2 || "")))) {
+      return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_CALL_ONLY" }, { status: 400 });
+    }
     const guardadosFree = toNum(body?.guardados_free);
     const guardadosNormales = toNum(body?.guardados_normales);
     const tarotistaWorkerId = cleanText(body?.tarotista_worker_id);
@@ -509,7 +539,7 @@ export async function POST(req: Request) {
     const usedFree = (codigo1 === "FREE" ? minutos1 : 0) + (codigo2 === "FREE" ? minutos2 : 0);
     const usedNormales = (codigo1 && codigo1 !== "FREE" ? minutos1 : 0) + (codigo2 && codigo2 !== "FREE" ? minutos2 : 0);
 
-    if (!clienteCompra && usoTipo === "7free" && currentFree < 7) {
+    if (!existingPaymentId && !clienteCompra && usoTipo === "7free" && currentFree < 7) {
       return NextResponse.json({
         ok: false,
         error: "INSUFFICIENT_FREE_MINUTES",
@@ -517,7 +547,7 @@ export async function POST(req: Request) {
         requested_free: 7,
       }, { status: 409 });
     }
-    if (!clienteCompra && usoTipo === "minutos" && usedFree > currentFree) {
+    if (!existingPaymentId && !clienteCompra && usoTipo === "minutos" && usedFree > currentFree) {
       return NextResponse.json({
         ok: false,
         error: "INSUFFICIENT_FREE_MINUTES",
@@ -525,7 +555,7 @@ export async function POST(req: Request) {
         requested_free: usedFree,
       }, { status: 409 });
     }
-    if (!clienteCompra && usoTipo === "minutos" && usedNormales > currentNormales) {
+    if (!existingPaymentId && !clienteCompra && usoTipo === "minutos" && usedNormales > currentNormales) {
       return NextResponse.json({
         ok: false,
         error: "INSUFFICIENT_NORMAL_MINUTES",
@@ -587,6 +617,8 @@ export async function POST(req: Request) {
       : null;
 
     const atomicPayload = {
+      existing_payment_id: existingPaymentId || null,
+      separate_payment_confirmed: body?.separate_payment_confirmed === true,
       operation_id: operationId || null,
       cliente_id: clienteId,
       cliente_nombre: clienteNombre,
@@ -672,6 +704,11 @@ export async function POST(req: Request) {
 
       const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
       const knownBalanceError = [
+        "PAYPAL_PAYMENT_ALREADY_CONFIRMED",
+        "PAYMENT_ALREADY_LINKED",
+        "PAYMENT_OPERATION_CONFLICT",
+        "EXISTING_PAYMENT_INVALID",
+        "EXISTING_PAYMENT_CALL_ONLY",
         "BALANCE_CHANGED",
         "INSUFFICIENT_FREE_MINUTES",
         "INSUFFICIENT_NORMAL_MINUTES",
@@ -736,7 +773,7 @@ export async function POST(req: Request) {
         // La clasificación Super Promo Ruleta no depende del subsistema de captación.
         // La compra y su giro especial ya han quedado persistidos correctamente, por
         // lo que un fallo de atribución no debe mostrar falsamente "no se aplicaron cambios".
-        if (superPromoRuleta) {
+        if (superPromoRuleta || existingPaymentId) {
           console.error("[CRM registrar llamada] atribución de captación omitida en Super Promo Ruleta", {
             code: captureError.code || null,
             message: captureError.message || null,
@@ -790,7 +827,9 @@ export async function POST(req: Request) {
       }
     }
 
-    await syncClienteMonthTag(admin, clienteId);
+    // A tag update must not turn an already committed linked call into a failed payment.
+    try { await syncClienteMonthTag(admin, clienteId); }
+    catch (error) { if (!existingPaymentId) throw error; console.error("[CRM] Llamada vinculada; etiquetas pendientes", error); }
 
     const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
       ? await admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
@@ -799,6 +838,9 @@ export async function POST(req: Request) {
       ok: true,
       data: inserted,
       payment: economicPayment,
+      existing_payment_id: result.existing_payment_id || null,
+      payment_linked: result.payment_linked === true,
+      duplicate_prevented: result.duplicate_prevented === true,
       operation_id: operationId || null,
       rendimiento_id: result?.rendimiento?.id || null,
       payment_id: result?.payment?.id || null,

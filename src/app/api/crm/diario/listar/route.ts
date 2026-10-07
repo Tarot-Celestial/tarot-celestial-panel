@@ -139,7 +139,7 @@ async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, paym
     const rendimiento = rendimientoMap.get(String(payment.source_rendimiento_id || ""));
     const worker = workerMap.get(String(payment.created_by_user_id || ""));
     const role = String(payment.created_by_role || "").toLowerCase();
-    const isLink = ["mollie_crm", "mollie_crm_manual"].includes(payment.metodo);
+    const isLink = ["mollie_crm", "mollie_crm_manual", "paypal_crm", "paypal_crm_manual"].includes(payment.metodo);
     const isWeb = !payment.created_by_user_id || role.includes("web") || role.includes("cliente");
     const nombre = cleanName(rendimiento?.cliente_nombre || [client?.nombre, client?.apellido].filter(Boolean).join(" "), "Cliente");
     const telefono = String(client?.telefono || "").trim() || null;
@@ -158,7 +158,7 @@ async function hydratePaymentRows(supabase: ReturnType<typeof adminClient>, paym
       moneda: payment.moneda,
       referencia_externa: payment.referencia_externa,
       central_generadora: worker?.display_name || null,
-      central: isLink ? "Central automática · Enlace" : isWeb ? "Web automática" : cleanName(rendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
+      central: isLink ? cleanName(rendimiento?.telefonista_nombre || worker?.display_name, "Central automática · Enlace") : isWeb ? "Web automática" : cleanName(rendimiento?.telefonista_nombre || worker?.display_name, "Central sin asignar"),
       tarotista: rendimiento ? cleanName(rendimiento.tarotista_nombre || rendimiento.tarotista_manual_call, "—") : null,
       estado: String(payment.estado || "completed").trim().toLowerCase(),
     } as DailyRow;

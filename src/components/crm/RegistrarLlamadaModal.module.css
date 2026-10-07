@@ -559,3 +559,10 @@
   from { opacity: 0; transform: translateY(5px) scale(.99); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+.confirmedPayments { display: grid; gap: 10px; padding: 16px; border: 1px solid #60cba777; background: #12372c55; border-radius: 16px; }
+.confirmedPayments p { margin: 0; font-size: 14px; line-height: 1.5; }
+.confirmedPayments button { display: grid; gap: 6px; text-align: left; padding: 14px; }
+.confirmedPayments small { font-size: 12px; line-height: 1.5; opacity: .85; }
+.separatePayment { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; font-size: 14px; line-height: 1.5; }
+.separatePayment input { margin-top: 4px; flex: 0 0 auto; }
