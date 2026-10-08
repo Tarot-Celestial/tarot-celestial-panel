@@ -101,32 +101,19 @@ export async function POST(req: Request) {
       patch.minutos_normales_pendientes = toNumberOrZero(body.minutos_normales_pendientes);
     }
 
-    let updateQuery = gate.admin
+    // Manual correction: an authorized worker saves the entered absolute balance.
+    // Omitted minute fields remain untouched when editing other profile details.
+    const updateQuery = gate.admin
       .from("crm_clientes")
       .update(patch)
       .eq("id", id);
-    // Compare and update in the same SQL statement: a concurrent reward must never be overwritten.
-    if (body?.minutos_free_pendientes !== undefined || body?.minutos_normales_pendientes !== undefined) {
-      if (!Object.hasOwn(body, "expected_free") || !Object.hasOwn(body, "expected_normal")) {
-        return NextResponse.json({ ok: false, error: "Vuelve a abrir la ficha para comprobar el saldo antes de guardar." }, { status: 409 });
-      }
-      for (const [column, expected] of [
-        ["minutos_free_pendientes", body.expected_free],
-        ["minutos_normales_pendientes", body.expected_normal],
-      ] as const) {
-        if (expected !== null && !Number.isFinite(Number(expected))) {
-          return NextResponse.json({ ok: false, error: "Saldo de referencia no válido." }, { status: 400 });
-        }
-        updateQuery = expected === null ? updateQuery.is(column, null) : updateQuery.eq(column, Number(expected));
-      }
-    }
     const { data: updated, error } = await updateQuery
       .select("*")
       .maybeSingle();
 
     if (error) throw error;
     if (!updated) {
-      return NextResponse.json({ ok: false, error: "La ficha o su saldo han cambiado. Vuelve a abrirla antes de guardar." }, { status: 409 });
+      return NextResponse.json({ ok: false, error: "Cliente no encontrado." }, { status: 404 });
     }
 
     return NextResponse.json({

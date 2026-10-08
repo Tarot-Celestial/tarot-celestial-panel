@@ -368,7 +368,6 @@ export default function CRMClientesPanel({
   const [crmEditDeuda, setCrmEditDeuda] = useState("0");
   const [crmEditMinFree, setCrmEditMinFree] = useState("0");
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
-  const balanceConflict = useRef(false);
   const balanceEdited = useRef(false);
   const fichaFetchVersion = useRef(0);
   const fichaOpening = useRef(false);
@@ -1371,10 +1370,8 @@ export default function CRMClientesPanel({
       const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
       const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree
         || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
-      if (changed && balanceEdited.current) {
-        balanceConflict.current = true;
-        setCrmFichaMsg("El saldo ha cambiado mientras editabas. Tus datos no se han borrado: revisa el saldo antes de guardarlo.");
-      } else if (!balanceEdited.current && changed) {
+      // Automatic refresh keeps the operator's explicit correction intact.
+      if (!balanceEdited.current && changed) {
         setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
         setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
       }
@@ -1429,7 +1426,6 @@ export default function CRMClientesPanel({
     }
     const requestVersion = ++fichaFetchVersion.current;
     fichaOpening.current = true;
-    balanceConflict.current = false;
     balanceEdited.current = false;
 
     try {
@@ -1504,10 +1500,6 @@ export default function CRMClientesPanel({
   }
 
   async function saveCRMFicha() {
-    if (balanceConflict.current) {
-      setCrmFichaMsg("El saldo cambió mientras lo editabas. Vuelve a abrir la ficha para revisar los minutos actuales antes de guardar.");
-      return;
-    }
     if (!crmClienteSelId) return;
 
     try {
@@ -1526,8 +1518,6 @@ export default function CRMClientesPanel({
         body: JSON.stringify({
           id: crmClienteSelId,
           ...(balanceEdited.current ? {
-            expected_free: crmClienteFicha?.minutos_free_pendientes ?? null,
-            expected_normal: crmClienteFicha?.minutos_normales_pendientes ?? null,
             minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
             minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
           } : {}),
@@ -1547,7 +1537,6 @@ export default function CRMClientesPanel({
 
       await saveEtiquetasCliente(crmClienteSelId);
       balanceEdited.current = false;
-      balanceConflict.current = false;
       setCrmClienteFicha((prev: any) => prev?.id === crmClienteSelId ? { ...prev, ...j.cliente } : prev);
       setCrmEditMinFree(String(j.cliente?.minutos_free_pendientes ?? 0));
       setCrmEditMinNormales(String(j.cliente?.minutos_normales_pendientes ?? 0));
@@ -2785,7 +2774,6 @@ export default function CRMClientesPanel({
           if (targetId !== visibleClientRef.current) return;
           // La operación confirmada prevalece sobre cualquier borrador anterior.
           balanceEdited.current = false;
-          balanceConflict.current = false;
           // El recibo nunca sustituye a la fila de Supabase. Se consulta la ficha
           // ya confirmada, sin desmontar el historial ni volver al inicio.
           const refreshed = await refreshCrmBenefits();
