@@ -399,6 +399,7 @@ export default function CRMClientesPanel({
   // NOTAS CON AUTOR
   const [crmNotes, setCrmNotes] = useState<any[]>([]);
   const [crmNotesLoading, setCrmNotesLoading] = useState(false);
+  const notesRequestSeq = useRef(0);
   const [crmNotesMsg, setCrmNotesMsg] = useState("");
   const [crmNewNote, setCrmNewNote] = useState("");
   const [crmSavingNote, setCrmSavingNote] = useState(false);
@@ -1103,6 +1104,7 @@ export default function CRMClientesPanel({
   }
 
   function closeCRMFicha() {
+    ++notesRequestSeq.current;
     setCrmClienteSelId("");
     setCrmClienteFicha(null);
     setCrmFichaMsg("");
@@ -1182,33 +1184,33 @@ export default function CRMClientesPanel({
   }
 
   async function loadNotasCliente(clienteId: string) {
+    const request = ++notesRequestSeq.current;
     if (!clienteId) {
       setCrmNotes([]);
       return;
     }
 
+    // Nunca desmontar las notas visibles durante una actualización en segundo plano.
+    // Esto preserva el scroll, el texto que se está editando y "Ver las demás notas".
     try {
-      setCrmNotesLoading(true);
       setCrmNotesMsg("");
-
       const token = await getTokenOrLogin();
       if (!token) return;
 
       const r = await fetch(`/api/crm/clientes/notas/listar?cliente_id=${encodeURIComponent(clienteId)}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
       });
-
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
-
+      if (request !== notesRequestSeq.current) return;
       setCrmNotes(sortNotes(Array.isArray(j.notas) ? j.notas : []));
-      setCrmNotesExpanded(false);
     } catch (e) {
-      console.error("ERROR CARGANDO NOTAS CLIENTE", e);
-      setCrmNotes([]);
+      if (request === notesRequestSeq.current) {
+        console.error("ERROR CARGANDO NOTAS CLIENTE", e);
+        setCrmNotesMsg("No se pudieron actualizar las notas. Se conserva lo que estabas leyendo.");
+      }
     } finally {
-      setCrmNotesLoading(false);
+      if (request === notesRequestSeq.current) setCrmNotesLoading(false);
     }
   }
 
@@ -1349,37 +1351,51 @@ export default function CRMClientesPanel({
 
   const liveCrmBalance = useRef({ cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales });
   liveCrmBalance.current = { cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales };
-  async function refreshCrmBenefits() {
-    if (fichaOpening.current) return;
+  async function refreshCrmBenefits(): Promise<boolean> {
+    if (fichaOpening.current) return false;
     const requestVersion = ++fichaFetchVersion.current;
-    const clientId = String(crmClienteFicha?.id || "");
+    const clientId = String(liveCrmBalance.current.cliente?.id || "");
+    if (!clientId) return false;
     const token = await getTokenOrLogin();
-    if (!clientId || !token) return;
-    const response = await fetch("/api/crm/clientes/ficha?id=" + encodeURIComponent(clientId), {
-      headers: { Authorization: "Bearer " + token }, cache: "no-store",
-    });
-    const json = await safeJson(response);
-    if (!json?.ok || visibleClientRef.current !== clientId || requestVersion !== fichaFetchVersion.current) return;
-    const current = json.cliente;
-    if (!current) return;
-    const latest = liveCrmBalance.current;
-    const beforeFree = Number(latest.cliente?.minutos_free_pendientes || 0);
-    const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
-    const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
-    const dirty = balanceEdited.current;
-    if (changed && dirty) {
-      balanceConflict.current = true;
-      setCrmFichaMsg("El saldo ha cambiado. Tus cambios no se han borrado: vuelve a abrir la ficha antes de guardar los minutos.");
-    } else if (!dirty) {
-      setCrmEditMinFree(String(current.minutos_free_pendientes || 0));
-      setCrmEditMinNormales(String(current.minutos_normales_pendientes || 0));
+    if (!token) return false;
+    try {
+      const response = await fetch("/api/crm/clientes/ficha?id=" + encodeURIComponent(clientId), {
+        headers: { Authorization: "Bearer " + token }, cache: "no-store",
+      });
+      const json = await safeJson(response);
+      if (!json?.ok || !json?.cliente) return false;
+      if (visibleClientRef.current !== clientId || requestVersion !== fichaFetchVersion.current) return false;
+      const current = json.cliente;
+      const latest = liveCrmBalance.current;
+      const beforeFree = Number(latest.cliente?.minutos_free_pendientes || 0);
+      const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
+      const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree
+        || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
+      if (changed && balanceEdited.current) {
+        balanceConflict.current = true;
+        setCrmFichaMsg("El saldo ha cambiado mientras editabas. Tus datos no se han borrado: revisa el saldo antes de guardarlo.");
+      } else if (!balanceEdited.current && changed) {
+        setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
+        setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
+      }
+      // Guardar una copia coherente del saldo del servidor. Las notas no se tocan.
+      setCrmClienteFicha((previous: any) => {
+        if (previous?.id !== clientId) return previous;
+        if (!changed && Number(previous?.puntos || 0) === Number(current.puntos || 0)
+            && previous?.updated_at === current.updated_at) return previous;
+        return { ...previous, free_passes: current.free_passes,
+          puntos: current.puntos,
+          minutos_free_pendientes: current.minutos_free_pendientes,
+          minutos_normales_pendientes: current.minutos_normales_pendientes,
+          updated_at: current.updated_at };
+      });
+      return true;
+    } catch (error) {
+      console.error("Error refrescando saldo real del CRM", error);
+      return false;
     }
-    setCrmClienteFicha((previous: any) => previous?.id === clientId ? { ...previous,
-      free_passes: current.free_passes, puntos: current.puntos, minutos_free_pendientes: current.minutos_free_pendientes,
-      minutos_normales_pendientes: current.minutos_normales_pendientes, updated_at: current.updated_at,
-    } : previous);
-    await loadNotasCliente(clientId);
   }
+
   useRouletteSignal(sb, crmClienteFicha?.id, refreshCrmBenefits);
   const refreshBenefitsRef = useRef(refreshCrmBenefits);
   refreshBenefitsRef.current = refreshCrmBenefits;
@@ -1403,6 +1419,14 @@ export default function CRMClientesPanel({
 
   async function openCRMFicha(id: string) {
     if (!id) return;
+    // Solo cambiar de cliente puede reiniciar el historial visible.
+    // Una actualización de saldo NUNCA debe reconstruir las notas.
+    if (id !== visibleClientRef.current) {
+      ++notesRequestSeq.current;
+      setCrmNotes([]);
+      setCrmNotesExpanded(false);
+      setCrmNotesLoading(true);
+    }
     const requestVersion = ++fichaFetchVersion.current;
     fichaOpening.current = true;
     balanceConflict.current = false;
@@ -1501,8 +1525,12 @@ export default function CRMClientesPanel({
         },
         body: JSON.stringify({
           id: crmClienteSelId,
-          expected_free: crmClienteFicha?.minutos_free_pendientes ?? null,
-          expected_normal: crmClienteFicha?.minutos_normales_pendientes ?? null,
+          ...(balanceEdited.current ? {
+            expected_free: crmClienteFicha?.minutos_free_pendientes ?? null,
+            expected_normal: crmClienteFicha?.minutos_normales_pendientes ?? null,
+            minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
+            minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
+          } : {}),
           nombre: crmEditNombre,
           apellido: crmEditApellido,
           telefono: crmEditTelefono,
@@ -1511,8 +1539,6 @@ export default function CRMClientesPanel({
           notas: crmEditNotas,
           origen: crmEditOrigen,
           deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
-          minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
-          minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
         }),
       });
 
@@ -1520,9 +1546,14 @@ export default function CRMClientesPanel({
       if (!j?._ok || !j?.ok) throw new Error(j?.error || "Error guardando");
 
       await saveEtiquetasCliente(crmClienteSelId);
-      await openCRMFicha(crmClienteSelId);
+      balanceEdited.current = false;
+      balanceConflict.current = false;
+      setCrmClienteFicha((prev: any) => prev?.id === crmClienteSelId ? { ...prev, ...j.cliente } : prev);
+      setCrmEditMinFree(String(j.cliente?.minutos_free_pendientes ?? 0));
+      setCrmEditMinNormales(String(j.cliente?.minutos_normales_pendientes ?? 0));
       setCrmFichaMsg("✅ Cliente y etiquetas actualizados correctamente");
-      await searchCRM();
+      // No reabrir la ficha ni reiniciar notas, scroll o edición para guardar.
+      void searchCRM(true);
     } catch (e: any) {
       setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
     } finally {
@@ -2752,28 +2783,16 @@ export default function CRMClientesPanel({
           const targetId = confirmed?.clienteId || String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);
           if (targetId !== visibleClientRef.current) return;
-          const balance = confirmed?.balances;
-          if (balance && Number.isFinite(Number(balance.free_after)) && Number.isFinite(Number(balance.normal_after))) {
-            ++fichaFetchVersion.current;
-            fichaOpening.current = false;
-            setCrmFichaLoading(false);
-            balanceEdited.current = false;
-            balanceConflict.current = false;
-            const free = String(balance.free_after);
-            const normal = String(balance.normal_after);
-            setCrmEditMinFree(free);
-            setCrmEditMinNormales(normal);
-            setCrmSendMinFree(free);
-            setCrmSendMinNormales(normal);
-            const updated = { ...liveCrmBalance.current.cliente, minutos_free_pendientes: Number(free), minutos_normales_pendientes: Number(normal) };
-            liveCrmBalance.current = { cliente: updated, free, normal };
-            setCrmClienteFicha((previous: any) => previous?.id === targetId ? { ...previous, minutos_free_pendientes: Number(free), minutos_normales_pendientes: Number(normal) } : previous);
-            // Reload history without resetting the committed balance inputs.
-            await Promise.allSettled([loadPagosCliente(targetId), loadNotasCliente(targetId)]);
-          } else if (targetId) {
-            await openCRMFicha(targetId);
-          }
-          setCrmFichaMsg(message || "✅ Llamada registrada correctamente");
+          // La operación confirmada prevalece sobre cualquier borrador anterior.
+          balanceEdited.current = false;
+          balanceConflict.current = false;
+          // El recibo nunca sustituye a la fila de Supabase. Se consulta la ficha
+          // ya confirmada, sin desmontar el historial ni volver al inicio.
+          const refreshed = await refreshCrmBenefits();
+          await Promise.allSettled([loadPagosCliente(targetId), loadNotasCliente(targetId)]);
+          setCrmFichaMsg(refreshed
+            ? (message || "✅ Llamada registrada correctamente")
+            : "✅ Operación registrada. No se pudo verificar el saldo actualizado; usa el botón de refrescar saldo.");
         }}
       />
 

@@ -908,7 +908,7 @@ export default function RegistrarLlamadaModal({
                     <span>Consumo ahora: {usedFree} FREE + {usedNormal} normales.</span>
                     {balanceValidationError ? <strong role="alert">{balanceValidationError}</strong> : <>
                       <span>Quedan de esta compra: {remainingFree} FREE + {remainingNormal} normales.</span>
-                      {liveBalance && <strong>Saldo previsto sin bonos: {freePend + remainingFree} FREE + {normalesPend + remainingNormal} normales.</strong>}
+                      {liveBalance && <strong>Saldo previsto al guardar: {freePend + remainingFree} FREE + {normalesPend + remainingNormal} normales.</strong>}
                     </>}
                     <small>Los bonos de rango se suman aparte y quedan detallados en la nota final.</small>
                   </> : <>
