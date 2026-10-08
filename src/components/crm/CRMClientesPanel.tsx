@@ -2856,6 +2856,10 @@ export default function CRMClientesPanel({
           const targetId = confirmed?.clienteId || String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);
           if (targetId !== visibleClientRef.current) return;
+          // El visor de Resumen operativo consulta de inmediato la cartera real.
+          window.dispatchEvent(new CustomEvent("tc-crm-balance-updated", {
+            detail: { clienteId: targetId },
+          }));
           // La operación confirmada prevalece sobre cualquier borrador anterior.
           balanceEdited.current = false;
           balanceConflict.current = false;

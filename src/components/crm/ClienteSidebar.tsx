@@ -1,6 +1,15 @@
 "use client";
+import { useEffect, useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 import FreePassBenefits from "./FreePassBenefits";
 import styles from "./CRMNuevaEra.module.css";
+
+type ConfirmedCrmBalance = {
+  clienteId: string;
+  free: number;
+  normal: number;
+  updatedAt: string;
+};
 
 type ClienteSidebarProps = {
   cliente?: any;
@@ -61,8 +70,97 @@ export default function ClienteSidebar({
   const totalPagado = confirmedPayments.reduce((sum, pago) => sum + paymentAmount(pago), 0);
   const status = activityScore(cliente, confirmedPayments, notas);
   const fullName = [cliente?.nombre, cliente?.apellido].filter(Boolean).join(" ") || "Cliente sin nombre";
-  const free = Number(cliente?.minutos_free_pendientes || 0);
-  const normales = Number(cliente?.minutos_normales_pendientes || 0);
+  const clienteId = String(cliente?.id || "");
+  const [confirmed, setConfirmed] = useState<ConfirmedCrmBalance | null>(null);
+  const [balanceError, setBalanceError] = useState(false);
+
+  // El resumen se conecta a la fila real de crm_clientes, sin depender de una
+  // lectura antigua de la ficha completa ni del estado editable del formulario.
+  // No se hacen setState durante comprobaciones sin cambios: no parpadea.
+  useEffect(() => {
+    if (!clienteId) return;
+    let active = true;
+    let generation = 0;
+    let controller: AbortController | null = null;
+
+    const readBalance = async () => {
+      if (!active || document.visibilityState === "hidden") return;
+      const version = ++generation;
+      controller?.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+      try {
+        const { data } = await supabaseBrowser().auth.getSession();
+        const token = data.session?.access_token;
+        if (!token || signal.aborted) return;
+        const response = await fetch(
+          `/api/crm/rendimiento/registrar?mode=balance&cliente_id=${encodeURIComponent(clienteId)}&fresh=${Date.now()}`,
+          {
+            cache: "no-store",
+            headers: { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" },
+            signal,
+          },
+        );
+        if (!response.ok) throw new Error(`HTTP_${response.status}`);
+        const json = await response.json();
+        if (!json?.ok || !json.balance) throw new Error("SALDO_NO_CONFIRMADO");
+        const free = Number(json.balance.minutos_free_pendientes);
+        const normal = Number(json.balance.minutos_normales_pendientes);
+        if (!Number.isFinite(free) || !Number.isFinite(normal) || free < 0 || normal < 0) {
+          throw new Error("SALDO_INVALIDO");
+        }
+        if (!active || signal.aborted || version !== generation) return;
+        const updatedAt = String(json.balance.updated_at || "");
+        setConfirmed((previous) => {
+          if (previous?.clienteId === clienteId) {
+            const previousStamp = Date.parse(previous.updatedAt);
+            const nextStamp = Date.parse(updatedAt);
+            if (Number.isFinite(previousStamp) && Number.isFinite(nextStamp) && nextStamp < previousStamp) {
+              return previous;
+            }
+            if (previous.free === free && previous.normal === normal && previous.updatedAt === updatedAt) {
+              return previous;
+            }
+          }
+          return { clienteId, free, normal, updatedAt };
+        });
+        setBalanceError(false);
+      } catch (error) {
+        if (active && !signal.aborted && version === generation) {
+          console.error("No se pudo leer el saldo real del Resumen operativo CRM", error);
+          setBalanceError(true);
+        }
+      }
+    };
+
+    const onFocus = () => { void readBalance(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void readBalance();
+    };
+    const onBalanceChanged = (event: Event) => {
+      const receivedId = String((event as CustomEvent<{ clienteId?: string }>).detail?.clienteId || "");
+      if (!receivedId || receivedId === clienteId) void readBalance();
+    };
+
+    void readBalance();
+    const timer = window.setInterval(() => { void readBalance(); }, 20_000);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("tc-crm-balance-updated", onBalanceChanged);
+    return () => {
+      active = false;
+      generation++;
+      controller?.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("tc-crm-balance-updated", onBalanceChanged);
+    };
+  }, [clienteId]);
+
+  const hasConfirmedBalance = confirmed?.clienteId === clienteId;
+  const free = hasConfirmedBalance ? confirmed.free : Number(cliente?.minutos_free_pendientes || 0);
+  const normales = hasConfirmedBalance ? confirmed.normal : Number(cliente?.minutos_normales_pendientes || 0);
   const latestActivity = [cliente?.updated_at, ...notas.map(n => n.created_at || n.updated_at), ...pagos.map(p => p.created_at)]
     .filter((date): date is string => typeof date === "string" && Number.isFinite(Date.parse(date)))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0] || null;
@@ -83,14 +181,17 @@ export default function ClienteSidebar({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10 }}>
         <MiniMetric label="Pagado" value={eur(totalPagado)} />
         <MiniMetric label="Pagos" value={String(confirmedPayments.length)} />
-        <MiniMetric label="Min free" value={String(free)} />
-        <MiniMetric label="Min normales" value={String(normales)} />
+        <MiniMetric label="Min free" value={hasConfirmedBalance ? String(free) : "…"} />
+        <MiniMetric label="Min normales" value={hasConfirmedBalance ? String(normales) : "…"} />
         <MiniMetric label="Coins disponibles" value={Number(cliente?.puntos || 0).toLocaleString("es-ES")} />
         <MiniMetric label="Deuda pendiente" value={eur(cliente?.deuda_pendiente)} />
       </div>
 
       <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
-        <InfoRow label="Total minutos disponibles" value={`${free + normales} min`} />
+        <InfoRow label="Total minutos disponibles" value={hasConfirmedBalance ? `${free + normales} min` : "Comprobando…"} />
+        {balanceError && !hasConfirmedBalance ? (
+          <div role="status" className="tc-sub">No se ha podido confirmar el saldo. Se reintentará automáticamente.</div>
+        ) : null}
         <InfoRow label="Rango" value={cliente?.rango_actual || "Sin rango"} />
         <InfoRow label="Origen" value={cliente?.origen || "—"} />
         <InfoRow label="Última interacción" value={dateLabel(latestActivity)} />
