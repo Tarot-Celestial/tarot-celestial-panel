@@ -76,17 +76,40 @@ async function getCliente(db: any, clienteId: string) {
 }
 
 async function addClientMinutes(db: any, clienteId: string, freeDelta: number, normalDelta: number) {
-  const cliente = await getCliente(db, clienteId);
-  if (!cliente?.id) throw new Error("CLIENTE_NOT_FOUND");
-  const { error } = await db
-    .from("crm_clientes")
-    .update({
-      minutos_free_pendientes: Math.max(0, n(cliente.minutos_free_pendientes) + freeDelta),
-      minutos_normales_pendientes: Math.max(0, n(cliente.minutos_normales_pendientes) + normalDelta),
-      updated_at: nowIso(),
-    })
-    .eq("id", clienteId);
-  if (error) throw error;
+  // Los saldos se actualizan con control de concurrencia: nunca escribimos una
+  // cifra calculada sobre una lectura antigua después de un canje o una compra.
+  // El update se ejecuta solo si AMBOS saldos siguen coincidiendo con la lectura.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cliente = await getCliente(db, clienteId);
+    if (!cliente?.id) throw new Error("CLIENTE_NOT_FOUND");
+
+    const beforeFree = n(cliente.minutos_free_pendientes);
+    const beforeNormal = n(cliente.minutos_normales_pendientes);
+    const nextFree = beforeFree + freeDelta;
+    const nextNormal = beforeNormal + normalDelta;
+    if (nextFree < 0 || nextNormal < 0) throw new Error("INSUFFICIENT_MINUTES");
+    if (!Number.isFinite(nextFree) || !Number.isFinite(nextNormal)) throw new Error("INVALID_MINUTE_DELTA");
+
+    let query = db.from("crm_clientes")
+      .update({
+        minutos_free_pendientes: nextFree,
+        minutos_normales_pendientes: nextNormal,
+        updated_at: nowIso(),
+      }).eq("id", clienteId);
+
+    query = cliente.minutos_free_pendientes === null
+      ? query.is("minutos_free_pendientes", null)
+      : query.eq("minutos_free_pendientes", cliente.minutos_free_pendientes);
+    query = cliente.minutos_normales_pendientes === null
+      ? query.is("minutos_normales_pendientes", null)
+      : query.eq("minutos_normales_pendientes", cliente.minutos_normales_pendientes);
+
+    const { data, error } = await query.select("id,minutos_free_pendientes,minutos_normales_pendientes").maybeSingle();
+    if (error) throw error;
+    if (data?.id) return data;
+    // Otro proceso modificó el saldo; recalcular sobre la nueva fila.
+  }
+  throw new Error("BALANCE_CHANGED_RETRY");
 }
 
 async function readTargetPhone(db: any, extension?: string | null) {

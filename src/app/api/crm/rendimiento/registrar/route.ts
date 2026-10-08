@@ -805,9 +805,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // A tag update must not turn an already committed linked call into a failed payment.
+    // La operación principal ya se ha confirmado en PostgreSQL. Las etiquetas
+    // son un detalle accesorio: un fallo aquí nunca puede convertir una compra
+    // ya guardada en un error que anime a registrarla otra vez.
     try { await syncClienteMonthTag(admin, clienteId); }
-    catch (error) { if (!existingPaymentId) throw error; console.error("[CRM] Llamada vinculada; etiquetas pendientes", error); }
+    catch (error) { console.error("[CRM] Operación guardada; sincronización de etiqueta pendiente", error); }
+
+    // No entregar al navegador una estimación o el saldo viejo del recibo:
+    // releemos la fila real DESPUÉS del registro y sus beneficios/triggers.
+    const { data: confirmedBalance, error: confirmationError } = await admin
+      .from("crm_clientes")
+      .select("id,minutos_free_pendientes,minutos_normales_pendientes,updated_at")
+      .eq("id", clienteId).maybeSingle();
+    if (confirmationError) console.error("[CRM] Operación guardada; lectura de comprobación pendiente", confirmationError);
+    if (!confirmedBalance) console.error("[CRM] Operación guardada sin confirmación de saldo", { clienteId, operationId });
 
     const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
       ? await admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
@@ -819,7 +830,14 @@ export async function POST(req: Request) {
       existing_payment_id: result.existing_payment_id || null,
       payment_linked: result.payment_linked === true,
       duplicate_prevented: result.duplicate_prevented === true,
-      balances: result.balances || null,
+      balances: confirmedBalance ? {
+        ...result.balances,
+        free_after: Number(confirmedBalance.minutos_free_pendientes || 0),
+        normal_after: Number(confirmedBalance.minutos_normales_pendientes || 0),
+        total_after: Number(confirmedBalance.minutos_free_pendientes || 0) + Number(confirmedBalance.minutos_normales_pendientes || 0),
+      } : result.balances || null,
+      balance_verified: Boolean(confirmedBalance),
+      balance_updated_at: confirmedBalance?.updated_at || null,
       operation_id: operationId || null,
       rendimiento_id: result?.rendimiento?.id || null,
       payment_id: result?.payment?.id || null,

@@ -166,15 +166,29 @@ export async function POST(req: Request) {
     const nuevoNormales =
       Number(cliente.minutos_normales_pendientes || 0) + restantes_normales;
 
-    const { error: updateClienteError } = await admin
-      .from("crm_clientes")
+    // No sobrescribir compras/canjes/minutos guardados que hayan cambiado
+    // desde la lectura. Si hubo cambios simultáneos, se pide reintentar el cierre.
+    let updateSaldo = admin.from("crm_clientes")
       .update({
         minutos_free_pendientes: nuevoFree,
         minutos_normales_pendientes: nuevoNormales,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", popup.cliente_id);
-
+    updateSaldo = cliente.minutos_free_pendientes === null
+      ? updateSaldo.is("minutos_free_pendientes", null)
+      : updateSaldo.eq("minutos_free_pendientes", cliente.minutos_free_pendientes);
+    updateSaldo = cliente.minutos_normales_pendientes === null
+      ? updateSaldo.is("minutos_normales_pendientes", null)
+      : updateSaldo.eq("minutos_normales_pendientes", cliente.minutos_normales_pendientes);
+    const { data: savedBalance, error: updateClienteError } = await updateSaldo
+      .select("id,minutos_free_pendientes,minutos_normales_pendientes")
+      .maybeSingle();
     if (updateClienteError) throw updateClienteError;
+    if (!savedBalance) return NextResponse.json({
+      ok: false, error: "BALANCE_CHANGED",
+      message: "El saldo cambió al cerrar la llamada; vuelve a intentarlo para no borrar minutos nuevos.",
+    }, { status: 409 });
 
     const { data: closedPopup, error: closeError } = await admin
       .from("crm_call_popups")

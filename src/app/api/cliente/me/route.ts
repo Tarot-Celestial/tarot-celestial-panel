@@ -115,7 +115,7 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
   const nextFree = toNum(cliente.minutos_free_pendientes) + 10;
   const nowIso = new Date().toISOString();
 
-  const { data: updated, error } = await gate.admin
+  let grantQuery = gate.admin
     .from("crm_clientes")
     .update({
       minutos_free_pendientes: nextFree,
@@ -125,9 +125,13 @@ async function maybeGrantWelcomeGift(gate: { cliente: ClienteRow; admin: any }) 
     })
     .eq("id", cliente.id)
     .eq("regalo_bienvenida_elegible", true)
-    .eq("regalo_bienvenida_otorgado", false)
-    .select("*")
-    .maybeSingle();
+    .eq("regalo_bienvenida_otorgado", false);
+  // La lectura de auth puede haber ocurrido antes de una compra. Si otro
+  // proceso acaba de sumar minutos, jamás devolver el saldo a la cifra antigua.
+  grantQuery = cliente.minutos_free_pendientes == null
+    ? grantQuery.is("minutos_free_pendientes", null)
+    : grantQuery.eq("minutos_free_pendientes", cliente.minutos_free_pendientes);
+  const { data: updated, error } = await grantQuery.select("*").maybeSingle();
 
   if (error) throw error;
 
