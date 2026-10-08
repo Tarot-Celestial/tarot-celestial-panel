@@ -123,8 +123,8 @@ async function registerCallAtomic(admin: any, payload: any) {
   // El adaptador vincula pagos existentes y delega el registro operativo en v8.
   // tc_confirm_rank_purchase es un adaptador de compras de la nueva Fase 1
   // que no debe envolver v8 porque v8 ya aplica sus propios beneficios/rangos.
-  const result = await admin.rpc("tc_register_call_minutes", { p_payload: payload });
-  return { ...result, rpcName: "tc_register_call_minutes" };
+  const result = await admin.rpc("tc_register_call_minutes_v2", { p_payload: payload });
+  return { ...result, rpcName: "tc_register_call_minutes_v2" };
 }
 
 async function ensureSuperPromoSpin(
@@ -389,6 +389,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_INVALID" }, { status: 400 });
     }
     const clienteCompra = Boolean(body?.cliente_compra_minutos);
+    if (clienteCompra && body?.minute_accounting_version !== 2) {
+      return NextResponse.json({ ok: false, error: "Actualiza la página antes de registrar la compra: ha cambiado el cálculo de minutos." }, { status: 409 });
+    }
     if (existingPaymentId && (clienteCompra || body?.uso_tipo !== "minutos")) {
       return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_CALL_ONLY" }, { status: 400 });
     }
@@ -548,12 +551,12 @@ export async function POST(req: Request) {
 
     // PostgreSQL validates balance after checking operation replay; a retry must not fail because its first call consumed the saldo.
     const freeDelta = clienteCompra
-      ? (Boolean(body?.guarda_minutos) ? guardadosFree : 0)
+      ? (Boolean(body?.guarda_minutos) ? guardadosFree - usedFree : 0)
       : usoTipo === "7free" ? -7
       : usoTipo === "minutos" ? -usedFree
       : 0;
     const normalDelta = clienteCompra
-      ? (Boolean(body?.guarda_minutos) ? guardadosNormales : 0)
+      ? (Boolean(body?.guarda_minutos) ? guardadosNormales - usedNormales : 0)
       : usoTipo === "minutos" ? -usedNormales
       : 0;
 
@@ -693,6 +696,7 @@ export async function POST(req: Request) {
         "EXISTING_PAYMENT_INVALID",
         "EXISTING_PAYMENT_CALL_ONLY",
         "INVALID_CALL_MINUTES",
+        "PURCHASE_MINUTES_EXCEEDED",
         "BALANCE_CHANGED",
         "INSUFFICIENT_FREE_MINUTES",
         "INSUFFICIENT_NORMAL_MINUTES",

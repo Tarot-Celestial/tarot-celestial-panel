@@ -300,6 +300,7 @@ function friendlySubmitError(error: unknown) {
   if (message === "BALANCE_CHANGED") {
     return "El saldo ha cambiado mientras registrabas la llamada. Vuelve a abrir el formulario para comprobar los minutos actuales; no se ha guardado esta operación.";
   }
+  if (message === "PURCHASE_MINUTES_EXCEEDED") return "El consumo supera los minutos de esta compra. Revisa los minutos comprados y los códigos.";
   if (message === "INSUFFICIENT_FREE_MINUTES") {
     return "La clienta no dispone de minutos free suficientes para registrar esta llamada.";
   }
@@ -476,7 +477,7 @@ export default function RegistrarLlamadaModal({
     if (clienteCompra === "si") {
       list.push({ key: "compra_destino", title: "¿Usa todos los minutos o guarda?", subtitle: "Si guarda, esos minutos quedarán pendientes en su CRM." });
       if (compraDestino === "guardar") {
-        list.push({ key: "guardar", title: "¿Cuántos minutos quedan de esta compra?", subtitle: "Escribe solo los restantes después de esta llamada. Se sumarán al saldo anterior; no incluyas minutos ya disponibles en CRM." });
+        list.push({ key: "guardar", title: "¿Cuántos minutos incluye esta compra?", subtitle: "Introduce los minutos antes de consumir. Restaremos los utilizados ahora. No incluyas el saldo que ya tenía la clienta." });
       }
       if (compraDestino) {
         list.push({ key: "codigos", title: "¿Qué código de minutos usa?", subtitle: "Registra aquí los minutos utilizados en esta llamada." });
@@ -512,6 +513,12 @@ export default function RegistrarLlamadaModal({
   const isMarioCall = tarotistaId === CALL_MARIO_VALUE;
 
   const balanceValidationError = useMemo(() => {
+    if (clienteCompra === "si") {
+      const usedFree = (codigo1 === "FREE" ? toNum(minutos1) : 0) + (codigo2 === "FREE" ? toNum(minutos2) : 0);
+      const usedNormal = toNum(minutos1) + toNum(minutos2) - usedFree;
+      return compraDestino === "guardar" && (usedFree > toNum(guardarFree) || usedNormal > toNum(guardarNormales))
+        ? "El consumo supera los minutos de esta compra. Revisa los bloques FREE y normales." : "";
+    }
     if (balanceError) return balanceError;
     if (!liveBalance) return "Comprobando saldo actual…";
     if (clienteCompra !== "no") return "";
@@ -535,7 +542,7 @@ export default function RegistrarLlamadaModal({
       return `Saldo normal insuficiente: disponibles ${fmtMinutes(availableNormal)}, solicitados ${fmtMinutes(requestedNormal)}.`;
     }
     return "";
-  }, [clienteCompra, usoSinCompra, liveBalance, balanceError, codigo1, codigo2, minutos1, minutos2]);
+  }, [clienteCompra, compraDestino, guardarFree, guardarNormales, usoSinCompra, liveBalance, balanceError, codigo1, codigo2, minutos1, minutos2]);
 
   const tarotistaSelectOptions = useMemo<GameSelectOption[]>(() => [
     { value: CALL_MARIO_VALUE, label: "✦ CALL MARIO · colaborador", special: "mario" },
@@ -629,6 +636,7 @@ export default function RegistrarLlamadaModal({
       const actualTarotistaWorkerId = isMarioCall ? marioTarotistaId : (tarotistaId && tarotistaId !== CALL_MANUAL_VALUE ? tarotistaId : null);
 
       const payload = {
+        minute_accounting_version: 2,
         operation_id: operationIdRef.current,
         cliente_id: clienteId,
         existing_payment_id: existingPaymentId || null,
@@ -741,6 +749,10 @@ export default function RegistrarLlamadaModal({
   const clienteNombre = [cliente.nombre, cliente.apellido].filter(Boolean).join(" ") || "Cliente";
   const freePend = toNum(liveBalance?.minutos_free_pendientes);
   const normalesPend = toNum(liveBalance?.minutos_normales_pendientes);
+  const usedFree = (codigo1 === "FREE" ? toNum(minutos1) : 0) + (codigo2 === "FREE" ? toNum(minutos2) : 0);
+  const usedNormal = minutosConsumidos - usedFree;
+  const remainingFree = compraDestino === "guardar" ? toNum(guardarFree)-usedFree : 0;
+  const remainingNormal = compraDestino === "guardar" ? toNum(guardarNormales)-usedNormal : 0;
 
   const content = (
     <div className={styles.overlay} onClick={onClose}>
@@ -806,18 +818,18 @@ export default function RegistrarLlamadaModal({
             {current?.key === "compra_destino" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
                 <button type="button" className={`${styles.choiceButton} ${compraDestino === "usar_todo" ? styles.choiceSelected : ""}`} onClick={() => setCompraDestino("usar_todo")} style={{ padding: 16, border: compraDestino === "usar_todo" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "usar_todo" ? "rgba(215,181,109,.14)" : undefined }}>Usa todos los minutos</button>
-                <button type="button" className={`${styles.choiceButton} ${compraDestino === "guardar" ? styles.choiceSelected : ""}`} onClick={() => setCompraDestino("guardar")} style={{ padding: 16, border: compraDestino === "guardar" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "guardar" ? "rgba(215,181,109,.14)" : undefined }}>Guarda minutos</button>
+                <button type="button" className={`${styles.choiceButton} ${compraDestino === "guardar" ? styles.choiceSelected : ""}`} onClick={() => setCompraDestino("guardar")} style={{ padding: 16, border: compraDestino === "guardar" ? "1px solid rgba(215,181,109,.55)" : undefined, background: compraDestino === "guardar" ? "rgba(215,181,109,.14)" : undefined }}>Compra y deja minutos pendientes</button>
               </div>
             )}
 
             {current?.key === "guardar" && (
               <div className="tc-grid-2" style={{ marginTop: 18 }}>
                 <div>
-                  <div className="tc-sub">Minutos free que guarda</div>
+                  <div className="tc-sub">Minutos FREE de la compra (antes de usar)</div>
                   <input className={`${styles.gameInput} tc-input`} value={guardarFree} onChange={(e) => setGuardarFree(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
                 </div>
                 <div>
-                  <div className="tc-sub">Minutos normales que guarda</div>
+                  <div className="tc-sub">Minutos normales de la compra (antes de usar)</div>
                   <input className={`${styles.gameInput} tc-input`} value={guardarNormales} onChange={(e) => setGuardarNormales(e.target.value)} style={{ width: "100%", marginTop: 6 }} />
                 </div>
               </div>
@@ -939,9 +951,13 @@ export default function RegistrarLlamadaModal({
                   <strong>Así quedarán sus minutos</strong>
                   <span>Saldo anterior: {freePend} free + {normalesPend} normales = {freePend + normalesPend} min</span>
                   {clienteCompra === "si" ? <>
-                    <span>Compra registrada: {minutosConsumidos + (compraDestino === "guardar" ? toNum(guardarFree) + toNum(guardarNormales) : 0)} min en total · {minutosConsumidos} utilizados ahora.</span>
-                    <span>Se añaden al saldo solo los restantes: {compraDestino === "guardar" ? toNum(guardarFree) : 0} free + {compraDestino === "guardar" ? toNum(guardarNormales) : 0} normales.</span>
-                    <strong>Saldo previsto: {freePend + normalesPend + (compraDestino === "guardar" ? toNum(guardarFree) + toNum(guardarNormales) : 0)} min</strong>
+                    <span>Minutos de la compra: {compraDestino === "guardar" ? toNum(guardarFree) : usedFree} FREE + {compraDestino === "guardar" ? toNum(guardarNormales) : usedNormal} normales.</span>
+                    <span>Consumo ahora: {usedFree} FREE + {usedNormal} normales.</span>
+                    {balanceValidationError ? <strong role="alert">{balanceValidationError}</strong> : <>
+                      <span>Quedan de esta compra: {remainingFree} FREE + {remainingNormal} normales.</span>
+                      {liveBalance && <strong>Saldo previsto sin bonos: {freePend + remainingFree} FREE + {normalesPend + remainingNormal} normales.</strong>}
+                    </>}
+                    <small>Los bonos de rango se suman aparte y quedan detallados en la nota final.</small>
                   </> : <>
                     {balanceValidationError ? <strong role="alert">{balanceValidationError} No se descontarán minutos hasta corregir los bloques.</strong> : <>
                       <span>Se descuentan {minutosConsumidos} min de esta llamada.</span>
@@ -974,7 +990,7 @@ export default function RegistrarLlamadaModal({
                   )}
                   {clienteCompra === "si" && compraDestino === "guardar" && (
                     <div className="tc-sub" style={{ marginTop: 8 }}>
-                      Guarda: {fmtMinutes(guardarFree)} free · {fmtMinutes(guardarNormales)} normales
+                      Compra antes de consumir: {fmtMinutes(guardarFree)} FREE · {fmtMinutes(guardarNormales)} normales
                     </div>
                   )}
                   {(toNum(minutos1) > 0 || toNum(minutos2) > 0) && (
