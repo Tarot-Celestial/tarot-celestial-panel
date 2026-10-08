@@ -18,7 +18,7 @@ function harness(){
     const selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
     return Promise.resolve({data:one?selected[0]||null:selected,error:null}).then(resolve);}};return q;
  },rpc:async(name,{p_payload})=>{h.rpcCalls.push({name,payload:p_payload});
-  if(name==='tc_register_call_minutes_v2')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
+  if(name==='tc_register_call_minutes')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
   return {data:{status:'pending'},error:null};
  }};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/app/api/crm/rendimiento/registrar/route.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports,URL,Date,console:{error:()=>{}},process:{env:{NEXT_PUBLIC_SUPABASE_URL:'https://example.test',SUPABASE_SERVICE_ROLE_KEY:'test',NEXT_PUBLIC_SUPABASE_ANON_KEY:'test'}},require:n=>({
@@ -35,22 +35,9 @@ test('Only active admin/central can read candidates or register calls',async()=>
  h.role='tarotista';assert.equal((await h.post()).status,403);assert.equal((await h.get()).status,403);
  h.role='central';h.active=false;assert.equal((await h.get()).status,401);assert.equal(h.rpcCalls.length,0);
 });
-test('Candidates belong to requested client and exclude payments already linked to calls',async()=>{
- const h=harness();let r=await h.get();assert.equal(r.status,200);let j=await r.json();assert.equal(j.payments.length,1);assert.equal(j.payments[0].id,id(3));
- h.tables.crm_cliente_pagos[0].source_rendimiento_id=id(8);j=await(await h.get()).json();assert.equal(j.payments.length,0);
-});
-test('A linked call uses atomic adapter, no purchase benefits; retries reach adapter even with zero remaining balance',async()=>{
- const h=harness();const response=await h.post();assert.equal(response.status,200);const json=await response.json();assert.equal(json.payment,null);assert.equal(json.payment_linked,true);assert.equal(json.duplicate_prevented,true);
- const call=h.rpcCalls[0];assert.equal(call.name,'tc_register_call_minutes_v2');assert.equal(call.payload.existing_payment_id,id(3));assert.equal(call.payload.normal_delta,-20);assert.equal(call.payload.points_to_add,0);assert.equal(call.payload.purchase_benefits,null);
-});
-test('Malformed payment and attempts to combine existing payment with a new purchase fail before RPC',async()=>{
- const h=harness();assert.equal((await h.post({...h.body,existing_payment_id:'bad'})).status,400);
- assert.equal((await h.post({...h.body,cliente_compra_minutos:true})).status,400);assert.equal(h.rpcCalls.length,0);
-});
-test('Database duplicate/link/balance guards become actionable HTTP 409, not an invented successful payment',async()=>{
- for(const code of ['PAYPAL_PAYMENT_ALREADY_CONFIRMED','PAYMENT_ALREADY_LINKED','PAYMENT_OPERATION_CONFLICT','EXISTING_PAYMENT_INVALID','INSUFFICIENT_NORMAL_MINUTES']){
-  const h=harness();h.rpcError={code:'P0001',message:code};const response=await h.post();assert.equal(response.status,409);assert.equal((await response.json()).error,code);
- }
+test('Old listing and payment selection are disabled before mutation',async()=>{
+ const h=harness();assert.equal((await h.get()).status,410);
+ assert.equal((await h.post()).status,409);assert.equal(h.rpcCalls.length,0);
 });
 
 test('Balance endpoint reads authoritative split and prevents caching',async()=>{
@@ -62,6 +49,6 @@ test('Balance endpoint reads authoritative split and prevents caching',async()=>
 test('Rejected consumption returns refreshed split without a second RPC',async()=>{
  const h=harness();h.tables.crm_clientes[0].minutos_free_pendientes=10;h.tables.crm_clientes[0].minutos_normales_pendientes=10;
  h.rpcError={code:'P0001',message:'INSUFFICIENT_FREE_MINUTES'};
- const r=await h.post();const j=await r.json();assert.equal(r.status,409);
+ const r=await h.post({...h.body,existing_payment_id:null});const j=await r.json();assert.equal(r.status,409);
  assert.equal(j.balance.minutos_free_pendientes,10);assert.equal(j.balance.minutos_normales_pendientes,10);assert.equal(h.rpcCalls.length,1);
 });

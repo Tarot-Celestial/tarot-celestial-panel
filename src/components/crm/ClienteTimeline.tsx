@@ -127,7 +127,7 @@ export default function ClienteTimeline({ cliente, pagos = [], notas = [], loadi
       id: `note-${nota?.id || index}`,
       type: "note",
       icon: nota?.event_type === "system_free_pass" ? "🎁" : nota?.event_type === "ruleta_reward" ? "🎡" : nota?.is_pinned ? "📌" : isWebPurchaseNote ? "🟣" : "📝",
-      title: nota?.event_type === "system_free_pass" ? "Pase FREE utilizado" : nota?.event_type === "ruleta_reward" ? "Premio Ruleta Celestial · Solo lectura" : nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
+      title: nota?.event_type === "paypal_collection_confirmed" ? "Pago PayPal confirmado · cobro" : nota?.event_type === "system_free_pass" ? "Pase FREE utilizado" : nota?.event_type === "ruleta_reward" ? "Premio Ruleta Celestial · Solo lectura" : nota?.is_pinned ? "Nota anclada" : isWebPurchaseNote ? "Compra web" : "Nota CRM",
       subtitle: nota?.author_name || nota?.author_email || "Usuario",
       body,
       date: getNoteDate(nota),

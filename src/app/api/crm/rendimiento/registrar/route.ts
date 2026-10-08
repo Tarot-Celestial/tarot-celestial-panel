@@ -305,22 +305,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, balance: data }, { headers: { "Cache-Control": "no-store" } });
     }
     if (new URL(req.url).searchParams.get("mode") === "payments") {
-      const { data: orders, error } = await admin.from("crm_paypal_orders")
-        .select("payment_id,pack_name,completed_at").eq("cliente_id", clienteId)
-        .eq("status", "completed").not("payment_id", "is", null)
-        .order("completed_at", { ascending: false });
-      if (error) throw error;
-      const ids = (orders || []).map((order: any) => order.payment_id);
-      const { data: payments, error: paymentError } = ids.length
-        ? await admin.from("crm_cliente_pagos").select("id,importe,moneda,created_at")
-          .eq("cliente_id", clienteId).eq("estado", "completed")
-          .is("source_rendimiento_id", null).in("id", ids)
-        : { data: [], error: null };
-      if (paymentError) throw paymentError;
-      return NextResponse.json({ ok: true, payments: (orders || []).flatMap((order: any) => {
-        const payment = (payments || []).find((p: any) => p.id === order.payment_id);
-        return payment ? [{ ...payment, pack_name: order.pack_name, paid_at: order.completed_at || payment.created_at }] : [];
-      }) }, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json({ ok: false, error: "PAYPAL_COLLECTION_SELECTION_REMOVED" }, { status: 410 });
     }
     const [clientResult, ruleResult, eventsResult, assignmentResult] = await Promise.all([
       admin.from("crm_clientes").select("id").eq("id", clienteId).maybeSingle(),
@@ -385,8 +370,8 @@ export async function POST(req: Request) {
     }
 
     const existingPaymentId = String(body?.existing_payment_id || "").trim();
-    if (existingPaymentId && !isUuid(existingPaymentId)) {
-      return NextResponse.json({ ok: false, error: "EXISTING_PAYMENT_INVALID" }, { status: 400 });
+    if (existingPaymentId) {
+      return NextResponse.json({ ok: false, error: "Los cobros PayPal ya no se vinculan desde Registrar llamada. Actualiza la página y elige compra nueva o saldo pendiente." }, { status: 409 });
     }
     const clienteCompra = Boolean(body?.cliente_compra_minutos);
     if (clienteCompra && body?.minute_accounting_version !== 3) {

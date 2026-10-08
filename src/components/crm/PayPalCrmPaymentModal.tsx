@@ -237,7 +237,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
 
       if (attempt.status === "completed" && !notifiedPaid.current) {
         notifiedPaid.current = true;
-        setMessage("✅ Pago confirmado y registrado. Ahora abre «Registrar llamada» y elige este pago en «Pago PayPal ya confirmado».");
+        setMessage("✅ Pago realizado correctamente. Para registrar la compra, abre «Registrar llamada» → «Registrar una compra nueva».");
         await Promise.resolve(onPaid?.());
       }
     } catch (error: any) {
@@ -538,7 +538,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
 
             <p className={styles.help}>Abrir WhatsApp prepara el mensaje. La central debe pulsar Enviar; no se envía automáticamente.</p>
             {["success", "rejected"].includes(visualPaymentState) && <button className={styles.generate} disabled={loading} onClick={() => { resetPayment(); setMessage("Elige el paquete para el nuevo cobro."); }}>Elegir tarifa · Nuevo cobro</button>}
-            <p className={styles.help}>El envío por WhatsApp abrirá la conversación con el mensaje y el enlace ya preparados. La central solo tiene que pulsar <b>Enviar</b>. El servidor verifica el pago en PayPal y registra la compra automáticamente.</p>
+            <p className={styles.help}>El envío por WhatsApp abrirá la conversación con el mensaje y el enlace ya preparados. La central solo tiene que pulsar <b>Enviar</b>. El servidor verifica el cobro en PayPal. La central registra la compra después desde «Registrar llamada».</p>
           </div>
         )}
 

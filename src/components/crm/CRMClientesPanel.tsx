@@ -2729,7 +2729,7 @@ export default function CRMClientesPanel({
             await loadPagosCliente(targetId);
             await openCRMFicha(targetId);
           }
-          setCrmFichaMsg("✅ Pago Mollie confirmado y CRM actualizado.");
+          setCrmFichaMsg("✅ Pago PayPal confirmado. La compra se registra desde «Registrar llamada» → «Registrar una compra nueva».");
         }}
       />
 

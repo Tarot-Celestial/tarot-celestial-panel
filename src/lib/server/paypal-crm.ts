@@ -169,8 +169,8 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
     if (order.status !== "COMPLETED" || !capture.id || capture.amount?.currency_code !== attempt.currency || Number(capture.amount?.value) !== Number(attempt.amount)) throw new PayPalError("La captura de PayPal no coincide con el cobro.");
     const { error } = await admin.rpc("tc_complete_paypal_crm", { p_id: attempt.id, p_order_id: order.id, p_capture_id: capture.id, p_amount: Number(capture.amount.value), p_currency: capture.amount.currency_code });
     if (error) {
-      await admin.from(PAYPAL_TABLE).update({ remote_status: "CAPTURE_COMPLETED", last_error: "Pago recibido. Pendiente de registrar los beneficios; no solicites otro pago." }).eq("id", attempt.id).neq("status", "completed");
-      throw new PayPalError("Pago recibido. La acreditación está pendiente; pulsa Comprobar sin crear otro cobro.", 503);
+      await admin.from(PAYPAL_TABLE).update({ remote_status: "CAPTURE_COMPLETED", last_error: "Pago recibido. Pendiente de guardar la confirmación del cobro; no solicites otro pago." }).eq("id", attempt.id).neq("status", "completed");
+      throw new PayPalError("Pago recibido. Falta guardar su confirmación; pulsa Comprobar sin crear otro cobro.", 503);
     }
   } else {
     const rejected = ["DECLINED", "FAILED", "DENIED"].includes(capture?.status) || order.status === "VOIDED";

@@ -11,15 +11,17 @@ before(async()=>{
  create table crm_clientes(id uuid primary key);
  create table crm_cliente_pagos(id uuid primary key default gen_random_uuid(),cliente_id uuid,importe numeric,estado text,paypal_order_id text,paypal_capture_id text);
  create table purchase_calls(payload jsonb);
+ create table crm_client_notes(cliente_id text,texto text,author_name text,event_type text,event_data jsonb,is_pinned boolean);
  create function cliente_confirmar_compra_ruleta_v3(p jsonb) returns jsonb language plpgsql as $$declare r crm_cliente_pagos;begin
  if p->>'notas'='FAIL' then raise exception 'DELIVERY_FAILURE';end if;
  insert into purchase_calls values(p);
  insert into crm_cliente_pagos(cliente_id,importe,estado) values((p->>'cliente_id')::uuid,(p->>'amount')::numeric,'completed') returning * into r;
  return jsonb_build_object('ok',true,'payment',to_jsonb(r));end $$;
  create function cliente_confirmar_compra_ruleta_v2(p jsonb) returns jsonb language sql as $$select cliente_confirmar_compra_ruleta_v3(p)$$;
- grant all on crm_cliente_pagos,purchase_calls to service_role;
+ grant all on crm_cliente_pagos,purchase_calls,crm_client_notes to service_role;
  `);
  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261006235223_paypal_crm_checkout.sql'),'utf8'));
+ await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261008175017_paypal_collection_only.sql'),'utf8'));
  await db.query('insert into workers values($1)',[id(1)]);await db.query('insert into crm_clientes values($1)',[id(2)]);
 });
 after(async()=>db.close());
@@ -31,33 +33,40 @@ test('No public access to payment tokens or fulfilment RPC',async()=>{
   assert.equal(await scalar("select has_function_privilege($1,'tc_complete_paypal_crm(uuid,text,text,numeric,text)','execute') v",[role]),false);
  }assert.equal(await scalar("select relrowsecurity v from pg_class where relname='crm_paypal_orders'"),true);
 });
-test('Completed capture registers one purchase; concurrent callbacks and retries do not duplicate benefits',async()=>{
- await order(10,{free:10,normal:10,oracle_credits:0});
+
+test('Pending order has no purchase; completion and retries create only one collection note',async()=>{
+ await order(10,{free:10,normal:10,points:100,roulette_spins:1});
+ assert.equal(await scalar('select count(*)::int v from crm_cliente_pagos'),0);
  await Promise.all([complete(10),complete(10),complete(10)]);
- assert.equal(await scalar('select count(*)::int v from purchase_calls'),1);
  const a=await scalar('select to_jsonb(t) v from crm_paypal_orders t where id=$1',[id(10)]);
- assert.equal(a.status,'completed');assert.equal(a.capture_id,'CAP10');assert.ok(a.payment_id);
- const p=await scalar('select payload v from purchase_calls limit 1');assert.equal(p.payment_ref,'paypal-crm:ORDER10');assert.equal(p.free,10);assert.equal(p.created_by_user_id,id(1));
+ assert.equal(a.status,'completed');assert.equal(a.capture_id,'CAP10');assert.equal(a.payment_id,null);
+ assert.equal(await scalar('select count(*)::int v from purchase_calls'),0);
+ assert.equal(await scalar('select count(*)::int v from crm_cliente_pagos'),0);
+ assert.equal(await scalar("select count(*)::int v from crm_client_notes where event_type='paypal_collection_confirmed'"),1);
  await assert.rejects(complete(10,'OTHER'),/MISMATCH/);
 });
-test('Wrong amount/currency cannot register purchases',async()=>{
+test('Wrong amount or currency never completes the collection',async()=>{
  await order(11);await assert.rejects(complete(11,'CAP11',21),/MISMATCH/);await assert.rejects(complete(11,'CAP11',22,'USD'),/MISMATCH/);
  assert.equal(await scalar('select status v from crm_paypal_orders where id=$1',[id(11)]),'pending');
 });
-test('Delivery error rolls back everything and same order can recover',async()=>{
- await order(12,{notas:'FAIL'});await assert.rejects(complete(12),/DELIVERY_FAILURE/);
- assert.equal(await scalar('select status v from crm_paypal_orders where id=$1',[id(12)]),'pending');
- await db.query("update crm_paypal_orders set purchase_payload='{}' where id=$1",[id(12)]);
- assert.equal((await complete(12)).ok,true);
+test('Manual amount ignores purchase payload and does not invoke purchase RPCs',async()=>{
+ await order(12,{notas:'FAIL',free:0,normal:0,points:220},'crm_manual_amount');
+ assert.equal((await complete(12)).collection_only,true);
+ assert.equal(await scalar('select count(*)::int v from purchase_calls'),0);
 });
-test('Manual amount keeps zero pack minutes and uses the existing manual RPC',async()=>{
- await order(13,{free:0,normal:0,points:220},'crm_manual_amount');await complete(13);
- const p=await scalar("select payload v from purchase_calls where payload->>'payment_ref'='paypal-crm:ORDER13'");
- assert.equal(p.metodo,'paypal_crm_manual');assert.equal(p.free,0);assert.equal(p.normal,0);
-});
-test('A capture ID cannot credit two different orders (transaction rollback)',async()=>{
- await order(14);const before=await scalar('select count(*)::int v from purchase_calls');
+test('A capture cannot confirm two orders and its note is rolled back too',async()=>{
+ await order(14);const before=await scalar('select count(*)::int v from crm_client_notes');
  await assert.rejects(complete(14,'CAP10'),/unique/);
- assert.equal(await scalar('select count(*)::int v from purchase_calls'),before);
+ assert.equal(await scalar('select count(*)::int v from crm_client_notes'),before);
  assert.equal(await scalar('select status v from crm_paypal_orders where id=$1',[id(14)]),'pending');
+});
+test('Historical completed orders retain purchase links and retries do not reapply benefits',async()=>{
+ await order(15);
+ const payment=await scalar("insert into crm_cliente_pagos(cliente_id,importe,estado) values($1,22,'completed') returning id v",[id(2)]);
+ await db.query("update crm_paypal_orders set status='completed',capture_id='CAP15',payment_id=$2 where id=$1",[id(15),payment]);
+ const before=await scalar('select to_jsonb(t) v from crm_paypal_orders t where id=$1',[id(15)]);
+ await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261008175017_paypal_collection_only.sql'),'utf8'));
+ assert.equal((await complete(15)).payment_id,payment);
+ assert.deepEqual(await scalar('select to_jsonb(t) v from crm_paypal_orders t where id=$1',[id(15)]),before);
+ assert.equal(await scalar('select count(*)::int v from purchase_calls'),0);
 });

@@ -4,7 +4,7 @@ import { CALL_CODE_OPTIONS as CODIGO_OPTIONS } from "@/lib/activity-codes";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./RegistrarLlamadaModal.module.css";
-import FreePassBenefits, { type FreePassStatus } from "./FreePassBenefits";
+import { type FreePassStatus } from "./FreePassBenefits";
 import { tcToast } from "@/lib/tc-toast";
 
 type ClienteLite = {
@@ -17,7 +17,6 @@ type ClienteLite = {
   minutos_normales_pendientes?: number | string | null;
 };
 
-type ConfirmedPayment = { id: string; importe: number; moneda: string; pack_name: string; paid_at: string };
 
 type TarotistaOpt = {
   id: string;
@@ -280,7 +279,7 @@ function isUuid(value: unknown) {
 function friendlySubmitError(error: unknown) {
   const message = String(error || "").trim();
   if (message === "INVALID_CALL_MINUTES") return "Revisa los minutos: deben ser positivos, con su código. Si guarda toda la compra para después, los utilizados pueden ser 0.";
-  if (message === "PAYPAL_PAYMENT_ALREADY_CONFIRMED") return "Ya hay un pago PayPal confirmado de este importe. Vuelve al primer paso y selecciónalo. Si es otra compra distinta, confírmalo expresamente en el paso Importe.";
+  if (message === "PAYPAL_PAYMENT_ALREADY_CONFIRMED") return "Existe una compra histórica de PayPal de este importe pendiente de revisión. Administración debe comprobarla antes de registrar otra compra.";
   if (message === "PAYMENT_ALREADY_LINKED") return "Ese pago ya tiene una llamada vinculada. Vuelve a abrir la ficha; para otra llamada utiliza los minutos pendientes.";
   if (message === "EXISTING_PAYMENT_INVALID") return "El pago ya no está disponible o no pertenece a esta clienta. Vuelve a abrir el formulario.";
   if (message === "PAYMENT_OPERATION_CONFLICT") return "Esta operación ya se utilizó con otro pago. Cierra y vuelve a abrir el formulario.";
@@ -351,14 +350,8 @@ export default function RegistrarLlamadaModal({
   const getTokenRef = useRef(getToken);
   getTokenRef.current = getToken;
 
-  const [confirmedPayments, setConfirmedPayments] = useState<ConfirmedPayment[]>([]);
-  const [paymentsLoading, setPaymentsLoading] = useState(false);
-  const [paymentsError, setPaymentsError] = useState("");
   const [liveBalance, setLiveBalance] = useState<{ minutos_free_pendientes: number; minutos_normales_pendientes: number } | null>(null);
   const [balanceError, setBalanceError] = useState("");
-  const [existingPaymentId, setExistingPaymentId] = useState("");
-  const [separatePaymentConfirmed, setSeparatePaymentConfirmed] = useState(false);
-  const selectedPayment = confirmedPayments.find((p) => p.id === existingPaymentId);
   const [clienteCompra, setClienteCompra] = useState<"si" | "no" | "">("");
   const [usoSinCompra, setUsoSinCompra] = useState<"minutos" | "7free" | "">("");
   const [compraDestino, setCompraDestino] = useState<"usar_todo" | "guardar" | "">("");
@@ -388,11 +381,6 @@ export default function RegistrarLlamadaModal({
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setMsg("");
     setClienteCompra("");
-    setExistingPaymentId("");
-    setSeparatePaymentConfirmed(false);
-    setConfirmedPayments([]);
-    setPaymentsLoading(true);
-    setPaymentsError("");
     setLiveBalance(null);
     setBalanceError("");
     setUsoSinCompra("");
@@ -428,20 +416,6 @@ export default function RegistrarLlamadaModal({
     void (async () => {
       try {
         const token = await getTokenRef.current();
-        if (!token || !isUuid(cliente?.id)) throw new Error("No se pudo comprobar los pagos. Cierra y vuelve a abrir la ficha.");
-        const response = await fetch(`/api/crm/rendimiento/registrar?mode=payments&cliente_id=${encodeURIComponent(String(cliente?.id))}`, {
-          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
-        });
-        const json = await response.json();
-        if (!response.ok || !json.ok) throw new Error("No se pudo comprobar los pagos confirmados. Cierra y vuelve a abrir la ficha.");
-        if (!cancelled) setConfirmedPayments(json.payments || []);
-      } catch (error) {
-        if (!cancelled) setPaymentsError(error instanceof Error ? error.message : "No se pudo comprobar los pagos.");
-      } finally { if (!cancelled) setPaymentsLoading(false); }
-    })();
-    void (async () => {
-      try {
-        const token = await getTokenRef.current();
         if (!token || cancelled || !isUuid(cliente?.id)) return;
         const response = await fetch(`/api/crm/rendimiento/registrar?cliente_id=${encodeURIComponent(String(cliente?.id))}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const json = await response.json();
@@ -455,11 +429,11 @@ export default function RegistrarLlamadaModal({
 
   const steps = useMemo(() => {
     const list: { key: string; title: string; subtitle: string }[] = [
-      { key: "compra", title: "¿Qué vas a registrar?", subtitle: "Si ya cobraste con el enlace PayPal, selecciona ese pago para registrar su llamada." },
+      { key: "compra", title: "¿Qué vas a registrar?", subtitle: "Registra una compra nueva o utiliza los minutos pendientes del cliente." },
     ];
 
     if (clienteCompra === "no") {
-      if (!existingPaymentId) list.push({ key: "uso", title: "¿Cliente usa minutos o 7free?", subtitle: "Indica qué ha usado realmente en esta llamada." });
+      list.push({ key: "uso", title: "¿Cliente usa minutos o 7free?", subtitle: "Indica qué ha usado realmente en esta llamada." });
       if (usoSinCompra === "minutos") {
         list.push({ key: "codigos", title: "¿Qué código de minutos usa?", subtitle: "Puedes registrar hasta dos bloques de minutos." });
       }
@@ -496,7 +470,7 @@ export default function RegistrarLlamadaModal({
 
     list.push({ key: "resumen", title: "Resumen final", subtitle: "Revisa los datos antes de registrar la llamada." });
     return list;
-  }, [clienteCompra, usoSinCompra, compraDestino, tarotistaId, existingPaymentId]);
+  }, [clienteCompra, usoSinCompra, compraDestino, tarotistaId]);
 
   const current = steps[step];
   const minutosConsumidos = useMemo(() => {
@@ -562,7 +536,7 @@ export default function RegistrarLlamadaModal({
   function currentStepIsValid() {
     switch (current?.key) {
       case "compra":
-        return !paymentsLoading && !paymentsError && (clienteCompra === "si" || clienteCompra === "no");
+        return clienteCompra === "si" || clienteCompra === "no";
       case "uso":
         return usoSinCompra === "minutos" || usoSinCompra === "7free";
       case "compra_destino":
@@ -634,8 +608,6 @@ export default function RegistrarLlamadaModal({
         minute_accounting_version: 3,
         operation_id: operationIdRef.current,
         cliente_id: clienteId,
-        existing_payment_id: existingPaymentId || null,
-        separate_payment_confirmed: separatePaymentConfirmed,
         cliente_compra_minutos: clienteCompra === "si",
         uso_tipo: clienteCompra === "no" ? usoSinCompra : "compra",
         guarda_minutos: clienteCompra === "si" && compraDestino === "guardar",
@@ -788,22 +760,8 @@ export default function RegistrarLlamadaModal({
 
             {current?.key === "compra" && (
               <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-                {paymentsLoading && <p role="status">Comprobando pagos confirmados…</p>}
-                {paymentsError && <p role="alert">{paymentsError}</p>}
-                {confirmedPayments.length > 0 && <div className={styles.confirmedPayments}>
-                  <strong>Pago PayPal ya confirmado</strong>
-                  <p>Vincula su llamada. El importe y los beneficios ya están registrados.</p>
-                  {confirmedPayments.map((payment) => <button type="button" key={payment.id}
-                    className={`${styles.choiceButton} ${existingPaymentId === payment.id ? styles.choiceSelected : ""}`}
-                    onClick={() => { setExistingPaymentId(payment.id); setClienteCompra("no"); setUsoSinCompra("minutos"); setClasificacion("nada"); }}>
-                    <strong>{Number(payment.importe).toFixed(2)} {payment.moneda} · {payment.pack_name}</strong>
-                    <small>{new Date(payment.paid_at).toLocaleString("es-ES")} · Ref. {payment.id.slice(-8)}</small>
-                  </button>)}
-                  <small>Se descuentan solo los minutos utilizados. El resto permanece en el saldo.</small>
-                </div>}
-                <button type="button" className={`${styles.choiceButton} ${clienteCompra === "si" ? styles.choiceSelected : ""}`} onClick={() => { setClienteCompra("si"); setExistingPaymentId(""); setSeparatePaymentConfirmed(false); }} style={{ padding: 16, border: clienteCompra === "si" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "si" ? "rgba(215,181,109,.14)" : undefined }}>Registrar una compra nueva</button>
-                <button type="button" className={`${styles.choiceButton} ${clienteCompra === "no" && !existingPaymentId ? styles.choiceSelected : ""}`} onClick={() => { setClienteCompra("no"); setExistingPaymentId(""); }} style={{ padding: 16, border: clienteCompra === "no" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "no" ? "rgba(215,181,109,.14)" : undefined }}>Usar saldo pendiente · sin nueva compra</button>
-                <FreePassBenefits key={cliente.id} benefits={cliente.free_passes} clienteId={cliente.id} getToken={getToken} onRefresh={onBenefitsChanged} />
+                <button type="button" className={`${styles.choiceButton} ${clienteCompra === "si" ? styles.choiceSelected : ""}`} onClick={() => { setClienteCompra("si"); }} style={{ padding: 16, border: clienteCompra === "si" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "si" ? "rgba(215,181,109,.14)" : undefined }}>Registrar una compra nueva</button>
+                <button type="button" className={`${styles.choiceButton} ${clienteCompra === "no" ? styles.choiceSelected : ""}`} onClick={() => { setClienteCompra("no"); }} style={{ padding: 16, border: clienteCompra === "no" ? "1px solid rgba(215,181,109,.55)" : undefined, background: clienteCompra === "no" ? "rgba(215,181,109,.14)" : undefined }}>Usar saldo pendiente · sin nueva compra</button>
               </div>
             )}
 
@@ -924,11 +882,7 @@ export default function RegistrarLlamadaModal({
             {current?.key === "importe" && (
               <div style={{ marginTop: 18 }}>
                 <div className="tc-sub">Importe (€)</div>
-                <input className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => { setImporte(e.target.value); setSeparatePaymentConfirmed(false); }} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
-                {formaPago === "PAYPAL" && <label className={styles.separatePayment}>
-                  <input type="checkbox" checked={separatePaymentConfirmed} onChange={(e) => setSeparatePaymentConfirmed(e.target.checked)} />
-                  Confirmo que es OTRO cobro real distinto a los enlaces PayPal ya registrados. No estoy registrando de nuevo un pago confirmado del panel.
-                </label>}
+                <input className={`${styles.gameInput} tc-input`} value={importe} onChange={(e) => { setImporte(e.target.value); }} placeholder="22" style={{ width: "100%", marginTop: 6 }} />
               </div>
             )}
 
@@ -972,7 +926,7 @@ export default function RegistrarLlamadaModal({
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
                   <div className="tc-sub">Tipo</div>
                   <div style={{ marginTop: 4 }}>
-                    {selectedPayment ? `Llamada vinculada al pago de ${Number(selectedPayment.importe).toFixed(2)} ${selectedPayment.moneda} · sin nueva compra` : clienteCompra === "si" ? "Compra minutos" : usoSinCompra === "7free" ? "Usa 7 free" : "Usa minutos pendientes"}
+                    {clienteCompra === "si" ? "Compra minutos" : usoSinCompra === "7free" ? "Usa 7 free" : "Usa minutos pendientes"}
                   </div>
                 </div>
                 <div className="tc-card" style={{ borderRadius: 18, padding: 14, background: "rgba(255,255,255,.03)" }}>
