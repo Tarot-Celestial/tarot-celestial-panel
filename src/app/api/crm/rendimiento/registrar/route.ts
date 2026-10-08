@@ -297,6 +297,13 @@ export async function GET(req: Request) {
     if (!isUuid(clienteId)) return clientIdentificationError();
 
     const admin = adminClient();
+    if (new URL(req.url).searchParams.get("mode") === "balance") {
+      const { data, error } = await admin.from("crm_clientes")
+        .select("minutos_free_pendientes,minutos_normales_pendientes").eq("id", clienteId).maybeSingle();
+      if (error) throw error;
+      if (!data) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404 });
+      return NextResponse.json({ ok: true, balance: data }, { headers: { "Cache-Control": "no-store" } });
+    }
     if (new URL(req.url).searchParams.get("mode") === "payments") {
       const { data: orders, error } = await admin.from("crm_paypal_orders")
         .select("payment_id,pack_name,completed_at").eq("cliente_id", clienteId)
@@ -692,9 +699,14 @@ export async function POST(req: Request) {
         "INSUFFICIENT_MINUTES",
       ].find((code) => technicalMessage.includes(code));
 
+      const freshBalance = knownBalanceError?.includes("MINUTES") || knownBalanceError === "BALANCE_CHANGED"
+        ? await admin.from("crm_clientes").select("minutos_free_pendientes,minutos_normales_pendientes")
+          .eq("id", clienteId).maybeSingle()
+        : null;
       return NextResponse.json(
         {
           ok: false,
+          balance: freshBalance?.error ? null : freshBalance?.data ?? null,
           error: knownBalanceError || (clienteCompra ? "PAYMENT_REGISTER_FAILED" : "CALL_REGISTER_FAILED"),
           diagnostic_code: atomicError.code || null,
           diagnostic_message: process.env.NODE_ENV === "development" ? atomicError.message : null,

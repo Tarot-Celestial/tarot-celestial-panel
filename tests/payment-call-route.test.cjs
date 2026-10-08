@@ -52,3 +52,16 @@ test('Database duplicate/link/balance guards become actionable HTTP 409, not an 
   const h=harness();h.rpcError={code:'P0001',message:code};const response=await h.post();assert.equal(response.status,409);assert.equal((await response.json()).error,code);
  }
 });
+
+test('Balance endpoint reads authoritative split and prevents caching',async()=>{
+ const h=harness();h.tables.crm_clientes[0].minutos_free_pendientes=10;h.tables.crm_clientes[0].minutos_normales_pendientes=10;
+ const r=await h.api.GET(new Request('https://panel.test/api?mode=balance&cliente_id='+id(2),{headers:{authorization:'Bearer good'}}));
+ assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');
+ assert.deepEqual((await r.json()).balance.minutos_free_pendientes,10);
+});
+test('Rejected consumption returns refreshed split without a second RPC',async()=>{
+ const h=harness();h.tables.crm_clientes[0].minutos_free_pendientes=10;h.tables.crm_clientes[0].minutos_normales_pendientes=10;
+ h.rpcError={code:'P0001',message:'INSUFFICIENT_FREE_MINUTES'};
+ const r=await h.post();const j=await r.json();assert.equal(r.status,409);
+ assert.equal(j.balance.minutos_free_pendientes,10);assert.equal(j.balance.minutos_normales_pendientes,10);assert.equal(h.rpcCalls.length,1);
+});

@@ -353,6 +353,8 @@ export default function RegistrarLlamadaModal({
   const [confirmedPayments, setConfirmedPayments] = useState<ConfirmedPayment[]>([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsError, setPaymentsError] = useState("");
+  const [liveBalance, setLiveBalance] = useState<{ minutos_free_pendientes: number; minutos_normales_pendientes: number } | null>(null);
+  const [balanceError, setBalanceError] = useState("");
   const [existingPaymentId, setExistingPaymentId] = useState("");
   const [separatePaymentConfirmed, setSeparatePaymentConfirmed] = useState(false);
   const selectedPayment = confirmedPayments.find((p) => p.id === existingPaymentId);
@@ -390,6 +392,8 @@ export default function RegistrarLlamadaModal({
     setConfirmedPayments([]);
     setPaymentsLoading(true);
     setPaymentsError("");
+    setLiveBalance(null);
+    setBalanceError("");
     setUsoSinCompra("");
     setCompraDestino("");
     setGuardarFree("0");
@@ -406,6 +410,20 @@ export default function RegistrarLlamadaModal({
     setClasificacion("nada");
     setCaptureXp(null);
     let cancelled = false;
+    void (async () => {
+      try {
+        const token = await getTokenRef.current();
+        if (!token) throw new Error("Sin sesión");
+        const response = await fetch(`/api/crm/rendimiento/registrar?mode=balance&cliente_id=${encodeURIComponent(String(cliente?.id))}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        const json = await response.json();
+        if (!response.ok || !json.ok || !json.balance) throw new Error("Sin saldo");
+        if (!cancelled) setLiveBalance(json.balance);
+      } catch {
+        if (!cancelled) setBalanceError("No se pudo consultar el saldo actual. Cierra y vuelve a abrir el registro.");
+      }
+    })();
     void (async () => {
       try {
         const token = await getTokenRef.current();
@@ -494,9 +512,11 @@ export default function RegistrarLlamadaModal({
   const isMarioCall = tarotistaId === CALL_MARIO_VALUE;
 
   const balanceValidationError = useMemo(() => {
+    if (balanceError) return balanceError;
+    if (!liveBalance) return "Comprobando saldo actual…";
     if (clienteCompra !== "no") return "";
-    const availableFree = toNum(cliente?.minutos_free_pendientes);
-    const availableNormal = toNum(cliente?.minutos_normales_pendientes);
+    const availableFree = toNum(liveBalance.minutos_free_pendientes);
+    const availableNormal = toNum(liveBalance.minutos_normales_pendientes);
 
     if (usoSinCompra === "7free") {
       return availableFree >= 7 ? "" : "La clienta no dispone de 7 minutos free suficientes para registrar esta consulta.";
@@ -515,7 +535,7 @@ export default function RegistrarLlamadaModal({
       return `Saldo normal insuficiente: disponibles ${fmtMinutes(availableNormal)}, solicitados ${fmtMinutes(requestedNormal)}.`;
     }
     return "";
-  }, [clienteCompra, usoSinCompra, cliente?.minutos_free_pendientes, cliente?.minutos_normales_pendientes, codigo1, codigo2, minutos1, minutos2]);
+  }, [clienteCompra, usoSinCompra, liveBalance, balanceError, codigo1, codigo2, minutos1, minutos2]);
 
   const tarotistaSelectOptions = useMemo<GameSelectOption[]>(() => [
     { value: CALL_MARIO_VALUE, label: "✦ CALL MARIO · colaborador", special: "mario" },
@@ -642,6 +662,12 @@ export default function RegistrarLlamadaModal({
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) {
+        if (j?.balance) {
+          setLiveBalance(j.balance);
+          const free = toNum(j.balance.minutos_free_pendientes);
+          const normal = toNum(j.balance.minutos_normales_pendientes);
+          throw new Error(`Saldo actualizado: ${fmtMinutes(free)} FREE + ${fmtMinutes(normal)} normales. No se ha registrado esta llamada. Pulsa Atrás y revisa los bloques de minutos.`);
+        }
         console.error("[RegistrarLlamadaModal] fallo API registrar llamada", {
           error: j?.error || null,
           diagnostic_code: j?.diagnostic_code || null,
@@ -713,8 +739,8 @@ export default function RegistrarLlamadaModal({
   if (!open || !cliente || typeof document === "undefined") return null;
 
   const clienteNombre = [cliente.nombre, cliente.apellido].filter(Boolean).join(" ") || "Cliente";
-  const freePend = toNum(cliente.minutos_free_pendientes);
-  const normalesPend = toNum(cliente.minutos_normales_pendientes);
+  const freePend = toNum(liveBalance?.minutos_free_pendientes);
+  const normalesPend = toNum(liveBalance?.minutos_normales_pendientes);
 
   const content = (
     <div className={styles.overlay} onClick={onClose}>
@@ -917,8 +943,10 @@ export default function RegistrarLlamadaModal({
                     <span>Se añaden al saldo solo los restantes: {compraDestino === "guardar" ? toNum(guardarFree) : 0} free + {compraDestino === "guardar" ? toNum(guardarNormales) : 0} normales.</span>
                     <strong>Saldo previsto: {freePend + normalesPend + (compraDestino === "guardar" ? toNum(guardarFree) + toNum(guardarNormales) : 0)} min</strong>
                   </> : <>
-                    <span>Se descuentan {minutosConsumidos} min de esta llamada.</span>
-                    <strong>Saldo previsto: {freePend + normalesPend - minutosConsumidos} min</strong>
+                    {balanceValidationError ? <strong role="alert">{balanceValidationError} No se descontarán minutos hasta corregir los bloques.</strong> : <>
+                      <span>Se descuentan {minutosConsumidos} min de esta llamada.</span>
+                      <strong>Saldo previsto: {freePend + normalesPend - minutosConsumidos} min</strong>
+                    </>}
                   </>}
                   <small>La base de datos comprueba el saldo real al guardar. Los premios nuevos se registran aparte.</small>
                 </div>
