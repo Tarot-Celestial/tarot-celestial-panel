@@ -2778,7 +2778,7 @@ export default function CRMClientesPanel({
         } : null}
         tarotistas={crmTarotistasOpts}
         getToken={getTokenOrLogin}
-        onBenefitsChanged={refreshCrmBenefits}
+        onBenefitsChanged={async () => { await refreshCrmBenefits(); }}
         onSuccess={async (message, confirmed) => {
           const targetId = confirmed?.clienteId || String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);
