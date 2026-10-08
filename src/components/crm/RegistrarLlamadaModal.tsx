@@ -242,7 +242,7 @@ type Props = {
   onClose: () => void;
   getToken: () => Promise<string>;
   onBenefitsChanged?: () => Promise<void>;
-  onSuccess?: (message?: string) => Promise<void> | void;
+  onSuccess?: (message?: string, confirmed?: { clienteId: string; balances: { free_after: number; normal_after: number } | null }) => Promise<void> | void;
 };
 
 type CaptureXpPreview = {
@@ -732,7 +732,11 @@ export default function RegistrarLlamadaModal({
         window.dispatchEvent(new CustomEvent("tc-xp-recorded", { detail: { event: j.xp_event, clienteId } }));
       }
 
-      if (onSuccess) await onSuccess(j?.message || "✅ Llamada registrada correctamente");
+      if (onSuccess) await onSuccess(j?.message || "✅ Llamada registrada correctamente", {
+        clienteId,
+        // Replays can contain an older receipt; refresh rather than restore it.
+        balances: j?.duplicate_prevented ? null : j?.balances || null,
+      });
       onClose();
     } catch (e: any) {
       console.error("[RegistrarLlamadaModal] error registrando llamada", e);

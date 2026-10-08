@@ -369,6 +369,7 @@ export default function CRMClientesPanel({
   const [crmEditMinFree, setCrmEditMinFree] = useState("0");
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
   const balanceConflict = useRef(false);
+  const balanceEdited = useRef(false);
   const fichaFetchVersion = useRef(0);
   const fichaOpening = useRef(false);
   const visibleClientRef = useRef<string | null>(null);
@@ -1365,11 +1366,11 @@ export default function CRMClientesPanel({
     const beforeFree = Number(latest.cliente?.minutos_free_pendientes || 0);
     const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
     const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
-    const dirty = Number(latest.free.replace(",", ".")) !== beforeFree || Number(latest.normal.replace(",", ".")) !== beforeNormal;
+    const dirty = balanceEdited.current;
     if (changed && dirty) {
       balanceConflict.current = true;
       setCrmFichaMsg("El saldo ha cambiado. Tus cambios no se han borrado: vuelve a abrir la ficha antes de guardar los minutos.");
-    } else if (changed) {
+    } else if (!dirty) {
       setCrmEditMinFree(String(current.minutos_free_pendientes || 0));
       setCrmEditMinNormales(String(current.minutos_normales_pendientes || 0));
     }
@@ -1405,6 +1406,7 @@ export default function CRMClientesPanel({
     const requestVersion = ++fichaFetchVersion.current;
     fichaOpening.current = true;
     balanceConflict.current = false;
+    balanceEdited.current = false;
 
     try {
       setCrmFichaLoading(true);
@@ -2225,11 +2227,11 @@ export default function CRMClientesPanel({
                 <div><div className="tc-sub">Email</div><input className="tc-input" value={crmEditEmail} onChange={(e) => setCrmEditEmail(e.target.value)} placeholder="cliente@email.com" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Origen</div><input className="tc-input" value={crmEditOrigen} onChange={(e) => setCrmEditOrigen(e.target.value)} placeholder="manual" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Deuda pendiente</div><input className="tc-input" value={crmEditDeuda} onChange={(e) => setCrmEditDeuda(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
-                <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => setCrmEditMinFree(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min free pendientes</div><input className="tc-input" value={crmEditMinFree} onChange={(e) => { balanceEdited.current = true; setCrmEditMinFree(e.target.value); }} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
               </div>
 
               <div className="tc-grid-2" style={{ marginTop: 12 }}>
-                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => setCrmEditMinNormales(e.target.value)} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
+                <div><div className="tc-sub">Min normales pendientes</div><input className="tc-input" value={crmEditMinNormales} onChange={(e) => { balanceEdited.current = true; setCrmEditMinNormales(e.target.value); }} placeholder="0" style={{ width: "100%", marginTop: 6 }} /></div>
                 <div><div className="tc-sub">Resumen interno</div><div className="tc-sub" style={{ marginTop: 10 }}>Las notas con autor están justo debajo.</div></div>
               </div>
 
@@ -2746,10 +2748,29 @@ export default function CRMClientesPanel({
         tarotistas={crmTarotistasOpts}
         getToken={getTokenOrLogin}
         onBenefitsChanged={refreshCrmBenefits}
-        onSuccess={async (message?: string) => {
-          const targetId = String(crmClienteFicha?.id || crmClienteSelId || "").trim();
+        onSuccess={async (message, confirmed) => {
+          const targetId = confirmed?.clienteId || String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);
-          if (targetId) {
+          if (targetId !== visibleClientRef.current) return;
+          const balance = confirmed?.balances;
+          if (balance && Number.isFinite(Number(balance.free_after)) && Number.isFinite(Number(balance.normal_after))) {
+            ++fichaFetchVersion.current;
+            fichaOpening.current = false;
+            setCrmFichaLoading(false);
+            balanceEdited.current = false;
+            balanceConflict.current = false;
+            const free = String(balance.free_after);
+            const normal = String(balance.normal_after);
+            setCrmEditMinFree(free);
+            setCrmEditMinNormales(normal);
+            setCrmSendMinFree(free);
+            setCrmSendMinNormales(normal);
+            const updated = { ...liveCrmBalance.current.cliente, minutos_free_pendientes: Number(free), minutos_normales_pendientes: Number(normal) };
+            liveCrmBalance.current = { cliente: updated, free, normal };
+            setCrmClienteFicha((previous: any) => previous?.id === targetId ? { ...previous, minutos_free_pendientes: Number(free), minutos_normales_pendientes: Number(normal) } : previous);
+            // Reload history without resetting the committed balance inputs.
+            await Promise.allSettled([loadPagosCliente(targetId), loadNotasCliente(targetId)]);
+          } else if (targetId) {
             await openCRMFicha(targetId);
           }
           setCrmFichaMsg(message || "✅ Llamada registrada correctamente");
@@ -2854,3 +2875,4 @@ export default function CRMClientesPanel({
     </div>
   );
 }
+
