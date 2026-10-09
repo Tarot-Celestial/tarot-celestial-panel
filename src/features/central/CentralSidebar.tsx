@@ -96,6 +96,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
               <div key={item.key} className={hasChildren ? styles.navGroup : undefined}>
                 <div className={styles.navRow}>
                 <button
+                  data-companion-nav={item.key}
                   className={[
                     "tc-sidebtn",
                     styles.navButton,
@@ -140,6 +141,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                       return (
                         <button
                           key={child.key}
+                          data-companion-nav={child.key}
                           type="button"
                           className={`${styles.subButton} ${isActive ? styles.subButtonActive : ""}`}
                           onClick={() => onTabChange(child.key)}

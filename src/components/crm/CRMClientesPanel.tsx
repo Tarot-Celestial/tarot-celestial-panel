@@ -368,7 +368,6 @@ export default function CRMClientesPanel({
   const [crmEditDeuda, setCrmEditDeuda] = useState("0");
   const [crmEditMinFree, setCrmEditMinFree] = useState("0");
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
-  const balanceConflict = useRef(false);
   const balanceEdited = useRef(false);
   const fichaFetchVersion = useRef(0);
   const fichaOpening = useRef(false);
@@ -1351,122 +1350,47 @@ export default function CRMClientesPanel({
 
   const liveCrmBalance = useRef({ cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales });
   liveCrmBalance.current = { cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales };
-  // El Resumen Operativo y los campos de minutos se alimentan de la MISMA fila
-  // crm_clientes confirmada. El endpoint ligero de saldo no depende del cálculo
-  // de rangos, etiquetas, pagos o historial de la ficha completa.
   async function refreshCrmBenefits(): Promise<boolean> {
     if (fichaOpening.current) return false;
+    const requestVersion = ++fichaFetchVersion.current;
     const clientId = String(liveCrmBalance.current.cliente?.id || "");
     if (!clientId) return false;
     const token = await getTokenOrLogin();
     if (!token) return false;
-    const requestVersion = ++fichaFetchVersion.current;
-    const headers = { Authorization: `Bearer ${token}`, "Cache-Control": "no-cache" };
-    let balanceConfirmed = false;
-
-    // Arrancamos ambas lecturas juntas, pero aplicamos primero el saldo rápido.
-    // Una ficha lenta nunca puede impedir que aparezcan los minutos guardados.
-    const fichaRequest = fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(clientId)}`, {
-      headers, cache: "no-store",
-    }).then(safeJson).catch((error) => {
-      console.error("Error consultando beneficios completos del CRM", error);
-      return null;
-    });
-
     try {
-      const response = await fetch(`/api/crm/rendimiento/registrar?mode=balance&cliente_id=${encodeURIComponent(clientId)}`, {
-        headers, cache: "no-store",
+      const response = await fetch("/api/crm/clientes/ficha?id=" + encodeURIComponent(clientId), {
+        headers: { Authorization: "Bearer " + token }, cache: "no-store",
       });
       const json = await safeJson(response);
-      const balance = json?.balance;
-      if (!response.ok || !json?.ok || !balance) throw new Error(json?.error || "SALDO_NO_DISPONIBLE");
-
-      const free = Number(balance.minutos_free_pendientes);
-      const normal = Number(balance.minutos_normales_pendientes);
-      if (!Number.isFinite(free) || !Number.isFinite(normal) || free < 0 || normal < 0) {
-        throw new Error("SALDO_INVALIDO");
+      if (!json?.ok || !json?.cliente) return false;
+      if (visibleClientRef.current !== clientId || requestVersion !== fichaFetchVersion.current) return false;
+      const current = json.cliente;
+      const latest = liveCrmBalance.current;
+      const beforeFree = Number(latest.cliente?.minutos_free_pendientes || 0);
+      const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
+      const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree
+        || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
+      // Automatic refresh keeps the operator's explicit correction intact.
+      if (!balanceEdited.current && changed) {
+        setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
+        setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
       }
-      const serverStamp = Date.parse(String(balance.updated_at || ""));
-      const last = liveCrmBalance.current;
-      const currentStamp = Date.parse(String(last.cliente?.updated_at || ""));
-      // Un GET que salió antes del registro nunca puede restaurar el saldo viejo.
-      const stale = Number.isFinite(serverStamp) && Number.isFinite(currentStamp) && serverStamp < currentStamp;
-      if (!stale && visibleClientRef.current === clientId && requestVersion === fichaFetchVersion.current) {
-        const beforeFree = Number(last.cliente?.minutos_free_pendientes || 0);
-        const beforeNormal = Number(last.cliente?.minutos_normales_pendientes || 0);
-        const changed = free !== beforeFree || normal !== beforeNormal;
-
-        if (balanceEdited.current && changed) {
-          balanceConflict.current = true;
-          setCrmFichaMsg("El saldo ha cambiado mientras editabas. Revisa los minutos antes de guardar la ficha.");
-        } else if (!balanceEdited.current) {
-          // También reparamos campos obsoletos aunque el objeto cliente ya sea correcto.
-          if (Number(last.free) !== free) setCrmEditMinFree(String(free));
-          if (Number(last.normal) !== normal) setCrmEditMinNormales(String(normal));
-        }
-        setCrmClienteFicha((previous: any) => {
-          if (previous?.id !== clientId) return previous;
-          const previousStamp = Date.parse(String(previous.updated_at || ""));
-          if (Number.isFinite(serverStamp) && Number.isFinite(previousStamp) && serverStamp < previousStamp) return previous;
-          if (Number(previous.minutos_free_pendientes || 0) === free && Number(previous.minutos_normales_pendientes || 0) === normal
-              && previous.updated_at === balance.updated_at) return previous;
-          return { ...previous, minutos_free_pendientes: free, minutos_normales_pendientes: normal,
-            updated_at: balance.updated_at || previous.updated_at };
-        });
-        balanceConfirmed = true;
-      }
-    } catch (error) {
-      console.error("Error leyendo minutos confirmados del CRM", error);
-    }
-
-    const ficha = await fichaRequest;
-    if (visibleClientRef.current !== clientId || requestVersion !== fichaFetchVersion.current) return balanceConfirmed;
-    if (ficha?._ok && ficha?.ok && ficha?.cliente) {
-      const current = ficha.cliente;
-      const last = liveCrmBalance.current.cliente;
-      const incomingStamp = Date.parse(String(current.updated_at || ""));
-      const lastStamp = Date.parse(String(last?.updated_at || ""));
-      const fallbackAllowed = !balanceConfirmed && (
-        !Number.isFinite(incomingStamp) || !Number.isFinite(lastStamp) || incomingStamp >= lastStamp
-      );
-      if (fallbackAllowed && !balanceEdited.current) {
-        if (Number(liveCrmBalance.current.free) !== Number(current.minutos_free_pendientes || 0)) {
-          setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
-        }
-        if (Number(liveCrmBalance.current.normal) !== Number(current.minutos_normales_pendientes || 0)) {
-          setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
-        }
-      }
-      // La ficha completa sincroniza rango, Coins y pases, pero nunca puede pisar
-      // el saldo ya comprobado por el endpoint canónico de minutos.
+      // Guardar una copia coherente del saldo del servidor. Las notas no se tocan.
       setCrmClienteFicha((previous: any) => {
         if (previous?.id !== clientId) return previous;
-        const previousStamp = Date.parse(String(previous.updated_at || ""));
-        const allowBalance = fallbackAllowed && (
-          !Number.isFinite(incomingStamp) || !Number.isFinite(previousStamp) || incomingStamp >= previousStamp
-        );
-        const free = allowBalance ? current.minutos_free_pendientes : previous.minutos_free_pendientes;
-        const normal = allowBalance ? current.minutos_normales_pendientes : previous.minutos_normales_pendientes;
-        const updatedAt = allowBalance ? current.updated_at : previous.updated_at;
-        if (Number(previous?.puntos || 0) === Number(current?.puntos || 0)
-            && previous?.free_passes === current?.free_passes
-            && previous?.rango_actual === current?.rango_actual
-            && Number(previous?.minutos_free_pendientes || 0) === Number(free || 0)
-            && Number(previous?.minutos_normales_pendientes || 0) === Number(normal || 0)
-            && previous?.updated_at === updatedAt) return previous;
-        return { ...previous,
+        if (!changed && Number(previous?.puntos || 0) === Number(current.puntos || 0)
+            && previous?.updated_at === current.updated_at) return previous;
+        return { ...previous, free_passes: current.free_passes,
           puntos: current.puntos,
-          free_passes: current.free_passes,
-          rango_actual: current.rango_actual,
-          rango_efectivo: current.rango_efectivo,
-          minutos_free_pendientes: free,
-          minutos_normales_pendientes: normal,
-          updated_at: updatedAt,
-        };
+          minutos_free_pendientes: current.minutos_free_pendientes,
+          minutos_normales_pendientes: current.minutos_normales_pendientes,
+          updated_at: current.updated_at };
       });
       return true;
+    } catch (error) {
+      console.error("Error refrescando saldo real del CRM", error);
+      return false;
     }
-    return balanceConfirmed;
   }
 
   useRouletteSignal(sb, crmClienteFicha?.id, refreshCrmBenefits);
@@ -1502,7 +1426,6 @@ export default function CRMClientesPanel({
     }
     const requestVersion = ++fichaFetchVersion.current;
     fichaOpening.current = true;
-    balanceConflict.current = false;
     balanceEdited.current = false;
 
     try {
@@ -1577,10 +1500,6 @@ export default function CRMClientesPanel({
   }
 
   async function saveCRMFicha() {
-    if (balanceConflict.current) {
-      setCrmFichaMsg("El saldo cambió mientras lo editabas. Vuelve a abrir la ficha para revisar los minutos actuales antes de guardar.");
-      return;
-    }
     if (!crmClienteSelId) return;
 
     try {
@@ -1599,8 +1518,6 @@ export default function CRMClientesPanel({
         body: JSON.stringify({
           id: crmClienteSelId,
           ...(balanceEdited.current ? {
-            expected_free: crmClienteFicha?.minutos_free_pendientes ?? null,
-            expected_normal: crmClienteFicha?.minutos_normales_pendientes ?? null,
             minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
             minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
           } : {}),
@@ -1620,7 +1537,6 @@ export default function CRMClientesPanel({
 
       await saveEtiquetasCliente(crmClienteSelId);
       balanceEdited.current = false;
-      balanceConflict.current = false;
       setCrmClienteFicha((prev: any) => prev?.id === crmClienteSelId ? { ...prev, ...j.cliente } : prev);
       setCrmEditMinFree(String(j.cliente?.minutos_free_pendientes ?? 0));
       setCrmEditMinNormales(String(j.cliente?.minutos_normales_pendientes ?? 0));
@@ -2856,13 +2772,8 @@ export default function CRMClientesPanel({
           const targetId = confirmed?.clienteId || String(crmClienteFicha?.id || crmClienteSelId || "").trim();
           setCrmRegistrarOpen(false);
           if (targetId !== visibleClientRef.current) return;
-          // El visor de Resumen operativo consulta de inmediato la cartera real.
-          window.dispatchEvent(new CustomEvent("tc-crm-balance-updated", {
-            detail: { clienteId: targetId },
-          }));
           // La operación confirmada prevalece sobre cualquier borrador anterior.
           balanceEdited.current = false;
-          balanceConflict.current = false;
           // El recibo nunca sustituye a la fila de Supabase. Se consulta la ficha
           // ya confirmada, sin desmontar el historial ni volver al inicio.
           const refreshed = await refreshCrmBenefits();

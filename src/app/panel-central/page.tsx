@@ -8,6 +8,7 @@ import CentralProgressHeader, { type CentralOperatorProfile, type CentralOperato
 import CentralStatsCards, { type CentralStatsData } from "@/features/central/CentralStatsCards";
 import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
+import CentralCompanion from "@/features/central/assistant/CentralCompanion";
 import CentralXpPanel from "@/features/central/CentralXpPanel";
 import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
 import CentralXpCoinsPanel from "@/features/central/CentralXpCoinsPanel";
@@ -1239,6 +1240,14 @@ function CentralPage() {
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
+      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} onNavigate={(nextTab, clientId) => {
+        if (!TABS.includes(nextTab as TabKey) || HIDDEN_TELEPHONIST_TABS.has(nextTab as TabKey)) return;
+        setTab(nextTab as TabKey);
+        const params = new URLSearchParams(searchParams?.toString() || "");
+        params.set("tab", nextTab);
+        if (clientId) params.set("cliente", clientId); else params.delete("cliente");
+        router.push(`${pathname}?${params.toString()}`, { scroll: false });
+      }} />}
       <div className="tc-premium-bg" aria-hidden="true">
         <div className="tc-premium-orb tc-premium-orb-one" />
         <div className="tc-premium-orb tc-premium-orb-two" />
@@ -1252,7 +1261,7 @@ function CentralPage() {
       <div className="tc-shell tc-shell-premium">
         <CentralSidebar items={centralNavItems} activeTab={tab} onTabChange={handleSidebarTabChange} />
 
-        <main className="tc-main">
+        <main className="tc-main" data-companion-section={tab}>
           <CentralProgressHeader
             progress={centralProgress}
             profile={centralProfile}

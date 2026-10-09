@@ -1813,6 +1813,7 @@ function AdminPage() {
         <div className="tc-login-grid" />
       </div>
       <AppHeader />
+      {ok && <a href="/admin/companions" className="tc-btn" style={{display:'inline-block',margin:'12px 24px'}}>Sol y Draco · mascotas y conocimientos</a>}
       <ReservasGlobalWatcher enabled={ok} onGoToReserva={openReservaFromPopup} />
       <PaymentMotivationWatcher mode="admin" />
 
