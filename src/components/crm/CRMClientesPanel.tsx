@@ -1370,8 +1370,9 @@ export default function CRMClientesPanel({
       const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
       const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree
         || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
-      // Automatic refresh keeps the operator's explicit correction intact.
-      if (!balanceEdited.current && changed) {
+      // Los campos pueden seguir mostrando un borrador antiguo aunque la copia
+      // interna ya tenga el saldo actual. Sin edición manual, sincronizar siempre.
+      if (!balanceEdited.current) {
         setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
         setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
       }
