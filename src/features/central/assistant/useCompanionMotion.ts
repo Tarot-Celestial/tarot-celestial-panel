@@ -31,7 +31,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean) {
       else { const damping=Math.exp(-14*dt);v.x=(v.x+(t.x-p.x)*65*dt)*damping;v.y=(v.y+(t.y-p.y)*65*dt)*damping;p.x+=v.x*dt;p.y+=v.y*dt; }
       const active=Math.abs(t.x-p.x)+Math.abs(t.y-p.y)>1;
       if(active!==wasMoving){wasMoving=active;setMoving(active);}
-      if(ref.current){ref.current.style.transform=`translate3d(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px,0)`;ref.current.style.setProperty('--bubble-offset',`${Math.max(0,248-(p.x+136))}px`);if(Math.abs(v.x)>5)ref.current.style.setProperty('--facing',v.x<0?'-1':'1');}
+      if(ref.current){ref.current.style.transform=`translate3d(${p.x.toFixed(2)}px,${p.y.toFixed(2)}px,0)`;ref.current.style.setProperty('--bubble-offset',`${Math.max(0,260-(p.x+136))}px`);ref.current.style.setProperty('--bubble-bottom',p.y<230?'auto':'164px');ref.current.style.setProperty('--bubble-top',p.y<230?'170px':'auto');if(Math.abs(v.x)>5)ref.current.style.setProperty('--facing',v.x<0?'-1':'1');}
       if(highlighted.current){if(Date.now()>expiry.current||!highlighted.current.isConnected){highlighted.current=null;setHighlight(null);}else setHighlight(highlighted.current.getBoundingClientRect());}
       raf=requestAnimationFrame(frame);
     }

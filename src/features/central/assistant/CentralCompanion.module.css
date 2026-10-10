@@ -52,3 +52,7 @@
 @keyframes pulse{50%{opacity:.3}}
 @media(max-width:600px){.panel{right:8px;bottom:70px;max-width:calc(100vw - 16px);height:calc(100dvh - 145px);border-radius:20px}.traveller{z-index:900}.character{width:110px;height:110px}.petButton{width:110px;height:125px}.bubble{width:205px;bottom:140px}.header{padding-left:16px}.content{padding:16px}.formRow{flex-direction:column}.petTools{opacity:1}.context{padding:8px 16px}.nameTag{font-size:10px}}
 @media(prefers-reduced-motion:reduce){.root *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.bubble p{margin:0 0 10px}.bubbleActions{display:flex;gap:8px;flex-wrap:wrap}.bubbleActions button{border:1px solid var(--line);border-radius:9px;background:#ffffff09;color:var(--pet-accent);padding:7px;font-size:10px}
+
+.bubble{box-sizing:border-box;width:248px;max-width:calc(100vw - 16px);top:var(--bubble-top,auto);bottom:var(--bubble-bottom,164px)}
