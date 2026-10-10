@@ -380,7 +380,7 @@ export default function PayPalCrmPaymentModal({ open, cliente, getToken, onClose
       if (contextRef.current !== expectedClient || currentAttempt.current !== expectedId) return;
       if (changeTariff) resetPayment();
       else setPayment(previous => previous ? { ...previous, status: data.attempt.status, remote_status: data.attempt.remote_status, last_error: data.attempt.last_error } : null);
-      setMessage(changeTariff ? "Enlace anterior cancelado. Elige otra tarifa y genera un nuevo enlace." : "Enlace cancelado. Ya no se puede cobrar desde el panel. Esta acción no es un reembolso.");
+      setMessage(data.attempt.last_error || (changeTariff ? "Enlace anterior cancelado. Elige otra tarifa y genera un nuevo enlace." : "Enlace cancelado. Esta acción no es un reembolso."));
     } catch (error: any) {
       if (contextRef.current === expectedClient) setMessage(error.message);
     } finally { cancelBusy.current = false; setLoading(false); }
