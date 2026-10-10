@@ -74,7 +74,7 @@ test('Missing resource never overrides capture markers or recorded payment ident
 });
 test('Other provider errors and network failures never become successful cancellations',async()=>{
  for(const failure of [
-  ...[401,403,422,429,500,503].map(status=>({status,body:{details:[{issue:'INVALID_RESOURCE_ID'}]}})),
+  ...[401,403,422,500,503].map(status=>({status,body:{details:[{issue:'INVALID_RESOURCE_ID'}]}})),
   {status:404,body:{name:'UNKNOWN'}},{status:404,body:{details:[{issue:'INVALID_RESOURCE_ID!'}]}},
   new Error('Network timeout')
  ]){
@@ -85,6 +85,34 @@ test('Other provider errors and network failures never become successful cancell
 });
 test('A capture claim racing the missing-order cancellation wins the database comparison',async()=>{
  const h=harness();h.missing({status:404,body:{details:[{issue:'INVALID_RESOURCE_ID'}]}});
+ h.race(()=>h.row.remote_status='CAPTURE_REQUESTED');
+ await assert.rejects(h.api.cancelPayPalLink(h.admin,{...h.row}),/estado cambió/);
+ assert.equal(h.row.status,'pending');assert.equal(h.row.remote_status,'CAPTURE_REQUESTED');
+});
+
+test('Rate-limited card checkout can be disabled and cancellation is idempotent',async()=>{
+ for(const failure of [{status:429,body:{name:'RATE_LIMIT_REACHED'}},{status:400,body:{name:'RATE_LIMIT_REACHED'}}]){
+  const h=harness();h.missing(failure);
+  await h.api.cancelPayPalLink(h.admin,{...h.row});
+  assert.equal(h.row.status,'cancelled');assert.match(h.row.last_error,/limitado/);
+  await h.api.cancelPayPalLink(h.admin,{...h.row});
+  h.missing(null);await h.api.reconcilePayPal(h.admin,{...h.row});
+  assert.equal(h.captures(),0);assert.equal(h.credits(),0);
+ }
+});
+
+test('Rate limiting never cancels captured, unknown, or external wallet orders',async()=>{
+ for(const patch of [{status:'completed'},{capture_id:'CAP'},{payment_id:'PAY'},
+  ...['CAPTURE_REQUESTED','CAPTURE_PENDING','CAPTURE_COMPLETED','CREATING'].map(remote_status=>({remote_status})),
+  {create_payload:{payment_source:{paypal:{}}}}]){
+  const h=harness(),stale={...h.row};Object.assign(h.row,patch);
+  h.missing({status:429,body:{name:'RATE_LIMIT_REACHED'}});
+  await assert.rejects(h.api.cancelPayPalLink(h.admin,stale));assert.notEqual(h.row.status,'cancelled');
+ }
+});
+
+test('Concurrent capture wins over rate-limited cancellation',async()=>{
+ const h=harness();h.missing({status:429,body:{name:'RATE_LIMIT_REACHED'}});
  h.race(()=>h.row.remote_status='CAPTURE_REQUESTED');
  await assert.rejects(h.api.cancelPayPalLink(h.admin,{...h.row}),/estado cambió/);
  assert.equal(h.row.status,'pending');assert.equal(h.row.remote_status,'CAPTURE_REQUESTED');

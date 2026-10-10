@@ -218,12 +218,19 @@ export async function cancelPayPalLink(admin: any, attempt: any) {
   let current = await latestAttempt(admin, attempt.id);
   if (current.environment !== paypalConfig().environment)
     throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
+  if (current.status === "cancelled" && current.remote_status === "CANCELLED_BY_STAFF") return current;
   let missingOrder = false;
+  let rateLimited = false;
   try { current = await reconcilePayPal(admin, current, false); }
   catch (error) {
-    if (!isMissingPayPalOrder(error)) throw error;
+    rateLimited = error instanceof PayPalError &&
+      (error.providerStatus === 429 || error.providerIssue === "RATE_LIMIT_REACHED");
+    if (!isMissingPayPalOrder(error) && !rateLimited) throw error;
     current = await latestAttempt(admin, attempt.id);
-    missingOrder = true;
+    // Only our card checkout uses the atomic capture claim below. External
+    // wallet links still require a successful provider check before cancelling.
+    if (rateLimited && !current.create_payload?.payment_source?.card) throw error;
+    missingOrder = isMissingPayPalOrder(error);
   }
   if (current.status === "completed" || current.capture_id || current.payment_id || ["CAPTURE_REQUESTED", "CAPTURE_PENDING", "CAPTURE_COMPLETED"].includes(current.remote_status))
     throw new PayPalError("El pago ya está cobrado o procesándose. Comprueba su estado; no se puede cancelar ni cambiar de tarifa todavía.", 409);
@@ -231,7 +238,9 @@ export async function cancelPayPalLink(admin: any, attempt: any) {
   if (!current.order_id || !["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status))
     throw new PayPalError("No se ha podido confirmar que el cobro esté sin procesar. Comprueba su estado antes de cancelar.", 409);
   const saved = await admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: "CANCELLED_BY_STAFF",
-    last_error: missingOrder
+    last_error: rateLimited
+      ? "Enlace desactivado en el panel. PayPal ha limitado temporalmente las consultas; no se ha solicitado ningún cobro ni reembolso."
+      : missingOrder
       ? "Enlace desactivado en el panel. PayPal no encuentra la referencia; esto no confirma que no haya habido un cobro. Revisa la cuenta de PayPal antes de solicitar otro pago. Esta acción no es un reembolso."
       : "Enlace cancelado por la central. Esta acción no es un reembolso." })
     .eq("id", current.id).eq("status", "pending").eq("remote_status", current.remote_status).select("*").maybeSingle();
