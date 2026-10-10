@@ -355,3 +355,12 @@
 .chevron { position:static; align-self:center; min-width:32px; min-height:40px; display:grid; place-items:center; border:1px solid var(--panel-border); border-radius:9px; color:var(--rank-accent); background:rgba(var(--rank-rgb),.04); cursor:pointer; }
 .navButtonActive .iconHud,.navButton:hover .iconHud { transform:none; }
 .subnav[hidden] { display:none; }
+
+/* Premium glass: scoped to the Central dashboard. */
+
+.sidebarCard {
+  --panel-glass:linear-gradient(160deg,rgba(166,115,225,.15),transparent 55%),var(--ct-user-surface,#151d2e);
+  --panel-border:rgba(187,149,229,.28);
+}
+.navButton { --nav-rgb:166,131,232; }
+.navButtonActive { --nav-rgb:226,192,121; }

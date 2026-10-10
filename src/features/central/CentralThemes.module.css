@@ -31,3 +31,17 @@
 .themeRoot[data-central-light="true"] { color-scheme:light; }
 .themeRoot[data-central-light="true"] :global(.tc-main-content) :is(table,th,td) { color:var(--ct-text); border-color:var(--ct-border); }
 @media (prefers-reduced-motion:reduce) { .themeRoot { transition:none; } }
+
+/* Premium glass: scoped to the Central dashboard. */
+
+.themeRoot[data-central-theme="rango-actual"] {
+  --ct-primary-rgb:143,88,210;
+  --ct-secondary-rgb:219,179,106;
+  --panel-bg:#0c0a18;
+  background:radial-gradient(ellipse at 90% 0,rgba(136,75,200,.19),transparent 50%),radial-gradient(ellipse at 0 65%,rgba(37,129,148,.10),transparent 50%),#0c0a18;
+}
+.themeRoot[data-central-theme="rango-actual"] :global(.tc-premium-bg) {
+  background:radial-gradient(ellipse at 90% 0,rgba(136,75,200,.19),transparent 50%),radial-gradient(ellipse at 0 65%,rgba(37,129,148,.10),transparent 50%),#0c0a18 !important;
+}
+@media(max-width:600px) { .themeRoot { --panel-blur: min(var(--ct-surface-blur,8px),8px); } }
+@media(prefers-reduced-transparency:reduce) { .themeRoot { --ct-user-surface:var(--ct-user-surface-solid,#151d2e); --panel-blur:0px; } }

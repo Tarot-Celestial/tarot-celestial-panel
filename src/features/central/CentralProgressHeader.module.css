@@ -362,3 +362,13 @@
 .profileName { font-weight:700; }
 @media(max-width:1500px) { .header { grid-template-columns:minmax(0,1fr) minmax(230px,.8fr); } .metrics { grid-column:1/-1; order:3; } .profileArea { grid-column:2; } }
 @media(max-width:620px) { .header { grid-template-columns:minmax(0,1fr); padding:16px; } .profileArea { grid-column:1; } .metrics { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; } .metric { flex-direction:column; align-items:flex-start; padding:10px 8px; } .metricIcon { display:none; } .metricValue { font-size:17px; } .metricLabel { min-height:28px; font-size:8px; } .profileCard { order:0; } }
+
+/* Premium glass: scoped to the Central dashboard. */
+
+.header {
+  --panel-glass:linear-gradient(125deg,rgba(213,172,87,.16),transparent 42%),radial-gradient(ellipse at 95% 15%,rgba(153,100,231,.25),transparent 65%),var(--ct-user-surface,#151d2e);
+  --panel-border:rgba(221,190,127,.32);
+  --panel-shadow:0 18px 45px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.18);
+}
+.metric { background:linear-gradient(140deg,rgba(173,128,242,.14),rgba(255,255,255,.035)); border-color:rgba(190,150,239,.28); }
+.brandMark,.metricIcon { color:#d8b9ff; border-color:rgba(188,142,241,.4); background:rgba(163,112,226,.14); }

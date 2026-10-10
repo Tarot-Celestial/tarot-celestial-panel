@@ -542,3 +542,17 @@
 .notificationAction { display:inline-flex; border:0; padding:6px 0; min-height:36px; background:none; cursor:pointer; text-align:left; font:inherit; font-size:12px; color:var(--rank-accent); }
 @media(max-width:1200px) { .layout { grid-template-columns:repeat(2,minmax(0,1fr)); } .notificationsPanel { grid-column:1/-1; } }
 @media(max-width:620px) { .layout { grid-template-columns:minmax(0,1fr); } .panel { min-height:300px; padding:18px; } }
+
+/* Premium glass: scoped to the Central dashboard. */
+
+.panel {
+  --panel-glass: linear-gradient(135deg,rgba(255,255,255,.08),transparent 50%), radial-gradient(ellipse at 100% 0,rgba(var(--section-rgb),.17),transparent 75%),var(--ct-user-surface,#151d2e);
+  --panel-border:rgba(var(--section-rgb),.30);
+  --panel-shadow:0 16px 40px rgba(0,0,0,.20),inset 0 1px 0 rgba(255,255,255,.14);
+}
+.panel { --section-rgb: 175,128,248; }
+.panel.summaryPanel { --section-rgb: 88,195,166; }
+.panel.notificationsPanel { --section-rgb: 86,171,235; }
+.headerIcon { color:rgb(var(--section-rgb)); border-color:rgba(var(--section-rgb),.4); background:rgba(var(--section-rgb),.14); }
+.dailyAction,.mission,.notification { background:linear-gradient(120deg,rgba(var(--section-rgb),.10),rgba(255,255,255,.025)); border-color:rgba(var(--section-rgb),.22); }
+.panelButton { background:rgba(var(--section-rgb),.12); border-color:rgba(var(--section-rgb),.3); }
