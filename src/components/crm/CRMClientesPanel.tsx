@@ -1422,8 +1422,8 @@ export default function CRMClientesPanel({
   }, [crmClienteFicha?.id, crmClienteFicha?.free_passes?.renews_at, crmClienteFicha?.free_passes?.eligible_until, crmClienteFicha?.free_passes?.eligible]);
 
 
-  async function openCRMFicha(id: string) {
-    if (!id) return;
+  async function openCRMFicha(id: string): Promise<boolean> {
+    if (!id) return false;
     const openVersion = ++fichaOpenVersion.current;
     // Solo cambiar de cliente puede reiniciar el historial visible.
     // Una actualización de saldo NUNCA debe reconstruir las notas.
@@ -1445,7 +1445,7 @@ export default function CRMClientesPanel({
       setCrmClienteSelId(id);
 
       const token = await getTokenOrLogin();
-      if (!token) return;
+      if (!token) return false;
 
       const r = await fetch(`/api/crm/clientes/ficha?id=${encodeURIComponent(id)}`, {
         cache: "no-store",
@@ -1453,7 +1453,7 @@ export default function CRMClientesPanel({
       });
 
       const j = await safeJson(r);
-      if (requestVersion !== fichaFetchVersion.current) return;
+      if (requestVersion !== fichaFetchVersion.current) return false;
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}`);
 
       const c = j.cliente;
@@ -1495,18 +1495,20 @@ export default function CRMClientesPanel({
         loadNotasCliente(String(c?.id || id || "")),
         loadEtiquetasCliente(String(c?.id || id || "")),
       ]);
+      return requestVersion === fichaFetchVersion.current;
     } catch (e: any) {
       console.error("ERROR FICHA", e);
-      if (requestVersion !== fichaFetchVersion.current) return;
-      setCrmClienteFicha(null);
+      if (requestVersion !== fichaFetchVersion.current) return false;
+      // A failed reload must retain the balance confirmed by the write.
+      if (visibleClientRef.current !== id) setCrmClienteFicha(null);
       setCrmFichaMsg(`❌ ${e?.message || "Error cargando ficha"}`);
+      return false;
     } finally {
       // Guardar o registrar una llamada invalida lecturas, pero no puede dejar
       // la apertura bloqueada. Solo otra apertura/cierre es su propietario.
       if (openVersion === fichaOpenVersion.current) {
         fichaOpening.current = false;
         setCrmFichaLoading(false);
-        if (visibleClientRef.current === id) void refreshBenefitsRef.current();
       }
     }
   }
@@ -1551,8 +1553,10 @@ export default function CRMClientesPanel({
       setCrmClienteFicha((prev: any) => prev?.id === crmClienteSelId ? { ...prev, ...j.cliente } : prev);
       setCrmEditMinFree(String(j.cliente?.minutos_free_pendientes ?? 0));
       setCrmEditMinNormales(String(j.cliente?.minutos_normales_pendientes ?? 0));
-      setCrmFichaMsg("✅ Cliente y etiquetas actualizados correctamente");
-      // No reabrir la ficha ni reiniciar notas, scroll o edición para guardar.
+      const refreshed = await openCRMFicha(targetId);
+      if (visibleClientRef.current === targetId) setCrmFichaMsg(refreshed
+        ? "✅ Cliente y etiquetas actualizados correctamente"
+        : "✅ Cambios guardados. No se pudo recargar la ficha; vuelve a abrirla para comprobarla.");
       void searchCRM(true);
     } catch (e: any) {
       if (visibleClientRef.current === targetId) setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
@@ -2799,11 +2803,12 @@ export default function CRMClientesPanel({
             } : previous);
           }
           // Releer también el saldo actual por si hubo otra operación posterior.
-          const refreshed = await refreshCrmBenefits();
-          await Promise.allSettled([loadPagosCliente(targetId), loadNotasCliente(targetId)]);
+          const refreshed = await openCRMFicha(targetId);
+          if (visibleClientRef.current !== targetId) return;
+          void searchCRM(true);
           setCrmFichaMsg(refreshed
             ? (message || "✅ Llamada registrada correctamente")
-            : "✅ Operación registrada. No se pudo verificar el saldo actualizado; usa el botón de refrescar saldo.");
+            : "✅ Operación registrada. No se pudo recargar la ficha; vuelve a abrirla para comprobarla.");
         }}
       />
 

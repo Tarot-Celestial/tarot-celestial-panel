@@ -24,7 +24,7 @@ function harness({ dirty = false, free = '23', normal = '15', serverFree = 0, se
     console, fichaSaving: { current: false }, fichaOpening: { current: false }, fichaOpenVersion: { current: 0 }, fichaFetchVersion: { current: 0 }, visibleClientRef: { current: 'a' },
     balanceEdited: { current: dirty }, liveCrmBalance: { current: { cliente: h.client, free, normal } },
     getTokenOrLogin: async () => 'test', fetch: async () => ({}),
-    safeJson: async () => ({ ok: true, cliente: { ...h.client, minutos_free_pendientes: serverFree, minutos_normales_pendientes: serverNormal } }),
+    safeJson: async () => ({ _ok: true, ok: true, cliente: { ...h.client, minutos_free_pendientes: serverFree, minutos_normales_pendientes: serverNormal } }),
     crmClienteFicha: h.client, crmClienteSelId: 'a',
     crmEditMinFree: free, crmEditMinNormales: normal, crmEditNombre: 'Cliente', crmEditApellido: '', crmEditTelefono: '', crmEditPais: '', crmEditEmail: '', crmEditNotas: '', crmEditOrigen: '', crmEditDeuda: '0',
     setCrmSaveLoading: () => {}, saveEtiquetasCliente: async () => {}, searchCRM: () => {},
@@ -42,6 +42,7 @@ function harness({ dirty = false, free = '23', normal = '15', serverFree = 0, se
   ctx.notesRequestSeq = {current:0};
   ctx.loadEtiquetasCliente = async () => {};
   h.open = vm.runInContext(ts.transpile('(' + open + ')', {target:ts.ScriptTarget.ES2020}), ctx);
+  ctx.openCRMFicha = h.open;
   h.ctx = ctx;
   return h;
 }
@@ -73,10 +74,10 @@ test('Confirmed call immediately updates both fields even if the follow-up read 
 test('Save always sends the visible minutes, even without a dirty flag, captured before authentication', async () => {
   const h=harness(); let body;
   h.ctx.getTokenOrLogin=async()=>{h.ctx.crmEditMinFree='99';h.ctx.crmEditMinNormales='99';return 'token';};
-  h.ctx.fetch=async(url,options)=>{body=JSON.parse(options.body);return {};};
+  h.ctx.fetch=async(url,options)=>{if(options.body)body=JSON.parse(options.body);return {};};
   h.ctx.safeJson=async()=>({_ok:true,ok:true,cliente:{id:'a',minutos_free_pendientes:23,minutos_normales_pendientes:15}});
   await h.save();assert.equal(body.minutos_free_pendientes,23);assert.equal(body.minutos_normales_pendientes,15);
-  assert.equal(h.ctx.fichaSaving.current,false);assert.equal(h.ctx.fichaFetchVersion.current,1);
+  assert.equal(h.ctx.fichaSaving.current,false);assert.equal(h.ctx.fichaFetchVersion.current,2);
 });
 test('Background refresh is paused during save',async()=>{
  const h=harness();h.ctx.fichaSaving.current=true;assert.equal(await h.refresh(),false);assert.equal(h.free,'23');
@@ -90,7 +91,7 @@ test('Another operator consuming 10 FREE replaces the old draft 98 with confirme
 test('Saving while notes are loading cannot permanently disable balance refresh',async()=>{
  const h=harness();let release;
  h.ctx.safeJson=async()=>({_ok:true,ok:true,cliente:{id:'a',minutos_free_pendientes:23,minutos_normales_pendientes:15}});
- h.ctx.loadNotasCliente=()=>new Promise(r=>release=r);
+ h.ctx.loadNotasCliente=()=>release ? Promise.resolve() : new Promise(r=>release=r);
  const opening=h.open('a');while(!release)await new Promise(r=>setImmediate(r));
  await h.save();release();await opening;
  assert.equal(h.ctx.fichaOpening.current,false);

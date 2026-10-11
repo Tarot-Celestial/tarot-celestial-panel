@@ -6,6 +6,10 @@ import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Next 14.2.5 can still cache internal fetches in a force-dynamic GET handler.
+// Every ficha read must reach Supabase, including after a call or a manual save.
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 function getEnv(name: string) {
   const v = process.env[name];

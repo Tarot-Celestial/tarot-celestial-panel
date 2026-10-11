@@ -24,11 +24,10 @@ test('Una respuesta vieja de notas no sobrescribe las nuevas ni contrae la lista
   assert.doesNotMatch(body.split('    try {')[1],/setCrmNotes\(\[\]\)/);
 });
 
-test('Registro confirmado aplica saldo de la transacción y relee sin reiniciar la ficha', () => {
+test('Registro confirmado aplica saldo de la transacción y recarga la ficha completa', () => {
   const body=crm.split('        onSuccess={async (message, confirmed) => {')[1].split('        }}')[0];
-  assert.match(body,/refreshCrmBenefits\(\)/);
+  assert.match(body,/await openCRMFicha\(targetId\)/);
   assert.match(body,/confirmed\?\.balances/);
-  assert.doesNotMatch(body,/openCRMFicha\(/);
 });
 
 test('Guardar cambios incluye siempre los minutos visibles', () => {
@@ -36,7 +35,7 @@ test('Guardar cambios incluye siempre los minutos visibles', () => {
   assert.match(body,/minutos_free_pendientes:/);
   assert.match(body,/minutos_normales_pendientes:/);
   assert.doesNotMatch(body,/balanceEdited\.current \?/);
-  assert.doesNotMatch(body,/await openCRMFicha\(/);
+  assert.match(body,/await openCRMFicha\(targetId\)/);
 });
 
 test('El cálculo de la compra manual no incluye bono Diamante invisible y la nota no contiene Bonos',()=>{
