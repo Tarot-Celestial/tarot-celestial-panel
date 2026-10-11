@@ -371,6 +371,7 @@ export default function CRMClientesPanel({
   const balanceEdited = useRef(false);
   const fichaSaving = useRef(false);
   const fichaFetchVersion = useRef(0);
+  const fichaOpenVersion = useRef(0);
   const fichaOpening = useRef(false);
   const visibleClientRef = useRef<string | null>(null);
   visibleClientRef.current = crmClienteFicha?.id || null;
@@ -1104,6 +1105,10 @@ export default function CRMClientesPanel({
   }
 
   function closeCRMFicha() {
+    ++fichaFetchVersion.current;
+    ++fichaOpenVersion.current;
+    fichaOpening.current = false;
+    setCrmFichaLoading(false);
     ++notesRequestSeq.current;
     setCrmClienteSelId("");
     setCrmClienteFicha(null);
@@ -1371,9 +1376,10 @@ export default function CRMClientesPanel({
       const beforeNormal = Number(latest.cliente?.minutos_normales_pendientes || 0);
       const changed = Number(current.minutos_free_pendientes || 0) !== beforeFree
         || Number(current.minutos_normales_pendientes || 0) !== beforeNormal;
-      // Los campos pueden seguir mostrando un borrador antiguo aunque la copia
-      // interna ya tenga el saldo actual. Sin edición manual, sincronizar siempre.
-      if (!balanceEdited.current) {
+      // Un movimiento confirmado (también de otra central) sustituye al borrador
+      // anterior. Solo conservar la edición mientras el saldo real no cambie.
+      if (!balanceEdited.current || changed) {
+        balanceEdited.current = false;
         setCrmEditMinFree(String(current.minutos_free_pendientes ?? 0));
         setCrmEditMinNormales(String(current.minutos_normales_pendientes ?? 0));
       }
@@ -1418,6 +1424,7 @@ export default function CRMClientesPanel({
 
   async function openCRMFicha(id: string) {
     if (!id) return;
+    const openVersion = ++fichaOpenVersion.current;
     // Solo cambiar de cliente puede reiniciar el historial visible.
     // Una actualización de saldo NUNCA debe reconstruir las notas.
     if (id !== visibleClientRef.current) {
@@ -1494,9 +1501,12 @@ export default function CRMClientesPanel({
       setCrmClienteFicha(null);
       setCrmFichaMsg(`❌ ${e?.message || "Error cargando ficha"}`);
     } finally {
-      if (requestVersion === fichaFetchVersion.current) {
+      // Guardar o registrar una llamada invalida lecturas, pero no puede dejar
+      // la apertura bloqueada. Solo otra apertura/cierre es su propietario.
+      if (openVersion === fichaOpenVersion.current) {
         fichaOpening.current = false;
         setCrmFichaLoading(false);
+        if (visibleClientRef.current === id) void refreshBenefitsRef.current();
       }
     }
   }
