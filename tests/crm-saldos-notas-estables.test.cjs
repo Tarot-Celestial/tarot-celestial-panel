@@ -9,7 +9,7 @@ const modal = read('src/components/crm/RegistrarLlamadaModal.tsx');
 const sql = read('migrations/20261008_21_crm_saldos_notas_sin_bonos_manual.sql');
 
 test('Realtime actualiza los saldos de la ficha sin volver a cargar las notas', () => {
-  const body = crm.split('  async function refreshCrmBenefits()')[1].split('  useRouletteSignal')[0];
+  const body = crm.split('  async function refreshCrmBenefits(): Promise<boolean>')[1].split('  useRouletteSignal')[0];
   assert.match(body,/fetch\("\/api\/crm\/clientes\/ficha\?id=/);
   assert.match(body,/requestVersion !== fichaFetchVersion\.current/);
   assert.doesNotMatch(body,/loadNotasCliente\s*\(/);
@@ -24,16 +24,18 @@ test('Una respuesta vieja de notas no sobrescribe las nuevas ni contrae la lista
   assert.doesNotMatch(body.split('    try {')[1],/setCrmNotes\(\[\]\)/);
 });
 
-test('Registro confirmado relee saldo real sin usar el recibo local ni reiniciar la ficha', () => {
+test('Registro confirmado aplica saldo de la transacción y relee sin reiniciar la ficha', () => {
   const body=crm.split('        onSuccess={async (message, confirmed) => {')[1].split('        }}')[0];
   assert.match(body,/refreshCrmBenefits\(\)/);
-  assert.doesNotMatch(body,/confirmed\?\.balances/);
+  assert.match(body,/confirmed\?\.balances/);
   assert.doesNotMatch(body,/openCRMFicha\(/);
 });
 
-test('Guardar cambios sin editar saldo no incluye campos de minutos', () => {
+test('Guardar cambios incluye siempre los minutos visibles', () => {
   const body=crm.split('  async function saveCRMFicha()')[1].split('  async function crearReservaCRM()')[0];
-  assert.match(body,/\.\.\.\(balanceEdited\.current \? \{/);
+  assert.match(body,/minutos_free_pendientes:/);
+  assert.match(body,/minutos_normales_pendientes:/);
+  assert.doesNotMatch(body,/balanceEdited\.current \?/);
   assert.doesNotMatch(body,/await openCRMFicha\(/);
 });
 

@@ -369,6 +369,7 @@ export default function CRMClientesPanel({
   const [crmEditMinFree, setCrmEditMinFree] = useState("0");
   const [crmEditMinNormales, setCrmEditMinNormales] = useState("0");
   const balanceEdited = useRef(false);
+  const fichaSaving = useRef(false);
   const fichaFetchVersion = useRef(0);
   const fichaOpening = useRef(false);
   const visibleClientRef = useRef<string | null>(null);
@@ -1351,7 +1352,7 @@ export default function CRMClientesPanel({
   const liveCrmBalance = useRef({ cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales });
   liveCrmBalance.current = { cliente: crmClienteFicha, free: crmEditMinFree, normal: crmEditMinNormales };
   async function refreshCrmBenefits(): Promise<boolean> {
-    if (fichaOpening.current) return false;
+    if (fichaOpening.current || fichaSaving.current) return false;
     const requestVersion = ++fichaFetchVersion.current;
     const clientId = String(liveCrmBalance.current.cliente?.id || "");
     if (!clientId) return false;
@@ -1501,7 +1502,19 @@ export default function CRMClientesPanel({
   }
 
   async function saveCRMFicha() {
-    if (!crmClienteSelId) return;
+    if (!crmClienteSelId || fichaSaving.current) return;
+    const targetId = crmClienteSelId;
+    // Capturar lo visible al pulsar Guardar, antes de cualquier espera.
+    const payload = {
+      id: targetId,
+      minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
+      minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
+      nombre: crmEditNombre, apellido: crmEditApellido, telefono: crmEditTelefono,
+      pais: crmEditPais, email: crmEditEmail, notas: crmEditNotas, origen: crmEditOrigen,
+      deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
+    };
+    fichaSaving.current = true;
+    ++fichaFetchVersion.current;
 
     try {
       setCrmSaveLoading(true);
@@ -1516,27 +1529,14 @@ export default function CRMClientesPanel({
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          id: crmClienteSelId,
-          ...(balanceEdited.current ? {
-            minutos_free_pendientes: Number(String(crmEditMinFree).replace(",", ".")) || 0,
-            minutos_normales_pendientes: Number(String(crmEditMinNormales).replace(",", ".")) || 0,
-          } : {}),
-          nombre: crmEditNombre,
-          apellido: crmEditApellido,
-          telefono: crmEditTelefono,
-          pais: crmEditPais,
-          email: crmEditEmail,
-          notas: crmEditNotas,
-          origen: crmEditOrigen,
-          deuda_pendiente: Number(String(crmEditDeuda).replace(",", ".")) || 0,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || "Error guardando");
 
-      await saveEtiquetasCliente(crmClienteSelId);
+      await saveEtiquetasCliente(targetId);
+      if (visibleClientRef.current !== targetId) return;
       balanceEdited.current = false;
       setCrmClienteFicha((prev: any) => prev?.id === crmClienteSelId ? { ...prev, ...j.cliente } : prev);
       setCrmEditMinFree(String(j.cliente?.minutos_free_pendientes ?? 0));
@@ -1545,8 +1545,9 @@ export default function CRMClientesPanel({
       // No reabrir la ficha ni reiniciar notas, scroll o edición para guardar.
       void searchCRM(true);
     } catch (e: any) {
-      setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
+      if (visibleClientRef.current === targetId) setCrmFichaMsg(`❌ ${e?.message || "Error guardando ficha"}`);
     } finally {
+      fichaSaving.current = false;
       setCrmSaveLoading(false);
     }
   }
@@ -2775,8 +2776,19 @@ export default function CRMClientesPanel({
           if (targetId !== visibleClientRef.current) return;
           // La operación confirmada prevalece sobre cualquier borrador anterior.
           balanceEdited.current = false;
-          // El recibo nunca sustituye a la fila de Supabase. Se consulta la ficha
-          // ya confirmada, sin desmontar el historial ni volver al inicio.
+          ++fichaFetchVersion.current;
+          // La misma transacción que escribe la nota devuelve el saldo final.
+          // Mostrarlo inmediatamente; los reintentos duplicados no traen recibo.
+          const balances = confirmed?.balances;
+          if (balances && Number.isFinite(balances.free_after) && Number.isFinite(balances.normal_after)) {
+            setCrmEditMinFree(String(balances.free_after));
+            setCrmEditMinNormales(String(balances.normal_after));
+            setCrmClienteFicha((previous: any) => previous?.id === targetId ? {
+              ...previous, minutos_free_pendientes: balances.free_after,
+              minutos_normales_pendientes: balances.normal_after,
+            } : previous);
+          }
+          // Releer también el saldo actual por si hubo otra operación posterior.
           const refreshed = await refreshCrmBenefits();
           await Promise.allSettled([loadPagosCliente(targetId), loadNotasCliente(targetId)]);
           setCrmFichaMsg(refreshed
