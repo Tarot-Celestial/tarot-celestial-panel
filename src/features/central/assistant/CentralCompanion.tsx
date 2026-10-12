@@ -20,6 +20,18 @@ export default function CentralCompanion({ tab, workerId, onNavigate }: { tab:st
   const button=useRef<HTMLButtonElement>(null),panel=useRef<HTMLElement>(null),input=useRef<HTMLTextAreaElement>(null),epoch=useRef(0),alive=useRef(true),lastActivity=useRef(Date.now()),bubbleTimer=useRef<ReturnType<typeof setTimeout>>(),requestController=useRef<AbortController|null>(null);
   const motion=useCompanionMotion(preferences.motion&&!reduced&&!mini,open||busy);
   const say=useCallback((text:string)=>{setBubble(text);clearTimeout(bubbleTimer.current);bubbleTimer.current=setTimeout(()=>setBubble(''),18000);},[]);
+  useEffect(() => {
+    if (tab !== 'recuperar-clientes') return;
+    let timer: ReturnType<typeof setTimeout>;
+    const prepared = (event: Event) => {
+      const name = (event as CustomEvent<{name?: string}>).detail?.name;
+      if (typeof name !== 'string' || !name.trim()) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => say(`He preparado el saludo para ${name.trim()}. Revisa el recuadro y pulsa Copiar mensaje.`), 500);
+    };
+    window.addEventListener('tc-recovery-message-ready', prepared);
+    return () => { clearTimeout(timer); window.removeEventListener('tc-recovery-message-ready', prepared); };
+  }, [tab, say]);
   const initiative=useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,preferences,bubble,say});
   const api=useCallback(async(body?:unknown)=>{
     const current=epoch.current; const session=(await supabaseBrowser().auth.getSession()).data.session;
@@ -82,7 +94,7 @@ export default function CentralCompanion({ tab, workerId, onNavigate }: { tab:st
   return <div data-companion-root className={styles.root} style={{'--pet-accent':PETS[pet].accent} as CSSProperties}>
     {motion.highlight&&!open&&<div className={styles.highlight} style={{left:motion.highlight.left-4,top:motion.highlight.top-4,width:motion.highlight.width+8,height:motion.highlight.height+8}}/>}
     <div ref={motion.ref} className={styles.traveller} data-moving={motion.moving}>
-      {bubble&&!open&&<div className={styles.bubble} role="status"><p>{bubble}</p><div className={styles.bubbleActions}><button onClick={()=>{if(bubble.includes('recuerde')){setPane('memory');setOpen(true);return;}setPane('chat');setOpen(true);void ask(['mis-clientas','crm','recuperar-clientes','captacion'].includes(tab)?'Clientes sin llamar en 30 días':tab.includes('xp')||tab==='tienda'?'Explícame mi XP':'Mi resumen de hoy');}}>Sí, ayúdame</button><button onClick={initiative.hush}>Ahora no · 10 min</button></div></div>}
+      {bubble&&!open&&<div className={styles.bubble} role="status"><p>{bubble}</p><div className={styles.bubbleActions}><button onClick={()=>{if(bubble.startsWith('He preparado el saludo para ')){window.dispatchEvent(new Event('tc-recovery-focus-message'));setBubble('');return;}if(bubble.includes('recuerde')){setPane('memory');setOpen(true);return;}setPane('chat');setOpen(true);void ask(['mis-clientas','crm','recuperar-clientes','captacion'].includes(tab)?'Clientes sin llamar en 30 días':tab.includes('xp')||tab==='tienda'?'Explícame mi XP':'Mi resumen de hoy');}}>{bubble.startsWith('He preparado el saludo para ')?'Ver mensaje':'Sí, ayúdame'}</button><button onClick={initiative.hush}>Ahora no · 10 min</button></div></div>}
       <button ref={button} className={`${styles.petButton} ${mini?styles.mini:''}`} onClick={()=>setOpen(o=>!o)} aria-label={`Abrir ${PETS[pet].name}, tu compañero`} aria-expanded={open} aria-controls="central-companion-panel"><CompanionCharacter pet={pet} state={state} gesture={busy||motion.moving?undefined:initiative.gesture} reduced={reduced||!preferences.motion}/><span className={styles.nameTag}><i/>{PETS[pet].name}<MessageCircle size={12}/></span></button>
       {!open&&<div className={styles.petTools}><button title="Saludar y animarse" aria-label="Saludar y animarse" onClick={initiative.entertain}><Sparkles size={12}/></button><button title="Volver a su rincón" onClick={motion.dock}><Home size={12}/></button><button title={mini?'Ampliar mascota':'Minimizar mascota'} onClick={()=>setMini(m=>!m)}><Minus size={12}/></button></div>}
     </div>
