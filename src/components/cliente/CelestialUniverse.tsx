@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { pointerTarget, scrollProgress, universeDestination } from "./universe-motion";
 import type { UniverseController } from "./universe-renderer";
+import TarotAtmosphere from "./TarotAtmosphere";
 import styles from "./CelestialUniverse.module.css";
 
 export { universeDestination } from "./universe-motion";
@@ -27,6 +28,7 @@ export default function CelestialUniverse({ pathname, children }: { pathname: st
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [reduced, setReduced] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [visible, setVisible] = useState(true);
   const [status, setStatus] = useState<"loading" | "webgl" | "fallback">("loading");
   const motion = useRef(false);
   motion.current = preferencesReady && !reduced && !paused;
@@ -55,7 +57,11 @@ export default function CelestialUniverse({ pathname, children }: { pathname: st
       controller.current?.setPointer(target.x, target.y);
     };
     const resetPointer = () => controller.current?.setPointer(0, 0);
-    const visibility = () => controller.current?.setVisible(!document.hidden);
+    const visibility = () => {
+      const shown = !document.hidden;
+      setVisible(shown);
+      controller.current?.setVisible(shown);
+    };
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measureScroll);
     observer?.observe(document.body);
     window.addEventListener("scroll", measureScroll, { passive: true });
@@ -91,10 +97,11 @@ export default function CelestialUniverse({ pathname, children }: { pathname: st
   }
 
   return <MotionContext.Provider value={{ paused, available: preferencesReady && !reduced && status !== "fallback", toggle: toggleMotion }}>
-    <div className={styles.universe} data-celestial-universe="" data-destination={destination.name} data-renderer={status} style={{ "--planet-glow": destination.color } as CSSProperties} aria-hidden="true">
+    <div className={styles.universe} data-celestial-universe="" data-destination={destination.name} data-renderer={status} data-motion={motion.current && visible && status === "webgl" ? "running" : "paused"} style={{ "--planet-glow": destination.color } as CSSProperties} aria-hidden="true">
       <div className={styles.sky} />
       <div className={styles.fallback} style={{ backgroundPosition: `${(destination.index % 4) * 100 / 3}% ${Math.floor(destination.index / 4) * 50}%` }} />
       <div ref={host} className={styles.canvas} />
+      <TarotAtmosphere index={destination.index} />
       <div className={styles.shade} />
     </div>
     {children}

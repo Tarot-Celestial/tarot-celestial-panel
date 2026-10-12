@@ -1,0 +1,132 @@
+.atmosphere {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: #e6c78f;
+  opacity: clamp(0, calc(1 - var(--approach, 0) * 1.18), 1);
+  contain: layout paint;
+}
+
+.wheelPosition {
+  position: absolute;
+  width: min(78vw, 1080px);
+  aspect-ratio: 1;
+  right: -16vw;
+  top: 54%;
+  transform: translateY(-50%);
+  opacity: .56;
+}
+
+.wheelDestination {
+  width: 100%;
+  height: 100%;
+  transform: rotate(var(--zodiac-offset, 0deg));
+}
+
+.wheel {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  stroke: currentColor;
+  stroke-width: .9;
+  animation: wheelRevolve 420s linear infinite;
+  animation-play-state: paused;
+  transform-origin: center;
+}
+
+.outerRings { opacity: .67; }
+.zodiacMark { stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+.sacredGeometry { opacity: .22; stroke-width: .8; }
+.wheelStars { opacity: .85; stroke-width: 1.1; }
+
+.constellation { position: absolute; stroke: currentColor; }
+.constellationLeft { top: 29%; left: max(12px, 2.3vw); width: min(12vw, 220px); opacity: .51; }
+.constellationRight { top: 44%; right: -36px; width: 190px; opacity: .44; }
+.constellationLine { stroke-width: .8; opacity: .65; }
+.constellationPoints { stroke: none; fill: #eedcb1; }
+.constellationStars { stroke-width: .9; opacity: .8; }
+
+.orb {
+  position: absolute;
+  width: 180px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f0e9ff16 0, #b886ec16 14%, #ad77d407 34%, transparent 66%);
+  opacity: .7;
+  animation: orbDrift 17s ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.orb > span {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  left: calc(50% - 2.5px);
+  top: calc(50% - 2.5px);
+  background: #eedbff;
+  border: 1px solid #fff4d6b3;
+  border-radius: 50%;
+  box-shadow: 0 0 12px 3px #dcc0f45c, 0 0 34px 6px #9764db36;
+}
+
+.orb > span::before,
+.orb > span::after {
+  content: "";
+  position: absolute;
+  inset: -11px 1px;
+  background: linear-gradient(transparent, #f3d6a899, transparent);
+}
+.orb > span::after { transform: rotate(90deg); }
+.orbViolet { top: 20%; left: 52%; }
+.orbGold { top: 35%; right: 3%; width: 145px; animation-delay: -8s; background: radial-gradient(circle, #fff0cd1a, #e6bf7310 19%, transparent 66%); }
+.orbGold > span { background: #ffebbc; box-shadow: 0 0 12px 3px #f1d69866, 0 0 30px 6px #dbad6430; }
+.orbCelestial { top: 59%; left: 39%; width: 230px; animation-delay: -13s; background: radial-gradient(circle, #d4eaf913, color-mix(in srgb, var(--planet-glow, #8d9fd8) 10%, transparent) 18%, transparent 66%); }
+.orbCelestial > span { width: 3px; height: 3px; background: #d7e4ed; opacity: .7; }
+
+.tarotCards {
+  position: absolute;
+  right: 28%;
+  top: 39%;
+  width: 118px;
+  opacity: .24;
+  stroke: #e6c99a;
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform: rotate(-12deg);
+  animation: cardsFloat 23s ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+.cardBack { opacity: .45; }
+.cardFront { fill: #160f261a; }
+
+:global([data-motion="running"]) .wheel,
+:global([data-motion="running"]) .orb,
+:global([data-motion="running"]) .tarotCards { animation-play-state: running; }
+:global([data-motion="running"]) .wheelDestination { transition: transform 1.6s ease-in-out; }
+
+@keyframes wheelRevolve { to { transform: rotate(360deg); } }
+@keyframes orbDrift { from { transform: translate3d(0, 0, 0); opacity: .60; } to { transform: translate3d(7px, -16px, 0); opacity: .82; } }
+@keyframes cardsFloat { from { transform: translateY(0) rotate(-12deg); } to { transform: translateY(-9px) rotate(-8deg); } }
+
+@media (max-width: 1599px) {
+  .constellationLeft { top: 8%; left: -52px; width: 140px; opacity: .25; }
+}
+
+@media (max-width: 768px) {
+  .atmosphere { mask-image: linear-gradient(90deg, transparent 13%, #0004 42%, #000 78%); }
+  .wheelPosition { width: 145vw; right: -83vw; top: 48%; opacity: .35; }
+  .wheel { animation-duration: 540s; }
+  .zodiacMark { stroke-width: 2.1; }
+  .zodiacMark:nth-child(even), .sacredGeometry, .constellationLeft,
+  .orbCelestial, .orbViolet, .tarotCards { display: none; }
+  .constellationRight { width: 130px; right: -39px; top: 66%; opacity: .25; }
+  .orbGold { right: -8%; top: 36%; width: 130px; opacity: .45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wheel, .orb, .tarotCards { animation: none; }
+  .wheelDestination { transition: none !important; }
+}
