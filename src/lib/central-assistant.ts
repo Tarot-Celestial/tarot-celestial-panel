@@ -28,7 +28,7 @@ export const ASSISTANT_SECTIONS: Record<string, { label: string; help: string }>
   habituales: { label: 'Habituales', help: 'Consulta las relaciones habituales entre clientes y tarotistas.' },
   ranking: { label: 'Ranking', help: 'Consulta el progreso del equipo con el período indicado.' },
 };
-export type AssistantCard = { id: string; title: string; detail: string; tab: string; clientId?: string; date?: string; priority: 'attention' | 'info' | 'success'; source?: string };
+export type AssistantCard = { id: string; title: string; detail: string; tab: string; clientId?: string; date?: string; priority: 'attention' | 'info' | 'success'; source?: string; learning?: import('./companion-learning').LearningCardRef };
 export type AssistantProposal = ({ type: 'memory'; topic: string; content: string } | { type: 'task'; title: string; kind: 'reminder'|'inactive'|'opportunities'; due_at: string; recurrence:'none'|'daily'|'weekly'; days:number }) & { operationId?:string };
 export type AssistantResult = { text: string; cards: AssistantCard[]; updatedAt: string; total?: number; page?: number; pages?: number; query?: ClientQuery; unavailable?: string[]; proposal?: AssistantProposal };
 export type ClientQuery = { kind: 'inactive' | 'prefix' | 'affinity' | 'opportunities'; days: number; prefix: string; tarotist: string; metric: 'calls' | 'minutes'; page: number };

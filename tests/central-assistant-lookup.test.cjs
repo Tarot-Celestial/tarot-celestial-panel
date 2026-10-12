@@ -47,6 +47,8 @@ function modules(db, env = {}, fetch = async () => { throw new Error('Unexpected
       if (name === '@supabase/supabase-js') return { createClient: () => db };
       if (name === 'node:crypto') return require(name);
       if (name === '@/lib/central-assistant') return load('central-assistant');
+      if (name === '@/lib/companion-learning') return load('companion-learning');
+      if (name === './central-assistant-learning') return load('server/central-assistant-learning');
       if (name === './central-assistant-lookup') return load('server/central-assistant-lookup');
       if (name === './central-assistant') return load('server/central-assistant');
       return {};

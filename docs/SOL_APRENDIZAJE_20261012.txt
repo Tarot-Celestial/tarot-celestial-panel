@@ -1,0 +1,81 @@
+TAROT CELESTIAL · SOL Y DRACO APRENDEN CONTIGO
+Actualización sobre main 3f1f746058fd40b2def3dcb805172bea4a81f386
+
+INSTALACIÓN
+1. Descomprime Tarot-Celestial-Sol-Aprende.zip.
+2. En el SQL Editor de tu proyecto Supabase, ejecuta el contenido completo de:
+   supabase/migrations/20261012161528_companion_learning.sql
+   Añade únicamente el registro privado de aprendizaje. No cambia llamadas,
+   saldos, XP de las trabajadoras, reservas ni recuerdos existentes. Se ha
+   probado reinstalarlo sin borrar datos. Subir el SQL a GitHub NO lo ejecuta.
+3. Sube el contenido descomprimido a la raíz de Tarot-Celestial/tarot-celestial-panel,
+   rama main. Combina las carpetas src, tests, docs y supabase con las existentes;
+   reemplaza solo los archivos incluidos. No subas una carpeta contenedora extra.
+4. Haz commit, espera a que Vercel muestre Ready y recarga con Ctrl+F5.
+5. Abre Sol/Draco > Evolución. Debe mostrar nivel 1 y experiencia 0 al empezar.
+   Si indica que falta el SQL, revisa el paso 2. El asistente anterior sigue funcionando.
+
+No hacen falta nuevas dependencias, claves ni cambios de variables de entorno.
+El paquete NO incluye node_modules, .next ni credenciales. El modelo conserva la
+configuración de IA existente. Esta entrega se prepara y valida localmente;
+no se ha ejecutado el SQL nuevo ni publicado el código en producción desde este chat.
+
+QUÉ APRENDE
+- Registra qué sugirió, qué datos motivaron la propuesta y qué resultado espera.
+- Recuperación: distingue clientas con tres o más llamadas anteriores de quienes
+  tienen una o dos. Descarta restricciones de contacto y seguimientos abiertos.
+- Seguimientos pendientes: comprueba su finalización registrada.
+- Incidencias: comprueba el cierre con cero minutos pendientes.
+- Conserva tus valoraciones y correcciones privadas. Se pueden editar o vaciar.
+- Resume experiencias de los últimos 90 días y utiliza las correcciones recientes
+  como contexto de conversación. No las convierte en permisos ni reglas del sistema.
+
+CÓMO USARLO
+Abre una propuesta desde Mi turno o desde una búsqueda de recuperación y pulsa
+«Ver aprendizaje». En Evolución verás el motivo y el resultado que se observará.
+Pulsa «Iniciar seguimiento» ANTES de realizar la acción en la ficha o sección.
+Abrir una ficha no se interpreta como contacto, venta ni trabajo terminado.
+Durante los 7 días siguientes se comprobarán los resultados registrados. Puedes
+usar «Revisar resultados» o dejar activa la revisión automática cada 5 minutos
+mientras el panel está visible y la iniciativa está activada.
+Si cierras el panel, la experiencia queda guardada; la siguiente revisión comprueba
+el historial de esa ventana. No hay un proceso nuevo ejecutándose con el panel cerrado.
+Valora «Me sirvió» o «No me sirvió» y explica qué debería repetir o cambiar.
+También puedes preguntar «¿Qué has aprendido?» o «¿Cuál es tu evolución?».
+
+ADAPTACIÓN Y NIVELES
+- Con menos de 5 observaciones completas mantiene el criterio inicial de recuperación.
+- A partir de 5 aplica cambios pequeños en la prioridad según los resultados observados.
+- Desde 3 valoraciones puede reducir la iniciativa de una estrategia poco útil.
+- Una propuesta descartada o valorada negativamente deja de insistir automáticamente.
+  Las incidencias y seguimientos siguen consultables en el resumen manual.
+- Las correcciones se incorporan a las siguientes conversaciones con IA disponible.
+- El diario muestra las muestras, la evidencia y qué ajuste se aplicará.
+- 20 XP por resultado observado y 5 por valorar un caso, como máximo 100 XP/día Madrid.
+- Recargas, aperturas, reintentos, valoraciones repetidas y editar una corrección no
+  generan premios adicionales. Una misma evidencia no premia dos misiones.
+- Los niveles requieren progresivamente más experiencia. Son exclusivos del compañero,
+  privados para cada trabajadora y no canjeables. No modifican XP, coins ni ingresos.
+
+LÍMITES HONESTOS
+Es aprendizaje operativo mediante experiencias, estadísticas y contexto persistente;
+no es reentrenamiento autónomo del modelo ni consciencia. De momento se comprueban
+los cuatro tipos de estrategia descritos, no cualquier evento del negocio.
+Una llamada posterior es un resultado observado: no demuestra que la sugerencia
+la causara, ni se presenta como una venta. Tus valoraciones se distinguen de esa evidencia.
+Una fuente caída, fecha insuficiente, reasignación, cancelación o registro eliminado
+no se contabilizan como fracaso. Sin resultado al acabar el plazo significa únicamente
+que no se encontró un cambio válido en los datos consultados. Los datos muy tardíos o
+acciones no registradas pueden quedar fuera de esa observación.
+La mascota propone; no contacta a clientas ni modifica el trabajo por su cuenta.
+
+VALIDACIÓN
+- 103 pruebas automatizadas del núcleo, endpoints, seguridad, deduplicación, concurrencia, aprendizaje y funciones anteriores, todas correctas.
+- Migración probada con PostgreSQL local/PGlite: roles, RLS, instalación repetida y parcial.
+- 14 comprobaciones de navegador con datos simulados: escritorio/móvil, correcciones, resultados, reintentos,
+  episodios antiguos, cambios de cartera y rechazo de respuestas de una cuenta anterior.
+- Compilación de producción Next.js completada, incluido TypeScript. Solo avisos CSS preexistentes.
+- Ninguna prueba local confirma un despliegue ni una acción comercial en producción.
+
+Referencia de seguridad usada para la tabla privada:
+https://supabase.com/docs/guides/database/postgres/row-level-security

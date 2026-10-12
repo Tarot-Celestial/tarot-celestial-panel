@@ -28,13 +28,13 @@ export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,pr
   useEffect(()=>{last.current=0;quietUntil.current=0;counter.current=0;offered.current.clear();return()=>{clearTimeout(gestureTimer.current);if(spoken.current&&'speechSynthesis'in window)window.speechSynthesis.cancel();};},[workerId]);
   useEffect(()=>{
     if(!ready)return;
-    const timer=setTimeout(()=>{const c=current.current;if(!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||Date.now()<quietUntil.current||Date.now()-last.current<30000)return;const next=c.suggestions.find(card=>!offered.current.has(card.id));if(!next||!c.suggest)return;offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);},14000);
+    const timer=setTimeout(()=>{const c=current.current;if(!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||Date.now()<quietUntil.current||Date.now()-last.current<30000)return;const next=c.suggestions.find(card=>!card.learning?.quiet&&!offered.current.has(card.id));if(!next||!c.suggest)return;offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);},14000);
     return()=>clearTimeout(timer);
   },[ready,tab,animate]);
   useEffect(()=>{
     const timer=setInterval(()=>{const c=current.current;const active=document.activeElement;const typing=active instanceof HTMLElement&&(active.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(active.tagName));
       if(!c.ready||!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||typing||Date.now()<quietUntil.current||Date.now()-last.current<INITIATIVE_INTERVAL)return;
-      const next=c.suggestions.find(card=>!offered.current.has(card.id));if(!next||!c.suggest)return;
+      const next=c.suggestions.find(card=>!card.learning?.quiet&&!offered.current.has(card.id));if(!next||!c.suggest)return;
       offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);
     },10000);return()=>clearInterval(timer);
   },[animate]);

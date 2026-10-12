@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       const result=await brief(ctx);
       const runs=await checked(db.from('central_assistant_task_runs').select('id,created_at').eq('worker_id',worker_id).order('created_at',{ascending:false}).limit(5));
       const candidates=[...runs.map((r:any)=>({id:`run:${r.id}`,title:'Una tarea está terminada',detail:'Abre Tareas para revisar el resultado.',tab:'central',priority:'info' as const})),...result.cards.filter(c=>c.id.startsWith('incident:')||c.id.startsWith('bonus:')||c.id.startsWith('client:')||c.id.startsWith('review:'))];
-      for(const card of candidates.slice(0,12)){
+      for(const card of candidates.filter(card=>!('learning' in card)||!card.learning?.quiet).slice(0,12)){
         const inserted=await db.from('central_assistant_deliveries').insert({worker_id,key:card.id});
         if(inserted.error?.code==='23505')continue;
         if(inserted.error)throw new AssistantError('No pude registrar el aviso.',503);
