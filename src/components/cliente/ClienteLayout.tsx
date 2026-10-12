@@ -273,7 +273,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
       {!isHome && <section className={universeStyles.intro}><span>{eyebrow} · {destination.name}</span><h1>{title}</h1>{subtitle && <p>{subtitle}</p>}</section>}
       {!isHome && summaryItems.length>0 && <div className={universeStyles.summary}>{summaryItems.map(item=><div key={item.label}><small>{item.label}</small><strong>{item.value}</strong>{item.meta && <p>{item.meta}</p>}</div>)}</div>}
       <main data-leo-anchor="page-content" data-leo-page={pathname}>{children}</main>
-      <footer className={universeStyles.footer}>Tarot Celestial <span>✦</span> Tu espacio personal · {destination.name}</footer>
+      <footer className={universeStyles.footer}>Tarot Celestial <span>✦</span> Tu espacio personal · {destination.name} <a href="/images/universe/surfaces/CREDITS.txt" target="_blank" rel="noopener noreferrer">Créditos del universo</a></footer>
     </div>
     <LeoCelestialGuide promoActive={promoActive}/>
   </PanelTheme>;

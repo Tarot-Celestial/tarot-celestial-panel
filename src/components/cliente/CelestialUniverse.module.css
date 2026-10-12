@@ -14,4 +14,3 @@
 .motionControl>span:first-child{font-size:15px;min-width:12px}
 @media(max-width:768px){.fallback{width:125vw;right:-53vw;top:240px;opacity:.8}.sky{opacity:.4}.shade{background:linear-gradient(90deg,#020813b8,#02081328),linear-gradient(0deg,#02081370,transparent 65%)}.motionControl{bottom:max(76px,calc(env(safe-area-inset-bottom) + 64px));min-height:44px;min-width:44px;justify-content:center;padding:9px 12px;font-size:10px}}
 @media(max-width:768px){.motionControl>span:last-child{display:none}}
-@media(prefers-reduced-motion:reduce){.canvas{display:none}.universe[data-renderer=webgl] .fallback{visibility:visible}}

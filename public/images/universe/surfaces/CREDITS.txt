@@ -1,0 +1,41 @@
+PLANET TEXTURE CREDITS
+
+SOLAR SYSTEM SCOPE MAPS
+Mercury, Venus surface, Mars, Jupiter, Saturn, Earth daytime, Sun, Moon, Uranus and Neptune maps:
+Solar System Scope / INOVE
+Source: https://www.solarsystemscope.com/textures/
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+
+Separate Earth clouds and Venus atmosphere maps are also by Solar System Scope / INOVE under CC BY 4.0:
+earth-clouds-2k.jpg, source: https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg
+venus-clouds-2k.jpg, source: https://www.solarsystemscope.com/textures/download/2k_venus_atmosphere.jpg
+Both cloud maps are 2048 x 1024 pixels.
+
+The bundled Solar System Scope maps preserve the original provider bytes. The provider adjusts colors and fills some unmapped areas with illustrative terrain. No affiliation or endorsement is implied.
+Jupiter, Saturn and Sun high-resolution source files are 4096 x 2048 pixels despite the provider URLs containing 8k. Local filenames and the manifest identify their actual 4K resolution. Uranus and Neptune are 2048 x 1024 and are not upscaled.
+
+PLUTO COLOR PREVIEW
+NASA/JHUAPL/SwRI, New Horizons
+Source: https://science.nasa.gov/resource/pluto-global-color-map/
+Usage guidelines: https://www.nasa.gov/nasa-brand-center/images-and-media/
+The bundled pluto-2k.jpg is a 2048 x 1024 preview resized by the NASA image CDN from the 5926 x 2963 source color map. The original color map is not included in this package. No NASA logos, endorsement, or approval are claimed.
+
+PLUTO HIGH-RESOLUTION MONOCHROME DETAIL
+New Horizons Team; NASA, Johns Hopkins University Applied Physics Laboratory, Southwest Research Institute, Lunar and Planetary Institute.
+Publisher: USGS Astrogeology Science Center.
+Source: https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m
+Access constraints: None. Use constraints: Please cite authors.
+Dataset: Pluto New Horizons LORRI - MVIC Global Mosaic 300 m, July 14, 2017.
+Native raster: 24888 x 12444 pixels; simple cylindrical/equirectangular projection; east-positive longitude 0 to 360 degrees; latitude -90 to 90 degrees.
+The source images have varying observed detail across the globe and unmapped areas remain present.
+
+Imported through USGS WMS as two original 4096 x 4096 JPEG responses, downsampled by the provider from the native raster. No local image edits or upscaling were applied.
+pluto-detail-west-4k.jpg: longitude 0 to 180 degrees east; latitude -90 to 90 degrees; image top = 90 N and bottom = 90 S.
+pluto-detail-east-4k.jpg: longitude 180 to 360 degrees east; latitude -90 to 90 degrees; image top = 90 N and bottom = 90 S.
+Together these provide 8192 x 4096 equivalent global sampling. Shader color tint from the separate NASA preview is a visualization treatment, not an additional observed color image.
+Reference: Schenk et al. (2018), Basin, Fractures and Volcanoes: Global Cartography and Topography of Pluto from New Horizons, Icarus 314, 400-433. https://doi.org/10.1016/j.icarus.2018.06.008
+
+RESOLUTION, COVERAGE AND VISUAL EFFECTS
+Native source dimensions are recorded in the asset manifest. Lighting, atmosphere and procedural relief overlays are artistic effects, not additional observations or authentic interior maps.
+The NASA and USGS Pluto maps contain black regions near the south pole where surface data are unavailable. Any visual fill in those areas is illustrative rather than observed terrain.

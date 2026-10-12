@@ -1,5 +1,7 @@
 import * as THREE from "three";
-import { createPlanetVisual, type PlanetVisual } from "./universe-planets";
+import { createPlanetSurface, type PlanetSurface } from "./planet-surface";
+import { approachPose, planetTextureSources, shouldLoadPlanetDetail } from "./planet-detail";
+import { loadPlanetDetail, loadPlanetTexture, type PlanetDetailTextures, type PlanetTexture } from "./planet-textures";
 import { advanceFrameBudget, dampingFactor, qualityProfile, seededRandom, travelPose, type UniverseDestination } from "./universe-motion";
 
 export type UniverseController = {
@@ -11,11 +13,15 @@ export type UniverseController = {
   resize: () => void;
   dispose: () => void;
 };
-type Actor = { visual: PlanetVisual; destination: UniverseDestination; x: number; z: number; scale: number; opacity: number };
+type Actor = {
+  visual: PlanetSurface; destination: UniverseDestination; x: number; z: number; scale: number; opacity: number;
+  preview: PlanetTexture | null; detail: PlanetDetailTextures | null; clouds: PlanetTexture | null; request: AbortController;
+  detailRequest: AbortController | null; detailFailed: boolean; removed: boolean;
+};
 type Flight = { elapsed: number; direction: number; x: number; z: number; scale: number; opacity: number };
 type Options = { host: HTMLDivElement; destination: UniverseDestination; motion: boolean; signal: AbortSignal; onStatus: (ready: boolean) => void };
 
-/** Loaded on demand in the browser. One renderer/atlas survives client tab navigation. */
+/** Loaded on demand in the browser. One renderer survives client tab navigation. */
 export async function createUniverseRenderer(options: Options): Promise<UniverseController | null> {
   const { host, signal, onStatus } = options;
   if (signal.aborted) return null;
@@ -34,18 +40,64 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
   let motion = options.motion, frame = 0, lastTick = 0, lastPaint = 0, frameBudget = 0, elapsed = 0, frames = 0;
   let targetScroll = 0, scroll = 0, pointerX = 0, pointerY = 0, targetX = 0, targetY = 0;
   let baseX = 3, baseY = -0.8, baseScale = 4.4;
-  let atlas: THREE.Texture | null = null, current: Actor | null = null, incoming: Actor | null = null, flight: Flight | null = null;
+  let current: Actor | null = null, incoming: Actor | null = null, flight: Flight | null = null;
+  let proximity = 0;
   let destination = options.destination;
   let stars: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null;
 
   function removeActor(item: Actor | null) {
     if (!item) return;
+    item.removed = true; item.request.abort(); item.detailRequest?.abort();
     world.remove(item.visual.group); item.visual.dispose();
+    item.preview?.dispose(); item.detail?.dispose(); item.clouds?.dispose();
+  }
+  function downgrade(item: Actor | null) {
+    if (!item) return;
+    item.detailRequest?.abort(); item.detailRequest = null;
+    item.visual.setMap(item.preview?.texture || null);
+    item.visual.setDetailMaps(null, null);
+    item.detail?.dispose(); item.detail = null;
   }
   function actor(next: UniverseDestination): Actor {
-    const visual = createPlanetVisual(atlas!, next, quality.maxFps <= 30);
+    const visual = createPlanetSurface(next, quality.maxFps <= 30, null);
     world.add(visual.group);
-    return { visual, destination: next, x: 0, z: 0, scale: 1, opacity: 1 };
+    const item: Actor = { visual, destination: next, x: 0, z: 0, scale: 1, opacity: 1, preview: null, detail: null, clouds: null, request: new AbortController(), detailRequest: null, detailFailed: false, removed: false };
+    const path = planetTextureSources(next.index).preview;
+    if (path) void loadPlanetTexture(path, item.request.signal, renderer.capabilities.getMaxAnisotropy()).then(texture => {
+      if (disposed || item.removed) { texture.dispose(); return; }
+      item.preview = texture;
+      if (!item.detail || item.detail.textures.length === 2) visual.setMap(texture.texture);
+      paint(0);
+    }).catch(() => { /* The lit procedural surface remains available offline. */ });
+    if (next.index === 7 || next.index === 4) {
+      const cloudPath = `/images/universe/surfaces/${next.index === 7 ? "earth" : "venus"}-clouds-2k.jpg`;
+      void loadPlanetTexture(cloudPath, item.request.signal, renderer.capabilities.getMaxAnisotropy()).then(texture => {
+        if (disposed || item.removed) { texture.dispose(); return; }
+        item.clouds = texture; visual.setCloudMap(texture.texture); paint(0);
+      }).catch(() => { /* The procedural cloud layer remains visible. */ });
+    }
+    return item;
+  }
+  function canLoadDetail(item: Actor) {
+    return shouldLoadPlanetDetail({ index: item.destination.index, proximity, viewportWidth: innerWidth, deviceMemory: nav.deviceMemory, saveData: nav.connection?.saveData, maxTextureSize: renderer.capabilities.maxTextureSize, traveling: Boolean(flight) });
+  }
+  function upgradeActivePlanet() {
+    const item = current;
+    if (!item || item.removed || item.detail || item.detailRequest || item.detailFailed || lost || !visible) return;
+    if (!canLoadDetail(item)) return;
+    const source = planetTextureSources(item.destination.index);
+    if (!source.detail) return;
+    const request = new AbortController(); item.detailRequest = request;
+    const paths = source.detailSecondary ? [source.detail, source.detailSecondary] : [source.detail];
+    void loadPlanetDetail(paths, request.signal, renderer.capabilities.getMaxAnisotropy()).then(texture => {
+      if (disposed || item.removed || current !== item || flight || item.detailRequest !== request || !canLoadDetail(item)) {
+        texture.dispose(); if (item.detailRequest === request) item.detailRequest = null; return;
+      }
+      item.detailRequest = null; item.detail = texture;
+      if (texture.textures.length === 2) item.visual.setDetailMaps(texture.textures[0], texture.textures[1]);
+      else item.visual.setMap(texture.textures[0]);
+      paint(0);
+    }).catch(() => { if (item.detailRequest === request) { item.detailRequest = null; item.detailFailed = !request.signal.aborted; } });
   }
   function settle() {
     if (incoming) { removeActor(current); current = incoming; incoming = null; }
@@ -59,7 +111,8 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
     const aspect = innerWidth / Math.max(1, innerHeight);
     for (let i = 0; i < count; i++) {
       const layer = i % 10;
-      const z = layer < 2 ? 1 + random() * 3 : layer < 5 ? -2 - random() * 18 : -22 - random() * 53;
+      // Every star stays behind the complete planet, including its distant limb.
+      const z = layer < 2 ? -16 - random() * 9 : layer < 5 ? -32 - random() * 18 : -55 - random() * 35;
       const halfHeight = Math.tan(THREE.MathUtils.degToRad(24)) * (9 - z) * 1.35;
       positions.set([(random() * 2 - 1) * halfHeight * aspect, (random() * 2 - 1) * halfHeight, z], i * 3);
       sizes[i] = 0.75 + random() * 1.1; phases[i] = random() * Math.PI * 2;
@@ -75,7 +128,7 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
       vertexShader: `attribute float size; attribute float phase; attribute vec3 starColor;
         uniform float pixelRatio; uniform float time; varying vec3 vColor; varying float vLight;
         void main(){vec4 view=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*view;
-          gl_PointSize=clamp(size*(15.0/-view.z),0.8,3.5)*pixelRatio;
+          gl_PointSize=clamp(size*(42.0/-view.z),0.8,3.5)*pixelRatio;
           vColor=starColor; vLight=0.75+0.08*sin(time*0.65+phase);}`,
       fragmentShader: `varying vec3 vColor; varying float vLight;
         void main(){float d=length(gl_PointCoord-0.5)*2.0; float a=(1.0-smoothstep(0.12,1.0,d))*vLight;
@@ -88,9 +141,19 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
   }
   function place(item: Actor | null) {
     if (!item) return;
-    item.visual.group.position.set(baseX + item.x, baseY + scroll * 0.3, item.z);
+    item.visual.group.position.set(baseX + item.x, baseY, item.z);
     item.visual.group.scale.setScalar(baseScale * item.scale);
-    item.visual.setOpacity(item.opacity); item.visual.update(elapsed, motion);
+    item.visual.setOpacity(item.opacity); item.visual.update(elapsed, motion, flight ? 0 : proximity);
+  }
+  function keepCameraOutside(item: Actor | null) {
+    if (!item || item.opacity < 0.05) return;
+    const centerX = baseX + item.x, centerZ = item.z;
+    const dx = camera.position.x - centerX, dy = camera.position.y - baseY, dz = camera.position.z - centerZ;
+    const distance = Math.hypot(dx, dy, dz), minimum = baseScale * item.scale * 1.045;
+    if (distance < minimum) {
+      const factor = minimum / Math.max(distance, 0.0001);
+      camera.position.set(centerX + dx * factor, baseY + dy * factor, centerZ + (distance > 0.0001 ? dz * factor : minimum));
+    }
   }
   function paint(dt: number) {
     if (!ready || disposed || lost || !visible) return;
@@ -109,15 +172,26 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
         if (progress >= 1) settle();
       }
       const arc = flight ? travelPose(flight.elapsed / 1250, flight.direction) : null;
-      camera.position.x += (scroll * 0.3 + pointerX * 0.13 + (arc?.cameraX || 0) - camera.position.x) * damping;
-      camera.position.y += (-scroll * 0.4 - pointerY * 0.1 + (arc?.cameraY || 0) - camera.position.y) * damping;
-      camera.position.z += (9 - scroll * 2.25 + (arc?.cameraZ || 0) - camera.position.z) * damping;
+      const approach = approachPose(flight ? Math.min(scroll, 0.12) : scroll, baseX, baseY, baseScale, innerWidth <= 768);
+      proximity = approach.proximity;
+      const parallax = 1 - proximity * 0.85;
+      camera.position.x += (approach.x + pointerX * 0.13 * parallax + (arc?.cameraX || 0) - camera.position.x) * damping;
+      camera.position.y += (approach.y - pointerY * 0.1 * parallax + (arc?.cameraY || 0) - camera.position.y) * damping;
+      camera.position.z += (approach.z + (arc?.cameraZ || 0) - camera.position.z) * damping;
       if (stars) stars.material.uniforms.time.value = elapsed;
     }
+    keepCameraOutside(current); keepCameraOutside(incoming);
     place(current); place(incoming); renderer.render(world, camera);
+    upgradeActivePlanet();
     renderer.domElement.dataset.frames = String(++frames);
     renderer.domElement.dataset.scrollProgress = scroll.toFixed(4);
     renderer.domElement.dataset.travel = flight ? "true" : "false";
+    renderer.domElement.dataset.proximity = proximity.toFixed(4);
+    renderer.domElement.dataset.textureWidth = String(current?.detail?.width || current?.preview?.width || 0);
+    renderer.domElement.dataset.highResolutionTextures = current?.detail || incoming?.detail ? "1" : "0";
+    renderer.domElement.dataset.cameraDistance = Math.hypot(camera.position.x - baseX, camera.position.y - baseY, camera.position.z).toFixed(4);
+    renderer.domElement.dataset.planetRadius = baseScale.toFixed(4);
+    host.parentElement?.style.setProperty("--approach", proximity.toFixed(3));
   }
   function tick(time: number) {
     frame = 0;
@@ -145,6 +219,9 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
     const halfWidth = Math.tan(THREE.MathUtils.degToRad(24)) * 9 * camera.aspect;
     baseX = halfWidth * (width <= 768 ? 0.9 : 0.79); baseY = width <= 768 ? -0.55 : -0.85;
     baseScale = width <= 768 ? 3.35 : Math.min(5.5, Math.max(4.1, halfWidth * 0.7));
+    const pose = approachPose(flight ? Math.min(scroll, 0.12) : scroll, baseX, baseY, baseScale, width <= 768);
+    camera.position.set(pose.x, pose.y, pose.z); proximity = pose.proximity;
+    if (current && (current.detail || current.detailRequest) && !canLoadDetail(current)) downgrade(current);
     if (ready) { makeStars(); paint(0); wake(); }
   }
   function contextLost(event: Event) { event.preventDefault(); lost = true; stop(); onStatus(false); }
@@ -155,24 +232,20 @@ export async function createUniverseRenderer(options: Options): Promise<Universe
     renderer.domElement.removeEventListener("webglcontextlost", contextLost);
     renderer.domElement.removeEventListener("webglcontextrestored", contextRestored);
     removeActor(current); removeActor(incoming);
-    stars?.geometry.dispose(); stars?.material.dispose(); atlas?.dispose();
+    stars?.geometry.dispose(); stars?.material.dispose();
     renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
   }
   signal.addEventListener("abort", dispose, { once: true });
   renderer.domElement.addEventListener("webglcontextlost", contextLost);
   renderer.domElement.addEventListener("webglcontextrestored", contextRestored);
   resize();
-  try {
-    const loaded = await new THREE.TextureLoader().loadAsync("/images/universe/planets.png");
-    if (disposed || signal.aborted) { loaded.dispose(); return null; }
-    atlas = loaded; atlas.colorSpace = THREE.SRGBColorSpace; atlas.generateMipmaps = false;
-    atlas.minFilter = THREE.LinearFilter; atlas.magFilter = THREE.LinearFilter;
-    current = actor(destination); ready = true; makeStars(); paint(0); onStatus(!lost); wake();
-  } catch (error) { dispose(); throw error; }
+  try { current = actor(destination); ready = true; makeStars(); paint(0); onStatus(!lost); wake(); }
+  catch (error) { dispose(); throw error; }
   return {
     setDestination(next) {
       if (disposed || next.key === destination.key) return;
       destination = next;
+      downgrade(current); downgrade(incoming);
       if (!motion || !visible || lost) { settle(); removeActor(current); current = actor(next); paint(0); return; }
       // Interrupt from the visible position, retaining at most two worlds.
       if (incoming) {

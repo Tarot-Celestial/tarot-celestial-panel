@@ -1,0 +1,85 @@
+TAROT CELESTIAL — PLANETAS CON DETALLE Y DESCENSO
+Actualización del 12 de octubre de 2026
+
+QUÉ CAMBIA
+
+Los planetas pasan de imágenes planas a esferas tridimensionales con superficies
+independientes, iluminación, rotación lenta, atmósfera y anillos de Saturno.
+Al bajar por la página, la cámara se acerca a la superficie. Las capas de nubes
+se disipan durante el acercamiento; al subir se recorre el camino inverso.
+Cambiar de pestaña conserva el viaje suave entre destinos y el mismo canvas.
+
+Tierra y Venus incorporan mapas independientes de nubes. Neptuno y Urano tienen
+cirros y variaciones atmosféricas ilustrativas. Plutón combina el color de NASA
+con un mosaico de mayor detalle de USGS/New Horizons cuando se acerca la cámara.
+Los efectos de relieve e iluminación son artísticos, no una reconstrucción
+científica del terreno ni del interior de los planetas.
+
+CALIDAD REAL DE LAS TEXTURAS
+
+- Tierra, Luna, Marte, Mercurio y Venus: mapas de 8192 x 4096 píxeles.
+- Plutón: dos hemisferios de 4096 x 4096, equivalentes a 8192 x 4096 globales,
+  obtenidos por USGS de un mosaico de 24888 x 12444. Su luminancia se combina
+  con el mapa de color NASA. Las zonas menos observadas conservan menos detalle.
+- Júpiter, Saturno y Sol: 4096 x 2048 reales.
+- Neptuno y Urano: 2048 x 1024 reales, complementados por efectos atmosféricos.
+- Todos usan previsualizaciones de 2048 x 1024; las nubes también son 2K.
+
+No se han ampliado imágenes pequeñas para etiquetarlas como 8K. Las dimensiones,
+fuentes, licencias y hashes están en docs/PLANETAS_FUENTES_20261012.json.
+Los créditos también son accesibles desde el pie del panel.
+
+FLUIDEZ Y CARGA
+
+Sólo se solicita el mapa grande del planeta activo, cuando el usuario se acerca
+y ha terminado el viaje entre secciones. La versión grande se libera al cambiar
+de destino. Las solicitudes pendientes se cancelan y los resultados tardíos
+se descartan si cambia el destino o se reduce la pantalla.
+
+Se exige un ancho de al menos 1024 píxeles, capacidad gráfica suficiente y memoria
+de dispositivo declarada por el navegador: 8 GB para 8K, 4 GB para 4K. Si falta
+esta información o está activo el ahorro de datos se conserva 2K. Los móviles
+usan 2K, menos geometría/estrellas y una resolución de dibujo limitada.
+El conjunto de 23 imágenes ocupa aproximadamente 74 MB en el proyecto; cada
+visita descarga únicamente los mapas que necesita, no el conjunto completo.
+
+El botón de pausa sigue funcionando y recuerda su estado. Movimiento reducido
+muestra una esfera estática. Ocultar la pestaña detiene la animación. Sin WebGL,
+o durante la recuperación de su contexto, se conserva el fondo estático anterior.
+Objetivo de cadencia: 60 FPS en escritorio y 30 en móvil, según el dispositivo.
+
+CÓMO APLICARLO
+
+1. Descomprime Tarot-Celestial-Planetas-Detalle.zip.
+2. Copia src, public, docs y tests sobre la raíz de tu proyecto, donde está
+   package.json. Combina las carpetas y reemplaza los archivos incluidos.
+   Este ZIP es una actualización parcial: conserva el resto del proyecto.
+3. Sube las carpetas descomprimidas a GitHub, con todas sus subcarpetas, y confirma
+   el cambio en la rama conectada con Vercel. Es necesario incluir public: allí
+   están las texturas nuevas. Subir el ZIP cerrado no aplica la actualización.
+4. Espera a que el despliegue de ese commit aparezca Ready y recarga con Ctrl+F5.
+5. Comprueba Inicio, Mi Ritual y Ruleta; baja y vuelve a subir. En un ordenador
+   compatible, la primera aproximación puede afinar la imagen tras la descarga.
+   Prueba también pausa y navegación en móvil.
+
+No requiere SQL en Supabase, variables nuevas ni dependencias adicionales.
+Se reutiliza Three.js 0.180.0. La base comprobada en GitHub/Vercel es el commit
+1a3eef1aa555947a3341dafb40f87395dbc8e1b4, que ya incluye Universo Vivo.
+Este paquete se prepara y valida localmente; no publica cambios por sí mismo.
+
+VALIDACIÓN
+
+Pruebas de cámara, resolución adaptativa, geometría, propiedad/liberación de
+texturas y cargas parciales canceladas. Regresión de Leo y temas de rango.
+Navegación de los once destinos, cambio rápido de pestañas, pausa, cambio de
+tamaño durante una descarga, movimiento reducido y fallback en Edge.
+Rutas reales del panel probadas con sesión ficticia y APIs interceptadas, incluida
+la recuperación del contexto WebGL, la ayuda de Leo y las capas de los diálogos.
+TypeScript, compilación de producción y revisión de código independiente.
+El móvil se comprueba mediante emulación; el rendimiento físico depende del
+teléfono. Ninguna prueba modifica datos de producción.
+
+Pruebas desde la raíz del proyecto:
+node --test --test-isolation=none tests/planet-detail.test.cjs tests/planet-surface.test.cjs tests/planet-textures.test.cjs tests/universe-motion.test.cjs tests/leonaris-guide.test.cjs tests/panel-theme.test.cjs
+
+El banco visual temporal no forma parte de la aplicación entregada.

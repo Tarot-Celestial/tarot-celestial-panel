@@ -1,0 +1,472 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-12",
+  "sources": {
+    "solarSystemScope": "https://www.solarsystemscope.com/textures/",
+    "pluto": "https://science.nasa.gov/resource/pluto-global-color-map/",
+    "plutoDetail": "https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m"
+  },
+  "notes": [
+    "Planet maps are equirectangular. Solar System Scope adjusts colors and fills unmapped areas with illustrative terrain.",
+    "Neptune and Uranus are 2048 x 1024 source maps and are never upscaled.",
+    "The Pluto color preview is 2048 x 1024, resized by the NASA image CDN from its 5926 x 2963 original. The original color image is not bundled.",
+    "Procedural atmosphere or relief overlays are artistic visual effects and do not represent newly observed detail.",
+    "The provider URLs for Jupiter, Saturn and Sun say 8k, but their actual JPEG dimensions are 4096 x 2048. These originals are stored and catalogued as 4K, never upscaled.",
+    "The NASA and USGS Pluto maps contain black regions at the southern pole where data are unavailable. Any visual fill in those areas is illustrative, not observed surface data.",
+    "Pluto detail comes from the USGS New Horizons LORRI/MVIC global 300 m monochrome mosaic, native 24888 x 12444. Two WMS 4096 x 4096 hemispheres provide 8192 x 4096 equivalent sampling, with no local image edits. Coverage and actual observed detail vary across the globe. The NASA color preview provides tint in the shader.",
+    "Earth and Venus use separate native 2048 x 1024 cloud/atmosphere maps from Solar System Scope."
+  ],
+  "assets": [
+    {
+      "file": "earth-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 463087,
+      "sha256": "767ee1dc6eb3802699bfccf6f264880f8acd0b80de3191cd24984fe279b07b7c",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_earth_daymap.jpg",
+      "path": "public/images/universe/surfaces/earth-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "earth-8k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg",
+      "expected": [
+        8192,
+        4096
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        8192,
+        4096
+      ],
+      "bytes": 4565076,
+      "sha256": "88ab060b6e7d241cfc590c69f528fab2b3247b738d40124cb590999a6fe44abc",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_earth_daymap.jpg",
+      "path": "public/images/universe/surfaces/earth-8k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "earth-clouds-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg",
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 965676,
+      "sha256": "fffd7f68d41b37274822150e54a6ef605af1d3ec35624d9f628c3b896bfa42ed",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_earth_clouds.jpg",
+      "path": "public/images/universe/surfaces/earth-clouds-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "jupiter-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 498976,
+      "sha256": "b0f04d005350252636b0e3396fc592548cbd9e9126b269d32d5c6abd4b0e4f2b",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_jupiter.jpg",
+      "path": "public/images/universe/surfaces/jupiter-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "jupiter-4k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_jupiter.jpg",
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        4096,
+        2048
+      ],
+      "bytes": 3080980,
+      "sha256": "0bd844bf20822c4e3e80882b077859833c0dac44c7e4e1e0cd63d1b1b6d43085",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_jupiter.jpg",
+      "path": "public/images/universe/surfaces/jupiter-4k.jpg",
+      "transformations": "None. Provider URL says 8k, but source JPEG is 4096x2048; local filename reports verified dimensions."
+    },
+    {
+      "file": "mars-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_mars.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 750547,
+      "sha256": "2d187f3e77a98eaa8cea5f4cc722f633c122ef170b9e94ace6b5fb6cbc3f8e01",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_mars.jpg",
+      "path": "public/images/universe/surfaces/mars-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "mars-8k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_mars.jpg",
+      "expected": [
+        8192,
+        4096
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        8192,
+        4096
+      ],
+      "bytes": 8396951,
+      "sha256": "4cc52149924abc6ae507d63032f994e1d42a55cb82c09e002d1a567ff66c23ee",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_mars.jpg",
+      "path": "public/images/universe/surfaces/mars-8k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "mercury-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_mercury.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 872555,
+      "sha256": "5a5c80607f643496bac9a631e71957def35ed788895f18b678ac849c2b38e48a",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_mercury.jpg",
+      "path": "public/images/universe/surfaces/mercury-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "mercury-8k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_mercury.jpg",
+      "expected": [
+        8192,
+        4096
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        8192,
+        4096
+      ],
+      "bytes": 15035740,
+      "sha256": "5c8bd885ae3571c6ba2cd34b3446b9c6d767e314bf0ee8c1d5c147cadd388fc3",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_mercury.jpg",
+      "path": "public/images/universe/surfaces/mercury-8k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "moon-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 1053869,
+      "sha256": "2764ba6535ea0481a062846ee033cc7a909dae05b31a8fd13f3e98f3a7fd92bd",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_moon.jpg",
+      "path": "public/images/universe/surfaces/moon-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "moon-8k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_moon.jpg",
+      "expected": [
+        8192,
+        4096
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        8192,
+        4096
+      ],
+      "bytes": 15030356,
+      "sha256": "d1875bcec83588ca25e4802e576f6bb9f88b39e1e403cb41ff55867419c54796",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_moon.jpg",
+      "path": "public/images/universe/surfaces/moon-8k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "neptune-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_neptune.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 241580,
+      "sha256": "cb42ea82709741d28b0af44d8b283cbc6dbd0c521a7f0e1e1e010ade00977df6",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_neptune.jpg",
+      "path": "public/images/universe/surfaces/neptune-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "pluto-2k.jpg",
+      "url": "https://assets.science.nasa.gov/dynamicimage/assets/science/psd/solar/2023/09/p/l/pluto_color_mapmosaic.jpg?crop=faces%2Cfocalpoint&fit=clip&h=1024&w=2048",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "NASA/JHUAPL/SwRI",
+      "source": "https://science.nasa.gov/resource/pluto-global-color-map/",
+      "license": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 220153,
+      "sha256": "c6be09acdcbe973ab5e0d64fffac89624ce11da501afbd5f9e20b42986132f96",
+      "resolvedUrl": "https://assets.science.nasa.gov/dynamicimage/assets/science/psd/solar/2023/09/p/l/pluto_color_mapmosaic.jpg?crop=faces%2Cfocalpoint&fit=clip&h=1024&w=2048",
+      "path": "public/images/universe/surfaces/pluto-2k.jpg",
+      "transformations": "Provider CDN resize."
+    },
+    {
+      "file": "pluto-detail-east-4k.jpg",
+      "url": "https://planetarymaps.usgs.gov/cgi-bin/mapserv?map=%2Fmaps%2Fpluto%2Fpluto_simp_cyl.map&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=NEWHORIZONS_PLUTO_MOSAIC&STYLES=&FORMAT=image%2Fjpeg&SRS=EPSG%3A4326&BBOX=180%2C-90%2C360%2C90&WIDTH=4096&HEIGHT=4096&TRANSPARENT=FALSE&BGCOLOR=0x000000",
+      "dimensions": [
+        4096,
+        4096
+      ],
+      "bytes": 1516211,
+      "sha256": "14da576dafec034851b7b90545d90ce1f57dc91bdff528cca95896a3cdf2b882",
+      "projection": "Equirectangular, east-positive longitude, latitude -90 to 90 degrees",
+      "bounds": "180,-90,360,90",
+      "source": "https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m",
+      "credit": "NASA/JHUAPL/SwRI/LPI, New Horizons Team; USGS Astrogeology",
+      "path": "public/images/universe/surfaces/pluto-detail-east-4k.jpg",
+      "license": "https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m",
+      "nativeSourceDimensions": [
+        24888,
+        12444
+      ],
+      "nativeSourceMetersPerPixel": 300,
+      "WMSversion": "1.1.1",
+      "SRS": "EPSG:4326",
+      "orientation": "Image x increases eastward within the stated bbox; image y increases southward, north pole at top. West/east filename labels represent the 0 to 180 and 180 to 360 east-positive longitude halves.",
+      "transformations": "USGS WMS resamples the native 24888 x 12444 monochrome mosaic into two 4096 x 4096 longitude hemispheres, equivalent to 8192 x 4096 global sampling. No local resizing, recoloring, sharpening or pixel changes."
+    },
+    {
+      "file": "pluto-detail-west-4k.jpg",
+      "url": "https://planetarymaps.usgs.gov/cgi-bin/mapserv?map=%2Fmaps%2Fpluto%2Fpluto_simp_cyl.map&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=NEWHORIZONS_PLUTO_MOSAIC&STYLES=&FORMAT=image%2Fjpeg&SRS=EPSG%3A4326&BBOX=0%2C-90%2C180%2C90&WIDTH=4096&HEIGHT=4096&TRANSPARENT=FALSE&BGCOLOR=0x000000",
+      "dimensions": [
+        4096,
+        4096
+      ],
+      "bytes": 1404240,
+      "sha256": "c0b442c150035313f0b6130f3f034bbc10587dc0d8fbdaf9af7d2c90cdc1bcff",
+      "projection": "Equirectangular, east-positive longitude, latitude -90 to 90 degrees",
+      "bounds": "0,-90,180,90",
+      "source": "https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m",
+      "credit": "NASA/JHUAPL/SwRI/LPI, New Horizons Team; USGS Astrogeology",
+      "path": "public/images/universe/surfaces/pluto-detail-west-4k.jpg",
+      "license": "https://astrogeology.usgs.gov/search/map/pluto_new_horizons_lorri_mvic_global_mosaic_300m",
+      "nativeSourceDimensions": [
+        24888,
+        12444
+      ],
+      "nativeSourceMetersPerPixel": 300,
+      "WMSversion": "1.1.1",
+      "SRS": "EPSG:4326",
+      "orientation": "Image x increases eastward within the stated bbox; image y increases southward, north pole at top. West/east filename labels represent the 0 to 180 and 180 to 360 east-positive longitude halves.",
+      "transformations": "USGS WMS resamples the native 24888 x 12444 monochrome mosaic into two 4096 x 4096 longitude hemispheres, equivalent to 8192 x 4096 global sampling. No local resizing, recoloring, sharpening or pixel changes."
+    },
+    {
+      "file": "saturn-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_saturn.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 199916,
+      "sha256": "54a900ca9bf7ab62e70f862852759abdf342e6d6436a95a2fe9ebdb6bcd3bbac",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_saturn.jpg",
+      "path": "public/images/universe/surfaces/saturn-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "saturn-4k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_saturn.jpg",
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        4096,
+        2048
+      ],
+      "bytes": 1098204,
+      "sha256": "0d39a4a490c87c3edabe00a3881a29bb3418364178c79c534fe0986e97e09853",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_saturn.jpg",
+      "path": "public/images/universe/surfaces/saturn-4k.jpg",
+      "transformations": "None. Provider URL says 8k, but source JPEG is 4096x2048; local filename reports verified dimensions."
+    },
+    {
+      "file": "sun-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_sun.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 822427,
+      "sha256": "ff0f076ba65e03b5ab518451bc96699325be38e3ccbdd5869ee1c00f3a0c8816",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_sun.jpg",
+      "path": "public/images/universe/surfaces/sun-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "sun-4k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_sun.jpg",
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        4096,
+        2048
+      ],
+      "bytes": 3696361,
+      "sha256": "f22b1cfb306ddce72a7e3b628668a0175b745038ce6268557cb2f7f1bdf98b9d",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_sun.jpg",
+      "path": "public/images/universe/surfaces/sun-4k.jpg",
+      "transformations": "None. Provider URL says 8k, but source JPEG is 4096x2048; local filename reports verified dimensions."
+    },
+    {
+      "file": "uranus-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_uranus.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 77751,
+      "sha256": "d15239d46f82d3ea13d2b260b5b29b2a382f42f2916dae0694d0387b1204a09d",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_uranus.jpg",
+      "path": "public/images/universe/surfaces/uranus-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "venus-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_venus_surface.jpg",
+      "expected": [
+        2048,
+        1024
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 885075,
+      "sha256": "dbe5db1c794a8ab4cbf7dd6bf193540c400fc833ce1e6cc399318aa68026278b",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_venus_surface.jpg",
+      "path": "public/images/universe/surfaces/venus-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "venus-8k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/8k_venus_surface.jpg",
+      "expected": [
+        8192,
+        4096
+      ],
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        8192,
+        4096
+      ],
+      "bytes": 12523129,
+      "sha256": "9bc21a50577ed8ac734cda91058724c7a741c19427aa276224ce349351432c5b",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/8k_venus_surface.jpg",
+      "path": "public/images/universe/surfaces/venus-8k.jpg",
+      "transformations": "None. Original provider bytes."
+    },
+    {
+      "file": "venus-clouds-2k.jpg",
+      "url": "https://www.solarsystemscope.com/textures/download/2k_venus_atmosphere.jpg",
+      "credit": "Solar System Scope / INOVE",
+      "source": "https://www.solarsystemscope.com/textures/",
+      "license": "https://creativecommons.org/licenses/by/4.0/",
+      "dimensions": [
+        2048,
+        1024
+      ],
+      "bytes": 229696,
+      "sha256": "225012ad4911730605c4e189ca2a3bf674fce50cc48aab4102b936b47d6991ac",
+      "resolvedUrl": "https://www.solarsystemscope.com/textures/download/2k_venus_atmosphere.jpg",
+      "path": "public/images/universe/surfaces/venus-clouds-2k.jpg",
+      "transformations": "None. Original provider bytes."
+    }
+  ],
+  "totalBytes": 73628556
+}

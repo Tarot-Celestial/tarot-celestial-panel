@@ -43,7 +43,6 @@ export default function CelestialUniverse({ pathname, children }: { pathname: st
 
   useEffect(() => {
     if (!preferencesReady || !host.current) return;
-    if (reduced) { setStatus("fallback"); return; }
     const abort = new AbortController();
     const element = host.current;
     setStatus("loading");
@@ -80,7 +79,7 @@ export default function CelestialUniverse({ pathname, children }: { pathname: st
       window.removeEventListener("pointermove", pointer); window.removeEventListener("blur", resetPointer);
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [preferencesReady, reduced]);
+  }, [preferencesReady]);
 
   useEffect(() => { controller.current?.setDestination(destination); }, [destination]);
   useEffect(() => { controller.current?.setMotion(preferencesReady && !reduced && !paused); }, [preferencesReady, reduced, paused]);
