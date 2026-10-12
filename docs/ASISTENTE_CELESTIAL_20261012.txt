@@ -1,0 +1,99 @@
+TAROT CELESTIAL — SOL Y DRACO
+Entrega del 12 de octubre de 2026
+Base: tarot-celestial-panel-main (49).zip
+
+INSTALACIÓN
+1. Conserva una copia de tu versión actual.
+2. Extrae Tarot-Celestial-Asistente-Mejorado.zip en la raíz del proyecto,
+   donde está package.json, respetando las carpetas y sustituyendo los archivos.
+3. Sube esos cambios a tu repositorio y deja que tu despliegue habitual compile.
+4. Comprueba que Vercel termina en Ready. Entra en Panel Central y recarga.
+
+El ZIP contiene únicamente archivos nuevos o modificados respecto al ZIP 49.
+No contiene el proyecto completo, dependencias, cachés, credenciales ni pruebas
+con datos ficticios dentro de las pantallas del producto. Las pruebas unitarias
+incluidas utilizan fixtures aislados. La página temporal de prueba visual se ha
+retirado antes de generar el build y el ZIP.
+
+Este cambio no necesita SQL. No cambian package.json, los lockfiles, Next.js ni
+vercel.json. Se reutilizan las tablas existentes del asistente, reservas, CRM y
+sorteos. Se ha comprobado en Supabase la existencia de estas estructuras y de
+la clave única central_assistant_deliveries(worker_id,key), solo mediante lecturas.
+
+QUÉ CAMBIA
+- Sol y Draco tienen siluetas más suaves, ojos expresivos, mirada al cursor,
+  transiciones fluidas y una alternativa vectorial si WebGL no está disponible.
+- Puedes pulsar y arrastrar la mascota con ratón o pantalla táctil. Conserva la
+  posición por trabajador en este navegador. Sus paseos se pausan cinco minutos
+  después de colocarla. Abrir la conversación no la devuelve a la esquina.
+- Teclado: flechas para mover; Mayús para mover más; Inicio para volver a su
+  rincón; Escape para cancelar un arrastre. Movimiento reducido compatible.
+- Las reservas próximas de clientes activos de la cartera autorizada generan
+  avisos a 10, 5 y 1 minuto, con acceso a la reserva y a la ficha. Se comprueban
+  cancelaciones, cambios de hora y permisos antes de emitir cada aviso.
+- No se repite el mismo aviso entre pestañas o al recargar. Si entras cuando
+  faltan cuatro minutos, se muestra el aviso actual y después el de un minuto;
+  no se lanzan de golpe todos los avisos anteriores.
+- La voz es opcional en Ajustes. Los avisos urgentes interrumpen las sugerencias.
+- Las intervenciones espontáneas utilizan asuntos reales del resumen: clientes
+  con inactividad, seguimientos, tareas e incidencias. Incluyen la acción útil.
+- Puedes localizar una clienta por nombre, teléfono, email o identificador,
+  consultar sus números del sorteo activo y revisar sus seguimientos abiertos.
+- «Esta clienta» usa la ficha visible de Mis clientas o un último resultado
+  inequívoco. Si hay varias coincidencias, pide precisión antes de atribuir datos.
+- Los recuerdos siguen siendo privados por trabajador. «Recuerda que…» prepara
+  una propuesta que se guarda al confirmar. También puedes editarlos o borrarlos.
+- Si la IA falla, las consultas guiadas de clientes, sorteos, seguimientos y
+  memoria siguen disponibles; se indica la indisponibilidad del modelo.
+
+INTELIGENCIA Y CONFIGURACIÓN
+El asistente utiliza OPENAI_API_KEY y, por orden de preferencia:
+  CENTRAL_ASSISTANT_MODEL
+  OPENAI_TEXT_MODEL
+Se comprobó en los metadatos de Vercel que OPENAI_API_KEY y OPENAI_TEXT_MODEL
+están configuradas para producción. No se leyeron sus valores ni se modificaron
+variables. El cambio permite reutilizarlas; no demuestra que una llamada real
+al proveedor se haya ejecutado correctamente. Compruébala tras el despliegue.
+No hay modelos ni claves nuevos fijados en el código.
+
+ALCANCE OPERATIVO
+Los avisos de reservas funcionan con Panel Central abierto, visible y conectado.
+No son notificaciones push ni una aplicación que trabaje con el navegador cerrado.
+Se consulta la cartera asignada y activa permitida por el asistente existente;
+no se amplía el acceso a clientes ajenos ni se mezclan datos de Orion.
+
+Las tareas programadas conservan el sistema existente. Su ejecución de fondo
+necesita CENTRAL_ASSISTANT_CRON_SECRET y un servicio que invoque mediante POST
+/api/cron/central-assistant con su autorización. Esta entrega no configura ese
+servicio ni cambia la planificación de Vercel. Crear una tarea no significa que
+ese planificador esté ejecutándose; la interfaz informa de su configuración.
+Las consultas inmediatas, memoria y avisos de reservas no dependen de ese cron.
+
+La mascota propone acciones y abre fichas. No envía WhatsApp, hace cobros, cambia
+saldos ni modifica clientes automáticamente. Sus recomendaciones se basan en
+herramientas y datos acotados; no prometen ventas ni una autonomía ilimitada.
+
+PRUEBAS REALIZADAS
+- 46 pruebas del asistente, consultas, permisos, memoria, movimiento, reservas y
+  prioridad de voz aprobadas con Node 24.
+- TypeScript y build completo de Next.js 14.2.5 correctos: 207 páginas generadas.
+  Build ejecutado con dependencias locales disponibles y variables ficticias
+  de Supabase; no utiliza claves ni datos productivos.
+- 13 comprobaciones de navegador con fixtures locales: render 3D, arrastre sin
+  clic accidental, persistencia, contexto de clienta, guardado de memoria,
+  teclado, aviso y apertura de reserva, móvil, movimiento reducido y Draco.
+  Sin errores JavaScript del navegador en estas pruebas.
+- La suite SQL histórica central-assistant.integration.cjs no puede iniciarse
+  con el ZIP 49: referencia 20261009195407_central_assistant_companions.sql,
+  ausente de ese ZIP. No se ha inventado ni reinstalado dicha migración.
+- Siguen apareciendo avisos CSS preexistentes y mensajes de detección de rutas
+  dinámicas durante el build; no impidieron su finalización.
+
+No se ha publicado esta entrega ni ejecutado una prueba con una sesión real de
+trabajador contra producción. Las capturas adjuntas son de la prueba local.
+
+COMPROBACIÓN TRAS INSTALAR
+Arrastra a Sol, recarga y confirma la posición. Abre una ficha de Mis clientas
+y pregunta «¿Qué números de sorteo tiene esta clienta?». Guarda un recuerdo
+explícito. Comprueba una reserva autorizada a 10, 5 y 1 minuto sin crear cobros
+ni modificar saldos para probar. En Ajustes puedes activar voz y pausar avisos.

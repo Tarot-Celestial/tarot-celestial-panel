@@ -1240,7 +1240,7 @@ function CentralPage() {
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
-      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} onNavigate={(nextTab, clientId) => {
+      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
         if (!TABS.includes(nextTab as TabKey) || HIDDEN_TELEPHONIST_TABS.has(nextTab as TabKey)) return;
         setTab(nextTab as TabKey);
         const params = new URLSearchParams(searchParams?.toString() || "");

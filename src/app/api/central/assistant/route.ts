@@ -21,7 +21,7 @@ export async function GET(req: Request) {
       checked(db.from('central_assistant_task_runs').select('id,result,created_at').eq('worker_id', id).order('created_at', { ascending: false }).limit(10)),
     ]);
     const records=[...tasks,...history,...runs];const filtered=await currentResults(ctx,records.map(r=>r.result));records.forEach((r,i)=>{r.result=filtered[i];});
-    return json({ ok: true, worker: { id, name: ctx.worker.display_name }, profile, preferences: { ...DEFAULT_PREFERENCES, ...profile?.preferences }, memories, tasks, history: history.reverse(), runs, mode: process.env.OPENAI_API_KEY && process.env.CENTRAL_ASSISTANT_MODEL ? 'ai' : 'guided', schedulerConfigured: Boolean(process.env.CENTRAL_ASSISTANT_CRON_SECRET) });
+    return json({ ok: true, worker: { id, name: ctx.worker.display_name }, profile, preferences: { ...DEFAULT_PREFERENCES, ...profile?.preferences }, memories, tasks, history: history.reverse(), runs, mode: process.env.OPENAI_API_KEY && (process.env.CENTRAL_ASSISTANT_MODEL || process.env.OPENAI_TEXT_MODEL) ? 'ai' : 'guided', schedulerConfigured: Boolean(process.env.CENTRAL_ASSISTANT_CRON_SECRET) });
   } catch (e) { return failure(e); }
 }
 export async function POST(req: Request) {
@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       const period = dayKey();
       if (!body.manual) {
         const exists = await checked(db.from('central_assistant_briefings').select('period').eq('worker_id', worker_id).eq('period', period).maybeSingle());
-        if (exists) return json({ ok: true, delivered: false });
+        if (exists) return json({ ok: true, delivered: false, result: await brief(ctx) });
       }
       const result = await brief(ctx);
       if (!body.manual) {
@@ -68,11 +68,12 @@ export async function POST(req: Request) {
       const quota = await checked(db.rpc('central_assistant_take_quota', { p_worker: worker_id }));
       if (!quota) throw new AssistantError('Has alcanzado las 30 consultas de esta hora. Tus tareas y recuerdos siguen disponibles.', 429);
       const question = body.action === 'chat' ? text(body.question, 2000) : 'Consulta rápida de clientes';
+      if (body.clientId && !validUuid(body.clientId)) throw new AssistantError('Cliente no válido.');
       const lock = await db.from('central_assistant_messages').insert({ worker_id, request_id: body.requestId, question });
       if (lock.error) throw new AssistantError('Petición duplicada o servicio no disponible.', 409);
       try {
         const profile = await checked(db.from('central_assistant_profiles').select('pet,preferences').eq('worker_id', worker_id).maybeSingle());
-        const response = body.action === 'query' ? { result: await runTool(ctx, 'clients', body.query), mode: 'guided', model: null, inputTokens: 0, outputTokens: 0 } : await answer(ctx, question, String(body.tab || ''), (profile?.pet || 'draco') as PetId, profile?.preferences?.humor !== false);
+        const response = body.action === 'query' ? { result: await runTool(ctx, 'clients', body.query), mode: 'guided', model: null, inputTokens: 0, outputTokens: 0 } : await answer(ctx, question, String(body.tab || ''), (profile?.pet || 'draco') as PetId, profile?.preferences?.humor !== false, body.clientId || undefined);
         if(response.result.proposal)response.result.proposal.operationId=body.requestId;
         await checked(db.from('central_assistant_messages').update({ result: response.result, status: 'completed', model: response.model, input_tokens: response.inputTokens, output_tokens: response.outputTokens }).eq('worker_id', worker_id).eq('request_id', body.requestId));
         return json({ ok: true, ...response });

@@ -3,99 +3,178 @@ import { useEffect, useRef, useState } from 'react';
 import * as T from 'three';
 import type { PetId } from '@/lib/central-assistant';
 
-// Articulated procedural characters: every visible part is real lit geometry.
-export default function Companion3D({pet,state,reduced,onUnavailable}:{pet:PetId;state:string;reduced:boolean;onUnavailable:()=>void}) {
-  const host=useRef<HTMLSpanElement>(null),live=useRef({state,reduced});live.current={state,reduced};
-  const [loaded,setLoaded]=useState(false);
-  useEffect(()=>{
-    const element=host.current;if(!element)return;
-    let renderer:T.WebGLRenderer;
-    try{renderer=new T.WebGLRenderer({alpha:true,antialias:true,powerPreference:'low-power'});}catch{onUnavailable();return;}
-    renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=T.SRGBColorSpace;
-    renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.35;
-    element.appendChild(renderer.domElement);renderer.domElement.style.cssText='width:100%;height:100%;display:block';
-    const scene=new T.Scene(),camera=new T.PerspectiveCamera(30,1,.1,30);camera.position.set(0,1.9,6.2);camera.lookAt(0,1.45,0);
-    scene.add(new T.HemisphereLight(0xe8e2ff,0x332044,2.7));
-    const key=new T.DirectionalLight(0xffefda,4);key.position.set(-3,5,5);scene.add(key);
-    const rim=new T.DirectionalLight(pet==='sol'?0xffae33:0x9970ff,5);rim.position.set(3,2,-3);scene.add(rim);
-    const mat=(c:number,metal=.0,rough=.4)=>new T.MeshStandardMaterial({color:c,metalness:metal,roughness:rough});
-    const skin=mat(pet==='sol'?0xffba46:0x50436b,.15),dark=mat(0x191827,.2),violet=mat(0x684cb1,.3),gold=mat(0xffce65,.65,.25),white=mat(0xfaf0e0),pupil=mat(0x151522),iris=mat(pet==='sol'?0x8b4927:0x29c6ff,.3);
-    const flame=new T.MeshStandardMaterial({color:0xffa223,emissive:0xff6600,emissiveIntensity:.45,roughness:.3});
-    const root=new T.Group();scene.add(root);root.rotation.y=-.23;
-    function sphere(parent:T.Object3D,m:T.Material,x:number,y:number,z:number,sx:number,sy:number,sz:number){const mesh=new T.Mesh(new T.SphereGeometry(1,24,16),m);mesh.position.set(x,y,z);mesh.scale.set(sx,sy,sz);parent.add(mesh);return mesh;}
-    function cone(parent:T.Object3D,m:T.Material,x:number,y:number,z:number,r:number,h:number,angle=0){const mesh=new T.Mesh(new T.ConeGeometry(r,h,20),m);mesh.position.set(x,y,z);mesh.rotation.z=angle;parent.add(mesh);return mesh;}
-    function tube(parent:T.Object3D,m:T.Material,points:number[][],radius:number){const curve=new T.CatmullRomCurve3(points.map(p=>new T.Vector3(...p as [number,number,number])));const mesh=new T.Mesh(new T.TubeGeometry(curve,24,radius,8,false),m);parent.add(mesh);return mesh;}
-    function fire(x:number,y:number,z:number,height:number,lean:number){
-      const geometry=new T.SphereGeometry(1,24,24);const pos=geometry.attributes.position;
-      for(let i=0;i<pos.count;i++){const v=(pos.getY(i)+1)/2;const taper=Math.pow(1-v,.6);pos.setXYZ(i,pos.getX(i)*.25*taper+lean*v*v,pos.getY(i)*height/2,pos.getZ(i)*.23*taper);}
-      geometry.computeVertexNormals();const mesh=new T.Mesh(geometry,flame);mesh.position.set(x,y,z);head.add(mesh);
+type Props = { pet: PetId; state: string; reduced: boolean; onUnavailable: () => void; onReady?: () => void };
+
+// A compact toy-like character, built from lit geometry so it stays crisp at any size.
+export default function Companion3D({ pet, state, reduced, onUnavailable, onReady }: Props) {
+  const host = useRef<HTMLSpanElement>(null), live = useRef({ state, reduced }); live.current = { state, reduced };
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    const element = host.current; if (!element) return;
+    let renderer: T.WebGLRenderer;
+    try { renderer = new T.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' }); }
+    catch { onUnavailable(); return; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.outputColorSpace = T.SRGBColorSpace; renderer.toneMapping = T.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
+    renderer.setClearColor(0x000000, 0);
+    element.appendChild(renderer.domElement); renderer.domElement.style.cssText = 'width:100%;height:100%;display:block;pointer-events:none';
+    const scene = new T.Scene(), camera = new T.OrthographicCamera(-1.68, 1.68, 1.68, -1.68, .1, 20);
+    camera.position.set(0, 1.75, 7); camera.lookAt(0, 1.53, 0);
+    scene.add(new T.HemisphereLight(0xf4f4ff, 0x4d3158, 2.6));
+    const key = new T.DirectionalLight(0xfff1dd, 3.3); key.position.set(-3, 5, 5); scene.add(key);
+    const fill = new T.DirectionalLight(0xaddcff, 1.6); fill.position.set(3, 1, 4); scene.add(fill);
+    const rim = new T.DirectionalLight(pet === 'sol' ? 0xffa648 : 0xbfa0ff, 4); rim.position.set(2, 3, -3); scene.add(rim);
+    const material = (color: number, metalness = 0, roughness = .38) => new T.MeshPhysicalMaterial({ color, metalness, roughness, clearcoat: .65, clearcoatRoughness: .24 });
+    const skin = material(pet === 'sol' ? 0xffbe45 : 0x8771cc, .08), rays = material(0xffa825, .16);
+    const gold = material(0xffdb7f, .46, .29), violet = material(0x7b4ddd, .13), dark = material(0x29213e), face = material(0x141c32, .08, .26);
+    const sole = material(0xe5ddff, .08), glow = new T.MeshStandardMaterial({ color: 0xb5fbff, emissive: 0x67dfe7, emissiveIntensity: .85, roughness: .28 });
+    const blush = new T.MeshStandardMaterial({ color: pet === 'sol' ? 0xffae86 : 0xda9fee, emissive: pet === 'sol' ? 0xea8057 : 0x985eae, emissiveIntensity: .35 });
+    const sphereGeometry = new T.SphereGeometry(1, 28, 20), geometries = new Set<T.BufferGeometry>([sphereGeometry]);
+    function sphere(parent: T.Object3D, mat: T.Material, x: number, y: number, z: number, sx: number, sy: number, sz: number) {
+      const mesh = new T.Mesh(sphereGeometry, mat); mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); parent.add(mesh); return mesh;
     }
-    const torso=new T.Group();root.add(torso);sphere(torso,dark,0,1.04,0,.42,.48,.29);
-    sphere(torso,violet,0,1.07,.245,.28,.32,.075);tube(torso,gold,[[0,.76,.31],[0,1.32,.31]],.015);
-    for(const side of [-1,1]){tube(torso,gold,[[side*.28,1.3,.24],[side*.12,1.15,.33],[side*.21,1.03,.31]],.02);sphere(torso,gold,side*.28,.92,.25,.026,.026,.016);}
-    const head=new T.Group();head.position.y=1.77;root.add(head);sphere(head,skin,0,0,0,.56,.53,.43);
-    if(pet==='draco'){
-      sphere(head,skin,0,-.2,.37,.37,.22,.23);
-      for(const s of [-1,1]){cone(head,gold,s*.37,.51,-.13,.11,.45,-s*.35);sphere(head,dark,s*.13,-.15,.568,.034,.021,.017);}
-      tube(root,skin,[[0,.8,-.16],[.35,.52,-.55],[.78,.48,-.4],[.96,.7,-.2]],.105);
-      for(let i=0;i<4;i++)cone(root,violet,.35+i*.16,.62+i*.025,-.46,.065,.16);
-    }else{
-      for(let i=0;i<9;i++){const a=i/9*Math.PI*2;fire(Math.sin(a)*.36,.43+Math.cos(a)*.09,Math.cos(a)*.29,.8+(i%3)*.12,Math.sin(a)*.25);}
-      sphere(head,flame,-.42,.07,-.1,.2,.48,.3);sphere(head,flame,.42,.07,-.1,.2,.48,.3);
-      fire(.02,.75,-.08,.95,.23);
+    function tube(parent: T.Object3D, mat: T.Material, points: number[][], radius: number) {
+      const curve = new T.CatmullRomCurve3(points.map(p => new T.Vector3(p[0], p[1], p[2])));
+      const geometry = new T.TubeGeometry(curve, 18, radius, 8, false); geometries.add(geometry);
+      const mesh = new T.Mesh(geometry, mat); parent.add(mesh); return mesh;
     }
-    const eyes:T.Mesh[]=[];
-    for(const s of [-1,1]){
-      sphere(head,dark,s*.235,.055,.357,.186,.216,.094);
-      const eye=sphere(head,white,s*.235,.065,.417,.143,.167,.052);eyes.push(eye);
-      sphere(eye,iris,0,0,.55,.63,.72,.8);sphere(eye,pupil,0,0,1,.28,.55,.35);sphere(eye,white,-.22,.3,1.2,.19,.16,.12);
-      tube(head,dark,[[s*.1,.26,.4],[s*.24,.3,.4],[s*.36,.26,.36]],.035);
-      sphere(head,pet==='sol'?flame:violet,s*.39,-.19,.36,.09,.035,.025);
+    function capsule(parent: T.Object3D, mat: T.Material, radius: number, length: number, x: number, y: number, z: number, angle = 0) {
+      const geometry = new T.CapsuleGeometry(radius, length, 6, 16); geometries.add(geometry);
+      const mesh = new T.Mesh(geometry, mat); mesh.position.set(x, y, z); mesh.rotation.z = angle; parent.add(mesh); return mesh;
     }
-    const mouth=sphere(head,dark,0,-.305,0.4,.1,.018,.018);
-    mouth.position.z=pet==='draco'?.565:.396;
-    // Headset and mic are solid curves and meshes, not painted details.
-    tube(head,dark,[[-.55,0,0],[-.53,.36,0],[0,.58,0],[.53,.36,0],[.55,0,0]],.043);
-    for(const s of [-1,1]){sphere(head,dark,s*.55,.015,0,.1,.17,.17);sphere(head,violet,s*.62,.015,0,.035,.11,.11);}
-    tube(head,dark,[[.58,-.03,.02],[.54,-.27,.33],[.24,-.3,.53]],.023);sphere(head,gold,.23,-.3,.53,.07,.04,.04);
-    const arms:T.Group[]=[],legs:T.Group[]=[],wings:T.Group[]=[];
-    for(const s of [-1,1]){
-      const arm=new T.Group();arm.position.set(s*.43,1.32,0);root.add(arm);arms.push(arm);
-      sphere(arm,dark,s*.07,-.16,0,.14,.26,.15);sphere(arm,skin,s*.09,-.43,.025,.125,.13,.115);sphere(arm,gold,s*.09,-.31,.025,.14,.04,.12);
-      const leg=new T.Group();leg.position.set(s*.19,.69,0);root.add(leg);legs.push(leg);
-      sphere(leg,dark,0,-.21,0,.15,.3,.16);sphere(leg,white,0,-.49,.09,.18,.11,.28);sphere(leg,violet,0,-.46,.14,.175,.095,.24);
-      if(pet==='draco'){
-        const wing=new T.Group();wing.position.set(s*.32,1.3,-.22);root.add(wing);wings.push(wing);
-        const shape=new T.Shape();shape.moveTo(0,0);shape.quadraticCurveTo(s*.25,.58,s*.72,.66);shape.lineTo(s*.65,.04);shape.quadraticCurveTo(s*.45,.22,s*.38,-.12);shape.quadraticCurveTo(s*.16,.12,0,-.25);shape.closePath();
-        const mesh=new T.Mesh(new T.ExtrudeGeometry(shape,{depth:.035,bevelEnabled:true,bevelThickness:.012,bevelSize:.015,bevelSegments:2,steps:1}),violet);wing.add(mesh);
-        tube(wing,skin,[[0,0,0],[s*.27,.44,0],[s*.72,.66,0]],.04);tube(wing,skin,[[0,0,0],[s*.4,.2,0],[s*.65,.04,0]],.024);
+    const root = new T.Group(); root.rotation.y = -.12; scene.add(root);
+    const torso = new T.Group(); root.add(torso);
+    sphere(torso, violet, 0, 1.01, 0, .43, .43, .3);
+    sphere(torso, dark, 0, 1.10, .242, .25, .25, .067);
+    tube(torso, gold, [[-.27, 1.30, .20], [-.13, 1.13, .30], [0, 1.05, .31], [.13, 1.13, .30], [.27, 1.30, .20]], .025);
+    tube(torso, gold, [[0, 1.06, .31], [0, .77, .25]], .018);
+    sphere(torso, glow, 0, 1.20, .311, .054, .054, .024);
+    for (const sign of [-1, 1]) sphere(torso, gold, sign * .29, .88, .235, .023, .023, .018);
+    const head = new T.Group(); head.position.set(0, 2.02, 0); root.add(head);
+    sphere(head, skin, 0, 0, 0, .66, .61, .46);
+    const crown: T.Mesh[] = [];
+    if (pet === 'sol') {
+      for (let i = 0; i < 7; i++) {
+        const angle = (i - 3) * .46;
+        crown.push(capsule(head, i % 2 ? gold : rays, .092, i === 3 ? .25 : .18, Math.sin(angle) * .61, Math.cos(angle) * .58, -.055, -angle));
+      }
+    } else {
+      for (const sign of [-1, 1]) {
+        capsule(head, gold, .073, .27, sign * .43, .58, -.07, -sign * .4);
+        sphere(head, skin, sign * .64, .13, -.02, .19, .15, .095);
+      }
+      tube(root, skin, [[0, .80, -.18], [.4, .55, -.43], [.70, .48, -.38], [.84, .7, -.2]], .087);
+      sphere(root, gold, .84, .70, -.2, .10, .13, .08);
+    }
+    // Independent face elements avoid squashing the eyes through nested mesh scaling.
+    sphere(head, gold, 0, -.035, .397, .541, .435, .155);
+    sphere(head, face, 0, -.035, .435, .505, .399, .143);
+    const eyeGroups: T.Group[] = [], eyes: T.Mesh[] = [], lids: T.Mesh[] = [], brows: T.Mesh[] = [];
+    for (const sign of [-1, 1]) {
+      const eyeGroup = new T.Group(); eyeGroup.position.set(sign * .181, .026, .574); head.add(eyeGroup); eyeGroups.push(eyeGroup);
+      eyes.push(sphere(eyeGroup, glow, 0, 0, 0, .058, .088, .023));
+      sphere(eyeGroup, sole, -.017, .037, .019, .014, .02, .006);
+      const lid = tube(head, glow, [[sign * .181 - .065, -.01, .591], [sign * .181, -.04, .596], [sign * .181 + .065, -.01, .591]], .013); lid.visible = false; lids.push(lid);
+      brows.push(tube(head, gold, [[sign * .181 - .063, .184, .561], [sign * .181, .204, .577], [sign * .181 + .063, .184, .561]], .013));
+      sphere(head, blush, sign * .335, -.139, .540, .051, .025, .012);
+    }
+    const smile = tube(head, glow, [[-.072, -.168, .571], [0, -.198, .588], [.072, -.168, .571]], .014);
+    const mouth = sphere(head, glow, 0, -.183, .580, .035, .027, .012); mouth.visible = false;
+    // Headset gives both companions the same helpful operator identity.
+    tube(head, dark, [[-.65, 0, 0], [-.62, .38, -.05], [0, .65, -.11], [.62, .38, -.05], [.65, 0, 0]], .047);
+    for (const sign of [-1, 1]) {
+      sphere(head, dark, sign * .651, -.04, 0, .092, .174, .16);
+      sphere(head, violet, sign * .715, -.04, .025, .044, .118, .116);
+      sphere(head, glow, sign * .75, -.045, .05, .015, .04, .035);
+    }
+    tube(head, dark, [[.67, -.12, .09], [.60, -.34, .35], [.29, -.32, .53]], .023);
+    sphere(head, gold, .29, -.32, .53, .06, .032, .034);
+    const arms: T.Group[] = [], legs: T.Group[] = [], wings: T.Group[] = [];
+    for (const sign of [-1, 1]) {
+      const arm = new T.Group(); arm.position.set(sign * .4, 1.26, 0); root.add(arm); arms.push(arm);
+      sphere(arm, violet, sign * .09, -.16, 0, .151, .25, .16);
+      sphere(arm, gold, sign * .13, -.33, .024, .138, .05, .134);
+      sphere(arm, skin, sign * .14, -.415, .032, .13, .123, .12);
+      sphere(arm, skin, sign * .045, -.403, .11, .064, .070, .064);
+      const leg = new T.Group(); leg.position.set(sign * .20, .71, 0); root.add(leg); legs.push(leg);
+      sphere(leg, dark, 0, -.18, 0, .144, .236, .154);
+      sphere(leg, sole, 0, -.415, .09, .183, .102, .245);
+      sphere(leg, violet, 0, -.355, .071, .177, .105, .23);
+      tube(leg, gold, [[-.075, -.33, .274], [.075, -.33, .274]], .015);
+      if (pet === 'draco') {
+        const wing = new T.Group(); wing.position.set(sign * .34, 1.3, -.20); root.add(wing); wings.push(wing);
+        const shape = new T.Shape(); shape.moveTo(0, 0); shape.quadraticCurveTo(sign * .3, .56, sign * .64, .57); shape.lineTo(sign * .59, .05); shape.quadraticCurveTo(sign * .39, .17, sign * .31, -.11); shape.quadraticCurveTo(sign * .15, .06, 0, -.2);
+        const geometry = new T.ExtrudeGeometry(shape, { depth: .035, bevelEnabled: true, bevelThickness: .012, bevelSize: .015, bevelSegments: 2, steps: 1 }); geometries.add(geometry);
+        wing.add(new T.Mesh(geometry, violet)); tube(wing, skin, [[0, 0, 0], [sign * .25, .4, 0], [sign * .64, .57, 0]], .033);
       }
     }
-    const star=new T.Mesh(new T.OctahedronGeometry(.09),gold);star.position.set(.17,1.25,.32);root.add(star);
-    const prop=new T.Group();prop.visible=false;root.add(prop);sphere(prop,white,0,.35,-.1,.4,.32,.4);sphere(prop,white,0,.5,-.35,.32,.45,.1);
-    const paper=new T.Mesh(new T.BoxGeometry(.7,.4,.025),white);paper.position.set(0,.98,.48);paper.rotation.x=-.3;prop.add(paper);
-    for(let i=0;i<5;i++)tube(prop,dark,[[-.27,.85+i*.055,.5],[.27,.85+i*.055,.5]],.008);
-    let frame=0,last=0,time=0,visible=true;const gaze={x:0,y:0};
-    const pointer=(e:PointerEvent)=>{const r=element.getBoundingClientRect();gaze.x=T.MathUtils.clamp((e.clientX-r.x-r.width/2)/400,-.35,.35);gaze.y=T.MathUtils.clamp((e.clientY-r.y-r.height/2)/500,-.18,.18);};
-    window.addEventListener('pointermove',pointer,{passive:true});
-    const resize=new ResizeObserver(()=>{const r=element.getBoundingClientRect();if(r.width&&r.height){renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.updateProjectionMatrix();}});resize.observe(element);
-    const observer=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;});observer.observe(element);
-    const lost=(e:Event)=>{e.preventDefault();onUnavailable();};renderer.domElement.addEventListener('webglcontextlost',lost);
-    function draw(now:number){frame=requestAnimationFrame(draw);if(document.hidden||!visible||now-last<33)return;const dt=Math.min((now-last)/1000,.05);last=now;if(!live.current.reduced)time+=dt;
-      const s=live.current.state,t=time,still=live.current.reduced,walk=!still&&s==='walking',dance=!still&&(s==='dancing'||s==='celebrating'),wave=!still&&s==='greeting',stretch=!still&&s==='stretching';
-      root.position.y=still?0:Math.sin(t*(walk?12:2))*(walk?.035:.018)+(dance?Math.abs(Math.sin(t*7))*.16:0);
-      root.rotation.y=still?-.23:s==='turning'?Math.sin(t*1.5)*1.6:-.23+(dance?Math.sin(t*5)*.4:walk?.45:Math.sin(t*.65)*.12);
-      head.rotation.y=still?0:T.MathUtils.lerp(head.rotation.y,gaze.x,dt*5);head.rotation.x=still?0:s==='sleeping'?.2:gaze.y+(s==='listening'?Math.sin(t*2)*.06:0);head.rotation.z=s==='thinking'?.14:0;
-      const blink=still?1:s==='sleeping'?.08:(t%4.3>4.13?.08:1);eyes.forEach(e=>e.scale.y=.167*blink);
-      mouth.scale.y=s==='talking'&&!still?.025+Math.abs(Math.sin(t*14))*.045:.018;
-      arms.forEach((a,i)=>{const sign=i===0?-1:1;a.rotation.x=walk?Math.sin(t*10+i*Math.PI)*.5:s==='break'?-.9:0;a.rotation.z=stretch?sign*2.6:dance?sign*(1.8+Math.sin(t*8)*.4):wave&&i===1?2.4+Math.sin(t*10)*.35:s==='pointing'&&i===1?1.5:sign*.1;});
-      legs.forEach((l,i)=>{l.rotation.x=walk?Math.sin(t*10+i*Math.PI)*.6:s==='break'?-1.2:0;l.rotation.z=dance?Math.sin(t*6+i)*.14:0;});
-      wings.forEach((w,i)=>{w.rotation.y=(i===0?1:-1)*(.12+(still?0:Math.sin(t*(dance?8:2))*.17));});prop.visible=s==='break';
-      renderer.render(scene,camera);
+    const tablet = new T.Group(); tablet.position.set(0, .95, .46); tablet.rotation.x = -.2; root.add(tablet);
+    const tabletGeometry = new T.BoxGeometry(.52, .32, .045); geometries.add(tabletGeometry); tablet.add(new T.Mesh(tabletGeometry, dark));
+    sphere(tablet, glow, 0, 0, .028, .17, .008, .007); sphere(tablet, glow, 0, -.05, .028, .12, .008, .007);
+    tablet.visible = false;
+    let frame = 0, last = 0, time = 0, visible = true, previousState = '', previousReduced = false, announcedReady = false;
+    const gaze = { x: 0, y: 0 }, smoothGaze = { x: 0, y: 0 };
+    const pointer = (event: PointerEvent) => {
+      const rect = element.getBoundingClientRect();
+      gaze.x = T.MathUtils.clamp((event.clientX - rect.x - rect.width / 2) / 650, -.32, .32);
+      gaze.y = T.MathUtils.clamp((event.clientY - rect.y - rect.height / 2) / 700, -.17, .17);
+    };
+    const resetGaze = () => { gaze.x = 0; gaze.y = 0; };
+    window.addEventListener('pointermove', pointer, { passive: true }); window.addEventListener('blur', resetGaze);
+    const resize = new ResizeObserver(() => {
+      const { width, height } = element.getBoundingClientRect(); if (!width || !height) return;
+      renderer.setSize(width, height, false); const aspect = width / height;
+      camera.left = -1.68 * Math.max(1, aspect); camera.right = -camera.left;
+      camera.top = 1.68 * Math.max(1, 1 / aspect); camera.bottom = -camera.top; camera.updateProjectionMatrix(); previousState = '';
+    }); resize.observe(element);
+    const observer = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? true; if (visible) previousState = ''; }); observer.observe(element);
+    const lost = (event: Event) => { event.preventDefault(); onUnavailable(); }; renderer.domElement.addEventListener('webglcontextlost', lost);
+    const approach = (value: number, next: number, dt: number) => live.current.reduced ? next : T.MathUtils.lerp(value, next, 1 - Math.exp(-dt * 9));
+    function draw(now: number) {
+      frame = requestAnimationFrame(draw);
+      if (document.hidden || !visible || now - last < 33) return;
+      const { state: s, reduced: still } = live.current;
+      // Reduced motion renders only state/size changes, with no gaze or breathing loop.
+      if (still && previousReduced && previousState === s) return;
+      const dt = Math.min((now - last) / 1000 || .033, .05); last = now; if (!still) time += dt;
+      previousState = s; previousReduced = still;
+      const t = time, walk = !still && s === 'walking', dance = !still && (s === 'dancing' || s === 'celebrating'), wave = !still && s === 'greeting';
+      const worried = s === 'concerned' || s === 'error', thinking = s === 'thinking' || s === 'working', sleeping = s === 'sleeping', held = s === 'dragging';
+      root.position.y = still ? 0 : Math.sin(t * (walk ? 11 : 2.2)) * (walk ? .035 : .018) + (dance ? Math.abs(Math.sin(t * 6)) * .13 : 0);
+      root.rotation.y = approach(root.rotation.y, still ? -.12 : s === 'turning' ? Math.sin(t * 1.8) * 1.2 : -.12 + (dance ? Math.sin(t * 4) * .3 : walk ? .32 : Math.sin(t * .65) * .065), dt);
+      root.rotation.z = approach(root.rotation.z, held ? -.07 : dance ? Math.sin(t * 6) * .07 : 0, dt);
+      smoothGaze.x = approach(smoothGaze.x, still || sleeping ? 0 : gaze.x, dt); smoothGaze.y = approach(smoothGaze.y, still || sleeping ? 0 : gaze.y, dt);
+      head.rotation.y = smoothGaze.x; head.rotation.x = approach(head.rotation.x, sleeping ? .16 : smoothGaze.y + (!still && s === 'listening' ? Math.sin(t * 3) * .025 : 0), dt);
+      head.rotation.z = approach(head.rotation.z, thinking ? -.12 : worried ? .08 : wave ? -.09 : 0, dt);
+      const blinkPhase = t % 4.7, blinking = !still && blinkPhase > 4.48;
+      const openness = sleeping ? .04 : blinking ? Math.max(.04, Math.abs(blinkPhase - 4.59) / .11) : 1;
+      eyes.forEach((eye, i) => {
+        eye.scale.y = .088 * (worried ? .76 : held ? 1.2 : 1) * openness;
+        eyeGroups[i].position.x = (i ? 1 : -1) * .181 + smoothGaze.x * .09;
+        eyeGroups[i].position.y = .026 - smoothGaze.y * .10; eyeGroups[i].visible = openness > .15;
+        lids[i].visible = openness <= .15; brows[i].rotation.z = worried ? (i ? -.10 : .10) : thinking && i === 1 ? -.08 : 0;
+      });
+      const talking = s === 'talking'; smile.visible = !talking && !worried && !sleeping; mouth.visible = talking || worried || sleeping;
+      mouth.scale.y = talking && !still ? .025 + Math.abs(Math.sin(t * 13)) * .036 : .019;
+      arms.forEach((arm, i) => {
+        const sign = i === 0 ? -1 : 1;
+        const x = walk ? Math.sin(t * 10 + i * Math.PI) * .5 : s === 'break' || thinking ? -.72 : 0;
+        const z = !still && s === 'stretching' ? sign * 2.4 : held ? sign * 1.1 : dance ? sign * (1.65 + Math.sin(t * 7) * .30) : wave && i === 1 ? 2.25 + Math.sin(t * 9) * .30 : s === 'pointing' && i === 1 ? 1.4 : sign * .13;
+        arm.rotation.x = approach(arm.rotation.x, x, dt); arm.rotation.z = approach(arm.rotation.z, z, dt);
+      });
+      legs.forEach((leg, i) => { leg.rotation.x = approach(leg.rotation.x, walk ? Math.sin(t * 10 + i * Math.PI) * .48 : held ? -.15 : 0, dt); leg.rotation.z = approach(leg.rotation.z, dance ? Math.sin(t * 6 + i) * .1 : 0, dt); });
+      wings.forEach((wing, i) => { wing.rotation.y = (i === 0 ? 1 : -1) * (.1 + (still ? 0 : Math.sin(t * (dance ? 7 : 2)) * .12)); });
+      crown.forEach((ray, i) => { ray.scale.y = still ? 1 : 1 + Math.sin(t * 2 + i * .4) * .025; });
+      tablet.visible = s === 'break' || s === 'working'; renderer.render(scene, camera);
+      if (!announcedReady) { announcedReady = true; setLoaded(true); onReady?.(); }
     }
-    frame=requestAnimationFrame(draw);setLoaded(true);
-    return()=>{cancelAnimationFrame(frame);resize.disconnect();observer.disconnect();window.removeEventListener('pointermove',pointer);renderer.domElement.removeEventListener('webglcontextlost',lost);scene.traverse(o=>{if(o instanceof T.Mesh){o.geometry.dispose();const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose());}});renderer.dispose();renderer.forceContextLoss();renderer.domElement.remove();};
-  },[pet,onUnavailable]);
-  return <span ref={host} data-companion-3d={loaded?'ready':'loading'} style={{position:'absolute',inset:0,display:'block'}}/>;
+    frame = requestAnimationFrame(draw);
+    return () => {
+      cancelAnimationFrame(frame); resize.disconnect(); observer.disconnect(); window.removeEventListener('pointermove', pointer); window.removeEventListener('blur', resetGaze); renderer.domElement.removeEventListener('webglcontextlost', lost);
+      geometries.forEach(geometry => geometry.dispose()); const materials = new Set<T.Material>();
+      scene.traverse(object => { if (object instanceof T.Mesh) (Array.isArray(object.material) ? object.material : [object.material]).forEach(mat => materials.add(mat)); });
+      materials.forEach(mat => mat.dispose()); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
+    };
+  }, [pet, onUnavailable, onReady]);
+  return <span ref={host} data-companion-3d={loaded ? 'ready' : 'loading'} style={{ position: 'absolute', inset: 0, display: 'block' }} />;
 }
-

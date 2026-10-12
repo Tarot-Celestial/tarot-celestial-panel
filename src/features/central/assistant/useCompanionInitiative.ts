@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {ASSISTANT_SECTIONS,type PetId,type Preferences} from '@/lib/central-assistant';
+import {ASSISTANT_SECTIONS,type AssistantCard,type PetId,type Preferences} from '@/lib/central-assistant';
 
 export const INITIATIVE_INTERVAL=120000;
 export function invitation(tab:string,pet:PetId,index:number,humor:boolean){
@@ -17,33 +17,38 @@ export function invitation(tab:string,pet:PetId,index:number,humor:boolean){
   if(humor)options.push(pet==='sol'?'Pausa de chispa: me estiro un poquito. ¿Seguimos con tu siguiente tarea?':'Mis alas están listas; mi café sigue cargando. ¿Te ayudo a organizar los pendientes?');
   return options[index%options.length];
 }
-export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,preferences,bubble,say}:{ready:boolean;open:boolean;busy:boolean;mini:boolean;tab:string;pet:PetId;workerId?:string|null;preferences:Preferences;bubble:string;say:(text:string)=>void}){
+export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,preferences,bubble,say,suggestions=[],suggest,urgent=false,urgentAnnouncement}:{ready:boolean;open:boolean;busy:boolean;mini:boolean;tab:string;pet:PetId;workerId?:string|null;preferences:Preferences;bubble:string;say:(text:string)=>void;suggestions?:AssistantCard[];suggest?:(card:AssistantCard)=>void;urgent?:boolean;urgentAnnouncement?:{key:string;text:string}}){
   const [gesture,setGesture]=useState(''),[speaking,setSpeaking]=useState(false),[voiceReady,setVoiceReady]=useState(false);
-  const current=useRef({ready,open,busy,mini,tab,pet,preferences,say});current.current={ready,open,busy,mini,tab,pet,preferences,say};
+  const current=useRef({ready,open,busy,mini,tab,pet,preferences,say,bubble,suggestions,suggest,urgent,urgentAnnouncement});current.current={ready,open,busy,mini,tab,pet,preferences,say,bubble,suggestions,suggest,urgent,urgentAnnouncement};
+  const offered=useRef(new Set<string>());
   const last=useRef(0),quietUntil=useRef(0),counter=useRef(0),gestureTimer=useRef<ReturnType<typeof setTimeout>>(),spoken=useRef<SpeechSynthesisUtterance|null>(null);
   const animate=useCallback((value:string)=>{setGesture(value);clearTimeout(gestureTimer.current);gestureTimer.current=setTimeout(()=>setGesture(''),6500);},[]);
   const hush=useCallback(()=>{quietUntil.current=Date.now()+600000;current.current.say('');if(spoken.current&&'speechSynthesis'in window)window.speechSynthesis.cancel();setSpeaking(false);setGesture('');},[]);
   const entertain=useCallback(()=>{const c=current.current;const i=counter.current++;animate(['greeting','stretching','dancing','turning'][i%4]);c.say(invitation(c.tab,c.pet,i,c.preferences.humor));last.current=Date.now();},[animate]);
-  useEffect(()=>{last.current=0;quietUntil.current=0;counter.current=0;return()=>{clearTimeout(gestureTimer.current);if(spoken.current&&'speechSynthesis'in window)window.speechSynthesis.cancel();};},[workerId]);
+  useEffect(()=>{last.current=0;quietUntil.current=0;counter.current=0;offered.current.clear();return()=>{clearTimeout(gestureTimer.current);if(spoken.current&&'speechSynthesis'in window)window.speechSynthesis.cancel();};},[workerId]);
   useEffect(()=>{
     if(!ready)return;
-    const timer=setTimeout(()=>{const c=current.current;if(!c.preferences.proactive||c.open||c.busy||c.mini||document.hidden||Date.now()<quietUntil.current||Date.now()-last.current<30000)return;last.current=Date.now();animate('greeting');c.say(invitation(c.tab,c.pet,0,c.preferences.humor));},14000);
+    const timer=setTimeout(()=>{const c=current.current;if(!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||Date.now()<quietUntil.current||Date.now()-last.current<30000)return;const next=c.suggestions.find(card=>!offered.current.has(card.id));if(!next||!c.suggest)return;offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);},14000);
     return()=>clearTimeout(timer);
   },[ready,tab,animate]);
   useEffect(()=>{
     const timer=setInterval(()=>{const c=current.current;const active=document.activeElement;const typing=active instanceof HTMLElement&&(active.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(active.tagName));
-      if(!c.ready||!c.preferences.proactive||c.open||c.busy||c.mini||document.hidden||typing||Date.now()<quietUntil.current||Date.now()-last.current<INITIATIVE_INTERVAL)return;
-      const i=++counter.current;last.current=Date.now();animate(c.preferences.humor?['greeting','stretching','dancing','turning'][i%4]:'greeting');c.say(invitation(c.tab,c.pet,i,c.preferences.humor));
+      if(!c.ready||!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||typing||Date.now()<quietUntil.current||Date.now()-last.current<INITIATIVE_INTERVAL)return;
+      const next=c.suggestions.find(card=>!offered.current.has(card.id));if(!next||!c.suggest)return;
+      offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);
     },10000);return()=>clearInterval(timer);
   },[animate]);
   useEffect(()=>{const unlock=()=>setVoiceReady(true);window.addEventListener('pointerdown',unlock,{once:true});window.addEventListener('keydown',unlock,{once:true});return()=>{window.removeEventListener('pointerdown',unlock);window.removeEventListener('keydown',unlock);};},[]);
+  // An urgent threshold interrupts speech. Its stable key prevents countdown updates or hidden bubbles from replaying it.
+  const speechKey=urgent?urgentAnnouncement?.key||'':bubble;
   useEffect(()=>{
-    if(!preferences.sound||!voiceReady||!bubble||document.hidden||!('speechSynthesis'in window))return;
-    const synth=window.speechSynthesis,utterance=new SpeechSynthesisUtterance(bubble.slice(0,450));utterance.lang='es-ES';utterance.rate=pet==='sol'?1.03:.96;utterance.pitch=pet==='sol'?1.12:.86;
+    const text=urgent?current.current.urgentAnnouncement?.text:current.current.bubble;
+    if(!preferences.sound||!voiceReady||!text||document.hidden||!('speechSynthesis'in window))return;
+    const synth=window.speechSynthesis,utterance=new SpeechSynthesisUtterance(text.slice(0,450));utterance.lang='es-ES';utterance.rate=pet==='sol'?1.03:.96;utterance.pitch=pet==='sol'?1.12:.86;
     const voice=synth.getVoices().find(v=>v.lang==='es-ES')||synth.getVoices().find(v=>v.lang.startsWith('es'));if(voice)utterance.voice=voice;
     spoken.current=utterance;utterance.onstart=()=>setSpeaking(true);utterance.onend=utterance.onerror=()=>{setSpeaking(false);spoken.current=null;};synth.speak(utterance);
     const stop=()=>{synth.cancel();setSpeaking(false);};const hide=()=>{if(document.hidden)stop();};document.addEventListener('visibilitychange',hide);
     return()=>{utterance.onstart=utterance.onend=utterance.onerror=null;document.removeEventListener('visibilitychange',hide);if(spoken.current===utterance){synth.cancel();spoken.current=null;}setSpeaking(false);};
-  },[bubble,preferences.sound,voiceReady,pet]);
+  },[speechKey,preferences.sound,voiceReady,pet,urgent]);
   return {gesture:speaking?'talking':gesture,entertain,hush};
 }
