@@ -1,12 +1,17 @@
-.universe{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;background:#020813;--depth-far:0px;--depth-near:0px;--pointer-x:0px;--pointer-y:0px}
-.sky{position:absolute;inset:-180px -5%;background:url('/images/universe/deep-space.png') center/cover no-repeat;transform:translate3d(calc(var(--pointer-x) * -.3),var(--depth-far),0);opacity:.8}
-.stars{position:absolute;inset:-50%;background-image:radial-gradient(1px 1px at 30px 70px,#efcf91 65%,transparent),radial-gradient(1px 1px at 130px 130px,#d8eaff 65%,transparent);background-size:233px 271px,347px 293px;opacity:.5;transform:translate3d(var(--pointer-x),var(--depth-near),0)}
-.depth{position:absolute;width:min(78vw,1080px);aspect-ratio:1;top:110px;right:-13vw;transform:translate3d(var(--pointer-x),calc(var(--depth-near) + var(--pointer-y)),0)}
-.arriving,.departing{position:absolute;inset:0}.planet,.departing{width:100%;height:100%;background-image:url('/images/universe/planets.png');background-size:400% 300%;background-repeat:no-repeat;filter:drop-shadow(0 0 32px color-mix(in srgb,var(--planet-glow) 24%,transparent))}
-.arriving[data-travel=true]{animation:arrival .85s cubic-bezier(.2,.7,.2,1) both}.departing{animation:departure .7s ease both}
-.constellation{position:absolute;inset:-5%;width:110%;height:110%;opacity:.32;transform:rotate(-12deg)}
-.shade{position:absolute;inset:0;background:linear-gradient(90deg,#0208139c,transparent 70%),linear-gradient(0deg,#02081369,transparent 65%)}
-@keyframes arrival{from{opacity:0;transform:translateX(100px) scale(.8)}to{opacity:1;transform:translateX(0) scale(1)}}
-@keyframes departure{to{opacity:0;transform:translateX(-100px) scale(1.12)}}
-@media(max-width:700px){.depth{width:125vw;right:-53vw;top:240px;opacity:.7}.sky{opacity:.65}.shade{background:linear-gradient(90deg,#02081399,#02081330)}.constellation{opacity:.24}}
-@media(prefers-reduced-motion:reduce){.arriving[data-travel=true],.departing{animation:none}.departing{display:none}.sky,.stars,.depth{transform:none}}
+.worldFrame{position:relative;isolation:isolate;min-height:100dvh;background:#020813}
+.worldContent{position:relative;z-index:1}
+.universe{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;background:#020813;contain:strict}
+.sky{position:absolute;inset:0;background:url('/images/universe/deep-space.png') center/cover no-repeat;opacity:.48}
+.fallback{position:absolute;width:min(78vw,1080px);aspect-ratio:1;top:110px;right:-13vw;background-image:url('/images/universe/planets.png');background-size:400% 300%;background-repeat:no-repeat;filter:drop-shadow(0 0 28px color-mix(in srgb,var(--planet-glow) 22%,transparent))}
+.canvas{position:absolute;inset:0;opacity:0}
+.canvas canvas{display:block;width:100%;height:100%}
+.universe[data-renderer=webgl] .canvas{opacity:1}
+.universe[data-renderer=webgl] .fallback{visibility:hidden}
+.shade{position:absolute;inset:0;background:linear-gradient(90deg,#020813c7 0%,#0208135c 38%,transparent 72%),linear-gradient(0deg,#0208137d,transparent 50%,#02081318)}
+.motionControl{position:fixed;z-index:30;left:max(14px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:center;gap:8px;min-height:36px;padding:8px 12px;border:1px solid #d4b46e50;border-radius:30px;background:#08101eea;color:#e4d1a8;font:11px/1.2 system-ui,sans-serif;cursor:pointer;box-shadow:0 3px 16px #0003}
+.motionControl:hover{background:#152138;border-color:#ddbf87}
+.motionControl:focus-visible{outline:2px solid #ffe4a8;outline-offset:4px}
+.motionControl>span:first-child{font-size:15px;min-width:12px}
+@media(max-width:768px){.fallback{width:125vw;right:-53vw;top:240px;opacity:.8}.sky{opacity:.4}.shade{background:linear-gradient(90deg,#020813b8,#02081328),linear-gradient(0deg,#02081370,transparent 65%)}.motionControl{bottom:max(76px,calc(env(safe-area-inset-bottom) + 64px));min-height:44px;min-width:44px;justify-content:center;padding:9px 12px;font-size:10px}}
+@media(max-width:768px){.motionControl>span:last-child{display:none}}
+@media(prefers-reduced-motion:reduce){.canvas{display:none}.universe[data-renderer=webgl] .fallback{visibility:visible}}

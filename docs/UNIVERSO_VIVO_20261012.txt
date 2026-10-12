@@ -1,0 +1,68 @@
+TAROT CELESTIAL — UNIVERSO VIVO DEL PANEL CLIENTE
+Actualización del 12 de octubre de 2026
+
+QUÉ CAMBIA
+
+- Al bajar por la página, una cámara se acerca al planeta y atraviesa tres
+  profundidades de estrellas. Al subir, recorre el mismo camino a la inversa.
+- Cambiar de pestaña realiza un viaje suave de aproximadamente 1,25 segundos.
+  El fondo conserva su cámara y su canvas entre las secciones del panel.
+- Se mantienen los once planetas/destinos, sus imágenes originales y la estética
+  azul y dorada. Se añaden atmósferas, órbitas discretas y movimiento ambiental.
+- En ordenador hay un paralaje pequeño al mover el puntero. Textos, botones,
+  compras y navegación mantienen su comportamiento habitual.
+- El botón inferior izquierdo permite pausar/reanudar. En móvil se muestra
+  como un icono. La preferencia se recuerda en ese navegador.
+- Se respeta la preferencia de movimiento reducido del dispositivo. Sin WebGL,
+  o mientras se recupera su contexto, permanece el fondo estático con el planeta.
+- El trabajo de animación se detiene al ocultar la pestaña. En móvil y equipos
+  limitados se reduce la cantidad de estrellas y la resolución del dibujo.
+
+CÓMO APLICARLO
+
+1. Descomprime Tarot-Celestial-Universo-Vivo.zip.
+2. Copia las carpetas src, docs y tests sobre la raíz de tu proyecto, donde está
+   package.json. Combina las carpetas y reemplaza los archivos incluidos.
+   Conserva el resto del proyecto; este ZIP es una actualización parcial.
+3. Sube esos archivos descomprimidos a GitHub, respetando todas las subcarpetas,
+   y confirma el cambio en la rama conectada con Vercel.
+4. Espera a que Vercel muestre Ready para ese cambio. Recarga el panel con Ctrl+F5.
+5. En Inicio, baja y vuelve a subir; después cambia a Ruleta y Oráculo. Prueba
+   también el botón de pausa. Si tu dispositivo tiene movimiento reducido
+   activado, el fondo aparecerá estático de forma intencionada.
+
+No hay SQL que ejecutar en Supabase, variables de entorno nuevas ni paquetes
+que instalar. Se reutilizan Three.js 0.180.0 y los recursos que ya tiene el panel.
+La base comprobada en GitHub/Vercel antes de esta actualización es el commit
+20da79eaf57d2ba45b26faa6f27c2fc13210eaad. El ZIP no publica por sí mismo.
+
+VALIDACIÓN
+
+Pruebas de movimiento, rutas, calidad, cadencia y continuidad de la cámara;
+regresión de la guía Leo y los temas de rango; revisión de código independiente;
+pruebas en Edge de escritorio y móvil emulado, con datos ficticios y respuestas
+locales interceptadas. Se verifica también pausa, navegación rápida, ausencia
+de WebGL, movimiento reducido, capas de diálogos y recuperación del contexto.
+
+La calidad apunta a 60 fotogramas/segundo en escritorio y 30 en móvil, sin
+garantizar esa velocidad en todos los dispositivos. La comprobación de móvil
+es emulada; el rendimiento final depende del teléfono y del navegador reales.
+
+DETALLE TÉCNICO
+
+Los planetas conservan el arte original sobre planos situados en una escena
+tridimensional. La cámara, las estrellas a distintas distancias y las trayectorias
+producen la profundidad. No se han reemplazado las imágenes por globos 3D de menor
+calidad ni se ha cambiado la lógica comercial, los saldos o los permisos.
+
+El layout compartido vive en src/app/cliente/layout.tsx. La escena pesada se carga
+de forma diferida y no se monta en login, recuperación ni en el chat independiente.
+Los recursos GPU y los listeners se liberan al salir de ese layout.
+
+Para ejecutar las pruebas unitarias desde la raíz del proyecto:
+node --test --test-isolation=none tests/universe-motion.test.cjs tests/leonaris-guide.test.cjs tests/panel-theme.test.cjs
+
+Las comprobaciones de rutas reales están en tests/universe-integration.cjs y
+requieren un servidor LOCAL con NEXT_PUBLIC_SUPABASE_URL=https://example.supabase.co
+y una clave ficticia, además de Playwright y Edge. Interceptan las APIs y usan
+una sesión de prueba; no deben apuntarse a producción.

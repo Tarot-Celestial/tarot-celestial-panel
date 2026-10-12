@@ -12,7 +12,7 @@ import { announceLeoCelestial, type LeoCelestialEventDetail } from "@/lib/leo-ce
 import styles from "./ClientePremium.module.css";
 import LeoCelestialGuide from "./LeoCelestialGuide";
 import ClienteNavigation from "./ClienteNavigation";
-import CelestialUniverse, { universeDestination } from "./CelestialUniverse";
+import { universeDestination, UniverseMotionControl } from "./CelestialUniverse";
 import universeStyles from "./ClienteUniverseLayout.module.css";
 
 const sb = supabaseClienteBrowser();
@@ -263,8 +263,9 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
 
   const destination = universeDestination(pathname);
   return <PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell} data-home={isHome ? "true" : "false"}>
-    <CelestialUniverse pathname={pathname}/>
+    
     <div className={universeStyles.container}>
+      <UniverseMotionControl />
       <header className={universeStyles.header}>
         <Link href="/cliente/dashboard" className={universeStyles.brand}><Image src="/Nuevo-logo-tarot.png" alt="" width={34} height={34}/><span>TAROT CELESTIAL</span></Link>
         <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>
