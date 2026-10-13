@@ -196,8 +196,8 @@
   border: 1px solid #d4b46e69;
   border-radius: 25px;
   background: #080e1be8;
-  color: #ead5aa;
-  font: 12px/1.2 system-ui, sans-serif;
+  color: #ffe6b5;
+  font: 500 .875rem/1.4 system-ui, sans-serif;
   cursor: pointer;
 }
 .motionControl:hover { background: #152037; border-color: #ddbf87; }

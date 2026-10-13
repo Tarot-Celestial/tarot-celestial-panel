@@ -31,6 +31,24 @@ const count = (value: number) => Number.isFinite(value) ? Math.max(0, Math.trunc
 const PARTICLES = [
   [13, 29, -.8], [34, 14, -2.4], [81, 26, -4.2], [73, 68, -1.7], [89, 49, -3.3], [20, 78, -5.1],
 ] as const;
+const ZODIAC = ["♈︎", "♉︎", "♊︎", "♋︎", "♌︎", "♍︎", "♎︎", "♏︎", "♐︎", "♑︎", "♒︎", "♓︎"] as const;
+
+function AstralDial() {
+  return <svg className={styles.dial} viewBox="0 0 360 360" fill="none" aria-hidden="true" focusable="false">
+    <circle cx="180" cy="180" r="155" />
+    <circle cx="180" cy="180" r="149" />
+    <circle cx="180" cy="180" r="116" />
+    <circle className={styles.innerOrbit} cx="180" cy="180" r="110" />
+    {ZODIAC.map((sign, index) => {
+      const angle = (index * 30 - 75) * Math.PI / 180;
+      return <g key={sign}>
+        <path d="M180 31V64" transform={`rotate(${index * 30} 180 180)`} />
+        <text x={180 + Math.cos(angle) * 133} y={180 + Math.sin(angle) * 133}>{sign}</text>
+      </g>;
+    })}
+    <path className={styles.dialStar} d="M180 8L183 23L198 26L183 29L180 44L177 29L162 26L177 23Z" />
+  </svg>;
+}
 
 function experiences(props: ExperienceRailProps): Experience[] {
   const credits = count(props.oracleCredits);
@@ -61,10 +79,13 @@ function ExperienceCard({ card, index, running }: { card: Experience; index: num
   const Icon = card.Icon;
   return <li className={styles.item}>
     <Link href={card.href} className={styles.card} data-experience-card={card.id} data-running={running} style={{ "--experience-color": card.color, "--float-delay": `${-index * 1.25}s` } as CSSProperties} draggable={false}>
-      <div className={styles.art} data-experience-art={card.id} data-art-status={art} aria-hidden="true">
+      <div className={styles.art} data-experience-art={card.id} data-experience-portal="" data-art-status={art} aria-hidden="true">
+        <div className={styles.mist} />
+        <AstralDial />
+        <div className={styles.plinth}><i /></div>
         <div className={styles.float} data-experience-float={card.id}>
           <div className={styles.artFallback}><Icon size={82} strokeWidth={1.1} /></div>
-          {art !== "fallback" ? <Image src={`/images/portal/objects/${card.id}.webp`} alt="" width={1024} height={1024} sizes="(max-width: 360px) 180px, (max-width: 640px) 200px, 222px" loading={index < 3 ? "eager" : "lazy"} draggable={false} onLoad={() => setArt("ready")} onError={() => setArt("fallback")} /> : null}
+          {art !== "fallback" ? <Image src={`/images/portal/objects/${card.id}.webp`} alt="" width={1024} height={1024} sizes="(max-width: 360px) 210px, (max-width: 640px) 260px, 286px" loading={index < 3 ? "eager" : "lazy"} draggable={false} onLoad={() => setArt("ready")} onError={() => setArt("fallback")} /> : null}
         </div>
         <div className={styles.particles}>
           {PARTICLES.map(([x, y, delay], particle) => <span key={particle} className={styles.particle} data-particle={particle % 3} style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${delay}s` }}>
@@ -72,11 +93,11 @@ function ExperienceCard({ card, index, running }: { card: Experience; index: num
           </span>)}
         </div>
       </div>
-      <div className={styles.content}>
-        <span className={styles.detail}>{card.detail}</span>
+      <div className={styles.content} data-experience-content="">
+        <span className={styles.detail} data-experience-detail="">{card.detail}</span>
         <h3>{card.title}</h3>
-        <p>{card.description}</p>
-        <span className={styles.enter}>Explorar <ArrowRight size={15} aria-hidden="true" /></span>
+        <p data-experience-description="">{card.description}</p>
+        <span className={styles.enter} data-experience-action="">Explorar <ArrowRight size={20} aria-hidden="true" /></span>
       </div>
     </Link>
   </li>;

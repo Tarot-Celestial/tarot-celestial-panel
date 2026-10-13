@@ -39,3 +39,13 @@ Las flechas tienen 64px en escritorio y 48px en móvil. En pantallas anchas ocup
 El nuevo fondo se editó con el generador integrado usando el anterior como referencia. Se solicitaron 3072×1920, pero la herramienta conservó 1586×992; no hubo ampliación artificial ni se presenta como 4K/8K. La nube transparente mide 2172×724; los seis objetos 1254×1254. Los cambios de calidad se basan en detalle visual, compresión y composición.
 
 Validación local del refinamiento: 19 pruebas unitarias de movimiento y 16 comprobaciones de navegador aprobadas; TypeScript global correcto. Se comprobaron flechas laterales 64/48px, objetos flotantes, carga de seis imágenes, legibilidad 320px, swipe nativo, cascadas/nubes, pausa, movimiento reducido, canje sin confirmar y navegación entre portal y planetas. No se ejecutaron transacciones reales.
+# Portales astrales y lectura clara
+
+La propuesta visual 01 se aplica a las seis experiencias: cristal oscuro con doble borde, anillos zodiacales SVG decorativos, una base de luz y bruma. Los objetos siguen siendo imágenes independientes que flotan; los títulos y explicaciones son texto HTML. La textura compartida `public/images/portal/astral-mist.webp` pesa 182110 bytes (1254 × 1254, RGB) y se generó con ImageGen integrado. No se incorporan nuevas dependencias.
+
+Las explicaciones usan 16 px, los detalles 14 px y las acciones 15 px con la configuración predeterminada del navegador. Se expresan en rem, las tarjetas crecen con el texto y la zona de lectura tiene una superficie oscura estable. Los saldos ahora indican explícitamente «min gratis» y «min normales»; mantienen los valores originales. La portada, navegación, bono diario y canje usan ayudas más legibles y controles de al menos 44 px cuando son acciones independientes.
+
+En móvil los saldos se apilan y las flechas del carrusel quedan sobre los bordes exteriores del área decorativa, conservando espacio para el texto. Los anillos son estáticos; la bruma usa transform/opacity y respeta la pausa, visibilidad y preferencia de movimiento reducido existentes.
+
+Validación local: 19 pruebas de movimiento, TypeScript global y 18 comprobaciones de navegador (1440, 390 y 320 px, texto al doble de tamaño, contraste de las superficies de lectura, arrastre, enlaces, permisos, pausa y navegación real entre rutas con API simulada). No se realizaron transacciones ni cambios de base de datos. La verificación del contraste de los recuadros no equivale a una auditoría integral de accesibilidad de todo el panel.
+

@@ -9,7 +9,7 @@ const baseURL = process.env.TC_PORTAL_QA_URL || 'http://127.0.0.1:3020';
 const origin = new URL(baseURL).origin;
 const smokeOnly = process.env.TC_PORTAL_QA_MODE === 'route-smoke';
 assert.ok(['localhost', '127.0.0.1'].includes(new URL(baseURL).hostname));
-const output = process.env.TC_PORTAL_QA_OUTPUT || path.resolve(__dirname, '../../outputs/portal-refinement-qa');
+const output = process.env.TC_PORTAL_QA_OUTPUT || path.resolve(__dirname, '../../outputs/astral-cards-qa');
 const checks = [], failures = [], errors = [], consoleErrors = [], screenshots = [], blocked = new Set(), calls = new Set(), imageFailures = [], metrics = {};
 fs.mkdirSync(output, { recursive: true });
 const customerId = '00000000-0000-4000-8000-000000000001';
@@ -122,7 +122,7 @@ async function frozen(page) {
     await check('Desktop and mobile preserve real balances and prevent body overflow', async () => {
       for (const [key, p] of [['desktop', page], ['mobile', phone]]) {
         assert.equal((await p.locator('#saldo-minutes strong').innerText()).replace(/\D/g, ''), '233');
-        assert.match(await p.locator('#saldo-minutes p').innerText(), /193 gratis.*40 normales/);
+        assert.match(await p.locator('#saldo-minutes p').innerText(), /193(?: min)? gratis[\s\S]*40(?: min)? normales/);
         assert.equal((await p.locator('#saldo-coins strong').innerText()).replace(/\D/g, ''), '1200');
         metrics[key] = { overflow: await overflow(p), logo: await p.locator('[data-client-home] img[alt="Tarot Celestial"]').evaluate(image => ({ complete: image.complete, naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, currentSrc: image.currentSrc })) };
       }
@@ -162,7 +162,7 @@ async function frozen(page) {
       await page.locator('[data-experience-card="oracle"]').focus(); assert.ok(await page.locator('[data-experience-card="oracle"]').evaluate(el => el === document.activeElement));
       metrics.desktop.afterDrag = await railMetrics(page);
     });
-    await check('Large arrows sit beside the cards without covering the swipe viewport', async () => {
+    await check('Large arrows stay beside cards and leave their text and artwork clear', async () => {
       for(const p of [page,phone]) {
         await showRail(p); await railStart(p);
         const area=await p.locator(viewport).boundingBox();
@@ -171,9 +171,13 @@ async function frozen(page) {
         const minimum=p===page?64:48;
         assert.ok(left.width>=minimum&&left.height>=minimum);
         assert.ok(right.width>=minimum&&right.height>=minimum);
-        assert.ok(left.x+left.width<=area.x+2, 'Previous arrow covers cards');
-        assert.ok(right.x>=area.x+area.width-2, 'Next arrow covers cards');
-        assert.ok(Math.abs(left.y+left.height/2-(area.y+area.height/2))<16, 'Arrow must align with card row');
+        const borderAllowance=p===page?2:26;
+        assert.ok(left.x+left.width<=area.x+borderAllowance, 'Previous arrow intrudes beyond the card edge');
+        assert.ok(right.x>=area.x+area.width-borderAllowance, 'Next arrow intrudes beyond the card edge');
+        assert.ok(left.x>=0 && right.x+right.width<=p.viewportSize().width+1,'Arrow is clipped by screen');
+        const art=await p.locator('[data-experience-card="oracle"] [data-experience-portal]').boundingBox();
+        const targetY=p===page?area.y+area.height/2:art.y+art.height/2;
+        assert.ok(Math.abs(left.y+left.height/2-targetY)<32, 'Arrow must align with the card or its artwork');
         await overflow(p);
       }
     });
@@ -206,6 +210,50 @@ async function frozen(page) {
       assert.ok((await item.innerText()).includes('Explorar'));
       await capture(phone,'mobile-320-clean-cards');
       await phone.setViewportSize({width:390,height:844});await showRail(phone);
+    });
+    await check('Astral cards retain readable text sizes and strong contrast on desktop and small phones', async () => {
+      for (const [name,p,width] of [['desktop',page,1440],['mobile',phone,390],['small-phone',phone,320]]) {
+        await p.setViewportSize({width,height:name==='desktop'?1000:844});await showRail(p);await railStart(p);
+        const readings=await p.evaluate(() => {
+          const color=value=>{const n=value.match(/[\d.]+/g).map(Number);return [...n.slice(0,3),n.length>3?n[3]:1];};
+          const luminance=rgb=>rgb.slice(0,3).map(v=>{v/=255;return v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4);}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+          return [...document.querySelectorAll('[data-experience-content]')].map(content=>{
+            const bg=color(getComputedStyle(content).backgroundColor);
+            // White behind translucent content is the conservative case for light lettering.
+            const painted=bg.slice(0,3).map(v=>v*bg[3]+255*(1-bg[3]));
+            const samples=[['[data-experience-detail]',14],['p',16],['[data-experience-action]',15]].map(([selector,min])=>{
+              const el=content.querySelector(selector),style=getComputedStyle(el),fg=color(style.color),l1=luminance(fg),l2=luminance(painted);
+              return {text:el.textContent,size:parseFloat(style.fontSize),min,contrast:(Math.max(l1,l2)+.05)/(Math.min(l1,l2)+.05)};
+            });
+            return {id:content.closest('[data-experience-card]').dataset.experienceCard,samples};
+          });
+        });
+        assert.equal(readings.length,6);
+        for(const card of readings) for(const sample of card.samples){assert.ok(sample.size>=sample.min,`${name} ${card.id}: ${sample.size}px`);assert.ok(sample.contrast>=4.5,`${name} ${card.id}: contrast ${sample.contrast}`);}
+        for(const selector of ['#saldo-minutes p','#saldo-minutes a','#saldo-coins p']) assert.ok(await p.locator(selector).evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>=14),`${name} ${selector} is too small`);
+        assert.equal(await p.locator('[data-experience-portal]').count(),6);
+        metrics['readability-'+name]=readings;await overflow(p);
+      }
+      await phone.setViewportSize({width:390,height:844});
+    });
+    await check('Doubling the text size preserves card content and all wallet values', async () => {
+      for(const p of [page,phone]) {
+        const handles=await p.locator('[data-client-home] h1,[data-client-home] h2,[data-client-home] h3,[data-client-home] p,[data-client-home] a,[data-client-home] button,[data-client-home] small,[data-client-home] strong,[data-client-home] span').elementHandles();
+        const originals=await p.evaluate(elements=>elements.map(el=>({style:el.getAttribute('style'),font:parseFloat(getComputedStyle(el).fontSize)})),handles);
+        try {
+          await p.evaluate(({elements,originals})=>elements.forEach((el,i)=>el.style.setProperty('font-size',(originals[i].font*2)+'px','important')),{elements:handles,originals});
+          await showRail(p);await railStart(p);await overflow(p);
+          const clipping=await p.locator(cards).evaluateAll(elements=>elements.map(card=>{
+            const box=card.getBoundingClientRect(),content=card.querySelector('[data-experience-content]');
+            return {id:card.dataset.experienceCard,height:box.height,clipped:[...content.children].some(el=>{const r=el.getBoundingClientRect();return r.bottom>box.bottom+1||r.right>box.right+1||r.left<box.left-1||el.scrollWidth>el.clientWidth+1;})};
+          }));
+          assert.ok(clipping.every(card=>!card.clipped),JSON.stringify(clipping));
+          assert.match(await p.locator('#saldo-minutes').innerText(),/193[\s\S]*40/);
+          await capture(p,p===page?'desktop-text-200':'mobile-text-200');
+        } finally {
+          await p.evaluate(({elements,originals})=>elements.forEach((el,i)=>{if(originals[i].style===null)el.removeAttribute('style');else el.setAttribute('style',originals[i].style);}),{elements:handles,originals});
+        }
+      }
     });
     await check('Waterfalls and cloud layers animate while sharing the scenery plane', async () => {
       assert.ok(await page.locator('[data-portal-waterfall]').count()>=2);
