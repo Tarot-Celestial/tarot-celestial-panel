@@ -30,81 +30,110 @@ export default function PreciosOfertasPage() {
   const [questionPack, setQuestionPack] = useState<QuestionPack | null>(null);
   const [minutePacks, setMinutePacks] = useState<MinutePack[]>([]);
   const [promotion, setPromotion] = useState<ActivePromotion | null>(null);
-  const [freeAvailable, setFreeAvailable] = useState(false);
-  const [credits, setCredits] = useState(0);
+  const [credits, setCredits] = useState<number | null>(null);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
-  const [loadError, setLoadError] = useState("");
-  const [promotionError, setPromotionError] = useState("");
-  const loading = useRef(false);
+  type Resource = "catalogue" | "roulette" | "account" | "promotion";
+  type LoadState = "loading" | "ready" | "error";
+  const [states, setStates] = useState<Record<Resource, LoadState>>({ catalogue: "loading", roulette: "loading", account: "loading", promotion: "loading" });
+  const controllers = useRef<Partial<Record<Resource, AbortController>>>({});
+  const generation = useRef(0), owner = useRef<string | null>(null), mounted = useRef(false), lastRefresh = useRef(0);
   const [showLevelThree, setShowLevelThree] = useState(false);
 
-  const loadPromotion = useCallback(async () => {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) return;
-    const response = await fetch("/api/cliente/promotions/active", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null);
-    const json = await response?.json().catch(() => null);
-    if (!response?.ok || !json?.ok) { setPromotionError("No hemos podido actualizar la promoción. Puedes reintentar."); return; }
-    setPromotion(json.promotion || null);
-    setPromotionError("");
+  const resetAccount = useCallback((id: string | null) => {
+    ++generation.current; owner.current = id; lastRefresh.current = 0;
+    Object.values(controllers.current).forEach(controller => controller?.abort()); controllers.current = {};
+    setMinutePacks([]); setOraclePacks([]); setQuestionPack(null); setPromotion(null); setRouletteSummary(null); setCredits(null); setMessage(""); setBusy("");
+    setStates({ catalogue: "loading", roulette: "loading", account: "loading", promotion: "loading" });
   }, []);
 
-  const load = useCallback(async () => {
-    const { data } = await sb.auth.getSession();
-    const token = data.session?.access_token;
-    if (!token) {
-      window.location.href = "/cliente/login";
-      return;
-    }
-
-    if (loading.current) return;
-    loading.current = true;
+  const load = useCallback(async (resources: Resource[] = ["catalogue", "roulette", "account", "promotion"]) => {
+    const entryGeneration = generation.current;
     try {
-    let refresh: ReturnType<typeof sb.auth.refreshSession> | undefined;
-    const read = async (url: string) => {
-      try {
-        let response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-        if (response.status === 401) {
-          const session = (await (refresh ??= sb.auth.refreshSession())).data.session;
-          if (!session) return null;
-          response = await fetch(url, { headers: { Authorization: `Bearer ${session.access_token}` }, cache: "no-store" });
+      const { data } = await sb.auth.getSession();
+      if (!mounted.current || generation.current !== entryGeneration) return;
+      const session = data.session;
+      if (!session) { resetAccount(null); window.location.href = "/cliente/login"; return; }
+      if (owner.current !== session.user.id) resetAccount(session.user.id);
+      const currentGeneration = generation.current, id = session.user.id;
+      const endpoints: Record<Resource, string> = { catalogue: "/api/cliente/catalogo", roulette: "/api/cliente/ruleta", account: "/api/cliente/state", promotion: "/api/cliente/promotions/active" };
+      let refresh: ReturnType<typeof sb.auth.refreshSession> | undefined;
+      lastRefresh.current = Date.now();
+      // Each section commits as soon as its own response arrives; slow rewards never hold prices.
+      await Promise.allSettled(resources.map(async resource => {
+        if (controllers.current[resource]) return;
+        const controller = new AbortController(); controllers.current[resource] = controller;
+        const isCurrent = () => mounted.current && currentGeneration === generation.current && owner.current === id && controllers.current[resource] === controller;
+        const timer = window.setTimeout(() => controller.abort(), 12000);
+        setStates(current => ({ ...current, [resource]: "loading" }));
+        try {
+          const read = (token: string) => fetch(endpoints[resource], { headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal });
+          let response = await read(session.access_token);
+          if (response.status === 401) {
+            const renewed = (await (refresh ??= sb.auth.refreshSession())).data.session;
+            if (!renewed || renewed.user.id !== id || !isCurrent()) throw new Error("session");
+            response = await read(renewed.access_token);
+          }
+          const json = await response.json();
+          if (!response.ok || !json?.ok) throw new Error("unavailable");
+          if (!isCurrent()) return;
+          if (resource === "catalogue") {
+            if (!Array.isArray(json.packs) || !Array.isArray(json.oraclePacks)) throw new Error("catalogue");
+            setMinutePacks(json.packs); setOraclePacks(json.oraclePacks); setQuestionPack(json.questionPack || null);
+          } else if (resource === "roulette") {
+            if (!Array.isArray(json.catalogue)) throw new Error("roulette");
+            setRouletteSummary(json);
+          } else if (resource === "account") {
+            const value = json.state?.oracle_credits;
+            if (value == null || !Number.isFinite(Number(value)) || Number(value) < 0) throw new Error("credits");
+            setCredits(Number(value));
+          } else setPromotion(json.promotion || null);
+          setStates(current => ({ ...current, [resource]: "ready" }));
+        } catch {
+          if (isCurrent()) {
+            if (resource === "roulette") setRouletteSummary(null);
+            if (resource === "account") setCredits(null);
+            if (resource === "promotion") setPromotion(null);
+            setStates(current => ({ ...current, [resource]: "error" }));
+          }
+        } finally {
+          window.clearTimeout(timer);
+          if (controllers.current[resource] === controller) delete controllers.current[resource];
         }
-        return response.ok ? await response.json() : null;
-      } catch { return null; }
-    };
-    const [roulette, oracle, customer] = await Promise.all([
-      read("/api/cliente/ruleta"), read("/api/cliente/oraculo"), read("/api/cliente/me"),
-    ]);
-
-    if (roulette?.ok) setRouletteSummary(roulette);
-    if (oracle?.ok) {
-      setOraclePacks(Array.isArray(oracle.packs) ? oracle.packs : []);
-      setQuestionPack(oracle.questionPack || null);
-      setCredits(Number(oracle.credits || 0));
-      setFreeAvailable(Boolean(oracle.freeDailyAvailable ?? oracle.freeAvailable));
+      }));
+    } catch {
+      if (mounted.current && generation.current === entryGeneration) setStates(current => ({ ...current, catalogue: "error" }));
     }
-    if (customer?.ok) setMinutePacks(Array.isArray(customer.packs) ? customer.packs : []);
-    setLoadError(!customer?.ok ? "No hemos podido cargar los precios. Reintenta; si tu sesión ha caducado, vuelve a entrar." : !oracle?.ok || !roulette?.ok ? "Algunos beneficios no se han podido actualizar. Los precios disponibles se mantienen." : "");
-    await loadPromotion();
-    } finally { loading.current = false; }
-  }, [loadPromotion]);
-
-  useEffect(() => { load(); }, [load]);
+  }, [resetAccount]);
 
   useEffect(() => {
+    mounted.current = true;
+    void load();
+    let authTimer: ReturnType<typeof setTimeout> | undefined;
+    const { data: auth } = sb.auth.onAuthStateChange((_event, session) => {
+      const id = session?.user.id || null;
+      if (id === owner.current) return;
+      resetAccount(id);
+      clearTimeout(authTimer); authTimer = setTimeout(() => void load(), 0);
+    });
     const channel = sb.channel("tc-client-promotions-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotions" }, () => { void loadPromotion(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotion_packages" }, () => { void loadPromotion(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotions" }, () => { void load(["promotion"]); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "tc_client_promotion_packages" }, () => { void load(["promotion"]); })
       .subscribe();
-    const focus = () => void load();
-    const timer = window.setInterval(() => { void load(); }, 30000);
+    const focus = () => { if (document.visibilityState !== "hidden" && Date.now() - lastRefresh.current > 15000) void load(); };
+    const changed = () => void load();
     window.addEventListener("focus", focus);
-    window.addEventListener("online", focus);
-    return () => { window.clearInterval(timer); window.removeEventListener("focus", focus); window.removeEventListener("online", focus); void sb.removeChannel(channel); };
-  }, [loadPromotion, load]);
+    window.addEventListener("online", changed);
+    window.addEventListener("tc-client-balances-changed", changed);
+    return () => {
+      mounted.current = false; ++generation.current; clearTimeout(authTimer); auth.subscription.unsubscribe();
+      Object.values(controllers.current).forEach(controller => controller?.abort()); controllers.current = {};
+      window.removeEventListener("focus", focus); window.removeEventListener("online", changed); window.removeEventListener("tc-client-balances-changed", changed); void sb.removeChannel(channel);
+    };
+  }, [load, resetAccount]);
 
   async function checkout(endpoint: string, packId: string) {
+    const checkoutGeneration = generation.current;
     try {
       setBusy(packId);
       setMessage("");
@@ -117,16 +146,18 @@ export default function PreciosOfertasPage() {
         body: JSON.stringify({ pack_id: packId }),
       });
       const result = await response.json().catch(() => null);
+      if (!mounted.current || generation.current !== checkoutGeneration || owner.current !== data.session?.user.id) return;
       if (!result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido iniciar el pago");
       window.location.href = result.url;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
+      if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
     } finally {
-      setBusy("");
+      if (mounted.current && generation.current === checkoutGeneration) setBusy("");
     }
   }
 
   async function checkoutPromotion(packageId: string) {
+    const checkoutGeneration = generation.current;
     try {
       setBusy(`promo:${packageId}`);
       setMessage("");
@@ -139,16 +170,16 @@ export default function PreciosOfertasPage() {
         body: JSON.stringify({ package_id: packageId }),
       });
       const result = await response.json().catch(() => null);
+      if (!mounted.current || generation.current !== checkoutGeneration || owner.current !== data.session?.user.id) return;
       if (!result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido iniciar el pago");
       window.location.href = result.url;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
+      if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
     } finally {
-      setBusy("");
+      if (mounted.current && generation.current === checkoutGeneration) setBusy("");
     }
   }
 
-  const total = credits + (freeAvailable ? 1 : 0);
   const packageLevel = (pack: MinutePack): StandardPackLevel | null => pack.packageLevel ?? null;
   const levelOnePacks = minutePacks.filter((pack) => packageLevel(pack) === 1);
   const levelTwoPacks = minutePacks.filter((pack) => packageLevel(pack) === 2);
@@ -160,13 +191,14 @@ export default function PreciosOfertasPage() {
       title="Precios y ofertas"
       subtitle="Elige tu consulta y descubre el premio que puede acompañarla."
       summaryItems={[
-        { label: "Giros disponibles", value: String(Number(rouletteSummary?.available_spins || 0)), meta: "Premios por tus compras", href: "/cliente/ruleta", tone: "oracle" },
-        { label: "Tiradas disponibles", value: String(total), meta: freeAvailable ? `1 gratis hoy · ${credits} compradas` : `${credits} compradas`, href: "/cliente/oraculo", tone: "oracle" },
-        { label: "Packs de minutos", value: String(minutePacks.length), meta: "Tres niveles de recompensa", tone: "minutes" },
+        { label: "Giros disponibles", value: rouletteSummary ? String(rouletteSummary.available_spins) : "—", meta: states.roulette === "error" ? "Consulta tus giros en Ruleta" : "Premios por tus compras", href: "/cliente/ruleta", tone: "oracle" },
+        { label: "Tiradas compradas", value: credits === null ? "—" : String(credits), meta: "Consulta tu carta gratis en Oráculo", href: "/cliente/oraculo", tone: "oracle" },
+        { label: "Packs de minutos", value: states.catalogue === "ready" ? String(minutePacks.length) : "—", meta: "Tres niveles de recompensa", tone: "minutes" },
       ]}
     >
       <div className={styles.shell}>
-        {(loadError || promotionError) && <div className={styles.message} role="alert">{loadError || promotionError} <button type="button" onClick={()=>void load()}>Reintentar</button></div>}
+        {states.catalogue === "error" && <div className={styles.message} role="alert">No hemos podido actualizar los precios. Reintenta para consultar los paquetes. <button type="button" onClick={()=>void load(["catalogue"])}>Reintentar precios</button></div>}
+        {states.promotion === "error" && <div className={styles.message} role="status">No hemos podido comprobar las promociones. Los paquetes disponibles aparecen debajo. <button type="button" onClick={()=>void load(["promotion"])}>Reintentar promociones</button></div>}
         {message ? <div className={styles.message}>{message}</div> : null}
 
         <section className={styles.hero}>
@@ -215,7 +247,7 @@ export default function PreciosOfertasPage() {
                     {pack.rankBenefitsStatus === "unavailable" ? <span><strong>Beneficios de rango:</strong> no disponibles temporalmente. El pack y su precio siguen disponibles.</span> : null}
                     {pack.rankBenefitsStatus === "unmapped_package" ? <span><strong>Beneficios de rango:</strong> esta promoción aún no tiene nivel asignado.</span> : null}
                   </div>
-                  <ClientPurchaseAction className={styles.promoBuy}><button className={styles.promoBuy} disabled={busy === `promo:${pack.id}`} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
+                  <ClientPurchaseAction className={styles.promoBuy}><button className={styles.promoBuy} disabled={busy === `promo:${pack.id}` || states.promotion !== "ready"} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
                 </article>
               ))}
             </div>
@@ -233,7 +265,8 @@ export default function PreciosOfertasPage() {
             <Link className={styles.rouletteShortcut} href="/cliente/ruleta">Ver ruleta <ArrowRight /></Link>
           </div>
 
-          <div className={styles.levelStack}>
+          {states.catalogue === "loading" && minutePacks.length === 0 ? <div className={styles.catalogueLoading} role="status" aria-label="Cargando precios"><p>Preparando tus paquetes y beneficios…</p><div className={styles.loadingGrid} aria-hidden="true">{[1,2,3].map(item=><div className={styles.loadingCard} key={item}><span/><span/><span/></div>)}</div></div> : null}
+          {minutePacks.length > 0 ? <div className={styles.levelStack} aria-busy={states.catalogue === "loading"}>
             <section className={styles.level} aria-labelledby="level-one-title">
               <div className={styles.levelHeader}>
                 <div className={styles.levelMedallion}><Sparkles /></div>
@@ -245,7 +278,7 @@ export default function PreciosOfertasPage() {
                 <LevelBenefitChips />
               </div>
               <div className={styles.grid}>
-                {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={1} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                {levelOnePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={1} busy={busy === pack.id} unavailable={states.catalogue !== "ready"} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
 
@@ -260,7 +293,7 @@ export default function PreciosOfertasPage() {
                 <LevelBenefitChips />
               </div>
               <div className={styles.grid}>
-                {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={2} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                {levelTwoPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={2} busy={busy === pack.id} unavailable={states.catalogue !== "ready"} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section>
 
@@ -286,10 +319,10 @@ export default function PreciosOfertasPage() {
                 <LevelBenefitChips />
               </div>
               <div className={`${styles.grid} ${styles.levelThreeGrid}`}>
-                {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={3} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                {levelThreePacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={3} busy={busy === pack.id} unavailable={states.catalogue !== "ready"} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
               </div>
             </section> : null}
-          </div>
+          </div> : states.catalogue === "ready" ? <p className={styles.message}>Ahora mismo no hay paquetes de minutos disponibles.</p> : null}
 
           {unassignedPacks.length ? <section className={styles.level} aria-labelledby="unassigned-packs-title">
             <div className={styles.levelHeader}>
@@ -298,7 +331,7 @@ export default function PreciosOfertasPage() {
               <LevelBenefitChips />
             </div>
             <div className={styles.grid}>
-              {unassignedPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={null} busy={busy === pack.id} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+              {unassignedPacks.map((pack) => <MinuteCard key={pack.id} pack={pack} summary={rouletteSummary} packageLevel={null} busy={busy === pack.id} unavailable={states.catalogue !== "ready"} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
             </div>
           </section> : null}
 
@@ -319,7 +352,7 @@ export default function PreciosOfertasPage() {
                 <div className={styles.serviceTop}><div className={styles.icon}>{index === 0 ? "🔮" : "✨"}</div><span className={styles.badge}>{pack.credits} TIRADAS</span></div>
                 <h3>{pack.nombre}</h3><p>{pack.descripcion}</p>
                 <strong className={styles.price}>${pack.priceEur.toFixed(2).replace(".", ",")}</strong>
-                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === pack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === pack.id || states.catalogue !== "ready"} onClick={() => checkout("/api/cliente/oraculo/checkout", pack.id)}>{busy === pack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
               </article>
             ))}
             {questionPack ? (
@@ -327,13 +360,13 @@ export default function PreciosOfertasPage() {
                 <div className={styles.serviceTop}><div className={styles.icon}>💬</div><span className={styles.badge}>{questionPack.questions} PREGUNTAS</span></div>
                 <h3>{questionPack.nombre}</h3><p>{questionPack.descripcion}</p>
                 <strong className={styles.price}>${questionPack.priceEur.toFixed(2).replace(".", ",")}</strong>
-                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === questionPack.id} onClick={() => checkout("/api/cliente/oraculo/checkout", questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+                <ClientPurchaseAction className={styles.buyButton}><button className={styles.buyButton} disabled={busy === questionPack.id || states.catalogue !== "ready"} onClick={() => checkout("/api/cliente/oraculo/checkout", questionPack.id)}>{busy === questionPack.id ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
               </article>
             ) : null}
           </div>
         </section>
 
-        {!promotion ? <section className={`${styles.section} ${styles.coming}`}>
+        {!promotion && states.promotion === "ready" ? <section className={`${styles.section} ${styles.coming}`}>
           <Gift /><div><span>OFERTAS</span><h2>Nuevas promociones próximamente</h2><p>Ahora mismo ves los precios normales. Cuando haya una promoción activa aparecerá aquí automáticamente.</p></div>
         </section> : null}
       </div>
@@ -346,7 +379,7 @@ function formatPromoMoney(value: number, currency: string) {
   catch { return `${Number(value || 0).toFixed(2)} ${currency}`; }
 }
 
-function MinuteCard({ pack, summary, packageLevel, busy, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; packageLevel: StandardPackLevel | null; busy: boolean; onBuy: () => void }) {
+function MinuteCard({ pack, summary, packageLevel, busy, unavailable, onBuy }: { pack: MinutePack; summary: RouletteSummary | null; packageLevel: StandardPackLevel | null; busy: boolean; unavailable: boolean; onBuy: () => void }) {
   const rewardCoins = Number(pack.rewardCoins || 0);
   return (
     <article className={`${styles.card} ${styles.minuteCard} ${pack.highlight ? styles.featured : ""}`} data-level={packageLevel || undefined} data-highlight={pack.highlight ? "true" : "false"}>
@@ -383,7 +416,7 @@ function MinuteCard({ pack, summary, packageLevel, busy, onBuy }: { pack: Minute
       {pack.rankBenefitsStatus === "unavailable" ? <div className={styles.rankBenefitExtra}><strong>Beneficios de rango temporalmente no disponibles</strong><span>No se muestran como 0. El precio, los minutos y los beneficios propios del pack siguen disponibles.</span></div> : null}
       {pack.rankBenefitsStatus === "unmapped_package" ? <div className={styles.rankBenefitExtra}><strong>Sin nivel de paquete asignado</strong><span>Este pack conserva sus beneficios propios; no se aplican extras de rango hasta que Admin lo asigne.</span></div> : null}
       <RouletteBenefit level={pack.rouletteLevel} summary={summary} spins={pack.rouletteSpins} rewardCoins={rewardCoins} oracleCredits={pack.oracleCredits} />
-      <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
+      <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy || unavailable} onClick={onBuy}>{busy ? "Conectando…" : "COMPRAR"}</button></ClientPurchaseAction>
     </article>
   );
 }

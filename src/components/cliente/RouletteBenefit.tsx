@@ -8,14 +8,14 @@ export default function RouletteBenefit({ level, summary, spins = 1, rewardCoins
   const prizes = summary?.catalogue.filter(p => p.nivel === level) ?? [];
   const catalogueMinutes = Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => p.reward_value));
   const catalogueCoins = Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => p.reward_value));
-  const minutes = catalogueMinutes || (level === 3 ? 100 : level === 2 ? 80 : 60);
-  const coins = catalogueCoins || (level === 3 ? 2000 : level === 2 ? 1000 : 400);
+  const prizesText = [catalogueMinutes > 0 ? `Hasta +${catalogueMinutes} min` : null, catalogueCoins > 0 ? `Hasta ${catalogueCoins.toLocaleString("es-ES")} Coins` : null].filter(Boolean).join(" · ");
+  const confirmed = [rewardCoins > 0 ? `+${rewardCoins.toLocaleString("es-ES")} Coins` : null, oracleCredits > 0 ? `+${oracleCredits} ${oracleCredits === 1 ? "tirada" : "tiradas"} Oráculo` : null].filter(Boolean).join(" · ");
+  if (spins <= 0 && !confirmed) return null;
   return <div className={styles.benefit} data-premium={level >= 2} data-level={level}>
     <span className={styles.eyebrow}>TU COMPRA INCLUYE</span>
-    <strong><Sparkles size={15}/> {spins} {spins === 1 ? "GIRO" : "GIROS"} NIVEL {level}</strong>
-    {rewardCoins > 0 ? <span className={styles.confirmed}>Al confirmar: +{rewardCoins.toLocaleString("es-ES")} Coins · +{oracleCredits} {oracleCredits === 1 ? "tirada" : "tiradas"} Oráculo</span> : null}
-    <span className={styles.prizes}>✨ Hasta +{minutes} min <i/> 🪙 Hasta {coins.toLocaleString("es-ES")} Coins</span>
-    <Link href={"/cliente/ruleta?nivel=" + level}>Ver ruleta <ArrowRight size={13}/></Link>
+    {spins > 0 ? <strong><Sparkles size={15}/> {spins} {spins === 1 ? "GIRO" : "GIROS"} NIVEL {level}</strong> : null}
+    {confirmed ? <span className={styles.confirmed}>Al confirmar: {confirmed}</span> : null}
+    {spins > 0 ? <><span className={styles.prizes}>{prizesText || "Consulta los premios disponibles en esta ruleta."}</span><Link href={"/cliente/ruleta?nivel=" + level}>Ver ruleta <ArrowRight size={13}/></Link></> : null}
     <small>Se activa cuando tu compra queda confirmada.</small>
   </div>;
 }

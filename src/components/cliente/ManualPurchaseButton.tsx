@@ -9,9 +9,10 @@ import { CLIENT_PURCHASE_CALL_OPTIONS, CLIENT_WEB_PURCHASE_CODE } from "@/lib/cl
 type ManualPurchaseButtonProps = {
   children?: ReactNode;
   className?: string;
+  disabled?: boolean;
 };
 
-export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL", className }: ManualPurchaseButtonProps) {
+export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL", className, disabled = false }: ManualPurchaseButtonProps) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const titleId = useId();
@@ -51,7 +52,7 @@ export default function ManualPurchaseButton({ children = "LLAMAR A LA CENTRAL",
 
   return (
     <>
-      <button ref={triggerRef} type="button" className={className} aria-haspopup="dialog" onClick={() => setOpen(true)}>
+      <button ref={triggerRef} type="button" className={className} disabled={disabled} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         {children}
       </button>
 

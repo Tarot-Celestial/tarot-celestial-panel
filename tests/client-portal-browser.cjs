@@ -130,17 +130,17 @@ async function frozen(page) {
     await check('Grouped navigation exposes every expected destination, Escape returns focus and outside click closes', async () => {
       const nav = page.getByRole('navigation', { name: 'Secciones del panel de cliente' });
       for (const [label, id, paths] of [
-        ['Consultar', 'consultar', ['tarotistas', 'precios-ofertas']],
+        ['Tarotistas', 'consultar', ['tarotistas', 'resenas']],
         ['Mi camino', 'camino', ['rangos', 'ritual']],
         ['Experiencias', 'experiencias', ['oraculo', 'ruleta', 'sorteo']],
-        ['Mi cuenta', 'cuenta', ['perfil', 'notificaciones', 'resenas']],
+        ['Mi cuenta', 'cuenta', ['perfil', 'notificaciones']],
       ]) {
         const button = nav.getByRole('button', { name: label, exact: true }); await button.click();
         assert.equal(await button.getAttribute('aria-expanded'), 'true');
         for (const target of paths) assert.ok(await nav.locator(`#client-nav-${id} a[href="/cliente/${target}"]`).isVisible());
         await page.keyboard.press('Escape'); assert.equal(await button.getAttribute('aria-expanded'), 'false'); assert.ok(await button.evaluate(el => el === document.activeElement));
       }
-      const trigger = nav.getByRole('button', { name: 'Consultar', exact: true }); await trigger.click(); await page.locator('#celestial-welcome').click(); assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
+      const trigger = nav.getByRole('button', { name: 'Tarotistas', exact: true }); await trigger.click(); await page.locator('#celestial-welcome').click(); assert.equal(await trigger.getAttribute('aria-expanded'), 'false');
     });
     await check('Rail contains six real destinations, loaded artwork and accessible arrows with real end states', async () => {
       await showRail(page); await railStart(page); await capture(page, 'desktop-rail');

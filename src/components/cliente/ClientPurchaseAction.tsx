@@ -11,5 +11,6 @@ function getButtonLabel(children: ReactNode): ReactNode {
 }
 
 export default function ClientPurchaseAction({ children, className }: { children: ReactNode; className?: string }) {
-  return <ManualPurchaseButton className={className}>{getButtonLabel(children)}</ManualPurchaseButton>;
+  const disabled = isValidElement<{ disabled?: boolean }>(children) && children.props.disabled === true;
+  return <ManualPurchaseButton className={className} disabled={disabled}>{getButtonLabel(children)}</ManualPurchaseButton>;
 }
