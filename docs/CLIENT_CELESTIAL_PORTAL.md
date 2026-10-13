@@ -27,3 +27,15 @@ En la validación local de esta entrega pasaron 59 pruebas de regresión y 11 co
 La prueba de navegación real Inicio → Rangos → Ruleta → Inicio también pasó: se conserva un único canvas entre planetas y se desmonta al regresar al portal. Para repetir las pruebas de UI: ejecutar un servidor local con variables ficticias de Supabase, instalar Playwright si no está disponible y lanzar node tests/client-portal-browser.cjs. TC_PORTAL_QA_URL permite cambiar el puerto y TC_PORTAL_QA_OUTPUT el destino del informe. Sólo se permiten localhost y 127.0.0.1.
 
 Limitación heredada: tres casos ajenos a esta entrega en tests/rank-benefits.test.cjs conservan contratos obsoletos de configuración/Admin y un mock incompleto. Fallan también al restituir el bloque original anterior. Los dos casos relevantes de permisos/navegación y denegación del endpoint ritual sí pasan.
+
+## Refinamiento del santuario y las experiencias
+
+El fondo conserva su arquitectura y recibe cascadas con textura de agua en cuatro regiones del escenario, tres nubes suaves y bruma local. Imagen y efectos comparten un plano de proporción 1586:992, por lo que las cascadas permanecen sobre sus islas al redimensionar. Sólo las texturas del agua, nubes y cielo cambian su transformación/opacidad; el arco y las estatuas quedan quietos. No se añade canvas ni un bucle de render continuo.
+
+Los seis accesos usan objetos RGBA separados en public/images/portal/objects, servidos por Next Image en tamaños adaptativos. Los objetos flotan sobre fondos limpios con halo discreto, conservando el texto fuera de la ilustración. Flotación y partículas dependen de visibilidad, pausa y movimiento reducido.
+
+Las flechas tienen 64px en escritorio y 48px en móvil. En pantallas anchas ocupan los márgenes exteriores del carrusel; en tamaños más pequeños tienen un canal reservado. A 320px se muestra una tarjeta completa. El arrastre y los enlaces siguen usando la implementación existente.
+
+El nuevo fondo se editó con el generador integrado usando el anterior como referencia. Se solicitaron 3072×1920, pero la herramienta conservó 1586×992; no hubo ampliación artificial ni se presenta como 4K/8K. La nube transparente mide 2172×724; los seis objetos 1254×1254. Los cambios de calidad se basan en detalle visual, compresión y composición.
+
+Validación local del refinamiento: 19 pruebas unitarias de movimiento y 16 comprobaciones de navegador aprobadas; TypeScript global correcto. Se comprobaron flechas laterales 64/48px, objetos flotantes, carga de seis imágenes, legibilidad 320px, swipe nativo, cascadas/nubes, pausa, movimiento reducido, canje sin confirmar y navegación entre portal y planetas. No se ejecutaron transacciones reales.

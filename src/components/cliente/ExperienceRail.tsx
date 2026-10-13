@@ -29,7 +29,7 @@ type Experience = {
 type MouseDrag = { pointerId: number; x: number; y: number; scroll: number; dragging: boolean };
 const count = (value: number) => Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
 const PARTICLES = [
-  [16, 26, -.8], [35, 13, -2.4], [78, 25, -4.2], [62, 40, -1.7], [87, 10, -3.3], [25, 47, -5.1],
+  [13, 29, -.8], [34, 14, -2.4], [81, 26, -4.2], [73, 68, -1.7], [89, 49, -3.3], [20, 78, -5.1],
 ] as const;
 
 function experiences(props: ExperienceRailProps): Experience[] {
@@ -60,15 +60,17 @@ function ExperienceCard({ card, index, running }: { card: Experience; index: num
   const [art, setArt] = useState<"loading" | "ready" | "fallback">("loading");
   const Icon = card.Icon;
   return <li className={styles.item}>
-    <Link href={card.href} className={styles.card} data-experience-card={card.id} data-running={running} style={{ "--experience-color": card.color } as CSSProperties} draggable={false}>
+    <Link href={card.href} className={styles.card} data-experience-card={card.id} data-running={running} style={{ "--experience-color": card.color, "--float-delay": `${-index * 1.25}s` } as CSSProperties} draggable={false}>
       <div className={styles.art} data-experience-art={card.id} data-art-status={art} aria-hidden="true">
-        <div className={styles.artFallback}><Icon size={62} strokeWidth={1.1} /></div>
-        {art !== "fallback" ? <Image src={`/images/portal/${card.id}.webp`} alt="" width={1536} height={1024} sizes="(max-width: 640px) 86vw, (max-width: 1000px) 46vw, 380px" loading={index < 3 ? "eager" : "lazy"} draggable={false} onLoad={() => setArt("ready")} onError={() => setArt("fallback")} /> : null}
-      </div>
-      <div className={styles.particles} aria-hidden="true">
-        {PARTICLES.map(([x, y, delay], particle) => <span key={particle} className={styles.particle} data-particle={particle % 3} style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${delay}s` }}>
-          {card.id === "benefits" ? ["✦", "✧", "⋄"][particle % 3] : card.id === "oracle" && particle % 3 !== 1 ? "✧" : card.id === "readers" ? "✦" : null}
-        </span>)}
+        <div className={styles.float} data-experience-float={card.id}>
+          <div className={styles.artFallback}><Icon size={82} strokeWidth={1.1} /></div>
+          {art !== "fallback" ? <Image src={`/images/portal/objects/${card.id}.webp`} alt="" width={1024} height={1024} sizes="(max-width: 360px) 180px, (max-width: 640px) 200px, 222px" loading={index < 3 ? "eager" : "lazy"} draggable={false} onLoad={() => setArt("ready")} onError={() => setArt("fallback")} /> : null}
+        </div>
+        <div className={styles.particles}>
+          {PARTICLES.map(([x, y, delay], particle) => <span key={particle} className={styles.particle} data-particle={particle % 3} style={{ left: `${x}%`, top: `${y}%`, animationDelay: `${delay}s` }}>
+            {card.id === "benefits" ? ["✦", "✧", "⋄"][particle % 3] : card.id === "oracle" && particle % 3 !== 1 ? "✧" : card.id === "readers" ? "✦" : null}
+          </span>)}
+        </div>
       </div>
       <div className={styles.content}>
         <span className={styles.detail}>{card.detail}</span>
@@ -182,15 +184,17 @@ export default function ExperienceRail(props: ExperienceRailProps) {
   return <section className={styles.rail} data-experience-rail="" aria-labelledby={titleId}>
     <header className={styles.header}>
       <div><h2 id={titleId}>Explora tu universo</h2><p>Desliza y descubre tu siguiente experiencia</p></div>
-      <div className={styles.controls}>
-        <button type="button" onClick={() => move(-1)} disabled={limits.start} aria-label="Ver experiencias anteriores"><ChevronLeft size={20} aria-hidden="true" /></button>
-        <button type="button" onClick={() => move(1)} disabled={limits.end} aria-label="Ver experiencias siguientes"><ChevronRight size={20} aria-hidden="true" /></button>
-      </div>
     </header>
-    <div ref={viewport} className={styles.viewport} dir="ltr" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag} onPointerLeave={() => { if (!drag.current?.dragging) drag.current = null; }} onClickCapture={captureClick} onDragStart={event => event.preventDefault()}>
-      <ul className={styles.track}>
-        {cards.map((card, index) => <ExperienceCard key={card.id} card={card} index={index} running={running && visible.has(card.id)} />)}
-      </ul>
+    <div className={styles.stage}>
+      <div className={styles.controls} data-experience-controls="" role="group" aria-label="Controles de experiencias">
+        <button type="button" onClick={() => move(-1)} disabled={limits.start} aria-label="Ver experiencias anteriores"><ChevronLeft size={28} aria-hidden="true" /></button>
+        <button type="button" onClick={() => move(1)} disabled={limits.end} aria-label="Ver experiencias siguientes"><ChevronRight size={28} aria-hidden="true" /></button>
+      </div>
+      <div ref={viewport} className={styles.viewport} data-experience-viewport="" dir="ltr" onPointerDown={startDrag} onPointerMove={moveDrag} onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag} onPointerLeave={() => { if (!drag.current?.dragging) drag.current = null; }} onClickCapture={captureClick} onDragStart={event => event.preventDefault()}>
+        <ul className={styles.track}>
+          {cards.map((card, index) => <ExperienceCard key={card.id} card={card} index={index} running={running && visible.has(card.id)} />)}
+        </ul>
+      </div>
     </div>
   </section>;
 }

@@ -17,14 +17,68 @@
 .parallax {
   position: absolute;
   inset: -22px;
+}
+.skyMotion {
+  position: absolute;
+  inset: 0;
   transform: translate3d(var(--portal-x), calc(var(--portal-y) - var(--portal-scroll)), 0) scale(1.015);
+}
+.scene {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  /* Exact 1586:992 source ratio. Parent includes the 22px cover margin. */
+  width: max(100%, calc(159.8790322581vh + 70.3467741935px));
+  aspect-ratio: 1586 / 992;
+  transform: translate(-50%, -50%);
+  overflow: hidden;
 }
 .sanctuary {
   position: absolute;
   inset: 0;
-  background: url("/images/portal/celestial-sanctuary.webp") center center / cover no-repeat,
-    radial-gradient(ellipse at 50% 40%, #302745, #080d1e 70%);
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at 50% 40%, #302745, #080d1e 70%);
 }
+.waterfall {
+  position: absolute;
+  overflow: hidden;
+  isolation: isolate;
+  contain: paint;
+  /* The water spreads slightly after leaving the rock, then dissolves into spray. */
+  clip-path: polygon(16% 0, 61% 0, 70% 21%, 79% 40%, 88% 63%, 100% 100%, 0 100%, 8% 63%, 15% 32%);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 8%, #000 68%, transparent 99%);
+  mask-image: linear-gradient(180deg, transparent, #000 8%, #000 68%, transparent 99%);
+}
+.waterTexture {
+  position: absolute;
+  inset: 0;
+  background-image: url("/images/portal/sanctuary-v2.webp");
+  background-size: var(--water-size);
+  background-position: var(--water-position);
+  background-repeat: no-repeat;
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: waterfallFlow var(--water-duration) linear var(--water-delay) infinite;
+}
+.waterTextureSecond { animation-delay: var(--water-second-delay); }
+.cloud, .mist {
+  position: absolute;
+  background: url("/images/portal/cloud-mist.webp") center / 100% 100% no-repeat;
+  opacity: .24;
+  contain: paint;
+  /* A soft local mask prevents a cutout edge without a full-screen filter. */
+  -webkit-mask-image: radial-gradient(ellipse, #000 24%, #000b 44%, transparent 72%);
+  mask-image: radial-gradient(ellipse, #000 24%, #000b 44%, transparent 72%);
+  animation: cloudDrift 54s ease-in-out infinite alternate;
+}
+.cloudLeft { left: -4%; top: 39%; width: 23%; height: 13%; animation-delay: -22s; }
+.cloudRight { right: -4%; top: 41%; width: 24%; height: 12%; animation-duration: 61s; animation-delay: -39s; }
+.cloudHorizon { left: 37%; top: 45%; width: 27%; height: 8%; opacity: .12; animation-duration: 76s; animation-delay: -31s; }
+.mist { width: 10%; height: 6%; opacity: .24; animation: sprayDrift 11s ease-in-out infinite alternate; }
+.mistLeft { left: 5%; top: 47%; animation-delay: -4s; }
+.mistRight { left: 88%; top: 47%; animation-delay: -8s; }
 .shade {
   position: absolute;
   inset: 0;
@@ -154,6 +208,20 @@
   from { opacity: .1; transform: translate3d(-12px, 0, 0) scale(.98); }
   to { opacity: .23; transform: translate3d(18px, 12px, 0) scale(1.07); }
 }
+@keyframes waterfallFlow {
+  0% { opacity: 0; transform: translate3d(-.3%, -7%, 0); }
+  18% { opacity: .5; }
+  75% { opacity: .45; }
+  100% { opacity: 0; transform: translate3d(.5%, 8%, 0); }
+}
+@keyframes cloudDrift {
+  from { transform: translate3d(-3%, 1%, 0) scale(1); }
+  to { transform: translate3d(4%, -2%, 0) scale(1.045); }
+}
+@keyframes sprayDrift {
+  from { opacity: .12; transform: translate3d(-3%, 4%, 0) scale(.95); }
+  to { opacity: .28; transform: translate3d(4%, -4%, 0) scale(1.08); }
+}
 @keyframes starBreath { from { opacity: .23; transform: scale(.85); } to { opacity: .68; transform: scale(1.1); } }
 @keyframes galaxyApproach {
   0%, 15% { opacity: .11; transform: translate3d(0, 0, 0) scale(.84); }
@@ -180,6 +248,11 @@
 .portal[data-quality="economy"] .constellationRight,
 .portal[data-quality="economy"] .shootingStarSecond,
 .portal[data-quality="economy"] .ship { display: none; }
+.portal[data-quality="economy"] .waterTextureSecond,
+.portal[data-quality="economy"] .cloudHorizon,
+.portal[data-quality="economy"] .mist { display: none; }
+.portal[data-quality="economy"] .waterTexture { animation-duration: 5s; }
+.portal[data-quality="economy"] .cloud { animation-duration: 80s; opacity: .15; }
 @media (max-width: 768px) {
   .star:nth-child(n+13), .galaxyRight, .nebulaRight, .constellationRight, .shootingStarSecond, .ship { display: none; }
   .sanctuary { background-position: center center; }

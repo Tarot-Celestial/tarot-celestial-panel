@@ -18,6 +18,51 @@ const STARS = Array.from({ length: 28 }, (_, index) => ({
   "--star-delay": `${-index * 1.7}s`,
 } as CSSProperties));
 
+// Source-pixel coordinates share the same cover-scaled plane as the architecture.
+// Reuse the actual water in the image rather than drawing flat light streaks.
+const SCENE_WIDTH = 1586;
+const SCENE_HEIGHT = 992;
+const WATERFALLS = [
+  { name: "left", x: 129, y: 343, width: 52, height: 165, duration: 3.4, delay: -.9 },
+  { name: "right", x: 1432, y: 382, width: 39, height: 129, duration: 3.1, delay: -1.8 },
+  { name: "right-far", x: 1508, y: 381, width: 36, height: 130, duration: 3.8, delay: -.6 },
+  { name: "upper-right", x: 1498, y: 148, width: 40, height: 161, duration: 3.5, delay: -2.2 },
+];
+
+function Waterfalls() {
+  return <>{WATERFALLS.map(({ name, x, y, width, height, duration, delay }) => {
+    const style = {
+      left: `${x / SCENE_WIDTH * 100}%`, top: `${y / SCENE_HEIGHT * 100}%`,
+      width: `${width / SCENE_WIDTH * 100}%`, height: `${height / SCENE_HEIGHT * 100}%`,
+      "--water-size": `${SCENE_WIDTH / width * 100}% ${SCENE_HEIGHT / height * 100}%`,
+      "--water-position": `${x / (SCENE_WIDTH - width) * 100}% ${y / (SCENE_HEIGHT - height) * 100}%`,
+      "--water-duration": `${duration}s`, "--water-delay": `${delay}s`,
+      "--water-second-delay": `${delay - duration / 2}s`,
+    } as CSSProperties;
+    return <div key={name} className={styles.waterfall} style={style} data-portal-waterfall={name}>
+      <i className={styles.waterTexture} />
+      <i className={`${styles.waterTexture} ${styles.waterTextureSecond}`} />
+    </div>;
+  })}</>;
+}
+
+const SCENERY = <div className={styles.scene} data-portal-scene="">
+  <img className={styles.sanctuary} src="/images/portal/sanctuary-v2.webp" alt="" decoding="async"
+    onError={(event) => {
+      const image = event.currentTarget;
+      if (image.dataset.fallback !== "true") {
+        image.dataset.fallback = "true";
+        image.src = "/images/portal/celestial-sanctuary.webp";
+      }
+    }} />
+  <Waterfalls />
+  <div className={`${styles.cloud} ${styles.cloudLeft}`} data-portal-cloud="left" />
+  <div className={`${styles.cloud} ${styles.cloudRight}`} data-portal-cloud="right" />
+  <div className={`${styles.cloud} ${styles.cloudHorizon}`} data-portal-cloud="horizon" />
+  <div className={`${styles.mist} ${styles.mistLeft}`} />
+  <div className={`${styles.mist} ${styles.mistRight}`} />
+</div>;
+
 /** Shared with the home logo, which must follow the same visibility and motion policy. */
 export function usePortalMotion(): { running: boolean } {
   const { running } = useContext(MotionContext);
@@ -168,8 +213,8 @@ export default function CelestialPortal({ children }: { children?: ReactNode }) 
   return <MotionContext.Provider value={context}>
     <div ref={host} className={styles.portal} data-celestial-portal="" data-motion={running ? "running" : "paused"} data-quality={economy ? "economy" : "full"} aria-hidden="true">
       <div className={styles.parallax}>
-        <div className={styles.sanctuary} />
-        {DECORATIONS}
+        {SCENERY}
+        <div className={styles.skyMotion}>{DECORATIONS}</div>
       </div>
       <div className={styles.shade} />
     </div>

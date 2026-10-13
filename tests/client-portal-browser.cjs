@@ -9,7 +9,7 @@ const baseURL = process.env.TC_PORTAL_QA_URL || 'http://127.0.0.1:3020';
 const origin = new URL(baseURL).origin;
 const smokeOnly = process.env.TC_PORTAL_QA_MODE === 'route-smoke';
 assert.ok(['localhost', '127.0.0.1'].includes(new URL(baseURL).hostname));
-const output = process.env.TC_PORTAL_QA_OUTPUT || path.resolve(__dirname, '../../outputs/portal-qa');
+const output = process.env.TC_PORTAL_QA_OUTPUT || path.resolve(__dirname, '../../outputs/portal-refinement-qa');
 const checks = [], failures = [], errors = [], consoleErrors = [], screenshots = [], blocked = new Set(), calls = new Set(), imageFailures = [], metrics = {};
 fs.mkdirSync(output, { recursive: true });
 const customerId = '00000000-0000-4000-8000-000000000001';
@@ -85,7 +85,7 @@ async function healthyPage(page, operation) {
   try { return await Promise.race([operation(), failure]); }
   finally { page.off('pageerror', onError); }
 }
-const rail = '[data-experience-rail]', viewport = `${rail} > div`, cards = '[data-experience-card]';
+const rail = '[data-experience-rail]', viewport = '[data-experience-viewport]', cards = '[data-experience-card]';
 async function overflow(page) {
   const value = await page.evaluate(() => ({ width: innerWidth, html: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
   assert.ok(value.html <= value.width + 1 && value.body <= value.width + 1, JSON.stringify(value)); return value;
@@ -94,6 +94,15 @@ async function showRail(page) { await page.locator(rail).scrollIntoViewIfNeeded(
 async function railStart(page) { await page.locator(viewport).evaluate(el => el.scrollTo({ left: 0, behavior: 'instant' })); await page.waitForTimeout(250); }
 async function railMetrics(page) {
   return page.locator(viewport).evaluate(el => ({ left: el.scrollLeft, width: el.clientWidth, scrollWidth: el.scrollWidth, cards: [...el.querySelectorAll('[data-experience-card]')].map(card => ({ id: card.dataset.experienceCard, running: card.dataset.running, width: card.getBoundingClientRect().width, animations: card.getAnimations({ subtree: true }).filter(animation => animation instanceof CSSAnimation).map(animation => ({ name: animation.animationName, state: animation.playState, time: Number(animation.currentTime) })) })) }));
+}
+async function worldAnimations(page) {
+ return page.locator('[data-celestial-portal]').evaluate(element => element.getAnimations({subtree:true}).filter(a => a instanceof CSSAnimation).map(a => ({name:a.animationName,state:a.playState,time:Number(a.currentTime)})));
+}
+async function frozenWorld(page) {
+ const before=await worldAnimations(page);await page.waitForTimeout(350);const after=await worldAnimations(page);
+ assert.equal(after.length,before.length);
+ after.forEach((a,i)=>{assert.notEqual(a.state,'running');assert.ok(Math.abs(a.time-before[i].time)<30, a.name+' kept running');});
+ return after;
 }
 async function frozen(page) {
   await page.waitForFunction(() => [...document.querySelectorAll('[data-experience-card]')].every(el => el.dataset.running === 'false'));
@@ -153,10 +162,64 @@ async function frozen(page) {
       await page.locator('[data-experience-card="oracle"]').focus(); assert.ok(await page.locator('[data-experience-card="oracle"]').evaluate(el => el === document.activeElement));
       metrics.desktop.afterDrag = await railMetrics(page);
     });
+    await check('Large arrows sit beside the cards without covering the swipe viewport', async () => {
+      for(const p of [page,phone]) {
+        await showRail(p); await railStart(p);
+        const area=await p.locator(viewport).boundingBox();
+        const left=await p.getByRole('button',{name:'Ver experiencias anteriores'}).boundingBox();
+        const right=await p.getByRole('button',{name:'Ver experiencias siguientes'}).boundingBox();
+        const minimum=p===page?64:48;
+        assert.ok(left.width>=minimum&&left.height>=minimum);
+        assert.ok(right.width>=minimum&&right.height>=minimum);
+        assert.ok(left.x+left.width<=area.x+2, 'Previous arrow covers cards');
+        assert.ok(right.x>=area.x+area.width-2, 'Next arrow covers cards');
+        assert.ok(Math.abs(left.y+left.height/2-(area.y+area.height/2))<16, 'Arrow must align with card row');
+        await overflow(p);
+      }
+    });
+    await check('Isolated objects float on clean cards and all six artworks load', async () => {
+      await showRail(page); await railStart(page);
+      const object=page.locator('[data-experience-card="oracle"] [data-experience-float]');
+      await page.waitForFunction(()=>document.querySelector('[data-experience-card="oracle"]')?.dataset.running==='true');
+      const before=await object.evaluate(el=>getComputedStyle(el).transform);
+      await page.waitForTimeout(650);
+      const after=await object.evaluate(el=>getComputedStyle(el).transform);
+      assert.notEqual(before,after,'Object should float independently');
+      for(const id of ['oracle','ritual','benefits','raffle','roulette','readers']){
+        const item=page.locator('[data-experience-card="'+id+'"]');
+        await item.scrollIntoViewIfNeeded();
+        await item.locator('[data-art-status="ready"]').waitFor();
+        const img=item.locator('[data-experience-float] img');
+        assert.ok(await img.evaluate(el=>el.complete&&el.naturalWidth>0));
+        assert.ok((await img.getAttribute('src')).includes('objects'));
+      }
+      await railStart(page); await capture(page,'desktop-clean-cards');await capture(phone,'mobile-clean-cards');
+    });
+    await check('Small phones keep titles and side controls readable at 320px', async () => {
+      await phone.setViewportSize({width:320,height:844});await showRail(phone);await railStart(phone);
+      await overflow(phone);
+      const item=phone.locator('[data-experience-card="oracle"]');
+      const cardBox=await item.boundingBox(), title=await item.locator('h3').boundingBox();
+      const float=await item.locator('[data-experience-float]').boundingBox();
+      assert.ok(title.x>=cardBox.x&&title.x+title.width<=cardBox.x+cardBox.width+1);
+      assert.ok(title.y>=float.y+float.height-8,'Title overlaps object');
+      assert.ok((await item.innerText()).includes('Explorar'));
+      await capture(phone,'mobile-320-clean-cards');
+      await phone.setViewportSize({width:390,height:844});await showRail(phone);
+    });
+    await check('Waterfalls and cloud layers animate while sharing the scenery plane', async () => {
+      assert.ok(await page.locator('[data-portal-waterfall]').count()>=2);
+      assert.ok(await page.locator('[data-portal-cloud]').count()>=2);
+      assert.ok(await page.locator('[data-portal-scene] [data-portal-waterfall]').count()>=2);
+      const moving=await worldAnimations(page);
+      await page.waitForTimeout(400);const moved=await worldAnimations(page);
+      assert.ok(moved.some((a,i)=>a.state==='running'&&a.time>moving[i].time+100));
+      metrics.scenery={waterfalls:await page.locator('[data-portal-waterfall]').count(),clouds:await page.locator('[data-portal-cloud]').count(),animations:moved.length};
+    });
     await check('Manual pause freezes rail particles and resume restores visible-card animation', async () => {
       await showRail(page); await page.waitForFunction(() => [...document.querySelectorAll('[data-experience-card]')].some(el => el.dataset.running === 'true'));
       await page.getByRole('button', { name: 'Pausar universo', exact: true }).click();
-      assert.equal(await page.locator('[data-celestial-portal]').getAttribute('data-motion'), 'paused'); metrics.paused = await frozen(page);
+      assert.equal(await page.locator('[data-celestial-portal]').getAttribute('data-motion'), 'paused'); metrics.paused = await frozen(page); metrics.pausedWorld=await frozenWorld(page);
       await page.getByRole('button', { name: 'Reanudar universo', exact: true }).click();
       await page.waitForFunction(() => [...document.querySelectorAll('[data-experience-card]')].some(el => el.dataset.running === 'true'));
       assert.ok((await railMetrics(page)).cards.some(card => card.running === 'true' && card.animations.some(animation => animation.state === 'running')));
@@ -188,7 +251,7 @@ async function frozen(page) {
     const reduced = await contextFor(browser, { viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' }); const still = await pageFor(reduced);
     await check('Reduced motion presents a static portal, no motion control and no moving card particles', async () => {
       assert.equal(await still.locator('[data-celestial-portal]').getAttribute('data-motion'), 'paused'); assert.equal(await still.getByRole('button', { name: /Pausar universo|Reanudar universo/ }).count(), 0);
-      await showRail(still); metrics.reduced = await frozen(still); await overflow(still); await capture(still, 'reduced');
+      await showRail(still); metrics.reduced = await frozen(still); await frozenWorld(still); await overflow(still); await capture(still, 'reduced');
     });
     const locked = await contextFor(browser, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }, { ritualAccess: false }); const withoutRitual = await pageFor(locked);
     await check('No ritual access removes ritual cards and menu entries while retaining other experiences', async () => {
