@@ -147,6 +147,12 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const selectedMeta = levelMeta[level];
   const SelectedLevelIcon = selectedMeta.icon;
   const isDiamondView = level === 5;
+  const unavailableReason = isDiamondView && summary && !summary.diamond_access
+    ? "La ruleta Diamante no está disponible con tu acceso actual."
+    : prizes.length === 0 ? "No hay premios configurados para este nivel."
+      : !available ? "No hay giros disponibles para este nivel."
+        : !nextSpinByLevel?.[level] ? "No se ha podido confirmar un giro disponible. Vuelve a cargar tus giros." : undefined;
+  const spinDisabled = busy || (!pending && !!unavailableReason);
 
   const selectedMaxMinutes = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => Number(p.reward_value || 0))), [prizes]);
   const selectedMaxCoins = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "coins").map(p => Number(p.reward_value || 0))), [prizes]);
@@ -175,6 +181,9 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
 
   async function spin(targetLevel: RouletteLevel = level) {
     if (inFlight.current || !summary) return;
+    // Recovery always reuses its original ID; fresh spins must meet the same guards as both buttons.
+    if (!pendingRef.current && ((targetLevel === 5 && !summary.diamond_access) ||
+      Number(spinsByLevel?.[targetLevel] || 0) <= 0 || !summary.catalogue.some(prize => prize.nivel === targetLevel))) return;
     const request = pendingRef.current || { spin_id: nextSpinByLevel?.[targetLevel] || "", level: targetLevel };
     if (!request.spin_id) return;
     setLevel(request.level);
@@ -367,7 +376,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           </div>
           <CelestialWheel prizes={wheelPrizes} level={level} rotation={rotation} busy={busy} spinning={spinning}
             pending={!!pending} available={available} winner={result?.reward_id}
-            disabled={busy || (!pending && (prizes.length === 0 || !available || !nextSpinByLevel?.[level] || (isDiamondView && !summary.diamond_access)))}
+            disabled={spinDisabled} unavailableReason={unavailableReason}
             onSpin={() => void spin()}/>
           <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina y acredita de forma segura antes de mostrar el resultado.</small>
         </div>
@@ -385,8 +394,8 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             <span>{prizeLabel(p)}<small>{rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel]}{p.special ? " · PREMIO DESTACADO" : ""}</small></span>
             {p.special && <Star size={14} className={styles.specialStar}/>}
           </li>)}</ul>
-          <button type="button" className={styles.spin} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"} disabled={busy || (!pending && (prizes.length === 0 || !available || !nextSpinByLevel?.[level] || (isDiamondView && !summary.diamond_access)))} onClick={() => void spin()}>
-            {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : prizes.length === 0 ? "Sin premios configurados" : pending ? "Comprobar mi giro pendiente" : isDiamondView ? "GIRAR · DIAMANTE" : level === 4 ? "Girar · Especial" : "Girar · Nivel " + level}
+          <button type="button" className={styles.spin} data-roulette-spin="secondary" data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"} disabled={spinDisabled} onClick={() => void spin()}>
+            {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : pending ? "Comprobar mi giro pendiente" : unavailableReason ? "Giro no disponible" : isDiamondView ? "GIRAR · DIAMANTE" : level === 4 ? "Girar · Especial" : "Girar · Nivel " + level}
           </button>
           {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">{isDiamondView ? "Ver consultas · Conseguir giro Diamante" : "Ver consultas · Desbloquear un giro"} <ArrowRight size={17}/></Link>}
           <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>

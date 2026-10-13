@@ -28,7 +28,9 @@
 .orbit[data-dense=true] .treasure b { font-size:clamp(9px,2.8cqw,17px); }
 .orbit[data-dense=true] .treasure[data-long=true] b { font-size:clamp(7px,1.65cqw,11px); }
 .orbit[data-dense=true] .treasure small { font-size:clamp(5px,1.25cqw,7px); letter-spacing:0; }
-.center { position:absolute; z-index:5; top:50%; left:50%; transform:translate(-50%,-50%); width:35%; aspect-ratio:1; padding:6px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px; border:1px solid var(--accent); border-radius:50%; color:var(--accent); background:radial-gradient(ellipse at 40% 0%,var(--glass-light),var(--glass-dark) 65%); box-shadow:0 0 0 7px #090b1d,0 0 0 8px var(--halo),inset 0 0 20px var(--halo),0 0 35px var(--halo); cursor:pointer; transition:filter .2s,box-shadow .2s; }
+/* Keep centering independent of the panel theme's button:active transform. */
+.center { position:absolute; z-index:5; top:50%; left:50%; translate:-50% -50%; width:35%; aspect-ratio:1; padding:6px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:6px; border:1px solid var(--accent); border-radius:50%; color:var(--accent); background:radial-gradient(ellipse at 40% 0%,var(--glass-light),var(--glass-dark) 65%); box-shadow:0 0 0 7px #090b1d,0 0 0 8px var(--halo),inset 0 0 20px var(--halo),0 0 35px var(--halo); cursor:pointer; touch-action:manipulation; transition:filter .2s,box-shadow .2s; }
+.halo,.pointer,.rotor,.orbit::before,.center>* { pointer-events:none; }
 .center::before { content:""; position:absolute; inset:7%; border-radius:inherit; border:1px solid var(--halo); pointer-events:none; }
 .center svg { width:27%; height:27%; stroke-width:1.4; filter:drop-shadow(0 0 9px var(--halo)); }
 .center strong { font-size:clamp(9px,3.4cqw,19px); letter-spacing:.09em; }

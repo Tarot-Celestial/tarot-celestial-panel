@@ -1,0 +1,84 @@
+LEONARIS: ACOMPAÑAMIENTO Y MEMORIA POR CLIENTA
+
+Alcance
+Leonaris adapta la orientación a las secciones visitadas, las interacciones,
+las valoraciones de respuestas y las notas que la clienta guarda expresamente.
+Mantiene preferencias de nombre y estilo cercano o conciso. Esta adaptación
+utiliza contexto persistente y reglas; no reentrena el modelo ni acredita ventas
+o resultados por sí misma. La información de saldos, giros y compras procede
+de las consultas verificadas del servidor.
+
+Apariencia y movimiento
+El atlas public/companions/leonaris-v2.png contiene doce poses transparentes:
+cuatro pasos, reposo, indicación, celebración, sueño, pensamiento, parpadeo y
+miradas a ambos lados. La imagen anterior sirve como respaldo si falla la nueva.
+Se puede arrastrar la mascota con ratón o pantalla táctil; las flechas del teclado
+también la desplazan y la tecla Inicio restaura su posición. Su ubicación se
+conserva por cuenta en ese navegador. Las animaciones respetan la preferencia
+de movimiento reducido y se detienen cuando la página no está visible.
+
+Ruleta
+El botón central mantiene su posición al pulsarlo y comparte las comprobaciones
+del botón inferior. Un giro pendiente se recupera con su identificador original.
+Entrar en la cuenta o recibir orientación de Leonaris no inicia ningún giro.
+
+Cuenta y permisos
+La API /api/cliente/leo utiliza la identidad autenticada del servidor y verifica
+la coincidencia con crm_clientes.auth_user_id. El clientId no se toma del cuerpo
+de la petición. Cada lectura y escritura queda limitada a esa cuenta.
+Las tablas nuevas tienen RLS y acceso exclusivo de service_role. La RPC
+tc_leonaris_memory es SECURITY INVOKER, con search_path vacío y sin permisos
+para PUBLIC, anon o authenticated. La clave de servicio permanece en servidor.
+
+Configuración del modelo
+Se utiliza el primer modelo configurado entre LEONARIS_MODEL,
+CENTRAL_ASSISTANT_MODEL y OPENAI_TEXT_MODEL, en ese orden. OPENAI_API_KEY es
+necesaria para el modo IA. Son variables privadas del servidor.
+Si faltan modelo o clave, o falla la respuesta del proveedor, continúa la guía
+local. La IA selecciona fichas verificadas y aperturas permitidas; no inventa
+saldos, premios, rutas ni números. Los botones orientan o navegan: Leonaris no
+compra, canjea ni consume giros o minutos automáticamente.
+
+Límites y retención
+- Hasta 20 notas explícitas de 400 caracteres cada una, con deduplicación.
+- Contexto conversacional: últimos 12 turnos, equivalentes a seis intercambios.
+- Historial acotado a aproximadamente 60 solicitudes por cuenta. Los registros
+  de más de 30 días se descartan al volver a consultar o escribir esa memoria.
+  No existe una purga global programada ni un cron en esta implementación.
+- Sin memoria, no se conserva el texto de nuevas preguntas. Una respuesta
+  puede permanecer en caché de reintento durante 10 minutos; se descarta al
+  volver a acceder después de ese plazo y no se usa como historial.
+- Solicitudes identificadas por UUID, respuestas repetibles sin duplicación,
+  token por intento y límites de ocho intentos por minuto y sesenta por hora.
+- Visitas e interacciones admiten las once secciones y se deduplican durante
+  30 segundos por tipo y sección. Los parámetros de consulta y fragmentos se
+  eliminan antes de validar la ruta canónica.
+
+Control de la clienta
+Desactivar memoria detiene el registro de visitas e interacciones, elimina el
+historial utilizable y excluye notas y hábitos de las recomendaciones. Conserva
+las notas explícitas para una posible reactivación, sin utilizarlas mientras
+está desactivada. La comprobación de esta preferencia y la escritura de señales
+comparten bloqueo transaccional, evitando una visita posterior al opt-out.
+
+Se puede borrar cada nota. Olvidar todo elimina notas, contenido conversacional,
+valoraciones y señales aprendidas, incluidos los contadores del perfil anterior.
+Conserva las preferencias hidden/muted y metadatos técnicos sin contenido para
+que el borrado no permita saltarse los límites de solicitudes. Revoca los
+intentos pendientes; sus respuestas tardías no pueden restaurar recuerdos.
+Desactivar y reactivar durante una consulta tampoco restaura su historial.
+
+Migración y validación
+Archivo generado con la CLI oficial de Supabase:
+supabase/migrations/20261013134318_leonaris_companion_memory.sql
+La migración es aditiva y puede reaplicarse preservando los datos existentes.
+Este documento no confirma su aplicación ni un despliegue en producción.
+
+Pruebas de memoria y contrato:
+node --test --test-isolation=none tests/leonaris-companion.test.cjs tests/leonaris-memory.integration.cjs
+Resultado local comprobado: 17 pruebas aprobadas. Incluyen reaplicación, roles,
+aislamiento entre dos clientas, límites, deduplicación, feedback idempotente,
+retención, borrado, opt-out, señales y respuestas pendientes. TypeScript global
+también fue validado durante esta implementación.
+Las pruebas complementarias del servidor están en tests/leonaris-server.test.cjs;
+las verificaciones del navegador, en tests/leonaris-companion-browser.cjs.

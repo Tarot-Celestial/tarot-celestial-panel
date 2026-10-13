@@ -25,10 +25,12 @@ function value(prize:RoulettePrize) {
   if(prize.reward_type==="rank") return [String(prize.meta?.rank || "Rango"),"RANGO"];
   return [prize.reward_type==="ritual"?"Ritual":"Extra","PREMIO"];
 }
-type Props = { prizes:RoulettePrize[]; level:RouletteLevel; rotation:number; busy:boolean; spinning:boolean; pending:boolean; disabled:boolean; available:number|null; winner?:string; onSpin:()=>void };
-export default function CelestialWheel({prizes,level,rotation,busy,spinning,pending,disabled,available,winner,onSpin}:Props) {
+type Props = { prizes:RoulettePrize[]; level:RouletteLevel; rotation:number; busy:boolean; spinning:boolean; pending:boolean; disabled:boolean; available:number|null; winner?:string; unavailableReason?:string; onSpin:()=>void };
+export default function CelestialWheel({prizes,level,rotation,busy,spinning,pending,disabled,available,winner,unavailableReason,onSpin}:Props) {
   const id=useId().replace(/:/g, ""), Emblem=EMBLEMS[level];
   const count=prizes.length, dense=count>9, title=level<4?"Nivel "+level:NAMES[level];
+  const blocked = busy || disabled;
+  const label = busy ? (spinning ? "GIRANDO" : "PREPARANDO") : pending ? "COMPROBAR" : !count ? "SIN PREMIOS" : !available ? "SIN GIROS" : disabled ? "NO DISPONIBLE" : "GIRAR";
   return <div className={styles.experience} data-level={level} data-busy={busy} data-spinning={spinning} style={{"--spin-time":WHEEL_SPIN_MS+"ms"} as CSSProperties}>
     <div className={styles.heading}><span>EL CÍRCULO DE LOS TESOROS</span><h3>{NAMES[level]}</h3><p>{available ?? "—"} {available===1?"giro disponible":"giros disponibles"}</p></div>
     <div className={styles.orbit} data-dense={dense} data-empty={!count}>
@@ -56,14 +58,15 @@ export default function CelestialWheel({prizes,level,rotation,busy,spinning,pend
           </span>;
         })}
       </div>
-      <button type="button" className={styles.center} disabled={disabled} onClick={onSpin} data-leo-anchor={pending?"roulette-recovery":undefined}
-        aria-label={pending?"Comprobar giro pendiente":!count?"No hay premios configurados para este nivel":available?"Girar ruleta "+title:"No hay giros disponibles"}>
+      <button type="button" className={styles.center} disabled={blocked} onClick={onSpin} data-roulette-spin="center" data-leo-anchor={pending?"roulette-recovery":undefined}
+        aria-busy={busy} aria-describedby={id+"status"}
+        aria-label={busy?"Confirmando giro de "+title:pending?"Comprobar giro pendiente":disabled?(unavailableReason || "Ruleta no disponible"):"Girar ruleta "+title}>
         {busy?<RotateCw/>:disabled?<LockKeyhole/>:level===5?<RouletteRewardArt type="perk" className={styles.emblemArt}/>:level===3?<RouletteRewardArt type="rank" className={styles.emblemArt}/>:<Emblem/>}
-        <strong>{busy?(spinning?"GIRANDO":"PREPARANDO"):pending?"COMPROBAR":!count?"SIN PREMIOS":available?"GIRAR":"SIN GIROS"}</strong>
+        <strong>{label}</strong>
         <small>{title}</small>
       </button>
     </div>
-    <div className={styles.status} role="status" aria-live="polite">{busy?(spinning?"La rueda está revelando tu premio…":"Confirmando tu giro…"):winner?"Tu premio ya está listo":pending?"Recupera tu resultado sin gastar otro giro":available?"Pulsa GIRAR en el centro · Usa 1 giro":"Consulta los premios de esta ruleta"}</div>
+    <div id={id+"status"} className={styles.status} role="status" aria-live="polite">{busy?(spinning?"La rueda está revelando tu premio…":"Confirmando tu giro…"):winner?"Tu premio ya está listo":pending?"Recupera tu resultado sin gastar otro giro":disabled?(unavailableReason || "Consulta la disponibilidad de esta ruleta"):"Pulsa GIRAR en el centro · Usa 1 giro"}</div>
   </div>;
 }
 

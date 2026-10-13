@@ -1,132 +1,97 @@
 import { NextResponse } from "next/server";
-import { clientFromRequest } from "@/lib/server/auth-cliente";
-import { getOracleCreditBalance } from "@/lib/server/oracle-premium";
-import { promotionIsLive } from "@/lib/server/client-promotions";
+import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
+import { buildLeoRecommendation, leoContextForPath } from "@/lib/leo-celestial-intelligence";
+import { LEO_SECTIONS, safeLeoPath } from "@/lib/leo-guide";
+import { validLeonarisId } from "@/lib/leonaris-companion";
+import { loadLeonarisContext, leonarisCompanion, leonarisProfile } from "@/lib/server/leonaris-context";
+import { answerLeonaris } from "@/lib/server/leonaris-chat";
 import {
-  buildLeoRecommendation,
-  leoContextForPath,
-  type LeoLiveFacts,
-  type LeoMemoryProfile,
-} from "@/lib/leo-celestial-intelligence";
+  getLeonarisMemory, updateLeonarisPreferences, rememberLeonarisMemory, forgetLeonarisMemory,
+  resetLeonarisMemory, claimLeonarisChat, completeLeonarisChat, failLeonarisChat,
+  recordLeonarisFeedback, recordLeonarisSignal, LeonarisMemoryError,
+} from "@/lib/server/leonaris-memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+const HEADERS = { "Cache-Control": "private, no-store, max-age=0", Vary: "Authorization" };
+const json = (body: unknown, status = 200, extra: Record<string, string> = {}) => NextResponse.json(body, { status, headers: { ...HEADERS, ...extra } });
+type Gate = Awaited<ReturnType<typeof rouletteClient>>;
 
-const HEADERS = { "Cache-Control": "private, no-store" };
-const VALID_CONTEXTS = new Set([
-  "dashboard", "promotions", "roulette", "oracle", "profile",
-  "tarotists", "notifications", "raffle", "reviews",
-]);
-
-function cleanContext(value: unknown) {
-  const context = String(value || "").trim().toLowerCase();
-  return VALID_CONTEXTS.has(context) ? context : "dashboard";
+function failure(error: unknown) {
+  if (error instanceof RouletteAccessError) return json({ ok: false, error: error.message }, error.status);
+  if (error instanceof LeonarisMemoryError) {
+    const messages: Record<string, string> = {
+      invalid_request: "Revisa el mensaje e inténtalo de nuevo.", invalid_memory: "Escribe un recuerdo de hasta cuatrocientos caracteres.",
+      invalid_preferences: "Revisa la preferencia seleccionada.", memory_limit: "Ya tienes veinte recuerdos. Borra uno para guardar otro.",
+      memory_disabled: "Activa la memoria antes de guardar un recuerdo.", request_conflict: "Envía ese mensaje como una consulta nueva.",
+      invalid_feedback: "No he podido guardar esa valoración.", stale_claim: "La consulta ha cambiado. Envía tu mensaje de nuevo.",
+      invalid_signal: "Elige un apartado válido del panel.",
+      not_found: "Este recuerdo o respuesta ya no está disponible.",
+    };
+    if (messages[error.code]) return json({ ok: false, error: messages[error.code] }, error.code === "stale_claim" ? 409 : 400);
+  }
+  // Never log questions, memories, tokens, provider bodies or raw database error messages.
+  console.error("[leonaris] request unavailable");
+  return json({ ok: false, error: "No he podido consultar tu información ahora. Vuelve a intentarlo en un momento." }, 503);
 }
 
-function profileShape(row: any): LeoMemoryProfile {
-  return {
-    hidden: Boolean(row?.hidden),
-    muted: Boolean(row?.muted),
-    visit_counts: row?.visit_counts && typeof row.visit_counts === "object" ? row.visit_counts : {},
-    interest_scores: row?.interest_scores && typeof row.interest_scores === "object" ? row.interest_scores : {},
-    interaction_counts: row?.interaction_counts && typeof row.interaction_counts === "object" ? row.interaction_counts : {},
-    last_path: row?.last_path || null,
-    last_seen_at: row?.last_seen_at || null,
-  };
-}
-
-async function loadFacts(gate: Awaited<ReturnType<typeof clientFromRequest>>): Promise<LeoLiveFacts> {
-  const now = new Date();
-  const [spinsResult, promotionsResult, oracleResult] = await Promise.all([
-    gate.admin
-      .from("cliente_ruleta_giros")
-      .select("id", { count: "exact", head: true })
-      .eq("cliente_id", gate.cliente.id)
-      .eq("estado", "pending"),
-    gate.admin
-      .from("tc_client_promotions")
-      .select("id,name,status,starts_at,ends_at,active_until_disabled")
-      .in("status", ["active", "scheduled"])
-      .order("created_at", { ascending: false }),
-    getOracleCreditBalance(gate.admin, gate.cliente.id).catch(() => null),
+async function responseFor(gate: Gate) {
+  const [memory, context, row] = await Promise.all([
+    getLeonarisMemory(gate.cliente.id), loadLeonarisContext(gate),
+    gate.admin.from("tc_client_leo_profiles").select("hidden,muted,visit_counts,interest_scores,interaction_counts,last_path,last_seen_at").eq("client_id", gate.cliente.id).maybeSingle(),
   ]);
-
-  if (spinsResult.error) throw spinsResult.error;
-  if (promotionsResult.error) throw promotionsResult.error;
-  const activePromotion = (promotionsResult.data || []).find((row: any) => promotionIsLive(row, now));
-
-  return {
-    activePromotion: activePromotion
-      ? { id: String(activePromotion.id), name: String(activePromotion.name || "Promoción de hoy") }
-      : null,
-    pendingSpins: Math.max(0, Number(spinsResult.count || 0)),
-    oracleCredits: oracleResult == null ? null : Math.max(0, Number(oracleResult)),
-    coins: Math.max(0, Number(gate.cliente.puntos || 0)),
-    minutes: Math.max(0, Number(gate.cliente.minutos_free_pendientes || 0) + Number(gate.cliente.minutos_normales_pendientes || 0)),
-  };
-}
-
-async function responseFor(gate: Awaited<ReturnType<typeof clientFromRequest>>, profileRow: any) {
-  const profile = profileShape(profileRow);
-  const facts = await loadFacts(gate);
-  return NextResponse.json({
-    ok: true,
-    profile,
-    facts,
-    recommendation: buildLeoRecommendation(profile, facts),
-  }, { headers: HEADERS });
+  if (row.error) throw new Error("LEONARIS_PROFILE_UNAVAILABLE");
+  const profile = leonarisProfile(row.data);
+  const interests = memory.memoryEnabled ? profile : { ...profile, visit_counts: {}, interest_scores: {}, interaction_counts: {} };
+  return json({ ok: true, profile: interests, facts: context.facts, recommendation: buildLeoRecommendation(interests, context.facts), companion: leonarisCompanion(memory, context) });
 }
 
 export async function GET(req: Request) {
-  try {
-    const gate = await clientFromRequest(req);
-    if (!gate.uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401, headers: HEADERS });
-    if (!gate.cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers: HEADERS });
-
-    const { data, error } = await gate.admin
-      .from("tc_client_leo_profiles")
-      .select("hidden,muted,visit_counts,interest_scores,interaction_counts,last_path,last_seen_at")
-      .eq("client_id", gate.cliente.id)
-      .maybeSingle();
-    if (error) throw error;
-    return responseFor(gate, data);
-  } catch (error: any) {
-    console.error("[cliente:leo:get]", error?.message || error);
-    return NextResponse.json({ ok: false, error: "LEO_PROFILE_UNAVAILABLE" }, { status: 503, headers: HEADERS });
-  }
+  try { return await responseFor(await rouletteClient(req)); } catch (error) { return failure(error); }
 }
 
 export async function POST(req: Request) {
   try {
-    const gate = await clientFromRequest(req);
-    if (!gate.uid) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401, headers: HEADERS });
-    if (!gate.cliente) return NextResponse.json({ ok: false, error: "CLIENTE_NO_ENCONTRADO" }, { status: 404, headers: HEADERS });
-
-    const body = await req.json().catch(() => ({}));
-    const action = String(body?.action || "").trim().toLowerCase();
-    if (!new Set(["visit", "interaction", "preference"]).has(action)) {
-      return NextResponse.json({ ok: false, error: "LEO_SIGNAL_INVALID" }, { status: 400, headers: HEADERS });
+    const gate = await rouletteClient(req);
+    // All queries use the client resolved above; request-supplied identity is ignored.
+    if (Number(req.headers.get("content-length") || 0) > 16000) return json({ ok: false, error: "El mensaje es demasiado largo." }, 413);
+    const text = await req.text();
+    if (text.length > 16000) return json({ ok: false, error: "El mensaje es demasiado largo." }, 413);
+    let body: any;
+    try { body = JSON.parse(text); } catch { return json({ ok: false, error: "Petición no válida." }, 400); }
+    if (!body || Array.isArray(body) || typeof body !== "object") return json({ ok: false, error: "Petición no válida." }, 400);
+    const id = gate.cliente.id;
+    const pathname = safeLeoPath(body.pathname) ? body.pathname.slice(0, 160) : "/cliente/dashboard";
+    if (body.action === "chat") {
+      if (!validLeonarisId(body.requestId) || typeof body.message !== "string" || !body.message.trim() || Array.from(body.message).length > 2000) return json({ ok: false, error: "Escribe un mensaje de hasta dos mil caracteres." }, 400);
+      const claim = await claimLeonarisChat(id, body.requestId, body.message);
+      if (claim.status === "completed") return claim.answer ? json({ ok: true, answer: claim.answer }) : json({ ok: false, error: "Esta respuesta ya no está guardada. Envía una consulta nueva." }, 409);
+      if (claim.status !== "claimed") return json({ ok: false, error: claim.status === "in_progress" ? "Todavía estoy preparando esta respuesta. Espera un momento." : "Vamos con calma: espera un momento antes de otra consulta." }, 429, { "Retry-After": String(claim.retryAfter) });
+      try {
+        const [memory, context] = await Promise.all([getLeonarisMemory(id), loadLeonarisContext(gate, true)]);
+        const answer = await answerLeonaris(context, memory, body.requestId, body.message.trim(), pathname);
+        await completeLeonarisChat(id, body.requestId, claim.claimToken, answer);
+        return json({ ok: true, answer });
+      } catch (error) {
+        await failLeonarisChat(id, body.requestId, claim.claimToken).catch(() => {});
+        throw error;
+      }
     }
-
-    const pathname = String(body?.pathname || "/cliente/dashboard").slice(0, 160);
-    const context = action === "preference"
-      ? cleanContext(body?.context)
-      : cleanContext(body?.context || leoContextForPath(pathname));
-    const hidden = action === "preference" && typeof body?.hidden === "boolean" ? body.hidden : null;
-    const muted = action === "preference" && typeof body?.muted === "boolean" ? body.muted : null;
-
-    const { data, error } = await gate.admin.rpc("tc_record_client_leo_signal", {
-      p_client_id: gate.cliente.id,
-      p_signal: action,
-      p_context: context,
-      p_path: pathname,
-      p_hidden: hidden,
-      p_muted: muted,
-    });
-    if (error) throw error;
-    return responseFor(gate, data);
-  } catch (error: any) {
-    console.error("[cliente:leo:post]", error?.message || error);
-    return NextResponse.json({ ok: false, error: "LEO_SIGNAL_UNAVAILABLE" }, { status: 503, headers: HEADERS });
-  }
+    if (body.action === "remember") await rememberLeonarisMemory(id, body.content);
+    else if (body.action === "forget") await forgetLeonarisMemory(id, body.memoryId);
+    else if (body.action === "forget_all") await resetLeonarisMemory(id);
+    else if (body.action === "feedback") await recordLeonarisFeedback(id, body.answerId, body.helpful);
+    else if (body.action === "preference") {
+      if (["memoryEnabled", "style", "displayName"].some(key => key in body)) await updateLeonarisPreferences(id, { memoryEnabled: body.memoryEnabled, style: body.style, displayName: body.displayName });
+      if (typeof body.hidden === "boolean" || typeof body.muted === "boolean") {
+        const { error } = await gate.admin.rpc("tc_record_client_leo_signal", { p_client_id: id, p_signal: "preference", p_context: "dashboard", p_path: pathname, p_hidden: typeof body.hidden === "boolean" ? body.hidden : null, p_muted: typeof body.muted === "boolean" ? body.muted : null });
+        if (error) throw new Error("LEONARIS_PREFERENCES_UNAVAILABLE");
+      }
+    } else if (body.action === "visit" || body.action === "interaction") {
+      const context = LEO_SECTIONS.some(section => section.key === body.context) ? body.context : LEO_SECTIONS.find(section => pathname.startsWith(section.path))?.key || leoContextForPath(pathname);
+      await recordLeonarisSignal(id, { signal: body.action, context, pathname: pathname.split(/[?#]/)[0] });
+    } else return json({ ok: false, error: "Acción no válida." }, 400);
+    return await responseFor(gate);
+  } catch (error) { return failure(error); }
 }
