@@ -274,13 +274,6 @@ export default function PreciosOfertasPage() {
               { level: 3, packs: levelThreePacks, nextPacks: [] },
             ] as const).map(({ level, packs, nextPacks }) => packs.length > 0 ? (
               <section key={level} id={`nivel-${level}`} className={styles.level} data-purchase-level={level} aria-labelledby={`level-${level}-title`}>
-                <div className={styles.levelIllustration} aria-hidden="true">
-                  <span className={styles.artOrbit} />
-                  <span className={styles.artMoon}>{level === 1 ? <Sparkles /> : level === 2 ? <Moon /> : <Sun />}</span>
-                  <RouletteRewardArt type="minutes" className={styles.hourglassArt} />
-                  <img className={styles.tarotArt} src="/images/portal/objects/oracle.webp" width="180" height="180" alt="" loading="lazy" />
-                  <span className={styles.artMotto}>{level === 1 ? "Un momento para ti" : level === 2 ? "Espacio para tus preguntas" : "Tu tiempo, con calma"}</span>
-                </div>
                 <div className={styles.levelContent}>
                   <div className={styles.levelHeader}>
                     <div className={styles.levelMedallion} aria-hidden="true">{level === 1 ? <Sparkles /> : level === 2 ? <Moon /> : <Sun />}</div>

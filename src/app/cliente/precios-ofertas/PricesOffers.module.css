@@ -35,18 +35,11 @@
 .rouletteShortcut { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:10px 18px; border:1px solid #d5b77280; border-radius:14px; color:#ffe6ad; background:#211b2bee; font-size:15px; font-weight:700; text-decoration:none; }
 .rouletteShortcut svg { width:18px; }
 .levelStack { display:grid; gap:28px; }
-.level { --level-rgb:178,111,225; --level-ink:#241137; --level-light:#e9bafc; position:relative; isolation:isolate; display:grid; grid-template-columns:175px minmax(0,1fr); align-items:start; gap:18px; padding:26px 22px; border:1px solid rgba(var(--level-rgb),.52); border-radius:26px; background:radial-gradient(ellipse at 0 45%,rgba(var(--level-rgb),.19),transparent 46%),linear-gradient(145deg,#0d0b1ef7,#090c1afc); box-shadow:0 18px 45px #0004,inset 0 1px #ffffff10; scroll-margin-top:140px; }
+.level { --level-rgb:178,111,225; --level-ink:#241137; --level-light:#e9bafc; position:relative; isolation:isolate; display:grid; grid-template-columns:minmax(0,1fr); align-items:start; padding:26px 22px; border:1px solid rgba(var(--level-rgb),.52); border-radius:26px; background:linear-gradient(145deg,rgba(13,11,30,.72),rgba(9,12,26,.80)); -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px); box-shadow:0 18px 45px #0004,inset 0 1px #ffffff18; scroll-margin-top:140px; }
 .level::before { content:""; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none; opacity:.36; background-image:radial-gradient(circle at 15% 35%,#fff0cb 0 1px,transparent 1.5px),radial-gradient(circle at 80% 74%,#fff0cb 0 1px,transparent 1.5px); background-size:171px 197px,249px 221px; }
 .level[data-purchase-level="2"] { --level-rgb:98,176,245; --level-ink:#102745; --level-light:#bde7ff; }
 .level[data-purchase-level="3"] { --level-rgb:234,187,94; --level-ink:#36250f; --level-light:#ffe29c; }
 .levelContent { min-width:0; }
-.levelIllustration { position:relative; display:grid; justify-items:center; align-content:center; align-self:stretch; min-width:0; min-height:380px; padding:44px 0; overflow:hidden; }
-.artOrbit { position:absolute; top:17%; left:3%; width:94%; aspect-ratio:1; border:1px solid rgba(var(--level-rgb),.42); border-radius:50%; box-shadow:0 0 0 12px rgba(var(--level-rgb),.05),0 0 75px rgba(var(--level-rgb),.17); }
-.artMoon { position:relative; z-index:1; color:var(--level-light); filter:drop-shadow(0 0 15px rgba(var(--level-rgb),.55)); }
-.artMoon svg { width:46px; height:46px; }
-.hourglassArt { position:relative; width:220px!important; max-width:145%; margin:6px 0 -30px; mask-image:radial-gradient(ellipse 49% 53%,#000 62%,transparent 94%); }
-.tarotArt { position:relative; z-index:1; width:150px; max-width:100%; height:auto; margin:-28px 0 8px; transform:rotate(-12deg); filter:drop-shadow(0 10px 18px #0007); }
-.artMotto { position:relative; max-width:145px; margin-top:12px; color:var(--level-light); text-align:center; font:400 20px/1.4 Georgia,"Times New Roman",serif; }
 .levelHeader { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
 .levelMedallion { display:grid; place-items:center; flex:0 0 44px; width:44px; height:44px; color:var(--level-light); background:rgba(var(--level-rgb),.12); border:1px solid rgba(var(--level-rgb),.45); border-radius:50%; }
 .levelMedallion svg { width:24px; height:24px; }
@@ -74,7 +67,7 @@
 .cardTopline { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:7px; min-height:25px; color:#d9d0e4; font-size:13px; line-height:1.4; }
 .recommended { padding:4px 8px; border:1px solid #e7c27180; border-radius:8px; color:#ffdf99; background:#d9a84619; font-size:12px; font-weight:700; }
 .minuteIdentity { display:flex; align-items:center; gap:14px; min-width:0; }
-.miniWheel { width:48px; height:48px; }
+.miniWheel { width:86px; height:86px; }
 .miniWheel svg { width:28px; height:28px; stroke-width:1.3; }
 .minuteIdentity h3 { display:flex; flex-direction:column; margin:0; }
 .minuteIdentity h3 > strong { color:#fff9ed; font:500 clamp(54px,4.4vw,70px)/1 Georgia,"Times New Roman",serif; letter-spacing:-.045em; font-variant-numeric:tabular-nums; }
@@ -126,17 +119,15 @@
 .coming h2 { margin:6px 0; font:500 28px/1.2 Georgia,serif; color:#fff2d7; }
 .coming p { margin:0; color:#e0d8e8; font-size:16px; line-height:1.6; }
 @media (max-width:1200px) {
- .level { grid-template-columns:135px minmax(0,1fr); padding:22px 18px; gap:14px; }
+ .level { padding:22px 18px; }
  .minuteGrid { gap:10px; }
  .minuteCard { padding:16px 13px 12px; }
- .miniWheel { width:36px; height:36px; }
+ .miniWheel { width:72px; height:72px; }
  .miniWheel svg { width:24px; height:24px; }
  .minuteIdentity { gap:10px; }
  .rankBenefitExtra { padding:12px 10px; }
 }
 @media (max-width:1050px) {
- .level { grid-template-columns:minmax(0,1fr); }
- .levelIllustration { display:none; }
  .minuteGrid { gap:14px; }
  .minuteCard { padding:20px 17px 14px; }
  .grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -156,7 +147,7 @@
  .minuteGrid,.grid { grid-template-columns:minmax(0,1fr); gap:18px; }
  .minuteCard { padding:20px; }
  .minuteIdentity h3 > strong { font-size:64px; }
- .miniWheel { width:56px; height:56px; }
+ .miniWheel { width:80px; height:80px; }
  .miniWheel svg { width:35px; height:35px; }
  .minuteIdentity { gap:18px; }
  .price { font-size:36px; }
