@@ -10,7 +10,7 @@ function harness(){
    insert:v=>{value=v;mode='insert';return q;},update:v=>{value=v;mode='update';return q;},single:()=>{one=true;return q;},maybeSingle:()=>{one=true;return q;},
    then:resolve=>{
     let data,error=null;
-    if(mode==='insert'){if(rows.has(value.id))error={code:'23505'};else rows.set(value.id,{...value,created_at:new Date().toISOString(),status:'pending',remote_status:'CREATING'});data=rows.get(value.id);}
+    if(mode==='insert'){if(rows.has(value.id))error={code:'23505'};else rows.set(value.id,{checkout_kind:'crm_collection',...value,created_at:new Date().toISOString(),status:'pending',remote_status:'CREATING'});data=rows.get(value.id);}
     else {let selected=(table==='crm_clientes'?[client]:[...rows.values()]).filter(r=>filters.every(f=>f(r)));if(lim)selected=selected.slice(-lim);if(mode==='update')selected.forEach(r=>Object.assign(r,value));data=one?selected[0]||null:selected;}
     return Promise.resolve({data,error}).then(resolve);
    }};return q;
@@ -62,4 +62,15 @@ test('Cancellation requires verified staff and is restricted to the creator or a
  assert.equal((await h.post(body,'forged')).status,401);
  h.worker.id=id(3);assert.equal((await h.post(body)).status,404);assert.equal(h.rows.get(id(10)).status,'pending');
  h.worker.role='admin';const response=await h.post(body);assert.equal(response.status,200);assert.equal((await response.json()).attempt.remote_status,'CANCELLED_BY_STAFF');
+});
+
+test('Central collection controls never select or cancel a self-service client purchase',async()=>{
+ const h=harness();await h.post();h.worker.role='admin';
+ const row=h.rows.get(id(10));row.checkout_kind='client_purchase';row.worker_id=null;
+ const found=await h.api.GET(new Request('https://panel.test/api/crm/pagos/paypal?attempt_id='+id(10),{headers:{authorization:'Bearer good'}}));
+ assert.equal(found.status,404);
+ assert.equal((await h.post({action:'cancel',attempt_id:id(10)})).status,404);
+ assert.equal(row.status,'pending');
+ const latest=await h.api.GET(new Request('https://panel.test/api/crm/pagos/paypal?cliente_id='+id(2),{headers:{authorization:'Bearer good'}}));
+ assert.equal((await latest.json()).latest,null);
 });

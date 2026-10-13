@@ -11,6 +11,8 @@ import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
 import styles from "./PricesOffers.module.css";
 
 const sb = supabaseClienteBrowser();
+const PURCHASE_ATTEMPT_PREFIX = "tc-client-purchase-attempt:v1:";
+const attemptUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type OraclePack = { id: string; nombre: string; descripcion: string; priceEur: number; credits: number };
 type QuestionPack = { id: string; nombre: string; descripcion: string; priceEur: number; questions: number };
@@ -21,6 +23,7 @@ type ActivePromotion = { id: string; name: string; subtitle?: string | null; des
 
 // Standard packs use levels 1–3; level 4 belongs to special promotions.
 type StandardPackLevel = Extract<RouletteLevel, 1 | 2 | 3>;
+type CheckoutFeedback = { message: string; pendingUrl: string | null };
 
 
 
@@ -34,16 +37,19 @@ export default function PreciosOfertasPage() {
   const [credits, setCredits] = useState<number | null>(null);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
+  const [pendingCheckoutUrl, setPendingCheckoutUrl] = useState<string | null>(null);
+  const [checkoutMessagePack, setCheckoutMessagePack] = useState<string | null>(null);
   type Resource = "catalogue" | "roulette" | "account" | "promotion";
   type LoadState = "loading" | "ready" | "error";
   const [states, setStates] = useState<Record<Resource, LoadState>>({ catalogue: "loading", roulette: "loading", account: "loading", promotion: "loading" });
   const controllers = useRef<Partial<Record<Resource, AbortController>>>({});
   const generation = useRef(0), owner = useRef<string | null>(null), mounted = useRef(false), lastRefresh = useRef(0);
+  const purchaseInFlight = useRef(false);
 
   const resetAccount = useCallback((id: string | null) => {
     ++generation.current; owner.current = id; lastRefresh.current = 0;
     Object.values(controllers.current).forEach(controller => controller?.abort()); controllers.current = {};
-    setMinutePacks([]); setRankLabel(null); setOraclePacks([]); setQuestionPack(null); setPromotion(null); setRouletteSummary(null); setCredits(null); setMessage(""); setBusy("");
+    setMinutePacks([]); setRankLabel(null); setOraclePacks([]); setQuestionPack(null); setPromotion(null); setRouletteSummary(null); setCredits(null); setMessage(""); setPendingCheckoutUrl(null); setCheckoutMessagePack(null); setBusy("");
     setStates({ catalogue: "loading", roulette: "loading", account: "loading", promotion: "loading" });
   }, []);
 
@@ -157,6 +163,57 @@ export default function PreciosOfertasPage() {
     }
   }
 
+  async function checkoutMinutes(packId: string) {
+    if (purchaseInFlight.current || states.catalogue !== "ready") return;
+    purchaseInFlight.current = true;
+    const checkoutGeneration = generation.current;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      setBusy(packId); setMessage(""); setPendingCheckoutUrl(null); setCheckoutMessagePack(packId);
+      const { data } = await sb.auth.getSession();
+      const session = data.session;
+      const isCurrent = () => mounted.current && generation.current === checkoutGeneration && owner.current === session?.user.id;
+      if (!isCurrent()) return;
+      if (!session) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión para comprar.");
+      const key = `${PURCHASE_ATTEMPT_PREFIX}${session.user.id}:${packId}`;
+      let stored: { attemptId: string; url?: string } | null = null;
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) { const parsed = JSON.parse(raw); if (attemptUuid.test(parsed?.attemptId || "")) stored = parsed; }
+      } catch { /* A damaged entry is replaced below before making a request. */ }
+      const attemptId = stored?.attemptId || crypto.randomUUID();
+      try { localStorage.setItem(key, JSON.stringify({ attemptId, ...(stored?.url ? { url: stored.url } : {}) })); }
+      catch { throw new Error("Tu navegador no puede guardar este intento de compra. Permite el almacenamiento del sitio y vuelve a intentarlo."); }
+      const controller = new AbortController();
+      timeout = setTimeout(() => controller.abort(), 30000);
+      const request = (token: string) => fetch("/api/cliente/pagos/paypal", { method: "POST", cache: "no-store", signal: controller.signal,
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ packId, attemptId }) });
+      let response = await request(session.access_token);
+      if (response.status === 401) {
+        const refreshed = (await sb.auth.refreshSession()).data.session;
+        if (!isCurrent() || refreshed?.user.id !== session.user.id) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
+        response = await request(refreshed.access_token);
+      }
+      const result = await response.json().catch(() => null);
+      if (!isCurrent()) return;
+      if (response.status === 409 && result?.url) {
+        const pendingUrl = new URL(result.url, window.location.origin);
+        if (pendingUrl.origin === window.location.origin && pendingUrl.pathname === "/pago-tarjeta" && attemptUuid.test(pendingUrl.searchParams.get("ref") || "")) setPendingCheckoutUrl(pendingUrl.pathname + pendingUrl.search);
+      }
+      if (!response.ok || !result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido preparar el pago. Vuelve a intentarlo: recuperaremos la misma compra.");
+      const url = new URL(result.url, window.location.origin);
+      if (url.origin !== window.location.origin || url.pathname !== "/pago-tarjeta" || !attemptUuid.test(url.searchParams.get("ref") || "")) throw new Error("No hemos podido verificar el enlace de pago. Vuelve a intentarlo.");
+      const confirmedAttemptId = attemptUuid.test(result.attempt_id || "") ? result.attempt_id : attemptId;
+      localStorage.setItem(key, JSON.stringify({ attemptId: confirmedAttemptId, url: url.pathname + url.search }));
+      window.location.href = url.pathname + url.search;
+    } catch (error) {
+      if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error && error.name !== "AbortError" ? error.message : "La conexión ha tardado demasiado. Vuelve a intentarlo: recuperaremos el mismo intento de pago.");
+    } finally {
+      clearTimeout(timeout); purchaseInFlight.current = false;
+      if (mounted.current && generation.current === checkoutGeneration) setBusy("");
+    }
+  }
+
   async function checkoutPromotion(packageId: string) {
     const checkoutGeneration = generation.current;
     try {
@@ -200,7 +257,7 @@ export default function PreciosOfertasPage() {
       <div className={styles.shell}>
         {states.catalogue === "error" && <div className={styles.message} role="alert">No hemos podido actualizar los precios. Reintenta para consultar los paquetes. <button type="button" onClick={()=>void load(["catalogue"])}>Reintentar precios</button></div>}
         {states.promotion === "error" && <div className={styles.message} role="status">No hemos podido comprobar las promociones. Los paquetes disponibles aparecen debajo. <button type="button" onClick={()=>void load(["promotion"])}>Reintentar promociones</button></div>}
-        {message ? <div className={styles.message}>{message}</div> : null}
+        {message && !checkoutMessagePack ? <div className={styles.message} role="alert">{message}</div> : null}
 
         <section className={styles.hero}>
           <div className={styles.heroSigil}><Sparkles /></div>
@@ -284,7 +341,7 @@ export default function PreciosOfertasPage() {
                   </div>
                   <LevelPrizeBanner packs={packs} summary={rouletteSummary} />
                   <div className={styles.minuteGrid}>
-                    {packs.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={level} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready"} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+                    {packs.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={level} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready" || Boolean(busy)} onBuy={() => checkoutMinutes(pack.id)} feedback={checkoutMessagePack === pack.id ? { message, pendingUrl: pendingCheckoutUrl } : null} />)}
                   </div>
                   {nextPacks.length > 0 ? <a className={styles.nextLevelLink} href={`#nivel-${level + 1}`}><span>{level === 1 ? "¿Quieres más tiempo?" : "¿Prefieres una consulta más larga?"}</span><strong>Ver paquetes {minutesRange(nextPacks).toLowerCase()} <ArrowDown aria-hidden="true" /></strong></a> : null}
                 </div>
@@ -298,7 +355,7 @@ export default function PreciosOfertasPage() {
               <div className={styles.levelIdentity}><span>PAQUETES DISPONIBLES</span><h3 id="unassigned-packs-title">Elige tus minutos</h3><p>Consulta el precio y los beneficios de cada paquete.</p></div>
             </div>
             <div className={styles.minuteGrid}>
-              {unassignedPacks.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={null} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready"} onBuy={() => checkout("/api/cliente/pagos/checkout-v2", pack.id)} />)}
+              {unassignedPacks.map(pack => <MinuteCard key={pack.id} pack={pack} packageLevel={null} rankLabel={rankLabel} busy={busy === pack.id} unavailable={states.catalogue !== "ready" || Boolean(busy)} onBuy={() => checkoutMinutes(pack.id)} feedback={checkoutMessagePack === pack.id ? { message, pendingUrl: pendingCheckoutUrl } : null} />)}
             </div>
           </section> : null}
 
@@ -369,7 +426,7 @@ function LevelPrizeBanner({ packs, summary }: { packs: readonly MinutePack[]; su
   </div>;
 }
 
-function MinuteCard({ pack, packageLevel, rankLabel, busy, unavailable, onBuy }: { pack: MinutePack; packageLevel: StandardPackLevel | null; rankLabel: string | null; busy: boolean; unavailable: boolean; onBuy: () => void }) {
+function MinuteCard({ pack, packageLevel, rankLabel, busy, unavailable, onBuy, feedback }: { pack: MinutePack; packageLevel: StandardPackLevel | null; rankLabel: string | null; busy: boolean; unavailable: boolean; onBuy: () => void; feedback: CheckoutFeedback | null }) {
   const rewardCoins = Number(pack.rewardCoins || 0);
   const rank = pack.rankBenefits;
   const rankSpins = rank?.enabled ? [
@@ -384,7 +441,7 @@ function MinuteCard({ pack, packageLevel, rankLabel, busy, unavailable, onBuy }:
       <span className={styles.miniWheel} aria-hidden="true"><Sun /></span>
       <h3 aria-label={pack.nombre}><strong>{pack.totalMinutes}</strong><span>minutos</span></h3>
     </div>
-    <div className={styles.priceRow}><strong className={styles.price}>${pack.priceUsd.toFixed(2).replace(".", ",")}</strong><span>Tu consulta</span></div>
+    <div className={styles.priceRow}><strong className={styles.price}>{formatPromoMoney(pack.priceUsd, "EUR")}</strong><span>Tu consulta</span></div>
     <div className={styles.includedBenefits} data-benefits="included">
       <strong className={styles.benefitLabel}>Tu paquete incluye</strong>
       {pack.rouletteSpins > 0 && pack.rouletteLevel ? <Link className={styles.includedRow} href={`/cliente/ruleta?nivel=${pack.rouletteLevel}`}><span className={styles.benefitGlyph} aria-hidden="true"><Sun /></span><span><strong>{pack.rouletteSpins} {pack.rouletteSpins === 1 ? "giro" : "giros"}</strong> · Ruleta {pack.rouletteLevel === 4 ? "Especial" : `Nivel ${pack.rouletteLevel}`}<small>Ver sus premios <ArrowRight aria-hidden="true" /></small></span></Link> : null}
@@ -401,7 +458,8 @@ function MinuteCard({ pack, packageLevel, rankLabel, busy, unavailable, onBuy }:
         {Number(rank.coins || 0) <= 0 && Number(rank.oracle_credits || 0) <= 0 && rankSpins.length === 0 ? <p>Este paquete no tiene extras de rango.</p> : <small>Se suman a lo incluido en tu paquete.</small>}
       </> : <p>{pack.rankBenefitsStatus === "unavailable" ? "Estamos comprobando tus beneficios. Consulta de nuevo en unos momentos." : pack.rankBenefitsStatus === "unmapped_package" ? "Los extras de este paquete todavía no están disponibles." : "Tu rango actual no añade extras a este paquete."}</p>}
     </div>
-    <ClientPurchaseAction className={styles.buyButton}><button type="button" className={styles.buyButton} disabled={busy || unavailable} onClick={onBuy}>{busy ? "Conectando…" : <>Elegir paquete <ArrowRight aria-hidden="true" /></>}</button></ClientPurchaseAction>
+    <ClientPurchaseAction className={styles.buyButton} checkoutEnabled><button type="button" className={styles.buyButton} disabled={busy || unavailable} onClick={onBuy}>{busy ? "Preparando pago…" : <>Elegir paquete <ArrowRight aria-hidden="true" /></>}</button></ClientPurchaseAction>
+    {feedback?.message ? <div className={styles.checkoutFeedback} role="alert"><p>{feedback.message}</p>{feedback.pendingUrl ? <a href={feedback.pendingUrl}>Revisar pago pendiente <ArrowRight aria-hidden="true" /></a> : null}</div> : null}
     <small className={styles.activationNote}>Beneficios al confirmar la compra.</small>
   </article>;
 }

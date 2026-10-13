@@ -162,7 +162,7 @@ async function noOverflow(page, label) {
           for (const pack of data.packs) {
             const article = f.page.locator(card).filter({ has: f.page.getByRole('heading', { name: pack.nombre, exact: true }) });
             assert.equal(await article.count(), 1, pack.id + ' title');
-            assert.ok((await article.innerText()).includes('$' + pack.priceUsd.toFixed(2).replace('.', ',')), pack.id + ' price');
+            assert.match(await article.innerText(), new RegExp(pack.priceUsd.toFixed(2).replace('.', ',') + '\\s*€'), pack.id + ' EUR price');
             const rank = await article.locator(rankBox).innerText(), included = await article.locator(includedBox).innerText();
             assert.ok(rank.includes(`+${pack.rankBenefits.coins} Coins`), pack.id + ': ' + rank);
             assert.match(rank, new RegExp(`1\\s+giro[^\\n]*[Nn]ivel\\s*${pack.packageLevel}`, 'i'));
@@ -263,7 +263,7 @@ async function noOverflow(page, label) {
         assert.equal(await f.page.locator(card).count(), 9);
         for (const pack of packs) {
           const article = f.page.locator(card).filter({ has: f.page.getByRole('heading', { name: pack.nombre, exact: true }) });
-          assert.ok((await article.innerText()).includes('$' + pack.priceUsd.toFixed(2).replace('.', ',')), pack.id + ' original price');
+          assert.match(await article.innerText(), new RegExp(pack.priceUsd.toFixed(2).replace('.', ',') + '\\s*€'), pack.id + ' original price in EUR');
           assert.equal((await article.locator('h3 strong').innerText()).trim(), String(pack.totalMinutes), pack.id + ' original minutes');
         }
         for (const [index, coins] of [50, 150, 300].entries()) {
@@ -337,22 +337,24 @@ async function noOverflow(page, label) {
         assert.equal(await f.page.locator('main[data-leo-page="/cliente/precios-ofertas"]').count(), 0);
       } finally { await f.close(); }
     });
-    await check('Existing purchase maintenance dialog remains the actual click behavior; pack checkout identifiers and endpoints stay intact', async () => {
+    await check('Oracle retains its manual purchase dialog while minutes use the authenticated client PayPal checkout', async () => {
       const f = await fixture(browser, { name: 'purchase-contract' });
       try {
-        await f.start(); await rendered(f.page); await f.page.locator(card).first().getByRole('button', { name: 'Elegir paquete', exact: true }).click();
+        await f.start(); await rendered(f.page); await f.page.locator('#oraculo-packs').getByRole('button', { name: 'COMPRAR', exact: true }).first().click();
         await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).waitFor();
         assert.equal(transactions.length, 0); await f.page.getByRole('button', { name: 'Cerrar aviso' }).click();
         const source = fs.readFileSync(path.resolve(__dirname, '../src/app/cliente/precios-ofertas/page.tsx'), 'utf8');
         assert.match(source, /JSON\.stringify\(\{ pack_id: packId \}\)/);
-        assert.match(source, /checkout\("\/api\/cliente\/pagos\/checkout-v2", pack\.id\)/);
+        assert.match(source, /checkoutMinutes\(pack\.id\)/);
+        assert.match(source, /fetch\("\/api\/cliente\/pagos\/paypal"/);
+        assert.match(source, /JSON\.stringify\(\{ packId, attemptId \}\)/);
         assert.match(source, /checkout\("\/api\/cliente\/oraculo\/checkout", pack\.id\)/);
         assert.match(source, /checkout\("\/api\/cliente\/oraculo\/checkout", questionPack\.id\)/);
         assert.match(source, /JSON\.stringify\(\{ package_id: packageId \}\)/);
-        metrics.push({ label: 'checkout coverage limitation', note: 'Visible buttons intentionally use the existing telephone maintenance dialog. No checkout POST occurs. Original pack_id/endpoints verified in source, not as an executable payment flow.' });
+        metrics.push({ label: 'checkout coverage boundary', note: 'Oracle keeps its telephone maintenance dialog. Minute PayPal flow is exercised separately in client-paypal-browser.cjs with all provider calls mocked.' });
       } finally { await f.close(); }
     });
-    await check('Refresh and failure disable stale catalogue purchases; retry enables the same manual purchase dialog', async () => {
+    await check('Refresh and failure disable stale catalogue purchases; retry enables the minute purchase action', async () => {
       const f = await fixture(browser, { name: 'stale-purchase' });
       try {
         await f.start(); await rendered(f.page); const buy = f.page.locator(card).first().getByRole('button', { name: 'Elegir paquete', exact: true });
@@ -362,7 +364,7 @@ async function noOverflow(page, label) {
         f.release(catalogPath); await f.page.getByRole('button', { name: 'Reintentar precios' }).waitFor(); assert.equal(await buy.isDisabled(), true);
         f.state.fail.delete(catalogPath); await f.page.getByRole('button', { name: 'Reintentar precios' }).click();
         await f.page.getByRole('button', { name: 'Reintentar precios' }).waitFor({ state: 'detached' }); assert.equal(await buy.isDisabled(), false);
-        await buy.click(); await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).waitFor(); assert.equal(transactions.length, 0);
+        assert.equal(transactions.length, 0);
       } finally { await f.close(); }
     });
     await check('320px mobile packs stay readable without horizontal document or card overflow', async () => {
@@ -399,7 +401,6 @@ async function noOverflow(page, label) {
         assert.ok(animations.every(animation => Number(animation.duration) <= 1 || animation.iterations !== Infinity), JSON.stringify(animations));
         metrics.push({ label: 'reduced motion and keyboard action', ...presentation, runningAnimations: animations });
         await shot(f.page, 'benefits-reduced-motion-keyboard');
-        await f.page.keyboard.press('Enter'); await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).waitFor();
         assert.equal(transactions.length, 0);
       } finally { await f.close(); }
     });

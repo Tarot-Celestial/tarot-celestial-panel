@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const { admin, worker } = await rouletteStaff(req);
     const config = paypalConfig();
     const params = new URL(req.url).searchParams;
-    let query = admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment);
+    let query = admin.from(PAYPAL_TABLE).select("*").eq("environment", config.environment).eq("checkout_kind", "crm_collection");
     if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
     const id = params.get("attempt_id");
     if (!id) {
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     const config = paypalConfig();
     if (body.action === "cancel") {
       if (!uuid.test(body.attempt_id || "")) throw new PayPalError("Cobro no válido.", 400);
-      let query = admin.from(PAYPAL_TABLE).select("*").eq("id", body.attempt_id).eq("environment", config.environment);
+      let query = admin.from(PAYPAL_TABLE).select("*").eq("id", body.attempt_id).eq("environment", config.environment).eq("checkout_kind", "crm_collection");
       if (worker.role !== "admin") query = query.eq("worker_id", worker.id);
       const { data, error } = await query.maybeSingle();
       if (error) throw error;

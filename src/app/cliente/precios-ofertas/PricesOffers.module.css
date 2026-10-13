@@ -238,3 +238,8 @@
 .promoRecommended { font-size:12px; }
 .promoLive { font-size:12px!important; }
 @media (prefers-reduced-motion:reduce) { .promoBuy { transition:none; } }
+
+.checkoutFeedback { padding:12px; border:1px solid #e5c08370; border-radius:12px; color:#fff1d4; background:#332230; font-size:15px; line-height:1.5; }
+.checkoutFeedback p { margin:0; }
+.checkoutFeedback a { display:flex; align-items:center; justify-content:center; gap:7px; min-height:48px; margin-top:10px; padding:8px; border:1px solid #edcd8f80; border-radius:8px; color:#ffe5ad; font-weight:700; text-decoration:none; }
+.checkoutFeedback a svg { width:18px; height:18px; flex-shrink:0; }

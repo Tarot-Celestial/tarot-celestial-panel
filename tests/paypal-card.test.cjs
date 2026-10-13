@@ -1,6 +1,8 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),ts=require('typescript');
 const ref='00000000-0000-4000-8000-000000000099';
+const originHelpers={};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(__dirname,'../src/lib/server/paypal-crm.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:originHelpers,require:()=>({})});
 function harness(){
  const row={id:'attempt',public_token:ref,order_id:'ORDER1',environment:'live',status:'pending',remote_status:'CREATED',
  amount:22,currency:'EUR',pack_name:'20 minutos',created_at:new Date().toISOString(),create_payload:{payment_source:{card:{}}}};
@@ -9,7 +11,7 @@ function harness(){
  const admin={from:()=>{const filters=[];const q={select:()=>q,eq:(k,v)=>{filters.push([k,v]);return q;},
  maybeSingle:async()=>({data:filters.every(([k,v])=>row[k]===v)?row:null})};return q;}};
  class PayPalError extends Error{constructor(m,status){super(m);this.status=status;}}
- const helpers={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,paypalConfig:()=>({environment:'live',origin:'https://panel.test',client:'PUBLIC_CLIENT_ID',secret:'NEVER_RETURN'}),
+ const helpers={PAYPAL_TABLE:'crm_paypal_orders',PayPalError,clientPayPalOriginAllowed:originHelpers.clientPayPalOriginAllowed,paypalConfig:()=>({environment:'live',origin:'https://panel.test',client:'PUBLIC_CLIENT_ID',secret:'NEVER_RETURN'}),
  paypalAdmin:()=>admin,reconcilePayPal:async(_,a,capture)=>{calls.push(['reconcile',capture]);return a;},
  validateOrder:(a,o)=>{assert.equal(a.order_id,o.id);},
  paypalRequest:async url=>{calls.push(['request',url]);return url.includes('generate-token')?{client_token:'CLIENT_TOKEN'}:order();}};

@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 
 export const PAYPAL_TABLE = "crm_paypal_orders";
+// The established staff checkout uses the Vercel alias. Client self-service also
+// runs on the verified customer domain; never trust an arbitrary request Origin.
+export function clientPayPalOriginAllowed(origin: string | null, configuredOrigin: string) {
+  return origin === configuredOrigin || origin === "https://clientestarotcelestial.es";
+}
 export class PayPalError extends Error {
   constructor(message: string, public status = 502, public paymentReason?: string, public providerStatus?: number, public providerIssue?: string) { super(message); }
 }
@@ -150,7 +155,7 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
       // Keep cancelled checkout pages usable, but still reconcile real late captures
       // whenever PayPal does return the order.
       if (latest.status === "completed" ||
-          (latest.status === "cancelled" && latest.remote_status === "CANCELLED_BY_STAFF")) return latest;
+          (latest.status === "cancelled" && ["CANCELLED_BY_STAFF", "CANCELLED_BY_CLIENT"].includes(latest.remote_status))) return latest;
     }
     throw error;
   }
@@ -190,14 +195,17 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
   if (captures.length > 1) throw new PayPalError("PayPal tiene varias capturas. Revisión necesaria.");
   if (capture?.status === "COMPLETED") {
     if (order.status !== "COMPLETED" || !capture.id || capture.amount?.currency_code !== attempt.currency || Number(capture.amount?.value) !== Number(attempt.amount)) throw new PayPalError("La captura de PayPal no coincide con el cobro.");
-    const { error } = await admin.rpc("tc_complete_paypal_crm", { p_id: attempt.id, p_order_id: order.id, p_capture_id: capture.id, p_amount: Number(capture.amount.value), p_currency: capture.amount.currency_code });
+    // Both browser callbacks and the signed webhook use the same atomic
+    // finalizer. Staff collections keep their existing collection-only mode.
+    const completion = attempt.checkout_kind === "client_purchase" ? "tc_complete_paypal_client" : "tc_complete_paypal_crm";
+    const { error } = await admin.rpc(completion, { p_id: attempt.id, p_order_id: order.id, p_capture_id: capture.id, p_amount: Number(capture.amount.value), p_currency: capture.amount.currency_code });
     if (error) {
       await admin.from(PAYPAL_TABLE).update({ remote_status: "CAPTURE_COMPLETED", last_error: "Pago recibido. Pendiente de guardar la confirmación del cobro; no solicites otro pago." }).eq("id", attempt.id).neq("status", "completed");
       throw new PayPalError("Pago recibido. Falta guardar su confirmación; pulsa Comprobar sin crear otro cobro.", 503);
     }
   } else {
     const rejected = ["DECLINED", "FAILED", "DENIED"].includes(capture?.status) || order.status === "VOIDED";
-    const manuallyCancelled = attempt.remote_status === "CANCELLED_BY_STAFF";
+    const manuallyCancelled = ["CANCELLED_BY_STAFF", "CANCELLED_BY_CLIENT"].includes(attempt.remote_status);
     const remoteStatus = manuallyCancelled ? attempt.remote_status : capture ? `CAPTURE_${capture.status}`
       : attempt.remote_status === "CAPTURE_REQUESTED" ? "CAPTURE_REQUESTED"
       : attempt.status === "cancelled" ? attempt.remote_status : order.status;
@@ -213,12 +221,14 @@ export async function reconcilePayPal(admin: any, attempt: any, captureApproved 
   if (error) throw error;
   return data;
 }
-export async function cancelPayPalLink(admin: any, attempt: any) {
+export async function cancelPayPalLink(admin: any, attempt: any, actor: "staff" | "client" = "staff") {
   // No PayPal capture is requested while checking whether cancellation is safe.
   let current = await latestAttempt(admin, attempt.id);
   if (current.environment !== paypalConfig().environment)
     throw new PayPalError("Este cobro pertenece a otro entorno de PayPal.", 409);
-  if (current.status === "cancelled" && current.remote_status === "CANCELLED_BY_STAFF") return current;
+  if (actor === "client" && current.checkout_kind !== "client_purchase")
+    throw new PayPalError("Esta operación debe revisarla tu central.", 403);
+  if (current.status === "cancelled" && ["CANCELLED_BY_STAFF", "CANCELLED_BY_CLIENT"].includes(current.remote_status)) return current;
   let missingOrder = false;
   let rateLimited = false;
   try { current = await reconcilePayPal(admin, current, false); }
@@ -237,12 +247,12 @@ export async function cancelPayPalLink(admin: any, attempt: any) {
   if (current.status === "cancelled") return current;
   if (!current.order_id || !["CREATED", "SAVED", "PAYER_ACTION_REQUIRED", "APPROVED", "VOIDED"].includes(current.remote_status))
     throw new PayPalError("No se ha podido confirmar que el cobro esté sin procesar. Comprueba su estado antes de cancelar.", 409);
-  const saved = await admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: "CANCELLED_BY_STAFF",
+  const saved = await admin.from(PAYPAL_TABLE).update({ status: "cancelled", remote_status: actor === "client" ? "CANCELLED_BY_CLIENT" : "CANCELLED_BY_STAFF",
     last_error: rateLimited
       ? "Enlace desactivado en el panel. PayPal ha limitado temporalmente las consultas; no se ha solicitado ningún cobro ni reembolso."
       : missingOrder
       ? "Enlace desactivado en el panel. PayPal no encuentra la referencia; esto no confirma que no haya habido un cobro. Revisa la cuenta de PayPal antes de solicitar otro pago. Esta acción no es un reembolso."
-      : "Enlace cancelado por la central. Esta acción no es un reembolso." })
+      : actor === "client" ? "Has cancelado esta compra antes de solicitar el cobro." : "Enlace cancelado por la central. Esta acción no es un reembolso." })
     .eq("id", current.id).eq("status", "pending").eq("remote_status", current.remote_status).select("*").maybeSingle();
   if (saved.error) throw saved.error;
   if (!saved.data) throw new PayPalError("El estado cambió mientras cancelabas. Pulsa Comprobar antes de crear otro cobro.", 409);
