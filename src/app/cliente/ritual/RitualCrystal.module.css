@@ -1,0 +1,173 @@
+.crystal {
+  position: relative;
+  width: min(100%, 490px);
+  aspect-ratio: 1;
+  margin-inline: auto;
+  isolation: isolate;
+  contain: layout paint;
+  pointer-events: none;
+  user-select: none;
+}
+
+.backlight {
+  position: absolute;
+  inset: 5% 8% 12%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--crystal-glow) 38%, transparent), color-mix(in srgb, var(--crystal-dark) 12%, transparent) 46%, transparent 70%);
+  opacity: var(--crystal-aura);
+}
+
+.glass {
+  position: absolute;
+  width: 76%;
+  aspect-ratio: 1;
+  left: 12%;
+  top: 5%;
+  border: 1px solid color-mix(in srgb, var(--crystal-light) 9%, transparent);
+  border-radius: 50%;
+  background: radial-gradient(circle at 28% 20%, #fff6ef09, transparent 34%), radial-gradient(circle at 50% 95%, color-mix(in srgb, var(--crystal-glow) 5%, transparent), transparent 63%);
+  box-shadow: inset 0 -7px 23px #dce8fc04, inset 0 1px 1px #fff8e90d;
+  overflow: hidden;
+}
+
+.glassReflection {
+  position: absolute;
+  width: 34%;
+  height: 15%;
+  left: 13%;
+  top: 8%;
+  border-top: 1px solid #fff6e522;
+  border-radius: 50%;
+  transform: rotate(-35deg);
+}
+
+.floorLight {
+  position: absolute;
+  width: 66%;
+  height: 15%;
+  left: 17%;
+  top: 75%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, color-mix(in srgb, var(--crystal-glow) 46%, transparent), transparent 68%);
+  opacity: var(--crystal-floor);
+}
+
+.pedestal {
+  position: absolute;
+  left: 15%;
+  width: 70%;
+  top: 76%;
+  color: #d4b16d;
+  opacity: .8;
+}
+
+.pedestal::before {
+  content: "";
+  position: absolute;
+  inset: 16% 5% 22%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 20%, #ceb57a12, #130e1ce6 55%, #4e371b45);
+  box-shadow: 0 10px 16px #03020b66;
+}
+
+.pedestal svg {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: auto;
+  stroke: currentColor;
+  stroke-width: .8;
+  stroke-opacity: .7;
+}
+
+.engraving { stroke-width: .5; stroke-opacity: .4; }
+.suspension { position: absolute; inset: 0; animation: levitate 7s ease-in-out infinite alternate; animation-play-state: paused; }
+.art { position: absolute; top: -1%; left: 3%; width: 94%; aspect-ratio: 1; }
+
+.atlas, .atlasFrame, .veins { position: absolute; inset: 0; width: 100%; height: 100%; }
+.atlas { background-size: 0 0; background-repeat: no-repeat; overflow: hidden; }
+.atlasFrame { background-image: inherit; background-size: 300% 200%; background-repeat: no-repeat; }
+.atlasArrival { opacity: 1; }
+.atlasPrevious { opacity: 0; }
+.lightMask { position: absolute; inset: 0; mask-size: 300% 200%; mask-repeat: no-repeat; }
+.lightContent { position: absolute; inset: 0; }
+
+.fallback { position: absolute; width: 51%; left: 24.5%; top: 17%; }
+.fallback svg { display: block; width: 100%; height: auto; }
+
+.veins {
+  opacity: var(--crystal-rays);
+  mix-blend-mode: screen;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rayBed { stroke: var(--crystal-main); stroke-width: 1.1; opacity: .19; }
+.rayPulse {
+  stroke: var(--crystal-light);
+  stroke-width: .38;
+  stroke-dasharray: 7 13 2 78;
+  stroke-dashoffset: 0;
+  opacity: .83;
+  animation: energyFlow 4.8s linear infinite;
+  animation-play-state: paused;
+}
+
+.core {
+  position: absolute;
+  width: 14%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, var(--crystal-light) 0, color-mix(in srgb, var(--crystal-light) 72%, transparent) 4%, color-mix(in srgb, var(--crystal-glow) 23%, transparent) 18%, transparent 66%);
+  opacity: var(--crystal-core);
+  mix-blend-mode: screen;
+  animation: coreBreath 4.8s ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.crystal[data-ritual-crystal="orbit"] .core { width: 11%; }
+.crystal[data-ritual-crystal="gem"] .rayPulse { stroke-width: .3; animation-duration: 5.8s; }
+.crystal[data-ritual-crystal="sprout"] .rayPulse { animation-duration: 6.2s; }
+.crystal[data-ritual-crystal="shield"] .rayBed { stroke-width: 1.35; }
+
+.particles { position: absolute; inset: 0; opacity: var(--crystal-core); }
+.mote {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  color: var(--crystal-secondary);
+  background: currentColor;
+  box-shadow: 0 0 7px 1px color-mix(in srgb, var(--crystal-secondary) 35%, transparent);
+  opacity: .46;
+  animation: dustRise 6.8s ease-in-out infinite;
+  animation-play-state: paused;
+}
+.mote:nth-child(3n)::after { content: ""; position: absolute; inset: -2px 0; background: linear-gradient(transparent, currentColor, transparent); }
+
+.crystal[data-paused="false"] .suspension,
+.crystal[data-paused="false"] .rayPulse,
+.crystal[data-paused="false"] .core,
+.crystal[data-paused="false"] .mote { animation-play-state: running; }
+.crystal[data-paused="false"] .atlasArrival { animation: phaseReveal 650ms ease-out both; }
+.crystal[data-paused="false"] .atlasPrevious { animation: phaseLeave 650ms ease-out both; }
+
+@keyframes levitate { from { transform: translateY(0); } to { transform: translateY(-1.3%); } }
+@keyframes energyFlow { to { stroke-dashoffset: -100; } }
+@keyframes coreBreath { from { transform: translate(-50%, -50%) scale(.92); } to { transform: translate(-50%, -50%) scale(1.1); } }
+@keyframes dustRise { 0%, 100% { opacity: .16; transform: translateY(4px); } 50% { opacity: .65; transform: translateY(-9px); } }
+@keyframes phaseReveal { from { opacity: 0; } to { opacity: 1; } }
+@keyframes phaseLeave { from { opacity: 1; } to { opacity: 0; } }
+
+@media (max-width: 600px) {
+  .crystal { max-width: 360px; }
+  .glass { border-color: color-mix(in srgb, var(--crystal-light) 7%, transparent); }
+  .mote:nth-child(n+6) { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suspension, .rayPulse, .core, .mote,
+  .crystal[data-paused="false"] .atlasArrival,
+  .crystal[data-paused="false"] .atlasPrevious { animation: none; }
+}

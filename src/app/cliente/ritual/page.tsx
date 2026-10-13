@@ -1,18 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowRight, Check, Clock3, Gem, Heart, MoonStar, Orbit, Shield, Sparkles, Sprout } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowRight, Check, Clock3, Gem, Heart, MoonStar, Orbit, Pause, Play, Shield, Sparkles, Sprout } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { RITUAL_CHANGED } from "@/lib/ritual-sync";
-import RitualSymbol from "./RitualSymbol";
-import { ritualMaterials, ritualSymbol, ritualEnergy } from "./ritual-materials";
+import RitualCrystal from "./RitualCrystal";
+import { ritualSymbol } from "./ritual-materials";
+import { latestCompletedRitual, ritualVisualState } from "./ritual-visual-state";
 import styles from "./Ritual.module.css";
 
-type Phase = { name?: string; message?: string; advice?: string; asset_url?: string | null; index?: number };
+type Phase = { name?: string; message?: string; advice?: string; asset_url?: string | null; index?: number; from?: number; to?: number };
 type Ritual = {
   id: string; nombre_personalizado?: string | null; estado: string; progress: number;
-  fecha_inicio?: string | null; fecha_fin_prevista?: string | null; fecha_fin_real?: string | null;
+  fecha_inicio?: string | null; fecha_fin_prevista?: string | null; fecha_fin_real?: string | null; created_at?: string | null;
   message?: string; advice?: string; phase?: Phase;
   ritual_types?: { nombre?: string; slug?: string; icono?: string; descripcion?: string; fases?: Phase[] } | null;
 };
@@ -23,6 +24,7 @@ const statusNames: Record<string, string> = { pendiente: "Pendiente", activo: "E
 const date = (value?: string | null) => value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleDateString("es-ES") : "Sin fecha registrada";
 const title = (ritual: Ritual) => ritual.nombre_personalizado || ritual.ritual_types?.nombre || "Mi ritual";
 const symbol = (ritual: Ritual) => ritualSymbol(ritual.ritual_types);
+const MOTION_KEY = "tc-ritual-motion";
 
 export default function RitualPage() {
   const [data, setData] = useState<ResponseData | null>(null);
@@ -74,6 +76,7 @@ export default function RitualPage() {
     };
   }, [load]);
 
+  const latestCompleted = !data?.ritual ? latestCompletedRitual(data?.history || []) : undefined;
   if (data && !data.ritual_access) return <ClienteLayout title="Panel cliente"><></></ClienteLayout>;
 
   return <ClienteLayout title="Mi Ritual" subtitle="Tu espacio privado para seguir cada etapa de tu experiencia." eyebrow="Tarot Celestial · Experiencia privada">
@@ -82,7 +85,7 @@ export default function RitualPage() {
       {error && <section className={styles.error} role="alert"><span>{error}{data ? " Se muestra la última información recibida." : ""}</span><button onClick={() => void load()}>Reintentar</button></section>}
       {loading ? <section className={styles.state} role="status">Preparando tu espacio ritual…</section>
         : !data?.ritual_access ? null : <>
-          {data.ritual ? <Active key={data.ritual.id} ritual={data.ritual} /> : <Empty />}
+          {data.ritual ? <Active key={data.ritual.id} ritual={data.ritual} /> : latestCompleted ? <Active key={`completed-${latestCompleted.id}`} ritual={latestCompleted} historical showArtwork /> : <Empty />}
           <History rituals={data.history || []} />
         </>}
     </div>
@@ -95,25 +98,29 @@ function Empty() {
 
 function Visual({ ritual, current, count }: { ritual: Ritual; current: number; count: number }) {
   const key = symbol(ritual);
-  const material = ritualMaterials[key];
-  const energy = ritualEnergy(ritual.estado, current, count);
+  const { frame, energy } = ritualVisualState({ state: ritual.estado, current, count, progress: Number(ritual.progress), phaseFrom: ritual.phase?.from, phaseTo: ritual.phase?.to });
   const [reduced, setReduced] = useState(true);
+  const [motionPaused, setMotionPaused] = useState(false);
   const [visible, setVisible] = useState(true);
   const [pageVisible, setPageVisible] = useState(true);
   const [failedAsset, setFailedAsset] = useState<string | null>(null);
   const host = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const asset = ritual.phase?.asset_url;
-  const paused = ritual.estado !== "activo" || reduced || !visible || !pageVisible;
+  const paused = ritual.estado !== "activo" || reduced || motionPaused || !visible || !pageVisible;
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setReduced(query.matches);
     update(); query.addEventListener("change", update);
+    const stored = () => { try { setMotionPaused(localStorage.getItem(MOTION_KEY) === "paused"); } catch { /* Session control still works. */ } };
+    stored();
+    const storage = (event: StorageEvent) => { if (event.key === MOTION_KEY || event.key === null) stored(); };
+    window.addEventListener("storage", storage);
     const visibility = () => setPageVisible(!document.hidden);
     visibility(); document.addEventListener("visibilitychange", visibility);
-    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
-    if (host.current) observer.observe(host.current);
-    return () => { query.removeEventListener("change", update); document.removeEventListener("visibilitychange", visibility); observer.disconnect(); };
+    const observer = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
+    if (host.current) observer?.observe(host.current);
+    return () => { query.removeEventListener("change", update); window.removeEventListener("storage", storage); document.removeEventListener("visibilitychange", visibility); observer?.disconnect(); };
   }, []);
   useEffect(() => {
     const element = video.current;
@@ -124,27 +131,20 @@ function Visual({ ritual, current, count }: { ritual: Ritual; current: number; c
     document.addEventListener("visibilitychange", update);
     return () => document.removeEventListener("visibilitychange", update);
   }, [paused, asset, failedAsset]);
-  return <div ref={host} className={styles.visual} data-paused={paused} data-theme={ritual.ritual_types?.slug} data-material={key} data-state={ritual.estado} style={{ "--energy": energy, "--aura-opacity": .2 + energy * .5, "--inner-light": .12 + energy * .48, "--accent": material.main, "--material-light": material.light, "--material-dark": material.dark, "--material-glow": material.glow, "--material-secondary": material.secondary } as CSSProperties}>
-    <div className={styles.scene} aria-hidden="true">
-      <div className={styles.halo} /><div className={styles.chart} /><div className={styles.pedestal} />
-      <div className={styles.levitation}>
-        <div className={styles.crystal}>✧</div>
-        <div className={styles.sphere}>
-          <div className={styles.meridian} />
-          <div className={styles.symbol}>
-            <RitualSymbol kind={key} />
-          </div>
-        </div>
-        {Array.from({ length: 1 + Math.round(energy * 2) }, (_, i) => <div key={i} className={styles.orbit} style={{ "--orbit-index": i } as CSSProperties}><i /></div>)}
-        <div className={styles.lowerCrystal}>✧</div>
-      </div>
-      {Array.from({ length: 6 + Math.round(energy * 10) }, (_, i) => <span key={i} className={styles.mote} style={{ left: `${8 + (i * 31) % 86}%`, top: `${12 + (i * 47) % 76}%`, animationDelay: `${-i * .7}s` }}>✦</span>)}
-    </div>
+  function toggleMotion() {
+    const next = !motionPaused;
+    setMotionPaused(next);
+    try { localStorage.setItem(MOTION_KEY, next ? "paused" : "enabled"); } catch { /* Session control still works. */ }
+  }
+  const showVideo = Boolean(asset && failedAsset !== asset);
+  return <div ref={host} className={styles.visual} data-ritual-visual="" data-paused={paused} data-theme={ritual.ritual_types?.slug} data-material={key} data-state={ritual.estado} data-frame={frame} data-energy={energy.toFixed(3)}>
+    <div className={styles.crystalStage}><RitualCrystal kind={key} frame={frame} energy={energy} paused={paused || showVideo} /></div>
     {asset && failedAsset !== asset && <video ref={video} className={styles.video} src={asset} muted loop playsInline controls preload="metadata" aria-label={`Vídeo de ${ritual.phase?.name || title(ritual)}`} onError={() => setFailedAsset(asset)} />}
+    {ritual.estado === "activo" && !reduced && <button type="button" className={styles.artMotion} onClick={toggleMotion} aria-pressed={motionPaused} aria-label={motionPaused ? "Reanudar animación del ritual" : "Pausar animación del ritual"}>{motionPaused ? <Play size={12} /> : <Pause size={12} />}<span>{motionPaused ? "Luz en pausa" : "Luz en movimiento"}</span></button>}
   </div>;
 }
 
-function Active({ ritual, historical = false }: { ritual: Ritual; historical?: boolean }) {
+function Active({ ritual, historical = false, showArtwork = !historical }: { ritual: Ritual; historical?: boolean; showArtwork?: boolean }) {
   const type = ritual.ritual_types || {};
   const phases = Array.isArray(type.fases) ? type.fases : [];
   const phase = ritual.phase || {};
@@ -152,21 +152,23 @@ function Active({ ritual, historical = false }: { ritual: Ritual; historical?: b
   const progress = Number.isFinite(Number(ritual.progress)) ? Math.max(0, Math.min(100, Number(ritual.progress))) : 0;
   const complete = ritual.estado === "completado";
   const next = !complete && ritual.estado !== "cancelado" ? phases[current + 1] : undefined;
-  const status = statusNames[ritual.estado] || ritual.estado;
+  const awaitingClosure = ritual.estado === "activo" && progress >= 100 && phases.length > 0 && current === phases.length - 1;
+  const status = awaitingClosure ? "Pendiente de cierre" : statusNames[ritual.estado] || ritual.estado;
   const Icon = icons[symbol(ritual)] || Sparkles;
   return <section className={styles.experience} aria-label={title(ritual)}>
     <div className={styles.hero}>
       <div className={styles.intro}>
-        <span className={styles.eyebrow}>{historical ? "TU RITUAL" : "TU RITUAL ACTUAL"} · DIAMANTE</span>
+        <span className={styles.eyebrow}>{historical ? showArtwork ? "TU ÚLTIMO RITUAL COMPLETADO" : "TU RITUAL" : "TU RITUAL ACTUAL"} · DIAMANTE</span>
         <h2>{title(ritual)}</h2><span className={styles.status}>{status}</span>
         {type.descripcion && <p>{type.descripcion}</p>}
       </div>
-      <Visual ritual={ritual} current={current} count={phases.length} />
+      {showArtwork && <Visual ritual={ritual} current={current} count={phases.length} />}
       <div className={styles.statusCard}>
-        <h3><Sparkles size={16} /> Estado de tu ritual</h3>
-        <div className={styles.progressHead}><strong>{progress.toLocaleString("es-ES", { maximumFractionDigits: 1 })}<small>%</small></strong><span>{complete ? "Ritual completado" : phase.name ? <>Fase {current + 1}<br />{phase.name}</> : "Sin fase configurada"}</span></div>
+        <h3><Sparkles size={16} /> Tu recorrido</h3>
+        <div className={styles.progressHead}><strong>{progress.toLocaleString("es-ES", { maximumFractionDigits: 1 })}<small>%</small></strong><span>{complete ? "Ritual completado" : phase.name ? <>Fase {current + 1}{phases.length ? ` de ${phases.length}` : ""}<br />{phase.name}</> : "Sin fase configurada"}</span></div>
         <div className={styles.progress} role="progressbar" aria-label="Progreso del ritual" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }} /></div>
         {ritual.message && <p className={styles.phaseMessage}>{ritual.message}</p>}
+        {awaitingClosure && <p className={styles.closureNote}>El recorrido ha llegado al final. Falta registrar el cierre del ritual.</p>}
       </div>
     </div>
     {phases.length > 0 && <ol className={styles.timeline} aria-label="Fases del ritual">{phases.map((item, i) => {

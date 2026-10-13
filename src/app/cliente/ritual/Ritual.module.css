@@ -16,3 +16,12 @@
 
 /* Status only affects the artwork; progress and labels remain server-owned. */
 .visual[data-state="cancelado"] .scene{opacity:.5}.visual[data-state="pendiente"] .symbol{opacity:.8}.visual[data-state="completado"] .sphere{border-color:var(--material-light)}
+
+/* The living crystal owns its artwork; this wrapper owns visibility and controls. */
+.visual{aspect-ratio:1/1.08;max-width:520px;perspective:none}
+.crystalStage{position:absolute;inset:0 0 28px;pointer-events:none}
+.artMotion{position:absolute;bottom:0;left:50%;transform:translateX(-50%);z-index:4;display:flex;align-items:center;justify-content:center;gap:7px;min-height:30px;padding:6px 12px;border:1px solid #d7b26a40;border-radius:30px;background:#0d0a16e6;color:#e0cca3;font-size:10px!important;white-space:nowrap;cursor:pointer}
+.artMotion:hover{border-color:#edcf89a6;color:#ffe8b4;background:#1e1728}
+.video{position:absolute;inset:9% 5% 40px;width:90%;height:calc(91% - 40px);object-fit:contain;z-index:3;border-radius:20px;background:#090812}
+.closureNote{font-size:11px;line-height:1.65;color:#e9cc95;margin-top:13px!important;grid-column:1/-1}
+@media(min-width:1101px){.hero{grid-template-columns:minmax(0,.95fr) minmax(280px,1.3fr) minmax(0,.9fr)}}
