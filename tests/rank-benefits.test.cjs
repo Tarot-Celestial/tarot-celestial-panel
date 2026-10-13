@@ -51,18 +51,48 @@ test('F: Admin retains edits on failed save, shows error, then shows success onl
  assert.match(JSON.stringify(view.toJSON()),/Guardado correctamente/);
  act(()=>view.unmount());
 });
-test('C/D/E: client navigation renders Mi ritual only when permission is true, regardless of rank',()=>{
+test('C/D/E: Mi camino exposes Mi ritual only with the layout permission, regardless of rank',()=>{
+ const access=load('src/components/cliente/ClientPanelAccess.tsx');
+ const listeners=new Map();
+ const document={addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:(name,fn)=>{if(listeners.get(name)===fn)listeners.delete(name);}};
+ const link=({children,...p})=>React.createElement('a',p,children);
+ const Navigation=load('src/components/cliente/ClienteNavigation.tsx',{'next/link':link},{document}).default;
+ function AccessProbe(){return React.createElement('output',{'data-ritual-access':access.useClientRitualAccess()});}
  for(const [rank,ritualAccess] of [['diamante',false],['bronce',true],['oro',false]]) {
+   let navigationProps;
    const Layout=load('src/components/cliente/ClienteLayout.tsx',{
-     'next/link':({children,...p})=>React.createElement('a',p,children),
+     'next/link':link,
      'next/image':()=>null,'next/navigation':{usePathname:()=>'/cliente/dashboard',useRouter:()=>({})},
      '@/hooks/useClientPanelRank':{useClientPanelState:()=>({rank,ritualAccess})},
      '@/components/ui/PanelTheme':({children})=>React.createElement('div',null,children),'@/lib/supabase-browser':{supabaseClienteBrowser:()=>sb},
      '@/lib/leo-celestial-events':{announceLeoCelestial:()=>{}},'./LeoCelestialGuide':()=>null,
+     './ClientPanelAccess':access,
+     './CelestialUniverse':{universeDestination:()=>({name:'Neptuno'}),UniverseMotionControl:()=>null},
+     './CelestialPortal':{PortalMotionControl:()=>null},
+     './ClienteNavigation':props=>{navigationProps=props;return React.createElement(Navigation,props);},
    }).default;
-   // SSR does not run unrelated polling effects; it tests actual navigation output.
-   const html=require('react-dom/server').renderToStaticMarkup(React.createElement(Layout,{title:'Panel'},'Content'));
-   assert.equal(html.includes('href="/cliente/ritual"'),ritualAccess);
+   // Read the real layout's context and navigation props without starting its unrelated polling.
+   const html=require('react-dom/server').renderToStaticMarkup(React.createElement(Layout,{title:'Panel'},React.createElement(AccessProbe)));
+   assert.equal(navigationProps.ritualAccess,ritualAccess);
+   assert.ok(html.includes(`data-ritual-access="${ritualAccess}"`));
+   assert.equal(html.includes('href="/cliente/ritual"'),false,'Closed groups do not expose hidden links');
+   let view;
+   act(()=>{view=renderer.create(React.createElement(Navigation,navigationProps));});
+   try {
+     const camino=()=>view.root.findAllByType('button').find(button=>button.findAllByType('span').some(span=>span.children.includes('Mi camino')));
+     const ritualLinks=()=>view.root.findAllByType('a').filter(item=>item.props.href==='/cliente/ritual');
+     act(()=>camino().props.onClick());
+     assert.equal(camino().props['aria-expanded'],true);
+     assert.ok(view.root.findAllByType('a').some(item=>item.props.href==='/cliente/rangos'),'The opened group remains useful without ritual access');
+     assert.equal(ritualLinks().length,ritualAccess?1:0);
+     if(ritualAccess){
+       act(()=>view.update(React.createElement(Navigation,{...navigationProps,ritualAccess:false})));
+       assert.equal(camino().props['aria-expanded'],false,'Revocation closes a previously open group');
+       act(()=>camino().props.onClick());
+       assert.equal(ritualLinks().length,0,'Reopening must not retain a stale permitted link');
+     }
+   } finally {act(()=>view.unmount());}
+   assert.equal(listeners.size,0);
  }
 });
 test('Admin endpoint rejects non-admins and propagates database failure without success',async()=>{

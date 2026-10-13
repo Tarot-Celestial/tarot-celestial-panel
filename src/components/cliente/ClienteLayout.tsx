@@ -14,6 +14,8 @@ import LeoCelestialGuide from "./LeoCelestialGuide";
 import ClienteNavigation from "./ClienteNavigation";
 import { universeDestination, UniverseMotionControl } from "./CelestialUniverse";
 import universeStyles from "./ClienteUniverseLayout.module.css";
+import { ClientRitualAccess } from "./ClientPanelAccess";
+import { PortalMotionControl } from "./CelestialPortal";
 
 const sb = supabaseClienteBrowser();
 const LEO_NOTIFICATION_KEY = "tc-leo-celestial-last-notification-v1";
@@ -262,10 +264,10 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   const isHome = pathname === "/cliente/dashboard";
 
   const destination = universeDestination(pathname);
-  return <PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell} data-home={isHome ? "true" : "false"}>
+  return <ClientRitualAccess.Provider value={ritualAccess}><PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell} data-home={isHome ? "true" : "false"}>
     
     <div className={universeStyles.container}>
-      <UniverseMotionControl />
+      {isHome ? <PortalMotionControl /> : <UniverseMotionControl />}
       <header className={universeStyles.header}>
         <Link href="/cliente/dashboard" className={universeStyles.brand}><Image src="/Nuevo-logo-tarot.png" alt="" width={34} height={34}/><span>TAROT CELESTIAL</span></Link>
         <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>
@@ -276,5 +278,5 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
       <footer className={universeStyles.footer}>Tarot Celestial <span>✦</span> Tu espacio personal · {destination.name} <a href="/images/universe/surfaces/CREDITS.txt" target="_blank" rel="noopener noreferrer">Créditos del universo</a></footer>
     </div>
     <LeoCelestialGuide promoActive={promoActive}/>
-  </PanelTheme>;
+  </PanelTheme></ClientRitualAccess.Provider>;
 }

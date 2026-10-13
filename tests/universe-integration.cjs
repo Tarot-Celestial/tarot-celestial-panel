@@ -12,6 +12,7 @@ const baseURL = process.env.TC_UNIVERSE_QA_URL || 'http://127.0.0.1:3020';
 assert.ok(['127.0.0.1', 'localhost'].includes(new URL(baseURL).hostname), 'Integration QA only permits a local server');
 const output = process.env.TC_UNIVERSE_QA_OUTPUT || path.resolve(__dirname, '../../outputs');
 const rootSelector = '[data-celestial-universe]';
+const portalSelector = '[data-celestial-portal]';
 const checks = [], errors = [], blocked = [], calls = new Set(), metrics = {};
 fs.mkdirSync(output, { recursive: true });
 const customerId = '00000000-0000-4000-8000-000000000001';
@@ -62,6 +63,17 @@ async function pageFor(context) {
   return page;
 }
 async function world(page, renderer = 'webgl') { await page.locator(`${rootSelector}[data-renderer="${renderer}"]`).waitFor({ timeout: 90000 }); }
+async function portal(page, motion = 'running') {
+  await page.locator(`${portalSelector}[data-motion="${motion}"]`).waitFor();
+  assert.equal(await page.locator(rootSelector).count(), 0, 'Home must not initialize the planetary renderer');
+  assert.equal(await page.locator(`${portalSelector} canvas`).count(), 0, 'The portal uses CSS/SVG instead of a second canvas');
+}
+async function navigateGroup(page, group, destination) {
+  const navigation = page.getByRole('navigation', { name: 'Secciones del panel de cliente' });
+  await navigation.getByRole('button', { name: group, exact: true }).click();
+  await navigation.locator(`a[href="/cliente/${destination}"]`).click();
+  await page.waitForURL(`**/cliente/${destination}`);
+}
 async function frames(page) { return Number(await page.locator(`${rootSelector} canvas`).getAttribute('data-frames')); }
 async function screenshot(page, name) { await page.screenshot({ path: path.join(output, `universe-integration-${name}.png`) }); }
 
@@ -72,15 +84,16 @@ async function screenshot(page, name) { await page.screenshot({ path: path.join(
     const page = await pageFor(desktop);
     await page.goto(`${baseURL}/cliente/dashboard`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.getByRole('heading', { name: 'Tu universo empieza aquí' }).waitFor();
-    await world(page);
+    await portal(page);
     await page.getByRole('button', { name: 'Abrir ayuda de Leonaris' }).waitFor();
     await page.waitForTimeout(1000);
-    metrics.actualLayout = await page.locator('.tc-rank-panel').evaluate(node => ({ backgroundColor: getComputedStyle(node).backgroundColor, backgroundImage: getComputedStyle(node).backgroundImage, rank: node.dataset.panelRank, canvasCount: document.querySelectorAll('[data-celestial-universe] canvas').length }));
+    metrics.actualLayout = await page.locator('.tc-rank-panel').evaluate(node => ({ backgroundColor: getComputedStyle(node).backgroundColor, backgroundImage: getComputedStyle(node).backgroundImage, rank: node.dataset.panelRank, canvasCount: document.querySelectorAll('[data-celestial-universe] canvas').length, portalCount: document.querySelectorAll('[data-celestial-portal]').length }));
     assert.equal(metrics.actualLayout.backgroundColor, 'rgba(0, 0, 0, 0)');
     assert.equal(metrics.actualLayout.backgroundImage, 'none');
-    assert.equal(metrics.actualLayout.canvasCount, 1);
+    assert.equal(metrics.actualLayout.canvasCount, 0);
+    assert.equal(metrics.actualLayout.portalCount, 1);
     assert.equal(metrics.actualLayout.rank, 'diamond');
-    checks.push('Actual dashboard renders through the transparent Diamante rank shell with one WebGL canvas');
+    checks.push('Actual dashboard renders through the transparent Diamante rank shell with one CSS/SVG portal and no planetary canvas');
     await screenshot(page, 'dashboard-desktop');
 
     const leo = page.getByRole('button', { name: 'Abrir ayuda de Leonaris' });
@@ -97,8 +110,10 @@ async function screenshot(page, name) { await page.screenshot({ path: path.join(
     checks.push('Leonaris remains fixed to the viewport and its help opens above the new world');
     await page.getByRole('button', { name: 'Pausar universo', exact: true }).click();
     await page.getByRole('button', { name: 'Reanudar universo', exact: true }).waitFor();
+    await portal(page, 'paused');
     await page.getByRole('button', { name: 'Reanudar universo', exact: true }).click();
-    checks.push('The universe pause control remains clickable beside the actual rank shell');
+    await portal(page);
+    checks.push('The portal pause control changes its actual motion state beside the rank shell');
 
     await page.getByRole('button', { name: 'Canjear', exact: true }).click();
     await page.getByRole('dialog', { name: 'Confirmar canje' }).waitFor();
@@ -111,16 +126,34 @@ async function screenshot(page, name) { await page.screenshot({ path: path.join(
     checks.push('The actual redemption modal covers the universe control without submitting any redemption');
 
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
+    const homePortal = await page.locator(portalSelector).elementHandle();
+    await navigateGroup(page, 'Experiencias', 'ruleta');
+    await page.getByRole('heading', { name: 'Ruletas clientes', exact: true }).waitFor();
+    await world(page);
+    await page.waitForTimeout(1700);
+    assert.equal(await homePortal.evaluate(node => node.isConnected), false);
+    assert.equal(await page.locator(portalSelector).count(), 0);
+    assert.equal(await page.locator(`${rootSelector} canvas`).count(), 1);
+    assert.equal(await page.locator(rootSelector).getAttribute('data-destination'), 'Saturno');
     const canvas = await page.locator(`${rootSelector} canvas`).elementHandle();
-    await page.getByRole('navigation', { name: 'Secciones del panel de cliente' }).getByRole('link', { name: 'Ruleta', exact: true }).click();
-    await page.waitForURL('**/cliente/ruleta');
+    checks.push('Experiencias > Mi ruleta replaces the home portal with one Saturn planetary canvas');
+    await screenshot(page, 'ruleta-desktop');
+
+    await navigateGroup(page, 'Experiencias', 'oraculo');
+    await page.getByRole('heading', { name: 'Oráculo', exact: true }).waitFor();
+    await world(page);
+    await page.waitForTimeout(1700);
+    assert.equal(await canvas.evaluate(node => node === document.querySelector('[data-celestial-universe] canvas')), true);
+    assert.equal(await page.locator(rootSelector).getAttribute('data-destination'), 'Urano');
+    assert.equal(await page.locator(`${rootSelector} canvas`).count(), 1);
+    await screenshot(page, 'oraculo-desktop');
+    await navigateGroup(page, 'Experiencias', 'ruleta');
     await page.getByRole('heading', { name: 'Ruletas clientes', exact: true }).waitFor();
     await world(page);
     await page.waitForTimeout(1700);
     assert.equal(await canvas.evaluate(node => node === document.querySelector('[data-celestial-universe] canvas')), true);
     assert.equal(await page.locator(rootSelector).getAttribute('data-destination'), 'Saturno');
-    checks.push('The actual dashboard-to-Ruleta menu navigation retains the same canvas and changes to Saturn');
-    await screenshot(page, 'ruleta-desktop');
+    checks.push('Navigation between Ruleta and Oráculo preserves the same planetary canvas in both directions');
 
     // Simulated hidden-document event: deterministic in headless browsers.
     await page.evaluate(() => {
@@ -157,20 +190,39 @@ async function screenshot(page, name) { await page.screenshot({ path: path.join(
     checks.push('A real WEBGL_lose_context event shows the static fallback and restores the same canvas');
     await screenshot(page, 'context-restored');
 
+    await page.getByRole('button', { name: 'Pausar universo', exact: true }).click();
+    await page.locator(`${rootSelector}[data-motion="paused"]`).waitFor();
+    await page.getByRole('navigation', { name: 'Secciones del panel de cliente' }).getByRole('link', { name: 'Inicio', exact: true }).click();
+    await page.waitForURL('**/cliente/dashboard');
+    await portal(page, 'paused');
+    assert.equal(await canvas.evaluate(node => node.isConnected), false);
+    await page.getByRole('button', { name: 'Reanudar universo', exact: true }).click();
+    await portal(page);
+    checks.push('Returning to Inicio disposes the planetary canvas and carries the paused preference into the portal');
+
     const mobile = await mockedContext(browser, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     const mobilePage = await pageFor(mobile);
     await mobilePage.goto(`${baseURL}/cliente/dashboard`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await mobilePage.getByRole('heading', { name: 'Tu universo empieza aquí' }).waitFor();
-    await world(mobilePage);
+    await portal(mobilePage);
     await mobilePage.waitForTimeout(700);
-    metrics.mobile = await mobilePage.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, viewport: innerWidth, worldCanvases: document.querySelectorAll('[data-celestial-universe] canvas').length }));
+    metrics.mobile = await mobilePage.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, viewport: innerWidth, worldCanvases: document.querySelectorAll('[data-celestial-universe] canvas').length, portals: document.querySelectorAll('[data-celestial-portal]').length }));
     assert.ok(metrics.mobile.scrollWidth <= metrics.mobile.viewport + 1);
+    assert.equal(metrics.mobile.worldCanvases, 0);
+    assert.equal(metrics.mobile.portals, 1);
     await mobilePage.getByRole('button', { name: 'Pausar universo', exact: true }).click();
+    await portal(mobilePage, 'paused');
     await mobilePage.getByRole('button', { name: 'Reanudar universo', exact: true }).click();
+    await portal(mobilePage);
     await screenshot(mobilePage, 'dashboard-mobile');
     checks.push('Actual mobile dashboard has no horizontal overflow and its motion control remains usable');
     await mobilePage.getByRole('button', { name: 'Abrir ayuda de Leonaris' }).click();
     await mobilePage.getByRole('region', { name: 'Ayuda de Leonaris' }).waitFor();
+    // The compact panel intentionally stops above the lower portal button. The real
+    // guided-tour mode reaches the bottom edge, exercising their stacking overlap.
+    await mobilePage.getByRole('button', { name: 'Ampliar ayuda', exact: true }).click();
+    await mobilePage.getByRole('button', { name: 'Guíame aquí', exact: true }).click();
+    await mobilePage.locator('[aria-label="Leonaris, tu guía celestial"][data-journey="true"]').waitFor();
     await mobilePage.waitForTimeout(400);
     const overlap = await mobilePage.evaluate(() => {
       const control = document.querySelector('button[aria-label="Pausar universo"]');
@@ -193,10 +245,12 @@ async function screenshot(page, name) { await page.screenshot({ path: path.join(
     }), true);
     await mobilePage.getByRole('button', { name: 'Cancelar', exact: true }).click();
     checks.push('Actual mobile Leonaris help and redemption overlay both stack above the universe control');
-    await mobilePage.getByRole('navigation', { name: 'Secciones del panel de cliente' }).getByRole('link', { name: 'Ruleta', exact: true }).click();
-    await mobilePage.waitForURL('**/cliente/ruleta');
+    await navigateGroup(mobilePage, 'Experiencias', 'ruleta');
     await world(mobilePage);
     await mobilePage.waitForTimeout(1600);
+    assert.equal(await mobilePage.locator(portalSelector).count(), 0);
+    assert.equal(await mobilePage.locator(`${rootSelector} canvas`).count(), 1);
+    assert.equal(await mobilePage.locator(rootSelector).getAttribute('data-destination'), 'Saturno');
     assert.equal(await mobilePage.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
     await screenshot(mobilePage, 'ruleta-mobile');
     checks.push('Actual mobile Ruleta navigation and layout fit the viewport');
@@ -207,7 +261,8 @@ async function screenshot(page, name) { await page.screenshot({ path: path.join(
     await authPage.goto(`${baseURL}/cliente/login`, { waitUntil: 'domcontentloaded', timeout: 120000 });
     await authPage.getByRole('heading', { name: 'Tarot Celestial', exact: true }).waitFor();
     assert.equal(await authPage.locator(rootSelector).count(), 0);
-    checks.push('Actual login page remains outside the universe renderer');
+    assert.equal(await authPage.locator(portalSelector).count(), 0);
+    checks.push('Actual login page remains outside both the portal and planetary renderer');
     await authContext.close();
 
     assert.deepEqual(errors, []);
