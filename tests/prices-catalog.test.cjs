@@ -34,7 +34,7 @@ function fixture(options = {}) {
         signals.push(signal);
         if (options.hang === name) return new Promise(() => {});
         if (options.reject === name) return Promise.reject(new Error('network unavailable'));
-        if (name === 'tc_client_rank_state') return Promise.resolve({ error: options.rankError || null, data: 'rank' in options ? options.rank : { effective: 'diamante', automatic: 'bronce', config: { rank_key: 'diamante' }, override: { reason: 'private reason', notes: 'private notes' } } });
+        if (name === 'tc_client_rank_state') return Promise.resolve({ error: options.rankError || null, data: 'rank' in options ? options.rank : { effective: 'diamante', automatic: 'bronce', config: { rank_key: 'diamante', label: 'Diamante' }, override: { reason: 'private reason', notes: 'private notes' } } });
         return Promise.resolve({ error: options.resolveError || null, data: 'rows' in options ? options.rows : args.p_packages.map((pack, i) => ({
           ...pack, rank_key: args.p_rank_key_override, package_level: Math.floor(i / 3) + 1,
           status: args.p_rank_key_override === null ? 'no_effective_rank' : 'ready',
@@ -51,6 +51,8 @@ function fixture(options = {}) {
 test('catalog preserves all checkout pack ids, prices, minutes and native benefits', async () => {
   const f = fixture(), catalog = await api.loadClientePriceCatalog(f.admin, owner);
   assert.equal(catalog.packs.length, 9);
+  assert.equal(catalog.rankKey, 'diamante');
+  assert.equal(catalog.rankLabel, 'Diamante');
   for (let i = 0; i < minute.CLIENTE_MINUTE_PACKS.length; i++) {
     for (const [key, value] of Object.entries(minute.CLIENTE_MINUTE_PACKS[i])) assert.equal(catalog.packs[i][key], value, key);
     assert.equal(catalog.packs[i].rankBenefitsStatus, 'ready');
@@ -78,10 +80,14 @@ test('verified no-rank state remains distinct from failed or unknown rank state'
   const f = fixture({ rank: { effective: null, config: null } });
   const catalog = await api.loadClientePriceCatalog(f.admin, owner);
   assert.equal(f.calls[1].args.p_rank_key_override, null);
+  assert.equal(catalog.rankKey, null);
+  assert.equal(catalog.rankLabel, null);
   assert.ok(catalog.packs.every(pack => pack.rankBenefitsStatus === 'no_effective_rank' && pack.rankBenefits === null));
   for (const rank of [null, {}, { effective: undefined }, { effective: '' }, { effective: 'diamante', config: { rank_key: 'oro' } }, { effective: 'unverified' }]) {
     const failed = fixture({ rank }), response = await api.loadClientePriceCatalog(failed.admin, owner);
     assert.equal(failed.calls.length, 1);
+    assert.equal(response.rankKey, null);
+    assert.equal(response.rankLabel, null);
     assert.ok(response.packs.every(pack => pack.rankBenefitsStatus === 'unavailable' && pack.rankBenefits === null && pack.packageLevel === null));
     assert.equal(response.packs[0].priceUsd, minute.CLIENTE_MINUTE_PACKS[0].priceUsd);
   }
@@ -117,6 +123,8 @@ test('timeout bounds both rank and benefits queries and cancels the active reque
     assert.ok(performance.now() - started < 1000);
     assert.ok(f.signals.every(signal => signal.aborted));
     assert.equal(catalog.packs[0].rankBenefitsStatus, 'unavailable');
+    assert.equal(catalog.rankKey, null);
+    assert.equal(catalog.rankLabel, null);
   }
 });
 
@@ -126,6 +134,62 @@ test('catalog does not cache one client rank or extras for the next account', as
   const next = await api.loadClientePriceCatalog(second.admin, foreign);
   assert.equal(second.calls[0].args.p_cliente_id, foreign);
   assert.ok(next.packs.every(pack => pack.rankBenefitsStatus === 'no_effective_rank'));
+  assert.equal(next.rankKey, null);
+  assert.equal(next.rankLabel, null);
+});
+
+// Mirrors the read-only production matrix verified on 2026-10-13. These are
+// extra rank benefits, not replacements for a pack's native oracle credits.
+test('current rank matrices preserve normal tier extras and the Diamond exception independently of native benefits', async () => {
+  for (const rankKey of ['bronce', 'plata', 'oro', 'diamante']) {
+    const diamond = rankKey === 'diamante';
+    const rows = minute.CLIENTE_MINUTE_PACKS.map((pack, index) => {
+      const level = Math.floor(index / 3) + 1;
+      return { package_source: 'standard', package_key: pack.id, package_level: level, rank_key: rankKey, status: 'ready', rank_benefits: {
+        enabled: true, coins: diamond ? 500 : [50, 150, 300][level - 1],
+        oracle_credits: diamond ? [0, 1, 3][level - 1] : (level === 3 ? 2 : 0),
+        roulette_level_1_spins: Number(level === 1), roulette_level_2_spins: Number(level === 2), roulette_level_3_spins: Number(level === 3),
+        roulette_special_spins: Number(diamond && level === 3), updated_by: 'private-operator',
+      } };
+    });
+    const f = fixture({ rank: { effective: rankKey, config: { rank_key: rankKey, label: `  ${rankKey}  ` } }, rows });
+    const catalog = await api.loadClientePriceCatalog(f.admin, owner);
+    assert.equal(catalog.rankKey, rankKey);
+    assert.equal(catalog.rankLabel, rankKey);
+    assert.equal(f.calls.length, 2, 'showing the rank must not add database requests');
+    for (let i = 0; i < catalog.packs.length; i++) {
+      const pack = catalog.packs[i], expected = rows[i].rank_benefits;
+      assert.equal(pack.rankBenefits.coins, expected.coins);
+      assert.equal(pack.rankBenefits.oracle_credits, expected.oracle_credits);
+      assert.equal(pack.rankBenefits.roulette_special_spins, expected.roulette_special_spins);
+      assert.equal(pack.rankBenefits[`roulette_level_${pack.packageLevel}_spins`], 1);
+      assert.equal(pack.oracleCredits || 0, minute.CLIENTE_MINUTE_PACKS[i].oracleCredits || 0);
+      assert.equal(pack.rouletteSpins, minute.CLIENTE_MINUTE_PACKS[i].rouletteSpins);
+    }
+    assert.deepEqual(clone(catalog.packs.slice(6).map(pack => (pack.oracleCredits || 0) + pack.rankBenefits.oracle_credits)), diamond ? [4, 5, 6] : [3, 4, 5]);
+    assert.equal(JSON.stringify(catalog).includes('private-operator'), false);
+  }
+});
+
+test('disabled matrix benefits stay disabled without losing the verified rank label or pack benefits', async () => {
+  const f = fixture({ rows: [{ package_source: 'standard', package_key: 'pack_80', package_level: 3, rank_key: 'diamante', status: 'disabled', rank_benefits: { enabled: false, coins: 500, oracle_credits: 3, private_notes: 'hidden' } }] });
+  const catalog = await api.loadClientePriceCatalog(f.admin, owner);
+  const pack = catalog.packs.find(pack => pack.id === 'pack_80');
+  assert.equal(catalog.rankKey, 'diamante');
+  assert.equal(catalog.rankLabel, 'Diamante');
+  assert.equal(pack.rankBenefitsStatus, 'disabled');
+  assert.equal(pack.rankBenefits.enabled, false);
+  assert.equal(pack.oracleCredits, 1);
+  assert.equal(JSON.stringify(catalog).includes('private_notes'), false);
+});
+
+test('rank display metadata is never invented from missing or non-text labels', async () => {
+  for (const label of [undefined, null, {}, '   ']) {
+    const f = fixture({ rank: { effective: 'oro', config: { rank_key: 'oro', label } } });
+    const catalog = await api.loadClientePriceCatalog(f.admin, owner);
+    assert.equal(catalog.rankKey, 'oro');
+    assert.equal(catalog.rankLabel, null);
+  }
 });
 
 class AccessError extends Error { constructor(status, message) { super(message); this.status = status; } }

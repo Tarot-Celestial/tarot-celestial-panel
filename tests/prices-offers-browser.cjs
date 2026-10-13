@@ -10,7 +10,7 @@ catch { playwright = require(path.join(process.env.USERPROFILE, '.cache/codex-ru
 const baseURL = process.env.TC_PRICES_QA_URL || 'http://127.0.0.1:3020';
 const origin = new URL(baseURL).origin;
 assert.ok(['localhost', '127.0.0.1'].includes(new URL(baseURL).hostname), 'QA must use localhost');
-const output = process.env.TC_PRICES_QA_OUTPUT || path.resolve(__dirname, '../outputs/prices-offers-qa');
+const output = process.env.TC_PRICES_QA_OUTPUT || path.resolve(__dirname, '../../outputs/benefits-redesign-qa');
 fs.mkdirSync(output, { recursive: true });
 const checks = [], failures = [], errors = [], metrics = [], transactions = [], requests = [];
 const ids = { A: '00000000-0000-4000-8000-000000000001', B: '00000000-0000-4000-8000-000000000002' };
@@ -27,13 +27,30 @@ const packs = loadSource('src/lib/server/cliente-minute-packs.ts', { '@/lib/rule
 const oraclePacks = loadSource('src/lib/server/oracle-premium.ts').ORACLE_PACKS;
 const questionPack = loadSource('src/lib/server/oracle-questions.ts').ORACLE_QUESTION_PACK;
 function catalogue(owner = 'A') {
-  return { ok: true, packs: packs.map((pack, i) => ({ ...pack,
-    nombre: owner === 'B' && i === 0 ? '10 minutos · cuenta B' : pack.nombre,
-    packageLevel: Math.floor(i / 3) + 1, rankBenefits: { enabled: true, coins: owner === 'B' ? 777 : 125, oracle_credits: 1 }, rankBenefitsStatus: 'ready',
-  })), oraclePacks, questionPack };
+  const diamond = owner === 'B';
+  return { ok: true, rankKey: diamond ? 'diamante' : 'bronce', rankLabel: diamond ? 'Diamante' : 'Bronce', packs: packs.map((pack, i) => {
+    const level = Math.floor(i / 3) + 1;
+    return { ...pack,
+      nombre: diamond && i === 0 ? '10 minutos · cuenta B' : pack.nombre,
+      packageLevel: level, rankBenefits: {
+        enabled: true, coins: diamond ? 500 : [50, 150, 300][level - 1],
+        oracle_credits: diamond ? [0, 1, 3][level - 1] : level === 3 ? 2 : 0,
+        roulette_level_1_spins: level === 1 ? 1 : 0,
+        roulette_level_2_spins: level === 2 ? 1 : 0,
+        roulette_level_3_spins: level === 3 ? 1 : 0,
+        roulette_special_spins: diamond && level === 3 ? 1 : 0,
+      }, rankBenefitsStatus: 'ready',
+    };
+  }), oraclePacks, questionPack };
 }
+const rankBox = '[data-benefits="rank"]', includedBox = '[data-benefits="included"]';
+// Synthetic catalogue with the same maxima already audited separately in Supabase.
+const prizes = [1, 2, 3].flatMap(level => [
+  { id: `qa-minutes-${level}`, nivel: level, reward_type: 'minutes', reward_value: [60, 80, 100][level - 1], probability: 1, special: false },
+  { id: `qa-coins-${level}`, nivel: level, reward_type: 'coins', reward_value: [400, 1000, 2000][level - 1], probability: 1, special: false },
+]);
 async function fixture(browser, options = {}) {
-  const context = await browser.newContext({ viewport: options.viewport || { width: 1440, height: 1000 }, deviceScaleFactor: options.scale || 1, isMobile: !!options.mobile, hasTouch: !!options.mobile, serviceWorkers: 'block' });
+  const context = await browser.newContext({ viewport: options.viewport || { width: 1440, height: 1000 }, deviceScaleFactor: options.scale || 1, isMobile: !!options.mobile, hasTouch: !!options.mobile, reducedMotion: options.reducedMotion || 'no-preference', serviceWorkers: 'block' });
   const state = { records: [], gates: [], hold: new Set(options.hold || []), fail: new Set(options.fail || []), nullRoulette: !!options.nullRoulette, credits: options.credits === undefined ? 4 : options.credits, closing: false };
   await context.addInitScript(({ ids, catalogPath }) => {
     const now = Math.floor(Date.now() / 1000), id = ids.A;
@@ -85,14 +102,15 @@ async function fixture(browser, options = {}) {
       return fulfill({ ok: false, error: 'QA blocked transaction' }, 403);
     }
     // Capture the response before a gate is released to reproduce a genuinely stale owner response.
-    const wallet = { effective_rank: 'diamante', minutes_free: 193, minutes_normal: 40, coins: 1200, oracle_credits: state.credits, spins: { total: 0 } };
+    const rankKey = owner === 'B' ? 'diamante' : 'bronce', rankLabel = owner === 'B' ? 'Diamante' : 'Bronce';
+    const wallet = { effective_rank: rankKey, minutes_free: 193, minutes_normal: 40, coins: 1200, oracle_credits: state.credits, spins: { total: 0 } };
     let json = { ok: true, data: [] };
-    if (url.pathname === catalogPath) json = catalogue(owner);
-    else if (url.pathname === '/api/cliente/me') json = { ok: true, cliente: { id: sub, nombre: owner, email: user.email, rango_actual: 'diamante', onboarding_completado: true }, wallet, recompensas: [], packs: [], cliente_notificaciones: [], rank_info: { label: 'Diamante', benefits: [] }, rank_progress: { current_label: 'Diamante', progress_percent: 100 }, rank_benefits: { ritual_access: true } };
-    else if (url.pathname === '/api/cliente/ruleta') json = state.nullRoulette ? { ok: true, catalogue: null } : { ok: true, cliente_id: sub, available_spins: 0, diamond_access: true, catalogue: [], history: [], entitlements: [], level_1_spins: 0, level_2_spins: 0, level_3_spins: 0, level_4_spins: 0, level_5_spins: 0 };
+    if (url.pathname === catalogPath) json = options.catalogue ? options.catalogue(owner) : catalogue(owner);
+    else if (url.pathname === '/api/cliente/me') json = { ok: true, cliente: { id: sub, nombre: owner, email: user.email, rango_actual: rankKey, onboarding_completado: true }, wallet, recompensas: [], packs: [], cliente_notificaciones: [], rank_info: { label: rankLabel, benefits: [] }, rank_progress: { current_label: rankLabel, progress_percent: 100 }, rank_benefits: { ritual_access: true } };
+    else if (url.pathname === '/api/cliente/ruleta') json = state.nullRoulette ? { ok: true, catalogue: null } : { ok: true, cliente_id: sub, available_spins: 0, diamond_access: true, catalogue: options.prizes || [], history: [], entitlements: [], level_1_spins: 0, level_2_spins: 0, level_3_spins: 0, level_4_spins: 0, level_5_spins: 0 };
     else if (url.pathname === '/api/cliente/state') json = { ok: true, state: wallet };
     else if (url.pathname === '/api/cliente/promotions/active') json = { ok: true, promotion: null };
-    else if (url.pathname === '/api/cliente/rangos') json = { ok: true, cliente_id: sub, currency: 'USD', window_days: 30, state: { effective: 'diamante', automatic: 'diamante', total: 200, purchases: 3, has_override: false }, ranks: [], warnings: [] };
+    else if (url.pathname === '/api/cliente/rangos') json = { ok: true, cliente_id: sub, currency: 'USD', window_days: 30, state: { effective: rankKey, automatic: rankKey, total: 200, purchases: 3, has_override: false }, ranks: [], warnings: [] };
     else if (url.pathname === '/api/cliente/leo') json = { ok: true, profile: { hidden: true, muted: true }, facts: { coins: 1200, minutes: 233, oracleCredits: 4 }, companion: { displayName: owner, memoryEnabled: false, style: 'warm', memories: [], favoriteSections: [], learning: { helpful: 0, unhelpful: 0, visits: 0, summary: '' }, greeting: null } };
     else if (url.pathname === '/api/cliente/auth/password/status') json = { ok: true, hasPassword: true };
     if (state.hold.has(url.pathname) || state.hold.has(url.pathname + ':' + owner)) await new Promise(resolve => state.gates.push({ endpoint: url.pathname, owner, resolve }));
@@ -133,11 +151,102 @@ async function noOverflow(page, label) {
 (async () => {
   const browser = await playwright.chromium.launch({ executablePath: process.env.EDGE_EXECUTABLE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', headless: true, args: ['--enable-unsafe-swiftshader'] });
   try {
+    await check('All nine packs expose their own minutes and price; normal and Diamond rank rewards stay separate from included purchases', async () => {
+      for (const owner of ['A', 'B']) {
+        const f = await fixture(browser, { name: `benefits-${owner}`, prizes, catalogue: () => catalogue(owner) });
+        try {
+          await f.start(); await f.page.locator(card).first().waitFor();
+          assert.equal(await f.page.locator(card).count(), 9);
+          assert.equal(await f.page.getByText('Beneficios por tu rango', { exact: true }).count(), 9);
+          const data = catalogue(owner);
+          for (const pack of data.packs) {
+            const article = f.page.locator(card).filter({ has: f.page.getByRole('heading', { name: pack.nombre, exact: true }) });
+            assert.equal(await article.count(), 1, pack.id + ' title');
+            assert.ok((await article.innerText()).includes('$' + pack.priceUsd.toFixed(2).replace('.', ',')), pack.id + ' price');
+            const rank = await article.locator(rankBox).innerText(), included = await article.locator(includedBox).innerText();
+            assert.ok(rank.includes(`+${pack.rankBenefits.coins} Coins`), pack.id + ': ' + rank);
+            assert.match(rank, new RegExp(`1\\s+giro[^\\n]*[Nn]ivel\\s*${pack.packageLevel}`, 'i'));
+            if (pack.rankBenefits.oracle_credits) assert.match(rank, new RegExp(`${pack.rankBenefits.oracle_credits}\\s+(?:tiradas?\\s+(?:del?\\s+)?(?:Oráculo)|Oráculo)`, 'i'));
+            else assert.doesNotMatch(rank, /\d+\s+(?:tiradas?|Oráculo)/i);
+            if (pack.rankBenefits.roulette_special_spins) assert.match(rank, /1\s+giro[^\n]*[Ee]special/);
+            assert.match(included, new RegExp(`${pack.rouletteSpins}\\s+giros?[^\\n]*[Nn]ivel\\s*${pack.rouletteLevel}`, 'i'));
+            if (pack.oracleCredits) assert.match(included, new RegExp(`${pack.oracleCredits}\\s+(?:tiradas?\\s+(?:del?\\s+)?(?:Oráculo)|Oráculo)`, 'i'));
+            assert.doesNotMatch(included, /50 Coins|150 Coins|300 Coins|500 Coins/, 'rank coins must not be repeated as base benefit');
+          }
+          await f.page.locator('#nivel-1').scrollIntoViewIfNeeded(); await shot(f.page, `benefits-${owner}-level1`);
+          await f.page.locator('#nivel-3').scrollIntoViewIfNeeded(); await shot(f.page, `benefits-${owner}-level3`);
+          await shot(f.page, `benefits-${owner}-full`, { fullPage: true });
+        } finally { await f.close(); }
+      }
+    });
+    await check('Configured roulette maxima are possible prizes rather than purchased minutes, and each next-level link reaches a visible section', async () => {
+      const f = await fixture(browser, { name: 'prizes-and-levels', prizes });
+      try {
+        await f.start(); await rendered(f.page);
+        for (const [index, max] of [60, 80, 100].entries()) {
+          const section = f.page.locator(`#nivel-${index + 1}`);
+          await section.getByText(/Premios posibles, no garantizados/i).waitFor();
+          const text = await section.innerText();
+          assert.match(text, new RegExp(`hasta\\s+${max}\\s+min`, 'i'));
+          assert.match(text, index === 0 ? /400\s+Coins/ : index === 1 ? /1[.,\s]?000\s+Coins/ : /2[.,\s]?000\s+Coins/);
+          assert.equal(await section.locator(card).count(), 3);
+        }
+        for (const level of [2, 3]) {
+          const link = f.page.locator(`a[href="#nivel-${level}"]`).first();
+          assert.equal(await link.count(), 1); await link.click();
+          await f.page.waitForFunction(level => {
+            const rect = document.getElementById(`nivel-${level}`).getBoundingClientRect();
+            return rect.top >= -10 && rect.top < innerHeight * .75;
+          }, level);
+        }
+        assert.equal(await f.page.getByRole('tab').count(), 0, 'all levels must be discoverable by ordinary scrolling');
+      } finally { await f.close(); }
+    });
+    await check('Missing rank information never displays invented Coins or oracle credits while all base packs remain available', async () => {
+      for (const status of ['no_effective_rank', 'unavailable']) {
+        const f = await fixture(browser, { name: status, prizes, catalogue: () => {
+          const data = catalogue();
+          return { ...data, rankKey: null, rankLabel: null, packs: data.packs.map(pack => ({ ...pack, rankBenefits: null, rankBenefitsStatus: status })) };
+        } });
+        try {
+          await f.start(); await rendered(f.page); assert.equal(await f.page.locator(card).count(), 9);
+          for (const article of await f.page.locator(card).all()) {
+            const text = await article.locator(rankBox).innerText();
+            assert.doesNotMatch(text, /\+\s*\d+\s*(?:Coins|Oráculo|tirada|giro)/i, status + ': ' + text);
+            assert.equal(await article.getByRole('button', { name: 'Elegir paquete', exact: true }).isDisabled(), false);
+          }
+        } finally { await f.close(); }
+      }
+    });
+    await check('Package grouping never substitutes a different roulette level or advertises a maximum for mixed or absent included spins', async () => {
+      for (const scenario of ['different-wheel', 'mixed-wheels', 'no-base-spins']) {
+        const f = await fixture(browser, { name: scenario, prizes, catalogue: () => {
+          const data = catalogue();
+          data.packs = data.packs.map((pack, index) => pack.packageLevel !== 2 ? pack : {
+            ...pack,
+            rouletteLevel: scenario === 'different-wheel' || scenario === 'mixed-wheels' && index === 3 ? 1 : 2,
+            rouletteSpins: scenario === 'no-base-spins' && index === 3 ? 0 : 1,
+          });
+          return data;
+        } });
+        try {
+          await f.start(); await rendered(f.page);
+          const section = f.page.locator('#nivel-2'), banner = section.locator('[class*="prizeBanner"]');
+          await f.page.locator('#nivel-1').getByText(/hasta\s+60\s+min/i).waitFor();
+          const text = await banner.innerText();
+          if (scenario === 'different-wheel') {
+            assert.match(text, /hasta\s+60\s+min/i); assert.match(text, /400\s+Coins/i); assert.doesNotMatch(text, /80\s+min|1[.,\s]?000\s+Coins/i);
+            assert.equal(await banner.locator('a[href="/cliente/ruleta?nivel=1"]').count(), 1);
+            assert.equal(await section.locator(`${includedBox} a[href="/cliente/ruleta?nivel=1"]`).count(), 3);
+          } else assert.doesNotMatch(text, /hasta\s*\d|\d[.,\d]*\s+Coins/i);
+        } finally { await f.close(); }
+      }
+    });
     await check('Catalogue renders independently of held account, roulette, promotion and me requests', async () => {
       const f = await fixture(browser, { name: 'independent', hold: ['/api/cliente/me', '/api/cliente/state', '/api/cliente/ruleta', '/api/cliente/promotions/active'] });
       try {
         await f.start(); await rendered(f.page);
-        assert.equal(await f.page.locator(card).count(), 6);
+        assert.equal(await f.page.locator(card).count(), 9);
         assert.equal(await summary(f.page, 'Giros disponibles'), '—');
         assert.equal(await summary(f.page, 'Tiradas compradas'), '—');
         assert.equal(await summary(f.page, 'Packs de minutos'), '9');
@@ -150,14 +259,17 @@ async function noOverflow(page, label) {
         assert.ok(timing.responseToCardMs >= 0 && timing.responseToCardMs < 1000, JSON.stringify(timing));
         await shot(f.page, 'desktop-prices-independent');
         await f.page.locator(card).first().scrollIntoViewIfNeeded(); await shot(f.page, 'desktop-prices-cards');
-        await f.page.getByRole('button', { name: 'Ver más minutos', exact: true }).click();
+        assert.equal(await f.page.getByRole('button', { name: 'Ver más minutos', exact: true }).count(), 0);
         assert.equal(await f.page.locator(card).count(), 9);
         for (const pack of packs) {
           const article = f.page.locator(card).filter({ has: f.page.getByRole('heading', { name: pack.nombre, exact: true }) });
           assert.ok((await article.innerText()).includes('$' + pack.priceUsd.toFixed(2).replace('.', ',')), pack.id + ' original price');
-          assert.ok((await article.innerText()).includes(pack.totalMinutes + ' minutos totales'), pack.id + ' original minutes');
+          assert.equal((await article.locator('h3 strong').innerText()).trim(), String(pack.totalMinutes), pack.id + ' original minutes');
         }
-        assert.ok(await f.page.getByText('+125 Coins · +1 Oráculo', { exact: true }).count() >= 9);
+        for (const [index, coins] of [50, 150, 300].entries()) {
+          const boxes = await f.page.locator(`article[data-level="${index + 1}"] ${rankBox}`).allInnerTexts();
+          assert.equal(boxes.length, 3); assert.ok(boxes.every(text => text.includes(`+${coins} Coins`)));
+        }
       } finally { await f.close(); }
     });
     await check('Slow catalogue shows skeleton; a failed response offers retry and recovers all products', async () => {
@@ -183,7 +295,7 @@ async function noOverflow(page, label) {
           await f.start(); await rendered(f.page); await f.page.getByText('Consulta tus giros en Ruleta', { exact: true }).waitFor();
           assert.equal(await summary(f.page, 'Giros disponibles'), '—'); assert.equal(await summary(f.page, 'Tiradas compradas'), '—');
           assert.equal(await f.page.getByText(/Hasta \+?\d/).count(), 0);
-          assert.ok(await f.page.getByText('Consulta los premios disponibles en esta ruleta.', { exact: true }).count() >= 6);
+          assert.equal(await f.page.getByText(/Descubre los premios de la ruleta Nivel [123]/).count(), 3);
           f.state.credits = 0; await f.page.evaluate(() => window.dispatchEvent(new Event('online')));
           await f.page.waitForFunction(() => [...document.querySelectorAll('small')].find(el => el.textContent === 'Tiradas compradas')?.parentElement.querySelector('strong')?.textContent === '0');
         } finally { await f.close(); }
@@ -209,8 +321,9 @@ async function noOverflow(page, label) {
         assert.ok((await f.page.evaluate(() => window.__priceQA.aborts)).some(row => row.url.includes('/api/cliente/catalogo')));
         f.release(catalogPath, 'A'); await f.page.waitForTimeout(300);
         assert.equal(await f.page.getByRole('heading', { name: '10 minutos', exact: true }).count(), 0);
-        assert.ok(await f.page.getByText('+777 Coins · +1 Oráculo', { exact: true }).count() >= 6);
-        assert.equal(await f.page.getByText('+125 Coins · +1 Oráculo', { exact: true }).count(), 0);
+        const boxes = await f.page.locator(rankBox).allInnerTexts();
+        assert.equal(boxes.length, 9); assert.ok(boxes.every(text => text.includes('+500 Coins')));
+        assert.ok(boxes.every(text => !text.includes('+50 Coins') && !text.includes('+150 Coins') && !text.includes('+300 Coins')));
       } finally { await f.close(); }
     });
     await check('Route change aborts the pending prices catalogue and a later response cannot restore old cards', async () => {
@@ -227,7 +340,7 @@ async function noOverflow(page, label) {
     await check('Existing purchase maintenance dialog remains the actual click behavior; pack checkout identifiers and endpoints stay intact', async () => {
       const f = await fixture(browser, { name: 'purchase-contract' });
       try {
-        await f.start(); await rendered(f.page); await f.page.locator(card).first().getByRole('button', { name: 'COMPRAR', exact: true }).click();
+        await f.start(); await rendered(f.page); await f.page.locator(card).first().getByRole('button', { name: 'Elegir paquete', exact: true }).click();
         await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).waitFor();
         assert.equal(transactions.length, 0); await f.page.getByRole('button', { name: 'Cerrar aviso' }).click();
         const source = fs.readFileSync(path.resolve(__dirname, '../src/app/cliente/precios-ofertas/page.tsx'), 'utf8');
@@ -242,7 +355,7 @@ async function noOverflow(page, label) {
     await check('Refresh and failure disable stale catalogue purchases; retry enables the same manual purchase dialog', async () => {
       const f = await fixture(browser, { name: 'stale-purchase' });
       try {
-        await f.start(); await rendered(f.page); const buy = f.page.locator(card).first().getByRole('button', { name: 'COMPRAR', exact: true });
+        await f.start(); await rendered(f.page); const buy = f.page.locator(card).first().getByRole('button', { name: 'Elegir paquete', exact: true });
         assert.equal(await buy.isDisabled(), false); f.state.hold.add(catalogPath); f.state.fail.add(catalogPath);
         await f.page.evaluate(() => window.dispatchEvent(new Event('online')));
         await f.page.locator('[aria-busy="true"]').waitFor(); assert.equal(await buy.isDisabled(), true);
@@ -257,7 +370,7 @@ async function noOverflow(page, label) {
       try {
         await f.start(); await rendered(f.page); await noOverflow(f.page, '320px mobile');
         await shot(f.page, 'mobile-320-prices'); await f.page.locator(card).first().scrollIntoViewIfNeeded(); await shot(f.page, 'mobile-320-card');
-        await f.page.getByRole('button', { name: 'Ver más minutos', exact: true }).click(); await noOverflow(f.page, '320px mobile premium expanded');
+        assert.equal(await f.page.locator(card).count(), 9); await noOverflow(f.page, '320px mobile all levels visible');
         await f.page.locator('article[data-level="3"]').first().scrollIntoViewIfNeeded(); await shot(f.page, 'mobile-320-premium');
       } finally { await f.close(); }
     });
@@ -267,6 +380,27 @@ async function noOverflow(page, label) {
       try {
         await f.start(); await rendered(f.page); await noOverflow(f.page, '200% desktop reflow: 1440 device pixels / 720 CSS pixels');
         await f.page.locator(card).first().scrollIntoViewIfNeeded(); await shot(f.page, 'desktop-200-percent-card');
+      } finally { await f.close(); }
+    });
+    await check('Reduced-motion cards keep all rewards visible and offer readable keyboard actions', async () => {
+      const f = await fixture(browser, { name: 'reduced-motion', reducedMotion: 'reduce', prizes });
+      try {
+        await f.start(); await rendered(f.page);
+        assert.equal(await f.page.locator(card).count(), 9);
+        const buy = f.page.locator(card).first().getByRole('button', { name: 'Elegir paquete', exact: true });
+        await buy.focus();
+        const presentation = await buy.evaluate(button => {
+          const style = getComputedStyle(button), box = button.getBoundingClientRect();
+          return { focused: document.activeElement === button, focusVisible: button.matches(':focus-visible'), height: box.height, fontSize: parseFloat(style.fontSize), outlineStyle: style.outlineStyle, outlineWidth: style.outlineWidth, boxShadow: style.boxShadow };
+        });
+        assert.equal(presentation.focused, true); assert.equal(presentation.focusVisible, true);
+        assert.ok(presentation.height >= 44, JSON.stringify(presentation)); assert.ok(presentation.fontSize >= 16, JSON.stringify(presentation));
+        const animations = await f.page.locator(card).evaluateAll(cards => cards.flatMap(card => card.getAnimations({ subtree: true }).filter(animation => animation.playState === 'running').map(animation => ({ duration: animation.effect?.getTiming().duration, iterations: animation.effect?.getTiming().iterations }))));
+        assert.ok(animations.every(animation => Number(animation.duration) <= 1 || animation.iterations !== Infinity), JSON.stringify(animations));
+        metrics.push({ label: 'reduced motion and keyboard action', ...presentation, runningAnimations: animations });
+        await shot(f.page, 'benefits-reduced-motion-keyboard');
+        await f.page.keyboard.press('Enter'); await f.page.getByRole('dialog', { name: 'Compras desde la app en mantenimiento' }).waitFor();
+        assert.equal(transactions.length, 0);
       } finally { await f.close(); }
     });
     await check('No unexpected page errors, real transactions or oracle-reading requests', async () => {

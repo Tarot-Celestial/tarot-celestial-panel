@@ -8,10 +8,14 @@ const BENEFITS_TIMEOUT_MS = 5000;
 const resolutionStatuses = new Set(["ready", "disabled", "unmapped_package", "no_effective_rank", "config_missing"]);
 const visibleBenefitFields = ["enabled", "coins", "oracle_credits", "roulette_level_1_spins", "roulette_level_2_spins", "roulette_level_3_spins", "roulette_special_spins"] as const;
 
-function unavailablePacks() {
-  return CLIENTE_MINUTE_PACKS.map(pack => ({
-    ...pack, packageLevel: null, rankBenefits: null, rankBenefitsStatus: "unavailable",
-  }));
+function unavailableCatalog() {
+  return {
+    rankKey: null as string | null,
+    rankLabel: null as string | null,
+    packs: CLIENTE_MINUTE_PACKS.map(pack => ({
+      ...pack, packageLevel: null, rankBenefits: null, rankBenefitsStatus: "unavailable",
+    })),
+  };
 }
 
 async function resolveCatalogPacks(admin: any, clientId: string, signal: AbortSignal) {
@@ -38,7 +42,7 @@ async function resolveCatalogPacks(admin: any, clientId: string, signal: AbortSi
   if (result.error) throw result.error;
   const rows: RankPackageResolution[] = Array.isArray(result.data) ? result.data : [];
   const byKey = new Map(rows.filter(row => row?.package_source === "standard").map(row => [row.package_key, row]));
-  return CLIENTE_MINUTE_PACKS.map(pack => {
+  const packs = CLIENTE_MINUTE_PACKS.map(pack => {
     const resolved = byKey.get(pack.id);
     const valid = resolved && resolved.rank_key === effective && resolutionStatuses.has(resolved.status);
     const level = resolved?.package_level;
@@ -51,24 +55,32 @@ async function resolveCatalogPacks(admin: any, clientId: string, signal: AbortSi
       rankBenefitsStatus: valid ? resolved.status : "unavailable",
     };
   });
+  return {
+    packs,
+    rankKey: effective as string | null,
+    // Only the public label is exposed; rank history and override notes stay private.
+    rankLabel: effective !== null && typeof state.config?.label === "string"
+      ? state.config.label.trim() || null
+      : null,
+  };
 }
 
 /** Read-only catalogue: no wallet, greeting grants, oracle readings or payment history. */
 export async function loadClientePriceCatalog(admin: any, clientId: string, timeoutMs = BENEFITS_TIMEOUT_MS) {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<ReturnType<typeof unavailablePacks>>(resolve => {
+  const timeout = new Promise<ReturnType<typeof unavailableCatalog>>(resolve => {
     timer = setTimeout(() => {
       controller.abort();
-      resolve(unavailablePacks());
+      resolve(unavailableCatalog());
     }, timeoutMs);
   });
   try {
-    const packs = await Promise.race([
-      resolveCatalogPacks(admin, clientId, controller.signal).catch(() => unavailablePacks()),
+    const catalog = await Promise.race([
+      resolveCatalogPacks(admin, clientId, controller.signal).catch(() => unavailableCatalog()),
       timeout,
     ]);
-    return { packs, oraclePacks: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK };
+    return { ...catalog, oraclePacks: ORACLE_PACKS, questionPack: ORACLE_QUESTION_PACK };
   } finally {
     clearTimeout(timer);
   }
