@@ -1,10 +1,11 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { processExpandedMetaLead, processMetaLeadById, type MetaLeadPayload } from "@/lib/server/meta-leads";
+import { MetaLeadError, metaLeadErrorCode, processExpandedMetaLead, processMetaLeadById, type MetaLeadPayload } from "@/lib/server/meta-leads";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 60;
 
 function safeEqual(left: string, right: string) {
   const a = Buffer.from(left);
@@ -60,6 +61,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const deadlineAt = Date.now() + 45000;
   const receivedAt = new Date().toISOString();
   const rawBody = await req.text();
   let body: any;
@@ -84,22 +86,38 @@ export async function POST(req: NextRequest) {
       const changes = leadgenChanges(body);
       console.info("META_WEBHOOK_RECEIVED", { receivedAt, changes: changes.length });
       const results = [];
+      const failures: Record<string, number> = {};
+      let unprocessed = 0;
       for (const change of changes) {
-        results.push(await processMetaLeadById(change.leadgenId, {
-          source: "meta_webhook",
-          pageId: change.pageId,
-          formId: change.formId,
-          campaignId: change.campaignId,
-          adId: change.adId,
-          payload: body,
-        }));
+        if (Date.now() >= deadlineAt) { unprocessed += 1; continue; }
+        try {
+          results.push(await processMetaLeadById(change.leadgenId, {
+            deadlineAt,
+            source: "meta_webhook",
+            pageId: change.pageId,
+            formId: change.formId,
+            campaignId: change.campaignId,
+            adId: change.adId,
+            payload: body,
+          }));
+        } catch (error) {
+          // A legacy/partial event needs manual recovery, but must not prevent
+          // independent leads later in the same delivery from being processed.
+          const code = metaLeadErrorCode(error);
+          failures[code] = (failures[code] || 0) + 1;
+        }
       }
+      const failed = Object.values(failures).reduce((total, count) => total + count, 0);
+      const ok = failed === 0 && unprocessed === 0;
       return NextResponse.json({
-        ok: true,
+        ok,
         received: changes.length,
         processed: results.filter((item: any) => !item?.duplicate).length,
         duplicates: results.filter((item: any) => item?.duplicate).length,
-      });
+        failed,
+        unprocessed,
+        failures,
+      }, { status: ok ? 200 : 503 });
     }
 
     const expanded = body?.lead && typeof body.lead === "object" ? body.lead : body;
@@ -108,15 +126,16 @@ export async function POST(req: NextRequest) {
 
     if (Array.isArray(expanded?.field_data)) {
       const result = await processExpandedMetaLead({ ...expanded, id: leadgenId } as MetaLeadPayload, {
+        deadlineAt,
         source: "internal_ingest",
         payload: body,
       });
       return NextResponse.json(result);
     }
 
-    const result = await processMetaLeadById(leadgenId, { source: "internal_ingest", payload: body });
+    const result = await processMetaLeadById(leadgenId, { source: "internal_ingest", payload: body, deadlineAt });
     return NextResponse.json(result);
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: String(error?.message || "META_WEBHOOK_FAILED") }, { status: 500 });
+    return NextResponse.json({ ok: false, error: metaLeadErrorCode(error) }, { status: error instanceof MetaLeadError ? error.status : 503 });
   }
 }

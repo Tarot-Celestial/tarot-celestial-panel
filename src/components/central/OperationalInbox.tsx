@@ -342,8 +342,9 @@ export default function OperationalInbox({ mode, onAction, compact = false, exte
       const today = todayKey();
 
       if (mode === "central" || mode === "admin") {
-        const leadRes = await fetch(`/api/captacion/list?scope=pendientes&t=${Date.now()}`, { cache: "no-store" });
+        const leadRes = await fetch(`/api/captacion/list?scope=pendientes&t=${Date.now()}`, { cache: "no-store", headers: authHeaders });
         const leadJson = await safeJson(leadRes);
+        if (!leadRes.ok || !leadJson?.ok) throw new Error("No se pudieron actualizar los contactos de Captación.");
         setLeads(Array.isArray(leadJson?.items) ? leadJson.items.slice(0, 8) : []);
       } else {
         setLeads([]);

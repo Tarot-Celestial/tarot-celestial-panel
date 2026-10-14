@@ -25,6 +25,52 @@ type IngestOptions = {
   metaContext?: Record<string, any>;
 };
 
+const SAFE_RETRY_PREFIX = "RETRYABLE_PRE_INGEST_V1:";
+const EVENT_COLUMNS = "id,status,received_at,updated_at,attempt_count,last_error,cliente_id,captacion_lead_id,inserted_at";
+
+export class MetaLeadError extends Error {
+  constructor(public code: string, public status = 503) {
+    super(code);
+  }
+}
+
+export function metaLeadErrorCode(error: unknown): string {
+  if (error instanceof MetaLeadError) return error.code;
+  const code = String((error as any)?.code || "");
+  return /^[A-Z0-9]{3,12}$/.test(code) ? `META_STORAGE_${code}` : "META_LEAD_PROCESSING_FAILED";
+}
+
+function isMissingColumn(error: any) {
+  return error?.code === "42703" || error?.code === "PGRST204";
+}
+
+export async function metaGraphRequest(path: string, params: Record<string, string>, deadlineAt?: number) {
+  if (!/^\d+(?:\/leads)?$/.test(path)) throw new MetaLeadError("META_INVALID_RESOURCE", 400);
+  const token = String(process.env.META_ACCESS_TOKEN || "").trim();
+  if (!token) throw new MetaLeadError("META_ACCESS_TOKEN_MISSING");
+  const version = String(process.env.META_GRAPH_API_VERSION || "v22.0").trim();
+  if (!/^v\d+\.\d+$/.test(version)) throw new MetaLeadError("META_GRAPH_VERSION_INVALID");
+  const remaining = deadlineAt == null ? 8000 : Math.min(8000, deadlineAt - Date.now());
+  if (remaining < 1000) throw new MetaLeadError("META_TIME_BUDGET_EXCEEDED");
+  const url = new URL(`https://graph.facebook.com/${version}/${path}`);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(remaining),
+    });
+    const json = await response.json().catch(() => null);
+    if (!response.ok) throw new MetaLeadError(`META_GRAPH_HTTP_${response.status}`);
+    if (!json || typeof json !== "object") throw new MetaLeadError("META_GRAPH_INVALID_RESPONSE");
+    return json;
+  } catch (error) {
+    if (error instanceof MetaLeadError) throw error;
+    const name = String((error as any)?.name || "");
+    throw new MetaLeadError(name === "TimeoutError" || name === "AbortError" ? "META_GRAPH_TIMEOUT" : "META_GRAPH_UNAVAILABLE");
+  }
+}
+
 function sanitizeText(value: any) {
   const text = String(value ?? "").trim();
   return text || null;
@@ -93,7 +139,6 @@ function buildLeadSummary(args: {
 
 async function trySelectClienteByLeadgenId(leadgenId: string) {
   const admin = supabaseAdmin();
-  try {
     const { data, error } = await admin
       .from("crm_clientes")
       .select("id, nombre, apellido, telefono, telefono_normalizado, email")
@@ -102,9 +147,6 @@ async function trySelectClienteByLeadgenId(leadgenId: string) {
 
     if (error) throw error;
     return data || null;
-  } catch {
-    return null;
-  }
 }
 
 async function findExistingClient(args: {
@@ -128,7 +170,8 @@ async function findExistingClient(args: {
       .limit(1)
       .maybeSingle();
 
-    if (!error && data) return data;
+    if (error) throw error;
+    if (data) return data;
   }
 
   if (args.email) {
@@ -140,7 +183,8 @@ async function findExistingClient(args: {
       .limit(1)
       .maybeSingle();
 
-    if (!error && data) return data;
+    if (error) throw error;
+    if (data) return data;
   }
 
   return null;
@@ -166,12 +210,16 @@ async function upsertClient(args: {
     email: args.email,
   });
 
+  // A new form submission is not permission to reset a CRM contact. Its latest
+  // answers are recorded in the note/inbox, preserving the staff-owned record.
+  if (existing?.id) return { cliente: existing, isNew: false, supportsLeadColumns: true };
+
   const commonPatch: Record<string, any> = {
     nombre: args.nombre,
     apellido: args.apellido || null,
-    telefono: args.telefono || existing?.telefono || `sin_telefono_${args.leadgenId || Date.now()}`,
-    telefono_normalizado: args.telefonoDigits || existing?.telefono_normalizado || `sin_telefono_${args.leadgenId || Date.now()}`,
-    email: args.email || existing?.email || null,
+    telefono: args.telefono || `sin_telefono_${args.leadgenId || Date.now()}`,
+    telefono_normalizado: args.telefonoDigits || `sin_telefono_${args.leadgenId || Date.now()}`,
+    email: args.email || null,
     origen: args.sourceLabel,
   };
 
@@ -185,38 +233,6 @@ async function upsertClient(args: {
     lead_created_at: args.metaCreatedAt || null,
     lead_contacted_at: null,
   };
-
-  if (existing?.id) {
-    const patch = {
-      ...commonPatch,
-    };
-
-    let cliente: any = null;
-    let updatedWithLeadColumns = false;
-
-    try {
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .update({ ...patch, ...optionalColumnsPatch })
-        .eq("id", existing.id)
-        .select("*")
-        .single();
-      if (error) throw error;
-      cliente = data;
-      updatedWithLeadColumns = true;
-    } catch {
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .update(patch)
-        .eq("id", existing.id)
-        .select("*")
-        .single();
-      if (error) throw error;
-      cliente = data;
-    }
-
-    return { cliente, isNew: false, supportsLeadColumns: updatedWithLeadColumns };
-  }
 
   const insertPayload: Record<string, any> = {
     ...commonPatch,
@@ -236,7 +252,10 @@ async function upsertClient(args: {
 
     if (error) throw error;
     return { cliente: data, isNew: true, supportsLeadColumns: true };
-  } catch {
+  } catch (insertFailure: any) {
+    // Only a definitive missing-column response is safe to retry. A transport
+    // error can mean the INSERT committed and its response was lost.
+    if (!isMissingColumn(insertFailure)) throw insertFailure;
     const { data, error } = await admin
       .from("crm_clientes")
       .insert(insertPayload)
@@ -297,7 +316,8 @@ async function insertNotifications(args: {
   try {
     const { error: insertError } = await admin.from("notifications").insert(rows);
     if (insertError) throw insertError;
-  } catch {
+  } catch (error: any) {
+    if (!isMissingColumn(error)) throw error;
     const fallbackRows = rows.map((row: any) => ({
       user_id: row.user_id,
       title: row.title,
@@ -316,16 +336,14 @@ async function upsertCaptacionLead(args: {
   formName?: string | null;
 }) {
   const admin = supabaseAdmin();
-  const openStates = ["nuevo", "no_contesta", "pendiente_free", "hizo_free", "recontacto"];
-
-  const { data: existing } = await admin
+  const { data: existing, error: lookupError } = await admin
     .from("captacion_leads")
     .select("id")
     .eq("cliente_id", args.clienteId)
-    .in("estado", openStates)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (lookupError) throw lookupError;
 
   const payload = {
     cliente_id: args.clienteId,
@@ -343,20 +361,26 @@ async function upsertCaptacionLead(args: {
     updated_at: new Date().toISOString(),
   };
 
-  if (existing?.id) {
-  const { error } = await admin.from("captacion_leads").update({
-    // 🔥 NO tocamos estado ni flujo
-    updated_at: new Date().toISOString(),
-    campaign_name: args.campaignName || null,
-    form_name: args.formName || null,
-    origen: args.origen,
-  }).eq("id", existing.id);
-
-  if (error) throw error;
-  return existing.id;
-}
+  const updateMetadata = async (id: string) => {
+    const { error } = await admin.from("captacion_leads").update({
+      // One row per client, including pend_free, pend_cap and closed contacts.
+      // Never reset workflow, assignment, attempts, reminders or closure.
+      updated_at: new Date().toISOString(),
+      ...(args.campaignName ? { campaign_name: args.campaignName } : {}),
+      ...(args.formName ? { form_name: args.formName } : {}),
+    }).eq("id", id);
+    if (error) throw error;
+    return id;
+  };
+  if (existing?.id) return updateMetadata(existing.id);
 
   const { data, error } = await admin.from("captacion_leads").insert(payload).select("id").single();
+  if (error?.code === "23505") {
+    const { data: raced, error: raceError } = await admin.from("captacion_leads")
+      .select("id").eq("cliente_id", args.clienteId).maybeSingle();
+    if (raceError) throw raceError;
+    if (raced?.id) return updateMetadata(raced.id);
+  }
   if (error) throw error;
   return data?.id || null;
 }
@@ -368,53 +392,23 @@ async function tryInsertLeadLog(args: {
 }) {
   const admin = supabaseAdmin();
   try {
-    await admin.from("crm_leads_inbox").insert({
+    const { error } = await admin.from("crm_leads_inbox").insert({
       cliente_id: args.clienteId,
       leadgen_id: args.leadgenId || null,
       payload: args.payload,
       status: "nuevo",
     });
-  } catch {
-    // tabla opcional
+    if (error) throw error;
+  } catch (error: any) {
+    // Auxiliary log must not cause a second ingestion after core writes.
+    console.warn("META_LEAD_INBOX_UNAVAILABLE", { code: metaLeadErrorCode(error) });
   }
 }
 
-export async function fetchMetaLeadById(leadgenId: string) {
-  const token = process.env.META_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error("Missing env META_ACCESS_TOKEN");
-  }
-
-  const url = new URL(`https://graph.facebook.com/v22.0/${leadgenId}`);
-  url.searchParams.set(
-    "fields",
-    [
-      "id",
-      "created_time",
-      "field_data",
-      "campaign_id",
-      "campaign_name",
-      "ad_id",
-      "ad_name",
-      "form_id",
-      "form_name",
-      "is_organic",
-      "platform",
-    ].join(",")
-  );
-  url.searchParams.set("access_token", token);
-
-  const res = await fetch(url.toString(), {
-    method: "GET",
-    cache: "no-store",
-  });
-
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    throw new Error(json?.error?.message || `Meta lead fetch failed (${res.status})`);
-  }
-
-  return json as MetaLeadPayload;
+export async function fetchMetaLeadById(leadgenId: string, deadlineAt?: number) {
+  return await metaGraphRequest(leadgenId, {
+    fields: "id,created_time,field_data,campaign_id,campaign_name,ad_id,ad_name,form_id,form_name,is_organic,platform",
+  }, deadlineAt) as MetaLeadPayload;
 }
 
 export async function ingestMetaLead(lead: MetaLeadPayload, options: IngestOptions = {}) {
@@ -537,6 +531,7 @@ type MetaEventContext = {
   campaignId?: string | null;
   adId?: string | null;
   payload?: Record<string, any> | null;
+  deadlineAt?: number;
 };
 
 export async function claimMetaLeadEvent(leadgenId: string, context: MetaEventContext = {}) {
@@ -553,24 +548,46 @@ export async function claimMetaLeadEvent(leadgenId: string, context: MetaEventCo
       campaign_id: context.campaignId || null,
       ad_id: context.adId || null,
       received_at: now,
+      attempt_count: 1,
       payload: context.payload || null,
       updated_at: now,
     })
-    .select("id,status,received_at")
+    .select(EVENT_COLUMNS)
     .single();
 
   if (!error && data) return { claimed: true as const, event: data };
 
   if (error?.code === "23505") {
-    const { data: existing } = await admin
+    const { data: existing, error: lookupError } = await admin
       .from("meta_lead_events")
-      .select("id,status,received_at,cliente_id,captacion_lead_id")
+      .select(EVENT_COLUMNS)
       .eq("leadgen_id", leadgenId)
       .maybeSingle();
-    return { claimed: false as const, event: existing || null };
+    if (lookupError) throw lookupError;
+    if (!existing) throw new MetaLeadError("META_EVENT_NOT_FOUND");
+    if (existing.status === "processed" && existing.cliente_id && existing.captacion_lead_id) {
+      return { claimed: false as const, event: existing };
+    }
+    if (existing.status === "failed" && String(existing.last_error || "").startsWith(SAFE_RETRY_PREFIX)
+      && !existing.cliente_id && !existing.captacion_lead_id && !existing.inserted_at) {
+      // Only this version's proven pre-ingestion failures can be reclaimed.
+      // No lease expiry retry: an old worker could still be writing CRM rows.
+      const { data: retried, error: retryError } = await admin.from("meta_lead_events")
+        .update({ status: "received", last_error: null, attempt_count: Number(existing.attempt_count || 0) + 1, updated_at: now })
+        .eq("id", existing.id).eq("status", "failed").eq("updated_at", existing.updated_at)
+        .eq("last_error", existing.last_error).select(EVENT_COLUMNS).maybeSingle();
+      if (retryError) throw retryError;
+      if (retried) return { claimed: true as const, event: retried };
+      throw new MetaLeadError("META_LEAD_IN_PROGRESS");
+    }
+    const age = Date.now() - Date.parse(existing.updated_at || existing.received_at);
+    if (["received", "fetching"].includes(existing.status) && Number.isFinite(age) && age < 120000) {
+      throw new MetaLeadError("META_LEAD_IN_PROGRESS");
+    }
+    throw new MetaLeadError("META_MANUAL_RECONCILIATION_REQUIRED");
   }
 
-  throw error || new Error("META_EVENT_CLAIM_FAILED");
+  throw error || new MetaLeadError("META_EVENT_CLAIM_FAILED");
 }
 
 export async function markMetaLeadEvent(
@@ -589,25 +606,46 @@ export async function processMetaLeadById(
   leadgenId: string,
   context: MetaEventContext = {}
 ) {
+  return processClaimedLead(leadgenId, () => fetchMetaLeadById(leadgenId, context.deadlineAt), context);
+}
+
+export async function processExpandedMetaLead(
+  lead: MetaLeadPayload,
+  context: MetaEventContext = {}
+) {
+  const leadgenId = sanitizeText(lead?.id);
+  if (!leadgenId) throw new MetaLeadError("META_LEAD_ID_REQUIRED", 400);
+  return processClaimedLead(leadgenId, async () => lead, context);
+}
+
+async function processClaimedLead(leadgenId: string, load: () => Promise<MetaLeadPayload>, context: MetaEventContext) {
+  if (!/^\d+$/.test(leadgenId)) throw new MetaLeadError("META_LEAD_ID_INVALID", 400);
   const claimed = await claimMetaLeadEvent(leadgenId, context);
-  if (!claimed.claimed) {
-    console.info("META_LEAD_DUPLICATE", { leadgenId, status: claimed.event?.status || "unknown" });
-    return { ok: true, duplicate: true, leadgenId, event: claimed.event };
-  }
+  if (!claimed.claimed) return { ok: true, duplicate: true, leadgenId, event: claimed.event };
 
   const eventId = String(claimed.event.id);
+  let ingestionStarted = false;
   try {
-    await markMetaLeadEvent(eventId, { status: "fetching", attempt_count: 1 });
-    console.info("META_LEAD_FETCH", { leadgenId, eventId });
-    const lead = await fetchMetaLeadById(leadgenId);
+    await markMetaLeadEvent(eventId, { status: "fetching" });
+    const lead = await load();
+    if (String(lead?.id || "") !== leadgenId || !Array.isArray(lead?.field_data) || !lead.field_data.length
+      || (lead.created_time != null && !Number.isFinite(Date.parse(lead.created_time)))) {
+      throw new MetaLeadError("META_LEAD_PAYLOAD_INVALID", 400);
+    }
     const fetchedAt = new Date().toISOString();
+    await markMetaLeadEvent(eventId, { fetched_at: fetchedAt });
+    if (context.deadlineAt != null && Date.now() >= context.deadlineAt) {
+      throw new MetaLeadError("META_TIME_BUDGET_EXCEEDED");
+    }
+    // From here, any error/crash can leave partial CRM/note/notification writes.
+    // Marking it failed must NEVER authorize a second ingestion automatically.
+    ingestionStarted = true;
     const result = await ingestMetaLead(lead, {
       sourceLabel: "facebook_ads",
       rawWebhookBody: context.payload || null,
       metaContext: context,
     });
     const insertedAt = new Date().toISOString();
-
     await markMetaLeadEvent(eventId, {
       status: "processed",
       cliente_id: result.cliente?.id || null,
@@ -622,55 +660,16 @@ export async function processMetaLeadById(
       last_error: null,
       payload: { webhook: context.payload || null, lead },
     });
-
-    console.info("META_LEAD_PROCESSED", {
-      leadgenId,
-      eventId,
-      clienteId: result.cliente?.id || null,
-      captacionLeadId: result.captacionLeadId || null,
-    });
+    console.info("META_LEAD_PROCESSED", { eventId, source: context.source || "meta_webhook" });
     return { ...result, duplicate: false, eventId };
-  } catch (error: any) {
-    const message = String(error?.message || "META_LEAD_PROCESSING_FAILED").slice(0, 1000);
-    await markMetaLeadEvent(eventId, { status: "failed", last_error: message }).catch(() => null);
-    console.error("META_LEAD_FAILED", { leadgenId, eventId, error: message });
-    throw error;
-  }
-}
-
-export async function processExpandedMetaLead(
-  lead: MetaLeadPayload,
-  context: MetaEventContext = {}
-) {
-  const leadgenId = sanitizeText(lead?.id);
-  if (!leadgenId) throw new Error("META_LEAD_ID_REQUIRED");
-
-  const claimed = await claimMetaLeadEvent(leadgenId, context);
-  if (!claimed.claimed) return { ok: true, duplicate: true, leadgenId, event: claimed.event };
-
-  const eventId = String(claimed.event.id);
-  try {
-    const result = await ingestMetaLead(lead, {
-      sourceLabel: "facebook_ads",
-      rawWebhookBody: context.payload || null,
-      metaContext: context,
+  } catch (error) {
+    const code = metaLeadErrorCode(error);
+    const marker = ingestionStarted ? "MANUAL_RECONCILIATION_REQUIRED:" : SAFE_RETRY_PREFIX;
+    await markMetaLeadEvent(eventId, { status: "failed", last_error: `${marker}${code}` }).catch(() => {
+      console.error("META_EVENT_STATUS_WRITE_FAILED", { eventId });
     });
-    const insertedAt = new Date().toISOString();
-    await markMetaLeadEvent(eventId, {
-      status: "processed",
-      cliente_id: result.cliente?.id || null,
-      captacion_lead_id: result.captacionLeadId || null,
-      meta_created_at: lead.created_time || null,
-      fetched_at: insertedAt,
-      inserted_at: insertedAt,
-      visible_at: insertedAt,
-      last_error: null,
-      payload: { webhook: context.payload || null, lead },
-    });
-    return { ...result, duplicate: false, eventId };
-  } catch (error: any) {
-    const message = String(error?.message || "META_LEAD_PROCESSING_FAILED").slice(0, 1000);
-    await markMetaLeadEvent(eventId, { status: "failed", last_error: message }).catch(() => null);
+    console.error("META_LEAD_FAILED", { eventId, code, manualReview: ingestionStarted });
+    if (ingestionStarted) throw new MetaLeadError("META_MANUAL_RECONCILIATION_REQUIRED");
     throw error;
   }
 }

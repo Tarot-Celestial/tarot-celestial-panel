@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, CalendarClock, ChevronDown, Clock3, ExternalLink, Filter, Mail, Megaphone, Phone, RefreshCw, Search, Sparkles, Target, UserCheck, Users } from "lucide-react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import styles from "./CaptacionPanel.module.css";
 
-type ColumnKey = "nuevo" | "pend_free" | "pend_cap" | "cliente";
+type ColumnKey = "nuevo" | "pend_free" | "pend_cap" | "cliente" | "cerrado";
 type ViewKey = "pendientes" | "hoy" | "urgentes" | "todos" | "cerrados";
 type SortKey = "priority" | "recent" | "oldest" | "next" | "attempts" | "origin";
 type ActionKey = "no_contesta" | "pendiente_free" | "hizo_free" | "recontacto" | "captado" | "no_interesado" | "reabrir" | "programar";
@@ -35,6 +35,11 @@ type Lead = {
 
 type Props = { onOpenClient?: (clienteId: string) => void };
 type LiveState = "connecting" | "live" | "degraded";
+type MetaDiagnostics = {
+  configuration: Record<string, boolean>;
+  last_event: { status: string; source: string; received_at: string; inserted_at?: string | null; visible_at?: string | null } | null;
+  event_read_available: boolean;
+};
 
 const sb = supabaseBrowser();
 const PAGE_SIZE = 18;
@@ -43,6 +48,8 @@ const COLUMNS: Array<{ key: ColumnKey; title: string; short: string; subtitle: s
   { key: "nuevo", title: "Cliente nuevo", short: "Nuevo", subtitle: "Primer contacto", icon: Sparkles },
   { key: "pend_free", title: "Pend FREE", short: "Pend FREE", subtitle: "Consulta gratis pendiente", icon: Clock3 },
   { key: "pend_cap", title: "Pend CAP", short: "Pend CAP", subtitle: "Lista para convertir", icon: Target },
+  { key: "cliente", title: "Clientes", short: "Clientes", subtitle: "Captaciones completadas", icon: UserCheck },
+  { key: "cerrado", title: "Cerrados", short: "Cerrados", subtitle: "Seguimientos cerrados", icon: Filter },
 ];
 
 function fullName(lead: Lead) {
@@ -56,9 +63,9 @@ function phone(lead: Lead) {
 function phaseOf(lead: Lead): ColumnKey | "cerrado" {
   const state = String(lead.workflow_state || lead.estado || "nuevo").toLowerCase();
   if (["cliente", "captado"].includes(state)) return "cliente";
+  if (CLOSED.has(state) || lead.closed_at) return "cerrado";
   if (["pend_cap", "hizo_free", "recontacto"].includes(state)) return "pend_cap";
   if (["pend_free", "pendiente_free", "no_contesta", "reintento_2", "reintento_3", "sin_respuesta"].includes(state)) return "pend_free";
-  if (CLOSED.has(state) || lead.closed_at) return "cerrado";
   return "nuevo";
 }
 
@@ -119,12 +126,32 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   const [worker, setWorker] = useState("all");
   const [sort, setSort] = useState<SortKey>("priority");
   const [mobileColumn, setMobileColumn] = useState<ColumnKey>("nuevo");
-  const [limits, setLimits] = useState<Record<ColumnKey, number>>({ nuevo: PAGE_SIZE, pend_free: PAGE_SIZE, pend_cap: PAGE_SIZE, cliente: PAGE_SIZE });
+  const [limits, setLimits] = useState<Record<ColumnKey, number>>({ nuevo: PAGE_SIZE, pend_free: PAGE_SIZE, pend_cap: PAGE_SIZE, cliente: PAGE_SIZE, cerrado: PAGE_SIZE });
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [message, setMessage] = useState("");
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [newLeadIds, setNewLeadIds] = useState<Set<string>>(() => new Set());
+  const [loadError, setLoadError] = useState("");
+  const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
+  const [metaDiagnostics, setMetaDiagnostics] = useState<MetaDiagnostics | null>(null);
+  const [nextPage, setNextPage] = useState<number | null>(null);
+  const requestRef = useRef<{ id: number; key: string; controller: AbortController } | null>(null);
+  const sequenceRef = useRef(0);
+  const pendingRefreshRef = useRef(false);
+  const itemsRef = useRef(items);
+  const nextPageRef = useRef(nextPage);
+  const pagesToLoadRef = useRef(4);
+  const lastVisibleRef = useRef(0);
+  const actionBusyRef = useRef(false);
+  const mountedRef = useRef(false);
+  const scope = view === "cerrados" ? "cerrados" : view === "todos" ? "todos" : "pendientes";
+  const loadKey = `${brand}:${scope}`;
+  const currentKeyRef = useRef(loadKey);
+  currentKeyRef.current = loadKey;
+  itemsRef.current = items;
+  nextPageRef.current = nextPage;
+  const visibleColumns = view === "todos" ? COLUMNS : COLUMNS.slice(0, 3);
 
   useEffect(() => {
     setBrand(getActiveBrand());
@@ -133,43 +160,132 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     return () => window.removeEventListener("tc-brand-changed", onBrand);
   }, []);
 
-  const load = useCallback(async (spinner = false) => {
+  const load = useCallback(async (force = false, append = false) => {
+    if (!mountedRef.current || currentKeyRef.current !== loadKey) return;
+    if (requestRef.current?.key === loadKey && !force) {
+      pendingRefreshRef.current = true;
+      return;
+    }
+    const firstPage = append ? nextPageRef.current : 0;
+    if (firstPage === null) return;
+    requestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const id = ++sequenceRef.current;
+    requestRef.current = { id, key: loadKey, controller };
+    pendingRefreshRef.current = false;
+    const isCurrent = () => !controller.signal.aborted && requestRef.current?.id === id && currentKeyRef.current === loadKey;
+    const deadline = window.setTimeout(() => {
+      if (!isCurrent()) return;
+      controller.abort();
+      requestRef.current = null;
+      pendingRefreshRef.current = false;
+      setLoading(false);
+      setLoadError("La lectura está tardando demasiado. Pulsa Actualizar para volver a intentarlo.");
+    }, 20_000);
+    setLoading(true);
     try {
-      if (spinner) setLoading(true);
       const { data } = await sb.auth.getSession();
+      if (!isCurrent()) return;
       const token = data.session?.access_token;
       if (!token) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
-      const scope = view === "cerrados" ? "cerrados" : view === "todos" ? "todos" : "pendientes";
-      const response = await fetch(`/api/captacion/list?scope=${scope}&brand=${brand}&t=${Date.now()}`, {
-        cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await response.json().catch(() => null);
-      if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo cargar Captación");
-      setItems(Array.isArray(json.items) ? json.items : []);
-      setMessage("");
+      const collected = new Map<string, Lead>((append ? itemsRef.current : []).map(item => [item.id, item]));
+      let page: number | null = firstPage;
+      let completedPages = 0;
+      let latest: any = null;
+      const pageBudget = append ? 4 : pagesToLoadRef.current;
+      while (page !== null && completedPages < pageBudget) {
+        const response: Response = await fetch(`/api/captacion/list?scope=${scope}&brand=${brand}&page=${page}&t=${Date.now()}`, {
+          cache: "no-store", signal: controller.signal,
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const json: any = await response.json().catch(() => null);
+        if (!isCurrent()) return;
+        if (!response.ok || !json?.ok) {
+          if (response.status === 401 || response.status === 403) { setItems([]); setMetaDiagnostics(null); setNextPage(null); setLastRefreshed(null); }
+          throw new Error(json?.error || "No se pudo cargar Captación");
+        }
+        for (const item of Array.isArray(json.items) ? json.items : []) collected.set(item.id, item);
+        latest = json;
+        const next: unknown = json.pagination?.next_page;
+        if (next !== undefined && next !== null && (typeof next !== "number" || !Number.isSafeInteger(next) || next <= page)) throw new Error("No se pudo continuar la lista de contactos.");
+        page = typeof next === "number" ? next : null;
+        completedPages += 1;
+      }
+      if (!isCurrent()) return;
+      pagesToLoadRef.current = Math.max(pagesToLoadRef.current, firstPage + completedPages);
+      setItems(Array.from(collected.values()));
+      setNextPage(page);
+      setMetaDiagnostics(latest?.meta_diagnostics || null);
+      setLastRefreshed(latest?.server_time || new Date().toISOString());
+      setLoadError("");
     } catch (error: any) {
-      setMessage(String(error?.message || "Error cargando Captación"));
-      setLiveState("degraded");
+      if (isCurrent()) setLoadError(String(error?.message || "Error cargando Captación"));
     } finally {
-      if (spinner) setLoading(false);
+      window.clearTimeout(deadline);
+      if (isCurrent()) {
+        requestRef.current = null;
+        setLoading(false);
+        if (pendingRefreshRef.current) {
+          pendingRefreshRef.current = false;
+          window.setTimeout(() => { if (mountedRef.current && currentKeyRef.current === loadKey) void load(false); }, 100);
+        }
+      }
     }
-  }, [brand, view]);
+  }, [brand, loadKey, scope]);
 
-  useEffect(() => { void load(true); }, [load]);
+  useEffect(() => {
+    mountedRef.current = true;
+    setItems([]); setNextPage(null); setMetaDiagnostics(null); setLastRefreshed(null); setLoadError("");
+    setOrigin("all"); setCampaign("all"); setWorker("all"); setMobileColumn("nuevo");
+    pagesToLoadRef.current = 4;
+    void load(true);
+    return () => {
+      mountedRef.current = false;
+      requestRef.current?.controller.abort();
+      requestRef.current = null;
+      pendingRefreshRef.current = false;
+    };
+  }, [load]);
+
+  useEffect(() => {
+    const { data } = sb.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_OUT") return;
+      requestRef.current?.controller.abort();
+      requestRef.current = null;
+      pendingRefreshRef.current = false;
+      setItems([]); setMetaDiagnostics(null); setNextPage(null); setLastRefreshed(null); setLoading(false);
+      setLoadError("Tu sesión ha caducado. Vuelve a iniciar sesión.");
+    });
+    return () => data.subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === "visible") void load(false);
     }, 60_000);
-    return () => window.clearInterval(interval);
+    const refreshVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastVisibleRef.current < 1000) return;
+      lastVisibleRef.current = Date.now();
+      void load(false);
+    };
+    window.addEventListener("focus", refreshVisible);
+    window.addEventListener("online", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshVisible);
+      window.removeEventListener("online", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [load]);
 
   useEffect(() => {
+    let active = true;
     setLiveState("connecting");
     const channel = sb
       .channel(`captacion-live-${brand}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "captacion_leads" }, (payload: any) => {
+        if (!active) return;
         const id = String(payload?.new?.id || "");
         if (payload?.eventType === "INSERT" && id) {
           setNewLeadIds((current) => new Set(current).add(id));
@@ -180,14 +296,18 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         void load(false);
       })
       .subscribe((status) => {
+        if (!active) return;
         if (status === "SUBSCRIBED") setLiveState("live");
         else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) setLiveState("degraded");
       });
-    return () => { void sb.removeChannel(channel); };
+    return () => { active = false; void sb.removeChannel(channel); };
   }, [brand, load]);
 
   const act = useCallback(async (lead: Lead, action: ActionKey, nextContactAt?: string) => {
-    const snapshot = items;
+    if (actionBusyRef.current) return;
+    actionBusyRef.current = true;
+    const actionKey = currentKeyRef.current;
+    const snapshot = lead;
     const now = new Date().toISOString();
     setBusyId(lead.id);
     setMessage("");
@@ -207,16 +327,20 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       });
       const json = await response.json().catch(() => null);
       if (!response.ok || !json?.ok) throw new Error(json?.error || "No se pudo actualizar el lead");
+      if (currentKeyRef.current !== actionKey) return;
       setMessage(json.message || "✓ Lead actualizado");
       window.setTimeout(() => setMessage(""), 3500);
       void load(false);
     } catch (error: any) {
-      setItems(snapshot);
-      setMessage(String(error?.message || "Error actualizando lead"));
+      if (currentKeyRef.current === actionKey) {
+        setItems(current => current.map(item => item.id === lead.id ? snapshot : item));
+        setMessage(String(error?.message || "Error actualizando lead"));
+      }
     } finally {
+      actionBusyRef.current = false;
       setBusyId("");
     }
-  }, [items, load]);
+  }, [load]);
 
   const openClient = useCallback((lead: Lead) => {
     const id = String(lead.cliente_id || lead.cliente?.id || "");
@@ -230,6 +354,13 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     campaigns: Array.from(new Set(items.map((item) => item.campaign_name).filter(Boolean) as string[])).sort(),
     workers: Array.from(new Map(items.filter((item) => item.assigned_worker_id).map((item) => [String(item.assigned_worker_id), String(item.assigned_worker_name || "Central")])).entries()),
   }), [items]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (origin !== "all" && !options.origins.includes(origin)) setOrigin("all");
+    if (campaign !== "all" && !options.campaigns.includes(campaign)) setCampaign("all");
+    if (worker !== "all" && !options.workers.some(([id]) => id === worker)) setWorker("all");
+  }, [campaign, loading, options, origin, worker]);
 
   const filtered = useMemo(() => {
     const q = deferredQuery.trim().toLowerCase();
@@ -273,8 +404,20 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     <header className={styles.command}>
       <div className={styles.heroRow}>
         <div className={styles.titleBlock}><span className={styles.heroIcon}><Megaphone /></span><div><span className={styles.eyebrow}>CENTRO DE CONVERSIÓN</span><h2>Captación</h2><p>Entiende, prioriza y convierte cada oportunidad.</p></div></div>
-        <div className={styles.heroActions}><span className={`${styles.live} ${styles[liveState]}`}><i />{liveState === "live" ? "EN VIVO" : liveState === "connecting" ? "CONECTANDO" : "SINCRONIZACIÓN DEGRADADA"}</span><button type="button" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? styles.spin : ""} />{loading ? "Actualizando" : "Actualizar"}</button></div>
+        <div className={styles.heroActions}><span className={`${styles.live} ${styles[liveState]}`} title="Estado de la conexión con los cambios del panel; no confirma la llegada de contactos desde Meta."><i />{liveState === "live" ? "CAMBIOS EN DIRECTO" : liveState === "connecting" ? "CONECTANDO AL PANEL" : "ACTUALIZACIÓN PERIÓDICA"}</span><button type="button" onClick={() => void load(true)} disabled={loading}><RefreshCw className={loading ? styles.spin : ""} />{loading ? "Actualizando" : "Actualizar"}</button></div>
       </div>
+      <p className={styles.readStatus} role="status">{loading ? "Cargando contactos…" : lastRefreshed ? `Datos leídos: ${formatDate(lastRefreshed)}.` : "Todavía no se han podido leer los contactos."} Las llegadas desde Meta dependen de la integración de entrada.</p>
+      {loadError ? <div className={styles.error} role="alert">{loadError}{lastRefreshed ? " Se conserva la última lectura correcta." : ""}</div> : null}
+      {metaDiagnostics ? <details className={styles.metaStatus}>
+        <summary>{["access_token", "form_ids", "app_secret", "verify_token"].every(key => metaDiagnostics.configuration[key]) ? "Entrada de Meta: configuración presente · Ver diagnóstico" : "Entrada de Meta: configuración directa incompleta · Ver diagnóstico"}</summary>
+        <p>Estos indicadores comprueban configuración y eventos recibidos. No confirman que Meta esté enviando todos sus contactos ni que exista una tarea programada.</p>
+        <ul>{([
+          ["access_token", "Acceso para consultar leads en Meta"], ["form_ids", "Formularios para recuperación"],
+          ["app_secret", "Validación de firma del webhook"], ["verify_token", "Verificación del webhook"],
+          ["internal_ingest", "Entrada mediante integración interna"], ["reconciliation_auth", "Autorización para recuperación programada"],
+        ] as const).map(([key, label]) => <li key={key}><span>{label}</span><strong>{metaDiagnostics.configuration[key] ? "Configurado" : "Sin configurar"}</strong></li>)}</ul>
+        <p>{!metaDiagnostics.event_read_available ? "No se pudo consultar el registro de entradas." : metaDiagnostics.last_event ? `Último evento registrado: ${formatDate(metaDiagnostics.last_event.received_at)} · ${metaDiagnostics.last_event.source === "internal_ingest" ? "Integración interna" : metaDiagnostics.last_event.source === "meta_reconciliation" ? "Recuperación de Meta" : metaDiagnostics.last_event.source === "meta_webhook" ? "Webhook de Meta" : "Otra entrada"} · ${metaDiagnostics.last_event.status === "processed" ? "Procesado" : metaDiagnostics.last_event.status === "failed" ? "Fallido" : "Pendiente de procesar"}.` : "No hay eventos de entrada registrados."}</p>
+      </details> : null}
 
       <div className={styles.hud}>
         <Hud icon={Activity} label="En vista" value={filtered.length} />
@@ -297,20 +440,25 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
         <Select value={campaign} onChange={setCampaign} label="Todas las campañas" options={options.campaigns.map((value) => [value, value])} />
         {options.workers.length ? <Select value={worker} onChange={setWorker} label="Todas las centrales" options={options.workers} /> : null}
         <Select value={sort} onChange={(value) => setSort(value as SortKey)} label="Prioridad automática" options={[["priority","Más urgente"],["recent","Más reciente"],["oldest","Más antiguo"],["next","Próxima gestión"],["attempts","Más intentos"],["origin","Origen"]]} />
+        {query || origin !== "all" || campaign !== "all" || worker !== "all" ? <button className={styles.clearFilters} type="button" onClick={() => { setQuery(""); setOrigin("all"); setCampaign("all"); setWorker("all"); }}>Limpiar filtros</button> : null}
       </div>
       {message ? <div className={styles.feedback}>{message}</div> : null}
     </header>
 
     {view === "cerrados" ? <div className={styles.closedList}>{filtered.length ? filtered.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} />) : <Empty />}</div> : <>
-      <div className={styles.mobileTabs}>{COLUMNS.map((column) => <button type="button" key={column.key} className={mobileColumn === column.key ? styles.active : ""} onClick={() => setMobileColumn(column.key)}>{column.short}<b>{byColumn[column.key].length}</b></button>)}</div>
-      <div className={styles.board}>
-        {COLUMNS.map((column) => { const Icon = column.icon; const rows = byColumn[column.key]; const shown = rows.slice(0, limits[column.key]); return <article key={column.key} className={`${styles.column} ${styles[column.key]} ${mobileColumn === column.key ? styles.mobileActive : ""}`}>
+      <div className={styles.mobileTabs}>{visibleColumns.map((column) => <button type="button" key={column.key} className={mobileColumn === column.key ? styles.active : ""} onClick={() => setMobileColumn(column.key)}>{column.short}<b>{byColumn[column.key].length}</b></button>)}</div>
+      <div className={`${styles.board} ${view === "todos" ? styles.allBoard : ""}`}>
+        {visibleColumns.map((column) => { const Icon = column.icon; const rows = byColumn[column.key]; const shown = rows.slice(0, limits[column.key]); return <article key={column.key} className={`${styles.column} ${styles[column.key]} ${mobileColumn === column.key ? styles.mobileActive : ""}`}>
           <div className={styles.columnHead}><span><Icon /></span><div><h3>{column.title}</h3><p>{column.subtitle}</p></div><b>{rows.length}</b></div>
           <div className={styles.cards}>{shown.length ? shown.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} />) : <Empty />}</div>
           {shown.length < rows.length ? <button type="button" className={styles.more} onClick={() => setLimits((current) => ({ ...current, [column.key]: current[column.key] + PAGE_SIZE }))}>Ver {Math.min(PAGE_SIZE, rows.length - shown.length)} más <ChevronDown /></button> : null}
         </article>; })}
       </div>
     </>}
+    {nextPage !== null ? <div className={styles.pagination}>
+      <p>{items.length} contactos cargados. Quedan más por cargar; los filtros y contadores se aplican a esta carga.</p>
+      <button type="button" disabled={loading} onClick={() => void load(false, true)}>{loading ? "Cargando…" : "Cargar más contactos"}</button>
+    </div> : null}
   </section>;
 }
 
@@ -319,7 +467,7 @@ function Hud({ icon: Icon, label, value, tone = "neutral", featured = false }: {
 }
 
 function Select({ icon: Icon, value, onChange, label, options }: { icon?: typeof Filter; value: string; onChange: (value: string) => void; label: string; options: Array<[string,string]> }) {
-  return <label className={styles.select}>{Icon ? <Icon /> : null}<select value={value} onChange={(event) => onChange(event.target.value)}><option value="all">{label}</option>{options.map(([key,text]) => <option key={key} value={key}>{text}</option>)}</select><ChevronDown /></label>;
+  return <label className={styles.select}>{Icon ? <Icon /> : null}<select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}><option value="all">{label}</option>{options.map(([key,text]) => <option key={key} value={key}>{text}</option>)}</select><ChevronDown /></label>;
 }
 
 function LeadCard({ lead, fresh, busy, onAction, onOpen }: { lead: Lead; fresh: boolean; busy: boolean; onAction: (lead: Lead, action: ActionKey, next?: string) => void; onOpen: (lead: Lead) => void }) {

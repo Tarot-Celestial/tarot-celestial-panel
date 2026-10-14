@@ -49,6 +49,9 @@ function modules(db, env = {}, fetch = async () => { throw new Error('Unexpected
       if (name === '@/lib/central-assistant') return load('central-assistant');
       if (name === '@/lib/companion-learning') return load('companion-learning');
       if (name === './central-assistant-learning') return load('server/central-assistant-learning');
+      if (name === './central-assistant-capture') return load('server/central-assistant-capture');
+      if (name === './madrid-reporting-period') return load('server/madrid-reporting-period');
+      if (name === './brand-filter') return load('server/brand-filter');
       if (name === './central-assistant-lookup') return load('server/central-assistant-lookup');
       if (name === './central-assistant') return load('server/central-assistant');
       return {};

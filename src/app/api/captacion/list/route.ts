@@ -26,7 +26,23 @@ type LeadItem = AnyRow & {
   created_at?: string | null;
 };
 
-const CLOSED_STATES = new Set(["captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"]);
+const CLOSED_STATES = ["cliente", "captado", "no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"];
+const PAGE_SIZE = 250;
+
+function scopedPage(query: any, worker: AnyRow, scope: string, page: number) {
+  // Apply access and workflow filters before pagination, so another central's
+  // rows or recent closed leads cannot push permitted pending leads out.
+  const alternatives: string[] = [];
+  if (worker.role === "central") alternatives.push(`assigned_worker_id.is.null,assigned_worker_id.eq.${worker.id}`);
+  if (scope === "pendientes") {
+    query = query.is("closed_at", null);
+    alternatives.push(`estado.is.null,estado.not.in.(${CLOSED_STATES.join(",")})`);
+  } else if (scope === "cerrados") {
+    alternatives.push(`closed_at.not.is.null,estado.in.(${CLOSED_STATES.join(",")})`);
+  }
+  if (alternatives.length) query = query.or(alternatives.length === 1 ? alternatives[0] : `and(${alternatives.map(filter => `or(${filter})`).join(",")})`);
+  return query.order("created_at", { ascending: false }).order("id", { ascending: false }).range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+}
 
 async function currentWorker(req: NextRequest) {
   const token = getBearerToken(req);
@@ -50,14 +66,12 @@ function norm(value: unknown) {
 
 function computeWorkflowState(item: AnyRow) {
   const estado = norm(item?.estado);
-
-  if (["pend_free", "pendiente_free", "no_contesta", "sin_respuesta"].includes(estado)) return "pend_free";
-  if (["pend_cap", "hizo_free", "recontacto"].includes(estado)) return "pend_cap";
   if (["cliente", "captado"].includes(estado)) return "cliente";
-
-  if (["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)) {
+  if (item?.closed_at || ["no_interesado", "numero_invalido", "perdido", "cerrado", "finalizado"].includes(estado)) {
     return "cerrado";
   }
+  if (["pend_free", "pendiente_free", "no_contesta", "sin_respuesta", "reintento_2", "reintento_3"].includes(estado)) return "pend_free";
+  if (["pend_cap", "hizo_free", "recontacto"].includes(estado)) return "pend_cap";
 
   return "nuevo";
 }
@@ -70,8 +84,8 @@ function isClosed(item: AnyRow) {
   );
 }
 
-async function fetchWithJoin() {
-  const { data, error } = await supabase
+async function fetchWithJoin(worker: AnyRow, scope: string, page: number) {
+  const { data, error } = await scopedPage(supabase
     .from("captacion_leads")
     .select(`
       id,
@@ -105,20 +119,16 @@ async function fetchWithJoin() {
         lead_form_name,
         created_at
       )
-    `)
-    .order("created_at", { ascending: false })
-    .limit(300);
+    `), worker, scope, page);
 
   if (error) throw error;
   return Array.isArray(data) ? data : [];
 }
 
-async function fetchFallback() {
-  const { data, error } = await supabase
+async function fetchFallback(worker: AnyRow, scope: string, page: number) {
+  const { data, error } = await scopedPage(supabase
     .from("captacion_leads")
-    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at")
-    .order("created_at", { ascending: false })
-    .limit(300);
+    .select("id, cliente_id, estado, intento_actual, max_intentos, next_contact_at, last_contact_at, contacted_at, closed_at, last_result, campaign_name, form_name, origen, notas, assigned_worker_id, assigned_role, created_at, updated_at"), worker, scope, page);
 
   if (error) throw error;
 
@@ -260,18 +270,24 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const scope = norm(searchParams.get("scope") || "pendientes");
     const brand = brandFromRequest(req);
+    const page = Number(searchParams.get("page") || 0);
+    if (!Number.isSafeInteger(page) || page < 0 || page > 100_000 || !["pendientes", "cerrados", "todos"].includes(scope)) {
+      return NextResponse.json({ ok: false, error: "INVALID_PAGINATION" }, { status: 400 });
+    }
 
     let raw: AnyRow[] = [];
 
     try {
-      raw = await fetchWithJoin();
+      raw = await fetchWithJoin(worker, scope, page);
     } catch {
-      raw = await fetchFallback();
+      raw = await fetchFallback(worker, scope, page);
     }
 
     // Importante para Supabase Nano: la vista de captación no necesita calcular ingresos
     // de cada cliente en cada refresco. Evitamos agregaciones pesadas en pagos/rendimiento.
 
+    // Advance over raw pages even if a page contains only the other brand.
+    const hasMore = raw.length === PAGE_SIZE;
     raw = raw.filter((item: AnyRow) => originMatchesBrand(item?.cliente?.origen || item?.origen, brand));
     if (worker.role === "central") {
       raw = raw.filter((item: AnyRow) => !item?.assigned_worker_id || String(item.assigned_worker_id) === String(worker.id));
@@ -313,20 +329,38 @@ export async function GET(req: NextRequest) {
       return bCreated - aCreated;
     });
 
-    let metaSync: AnyRow | null = null;
-    try {
-      const { data } = await supabase
+    let metaDiagnostics: AnyRow | undefined;
+    if (worker.role === "admin") {
+      let lastEvent: AnyRow | null = null;
+      let eventReadAvailable = true;
+      try {
+      const { data, error } = await supabase
         .from("meta_lead_events")
-        .select("status,source,received_at,inserted_at,visible_at,last_error")
+        .select("status,source,received_at,inserted_at,visible_at")
         .order("received_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      metaSync = data || null;
-    } catch {}
+      if (error) throw error;
+      lastEvent = data || null;
+      } catch { eventReadAvailable = false; }
+      const configured = (key: string) => Boolean(String(process.env[key] || "").trim());
+      metaDiagnostics = {
+        configuration: {
+          access_token: configured("META_ACCESS_TOKEN"),
+          form_ids: Boolean(String(process.env.META_FORM_IDS || "").split(",").some(value => value.trim())),
+          app_secret: configured("META_APP_SECRET"),
+          verify_token: configured("META_VERIFY_TOKEN"),
+          internal_ingest: configured("META_INGEST_SECRET"),
+          reconciliation_auth: configured("CRON_SECRET"),
+        },
+        last_event: lastEvent,
+        event_read_available: eventReadAvailable,
+      };
+    }
 
-    return new NextResponse(JSON.stringify({ ok: true, brand, items, server_time: new Date().toISOString(), meta_sync: metaSync }), {
+    return new NextResponse(JSON.stringify({ ok: true, brand, items, server_time: new Date().toISOString(), pagination: { page, page_size: PAGE_SIZE, next_page: hasMore ? page + 1 : null, has_more: hasMore }, meta_diagnostics: metaDiagnostics }), {
       headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        "Cache-Control": "private, no-store, no-cache, must-revalidate, proxy-revalidate",
       },
     });
 
