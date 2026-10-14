@@ -139,7 +139,7 @@ async function fixture(browser, options = {}) {
 async function check(name, run) { if (process.env.TC_PRICES_QA_FILTER && !name.includes(process.env.TC_PRICES_QA_FILTER)) return; try { await run(); checks.push(name); console.log('PASS: ' + name); } catch (error) { failures.push({ name, error: error.message, stack: error.stack }); console.log('FAIL: ' + name + ': ' + error.message); } }
 const shot = (page, name, options = {}) => page.screenshot({ path: path.join(output, name + '.png'), ...options });
 async function rendered(page) { await page.getByRole('heading', { name: '10 minutos', exact: true }).waitFor(); }
-async function summary(page, label) { return page.getByText(label, { exact: true }).locator('..').locator('strong').innerText(); }
+async function summary(page, label) { return page.getByRole('navigation', { name: 'Tus giros, Oráculo y paquetes' }).getByRole('link').filter({ has: page.getByText(label, { exact: true }) }).locator('strong').innerText(); }
 async function noOverflow(page, label) {
   const size = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth, cards: [...document.querySelectorAll('article[data-level]')].map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, box: el.getBoundingClientRect().toJSON(), text: el.querySelector('h3')?.textContent })), benefitChips: [...document.querySelectorAll('[class*="levelBenefitChip"]')].map(el => ({ width: el.clientWidth, scroll: el.scrollWidth, whiteSpace: getComputedStyle(el).whiteSpace, class: el.className, text: el.textContent })) }));
   metrics.push({ label, ...size });
@@ -249,7 +249,7 @@ async function noOverflow(page, label) {
         assert.equal(await f.page.locator(card).count(), 9);
         assert.equal(await summary(f.page, 'Giros disponibles'), '—');
         assert.equal(await summary(f.page, 'Tiradas compradas'), '—');
-        assert.equal(await summary(f.page, 'Packs de minutos'), '9');
+        assert.equal(await summary(f.page, 'Paquetes de minutos'), '9');
         assert.equal(f.count('/api/cliente/oraculo'), 0);
         assert.equal(await f.page.getByText(/Hasta \+?\d/).count(), 0);
         assert.equal(await f.page.getByText('Nuevas promociones próximamente', { exact: true }).count(), 0);
@@ -277,7 +277,7 @@ async function noOverflow(page, label) {
       try {
         const catalogueStarted = f.page.waitForRequest(request => new URL(request.url()).pathname === catalogPath);
         await f.start(); await catalogueStarted; await f.page.getByRole('status', { name: 'Cargando precios' }).waitFor();
-        assert.equal(await f.page.locator(card).count(), 0); assert.equal(await summary(f.page, 'Packs de minutos'), '—');
+        assert.equal(await f.page.locator(card).count(), 0); assert.equal(await summary(f.page, 'Paquetes de minutos'), '—');
         await shot(f.page, 'desktop-prices-loading'); f.release(catalogPath);
         await f.page.getByRole('button', { name: 'Reintentar precios' }).waitFor();
         assert.equal(await f.page.locator(card).count(), 0); await shot(f.page, 'desktop-prices-retry');
@@ -292,12 +292,12 @@ async function noOverflow(page, label) {
       for (const nullRoulette of [false, true]) {
         const f = await fixture(browser, { name: 'unknown-rewards', fail: nullRoulette ? [] : ['/api/cliente/ruleta'], nullRoulette, credits: null });
         try {
-          await f.start(); await rendered(f.page); await f.page.getByText('Consulta tus giros en Ruleta', { exact: true }).waitFor();
+          await f.start(); await rendered(f.page); await f.page.getByText('Consultar mis giros', { exact: true }).waitFor();
           assert.equal(await summary(f.page, 'Giros disponibles'), '—'); assert.equal(await summary(f.page, 'Tiradas compradas'), '—');
           assert.equal(await f.page.getByText(/Hasta \+?\d/).count(), 0);
           assert.equal(await f.page.getByText(/Descubre los premios de la ruleta Nivel [123]/).count(), 3);
           f.state.credits = 0; await f.page.evaluate(() => window.dispatchEvent(new Event('online')));
-          await f.page.waitForFunction(() => [...document.querySelectorAll('small')].find(el => el.textContent === 'Tiradas compradas')?.parentElement.querySelector('strong')?.textContent === '0');
+          await f.page.waitForFunction(() => [...document.querySelectorAll('nav[aria-label="Tus giros, Oráculo y paquetes"] a')].find(el => el.textContent.includes('Tiradas compradas'))?.querySelector('strong')?.textContent === '0');
         } finally { await f.close(); }
       }
     });

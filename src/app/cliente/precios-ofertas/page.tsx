@@ -2,9 +2,11 @@
 import ClientPurchaseAction from "@/components/cliente/ClientPurchaseAction";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowRight, Gift, Moon, PhoneCall, ShoppingBag, Sparkles, Sun, WandSparkles } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
+import ClientNavIcon from "@/components/cliente/ClientNavIcon";
 import RouletteRewardArt from "@/components/cliente/RouletteRewardArt";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import type { RouletteLevel, RouletteSummary } from "@/lib/ruleta";
@@ -243,33 +245,37 @@ export default function PreciosOfertasPage() {
   const levelTwoPacks = minutePacks.filter((pack) => packageLevel(pack) === 2);
   const levelThreePacks = minutePacks.filter((pack) => packageLevel(pack) === 3);
   const unassignedPacks = minutePacks.filter((pack) => packageLevel(pack) === null);
+  const availableLevelCount = new Set(minutePacks.map(packageLevel).filter(level => level !== null)).size;
+  const headerStats = [
+    { label: "Giros disponibles", value: rouletteSummary ? String(rouletteSummary.available_spins) : "—", detail: states.roulette === "error" ? "Consultar mis giros" : "Ver ruleta", href: "/cliente/ruleta", icon: "roulette" },
+    { label: "Tiradas compradas", value: credits === null ? "—" : String(credits), detail: "Ir al Oráculo", href: "/cliente/oraculo", icon: "oracle" },
+    { label: "Paquetes de minutos", value: states.catalogue === "ready" ? String(minutePacks.length) : "—", detail: states.catalogue === "ready" && availableLevelCount > 0 ? `${availableLevelCount} ${availableLevelCount === 1 ? "nivel disponible" : "niveles disponibles"}` : "Ver paquetes", href: "#paquetes-minutos", icon: "offers" },
+  ] as const;
 
   return (
     <ClienteLayout
       title="Precios y ofertas"
-      subtitle="Elige tu consulta y descubre el premio que puede acompañarla."
-      summaryItems={[
-        { label: "Giros disponibles", value: rouletteSummary ? String(rouletteSummary.available_spins) : "—", meta: states.roulette === "error" ? "Consulta tus giros en Ruleta" : "Premios por tus compras", href: "/cliente/ruleta", tone: "oracle" },
-        { label: "Tiradas compradas", value: credits === null ? "—" : String(credits), meta: "Consulta tu carta gratis en Oráculo", href: "/cliente/oraculo", tone: "oracle" },
-        { label: "Packs de minutos", value: states.catalogue === "ready" ? String(minutePacks.length) : "—", meta: "Tres niveles de recompensa", tone: "minutes" },
-      ]}
+      subtitle="Elige tu consulta y descubre sus beneficios."
     >
       <div className={styles.shell}>
+        <nav className={styles.summaryBar} aria-label="Tus giros, Oráculo y paquetes">
+          {headerStats.map(item => <Link key={item.label} className={styles.summaryLink} href={item.href}>
+            <span className={styles.summaryIcon}><ClientNavIcon name={item.icon} /></span>
+            <div className={styles.summaryCopy}><span>{item.label}</span><div><strong>{item.value}</strong><small>{item.detail}</small></div></div>
+            <ArrowRight className={styles.summaryArrow} aria-hidden="true" />
+          </Link>)}
+        </nav>
         {states.catalogue === "error" && <div className={styles.message} role="alert">No hemos podido actualizar los precios. Reintenta para consultar los paquetes. <button type="button" onClick={()=>void load(["catalogue"])}>Reintentar precios</button></div>}
         {states.promotion === "error" && <div className={styles.message} role="status">No hemos podido comprobar las promociones. Los paquetes disponibles aparecen debajo. <button type="button" onClick={()=>void load(["promotion"])}>Reintentar promociones</button></div>}
         {message && !checkoutMessagePack ? <div className={styles.message} role="alert">{message}</div> : null}
 
-        <section className={styles.hero}>
-          <div className={styles.heroSigil}><Sparkles /></div>
+        <section className={styles.hero} aria-labelledby="prices-benefits-title">
+          <Image className={styles.heroLogo} src="/images/portal/logo.webp" alt="Tarot Celestial" width={80} height={80} sizes="(max-width: 760px) 60px, 80px" />
           <div className={styles.heroCopy}>
-            <span>TAROT CELESTIAL · TU TIEMPO, TU UNIVERSO</span>
-            <h1>Tus minutos, <em>tus beneficios</em></h1>
-            <p>Elige el tiempo para tu consulta. Descubre las Coins, tiradas y ruletas que acompañan a cada paquete.</p>
+            <h2 id="prices-benefits-title">Tus minutos, <em>tus beneficios</em></h2>
+            <p>Coins, ruletas y Oráculo según tu paquete y tu rango.</p>
           </div>
-          <div className={styles.heroPromise}>
-            <ArrowDown />
-            <div><strong>Todos los paquetes a la vista</strong><small>Baja para ver los niveles 1, 2 y 3</small></div>
-          </div>
+          <a className={styles.heroAction} href="#paquetes-minutos">Ver paquetes <ArrowDown aria-hidden="true" /></a>
         </section>
 
         {promotion ? (
@@ -312,7 +318,7 @@ export default function PreciosOfertasPage() {
           </section>
         ) : null}
 
-        <section className={`${styles.section} ${styles.minuteSection}`}>
+        <section id="paquetes-minutos" className={`${styles.section} ${styles.minuteSection}`}>
           <div className={styles.heading}>
             <div className={styles.headingIcon}><PhoneCall /></div>
             <div>
