@@ -1000,3 +1000,69 @@
 .result[data-level="5"] { background:radial-gradient(ellipse at top,#276385,#10162e 65%); border-color:#b4efff; }
 @media(max-width:1100px) { .arena { grid-template-columns:1fr; } .arena .stage { width:100%; } .arena .controls { max-width:720px; } .arena .prizes { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:600px) { .arena { gap:14px; } .arena .stage { padding:15px 5px; } .arena .stageHead { margin-bottom:15px; } .arena .controls { padding:20px 14px; } .arena .prizes { grid-template-columns:repeat(2,minmax(0,1fr)); max-height:470px; } .arena .prizeIcon { width:66px; height:66px; } .arena .controlsHead { flex-wrap:wrap; } }
+
+/* Orbe celestial: the decoration is separate from real, selectable rewards. */
+.arena.orbScene {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(290px, 1fr);
+  align-items: start;
+  gap: clamp(18px, 2.4vw, 36px);
+  margin: 24px -18px 0;
+  padding: clamp(20px, 2.6vw, 38px) clamp(18px, 2.2vw, 32px) 24px;
+  border: 1px solid #adbae52e;
+  border-radius: 26px;
+  background: linear-gradient(90deg, #050b1910, #050b1938), url('/images/roulette/orb-backdrop.webp') center / cover no-repeat #060c1b;
+  box-shadow: inset 0 1px 0 #dee8ff14;
+  isolation: isolate;
+  scroll-margin-top: 24px;
+}
+.orbStage { min-width: 0; padding: 0 4px; }
+.orbFootnote { display: block; max-width: 510px; margin: 4px auto 0; padding: 0 12px; color: #e1d8e7; text-align: center; font-size: 12px; line-height: 1.7; text-shadow: 0 1px 5px #000; }
+.orbCatalogue { min-width: 0; padding: clamp(18px, 2vw, 26px); border: 1px solid #bdc8e7b3; border-radius: 24px; background: linear-gradient(135deg, #11162ae8, #090e20ed 55%, #171f2ee8); box-shadow: inset 0 0 30px #aebcfc09, 0 18px 38px #02050c45; }
+.orbCatalogue h3 { margin: 0; color: #fff4e5; text-align: center; font: 500 clamp(27px, 2.6vw, 38px)/1.15 Georgia, 'Times New Roman', serif; text-wrap: balance; }
+.orbDivider { display: flex; align-items: center; gap: 12px; width: 80%; margin: 8px auto 16px; color: #eed5a6; }
+.orbDivider::before, .orbDivider::after { content: ''; height: 1px; flex: 1; background: linear-gradient(90deg, transparent, #e8d1a4a6); }
+.orbDivider::after { transform: rotate(180deg); }
+.orbDivider span { font-size: 19px; line-height: 1; }
+.orbPrizeList { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.orbPrizeRow { display: flex; align-items: center; gap: clamp(10px, 1.3vw, 20px); min-width: 0; min-height: 65px; padding: 3px 16px 3px 8px; border: 1px solid #acb9e047; border-left-color: #a4a4efb0; border-radius: 21px; color: #fff5e8; background: linear-gradient(115deg, #211e43a8, #060b19d9 45%, #27324675); box-shadow: inset 0 1px 0 #faf2ff08; }
+.orbPrizeIcon { display: block; flex: 0 0 clamp(52px, 5.3vw, 76px); width: clamp(52px, 5.3vw, 76px); }
+.orbPrizeIcon > span { display: block; width: 100%; }
+.orbPrizeIcon > [data-reward-art="minutes"] { background-image: url('/images/roulette/orb-hourglass.webp'); background-size: contain; background-position: center; background-repeat: no-repeat; }
+.orbPrizeValue { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 7px; font: 400 clamp(19px, 1.7vw, 25px)/1.15 Georgia, 'Times New Roman', serif; }
+.orbPrizeValue b { font: 500 clamp(32px, 3.1vw, 46px)/1.05 Georgia, 'Times New Roman', serif; font-variant-numeric: tabular-nums; }
+.orbPrizeDescription { min-width: 0; color: #fff2df; font: 500 clamp(16px, 1.55vw, 22px)/1.3 Georgia, 'Times New Roman', serif; overflow-wrap: anywhere; }
+.orbHint { margin: 0 0 16px; color: #e6dff1; font-size: 15px; line-height: 1.55; }
+.orbPurchase { display: flex; align-items: center; justify-content: center; gap: 22px; min-height: 56px; margin-top: 20px; padding: 12px 18px; border: 1px solid #f3d89b; border-radius: 22px; background: linear-gradient(110deg, #34213fdb, #110f20e6); color: #fff1dc; font: 500 21px/1.3 Georgia, 'Times New Roman', serif; text-decoration: none; transition: background .2s, box-shadow .2s; }
+.orbPurchase svg { color: #f2d091; }
+.orbPurchase:hover { background: #382844; box-shadow: 0 0 20px #e4c88f20; }
+.orbPurchase:focus-visible { outline: 3px solid #fff2cf; outline-offset: 4px; }
+.arena .orbSpin { margin-top: 18px; min-height: 54px; padding: 12px 15px; font-size: 16px; line-height: 1.4; }
+.orbPrizeList[data-dense="true"] .orbPrizeRow { min-height: 52px; padding-block: 2px; border-radius: 16px; }
+.orbPrizeList[data-dense="true"] .orbPrizeIcon { flex-basis: 48px; width: 48px; }
+.orbPrizeList[data-dense="true"] .orbPrizeValue b { font-size: 28px; }
+.orbPrizeList[data-dense="true"] .orbPrizeDescription { font-size: 17px; }
+@media (max-width: 980px) {
+  .arena.orbScene { grid-template-columns: minmax(0, 1fr); margin-inline: -8px; padding-inline: 18px; background-position: 28% top; }
+  .orbStage { width: 100%; max-width: 740px; margin-inline: auto; }
+  .orbCatalogue { width: 100%; max-width: 740px; margin-inline: auto; }
+  .orbPrizeList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .orbPrizeRow { min-height: 72px; gap: 10px; }
+  .orbPrizeValue b { font-size: 34px; }
+  .orbPrizeIcon { flex-basis: 60px; width: 60px; }
+}
+@media (max-width: 520px) {
+  .arena.orbScene { margin-inline: -12px; padding: 22px 8px; gap: 22px; border-radius: 20px; }
+  .orbStage { padding: 0; }
+  .orbCatalogue { padding: 20px 14px; border-radius: 20px; }
+  .orbPrizeList { grid-template-columns: minmax(0, 1fr); }
+  .orbPrizeRow { min-height: 70px; gap: 18px; padding-inline: 16px; }
+  .orbPrizeIcon { flex-basis: 58px; width: 58px; }
+  .orbPrizeValue { font-size: 24px; }
+  .orbPrizeValue b { font-size: 38px; }
+  .orbPrizeDescription { font-size: 20px; }
+  .orbFootnote { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .orbPurchase { transition: none; }
+}

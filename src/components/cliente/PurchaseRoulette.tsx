@@ -145,7 +145,6 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const visibleLevels = [1, 2, 3, 4, 5] as const;
   const available = spinsByLevel?.[level] ?? null;
   const selectedMeta = levelMeta[level];
-  const SelectedLevelIcon = selectedMeta.icon;
   const isDiamondView = level === 5;
   const unavailableReason = isDiamondView && summary && !summary.diamond_access
     ? "La ruleta Diamante no está disponible con tu acceso actual."
@@ -368,37 +367,31 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       </div>
       {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
 
-      {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div ref={arenaRef} className={styles.arena} data-level={level}>
-        <div className={styles.stage} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
-          <div className={styles.stageHead}>
-            <span className={styles.stageLabel}>{isDiamondView ? `RULETA DIAMANTE · ${wheelPrizes.length} PREMIOS` : `${level === 4 ? "RULETA ESPECIAL" : "RULETA NIVEL " + level} · ${wheelPrizes.length} PREMIOS`}</span>
-            <small>{selectedMeta.name}</small>
-          </div>
+      {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div ref={arenaRef} className={`${styles.arena} ${styles.orbScene}`} data-level={level}>
+        <div className={styles.orbStage}>
           <CelestialWheel prizes={wheelPrizes} level={level} rotation={rotation} busy={busy} spinning={spinning}
             pending={!!pending} available={available} winner={result?.reward_id}
             disabled={spinDisabled} unavailableReason={unavailableReason}
             onSpin={() => void spin()}/>
-          <small className={styles.wheelNote}>Sectores ilustrativos. El premio se determina y acredita de forma segura antes de mostrar el resultado.</small>
+          <small className={styles.orbFootnote}>Premios posibles · Consulta las condiciones<br/>Los sectores son ilustrativos y no representan la probabilidad de cada premio.</small>
         </div>
 
-        <aside className={styles.controls} data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"}>
-          <div className={styles.controlsHead}>
-            <span className={styles.eyebrow}>ELIGE TU MOMENTO</span>
-            <span className={styles.currentLevel}><SelectedLevelIcon size={15}/> {isDiamondView ? "Ruleta Diamante" : level === 4 ? "Especial" : `Nivel ${level}`}</span>
-          </div>
-          <h3>Tesoros de tu ruleta</h3>
-          <p>{isDiamondView && !summary?.diamond_access ? "La ruleta Diamante requiere acceso vigente y una campaña habilitada." : "Minutos, Coins y sorpresas de tu nivel. Cada giro utiliza únicamente el saldo de la ruleta seleccionada."}</p>
-          <div className={styles.prizeTitle}><Gift size={16}/><span>{isDiamondView ? "Premios de la Ruleta Diamante" : "Premios de este nivel"}</span><b>{prizes.length}</b></div>
-          <ul className={styles.prizes}>{prizes.map(p => <li key={p.id} data-special={p.special} data-rarity={p.rarity || "common"}>
-            <span className={styles.prizeIcon}><RouletteRewardArt type={p.reward_type}/></span>
-            <span>{prizeLabel(p)}<small>{rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel]}{p.special ? " · PREMIO DESTACADO" : ""}</small></span>
-            {p.special && <Star size={14} className={styles.specialStar}/>}
-          </li>)}</ul>
-          <button type="button" className={styles.spin} data-roulette-spin="secondary" data-level={level} data-special={level === 4 ? "true" : "false"} data-diamond={isDiamondView ? "true" : "false"} disabled={spinDisabled} onClick={() => void spin()}>
+        <aside className={styles.orbCatalogue} aria-label={`Premios de ${selectedMeta.name}`}>
+          <h3>Premios de este nivel</h3>
+          <div className={styles.orbDivider} aria-hidden="true"><span>◇</span></div>
+          {isDiamondView && !summary.diamond_access && <p className={styles.orbHint}>La ruleta Diamante requiere acceso vigente y una campaña habilitada.</p>}
+          {wheelPrizes.length ? <ul className={styles.orbPrizeList} data-dense={wheelPrizes.length > 9}>
+            {[...wheelPrizes.slice(-1), ...wheelPrizes.slice(0, -1)].map(p => <li className={styles.orbPrizeRow} key={p.id} aria-label={`${prizeLabel(p)} · ${rarityLabel[(p.rarity || "common") as keyof typeof rarityLabel] || "Premio"}`}>
+              <span className={styles.orbPrizeIcon}><RouletteRewardArt type={p.reward_type}/></span>
+              {p.reward_type === "minutes" || p.reward_type === "coins"
+                ? <span className={styles.orbPrizeValue}><b>{p.reward_value}</b> <span>{p.reward_type === "minutes" ? "min" : "Coins"}</span></span>
+                : <span className={styles.orbPrizeDescription}>{prizeLabel(p)}</span>}
+            </li>)}
+          </ul> : <p className={styles.orbHint}>Todavía no hay premios disponibles en esta ruleta.</p>}
+          {((available ?? 0) > 0 || pending || busy) && <button type="button" className={`${styles.spin} ${styles.orbSpin}`} data-roulette-spin="secondary" data-level={level} disabled={spinDisabled} onClick={() => void spin()}>
             {busy ? <RotateCw size={20}/> : isDiamondView ? <Diamond size={20}/> : <RotateCw size={20}/>} {busy ? "Descubriendo tu premio…" : pending ? "Comprobar mi giro pendiente" : unavailableReason ? "Giro no disponible" : isDiamondView ? "GIRAR · DIAMANTE" : level === 4 ? "Girar · Especial" : "Girar · Nivel " + level}
-          </button>
-          {!available && !pending && <Link className={styles.buy} href="/cliente/precios-ofertas">{isDiamondView ? "Ver consultas · Conseguir giro Diamante" : "Ver consultas · Desbloquear un giro"} <ArrowRight size={17}/></Link>}
-          <div className={styles.trust}><ShieldCheck size={18}/><span>El premio se decide y se acredita de forma segura antes de mostrar el resultado.</span></div>
+          </button>}
+          {!pending && !busy && <Link className={styles.orbPurchase} href="/cliente/precios-ofertas">Ver paquetes <ArrowRight size={23}/></Link>}
         </aside>
       </div>}
 
