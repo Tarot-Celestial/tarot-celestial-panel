@@ -39,6 +39,7 @@ type LoginMode = "password" | "setup";
 function getRedirectPath() {
   const next = new URLSearchParams(window.location.search).get("next");
   if (next === "rangos") return "/cliente/rangos";
+  if (next === "runas") return "/cliente/runas";
   return next === "ruleta"
     ? "/cliente/ruleta"
     : "/cliente/dashboard";

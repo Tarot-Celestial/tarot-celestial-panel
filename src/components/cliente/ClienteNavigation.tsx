@@ -51,6 +51,10 @@ export default function ClienteNavigation({ pathname, promoActive, ritualAccess,
    <ArrowUpRight size={19} className={styles.priceArrow} aria-hidden="true" />
   </Link>
   <div className={styles.rail}>
+   <Link href="/cliente/runas" className={`${styles.item} ${styles.runesLink}`} aria-label="Runas, nuevo apartado" aria-describedby="client-nav-runes-detail" aria-current={active("runas") ? "page" : undefined} onClick={() => setOpen(null)}>
+    <span className={styles.art}><ClientNavIcon name="runes" /></span>
+    <span className={styles.itemCopy}><strong className={styles.runesTitle}>Runas <span className={styles.newBadge} aria-hidden="true">New</span></strong><small id="client-nav-runes-detail">Próximamente</small></span>
+   </Link>
    <Link href="/cliente/dashboard" className={styles.item} aria-label="Inicio" aria-current={active("dashboard") ? "page" : undefined} onClick={() => setOpen(null)}><span className={styles.art}><ClientNavIcon name="home" /></span><span className={styles.itemCopy}><strong>Inicio</strong><small>Tu espacio</small></span></Link>
    {GROUPS.map(group => <button key={group.id} ref={element => { triggers.current[group.id] = element; }} type="button" className={styles.item} data-active={group.items.some(item => active(item.path))} aria-label={group.label} aria-describedby={"client-nav-description-" + group.id + (group.id === "cuenta" && unread > 0 ? " client-nav-unread" : "")} aria-expanded={open === group.id} aria-controls={open === group.id ? "client-nav-" + group.id : undefined} onClick={event => {
     if (event.detail === 0 && open !== group.id) focusDestination.current = true;

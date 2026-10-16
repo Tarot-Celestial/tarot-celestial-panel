@@ -34,7 +34,7 @@ export function universeDestination(pathname: string): UniverseDestination {
 /** Authentication, standalone chat, and redirect-only pages must not start WebGL. */
 export function isUniverseRoute(pathname: string): boolean {
   const tab = routeTab(pathname);
-  return tab !== null && (hasDestination(tab) || tab === "campanas");
+  return tab !== null && (hasDestination(tab) || tab === "campanas" || tab === "runas");
 }
 
 const finite = (value: number, fallback = 0): number => Number.isFinite(value) ? value : fallback;
