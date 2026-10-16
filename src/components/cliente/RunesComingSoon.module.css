@@ -1,176 +1,66 @@
 .panel {
   position: relative;
   isolation: isolate;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
   align-items: center;
-  justify-content: center;
-  gap: clamp(28px, 5vw, 72px);
+  gap: clamp(28px, 4vw, 64px);
   width: 100%;
-  min-height: 360px;
-  padding: clamp(28px, 5vw, 64px);
+  padding: clamp(28px, 4vw, 58px);
   overflow: hidden;
-  border: 1px solid rgba(231, 199, 140, .35);
+  border: 1px solid #d7b67766;
   border-radius: 28px;
-  background:
-    radial-gradient(ellipse at 15% 40%, rgba(117, 80, 169, .18), transparent 55%),
-    linear-gradient(120deg, rgba(23, 20, 39, .94), rgba(9, 13, 25, .94));
-  box-shadow: 0 24px 64px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .06);
+  background: radial-gradient(ellipse at 20% 45%, #6d3b9d26, transparent 56%), linear-gradient(120deg, #181426ed, #0a0d1aef);
+  box-shadow: 0 24px 64px #0004, inset 0 1px 0 #ffffff12;
   color: #fff1d8;
 }
-
-.panel::before {
-  position: absolute;
-  z-index: -1;
-  inset: 12px;
-  border: 1px solid rgba(231, 199, 140, .07);
-  border-radius: 18px;
-  content: "";
-  pointer-events: none;
+.panel::before { position: absolute; z-index: -1; inset: 12px; border: 1px solid #e7c78c12; border-radius: 18px; content: ""; pointer-events: none; }
+.exhibit { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.artLabel { color: #d3bddf; font-size: 12px; font-weight: 600; line-height: 1.5; letter-spacing: .12em; text-align: center; text-transform: uppercase; }
+.art { position: relative; width: min(100%, 360px); margin: 0 auto; isolation: isolate; }
+.relic { display: block; width: 100%; height: auto; filter: drop-shadow(0 18px 22px #0003); }
+.light, .illuminated { position: absolute; inset: 13% -12% 8%; z-index: -1; border-radius: 50%; background: radial-gradient(ellipse, #d0a6ff4d, #a66bd51a 40%, transparent 70%); opacity: .45; pointer-events: none; }
+.illuminated { opacity: .85; animation: illuminate 1.8s ease-out both; }
+.previewButton { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; min-height: 44px; padding: 9px 14px; border: 1px solid #cfafee45; border-radius: 999px; background: #211c32; color: #f2dfc2; font-family: inherit; font-size: 14px; font-weight: 600; line-height: 1.4; cursor: pointer; }
+.previewButton span { padding-left: 8px; border-left: 1px solid #cfafee45; color: #c9bcd8; font-size: 12px; font-weight: 400; }
+.previewButton:hover { background: #342441; border-color: #cfafee80; }
+.previewButton[aria-pressed="true"] { background: #422c52; border-color: #ddbbea; color: #ffebba; }
+.content { min-width: 0; max-width: 610px; }
+.eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: #ddc18f; font-size: 12px; font-weight: 700; line-height: 1.5; letter-spacing: .08em; text-transform: uppercase; }
+.badge { padding: 5px 10px; border: 1px solid #cba2f24d; border-radius: 999px; background: #7c4b9929; color: #edd5ff; font-size: 12px; letter-spacing: .015em; text-transform: none; }
+.title { margin: 20px 0; color: #fff4e4; font: 500 clamp(36px, 4.3vw, 60px)/1.1 Georgia, serif; letter-spacing: -.025em; text-wrap: balance; }
+.title span { display: block; color: #f5d391; }
+.description { max-width: 44ch; margin: 0; color: #ded7e8; font-size: 17px; line-height: 1.65; }
+.benefit { display: flex; align-items: center; gap: 16px; margin-top: 28px; padding: 22px 20px; border: 1px solid #d6b77a5e; border-radius: 18px; background: linear-gradient(115deg, #8a63382b, #53357430); box-shadow: inset 0 1px 0 #ffffff0a; }
+.benefitIcon { display: grid; flex-shrink: 0; place-items: center; width: 48px; height: 48px; border: 1px solid #d6b77a4d; border-radius: 14px; background: #e1bd7512; color: #f4d391; }
+.benefitLabel { color: #dbc799; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.benefit h3 { margin: 7px 0; color: #fff2db; font-size: clamp(18px, 1.8vw, 23px); line-height: 1.35; }
+.benefit p { margin: 0; color: #e0d5e8; font-size: 16px; line-height: 1.5; }
+.details { display: flex; flex-wrap: wrap; gap: 12px 22px; margin-top: 20px; }
+.details span { display: inline-flex; align-items: center; gap: 9px; color: #d6ccdf; font-size: 14px; line-height: 1.5; }
+.details svg { color: #c9a0e3; flex-shrink: 0; }
+.link { display: inline-flex; align-items: center; justify-content: center; gap: 24px; min-height: 50px; margin-top: 28px; padding: 13px 26px; border: 1px solid #ffe0a0; border-radius: 12px; background: linear-gradient(110deg, #ffe2a1, #d5a54d); color: #21180c; font-size: 16px; font-weight: 700; line-height: 1.4; text-decoration: none; box-shadow: 0 7px 22px #d8ab4c1a; transition: background-color .15s ease, box-shadow .15s ease; }
+.link:hover { background: #ffe5ad; box-shadow: 0 7px 22px #d8ab4c33; }
+.link:focus-visible, .previewButton:focus-visible { outline: 3px solid #ffe3a8; outline-offset: 4px; }
+.availability { max-width: 52ch; margin: 16px 0 0; color: #c0b7ca; font-size: 14px; line-height: 1.6; }
+@keyframes illuminate { 0% { opacity: .45; transform: scale(.97); } 45% { opacity: 1; transform: scale(1.06); } 100% { opacity: .85; transform: scale(1); } }
+@media (max-width: 1000px) and (min-width: 681px) {
+  .panel { gap: 24px; padding: 32px; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+  .benefit { padding: 16px; gap: 12px; }
+  .benefitIcon { width: 40px; height: 40px; }
 }
-
-.emblem {
-  display: grid;
-  flex: 0 0 clamp(130px, 17vw, 192px);
-  place-items: center;
-  aspect-ratio: 1;
-  border: 1px solid rgba(231, 199, 140, .19);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(147, 105, 192, .17), rgba(147, 105, 192, .02) 70%);
-  box-shadow: inset 0 0 0 9px rgba(231, 199, 140, .025);
+@media (max-width: 680px) {
+  .panel { grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 28px 20px; border-radius: 22px; }
+  .art { width: min(100%, 240px); }
+  .content { text-align: center; }
+  .eyebrow, .details { justify-content: center; }
+  .title { margin: 18px 0 16px; }
+  .description, .availability { margin-inline: auto; }
+  .benefit { text-align: left; padding: 18px 14px; gap: 12px; }
+  .benefitIcon { width: 40px; height: 40px; }
+  .link { display: flex; width: 100%; }
 }
-
-.emblem svg {
-  display: block;
-  width: 65%;
-  height: auto;
-  filter: drop-shadow(0 8px 14px rgba(0, 0, 0, .28));
-}
-
-.stone {
-  fill: #2c2441;
-  stroke: #c9a675;
-  stroke-width: 1.6;
-  stroke-linejoin: round;
-}
-
-.facets {
-  stroke: rgba(226, 198, 159, .3);
-  stroke-width: 1;
-  stroke-linejoin: round;
-}
-
-.mark {
-  stroke: #f3d998;
-  stroke-width: 3.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.content {
-  width: 100%;
-  max-width: 520px;
-  min-width: 0;
-}
-
-.eyebrow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  color: #ddc18f;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-}
-
-.badge {
-  padding: 4px 9px;
-  border: 1px solid rgba(231, 199, 140, .38);
-  border-radius: 999px;
-  background: rgba(231, 199, 140, .1);
-  color: #ffe1a0;
-  font-size: 11px;
-  letter-spacing: .04em;
-}
-
-.title {
-  margin: 14px 0 10px;
-  color: #ffe8ba;
-  font: 500 clamp(42px, 5vw, 64px)/1.1 Georgia, serif;
-  letter-spacing: -.025em;
-}
-
-.status {
-  margin: 0 0 12px;
-  color: #e2c4ff;
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.description {
-  max-width: 45ch;
-  margin: 0;
-  color: #d4d8e5;
-  font-size: 16px;
-  line-height: 1.65;
-}
-
-.link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  min-height: 46px;
-  margin-top: 25px;
-  padding: 11px 20px;
-  border: 1px solid rgba(231, 199, 140, .55);
-  border-radius: 999px;
-  background: rgba(231, 199, 140, .06);
-  color: #ffe3a8;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-  text-decoration: none;
-  transition: background-color .15s ease, border-color .15s ease;
-}
-
-.link:hover {
-  border-color: #e7c78c;
-  background: rgba(231, 199, 140, .14);
-}
-
-.link:focus-visible {
-  outline: 3px solid #ffe3a8;
-  outline-offset: 4px;
-}
-
-@media (max-width: 600px) {
-  .panel {
-    flex-direction: column;
-    gap: 24px;
-    min-height: 0;
-    padding: 32px 24px;
-    border-radius: 22px;
-    text-align: center;
-  }
-
-  .emblem {
-    flex-basis: auto;
-    width: 132px;
-  }
-
-  .eyebrow {
-    justify-content: center;
-  }
-
-  .description {
-    margin-inline: auto;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .link {
-    transition: none;
-  }
+  .illuminated { animation: none; opacity: .75; }
+  .link { transition: none; }
 }

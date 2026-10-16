@@ -1,35 +1,69 @@
+"use client";
+
+import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, Gem, Sun } from "lucide-react";
 import styles from "./RunesComingSoon.module.css";
 
 export default function RunesComingSoon() {
+  const [illuminated, setIlluminated] = useState(false);
+
   return (
     <section className={styles.panel} aria-labelledby="runes-coming-soon-title">
-      <div className={styles.emblem} aria-hidden="true">
-        <svg viewBox="0 0 120 140" fill="none" focusable="false">
-          <path
-            d="M34 12 80 7 106 42 100 112 69 132 25 120 13 77 20 36Z"
-            className={styles.stone}
+      <div className={styles.exhibit}>
+        <span className={styles.artLabel}>Una nueva colección celestial</span>
+        <div className={styles.art}>
+          <div className={illuminated ? styles.illuminated : styles.light} aria-hidden="true" />
+          <Image
+            className={styles.relic}
+            src="/images/runas/runa-celestial-v1.webp"
+            alt="Runa de cristal oscuro con un símbolo dorado, luz amatista y una base de obsidiana."
+            width={800}
+            height={1200}
+            sizes="(max-width: 680px) 240px, (max-width: 1000px) 32vw, 360px"
+            priority
           />
-          <path d="m34 12 7 25-21-1m21 1 41-9-2-21m2 21 24 14m-24-14 7 65 11 19M25 120l15-20 29 32M13 77l27 23" className={styles.facets} />
-          <path d="M59 43v55m0-55 19 18-19 16m0-15L43 78" className={styles.mark} />
-        </svg>
+        </div>
+        <button className={styles.previewButton} type="button" aria-pressed={illuminated} onClick={() => setIlluminated(value => !value)}>
+          <Sun size={17} aria-hidden="true" /> Iluminar runa
+          <span>Vista previa</span>
+        </button>
       </div>
 
       <div className={styles.content}>
         <div className={styles.eyebrow}>
-          <span>Tarot Celestial</span>
-          <span className={styles.badge} aria-label="Nuevo apartado">New</span>
+          <span>Coleccionables con ventajas</span>
+          <span className={styles.badge}>Próximamente</span>
         </div>
-        <h2 id="runes-coming-soon-title" className={styles.title}>Runas</h2>
-        <p className={styles.status}>Próximamente</p>
+        <h2 id="runes-coming-soon-title" className={styles.title}>
+          Tu próxima <span>reliquia celestial.</span>
+        </h2>
         <p className={styles.description}>
-          Estamos preparando esta nueva experiencia. Aquí encontrarás toda la información cuando esté lista.
+          Una runa para tu colección. Una nueva forma de disfrutar de Tarot Celestial.
         </p>
+
+        <div className={styles.benefit}>
+          <span className={styles.benefitIcon}><BookOpen size={25} aria-hidden="true" /></span>
+          <div>
+            <span className={styles.benefitLabel}>La ventaja de esta runa</span>
+            <h3>Acceso a una lectura especial</h3>
+            <p>Con una tarotista, mediante reserva.</p>
+          </div>
+        </div>
+
+        <div className={styles.details}>
+          <span><Gem size={19} aria-hidden="true" /> Runa coleccionable</span>
+          <span><CalendarDays size={19} aria-hidden="true" /> Reserva previa</span>
+        </div>
+
         <Link href="/cliente/sorteo" className={styles.link}>
           Ver el sorteo
           <ArrowRight size={19} aria-hidden="true" />
         </Link>
+        <p className={styles.availability}>
+          Muy pronto anunciaremos cómo conseguirla, la disponibilidad de la lectura y sus condiciones.
+        </p>
       </div>
     </section>
   );
