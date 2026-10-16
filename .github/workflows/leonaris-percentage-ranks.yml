@@ -1,0 +1,25 @@
+name: Leonaris percentage ranks
+on:
+  pull_request:
+    paths:
+      - 'src/lib/tarotista-percentage-ranks.ts'
+      - 'src/components/admin/Tarotista*'
+      - 'src/components/tarotista/TarotistaPercentage*'
+      - 'src/app/api/admin/tarotista-ranks/simulate/**'
+      - 'tests/tarotista-percentage-ranks.test.cjs'
+      - '.github/workflows/leonaris-percentage-ranks.yml'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install --global yarn@1.22.19 --ignore-scripts --no-audit --no-fund
+      - run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
+      - run: node --test tests/tarotista-percentage-ranks.test.cjs
+      - run: yarn tsc --noEmit
