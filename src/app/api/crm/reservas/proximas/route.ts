@@ -12,6 +12,8 @@ export async function GET() {
     const { data, error } = await supabase
       .from("reservas")
       .select("*")
+      .is("deleted_at", null)
+      .in("estado", ["pendiente", "confirmada"])
       .gte("fecha_reserva", now)
       .order("fecha_reserva", { ascending: true })
       .limit(5);

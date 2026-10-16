@@ -1,80 +1,73 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { reservasStaff } from "@/lib/server/reservas-staff";
+import { reservaDate } from "@/lib/reservas";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function getEnv(name: string) {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env var: ${name}`);
-  return value;
-}
-
-function db() {
-  return createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } });
-}
-
-async function getWorker(req: Request, admin: any) {
-  const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!token) return null;
-  const userClient = createClient(getEnv("NEXT_PUBLIC_SUPABASE_URL"), getEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-    auth: { persistSession: false },
-  });
-  const { data } = getAuthUserFromRequest(req);
-  const uid = data.user?.id || null;
-  if (!uid) return null;
-  const { data: me, error } = await admin.from("workers").select("id,role").eq("user_id", uid).maybeSingle();
-  if (error) throw error;
-  return me;
-}
-
-function isOpenEstado(value: any) {
-  const s = String(value || "").toLowerCase();
-  return !["finalizada", "completada", "cancelada", "anulada"].includes(s);
-}
+const OPEN_STATES = ["pendiente", "confirmada"];
 
 export async function GET(req: Request) {
   try {
-    const admin = db();
-    const me = await getWorker(req, admin);
-    if (!me) return NextResponse.json({ ok: false, error: "NO_AUTH" }, { status: 401 });
-    if (!["admin", "central"].includes(String(me.role || ""))) return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
-
+    const gate = await reservasStaff(req);
+    if (gate.response) return gate.response;
+    const admin = gate.db!;
+    const now = new Date();
     const { data: reservas, error } = await admin
       .from("reservas")
       .select("*")
       .eq("notify_when_tarotista_idle", true)
       .is("ready_notified_at", null)
-      .order("created_at", { ascending: true })
-      .limit(25);
+      .is("deleted_at", null)
+      .in("estado", OPEN_STATES)
+      .lte("fecha_reserva", now.toISOString())
+      .order("fecha_reserva", { ascending: true })
+      .limit(100);
     if (error) throw error;
 
-    const ready: any[] = [];
     for (const reserva of reservas || []) {
-      if (!isOpenEstado(reserva.estado) || !reserva.tarotista_id) continue;
-      const { data: ext } = await admin
+      const due = reservaDate(String(reserva.fecha_reserva || "")).getTime();
+      if (!Number.isFinite(due) || due > now.getTime() || !reserva.tarotista_id) continue;
+      const { data: ext, error: extensionError } = await admin
         .from("pbx_extensions")
-        .select("extension,status,active_call_count,registered,worker_id,label")
+        .select("extension,status,active_call_count,registered,is_active,worker_id,label,last_seen_at,updated_at")
         .eq("worker_id", reserva.tarotista_id)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle();
+      if (extensionError) throw extensionError;
 
-      const activeCalls = Number(ext?.active_call_count || 0) || 0;
-      const status = String(ext?.status || "").toLowerCase();
-      const busy = activeCalls > 0 || ["in_call", "ringing", "calling", "busy"].includes(status);
-      if (!busy) ready.push({ ...reserva, tarotista_extension: ext?.extension || null, tarotista_extension_label: ext?.label || null, ready_reason: "tarotista_idle" });
+      // Match the PBX panel's fresh-runtime window. Missing/offline/old telemetry is not availability.
+      const seen = ext?.last_seen_at ? reservaDate(ext.last_seen_at).getTime() : NaN;
+      const age = Date.now() - seen;
+      if (ext?.is_active === false || ext?.registered !== true || ext.status !== "registered"
+        || ext.active_call_count == null || Number(ext.active_call_count) !== 0
+        || !Number.isFinite(age) || age < 0 || age >= 20_000) continue;
+
+      // Claim only the version inspected above. A concurrent cancellation, deletion or reschedule wins.
+      // Never change estado here: delivering an alert cannot reopen a reservation.
+      let claim = admin.from("reservas")
+        .update({ ready_notified_at: new Date().toISOString() })
+        .eq("id", reserva.id)
+        .eq("estado", reserva.estado)
+        .eq("fecha_reserva", reserva.fecha_reserva)
+        .eq("tarotista_id", reserva.tarotista_id)
+        .eq("notify_when_tarotista_idle", true)
+        .is("ready_notified_at", null)
+        .is("deleted_at", null);
+      claim = reserva.updated_at == null ? claim.is("updated_at", null) : claim.eq("updated_at", reserva.updated_at);
+      const { data: claimed, error: claimError } = await claim.select("*").maybeSingle();
+      if (claimError) throw claimError;
+      if (!claimed) continue;
+
+      // The watcher displays one modal at a time; do not consume alerts it cannot show.
+      return Response.json({ ok: true, serverNow: new Date().toISOString(), reservas: [{
+        ...claimed, tarotista_extension: ext.extension || null,
+        tarotista_extension_label: ext.label || null, ready_reason: "tarotista_idle",
+      }] }, { headers: { "Cache-Control": "no-store" } });
     }
-
-    if (ready.length) {
-      const ids = ready.map((r) => r.id).filter(Boolean);
-      await admin.from("reservas").update({ ready_notified_at: new Date().toISOString(), estado: "pendiente" }).in("id", ids);
-    }
-
-    return NextResponse.json({ ok: true, reservas: ready });
-  } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return Response.json({ ok: true, serverNow: new Date().toISOString(), reservas: [] }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    console.error("[reservas/ready]", error);
+    return Response.json({ ok: false, error: "No se pudo comprobar la disponibilidad de la tarotista." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
 }

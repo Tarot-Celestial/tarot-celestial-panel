@@ -1,14 +1,16 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { reservaClosed, reservaDate } from "@/lib/reservas";
 import styles from "./ReservasPanel.module.css";
 const sb = supabaseBrowser();
-type Row = { id: string; numero_reserva?: number; cliente_id: string; cliente_nombre: string; telefono_normalizado: string; tarotista_id: string; tarotista_nombre: string; tarotista_nombre_manual: string; fecha_reserva: string; estado: string; nota: string; updated_at: string | null };
+type Row = { id: string; numero_reserva?: number; cliente_id: string; cliente_nombre: string; telefono_normalizado: string; tarotista_id: string; tarotista_nombre: string; tarotista_nombre_manual: string; fecha_reserva: string; estado: string; nota: string; updated_at: string | null; deleted_at?: string | null };
+type Action = "completar" | "aplazar" | "cancelar" | "eliminar";
 const labels: Record<string,string> = { pendiente: "Pendiente", confirmada: "Confirmada", completada: "Cumplida", finalizada: "Cumplida", cancelada: "Cancelada" };
 const tarotista = (r: Row) => r.tarotista_nombre || r.tarotista_nombre_manual || "Sin asignar";
 const fecha = (value: string) => reservaDate(value).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" });
+const referencia = (row: Row) => row.numero_reserva ? `R-${String(row.numero_reserva).padStart(5,"0")}` : row.id;
 export default function ReservasPanel({ mode = "admin", embedded = false }: { mode?: "admin" | "central"; embedded?: boolean }) {
   const [brand,setBrand] = useState("celestial");
   const [rows,setRows] = useState<Row[]>([]);
@@ -19,27 +21,34 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
   const [filter,setFilter] = useState("pendientes");
   const [reader,setReader] = useState("");
   const [day,setDay] = useState("");
-  const [edit,setEdit] = useState<{row:Row;action:string} | null>(null);
+  const [edit,setEdit] = useState<{row:Row;action:Action} | null>(null);
   const [newDate,setNewDate] = useState("");
   const [reason,setReason] = useState("");
   const [saving,setSaving] = useState(false);
   const [focusId,setFocusId] = useState("");
   const [zone,setZone] = useState("");
   const serial = useRef(0), savingRef = useRef(false);
+  const deletedIds = useRef(new Set<string>());
   const dialog = useRef<HTMLDialogElement>(null);
+  const cancelDelete = useRef<HTMLButtonElement>(null);
+  const dialogTitleId = useId(), deleteDescriptionId = useId();
   async function token() {
     const { data } = await sb.auth.getSession();
     if (!data.session?.access_token) throw new Error("Tu sesión ha caducado. Vuelve a iniciar sesión.");
     return data.session.access_token;
   }
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false, preserveError = false) => {
+    if (savingRef.current) return;
     const id = ++serial.current;
     if (!silent) setBusy(true);
     try {
       const res = await fetch(`/api/crm/reservas/listar?brand=${brand}`, { headers: { Authorization: `Bearer ${await token()}` }, cache: "no-store" });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "No se pudieron cargar las reservas.");
-      if (id === serial.current) { setRows(result.reservas || []); setError(""); }
+      if (id === serial.current) {
+        setRows((result.reservas || []).filter((row: Row) => !row.deleted_at && !deletedIds.current.has(row.id)));
+        if (!silent && !preserveError) setError("");
+      }
     } catch (e: any) { if (id === serial.current) setError(e.message); }
     finally { if (id === serial.current) setBusy(false); }
   },[brand]);
@@ -63,6 +72,16 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
       const detail = (event as CustomEvent).detail || {};
       const id = String(detail?.id || detail?.reserva?.id || "");
       const reserva = detail?.reserva as Row | undefined;
+      if (id && (detail.deleted || reserva?.deleted_at)) {
+        deletedIds.current.add(id);
+        serial.current++;
+        setBusy(false);
+        setRows(prev => prev.filter(row => row.id !== id));
+        setFocusId(current => current === id ? "" : current);
+        refresh();
+        return;
+      }
+      if (id && deletedIds.current.has(id)) return;
       if (reserva?.id) {
         setRows((prev) => {
           const index = prev.findIndex((row) => row.id === reserva.id);
@@ -90,7 +109,12 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
     return () => { serial.current++; clearTimeout(timer); clearInterval(fallback); void sb.removeChannel(channel); window.removeEventListener("focus",visible); window.removeEventListener("online",visible); document.removeEventListener("visibilitychange",visible); window.removeEventListener("reservas-open-item",open); window.removeEventListener("tc-reservation-changed", changed as EventListener); };
   },[load,mode,brand]);
   useEffect(() => { if (focusId) document.getElementById(`reserva-${focusId}`)?.scrollIntoView({block:"center",behavior:"smooth"}); },[focusId,rows]);
-  useEffect(() => { if (edit) dialog.current?.showModal(); else dialog.current?.close(); },[edit]);
+  useEffect(() => {
+    if (edit) {
+      if (!dialog.current?.open) dialog.current?.showModal();
+      if (edit.action === "eliminar") cancelDelete.current?.focus();
+    } else dialog.current?.close();
+  },[edit]);
   const ordered = useMemo(() => [...rows].sort((a,b) => reservaDate(a.fecha_reserva).getTime()-reservaDate(b.fecha_reserva).getTime() || a.id.localeCompare(b.id)),[rows]);
   const queue = useMemo(() => {
     const counters = new Map<string,number>(), result = new Map<string,number>();
@@ -105,20 +129,35 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
     if (day) {const d=reservaDate(r.fecha_reserva);if (`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`!==day)return false;}
     return `${r.numero_reserva || ""} ${r.id} ${r.cliente_nombre} ${r.telefono_normalizado} ${tarotista(r)}`.toLowerCase().includes(q.trim().toLowerCase());
   });
-  function openAction(row:Row,action:string) {setEdit({row,action});setNewDate("");setReason("");setNotice("");setError("");}
+  function openAction(row:Row,action:Action) {if(savingRef.current)return;setEdit({row,action});setNewDate("");setReason("");setNotice("");setError("");}
   async function save(event:React.FormEvent) {
     event.preventDefault(); if (!edit || savingRef.current) return;
-    savingRef.current=true;setSaving(true);setError("");
+    savingRef.current=true;serial.current++;setBusy(false);setSaving(true);setError("");
+    let refreshAfter = false;
     try {
-      const res=await fetch("/api/crm/reservas/actualizar",{method:"POST",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({id:edit.row.id,version:edit.row.updated_at,action:edit.action,motivo:reason,fecha_reserva:newDate?new Date(newDate).toISOString():undefined})});
-      const result=await res.json();if(!res.ok)throw new Error(result.error || "No se pudo guardar.");
-      setRows(prev=>prev.map(r=>r.id===result.reserva.id?result.reserva:r));setEdit(null);setNotice("Reserva actualizada correctamente.");void load(true);
-    }catch(e:any){setError(e.message);}finally{savingRef.current=false;setSaving(false);}
+      const res=await fetch("/api/crm/reservas/actualizar",{method:"POST",headers:{Authorization:`Bearer ${await token()}`,"Content-Type":"application/json"},body:JSON.stringify({id:edit.row.id,version:edit.row.updated_at,action:edit.action,motivo:reason,fecha_reserva:newDate?new Date(newDate).toISOString():undefined,...(edit.action==="eliminar"?{confirmed:true}:{})})});
+      const result=await res.json();
+      if(!res.ok) {
+        if(res.status===409) {setEdit(null);refreshAfter=true;}
+        throw new Error(result.error || "No se pudo guardar.");
+      }
+      if(edit.action==="eliminar") {
+        deletedIds.current.add(edit.row.id);
+        setRows(prev=>prev.filter(row=>row.id!==edit.row.id));
+        setFocusId(current=>current===edit.row.id?"":current);
+        window.dispatchEvent(new CustomEvent("tc-reservation-changed",{detail:{id:edit.row.id,reserva:result.reserva,deleted:true}}));
+        setNotice("Reserva eliminada de la agenda. Su registro interno se conserva.");
+      } else {
+        setRows(prev=>prev.map(r=>r.id===result.reserva.id?result.reserva:r));
+        setNotice("Reserva actualizada correctamente.");
+      }
+      setEdit(null);refreshAfter=true;
+    }catch(e:any){setError(e.message);}finally{savingRef.current=false;setSaving(false);if(refreshAfter)void load(true,true);}
   }
   return <section className={`${styles.panel} ${embedded?"":"tc-card"}`}>
     <header className={styles.header}><div><span className={styles.eyebrow}>AGENDA DE ATENCIÓN</span><h2>Reservas</h2><p>Ordenadas por horario. Cada tarotista tiene su propia cola de atención.</p></div><div className={styles.actions}>
       {mode==="central" && <a className="tc-btn tc-btn-gold" href="/panel-central?tab=crm">Nueva reserva en CRM</a>}
-      <button className="tc-btn" disabled={busy} onClick={()=>void load()}>{busy?"Actualizando…":"Actualizar"}</button></div></header>
+      <button className="tc-btn" disabled={busy || saving} onClick={()=>void load()}>{busy?"Actualizando…":"Actualizar"}</button></div></header>
     <div className={styles.summary}><span><b>{rows.filter(r=>!reservaClosed(r.estado)).length}</b> pendientes</span><span><b>{rows.filter(r=>["completada","finalizada"].includes(r.estado)).length}</b> cumplidas</span><span>Horarios: <b>{zone || "hora local"}</b></span></div>
     <div className={styles.filters}>
       <label>Cliente, teléfono o referencia<input className="tc-input" value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar reserva…" /></label>
@@ -129,17 +168,22 @@ export default function ReservasPanel({ mode = "admin", embedded = false }: { mo
     {error && !edit && <p role="alert" className={styles.error}>{error}</p>}{notice && <p role="status">{notice}</p>}
     <div className={styles.list}>{filtered.map(r=><article className={styles.card} key={r.id} id={`reserva-${r.id}`} data-focused={focusId===r.id}>
       <div className={styles.cardTop}><div><span className={styles.eyebrow}>{queue.has(r.id)?`TURNO ${queue.get(r.id)} · ${tarotista(r)}`:tarotista(r)}</span><h3>{r.cliente_nombre || "Cliente sin nombre"}</h3>{r.telefono_normalizado && <a href={`tel:${r.telefono_normalizado.replace(/[^+\d]/g,"")}`}>{r.telefono_normalizado}</a>}</div><span className={styles.status}>{labels[r.estado] || r.estado}</span></div>
-      <p className={styles.time}>{fecha(r.fecha_reserva)}</p><div className={styles.reference}>N.º de reserva: <span title={r.id}>{r.numero_reserva ? `R-${String(r.numero_reserva).padStart(5,"0")}` : r.id}</span></div>
+      <p className={styles.time}>{fecha(r.fecha_reserva)}</p><div className={styles.reference}>N.º de reserva: <span title={r.id}>{referencia(r)}</span></div>
       {r.nota && <details><summary>Notas e historial</summary><p className={styles.notes}>{r.nota}</p></details>}
-      {!reservaClosed(r.estado) && <div className={styles.actions}><button className="tc-btn tc-btn-ok" onClick={()=>openAction(r,"completar")}>Cumplió reserva</button><button className="tc-btn tc-btn-gold" onClick={()=>openAction(r,"aplazar")}>Aplazar reserva</button><button className="tc-btn" onClick={()=>openAction(r,"cancelar")}>Cancelar</button></div>}
+      <div className={styles.actions}>
+        {!reservaClosed(r.estado) && <><button className="tc-btn tc-btn-ok" onClick={()=>openAction(r,"completar")}>Cumplió reserva</button><button className="tc-btn tc-btn-gold" onClick={()=>openAction(r,"aplazar")}>Aplazar reserva</button><button className="tc-btn" onClick={()=>openAction(r,"cancelar")}>Cancelar</button></>}
+        <button className={`tc-btn ${styles.deleteButton}`} onClick={()=>openAction(r,"eliminar")}>Eliminar reserva</button>
+      </div>
     </article>)}</div>
     {!busy && !filtered.length && <p className={styles.empty}>No hay reservas con estos filtros.</p>}
-    <dialog ref={dialog} className={styles.dialog} onCancel={e=>{if(saving)e.preventDefault();else setEdit(null);}} onClose={()=>{if(!saving)setEdit(null);}}>
-      {edit && <form onSubmit={save}><h3>{edit.action==="aplazar"?"Aplazar reserva":edit.action==="completar"?"Confirmar reserva cumplida":"Cancelar reserva"}</h3><p>{edit.row.cliente_nombre} · {tarotista(edit.row)}</p><p>Horario actual: {fecha(edit.row.fecha_reserva)}</p>
-        {edit.action==="aplazar" && <label>Nuevo horario · {zone}<input autoFocus required type="datetime-local" className="tc-input" value={newDate} onChange={e=>setNewDate(e.target.value)} /></label>}
-        <label>{edit.action==="aplazar"?"Motivo del aplazamiento":"Observación (opcional)"}<textarea className="tc-input" required={edit.action==="aplazar"} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} /></label>
+    <dialog ref={dialog} className={styles.dialog} aria-labelledby={dialogTitleId} aria-describedby={edit?.action==="eliminar"?deleteDescriptionId:undefined} aria-busy={saving} onCancel={e=>{if(savingRef.current)e.preventDefault();else setEdit(null);}} onClose={()=>{if(!savingRef.current)setEdit(null);}}>
+      {edit && <form onSubmit={save}><h3 id={dialogTitleId}>{edit.action==="eliminar"?"¿Eliminar esta reserva?":edit.action==="aplazar"?"Aplazar reserva":edit.action==="completar"?"Confirmar reserva cumplida":"Cancelar reserva"}</h3>
+        <div className={styles.dialogReservation}><p><strong>{edit.row.cliente_nombre || "Cliente sin nombre"}</strong> · {tarotista(edit.row)}</p>{edit.action==="eliminar" && <p className={styles.reference}>N.º de reserva: {referencia(edit.row)}</p>}<p>Horario actual: {fecha(edit.row.fecha_reserva)}</p></div>
+        {edit.action==="eliminar" && <p id={deleteDescriptionId} className={styles.deleteExplanation}>Se retirará de la agenda y dejará de generar avisos. Su registro interno se conservará.</p>}
+        {edit.action==="aplazar" && <label>Nuevo horario · {zone}<input autoFocus required disabled={saving} type="datetime-local" className="tc-input" value={newDate} onChange={e=>setNewDate(e.target.value)} /></label>}
+        <label>{edit.action==="aplazar"?"Motivo del aplazamiento":"Observación (opcional)"}<textarea className="tc-input" disabled={saving} required={edit.action==="aplazar"} maxLength={500} value={reason} onChange={e=>setReason(e.target.value)} /></label>
         {error && <p role="alert" className={styles.error}>{error}</p>}
-        <div className={styles.actions}><button type="button" className="tc-btn" disabled={saving} onClick={()=>setEdit(null)}>Volver</button><button className="tc-btn tc-btn-gold" disabled={saving}>{saving?"Guardando…":"Confirmar"}</button></div>
+        <div className={styles.actions}><button ref={cancelDelete} autoFocus={edit.action==="eliminar"} type="button" className="tc-btn" disabled={saving} onClick={()=>{if(!savingRef.current)setEdit(null);}}>{edit.action==="eliminar"?"Cancelar":"Volver"}</button><button type="submit" className={edit.action==="eliminar"?`tc-btn ${styles.deleteConfirm}`:"tc-btn tc-btn-gold"} disabled={saving}>{saving?(edit.action==="eliminar"?"Eliminando…":"Guardando…"):edit.action==="eliminar"?"Sí, eliminar reserva":"Confirmar"}</button></div>
       </form>}
     </dialog>
   </section>;

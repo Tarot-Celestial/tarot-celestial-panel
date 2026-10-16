@@ -2,16 +2,23 @@ export function reservaDate(value: string): Date {
   return new Date(/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`);
 }
 export function reservaClosed(estado: string) {
-  return ["completada", "finalizada", "cancelada"].includes(estado);
+  return ["completada", "finalizada", "cancelada", "anulada", "eliminada"].includes(String(estado || "").trim().toLowerCase());
 }
 export function reservaChange(row: any, body: any, worker: string, now = new Date()) {
-  if (reservaClosed(row.estado)) throw new Error("Esta reserva ya está cerrada.");
-  if (!["completar", "aplazar", "cancelar"].includes(body.action)) throw new Error("Acción no válida.");
+  if (row.deleted_at) throw new Error("Esta reserva ya está eliminada.");
+  if (!["completar", "aplazar", "cancelar", "eliminar"].includes(body.action)) throw new Error("Acción no válida.");
+  if (body.action !== "eliminar" && reservaClosed(row.estado)) throw new Error("Esta reserva ya está cerrada.");
   const motivo = String(body.motivo || "").trim();
   if (motivo.length > 500) throw new Error("El motivo no puede superar 500 caracteres.");
   const patch: Record<string, any> = { updated_at: now.toISOString() };
   let description = body.action === "completar" ? "Reserva cumplida" : "Reserva cancelada";
-  if (body.action === "aplazar") {
+  if (body.action === "eliminar") {
+    if (body.confirmed !== true) throw new Error("Confirma que quieres eliminar esta reserva.");
+    patch.deleted_at = now.toISOString();
+    patch.estado = "cancelada";
+    patch.notify_when_tarotista_idle = false;
+    description = `Reserva eliminada de la agenda (registro conservado; estado anterior: ${row.estado || "sin estado"})`;
+  } else if (body.action === "aplazar") {
     if (!motivo) throw new Error("Indica el motivo del aplazamiento.");
     const raw = String(body.fecha_reserva || "");
     if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)) throw new Error("Selecciona una fecha y hora válidas.");

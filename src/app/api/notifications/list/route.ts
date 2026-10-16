@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
+import { reservaDate } from "@/lib/reservas";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+const noStore = { "Cache-Control": "no-store" };
 
 function adminClient() {
   return createClient(
@@ -14,17 +16,20 @@ function adminClient() {
 
 async function uidFromBearer(req: Request) {
   const auth = req.headers.get("authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  const token = auth.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || "";
   if (!token) return null;
 
   const sb = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false } }
+    { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }
   );
 
-  const { data, error } = getAuthUserFromRequest(req);
-  if (error) throw error;
+  const { data, error } = await sb.auth.getUser(token);
+  if (error) {
+    if ([400, 401, 403].includes(error.status || 0)) return null;
+    throw error;
+  }
   return data.user?.id || null;
 }
 
@@ -35,24 +40,24 @@ function pendingEstado(v: any) {
 
 export async function GET(req: Request) {
   try {
-    const admin = adminClient();
     const { searchParams } = new URL(req.url);
     const user_id = searchParams.get("user_id");
     const uid = await uidFromBearer(req);
+    if (!uid) return NextResponse.json({ ok: false, error: "Inicia sesión de nuevo." }, { status: 401, headers: noStore });
+    if (user_id !== null && user_id !== uid) return NextResponse.json({ ok: false, error: "No puedes consultar las notificaciones de otra persona." }, { status: 403, headers: noStore });
+    const admin = adminClient();
 
-    let worker: any = null;
-    if (uid) {
-      const { data } = await admin.from("workers").select("id, role, display_name").eq("user_id", uid).maybeSingle();
-      worker = data || null;
-    }
+    const { data: workerRow, error: workerError } = await admin.from("workers").select("id, role, display_name, is_active").eq("user_id", uid).maybeSingle();
+    if (workerError) throw workerError;
+    const worker = workerRow?.is_active === false ? null : workerRow;
 
     const notifications: any[] = [];
 
-    if (user_id) {
+    {
       const { data, error } = await admin
         .from("notifications")
         .select("*")
-        .eq("user_id", user_id)
+        .eq("user_id", uid)
         .order("created_at", { ascending: false })
         .limit(20);
       if (error) throw error;
@@ -87,6 +92,7 @@ export async function GET(req: Request) {
       const { data: reservas } = await admin
         .from("reservas")
         .select("id, cliente_nombre, fecha_reserva, estado")
+        .is("deleted_at", null)
         .gte("fecha_reserva", now.toISOString())
         .lte("fecha_reserva", soon)
         .order("fecha_reserva", { ascending: true })
@@ -96,7 +102,7 @@ export async function GET(req: Request) {
         notifications.push({
           id: `virtual:reserva:${r.id}`,
           title: "Reserva próxima",
-          message: `${r?.cliente_nombre || "Cliente"} tiene reserva a las ${new Date(r.fecha_reserva).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}.`,
+          message: `${r?.cliente_nombre || "Cliente"} tiene reserva a las ${reservaDate(r.fecha_reserva).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid" })} (hora de España).`,
           created_at: new Date().toISOString(),
           read: false,
           synthetic: true,
@@ -144,8 +150,8 @@ export async function GET(req: Request) {
     }
 
     notifications.sort((a, b) => new Date(String(b.created_at || 0)).getTime() - new Date(String(a.created_at || 0)).getTime());
-    return NextResponse.json({ ok: true, data: notifications.slice(0, 20) });
-  } catch (err: any) {
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ ok: true, data: notifications.slice(0, 20) }, { headers: noStore });
+  } catch {
+    return NextResponse.json({ ok: false, error: "No se pudieron cargar las notificaciones. Inténtalo de nuevo." }, { status: 500, headers: noStore });
   }
 }

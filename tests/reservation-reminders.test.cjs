@@ -63,12 +63,13 @@ function fixture(extra = {}) {
       select(columns) { queries.push({ table, columns, filters }); return this; },
       in(field, values) { filters.push({ field, values }); return this; },
       eq(field, value) { filters.push({ field, value }); return this; },
+      is(field, value) { filters.push({ field, is: value }); return this; },
       gt(field, value) { filters.push({ field, gt: value }); return this; },
       lte(field, value) { filters.push({ field, lte: value }); return this; },
       order() { return this; },
       range(start, end) { slice = [start, end + 1]; return this; },
       insert(value) { const key = `${value.worker_id}:${value.key}`; if (deliveries.has(key)) return Promise.resolve({ error: { code: '23505' } }); deliveries.add(key); return Promise.resolve({ error: null }); },
-      then(resolve, reject) { return Promise.resolve({ data: (tables[table] || []).filter(row => filters.every(filter => filter.values ? filter.values.includes(row[filter.field]) : filter.gt ? row[filter.field] > filter.gt.replace('Z','') : filter.lte ? row[filter.field] <= filter.lte.replace('Z','') : row[filter.field] === filter.value)).slice(...slice), error: null }).then(resolve, reject); },
+      then(resolve, reject) { return Promise.resolve({ data: (tables[table] || []).filter(row => filters.every(filter => Object.hasOwn(filter, 'is') ? (row[filter.field] ?? null) === filter.is : filter.values ? filter.values.includes(row[filter.field]) : filter.gt ? row[filter.field] > filter.gt.replace('Z','') : filter.lte ? row[filter.field] <= filter.lte.replace('Z','') : row[filter.field] === filter.value)).slice(...slice), error: null }).then(resolve, reject); },
     }; return query;
   } };
   const ctx = { db, worker: { id: 'worker-a', user_id: 'auth-a' }, identityIds: ['worker-a'] };
@@ -105,6 +106,14 @@ test('cancelled, completed, unknown and expired reservations never produce remin
   f.tables.reservas[0].estado = 'pendiente';
   f.tables.reservas[0].fecha_reserva = new Date(Date.now() - 1000).toISOString();
   assert.equal((await f.server.upcomingReservations(f.ctx)).length, 0);
+});
+
+test('a deleted reservation is excluded even if its legacy state is still pending', async () => {
+  const f = fixture();
+  f.tables.reservas[0].deleted_at = new Date().toISOString();
+  assert.equal((await f.server.upcomingReservations(f.ctx)).length, 0);
+  assert.equal((await f.server.claimReservationReminder(f.ctx, { id, scheduledAt: f.schedule, threshold: 5 })).reason, 'stale');
+  assert.equal(f.deliveries.size, 0);
 });
 
 test('simultaneous tabs and refresh claim a threshold only once per worker and scheduled time', async () => {

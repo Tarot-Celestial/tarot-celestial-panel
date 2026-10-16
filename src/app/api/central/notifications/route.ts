@@ -243,6 +243,7 @@ async function loadReservations(admin: SupabaseClient, brand: BrandKey) {
   const { data, error } = await admin
     .from("reservas")
     .select("id, cliente_id, cliente_nombre, telefono_normalizado, tarotista_id, tarotista_nombre, tarotista_nombre_manual, fecha_reserva, estado, nota, created_at, updated_at")
+    .is("deleted_at", null)
     .gte("fecha_reserva", from)
     .lte("fecha_reserva", until)
     .order("fecha_reserva", { ascending: true })
@@ -518,6 +519,7 @@ export async function PATCH(req: Request) {
       const { data: reservation, error: reservationError } = await admin
         .from("reservas")
         .select("id, cliente_id, cliente_nombre, telefono_normalizado, tarotista_id, tarotista_nombre, tarotista_nombre_manual, fecha_reserva, estado, nota, created_at, updated_at")
+        .is("deleted_at", null)
         .eq("id", reservationId)
         .maybeSingle();
       if (reservationError) throw reservationError;

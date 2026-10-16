@@ -12,6 +12,7 @@ export async function upcomingReservations(ctx: AssistantContext, now = Date.now
   const rows = await allRows(() => {
     let query = ctx.db.from('reservas')
       .select('id,cliente_id,cliente_nombre,tarotista_nombre,tarotista_nombre_manual,fecha_reserva,estado')
+      .is('deleted_at', null)
       .in('estado', OPEN_STATES).gt('fecha_reserva', from).lte('fecha_reserva', until).order('id');
     if (reservationId) query = query.eq('id', reservationId);
     return query;

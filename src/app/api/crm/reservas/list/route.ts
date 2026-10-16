@@ -10,6 +10,7 @@ export async function GET() {
     const { data, error } = await supabase
       .from("reservas")
       .select("*")
+      .is("deleted_at", null)
       .order("fecha_reserva", { ascending: true });
 
     if (error) throw error;

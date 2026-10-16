@@ -9,13 +9,13 @@ export async function GET(req: Request) {
     const rows: any[] = [];
     // Supabase caps each response; fetch every page to preserve the full history.
     for (let offset = 0; ; offset += 500) {
-      const { data, error } = await gate.db!.from("reservas").select("*").order("fecha_reserva").order("id").range(offset, offset + 499);
+      const { data, error } = await gate.db!.from("reservas").select("*").is("deleted_at", null).order("fecha_reserva").order("id").range(offset, offset + 499);
       if (error) throw error;
       rows.push(...(data || []));
       if (!data || data.length < 500) break;
     }
     const brand = brandFromRequest(req);
-    return Response.json({ ok: true, reservas: await filterRowsByBrand(gate.db!, rows, brand) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ ok: true, reservas: await filterRowsByBrand(gate.db!, rows, brand), serverNow: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
   } catch (e) {
     console.error("[reservas/list]", e);
     return Response.json({ error: "No se pudieron cargar las reservas." }, { status: 500 });

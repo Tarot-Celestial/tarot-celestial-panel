@@ -2488,7 +2488,7 @@ export default function CRMClientesPanel({
                     checked={crmReservaAvisarCuandoLibre}
                     onChange={(e) => setCrmReservaAvisarCuandoLibre(e.target.checked)}
                   />
-                  <BellRing /><span><b>Aviso inteligente</b>Tarotista en llamada: notificar cuando termine y quede libre.</span>
+                  <BellRing /><span><b>Aviso inteligente</b>A partir de la hora reservada, avisar cuando se confirme que la tarotista está libre.</span>
                 </label>
 
                 <div className={reservationStyles.actions}>
