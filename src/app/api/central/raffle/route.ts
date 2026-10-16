@@ -1,11 +1,28 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/admin/require-admin";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CLIENT_SELECT = "id,nombre,apellido,telefono,telefono_normalizado,email,auth_user_id";
+const RAFFLE_SELECT = "id,title,status,max_number,created_at,updated_at";
+const HISTORY_PAGE_SIZE = 20;
+const noStore = { "Cache-Control": "no-store" };
+class RequestError extends Error {
+  constructor(message: string, public status = 400) { super(message); }
+}
+
+function failed(error: unknown) {
+  const e = error as { code?: string; message?: string };
+  const status = error instanceof RequestError ? error.status
+    : e.code === "42501" ? 403 : ["P0001", "23505"].includes(e.code || "") ? 409 : 503;
+  const message = error instanceof RequestError ? error.message
+    : e.code === "P0001" ? e.message
+    : e.code === "23505" ? "El número ya está utilizado o el sorteo ha cambiado. Actualiza antes de continuar."
+    : e.code === "42501" ? "No tienes permiso para esta acción."
+    : "No se pudo completar la operación. Actualiza antes de reintentar.";
+  return NextResponse.json({ ok: false, error: message }, { status, headers: noStore });
+}
 
 function digitsOnly(value: unknown) {
   return String(value || "").replace(/\D/g, "");
@@ -16,28 +33,21 @@ function isUuid(value: unknown) {
 }
 
 async function requireCentral(req: Request) {
-  const user = getAuthUserFromRequest(req).data.user;
-  if (!user?.id) return { ok: false as const, status: 401, error: "NO_AUTH" };
-
+  const token = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) throw new RequestError("Vuelve a iniciar sesión.", 401);
   const admin = getServiceClient();
-  let result = await admin
+  const auth = await admin.auth.getUser(token);
+  if (auth.error || !auth.data.user) throw new RequestError("Tu sesión ha caducado.", 401);
+  const result = await admin
     .from("workers")
     .select("id,role,display_name,email,is_active")
-    .eq("user_id", user.id)
+    .eq("user_id", auth.data.user.id)
     .maybeSingle();
-
-  if (!result.data && user.email) {
-    result = await admin
-      .from("workers")
-      .select("id,role,display_name,email,is_active")
-      .ilike("email", user.email)
-      .maybeSingle();
-  }
   if (result.error) throw result.error;
-  if (!result.data || !["central", "admin"].includes(String(result.data.role || "").toLowerCase())) {
-    return { ok: false as const, status: 403, error: "FORBIDDEN" };
+  if (!result.data || result.data.is_active === false || !["central", "admin"].includes(result.data.role)) {
+    throw new RequestError("No tienes permiso para gestionar sorteos.", 403);
   }
-  return { ok: true as const, admin, worker: result.data };
+  return { admin, worker: result.data };
 }
 
 async function getOrCreateActiveRaffle(admin: ReturnType<typeof getServiceClient>, workerId: string) {
@@ -96,12 +106,40 @@ async function loadEntries(admin: ReturnType<typeof getServiceClient>, raffleId:
 export async function GET(req: Request) {
   try {
     const gate = await requireCentral(req);
-    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
 
     const url = new URL(req.url);
+    if (url.searchParams.get("history") === "1") {
+      const offset = Number(url.searchParams.get("offset") || 0);
+      if (!Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw new RequestError("Página de historial inválida.");
+      const result = await gate.admin.from("raffles").select(RAFFLE_SELECT).eq("status", "closed")
+        .order("updated_at", { ascending: false }).order("id", { ascending: false })
+        .range(offset, offset + HISTORY_PAGE_SIZE);
+      if (result.error) throw result.error;
+      const rows = result.data || [];
+      return NextResponse.json({ ok: true,
+        history: rows.slice(0, HISTORY_PAGE_SIZE).map(r => ({ ...r, closed_at: r.updated_at })),
+        hasMore: rows.length > HISTORY_PAGE_SIZE,
+      }, { headers: noStore });
+    }
+    const historyId = url.searchParams.get("raffle_id");
+    if (historyId !== null) {
+      if (!isUuid(historyId)) throw new RequestError("Sorteo inválido.");
+      const old = await gate.admin.from("raffles").select(RAFFLE_SELECT).eq("id", historyId).eq("status", "closed").maybeSingle();
+      if (old.error) throw old.error;
+      if (!old.data) throw new RequestError("No encontramos este sorteo en el historial.", 404);
+      const [entries, prizes] = await Promise.all([
+        loadEntries(gate.admin, historyId),
+        gate.admin.from("raffle_prizes")
+          .select("id,position,name,candidate_number,confirmed_at,selected_at,selection_method,is_test,simulation_only")
+          .eq("raffle_id", historyId).order("position", { ascending: true }),
+      ]);
+      if (prizes.error) throw prizes.error;
+      return NextResponse.json({ ok: true, raffle: { ...old.data, closed_at: old.data.updated_at }, entries,
+        prizes: prizes.data || [], readOnly: true }, { headers: noStore });
+    }
     const search = digitsOnly(url.searchParams.get("search"));
     if (search) {
-      if (search.length < 4) return NextResponse.json({ ok: true, clients: [] });
+      if (search.length < 4) return NextResponse.json({ ok: true, clients: [] }, { headers: noStore });
       const tail = search.slice(-9);
       const result = await gate.admin
         .from("crm_clientes")
@@ -119,85 +157,48 @@ export async function GET(req: Request) {
           email: client.email || null,
           auth_user_id: client.auth_user_id || null,
         })),
-      });
+      }, { headers: noStore });
     }
 
     const raffle = await getOrCreateActiveRaffle(gate.admin, gate.worker.id);
     const entries = await loadEntries(gate.admin, raffle.id);
-    return NextResponse.json({ ok: true, raffle, entries });
-  } catch (error: any) {
-    console.error("[central:raffle:get]", error);
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_RAFFLE_LOAD" }, { status: 500 });
-  }
+    return NextResponse.json({ ok: true, raffle, entries }, { headers: noStore });
+  } catch (error) { return failed(error); }
 }
 
 export async function POST(req: Request) {
   try {
     const gate = await requireCentral(req);
-    if (!gate.ok) return NextResponse.json({ ok: false, error: gate.error }, { status: gate.status });
-    const body = await req.json().catch(() => ({}));
-    const action = String(body.action || "");
-    const raffle = await getOrCreateActiveRaffle(gate.admin, gate.worker.id);
-
-    if (action === "extend") {
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const current = await gate.admin.from("raffles").select("max_number").eq("id", raffle.id).single();
-        if (current.error) throw current.error;
-        const before = Number(current.data.max_number || 40);
-        if (before >= 10000) return NextResponse.json({ ok: false, error: "Se alcanzó el máximo de 10.000 números." }, { status: 400 });
-        const updated = await gate.admin
-          .from("raffles")
-          .update({ max_number: before + 40, updated_at: new Date().toISOString() })
-          .eq("id", raffle.id)
-          .eq("max_number", before)
-          .select("max_number")
-          .maybeSingle();
-        if (updated.error) throw updated.error;
-        if (updated.data) return NextResponse.json({ ok: true, max_number: updated.data.max_number });
-      }
-      return NextResponse.json({ ok: false, error: "Otro usuario amplió el sorteo al mismo tiempo. Actualiza y vuelve a intentarlo." }, { status: 409 });
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body) || !isUuid(body.raffle_id)) {
+      throw new RequestError("Actualiza el panel antes de gestionar el sorteo.");
     }
-
+    const action = body.action;
+    if (!["assign", "extend", "reset"].includes(action)) throw new RequestError("Acción inválida.");
+    const data: Record<string, unknown> = {};
     if (action === "assign") {
-      const raffleNumber = Number(body.raffle_number);
-      const clientId = String(body.client_id || "");
-      if (!Number.isSafeInteger(raffleNumber) || raffleNumber < 1 || raffleNumber > Number(raffle.max_number)) {
-        return NextResponse.json({ ok: false, error: "Número de sorteo inválido." }, { status: 400 });
+      if (!Number.isSafeInteger(body.raffle_number) || body.raffle_number < 1 || body.raffle_number > 10000 || !isUuid(body.client_id)) {
+        throw new RequestError("Número o cliente inválido.");
       }
-      if (!isUuid(clientId)) return NextResponse.json({ ok: false, error: "Cliente inválido." }, { status: 400 });
-
-      const client = await gate.admin.from("crm_clientes").select(CLIENT_SELECT).eq("id", clientId).maybeSingle();
-      if (client.error) throw client.error;
-      if (!client.data) return NextResponse.json({ ok: false, error: "No encontramos la ficha del cliente." }, { status: 404 });
-
-      const inserted = await gate.admin
-        .from("raffle_entries")
-        .insert({
-          raffle_id: raffle.id,
-          raffle_number: raffleNumber,
-          client_id: clientId,
-          client_auth_user_id: client.data.auth_user_id || null,
-          assigned_by_worker_id: gate.worker.id,
-        })
-        .select("id,raffle_id,raffle_number,client_id,assigned_at")
-        .single();
-      if (inserted.error?.code === "23505") {
-        return NextResponse.json({ ok: false, error: `El número ${raffleNumber} ya está utilizado.` }, { status: 409 });
+      Object.assign(data, { raffle_number: body.raffle_number, client_id: body.client_id });
+    } else if (action === "reset") {
+      if (body.confirmed !== true || !isUuid(body.request_id)) {
+        throw new RequestError("Confirma el reinicio del sorteo antes de continuar.");
       }
-      if (inserted.error) throw inserted.error;
-
-      return NextResponse.json({
-        ok: true,
-        entry: {
-          ...inserted.data,
-          client: client.data,
-        },
-      });
+      Object.assign(data, { confirmed: true, request_id: body.request_id });
     }
-
-    return NextResponse.json({ ok: false, error: "Acción inválida." }, { status: 400 });
-  } catch (error: any) {
-    console.error("[central:raffle:post]", error);
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_RAFFLE_ACTION" }, { status: 500 });
-  }
+    const result = await gate.admin.rpc("tc_raffle_manage", {
+      p_raffle: body.raffle_id, p_worker: gate.worker.id, p_action: action, p_data: data,
+    });
+    if (result.error) throw result.error;
+    if (action === "reset") {
+      // A retry must not wipe entries added since the first response, nor reopen a later closed raffle.
+      const current = await gate.admin.from("raffles").select(RAFFLE_SELECT).eq("status", "active").single();
+      if (current.error) throw current.error;
+      return NextResponse.json({ ok: true, raffle: current.data, entries: await loadEntries(gate.admin, current.data.id),
+        already_reset: result.data.already_reset === true, restarted_raffle_id: result.data.raffle.id,
+      }, { headers: noStore });
+    }
+    return NextResponse.json({ ok: true, ...result.data }, { headers: noStore });
+  } catch (error) { return failed(error); }
 }

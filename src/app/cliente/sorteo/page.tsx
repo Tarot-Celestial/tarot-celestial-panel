@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Gift, KeyRound, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
@@ -14,11 +14,15 @@ type NumberEntry = { id: string; number: number; assigned_at: string };
 export default function ClienteSorteoPage() {
   const [numbers, setNumbers] = useState<NumberEntry[]>([]);
   const [raffleTitle, setRaffleTitle] = useState("Sorteo actual");
+  const [raffleId, setRaffleId] = useState("");
   const [clientId, setClientId] = useState("");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const loadSequence = useRef(0);
+  const mounted = useRef(true);
 
   const load = useCallback(async (quiet = false) => {
+    const sequence = ++loadSequence.current;
     if (!quiet) setLoading(true);
     setMessage("");
     try {
@@ -30,6 +34,7 @@ export default function ClienteSorteoPage() {
       }
       const response = await fetch("/api/cliente/raffle", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const json = await response.json().catch(() => null);
+      if (!mounted.current || sequence !== loadSequence.current) return;
       if (response.status === 401 || json?.error === "SESSION_EXPIRED") {
         window.location.href = "/cliente/login";
         return;
@@ -41,16 +46,38 @@ export default function ClienteSorteoPage() {
         throw new Error(errorMessage);
       }
       setClientId(String(json.client_id || ""));
+      setRaffleId(String(json.raffle?.id || ""));
       setRaffleTitle(String(json.raffle?.title || "Sorteo actual"));
       setNumbers(Array.isArray(json.numbers) ? json.numbers : []);
     } catch (error: any) {
-      setMessage(error?.message || "No se pudo cargar tu sorteo.");
+      if (mounted.current && sequence === loadSequence.current) setMessage(error?.message || "No se pudo cargar tu sorteo.");
     } finally {
-      if (!quiet) setLoading(false);
+      if (mounted.current && sequence === loadSequence.current) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    mounted.current = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { void load(true); }, 250);
+    };
+    void load();
+    // Clients cannot subscribe to the staff-only raffles table. Recheck only while visible.
+    const activeRaffleCheck = setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      mounted.current = false;
+      loadSequence.current++;
+      clearInterval(activeRaffleCheck);
+      if (timer) clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [load]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -110,7 +137,7 @@ export default function ClienteSorteoPage() {
             <p>Cuando tu central te añada al sorteo, tu número aparecerá aquí automáticamente.</p>
           </div>
         )}
-        <RaffleWinners />
+        <RaffleWinners key={raffleId} />
       </section>
     </ClienteLayout>
   );
