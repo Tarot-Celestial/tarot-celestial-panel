@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { tcToast } from "@/lib/tc-toast";
+import type { CentralDailyPerformance } from "@/lib/central-daily-performance";
 
 const sb = supabaseBrowser();
 
@@ -29,6 +30,7 @@ export type CentralXpData = {
     is_today: boolean;
     total_actions: number;
     total_xp: number;
+    performance: CentralDailyPerformance;
     items: Array<{
       key: "payments" | "followups" | "captures";
       count: number;
@@ -149,6 +151,7 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const requestRef = useRef(0);
   const inFlightRef = useRef<Promise<boolean> | null>(null);
+  const requestControllerRef = useRef<AbortController | null>(null);
   const refreshDebounceRef = useRef<number | null>(null);
   const completedMissionRef = useRef<Set<string> | null>(null);
   const workerId = data?.worker.id || null;
@@ -159,20 +162,25 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
 
     const task = (async () => {
       const requestId = ++requestRef.current;
+      const controller = new AbortController();
+      requestControllerRef.current = controller;
       if (!silent) setBusy(true);
+      setError("");
       setSyncStatus("syncing");
       try {
         const { data: sessionData } = await sb.auth.getSession();
+        if (controller.signal.aborted || requestId !== requestRef.current) return false;
         const token = sessionData.session?.access_token;
         if (!token) throw new Error("Sesión no disponible");
         const dateParam = selectedDate ? `&date=${encodeURIComponent(selectedDate)}` : "";
         const response = await fetch(`/api/central/xp-system?t=${Date.now()}${dateParam}`, {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
+          signal: controller.signal,
         });
         const json = await response.json();
         if (!response.ok || !json.ok) throw new Error(json.error || "No se pudo cargar XP");
-        if (requestId === requestRef.current) {
+        if (requestId === requestRef.current && !controller.signal.aborted) {
           const typed = json as CentralXpData;
           const completedNow = new Set((typed.missions?.active || []).filter(mission => mission.completed && !mission.claimed).map(mission => `${mission.id}:${mission.period_key}:${mission.claim_count}`));
           if (completedMissionRef.current) {
@@ -187,13 +195,14 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
         }
         return true;
       } catch (loadError) {
-        if (requestId === requestRef.current) {
+        if (requestId === requestRef.current && !controller.signal.aborted) {
           setError(loadError instanceof Error ? loadError.message : "No se pudo cargar XP");
           setSyncStatus("error");
         }
         return false;
       } finally {
-        if (!silent) setBusy(false);
+        if (!silent && requestId === requestRef.current) setBusy(false);
+        if (requestControllerRef.current === controller) requestControllerRef.current = null;
       }
     })();
 
@@ -206,8 +215,19 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
   }, [enabled, selectedDate]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      setBusy(false);
+      return;
+    }
     void load();
+    // A different day must start a fresh request instead of sharing the previous
+    // day's promise. Abort also makes leaving this lazy tab inexpensive.
+    return () => {
+      requestRef.current += 1;
+      requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+      inFlightRef.current = null;
+    };
   }, [enabled, load]);
 
   useEffect(() => {
@@ -254,7 +274,6 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
 
     return () => {
       disposed = true;
-      requestRef.current += 1;
       window.clearInterval(refreshTimer);
       if (refreshDebounceRef.current != null) {
         window.clearTimeout(refreshDebounceRef.current);
@@ -314,5 +333,6 @@ export function useCentralXpData(selectedDate?: string, enabled = true) {
 
   const claimMission=useCallback(async(missionId:string,periodKey:string)=>{const {data:sessionData}=await sb.auth.getSession();const token=sessionData.session?.access_token;if(!token)throw new Error("Sesión no disponible");const response=await fetch("/api/central/xp-system",{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`},body:JSON.stringify({op:"claim_mission",mission_id:missionId,period_key:periodKey})});const json=await response.json();if(!response.ok||!json.ok)throw new Error(json.error||"No se pudo reclamar la misión");await load(true);return json.claim;},[load]);
 
-  return { data, error, busy, load, acknowledgeReward, exchangeXp, claimLevelReward, claimMission, syncStatus, lastSyncedAt };
+  const selectedData = selectedDate && data?.daily_activity.date !== selectedDate ? null : data;
+  return { data: selectedData, error, busy, load, acknowledgeReward, exchangeXp, claimLevelReward, claimMission, syncStatus, lastSyncedAt: selectedData ? lastSyncedAt : null };
 }

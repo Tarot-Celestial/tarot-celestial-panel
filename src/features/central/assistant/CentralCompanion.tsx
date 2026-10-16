@@ -12,7 +12,7 @@ import styles from './CentralCompanion.module.css';
 
 type Pane = 'chat'|'brief'|'tasks'|'memory'|'learning'|'settings';
 type Entry = { question:string; result:AssistantResult };
-export default function CentralCompanion({ tab, workerId, clientId, onNavigate, onOpenReservation }: { tab:string; workerId?:string|null; clientId?:string|null; onNavigate:(tab:string,clientId?:string)=>void; onOpenReservation?:(id:string)=>void }) {
+export default function CentralCompanion({ tab, workerId, clientId, onNavigate, onOpenReservation, onPetChange, openRequest = 0 }: { tab:string; workerId?:string|null; clientId?:string|null; onNavigate:(tab:string,clientId?:string)=>void; onOpenReservation?:(id:string)=>void; onPetChange?:(pet:PetId|null)=>void; openRequest?:number }) {
   const [pet,setPet]=useState<PetId>('draco'),[preferences,setPreferences]=useState<Preferences>(DEFAULT_PREFERENCES),[open,setOpen]=useState(false),[pane,setPane]=useState<Pane>('chat');
   const [ready,setReady]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[mode,setMode]=useState('guided'),[name,setName]=useState(''),[scheduler,setScheduler]=useState(false);
   const [messages,setMessages]=useState<Entry[]>([]),[summary,setSummary]=useState<AssistantResult|null>(null),[tasks,setTasks]=useState<AssistantTask[]>([]),[memories,setMemories]=useState<AssistantMemory[]>([]);
@@ -22,6 +22,7 @@ export default function CentralCompanion({ tab, workerId, clientId, onNavigate, 
   const [bubbleCard,setBubbleCard]=useState<AssistantCard|null>(null);
   const [monitorError,setMonitorError]=useState('');
   const [focusedLearning,setFocusedLearning]=useState<string|null>(null);
+  useEffect(()=>{onPetChange?.(ready?pet:null);},[ready,pet,onPetChange]);
   const chatEnd=useRef<HTMLDivElement>(null);
   const button=useRef<HTMLButtonElement>(null),panel=useRef<HTMLElement>(null),input=useRef<HTMLTextAreaElement>(null),epoch=useRef(0),alive=useRef(true),lastActivity=useRef(Date.now()),bubbleTimer=useRef<ReturnType<typeof setTimeout>>(),requestController=useRef<AbortController|null>(null);
   const motion=useCompanionMotion(preferences.motion&&!reduced&&!mini,open||busy,workerId);
@@ -63,6 +64,7 @@ export default function CentralCompanion({ tab, workerId, clientId, onNavigate, 
     const auth=supabaseBrowser().auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT'){epoch.current++;setReady(false);setMessages([]);setTasks([]);setMemories([]);setSummary(null);setOpen(false);setBubble('');}});
     return()=>{alive.current=false;epoch.current++;auth.data.subscription.unsubscribe();clearTimeout(bubbleTimer.current);requestController.current?.abort();};
   },[workerId,load,api,say]);
+  useEffect(()=>{if(openRequest>0){setSleeping(false);setResting(false);setOpen(true);}},[openRequest]);
   useEffect(()=>{const media=matchMedia('(prefers-reduced-motion: reduce)');const update=()=>setReduced(media.matches);update();media.addEventListener('change',update);return()=>media.removeEventListener('change',update);},[]);
   useEffect(()=>{
     const active=()=>{lastActivity.current=Date.now();setSleeping(false);setResting(false);};window.addEventListener('pointerdown',active);window.addEventListener('keydown',active);

@@ -4,6 +4,7 @@ import { getAdminClient, workerFromRequest } from "@/lib/server/auth-worker";
 import { configuredXpProgress } from "@/lib/xp-levels";
 import { loadXpLevelConfiguration } from "@/lib/server/xp-level-config";
 import { evaluateProfessionalXpRules } from "@/lib/server/xp-professional-rules";
+import { buildCentralDailyPerformance, selectCentralDayXpEvents } from "@/lib/central-daily-performance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,6 +55,23 @@ function buildOperationalDay(requestedDate?: string | null) {
   const nextCalendarDay = new Date(Date.UTC(year, month - 1, day + 1));
   const end = zonedMidnightUtc(nextCalendarDay.getUTCFullYear(), nextCalendarDay.getUTCMonth() + 1, nextCalendarDay.getUTCDate());
   return { date: safeDate, start: start.toISOString(), end: end.toISOString(), is_today: safeDate === todayKey };
+}
+
+function validMissionPeriodKey(period: string, key: string, now = new Date()) {
+  if (period === "daily" || period === "weekly") {
+    if (key.length !== 10 || !/^\d{4}-\d{2}-\d{2}$/.test(key)) return false;
+    const day = new Date(`${key}T00:00:00.000Z`);
+    if (!Number.isFinite(day.getTime()) || day.toISOString().slice(0, 10) !== key) return false;
+    if (period === "weekly") return day.getUTCDay() === 1 && day.getTime() <= now.getTime();
+    const today = zonedParts(now);
+    return key <= `${today.year}-${today.month}-${today.day}`;
+  }
+  if (period === "monthly") {
+    if (key.length !== 7 || !/^\d{4}-\d{2}$/.test(key)) return false;
+    const month = new Date(`${key}-01T00:00:00.000Z`);
+    return Number.isFinite(month.getTime()) && month.toISOString().slice(0, 7) === key && month.getTime() <= now.getTime();
+  }
+  return true;
 }
 
 function rewardTablesMissing(error: { code?: string; message?: string } | null | undefined) {
@@ -175,7 +193,13 @@ export async function GET(req: Request) {
     if (rewardClaimsR.error && !rewardTablesMissing(rewardClaimsR.error)) throw rewardClaimsR.error;
     if (rewardProcessingR.error && !rewardTablesMissing(rewardProcessingR.error)) throw rewardProcessingR.error;
 
-    const todayEvents = events.filter((event: any) => event.created_at >= operationalDay.start && event.created_at < operationalDay.end);
+    const activitySnapshot = new Date();
+    const todayEvents = selectCentralDayXpEvents(events, {
+      workerId: String(me.id), start: operationalDay.start, end: operationalDay.end, now: activitySnapshot,
+    });
+    const dailyPerformance = buildCentralDailyPerformance(events, operationalDay.date, {
+      workerId: String(me.id), now: activitySnapshot,
+    });
     const clientIds = Array.from(new Set([
       ...(paymentsR.data || []).map((row: any) => String(row.cliente_id || "")),
       ...(followupsR.data || []).map((row: any) => String(row.client_id || "")),
@@ -321,18 +345,26 @@ export async function GET(req: Request) {
     const missionSystemAvailable=![missionsR,levelMissionR,tierMissionR,missionClaimsR].some((r:any)=>r.error);
     const unlockedIds=new Set<string>();
     if(missionSystemAvailable){for(const link of levelMissionR.data||[])if(Number(link.level)<=level.level)unlockedIds.add(String(link.mission_id));for(const link of tierMissionR.data||[]){const tierLevels=levelConfig.levels.filter(item=>item.active&&item.tier_key===link.tier_key);const lastTierLevel=Math.max(0,...tierLevels.map(item=>item.level));if(lastTierLevel>0&&level.level>lastTierLevel)unlockedIds.add(String(link.mission_id));}}
-    const periodInfo=(period:string)=>{const now=new Date();if(period==="daily")return{key:operationalDay.date,start:operationalDay.start};if(period==="weekly")return{key:week.toISOString().slice(0,10),start:week.toISOString()};if(period==="monthly")return{key:now.toISOString().slice(0,7),start:new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),1)).toISOString()};return{key:period==="once"?"once":"lifetime",start:"1970-01-01T00:00:00.000Z"};};
-    const activeMissions=missionSystemAvailable?(missionsR.data||[]).filter((m:any)=>unlockedIds.has(String(m.id))).map((m:any)=>{const p=periodInfo(String(m.period));const matching=events.filter((e:any)=>e.action_key===m.source_action_key&&e.created_at>=p.start);const totalProgress=m.unique_clients?new Set(matching.map((e:any)=>String(e.metadata?.client_id||e.reference_id||e.id))).size:matching.length;const claimCount=(missionClaimsR.data||[]).filter((c:any)=>String(c.mission_id)===String(m.id)&&(c.period_key===p.key||String(c.period_key).startsWith(`${p.key}#`))).length;const target=Math.max(1,num(m.target_count));const maxClaims=m.max_claims==null?Number.POSITIVE_INFINITY:Math.max(1,num(m.max_claims));const completedClaims=Math.floor(totalProgress/target);const canClaim=claimCount<Math.min(completedClaims,maxClaims);const cycleProgress=Math.max(0,totalProgress-claimCount*target);return{...m,progress:canClaim?target:Math.min(cycleProgress,target),completed:canClaim,claimed:!canClaim&&claimCount>0,claim_count:claimCount,period_key:p.key};}):[];
+    const missionToday = buildOperationalDay();
+    const missionSnapshot = new Date();
+    const periodInfo = (period: string) => {
+      if (period === "daily") return { key: missionToday.date, start: missionToday.start, end: missionToday.end };
+      if (period === "weekly") return { key: week.toISOString().slice(0, 10), start: week.toISOString(), end: new Date(week.getTime() + 7 * 86400000).toISOString() };
+      if (period === "monthly") return { key: monthStartDate.toISOString().slice(0, 7), start: monthStartDate.toISOString(), end: new Date(Date.UTC(monthStartDate.getUTCFullYear(), monthStartDate.getUTCMonth() + 1, 1)).toISOString() };
+      return { key: period === "once" ? "once" : "lifetime", start: "1970-01-01T00:00:00.000Z", end: new Date(missionSnapshot.getTime() + 1).toISOString() };
+    };
+    const activeMissions=missionSystemAvailable?(missionsR.data||[]).filter((m:any)=>unlockedIds.has(String(m.id))).map((m:any)=>{const p=periodInfo(String(m.period));const matching=events.filter((e:any)=>{const at=Date.parse(e.created_at);return e.action_key===m.source_action_key&&at>=Date.parse(p.start)&&at<Date.parse(p.end)&&at<=missionSnapshot.getTime();});const totalProgress=m.unique_clients?new Set(matching.map((e:any)=>String(e.metadata?.client_id||e.reference_id||e.id))).size:matching.length;const claimCount=(missionClaimsR.data||[]).filter((c:any)=>String(c.mission_id)===String(m.id)&&(c.period_key===p.key||String(c.period_key).startsWith(`${p.key}#`))).length;const target=Math.max(1,num(m.target_count));const maxClaims=m.max_claims==null?Number.POSITIVE_INFINITY:Math.max(1,num(m.max_claims));const completedClaims=Math.floor(totalProgress/target);const canClaim=claimCount<Math.min(completedClaims,maxClaims);const cycleProgress=Math.max(0,totalProgress-claimCount*target);return{...m,progress:canClaim?target:Math.min(cycleProgress,target),completed:canClaim,claimed:!canClaim&&claimCount>0,claim_count:claimCount,period_key:p.key};}):[];
     return NextResponse.json({
       ok: true,
       worker: { id: me.id, name: me.display_name },
-      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, total_required_for_max: level.totalRequiredForMax, xp_today: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0), xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
+      progress: { total_xp: total, level: level.level, level_xp: level.current, level_span: level.span, next_level: level.nextLevel, remaining_xp: level.remaining, max_level: level.maxed, tier: level.tier, total_required_for_max: level.totalRequiredForMax, xp_today: dailyPerformance.current_xp, xp_week: xpWeek, xp_month: sumSince(monthStart), previous_week_xp: xpPreviousWeek },
       daily_activity: {
         date: operationalDay.date,
         timezone: APP_TIMEZONE,
         is_today: operationalDay.is_today,
+        performance: dailyPerformance,
         total_actions: activities.length,
-        total_xp: todayEvents.reduce((sum: number, event: any) => sum + num(event.xp_amount), 0),
+        total_xp: dailyPerformance.current_xp,
         items: dailyItems,
         activities,
       },
@@ -381,8 +413,15 @@ export async function POST(req: Request) {
       const missionR=await admin.from("worker_xp_missions").select("*").eq("id",missionId).eq("active",true).single(); if(missionR.error)throw missionR.error; const mission:any=missionR.data;
       const [levelLinks,tierLinks]=await Promise.all([admin.from("worker_xp_level_missions").select("level").eq("mission_id",missionId).eq("active",true),admin.from("worker_xp_tier_missions").select("tier_key").eq("mission_id",missionId).eq("active",true)]);
       const unlocked=(levelLinks.data||[]).some((x:any)=>num(x.level)<=progress.level)||(tierLinks.data||[]).some((x:any)=>{const tierLevels=config.levels.filter(item=>item.active&&item.tier_key===x.tier_key);return tierLevels.length>0&&progress.level>Math.max(...tierLevels.map(item=>item.level))}); if(!unlocked)return NextResponse.json({ok:false,error:"MISSION_LOCKED"},{status:409});
-      const start=mission.period==="daily"?new Date(`${periodKey}T00:00:00.000Z`).toISOString():mission.period==="weekly"?new Date(`${periodKey}T00:00:00.000Z`).toISOString():mission.period==="monthly"?new Date(`${periodKey}-01T00:00:00.000Z`).toISOString():"1970-01-01T00:00:00.000Z";
-      const matching=(xpR.data||[]).filter((e:any)=>e.action_key===mission.source_action_key&&e.created_at>=start);const count=mission.unique_clients?new Set(matching.map((e:any)=>String(e.metadata?.client_id||e.reference_id||e.id))).size:matching.length;
+      const claimSnapshot = new Date();
+      // Never let buildOperationalDay's display fallback become a new claim key.
+      if (!validMissionPeriodKey(String(mission.period), periodKey, claimSnapshot)) return NextResponse.json({ ok: false, error: "INVALID_MISSION_PERIOD" }, { status: 400 });
+      const claimedDay = mission.period === "daily" ? buildOperationalDay(periodKey) : null;
+      const start = claimedDay?.start || (mission.period === "weekly" ? new Date(`${periodKey}T00:00:00.000Z`).toISOString() : mission.period === "monthly" ? new Date(`${periodKey}-01T00:00:00.000Z`).toISOString() : "1970-01-01T00:00:00.000Z");
+      const startInstant = new Date(start);
+      const end = claimedDay?.end || (mission.period === "weekly" ? new Date(startInstant.getTime() + 7 * 86400000).toISOString() : mission.period === "monthly" ? new Date(Date.UTC(startInstant.getUTCFullYear(), startInstant.getUTCMonth() + 1, 1)).toISOString() : new Date(claimSnapshot.getTime() + 1).toISOString());
+      const matching = (xpR.data || []).filter((e: any) => { const at = Date.parse(e.created_at); return e.action_key === mission.source_action_key && at >= Date.parse(start) && at < Date.parse(end) && at <= claimSnapshot.getTime(); });
+      const count=mission.unique_clients?new Set(matching.map((e:any)=>String(e.metadata?.client_id||e.reference_id||e.id))).size:matching.length;
       const claimsR=await admin.from("worker_xp_mission_claims").select("id,period_key").eq("worker_id",me.id).eq("mission_id",missionId);if(claimsR.error)throw claimsR.error;const claimCount=(claimsR.data||[]).filter((claim:any)=>claim.period_key===periodKey||String(claim.period_key).startsWith(`${periodKey}#`)).length;const maxClaims=mission.max_claims==null?Number.POSITIVE_INFINITY:Math.max(1,num(mission.max_claims));if(claimCount>=maxClaims)return NextResponse.json({ok:false,error:"MISSION_CLAIM_LIMIT"},{status:409});if(count<num(mission.target_count)*(claimCount+1))return NextResponse.json({ok:false,error:"MISSION_NOT_COMPLETED"},{status:409});
       const claim=await admin.rpc("claim_worker_xp_mission",{p_worker_id:me.id,p_mission_id:missionId,p_period_key:periodKey}); if(claim.error)return NextResponse.json({ok:false,error:String(claim.error.message).includes("MISSION_ALREADY_CLAIMED")?"MISSION_ALREADY_CLAIMED":"MISSION_CLAIM_FAILED"},{status:409});
       return NextResponse.json({ok:true,claim:claim.data});

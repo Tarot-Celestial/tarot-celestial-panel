@@ -38,10 +38,17 @@
   --ct-primary-rgb:143,88,210;
   --ct-secondary-rgb:219,179,106;
   --panel-bg:#0c0a18;
-  background:radial-gradient(ellipse at 90% 0,rgba(136,75,200,.19),transparent 50%),radial-gradient(ellipse at 0 65%,rgba(37,129,148,.10),transparent 50%),#0c0a18;
+  background:radial-gradient(ellipse at 90% 0,rgba(66,78,130,.10),transparent 55%),radial-gradient(ellipse at 0 65%,rgba(40,87,108,.055),transparent 55%),#0b101c;
 }
 .themeRoot[data-central-theme="rango-actual"] :global(.tc-premium-bg) {
-  background:radial-gradient(ellipse at 90% 0,rgba(136,75,200,.19),transparent 50%),radial-gradient(ellipse at 0 65%,rgba(37,129,148,.10),transparent 50%),#0c0a18 !important;
+  background:radial-gradient(ellipse at 90% 0,rgba(66,78,130,.10),transparent 55%),radial-gradient(ellipse at 0 65%,rgba(40,87,108,.055),transparent 55%),#0b101c !important;
 }
+/* Color stays in the cards; the canvas stays quiet during a long shift. */
+.themeRoot :global(.tc-premium-orb),.themeRoot :global(.tc-login-stars),.themeRoot :global(.tc-login-grid),.themeRoot :global(.tc-premium-bg)::after,.themeRoot :global(.tc-shell-premium)::before { display:none; }
+.themeRoot :global(.tc-shell) { max-width:1840px; gap:24px; padding-top:22px; }
+.themeRoot :global(.tc-main) { align-content:start; gap:14px; }
+.themeRoot :global(.tc-main-content) { gap:14px; }
+@media(min-width:901px) { .themeRoot :global(.tc-shell) { grid-template-columns:232px minmax(0,1fr); } }
+@media(min-width:1600px) { .themeRoot :global(.tc-shell) { grid-template-columns:248px minmax(0,1fr); } }
 @media(max-width:600px) { .themeRoot { --panel-blur: min(var(--ct-surface-blur,8px),8px); } }
 @media(prefers-reduced-transparency:reduce) { .themeRoot { --ct-user-surface:var(--ct-user-surface-solid,#151d2e); --panel-blur:0px; } }

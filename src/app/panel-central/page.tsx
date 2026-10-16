@@ -9,6 +9,7 @@ import CentralStatsCards, { type CentralStatsData } from "@/features/central/Cen
 import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralCompanion from "@/features/central/assistant/CentralCompanion";
+import type { PetId } from "@/lib/central-assistant";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
@@ -254,6 +255,8 @@ function toRecentNotification(item: CentralNotification): RecentNotification {
 function CentralPage() {
   const [ok, setOk] = useState(false);
   const [tab, setTab] = useState<TabKey>("panel");
+  const [summaryPet, setSummaryPet] = useState<PetId|null>(null);
+  const [companionOpenRequest, setCompanionOpenRequest] = useState(0);
   const notificationFeed = useCentralNotificationsFeed();
   const myInvoiceFeed = useMyInvoice(ok && (tab === "mi-factura" || tab === "central"));
   const searchParams = useSearchParams();
@@ -343,8 +346,8 @@ function CentralPage() {
     availableCoins: xpData?.coin_exchange.coin_balance || 0,
   };
 
-  const dailyActivity = xpData?.daily_activity;
-  const realDailyActions = xpFeed.busy
+  const dailyActivity = xpData?.daily_activity.date === selectedDate ? xpData.daily_activity : undefined;
+  const realDailyActions = xpFeed.busy && !dailyActivity
     ? [{ id: "daily-loading", label: "Cargando resumen de la fecha seleccionada…", rewardXp: 0 }]
     : dailyActivity?.activities.length
     ? dailyActivity.activities.map((activity) => {
@@ -374,7 +377,7 @@ function CentralPage() {
           detail: `${time} · ${description}${activity.origin ? ` · ${activity.origin}` : ""}`,
         };
       })
-    : [{ id: "daily-empty", label: "Todavía no hay actividad registrada hoy", rewardXp: 0 }];
+    : [{ id: "daily-empty", label: "No hay actividad registrada en esta fecha", rewardXp: 0 }];
 
   const centralDailyOverview: CentralDailyOverviewData = {
     dailySummary: {
@@ -385,8 +388,15 @@ function CentralPage() {
       dailyXp: dailyActivity?.total_xp || 0,
       dateLabel: selectedDate === todayKey ? "hoy" : "ese día",
       actions: realDailyActions,
+      performance: dailyActivity?.performance,
+      loading: !dailyActivity && !xpFeed.error,
+      error: xpFeed.error || undefined,
     },
     missions: (xpData?.missions?.active||[]).map(mission=>({id:mission.id,name:mission.name,description:mission.description,progress:mission.progress,target:mission.target_count,rewardXp:mission.xp_reward,completed:mission.completed,claimed:mission.claimed,periodKey:mission.period_key})),
+    notificationsLoading: notificationFeed.loading,
+    missionsUnavailable: xpData?.missions?.available === false,
+    notificationsError: notificationFeed.error || undefined,
+    notificationTotal: notificationFeed.summary.pending,
     notifications: notificationFeed.items
       .filter((item) => item.state !== "resolved")
       .slice()
@@ -1264,7 +1274,7 @@ function CentralPage() {
 
   return (
     <CentralThemeProvider workerId={themeWorkerId} rank={xpProgress?.tier?.key}>
-      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
+      {ok && <CentralCompanion tab={tab} workerId={themeWorkerId} onPetChange={setSummaryPet} openRequest={companionOpenRequest} clientId={tab === 'mis-clientas' ? searchParams?.get('cliente') : null} onOpenReservation={(id) => openReservaFromPopup({id})} onNavigate={(nextTab, clientId) => {
         if (!TABS.includes(nextTab as TabKey) || HIDDEN_TELEPHONIST_TABS.has(nextTab as TabKey)) return;
         setTab(nextTab as TabKey);
         const params = new URLSearchParams(searchParams?.toString() || "");
@@ -1287,6 +1297,8 @@ function CentralPage() {
 
         <main className="tc-main" data-companion-section={tab}>
           <CentralProgressHeader
+            title={tab === "central" ? "Resumen de tu turno" : CENTRAL_NAV.flatMap(item => [item, ...(item.children || [])]).find(item => item.key === tab)?.label || "Tu central"}
+            subtitle={tab === "central" ? "Toda tu actividad, en un vistazo." : "Tu espacio de trabajo · Tarot Celestial"}
             progress={centralProgress}
             profile={centralProfile}
             onSync={() => { void xpFeed.load(); void fidelityFeed.load(); window.dispatchEvent(new Event("tc-my-clients-refresh")); }}
@@ -1350,6 +1362,9 @@ function CentralPage() {
               />
               <CentralDailyOverview
                 data={centralDailyOverview}
+                companionPet={summaryPet || undefined}
+                operatorName={centralProfile.name}
+                onOpenCompanion={() => setCompanionOpenRequest(value => value + 1)}
                 onViewAllMissions={() => handleSidebarTabChange("tu-sistema-xp-niveles")}
                 onClaimMission={xpFeed.claimMission}
                 onViewAllNotifications={() => handleSidebarTabChange("notificaciones")}
