@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useId, useState, type CSSProperties } from "react";
 import { ChevronDown, type LucideIcon } from "lucide-react";
 import NavigationVisibilityMenu, { useHiddenNavigation } from "@/components/navigation/NavigationVisibilityMenu";
 import styles from "./CentralSidebar.module.css";
@@ -45,16 +45,32 @@ const NAV_TONES: Record<string, NavTone> = {
   whatsapp: { rgb: "37, 211, 102" },
 };
 
+const NAV_SECTIONS = [
+  { key: "turno", title: "MI TURNO", keys: ["central", "panel", "reservas", "notificaciones", "primera-tarotista", "checklist", "llamadas", "diario"] },
+  { key: "clientas", title: "CLIENTAS Y SEGUIMIENTO", keys: ["mis-clientas", "recuperar-clientes", "crm", "whatsapp", "captacion", "incidencias", "habituales"] },
+  { key: "equipo", title: "EQUIPO", keys: ["equipo", "chat"] },
+  { key: "progreso", title: "PROGRESO Y RECOMPENSAS", keys: ["tu-sistema-xp", "tu-sistema-xp-niveles", "tu-sistema-xp-coins", "tienda", "mi-factura", "sorteo", "rendimiento", "ranking"] },
+] as const;
+const SECTION_KEYS = new Set<string>(NAV_SECTIONS.flatMap(section => [...section.keys]));
+const NAV_LABELS: Record<string, string> = { central: "Resumen", panel: "Panel de llamadas" };
+
 function navTone(key: string, notificationAlert: boolean) {
   if (notificationAlert) return { rgb: "255, 66, 91", className: "alert" };
   return NAV_TONES[key] || { rgb: "215, 181, 109" };
 }
 
 export default function CentralSidebar<T extends string = string>({ items, activeTab, onTabChange }: CentralSidebarProps<T>) {
+  const sidebarId = useId().replace(/:/g, "");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [chatUnread, setChatUnread] = useState(0);
   const { hiddenKeys, toggleHidden, resetHidden } = useHiddenNavigation("tc:navigation:hidden:central:v1");
   const visibleItems = items.filter((item) => !hiddenKeys.includes(String(item.key)));
+  const sections = NAV_SECTIONS.map(section => ({
+    ...section,
+    items: section.keys.flatMap(key => visibleItems.filter(item => String(item.key) === key)),
+  }));
+  const extraItems = visibleItems.filter(item => !SECTION_KEYS.has(String(item.key)));
+  const visibleSections = [...sections, { key: "otros", title: "MÁS APARTADOS", items: extraItems }].filter(section => section.items.length);
 
   useEffect(() => {
     const activeParent = items.find((item) => item.children?.some((child) => child.key === activeTab));
@@ -73,7 +89,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
     <aside className={`tc-sidebar ${styles.sidebar}`}>
       <div className={`tc-sidebar-card ${styles.sidebarCard}`}>
         <div className={styles.titleRow}>
-          <div className={`tc-sidebar-title ${styles.sidebarTitle}`}>Navegación centrales</div>
+          <div className={styles.sidebarTitle}>Tu central</div>
           <NavigationVisibilityMenu
             panelName="Centrales"
             items={items.map((item) => ({ key: String(item.key), label: item.label }))}
@@ -82,8 +98,10 @@ export default function CentralSidebar<T extends string = string>({ items, activ
             onReset={resetHidden}
           />
         </div>
-        <div className="tc-sidebar-nav">
-          {visibleItems.map((item) => {
+        <nav className={styles.navigation} aria-label="Navegación de Central">
+          {visibleSections.map(section => <section className={styles.section} key={section.key} aria-labelledby={`${sidebarId}-${section.key}`}>
+          <h2 id={`${sidebarId}-${section.key}`} className={styles.sectionTitle}>{section.title}</h2>
+          <div className={styles.sectionItems}>{section.items.map((item) => {
             const Icon = item.icon;
             const key = String(item.key);
             const hasChildren = Boolean(item.children?.length);
@@ -92,16 +110,17 @@ export default function CentralSidebar<T extends string = string>({ items, activ
             const expanded = hasChildren && (openGroups[key] ?? childActive);
             const notificationAlert = key === "notificaciones" && typeof item.badge === "number" && item.badge > 0;
             const tone = navTone(key, notificationAlert);
-            const toneStyle = { "--nav-rgb": notificationAlert ? tone.rgb : "var(--rank-rgb)" } as CSSProperties;
+            const toneStyle = { "--nav-rgb": tone.rgb } as CSSProperties;
+            const label = NAV_LABELS[key] || item.label;
+            const submenuId = `${sidebarId}-submenu-${key}`;
             return (
               <div key={item.key} className={hasChildren ? styles.navGroup : undefined}>
-                <div className={styles.navRow}>
+                <div className={styles.navRow} style={toneStyle}>
                 <button
                   data-companion-nav={item.key}
                   className={[
-                    "tc-sidebtn",
                     styles.navButton,
-                    active ? `tc-sidebtn-active ${styles.navButtonActive}` : "",
+                    active ? styles.navButtonActive : "",
                     tone.className === "invoice" ? styles.invoiceButton : "",
                     tone.className === "alert" ? styles.alertButton : "",
                   ].filter(Boolean).join(" ")}
@@ -111,15 +130,15 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                     if (hasChildren) setOpenGroups((current) => ({ ...current, [key]: true }));
                   }}
                   type="button"
-                  aria-current={active ? "page" : undefined}
+                  aria-current={activeTab === item.key ? "page" : undefined}
                 >
                   <div className={styles.navContent}>
-                    <div className={`tc-chip ${styles.iconHud}`}>
-                      <Icon size={17} strokeWidth={2.1} />
+                    <div className={styles.iconHud} aria-hidden="true">
+                      <Icon size={21} strokeWidth={1.7} />
                     </div>
                     <div className={styles.labelWrap}>
-                      <div className="tc-sidebtn-main">{item.label}</div>
-                      <div className="tc-sidebtn-kicker">{item.kicker}</div>
+                      <span className={styles.label}>{label}</span>
+                      {item.kicker && <span className={styles.kicker}>{item.kicker}</span>}
                     </div>
                   </div>
                   {typeof item.badge === "number" && item.badge > 0 ? (
@@ -130,13 +149,13 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                       {item.badge > 99 ? "99+" : item.badge}
                     </span>
                   ) : (
-                    <span className={`tc-sidebtn-dot ${styles.dot}`} />
+                    <span className={styles.dot} aria-hidden="true" />
                   )}
                 </button>
-                {hasChildren && <button type="button" className={`${styles.chevron} ${expanded ? styles.chevronOpen : ""}`} aria-expanded={expanded} aria-label={`${expanded ? "Cerrar" : "Abrir"} submenú ${item.label}`} onClick={() => setOpenGroups(current => ({ ...current, [key]: !expanded }))}><ChevronDown size={16} /></button>}
+                {hasChildren && <button type="button" className={`${styles.chevron} ${expanded ? styles.chevronOpen : ""}`} aria-expanded={expanded} aria-controls={submenuId} aria-label={`${expanded ? "Cerrar" : "Abrir"} submenú ${item.label}`} onClick={() => setOpenGroups(current => ({ ...current, [key]: !expanded }))}><ChevronDown size={16} /></button>}
                 </div>
                 {hasChildren ? (
-                  <div className={`${styles.subnav} ${expanded ? styles.subnavOpen : ""}`} style={toneStyle} hidden={!expanded}>
+                  <div id={submenuId} className={`${styles.subnav} ${expanded ? styles.subnavOpen : ""}`} style={toneStyle} hidden={!expanded}>
                     {item.children?.map((child) => {
                       const isActive = activeTab === child.key;
                       return (
@@ -145,6 +164,7 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                           data-companion-nav={child.key}
                           type="button"
                           className={`${styles.subButton} ${isActive ? styles.subButtonActive : ""}`}
+                          aria-current={isActive ? "page" : undefined}
                           onClick={() => onTabChange(child.key)}
                         >
                           <span className={styles.subDot} />
@@ -160,8 +180,8 @@ export default function CentralSidebar<T extends string = string>({ items, activ
                 ) : null}
               </div>
             );
-          })}
-        </div>
+          })}</div></section>)}
+        </nav>
       </div>
     </aside>
   );
