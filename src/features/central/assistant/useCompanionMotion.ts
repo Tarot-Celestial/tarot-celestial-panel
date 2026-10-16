@@ -10,6 +10,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
   const highlighted = useRef<HTMLElement | null>(null), expiry = useRef(0), lastHighlight = useRef<DOMRect | null>(null);
   const current = useRef({ enabled, busy, workerId }); current.current = { enabled, busy, workerId };
   const drag = useRef<Drag | null>(null), manualUntil = useRef(0), suppressClickUntil = useRef(0);
+  const wakeMotion = useRef<() => void>(() => {});
   const [positionLabel, setPositionLabel] = useState('');
   const bounded = useCallback((x: number, y: number) => clampCompanionPosition(x, y, window.innerWidth, window.innerHeight, ref.current?.offsetWidth || 136, Math.max(ref.current?.offsetHeight || 174, 174)), []);
   const clearHighlight = useCallback(() => { highlighted.current = null; lastHighlight.current = null; setHighlight(null); }, []);
@@ -37,6 +38,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
   const move = useCallback((x: number, y: number) => {
     if (drag.current || current.current.busy || Date.now() < manualUntil.current) return;
     target.current = bounded(x, y);
+    wakeMotion.current();
   }, [bounded]);
   const dock = useCallback(() => {
     clearHighlight(); manualUntil.current = Date.now() + MANUAL_POSITION_PAUSE;
@@ -47,6 +49,7 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
     const rect = element.getBoundingClientRect();
     if (!rect.width || !rect.height || rect.bottom < 0 || rect.top > window.innerHeight) return false;
     highlighted.current = element; expiry.current = Date.now() + 6500; lastHighlight.current = rect; setHighlight(rect);
+    wakeMotion.current();
     const candidates = [{ x: rect.right + 16, y: rect.top }, { x: rect.left - 152, y: rect.top }, { x: rect.right - 136, y: rect.bottom + 18 }];
     const interactive = [...document.querySelectorAll<HTMLElement>('button,input,textarea,select,[role="dialog"]')].filter(el => !el.closest('[data-companion-root]')).map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
     const candidate = candidates.find(p => p.x >= 8 && p.x + 136 < window.innerWidth - 8 && p.y >= 8 && p.y + 174 < window.innerHeight - 8 && !interactive.some(r => p.x < r.right && p.x + 136 > r.left && p.y < r.bottom && p.y + 174 > r.top));
@@ -102,19 +105,29 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
   // Parent-rendered bubbles can change size without any character movement.
   useEffect(() => { renderPosition(); });
   useEffect(() => {
-    let raf = 0, last = 0, wasMoving = false, lastHighlightCheck = 0, lastLayout = 0;
+    let raf = 0, last = 0, wasMoving = false, lastHighlightCheck = 0;
+    const wake = () => {
+      if (raf || document.hidden) return;
+      last = 0;
+      raf = requestAnimationFrame(frame);
+    };
+    wakeMotion.current = wake;
     function frame(time: number) {
+      raf = 0;
       const dt = Math.min((time - last) / 1000 || 1 / 60, .032); last = time;
       const p = position.current, t = target.current, v = velocity.current;
+      const previousX = p.x, previousY = p.y;
       if (!drag.current) {
         if (!current.current.enabled) { p.x = t.x; p.y = t.y; v.x = 0; v.y = 0; }
         else { const damping = Math.exp(-14 * dt); v.x = (v.x + (t.x - p.x) * 65 * dt) * damping; v.y = (v.y + (t.y - p.y) * 65 * dt) * damping; p.x += v.x * dt; p.y += v.y * dt; }
       }
       const active = !drag.current && Math.abs(t.x - p.x) + Math.abs(t.y - p.y) > 1;
+      const settling = wasMoving && !active;
+      if (!active && !drag.current) { p.x = t.x; p.y = t.y; v.x = 0; v.y = 0; }
       if (active !== wasMoving) { wasMoving = active; setMoving(active); }
-      // Dragging writes immediately from the pointer event. Idle frames must not
-      // repeatedly measure the bubble or write layout-affecting CSS variables.
-      if (active || time - lastLayout > 1000) { renderPosition(); lastLayout = time; }
+      // Pointer dragging and parent renders position directly. An idle companion
+      // needs no animation frame, layout measurement, or recurring DOM write.
+      if (active || settling || p.x !== previousX || p.y !== previousY) renderPosition();
       if (highlighted.current && time - lastHighlightCheck > 100) {
         lastHighlightCheck = time;
         if (Date.now() > expiry.current || !highlighted.current.isConnected) clearHighlight();
@@ -122,13 +135,14 @@ export function useCompanionMotion(enabled: boolean, busy: boolean, workerId?: s
           if (!prev || rect.x !== prev.x || rect.y !== prev.y || rect.width !== prev.width || rect.height !== prev.height) { lastHighlight.current = rect; setHighlight(rect); }
         }
       }
-      raf = requestAnimationFrame(frame);
+      if (active || highlighted.current) raf = requestAnimationFrame(frame);
     }
     const resize = () => { finishDrag(true); place(position.current.x, position.current.y); };
-    const visibility = () => { cancelAnimationFrame(raf); if (document.hidden) finishDrag(); else { last = 0; raf = requestAnimationFrame(frame); } };
+    const visibility = () => { cancelAnimationFrame(raf); raf = 0; if (document.hidden) finishDrag(); else { renderPosition(); wake(); } };
     const blur = () => finishDrag();
-    raf = requestAnimationFrame(frame); window.addEventListener('resize', resize); window.addEventListener('blur', blur); document.addEventListener('visibilitychange', visibility);
+    wake(); window.addEventListener('resize', resize); window.addEventListener('blur', blur); document.addEventListener('visibilitychange', visibility);
     return () => {
+      wakeMotion.current = () => {};
       cancelAnimationFrame(raf); window.removeEventListener('resize', resize); window.removeEventListener('blur', blur); document.removeEventListener('visibilitychange', visibility);
       const pendingDrag = drag.current; drag.current = null;
       if (pendingDrag?.element.hasPointerCapture?.(pendingDrag.pointerId)) pendingDrag.element.releasePointerCapture(pendingDrag.pointerId);

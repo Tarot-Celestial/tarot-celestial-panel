@@ -1,6 +1,6 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
-import {ASSISTANT_SECTIONS,type AssistantCard,type PetId,type Preferences} from '@/lib/central-assistant';
+import {ASSISTANT_SECTIONS,companionWelcome,dayKey,type AssistantCard,type PetId,type Preferences} from '@/lib/central-assistant';
 
 export const INITIATIVE_INTERVAL=120000;
 export function invitation(tab:string,pet:PetId,index:number,humor:boolean){
@@ -11,15 +11,16 @@ export function invitation(tab:string,pet:PetId,index:number,humor:boolean){
     tienda:'¿Te ayudo con un bonus? Podemos consultar tu XP y saldo antes de decidir.',
     'tu-sistema-xp':'¿Quieres que te explique cómo conseguir XP y cuál es tu próximo nivel?',
     'recuperar-clientes':'¿Preparamos una búsqueda de clientes inactivos de tu cartera?',
-    captacion:'¿Buscamos oportunidades de recuperación en tu cartera? Tú decides el siguiente paso.',
+    captacion:'¿Revisamos cuántos contactos nuevos entraron en Captación hoy? Puedo consultar los datos y separar las fechas.',
   };
   const options=[contextual[tab]||`${ASSISTANT_SECTIONS[tab]?.help||'Estoy aquí para ayudarte.'} ¿Lo vemos juntos?`,'¿Necesitas ayuda con algo? Puedes pedirme una búsqueda o dejarme una tarea.','¿Hay alguna indicación que quieras que recuerde? La revisamos antes de guardarla.'];
-  if(humor)options.push(pet==='sol'?'Pausa de chispa: me estiro un poquito. ¿Seguimos con tu siguiente tarea?':'Mis alas están listas; mi café sigue cargando. ¿Te ayudo a organizar los pendientes?');
+  if(humor)options.push(pet==='sol'?'Pausa de chispa: me estiro un poquito. ¿Seguimos con tu siguiente tarea?':pet==='ambar'?'Alas estiradas y libreta lista. Vamos con una cosa cada vez.':'Mis alas están listas; mi café sigue cargando. ¿Te ayudo a organizar los pendientes?');
   return options[index%options.length];
 }
-export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,preferences,bubble,say,suggestions=[],suggest,urgent=false,urgentAnnouncement}:{ready:boolean;open:boolean;busy:boolean;mini:boolean;tab:string;pet:PetId;workerId?:string|null;preferences:Preferences;bubble:string;say:(text:string)=>void;suggestions?:AssistantCard[];suggest?:(card:AssistantCard)=>void;urgent?:boolean;urgentAnnouncement?:{key:string;text:string}}){
+export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,name='',preferences,bubble,say,suggestions=[],suggest,urgent=false,urgentAnnouncement}:{ready:boolean;open:boolean;busy:boolean;mini:boolean;tab:string;pet:PetId;workerId?:string|null;name?:string;preferences:Preferences;bubble:string;say:(text:string)=>void;suggestions?:AssistantCard[];suggest?:(card:AssistantCard)=>void;urgent?:boolean;urgentAnnouncement?:{key:string;text:string}}){
   const [gesture,setGesture]=useState(''),[speaking,setSpeaking]=useState(false),[voiceReady,setVoiceReady]=useState(false);
-  const current=useRef({ready,open,busy,mini,tab,pet,preferences,say,bubble,suggestions,suggest,urgent,urgentAnnouncement});current.current={ready,open,busy,mini,tab,pet,preferences,say,bubble,suggestions,suggest,urgent,urgentAnnouncement};
+  const current=useRef({ready,open,busy,mini,tab,pet,name,preferences,say,bubble,suggestions,suggest,urgent,urgentAnnouncement});current.current={ready,open,busy,mini,tab,pet,name,preferences,say,bubble,suggestions,suggest,urgent,urgentAnnouncement};
+  const welcomed=useRef('');
   const offered=useRef(new Set<string>());
   const last=useRef(0),quietUntil=useRef(0),counter=useRef(0),gestureTimer=useRef<ReturnType<typeof setTimeout>>(),spoken=useRef<SpeechSynthesisUtterance|null>(null);
   const animate=useCallback((value:string)=>{setGesture(value);clearTimeout(gestureTimer.current);gestureTimer.current=setTimeout(()=>setGesture(''),6500);},[]);
@@ -27,8 +28,27 @@ export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,pr
   const entertain=useCallback(()=>{const c=current.current;const i=counter.current++;animate(['greeting','stretching','dancing','turning'][i%4]);c.say(invitation(c.tab,c.pet,i,c.preferences.humor));last.current=Date.now();},[animate]);
   useEffect(()=>{last.current=0;quietUntil.current=0;counter.current=0;offered.current.clear();return()=>{clearTimeout(gestureTimer.current);if(spoken.current&&'speechSynthesis'in window)window.speechSynthesis.cancel();};},[workerId]);
   useEffect(()=>{
+    if(!ready||!workerId)return;
+    const key=`tc-companion-welcome:${workerId}`;
+    const greet=()=>{
+      const c=current.current, today=dayKey();
+      if(welcomed.current===`${key}:${today}`)return;
+      let previous:string|null=null;
+      try{previous=sessionStorage.getItem(key);}catch{/* Welcome still works when browser storage is unavailable. */}
+      if(previous===today){welcomed.current=`${key}:${today}`;return;}
+      const active=document.activeElement;
+      const typing=active instanceof HTMLElement&&(active.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(active.tagName));
+      if(!c.ready||!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||typing||Date.now()<quietUntil.current)return;
+      welcomed.current=`${key}:${today}`;
+      try{sessionStorage.setItem(key,today);}catch{/* The ref also prevents repeated greetings in this session. */}
+      animate('greeting');c.say(companionWelcome(c.pet,c.name,Boolean(previous)));last.current=Date.now();
+    };
+    const first=setTimeout(greet,1800),retry=setInterval(greet,10000);
+    return()=>{clearTimeout(first);clearInterval(retry);};
+  },[ready,workerId,animate]);
+  useEffect(()=>{
     if(!ready)return;
-    const timer=setTimeout(()=>{const c=current.current;if(!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||Date.now()<quietUntil.current||Date.now()-last.current<30000)return;const next=c.suggestions.find(card=>!card.learning?.quiet&&!offered.current.has(card.id));if(!next||!c.suggest)return;offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);},14000);
+    const timer=setTimeout(()=>{const c=current.current;const active=document.activeElement;const typing=active instanceof HTMLElement&&(active.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(active.tagName));if(!c.preferences.proactive||c.open||c.busy||c.mini||c.bubble||c.urgent||document.hidden||typing||Date.now()<quietUntil.current||Date.now()-last.current<30000)return;const next=c.suggestions.find(card=>!card.learning?.quiet&&!offered.current.has(card.id));if(!next||!c.suggest)return;offered.current.add(next.id);last.current=Date.now();animate('greeting');c.suggest(next);},14000);
     return()=>clearTimeout(timer);
   },[ready,tab,animate]);
   useEffect(()=>{
@@ -44,7 +64,7 @@ export function useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,pr
   useEffect(()=>{
     const text=urgent?current.current.urgentAnnouncement?.text:current.current.bubble;
     if(!preferences.sound||!voiceReady||!text||document.hidden||!('speechSynthesis'in window))return;
-    const synth=window.speechSynthesis,utterance=new SpeechSynthesisUtterance(text.slice(0,450));utterance.lang='es-ES';utterance.rate=pet==='sol'?1.03:.96;utterance.pitch=pet==='sol'?1.12:.86;
+    const synth=window.speechSynthesis,utterance=new SpeechSynthesisUtterance(text.slice(0,450));utterance.lang='es-ES';utterance.rate=pet==='sol'?1.03:.96;utterance.pitch=pet==='sol'?1.12:pet==='ambar'?1.04:.86;
     const voice=synth.getVoices().find(v=>v.lang==='es-ES')||synth.getVoices().find(v=>v.lang.startsWith('es'));if(voice)utterance.voice=voice;
     spoken.current=utterance;utterance.onstart=()=>setSpeaking(true);utterance.onend=utterance.onerror=()=>{setSpeaking(false);spoken.current=null;};synth.speak(utterance);
     const stop=()=>{synth.cancel();setSpeaking(false);};const hide=()=>{if(document.hidden)stop();};document.addEventListener('visibilitychange',hide);

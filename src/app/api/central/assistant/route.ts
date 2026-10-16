@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { DEFAULT_PREFERENCES, dayKey, validUuid, type PetId } from '@/lib/central-assistant';
+import { DEFAULT_PREFERENCES, dayKey, normalizePetId, validUuid } from '@/lib/central-assistant';
 import { assistantAuth, AssistantError, brief, checked, currentResults, runTool } from '@/lib/server/central-assistant';
 import { answer } from '@/lib/server/central-assistant-chat';
 
@@ -73,7 +73,7 @@ export async function POST(req: Request) {
       if (lock.error) throw new AssistantError('Petición duplicada o servicio no disponible.', 409);
       try {
         const profile = await checked(db.from('central_assistant_profiles').select('pet,preferences').eq('worker_id', worker_id).maybeSingle());
-        const response = body.action === 'query' ? { result: await runTool(ctx, 'clients', body.query), mode: 'guided', model: null, inputTokens: 0, outputTokens: 0 } : await answer(ctx, question, String(body.tab || ''), (profile?.pet || 'draco') as PetId, profile?.preferences?.humor !== false, body.clientId || undefined);
+        const response = body.action === 'query' ? { result: await runTool(ctx, 'clients', body.query), mode: 'guided', model: null, inputTokens: 0, outputTokens: 0 } : await answer(ctx, question, String(body.tab || ''), normalizePetId(profile?.pet), profile?.preferences?.humor !== false, body.clientId || undefined);
         if(response.result.proposal)response.result.proposal.operationId=body.requestId;
         await checked(db.from('central_assistant_messages').update({ result: response.result, status: 'completed', model: response.model, input_tokens: response.inputTokens, output_tokens: response.outputTokens }).eq('worker_id', worker_id).eq('request_id', body.requestId));
         return json({ ok: true, ...response });
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
       const old = await checked(db.from('central_assistant_profiles').select('*').eq('worker_id', worker_id).maybeSingle());
       const preferences = { ...DEFAULT_PREFERENCES, ...old?.preferences };
       for (const key of Object.keys(DEFAULT_PREFERENCES)) if (typeof body.preferences?.[key] === 'boolean') preferences[key] = body.preferences[key];
-      await checked(db.from('central_assistant_profiles').upsert({ worker_id, pet: old?.pet || 'draco', preferences, updated_at: new Date().toISOString() }));
+      await checked(db.from('central_assistant_profiles').upsert({ worker_id, pet: normalizePetId(old?.pet), preferences, updated_at: new Date().toISOString() }));
       return json({ ok: true });
     }
     if (body.action === 'memory_save') {

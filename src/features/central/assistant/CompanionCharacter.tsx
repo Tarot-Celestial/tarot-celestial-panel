@@ -1,11 +1,11 @@
 'use client';
-import { useCallback, useId, useState, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useId, useState, type CSSProperties } from 'react';
 import dynamic from 'next/dynamic';
 import { PETS, type PetId, type PetState } from '@/lib/central-assistant';
 import styles from './CentralCompanion.module.css';
 
 const Model = dynamic(() => import('./Companion3D'), { ssr: false });
-type CharacterProps = { pet: PetId; state: PetState; gesture?: string; reduced?: boolean; large?: boolean };
+type CharacterProps = { pet: PetId; state: PetState; gesture?: string; reduced?: boolean; large?: boolean; portrait?: boolean };
 
 // The lightweight vector version also appears while WebGL loads or is unavailable.
 function CompatibleCharacter({ pet, state }: { pet: PetId; state: string }) {
@@ -52,13 +52,20 @@ function CharacterModel({ pet, state, reduced }: { pet: PetId; state: string; re
   </>;
 }
 
-export default function CompanionCharacter({ pet, state, gesture, reduced = false, large = false }: CharacterProps) {
+function CompanionCharacter({ pet, state, gesture, reduced = false, large = false, portrait = false }: CharacterProps) {
+  const [visible,setVisible] = useState(true);
+  useEffect(()=>{const update=()=>setVisible(!document.hidden);update();document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
   const effectiveState = gesture || state;
-  return <span className={`${styles.character} ${large ? styles.largeCharacter : ''}`} data-pet={pet} data-state={state} data-reduced={reduced} style={{ '--pet-accent': PETS[pet].accent } as CSSProperties} aria-hidden="true">
+  const paused = reduced || !visible || portrait;
+  const expression = effectiveState === 'sleeping' || effectiveState === 'break' ? 'sleeping' : effectiveState === 'thinking' || effectiveState === 'working' || effectiveState === 'concerned' || effectiveState === 'error' ? 'thinking' : effectiveState === 'celebrating' || effectiveState === 'dancing' ? 'celebrating' : effectiveState === 'greeting' || effectiveState === 'pointing' ? 'greeting' : 'idle';
+  return <span className={`${styles.character} ${large ? styles.largeCharacter : ''}`} data-pet={pet} data-state={effectiveState} data-reduced={paused} style={{ '--pet-accent': PETS[pet].accent } as CSSProperties} aria-hidden="true">
     <span className={styles.aura} /><span className={styles.shadow} />
-    <CharacterModel key={pet} pet={pet} state={effectiveState} reduced={reduced} />
+    {pet === 'ambar' ? <span className={`${styles.body} ${styles.ambarBody}`}>
+      {expression === 'idle' || portrait ? <img className={styles.ambarArt} src="/companions/ambar-v1.webp" alt="" width={822} height={900} draggable={false} decoding="async"/> : <span className={styles.ambarExpression} data-expression={expression}/>}
+    </span> : portrait ? <CompatibleCharacter pet={pet} state="idle"/> : <CharacterModel key={pet} pet={pet} state={effectiveState} reduced={paused} />}
     {effectiveState === 'thinking' || effectiveState === 'working' ? <span className={styles.thought}>•••</span> : null}
     {effectiveState === 'sleeping' && <span className={styles.thought}>z Z</span>}
     {effectiveState === 'celebrating' && <span className={styles.stars}>✦　✧　✦</span>}
   </span>;
 }
+export default memo(CompanionCharacter);

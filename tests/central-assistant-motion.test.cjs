@@ -33,7 +33,8 @@ function mount({ enabled = true, busy = false, workerId = 'a', saved = {} } = {}
   let renderer;
   act(() => { renderer = create(React.createElement(Harness, { enabled, busy, workerId }), { createNodeMock: () => traveller }); });
   const event = (x, y, id = 1) => ({ button: 0, isPrimary: true, pointerId: id, clientX: x, clientY: y, currentTarget: button, preventDefault() {}, stopPropagation() {} });
-  return { window, storage, button, style, windowEvents, event,
+  return { window, document, storage, button, style, windowEvents, documentEvents, event,
+    get pendingFrames() { return frames.size; },
     get hook() { return hook; },
     run(name, value) { act(() => hook.dragProps[name](value)); },
     update(props) { act(() => renderer.update(React.createElement(Harness, { enabled, busy, workerId, ...props }))); },
@@ -88,5 +89,31 @@ test('switching workers restores the right position and never writes an anonymou
   try {
     assert.match(m.style.transform, /30\.00px,40\.00px/); m.update({ workerId: 'b' }); assert.match(m.style.transform, /200\.00px,220\.00px/);
     m.update({ workerId: null }); m.run('onKeyDown', { key: 'ArrowLeft', preventDefault() {} }); assert.equal(m.storage.size, 2);
+  } finally { m.dispose(); }
+});
+
+test('idle motion stops scheduling frames, wakes for movement and settles exactly', () => {
+  const m = mount();
+  try {
+    m.frame(16); assert.equal(m.pendingFrames, 0);
+    act(() => m.hook.move(400, 250)); assert.equal(m.pendingFrames, 1);
+    for (let time = 32; time < 6000 && m.pendingFrames; time += 16) m.frame(time);
+    assert.equal(m.pendingFrames, 0); assert.equal(m.hook.moving, false);
+    assert.equal(m.style.transform, 'translate3d(400.00px,250.00px,0)');
+    m.frame(7000); assert.equal(m.pendingFrames, 0);
+    act(() => m.hook.move(600, 350)); assert.equal(m.pendingFrames, 1);
+    m.document.hidden = true; act(() => m.documentEvents.visibilitychange());
+    assert.equal(m.pendingFrames, 0);
+    m.document.hidden = false; act(() => m.documentEvents.visibilitychange());
+    assert.equal(m.pendingFrames, 1);
+  } finally { m.dispose(); }
+});
+
+test('reduced movement applies the new position in one frame without an idle loop', () => {
+  const m = mount({ enabled: false });
+  try {
+    m.frame(16); act(() => m.hook.move(200, 180)); m.frame(32);
+    assert.equal(m.style.transform, 'translate3d(200.00px,180.00px,0)');
+    assert.equal(m.pendingFrames, 0);
   } finally { m.dispose(); }
 });

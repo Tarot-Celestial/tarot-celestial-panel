@@ -8,6 +8,7 @@ type Props = { pet: PetId; state: string; reduced: boolean; onUnavailable: () =>
 // A compact toy-like character, built from lit geometry so it stays crisp at any size.
 export default function Companion3D({ pet, state, reduced, onUnavailable, onReady }: Props) {
   const host = useRef<HTMLSpanElement>(null), live = useRef({ state, reduced }); live.current = { state, reduced };
+  const wakeRender = useRef<() => void>(() => {});
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const element = host.current; if (!element) return;
@@ -113,8 +114,14 @@ export default function Companion3D({ pet, state, reduced, onUnavailable, onRead
     sphere(tablet, glow, 0, 0, .028, .17, .008, .007); sphere(tablet, glow, 0, -.05, .028, .12, .008, .007);
     tablet.visible = false;
     let frame = 0, last = 0, time = 0, visible = true, previousState = '', previousReduced = false, announcedReady = false;
+    const schedule = () => {
+      if (!frame && !document.hidden && visible) frame = requestAnimationFrame(draw);
+    };
+    const invalidate = () => { previousState = ''; schedule(); };
+    wakeRender.current = invalidate;
     const gaze = { x: 0, y: 0 }, smoothGaze = { x: 0, y: 0 };
     const pointer = (event: PointerEvent) => {
+      if (document.hidden || !visible || live.current.reduced) return;
       const rect = element.getBoundingClientRect();
       gaze.x = T.MathUtils.clamp((event.clientX - rect.x - rect.width / 2) / 650, -.32, .32);
       gaze.y = T.MathUtils.clamp((event.clientY - rect.y - rect.height / 2) / 700, -.17, .17);
@@ -125,14 +132,20 @@ export default function Companion3D({ pet, state, reduced, onUnavailable, onRead
       const { width, height } = element.getBoundingClientRect(); if (!width || !height) return;
       renderer.setSize(width, height, false); const aspect = width / height;
       camera.left = -1.68 * Math.max(1, aspect); camera.right = -camera.left;
-      camera.top = 1.68 * Math.max(1, 1 / aspect); camera.bottom = -camera.top; camera.updateProjectionMatrix(); previousState = '';
+      camera.top = 1.68 * Math.max(1, 1 / aspect); camera.bottom = -camera.top; camera.updateProjectionMatrix(); invalidate();
     }); resize.observe(element);
-    const observer = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? true; if (visible) previousState = ''; }); observer.observe(element);
+    const resumeVisible = () => {
+      cancelAnimationFrame(frame); frame = 0; last = 0;
+      if (!document.hidden && visible) invalidate();
+    };
+    const observer = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? true; resumeVisible(); }); observer.observe(element);
+    document.addEventListener('visibilitychange', resumeVisible);
     const lost = (event: Event) => { event.preventDefault(); onUnavailable(); }; renderer.domElement.addEventListener('webglcontextlost', lost);
     const approach = (value: number, next: number, dt: number) => live.current.reduced ? next : T.MathUtils.lerp(value, next, 1 - Math.exp(-dt * 9));
     function draw(now: number) {
-      frame = requestAnimationFrame(draw);
-      if (document.hidden || !visible || now - last < 33) return;
+      frame = 0;
+      if (document.hidden || !visible) return;
+      if (now - last < 33 && last) { schedule(); return; }
       const { state: s, reduced: still } = live.current;
       // Reduced motion renders only state/size changes, with no gaze or breathing loop.
       if (still && previousReduced && previousState === s) return;
@@ -167,14 +180,17 @@ export default function Companion3D({ pet, state, reduced, onUnavailable, onRead
       crown.forEach((ray, i) => { ray.scale.y = still ? 1 : 1 + Math.sin(t * 2 + i * .4) * .025; });
       tablet.visible = s === 'break' || s === 'working'; renderer.render(scene, camera);
       if (!announcedReady) { announcedReady = true; setLoaded(true); onReady?.(); }
+      if (!still) schedule();
     }
-    frame = requestAnimationFrame(draw);
+    schedule();
     return () => {
-      cancelAnimationFrame(frame); resize.disconnect(); observer.disconnect(); window.removeEventListener('pointermove', pointer); window.removeEventListener('blur', resetGaze); renderer.domElement.removeEventListener('webglcontextlost', lost);
+      wakeRender.current = () => {};
+      cancelAnimationFrame(frame); resize.disconnect(); observer.disconnect(); document.removeEventListener('visibilitychange', resumeVisible); window.removeEventListener('pointermove', pointer); window.removeEventListener('blur', resetGaze); renderer.domElement.removeEventListener('webglcontextlost', lost);
       geometries.forEach(geometry => geometry.dispose()); const materials = new Set<T.Material>();
       scene.traverse(object => { if (object instanceof T.Mesh) (Array.isArray(object.material) ? object.material : [object.material]).forEach(mat => materials.add(mat)); });
       materials.forEach(mat => mat.dispose()); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     };
   }, [pet, onUnavailable, onReady]);
+  useEffect(() => { wakeRender.current(); }, [state, reduced]);
   return <span ref={host} data-companion-3d={loaded ? 'ready' : 'loading'} style={{ position: 'absolute', inset: 0, display: 'block' }} />;
 }

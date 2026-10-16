@@ -9,19 +9,14 @@ import CentralStatsCards, { type CentralStatsData } from "@/features/central/Cen
 import CentralDailyOverview, { type CentralDailyOverviewData, type RecentNotification, type RecentNotificationType } from "@/features/central/CentralDailyOverview";
 import CentralSidebar, { type CentralNavItem } from "@/features/central/CentralSidebar";
 import CentralCompanion from "@/features/central/assistant/CentralCompanion";
-import CentralXpPanel from "@/features/central/CentralXpPanel";
-import CentralXpLevelsPanel from "@/features/central/CentralXpLevelsPanel";
-import CentralXpCoinsPanel from "@/features/central/CentralXpCoinsPanel";
-import CentralStorePanel from "@/features/central/CentralStorePanel";
 import CentralDateSelector from "@/features/central/CentralDateSelector";
 import { CentralThemeProvider } from "@/features/central/CentralTheme";
 import { useCentralXpData } from "@/features/central/useCentralXpData";
 import { useCentralFidelityData } from "@/features/central/useCentralFidelityData";
 import MyClientsStatsCards, { type MyClientsStatsData } from "@/features/central/MyClientsStatsCards";
 import ClientRecoveryPanel from "@/features/central/ClientRecoveryPanel";
-import MyClientsList, { type MyClientsView } from "@/features/central/MyClientsList";
+import type { MyClientsView } from "@/features/central/MyClientsList";
 import CentralNewClientModal from "@/features/central/CentralNewClientModal";
-import MyClientProfile from "@/features/central/MyClientProfile";
 import CentralNotificationsCenter, { useCentralNotificationsFeed, type CentralNotification } from "@/features/central/CentralNotificationsCenter";
 import MyInvoicePanel, { useMyInvoice } from "@/features/central/MyInvoicePanel";
 import { ChatProvider } from "@/providers/ChatProvider";
@@ -36,19 +31,28 @@ import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/t
 import { useAttendance } from "@/hooks/useAttendance";
 import CRMClientesPanel from "@/components/crm/CRMClientesPanel";
 import ReservasPanel from "@/components/reservas/ReservasPanel";
-import FirstTarotistReservationsPanel from "@/features/central/FirstTarotistReservationsPanel";
-import HabitualesPanel from "@/components/habituales/HabitualesPanel";
-import RendimientoPanel from "@/components/rendimiento/RendimientoPanel";
 import CaptacionPanel from "@/components/captacion/CaptacionPanel";
 import ReservasGlobalWatcher from "@/components/reservas/ReservasGlobalWatcher";
 import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationWatcher";
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
-import CentralTeamLivePanel from "@/features/central/CentralTeamLivePanel";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
 import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
 
 const sb = supabaseBrowser();
+const tabLoading = () => <section className="tc-card" role="status"><div className="tc-sub">Preparando tu apartado…</div></section>;
+// Download optional sections when opened. CRM/reservation event receivers and
+// global operational watchers remain immediate, so navigation and alerts keep working.
+const CentralXpPanel = nextDynamic(() => import("@/features/central/CentralXpPanel"), { loading: tabLoading });
+const CentralXpLevelsPanel = nextDynamic(() => import("@/features/central/CentralXpLevelsPanel"), { loading: tabLoading });
+const CentralXpCoinsPanel = nextDynamic(() => import("@/features/central/CentralXpCoinsPanel"), { loading: tabLoading });
+const CentralStorePanel = nextDynamic(() => import("@/features/central/CentralStorePanel"), { loading: tabLoading });
+const MyClientsList = nextDynamic(() => import("@/features/central/MyClientsList"), { loading: tabLoading });
+const MyClientProfile = nextDynamic(() => import("@/features/central/MyClientProfile"), { loading: tabLoading });
+const FirstTarotistReservationsPanel = nextDynamic(() => import("@/features/central/FirstTarotistReservationsPanel"), { loading: tabLoading });
+const HabitualesPanel = nextDynamic(() => import("@/components/habituales/HabitualesPanel"), { loading: tabLoading });
+const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { loading: tabLoading });
+const CentralTeamLivePanel = nextDynamic(() => import("@/features/central/CentralTeamLivePanel"), { loading: tabLoading });
 const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralRafflePanel"), {
   ssr: false,
   loading: () => <section className="tc-card"><div className="tc-sub">Preparando el sorteo…</div></section>,
@@ -286,11 +290,14 @@ function CentralPage() {
   const closeNewClient = useCallback(() => setNewClientOpen(false), []);
   const [myClientsRealStats, setMyClientsRealStats] = useState<{active:number;activeThisWeek:number;followup:number}|null>(null);
   const handleMyClientsStats = useCallback((stats:{active:number;activeThisWeek?:number;followup:number}) => {
-    setMyClientsRealStats((current) => ({
-      active: Number(stats.active || 0),
-      activeThisWeek: Number(stats.activeThisWeek ?? current?.activeThisWeek ?? 0),
-      followup: Number(stats.followup || 0),
-    }));
+    setMyClientsRealStats((current) => {
+      const next = {
+        active: Number(stats.active || 0),
+        activeThisWeek: Number(stats.activeThisWeek ?? current?.activeThisWeek ?? 0),
+        followup: Number(stats.followup || 0),
+      };
+      return current && current.active === next.active && current.activeThisWeek === next.activeThisWeek && current.followup === next.followup ? current : next;
+    });
   }, []);
 
   const centralProgress: CentralOperatorProgress = {
@@ -393,9 +400,14 @@ function CentralPage() {
 
   useEffect(() => {
     if (!ok || tab !== "central") return;
-    let cancelled = false;
+    let cancelled = false, inFlight = false, trailingRefresh = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const abort = new AbortController();
 
     const loadClientStats = async () => {
+      if (cancelled) return;
+      if (inFlight) { trailingRefresh = true; return; }
+      inFlight = true;
       try {
         const { data: sessionData } = await sb.auth.getSession();
         const token = sessionData.session?.access_token;
@@ -403,6 +415,7 @@ function CentralPage() {
         const response = await fetch("/api/central/my-clients?page=1&page_size=1&view=all&sort=recent", {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
+          signal: abort.signal,
         });
         const payload = await response.json().catch(() => null);
         if (!response.ok || !payload?.ok || cancelled) return;
@@ -413,11 +426,20 @@ function CentralPage() {
         });
       } catch {
         // Conserva la última cifra real durante una interrupción transitoria.
+      } finally {
+        inFlight = false;
+        if (trailingRefresh && !cancelled) { trailingRefresh = false; refreshVisible(); }
       }
     };
 
     const refreshVisible = () => {
-      if (document.visibilityState === "visible") void loadClientStats();
+      if (document.visibilityState !== "visible" || refreshTimer !== null) return;
+      // A single purchase can touch several subscribed tables. Coalesce that
+      // burst, but still refresh once more if data changed during the request.
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        if (document.visibilityState === "visible") void loadClientStats();
+      }, 180);
     };
     void loadClientStats();
     const channel = sb
@@ -431,6 +453,8 @@ function CentralPage() {
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       cancelled = true;
+      abort.abort();
+      if (refreshTimer !== null) clearTimeout(refreshTimer);
       window.clearInterval(fallback);
       window.removeEventListener("tc-my-clients-refresh", refreshVisible);
       document.removeEventListener("visibilitychange", refreshVisible);
@@ -524,6 +548,8 @@ function CentralPage() {
   }, []);
   const [crmCloseNotif, setCrmCloseNotif] = useState<any>(null);
   const [crmDismissedIds, setCrmDismissedIds] = useState<string[]>([]);
+  const crmDismissedIdsRef = useRef(crmDismissedIds);
+  crmDismissedIdsRef.current = crmDismissedIds;
   const crmCloseNotifInFlightRef = useRef(false);
   const [month, setMonth] = useState(monthKeyNow());
 
@@ -642,7 +668,7 @@ function CentralPage() {
         },
         (payload) => {
           const n: any = payload.new;
-          if (!crmDismissedIds.includes(String(n?.id || ""))) {
+          if (!crmDismissedIdsRef.current.includes(String(n?.id || ""))) {
             setCrmCloseNotif(n);
           }
         }
@@ -662,7 +688,7 @@ function CentralPage() {
       document.removeEventListener("visibilitychange", refreshVisible);
       sb.removeChannel(channel);
     };
-  }, [ok, crmDismissedIds]);
+  }, [ok]);
 
 
 
@@ -683,7 +709,7 @@ function CentralPage() {
       if (!j?._ok || !j?.ok) return;
       const notif = j.notification || null;
       if (!notif?.id) return;
-      if (crmDismissedIds.includes(String(notif.id))) return;
+      if (crmDismissedIdsRef.current.includes(String(notif.id))) return;
       setCrmCloseNotif(notif);
     } catch {}
     finally { crmCloseNotifInFlightRef.current = false; }
@@ -1042,29 +1068,27 @@ function CentralPage() {
   // ---------------- INIT LOADS ----------------
   useEffect(() => {
     if (!ok) return;
-    refreshRanking();
-    loadTarotists();
     loadAttendanceMe(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ok]);
 
   useEffect(() => {
-    if (!ok) return;
+    if (!ok || tab !== "ranking") return;
     refreshRanking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [month]);
+  }, [ok, tab, month]);
 
   useEffect(() => {
     if (!ok) return;
     if (tab === "incidencias") loadTarotists();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, ok]);
 
   useEffect(() => {
     if (!ok) return;
     if (tab === "checklist") loadChecklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, ok]);
 
 
   useEffect(() => {

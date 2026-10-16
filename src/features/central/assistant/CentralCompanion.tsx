@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { ArrowUp, Bell, BookOpen, Check, ChevronRight, Clock3, Home, ListTodo, MessageCircle, Minus, RefreshCw, Settings2, Sparkles, Trash2, TrendingUp, X } from 'lucide-react';
 import { supabaseBrowser } from '@/lib/supabase-browser';
-import { ASSISTANT_SECTIONS, DEFAULT_PREFERENCES, PETS, safeTab, validUuid, type AssistantCard, type AssistantMemory, type AssistantResult, type AssistantTask, type PetId, type PetState, type Preferences } from '@/lib/central-assistant';
+import { ASSISTANT_SECTIONS, DEFAULT_PREFERENCES, PETS, normalizePetId, safeTab, validUuid, type AssistantCard, type AssistantMemory, type AssistantResult, type AssistantTask, type PetId, type PetState, type Preferences } from '@/lib/central-assistant';
 import CompanionCharacter from './CompanionCharacter';
 import CompanionLearning, { useCompanionLearning } from './CompanionLearning';
 import { useCompanionInitiative } from './useCompanionInitiative';
@@ -46,7 +46,7 @@ export default function CentralCompanion({ tab, workerId, clientId, onNavigate, 
     window.addEventListener('tc-recovery-message-ready', prepared);
     return () => { clearTimeout(timer); window.removeEventListener('tc-recovery-message-ready', prepared); };
   }, [tab, say]);
-  const initiative=useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,preferences,bubble,say,suggestions:summary?.cards.map(card=>learningQuiet(card)&&card.learning?{...card,learning:{...card.learning,quiet:true}}:card),suggest,urgent:!!reservations.reminder,urgentAnnouncement:reservations.reminder?{key:reservations.reminder.key,text:`Tu reserva con ${reservations.reminder.clientName} y ${reservations.reminder.tarotistName} empieza en ${reservations.reminder.minutesRemaining} ${reservations.reminder.minutesRemaining===1?'minuto':'minutos'}. Puedes abrir la reserva o su ficha.`}:undefined});
+  const initiative=useCompanionInitiative({ready,open,busy,mini,tab,pet,workerId,name,preferences,bubble,say,suggestions:summary?.cards.map(card=>learningQuiet(card)&&card.learning?{...card,learning:{...card.learning,quiet:true}}:card),suggest,urgent:!!reservations.reminder,urgentAnnouncement:reservations.reminder?{key:reservations.reminder.key,text:`Tu reserva con ${reservations.reminder.clientName} y ${reservations.reminder.tarotistName} empieza en ${reservations.reminder.minutesRemaining} ${reservations.reminder.minutesRemaining===1?'minuto':'minutos'}. Puedes abrir la reserva o su ficha.`}:undefined});
   const api=useCallback(async(body?:unknown)=>{
     const current=epoch.current; const session=(await supabaseBrowser().auth.getSession()).data.session;
     if(!session)throw new Error('Inicia sesión para hablar con tu compañero.');
@@ -54,12 +54,12 @@ export default function CentralCompanion({ tab, workerId, clientId, onNavigate, 
     const data=await response.json();if(!alive.current||current!==epoch.current)throw new Error('La sesión cambió.');if(!response.ok||!data.ok)throw new Error(data.error||'No pude completar la petición.');return data;
   },[]);
   const load=useCallback(async()=>{
-    const data=await api();setPet(data.profile?.pet==='sol'?'sol':'draco');setPreferences(data.preferences);setName(data.worker.name);setTasks(data.tasks);setMemories(data.memories);setMode(data.mode);setScheduler(data.schedulerConfigured);setMessages(data.history.map((h:any)=>({question:h.question,result:h.result})));setReady(true);
+    const data=await api();setPet(normalizePetId(data.profile?.pet));setPreferences(data.preferences);setName(data.worker.name);setTasks(data.tasks);setMemories(data.memories);setMode(data.mode);setScheduler(data.schedulerConfigured);setMessages(data.history.map((h:any)=>({question:h.question,result:h.result})));setReady(true);
   },[api]);
   useEffect(()=>{
-    alive.current=true;epoch.current++;setReady(false);setFocusedLearning(null);setProposalStates({});setMemoryEdit(null);setTopic('');setContent('');setMessages([]);setSummary(null);setTasks([]);setMemories([]);setBubble('');setBubbleCard(null);setMonitorError('');setOpen(false);setError('');
+    alive.current=true;epoch.current++;setReady(false);setFocusedLearning(null);setProposalStates({});setMemoryEdit(null);setTopic('');setContent('');setQuestion('');setTaskTitle('');setTaskDue('');setTaskKind('reminder');setRecurrence('none');setName('');setMessages([]);setSummary(null);setTasks([]);setMemories([]);setBubble('');setBubbleCard(null);setMonitorError('');setOpen(false);setError('');
     const effectEpoch=epoch.current;
-    load().then(async()=>{const b=await api({action:'brief'});if(b.result)setSummary(b.result);if(b.delivered)say('Tu resumen de hoy está preparado. ¿Lo revisamos?');}).catch(e=>{if(alive.current&&effectEpoch===epoch.current)setError(e.message);});
+    load().then(async()=>{const b=await api({action:'brief'});if(b.result)setSummary(b.result);}).catch(e=>{if(alive.current&&effectEpoch===epoch.current)setError(e.message);});
     const auth=supabaseBrowser().auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT'){epoch.current++;setReady(false);setMessages([]);setTasks([]);setMemories([]);setSummary(null);setOpen(false);setBubble('');}});
     return()=>{alive.current=false;epoch.current++;auth.data.subscription.unsubscribe();clearTimeout(bubbleTimer.current);requestController.current?.abort();};
   },[workerId,load,api,say]);
@@ -97,7 +97,7 @@ export default function CentralCompanion({ tab, workerId, clientId, onNavigate, 
   useEffect(()=>{if(open&&pane==='chat')chatEnd.current?.scrollIntoView({block:'nearest',behavior:reduced?'auto':'smooth'});},[open,pane,messages,busy,reduced]);
   const close=()=>{setOpen(false);button.current?.focus();};
   const perform=async(body:unknown,refresh=true)=>{setBusy(true);setError('');try{const result=await api(body);if(refresh)await load();return result;}catch(e){setError(e instanceof Error?e.message:'No pude completar la petición.');return null;}finally{setBusy(false);}};
-  const ask=async(text:string,query?:unknown)=>{if(!text.trim()||busy)return;setQuestion('');const result=await perform(query?{action:'query',query,requestId:crypto.randomUUID()}:{action:'chat',question:text,tab,clientId:validUuid(clientId)?clientId:undefined,requestId:crypto.randomUUID()},false);if(result){setMode(result.mode||mode);setMessages(m=>[...m,{question:text,result:result.result}]);setCelebrate(true);setTimeout(()=>setCelebrate(false),2200);}else setQuestion(text);};
+  const ask=async(text:string,query?:unknown)=>{if(!text.trim()||busy)return;setQuestion('');const result=await perform(query?{action:'query',query,requestId:crypto.randomUUID()}:{action:'chat',question:text,tab,clientId:validUuid(clientId)?clientId:undefined,requestId:crypto.randomUUID()},false);if(result){setMessages(m=>[...m,{question:text,result:result.result}]);setCelebrate(true);setTimeout(()=>setCelebrate(false),2200);}else setQuestion(text);};
   const refreshBrief=async()=>{const b=await perform({action:'brief',manual:true},false);if(b)setSummary(b.result);};
   const navigate=(card:AssistantCard)=>{if(!safeTab(card.tab)||(card.clientId&&!validUuid(card.clientId)))return;if(card.id.startsWith('run:')||card.id.startsWith('task:')){setPane('tasks');setOpen(true);return;}setOpen(false);onNavigate(card.tab,card.clientId);say(card.detail);};
   const openLearning=(episodeId?:string)=>{setFocusedLearning(episodeId||null);setPane('learning');setOpen(true);};
@@ -120,7 +120,7 @@ export default function CentralCompanion({ tab, workerId, clientId, onNavigate, 
       {!open&&<div className={styles.petTools}><button title="Saludar y animarse" aria-label="Saludar y animarse" onClick={initiative.entertain}><Sparkles size={12}/></button><button title="Volver a su rincón" onClick={motion.dock}><Home size={12}/></button><button title={mini?'Ampliar mascota':'Minimizar mascota'} onClick={()=>setMini(m=>!m)}><Minus size={12}/></button></div>}
     </div>
     {open&&<section id="central-companion-panel" ref={panel} tabIndex={-1} className={styles.panel} role="dialog" aria-label={`Asistente ${PETS[pet].name}`} onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();close();}}}>
-      <header className={styles.header}><div className={styles.avatar}><CompanionCharacter pet={pet} state={state} gesture={busy||motion.moving||reservations.reminder?undefined:initiative.gesture} reduced={reduced||!preferences.motion}/></div><div><div className={styles.eyebrow}>TU COMPAÑERO CELESTIAL</div><h2>{PETS[pet].name} <span>✦</span></h2><p>{PETS[pet].description}</p></div><button className={styles.close} onClick={close} aria-label="Cerrar asistente"><X size={18}/></button></header>
+      <header className={styles.header}><div className={styles.avatar}><CompanionCharacter portrait pet={pet} state={state} gesture={busy||motion.moving||reservations.reminder?undefined:initiative.gesture} reduced={reduced||!preferences.motion}/></div><div><div className={styles.eyebrow}>TU COMPAÑERO CELESTIAL</div><h2>{PETS[pet].name} <span>✦</span></h2><p>{PETS[pet].description}</p></div><button className={styles.close} onClick={close} aria-label="Cerrar asistente"><X size={18}/></button></header>
       <div className={styles.context}><span className={styles.liveDot}/>{ASSISTANT_SECTIONS[tab]?.label||'Tu panel'}<span>{mode==='ai'?'IA conectada':'Ayuda con datos reales'}</span></div>
       <nav className={styles.tabs} aria-label="Herramientas del compañero">{([['chat','Conversar',MessageCircle],['brief','Mi turno',Bell],['tasks','Tareas',ListTodo],['memory','Memoria',BookOpen],['learning','Evolución',TrendingUp],['settings','Ajustes',Settings2]] as const).map(([key,label,Icon])=><button key={key} aria-current={pane===key?'page':undefined} onClick={()=>setPane(key)}><Icon size={16}/><span>{label}</span></button>)}</nav>
       {error&&<div role="alert" className={styles.error}>{error}<button onClick={()=>void perform(undefined)} disabled={busy}>Reintentar</button></div>}
