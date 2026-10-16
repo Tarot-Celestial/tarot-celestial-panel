@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm install --global yarn@1.22.19 --ignore-scripts --no-audit --no-fund
+      - run: yarn install --frozen-lockfile --ignore-scripts --non-interactive
       - run: node --test tests/tarotista-percentage-ranks.test.cjs
-      - run: npx tsc --noEmit
+      - run: yarn tsc --noEmit
