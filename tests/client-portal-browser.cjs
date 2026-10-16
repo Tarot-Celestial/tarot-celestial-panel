@@ -255,14 +255,17 @@ async function frozen(page) {
         }
       }
     });
-    await check('Waterfalls and cloud layers animate while sharing the scenery plane', async () => {
-      assert.ok(await page.locator('[data-portal-waterfall]').count()>=2);
-      assert.ok(await page.locator('[data-portal-cloud]').count()>=2);
-      assert.ok(await page.locator('[data-portal-scene] [data-portal-waterfall]').count()>=2);
+    await check('Nebula and branded meteors animate behind the client content', async () => {
+      const scenery=page.locator('[data-portal-scene="nebula"] img');
+      assert.match(await scenery.getAttribute('src'),/client-nebula\.webp$/);
+      assert.ok(await scenery.evaluate(image=>image.complete&&image.naturalWidth>0));
+      assert.equal(await page.locator('[data-portal-meteor]').count(),3);
+      assert.ok(await page.locator('[data-portal-meteor] img').evaluateAll(images=>images.every(image=>image.complete&&image.naturalWidth>0)));
+      assert.equal(await page.locator('[data-celestial-portal]').evaluate(element=>getComputedStyle(element).pointerEvents),'none');
       const moving=await worldAnimations(page);
       await page.waitForTimeout(400);const moved=await worldAnimations(page);
       assert.ok(moved.some((a,i)=>a.state==='running'&&a.time>moving[i].time+100));
-      metrics.scenery={waterfalls:await page.locator('[data-portal-waterfall]').count(),clouds:await page.locator('[data-portal-cloud]').count(),animations:moved.length};
+      metrics.scenery={nebula:true,meteors:await page.locator('[data-portal-meteor]').count(),animations:moved.length};
     });
     await check('Manual pause freezes rail particles and resume restores visible-card animation', async () => {
       await showRail(page); await page.waitForFunction(() => [...document.querySelectorAll('[data-experience-card]')].some(el => el.dataset.running === 'true'));

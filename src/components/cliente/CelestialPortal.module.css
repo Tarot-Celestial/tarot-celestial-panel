@@ -10,177 +10,82 @@
   pointer-events: none;
   isolation: isolate;
   contain: strict;
-  background: #070b19;
+  background: #080719;
 }
 .portal[data-motion="running"] { --portal-play-state: running; }
 .portal[data-motion] *, .portal[data-motion] *::before, .portal[data-motion] *::after { animation-play-state: var(--portal-play-state); }
-.parallax {
+.parallax { position: absolute; inset: -22px; }
+.scene {
   position: absolute;
-  inset: -22px;
+  inset: -3%;
+  overflow: hidden;
+  animation: nebulaFlow 70s ease-in-out infinite alternate;
+}
+.nebulaImage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 47%;
+  background: #080719;
 }
 .skyMotion {
   position: absolute;
   inset: 0;
-  transform: translate3d(var(--portal-x), calc(var(--portal-y) - var(--portal-scroll)), 0) scale(1.015);
+  transform: translate3d(var(--portal-x), calc(var(--portal-y) - var(--portal-scroll)), 0);
 }
-.scene {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  /* Exact 1586:992 source ratio. Parent includes the 22px cover margin. */
-  width: max(100%, calc(159.8790322581vh + 70.3467741935px));
-  aspect-ratio: 1586 / 992;
-  transform: translate(-50%, -50%);
-  overflow: hidden;
-}
-.sanctuary {
-  position: absolute;
-  inset: 0;
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(ellipse at 50% 40%, #302745, #080d1e 70%);
-}
-.waterfall {
-  position: absolute;
-  overflow: hidden;
-  isolation: isolate;
-  contain: paint;
-  /* The water spreads slightly after leaving the rock, then dissolves into spray. */
-  clip-path: polygon(16% 0, 61% 0, 70% 21%, 79% 40%, 88% 63%, 100% 100%, 0 100%, 8% 63%, 15% 32%);
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 8%, #000 68%, transparent 99%);
-  mask-image: linear-gradient(180deg, transparent, #000 8%, #000 68%, transparent 99%);
-}
-.waterTexture {
-  position: absolute;
-  inset: 0;
-  background-image: url("/images/portal/sanctuary-v2.webp");
-  background-size: var(--water-size);
-  background-position: var(--water-position);
-  background-repeat: no-repeat;
-  mix-blend-mode: screen;
-  opacity: 0;
-  animation: waterfallFlow var(--water-duration) linear var(--water-delay) infinite;
-}
-.waterTextureSecond { animation-delay: var(--water-second-delay); }
-.cloud, .mist {
-  position: absolute;
-  background: url("/images/portal/cloud-mist.webp") center / 100% 100% no-repeat;
-  opacity: .24;
-  contain: paint;
-  /* A soft local mask prevents a cutout edge without a full-screen filter. */
-  -webkit-mask-image: radial-gradient(ellipse, #000 24%, #000b 44%, transparent 72%);
-  mask-image: radial-gradient(ellipse, #000 24%, #000b 44%, transparent 72%);
-  animation: cloudDrift 54s ease-in-out infinite alternate;
-}
-.cloudLeft { left: -4%; top: 39%; width: 23%; height: 13%; animation-delay: -22s; }
-.cloudRight { right: -4%; top: 41%; width: 24%; height: 12%; animation-duration: 61s; animation-delay: -39s; }
-.cloudHorizon { left: 37%; top: 45%; width: 27%; height: 8%; opacity: .12; animation-duration: 76s; animation-delay: -31s; }
-.mist { width: 10%; height: 6%; opacity: .24; animation: sprayDrift 11s ease-in-out infinite alternate; }
-.mistLeft { left: 5%; top: 47%; animation-delay: -4s; }
-.mistRight { left: 88%; top: 47%; animation-delay: -8s; }
 .shade {
   position: absolute;
   inset: 0;
-  background: linear-gradient(180deg, #05081733, transparent 25%, #04091618 55%, #040816b8 100%),
-    radial-gradient(ellipse 37% 29% at 50% 52%, #05091955, transparent 100%);
+  background: linear-gradient(180deg, #07081530, #0708150a 35%, #07081538 68%, #060713a3),
+    radial-gradient(ellipse at 50% 40%, transparent 35%, #06071340);
 }
-.nebula {
-  position: absolute;
-  width: min(44vw, 650px);
-  height: min(58vh, 540px);
-  opacity: .13;
-  background: radial-gradient(ellipse at 42% 48%, #7982c04a, #654aa22b 36%, transparent 70%);
-  animation: nebulaDrift 56s ease-in-out infinite alternate;
-}
-.nebulaLeft { left: -8%; top: 1%; }
-.nebulaRight { right: -8%; top: 22%; animation-delay: -24s; animation-duration: 68s; }
-.stars { position: absolute; inset: 0; }
+.stars, .meteors { position: absolute; inset: 0; }
 .star {
   position: absolute;
   width: var(--star-size);
   height: var(--star-size);
   border-radius: 50%;
-  background: #f4e8cb;
-  opacity: .38;
-  box-shadow: 0 0 6px #e6d7c959;
+  background: #f4e8e2;
+  opacity: .3;
+  box-shadow: 0 0 5px #e6d7c940;
   animation: starBreath var(--star-duration) ease-in-out var(--star-delay) infinite alternate;
 }
-.galaxy {
+.brandMeteor {
   position: absolute;
-  width: clamp(145px, 18vw, 310px);
-  aspect-ratio: 5 / 3;
-  color: #b4a4ed;
-  opacity: .17;
-  background: radial-gradient(ellipse 42% 15% at 50% 50%, #dccaef59, #7668c72b 60%, transparent);
-  animation: galaxyApproach 105s ease-in-out infinite alternate;
+  left: -180px;
+  width: var(--meteor-size);
+  height: var(--meteor-size);
+  opacity: 0;
+  animation: meteorPass var(--meteor-duration) linear var(--meteor-delay) infinite;
 }
-.galaxy svg, .constellation svg, .zodiac svg, .ship svg { display: block; width: 100%; height: 100%; }
-.galaxyLeft { left: 2%; top: 12%; rotate: -29deg; }
-.galaxyRight { right: 2%; top: 22%; rotate: 24deg; color: #c3bcf0; animation-delay: -54s; }
-.constellation {
-  position: absolute;
-  width: clamp(145px, 17vw, 240px);
-  aspect-ratio: 6 / 5;
-  color: #ecd49b;
-  opacity: .18;
-  animation: constellationReveal 28s ease-in-out infinite;
+.brandMeteor img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 5px #edca7666);
 }
-.constellationLeft { left: 1%; top: 34%; }
-.constellationRight { right: 1%; top: 37%; rotate: 24deg; animation-delay: -13s; }
-.zodiac {
+.meteorTrail {
   position: absolute;
-  left: 50%;
-  top: 5%;
-  width: min(82vw, 1250px);
-  aspect-ratio: 35 / 19;
-  transform: translateX(-50%);
-  color: #e8c276;
-  opacity: .2;
-  animation: zodiacBreath 22s ease-in-out infinite alternate;
-}
-.moon {
-  position: absolute;
-  left: 9%;
-  top: 19%;
-  width: clamp(30px, 3.8vw, 58px);
-  aspect-ratio: 1;
-  overflow: hidden;
+  right: 65%;
+  top: 50%;
+  width: clamp(75px, 10vw, 160px);
+  height: 2px;
+  transform-origin: right center;
+  transform: rotate(9deg);
+  background: linear-gradient(90deg, transparent, #edca7612 25%, #e6cba669 75%, #fff0caaa);
   border-radius: 50%;
-  opacity: .68;
-  background: radial-gradient(circle at 34% 35%, #a5a1a982 4%, transparent 6%),
-    radial-gradient(circle at 66% 64%, #95939eaa 8%, transparent 10%),
-    radial-gradient(circle at 42% 75%, #a5a1a970 5%, transparent 7%),
-    radial-gradient(circle at 35% 34%, #eee4c8, #bab9c7 60%, #565f7f);
-  box-shadow: 0 0 15px #cbbbe11f;
 }
-.moonShadow {
+.meteorTrail::after {
+  content: "";
   position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: #0a1023ee;
-  transform: translateX(25%);
-  animation: moonPhase 96s ease-in-out infinite alternate;
-}
-.shootingStar {
-  position: absolute;
-  width: 100px;
-  height: 1px;
-  opacity: 0;
-  background: linear-gradient(90deg, transparent, #dbe4fb70 75%, #fff2d1);
-  transform: rotate(-24deg);
-  animation: shootingPass 48s linear infinite;
-}
-.shootingStarFirst { left: 5%; top: 28%; animation-delay: 7s; }
-.shootingStarSecond { left: 59%; top: 17%; width: 74px; animation-delay: 31s; }
-.ship {
-  position: absolute;
-  left: -100px;
-  top: 23%;
-  width: 63px;
-  height: 26px;
-  opacity: 0;
-  animation: shipPass 45s linear 13s infinite;
+  right: 0;
+  top: -3px;
+  width: 38%;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, transparent, #edca761f);
 }
 .motionControl {
   position: fixed;
@@ -203,69 +108,29 @@
 .motionControl:hover { background: #152037; border-color: #ddbf87; }
 .motionControl:focus-visible { outline: 2px solid #ffe4a8; outline-offset: 4px; }
 .motionControl > span:first-child { min-width: 12px; font-size: 15px; }
-
-@keyframes nebulaDrift {
-  from { opacity: .1; transform: translate3d(-12px, 0, 0) scale(.98); }
-  to { opacity: .23; transform: translate3d(18px, 12px, 0) scale(1.07); }
+@keyframes nebulaFlow {
+  from { transform: translate3d(-.6%, -.4%, 0) scale(1); }
+  to { transform: translate3d(.6%, .4%, 0) scale(1.025); }
 }
-@keyframes waterfallFlow {
-  0% { opacity: 0; transform: translate3d(-.3%, -7%, 0); }
-  18% { opacity: .5; }
-  75% { opacity: .45; }
-  100% { opacity: 0; transform: translate3d(.5%, 8%, 0); }
+@keyframes starBreath { from { opacity: .2; } to { opacity: .52; } }
+@keyframes meteorPass {
+  0% { opacity: 0; transform: translate3d(0, 0, 0); }
+  2% { opacity: .72; }
+  19% { opacity: .72; }
+  24%, 100% { opacity: 0; transform: translate3d(calc(100vw + 400px), 19vh, 0); }
 }
-@keyframes cloudDrift {
-  from { transform: translate3d(-3%, 1%, 0) scale(1); }
-  to { transform: translate3d(4%, -2%, 0) scale(1.045); }
-}
-@keyframes sprayDrift {
-  from { opacity: .12; transform: translate3d(-3%, 4%, 0) scale(.95); }
-  to { opacity: .28; transform: translate3d(4%, -4%, 0) scale(1.08); }
-}
-@keyframes starBreath { from { opacity: .23; transform: scale(.85); } to { opacity: .68; transform: scale(1.1); } }
-@keyframes galaxyApproach {
-  0%, 15% { opacity: .11; transform: translate3d(0, 0, 0) scale(.84); }
-  100% { opacity: .32; transform: translate3d(8px, 20px, 0) scale(1.16); }
-}
-@keyframes constellationReveal { 0%, 100% { opacity: .08; } 40%, 60% { opacity: .4; } }
-@keyframes zodiacBreath { from { opacity: .14; } to { opacity: .36; } }
-@keyframes moonPhase { from { transform: translateX(-72%); } to { transform: translateX(72%); } }
-@keyframes shootingPass {
-  0% { opacity: 0; transform: translate3d(-60px, 28px, 0) rotate(-24deg); }
-  1% { opacity: .66; }
-  4%, 100% { opacity: 0; transform: translate3d(230px, -105px, 0) rotate(-24deg); }
-}
-@keyframes shipPass {
-  0% { opacity: 0; transform: translate3d(0, 30px, 0) rotate(-5deg) scale(.75); }
-  2% { opacity: .55; }
-  21% { opacity: .55; }
-  26%, 100% { opacity: 0; transform: translate3d(calc(100vw + 190px), -68px, 0) rotate(-5deg) scale(.9); }
-}
-
 .portal[data-quality="economy"] .star:nth-child(n+13),
-.portal[data-quality="economy"] .galaxyRight,
-.portal[data-quality="economy"] .nebulaRight,
-.portal[data-quality="economy"] .constellationRight,
-.portal[data-quality="economy"] .shootingStarSecond,
-.portal[data-quality="economy"] .ship { display: none; }
-.portal[data-quality="economy"] .waterTextureSecond,
-.portal[data-quality="economy"] .cloudHorizon,
-.portal[data-quality="economy"] .mist { display: none; }
-.portal[data-quality="economy"] .waterTexture { animation-duration: 5s; }
-.portal[data-quality="economy"] .cloud { animation-duration: 80s; opacity: .15; }
+.portal[data-quality="economy"] .brandMeteor:nth-child(n+2) { display: none; }
+.portal[data-quality="economy"] .scene { animation: none; }
 @media (max-width: 768px) {
-  .star:nth-child(n+13), .galaxyRight, .nebulaRight, .constellationRight, .shootingStarSecond, .ship { display: none; }
-  .sanctuary { background-position: center center; }
-  .shade { background: linear-gradient(180deg, #05081733, transparent 23%, #04091633 55%, #040816c9 100%), radial-gradient(ellipse 60% 30% at 50% 47%, #05091959, transparent); }
-  .nebula { width: 70vw; height: 40vh; }
-  .galaxyLeft { left: -12%; top: 15%; opacity: .15; }
-  .constellationLeft { left: -8%; top: 34%; width: 140px; }
-  .moon { left: 7%; top: 24%; opacity: .5; }
-  .zodiac { width: 145vw; top: 18%; opacity: .16; }
+  .star:nth-child(n+13), .brandMeteor:nth-child(3) { display: none; }
+  .nebulaImage { object-position: center; }
+  .brandMeteor { --meteor-size: 23px !important; }
+  .shade { background: linear-gradient(180deg, #07081538, #07081510 35%, #06071390); }
   .motionControl { padding: 10px; justify-content: center; }
   .motionControl > span:last-child { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .portal *, .portal *::before, .portal *::after { animation: none !important; }
-  .motionControl { display: none; }
+  .brandMeteor, .motionControl { display: none; }
 }

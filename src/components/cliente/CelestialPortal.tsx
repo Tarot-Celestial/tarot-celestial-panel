@@ -18,49 +18,10 @@ const STARS = Array.from({ length: 28 }, (_, index) => ({
   "--star-delay": `${-index * 1.7}s`,
 } as CSSProperties));
 
-// Source-pixel coordinates share the same cover-scaled plane as the architecture.
-// Reuse the actual water in the image rather than drawing flat light streaks.
-const SCENE_WIDTH = 1586;
-const SCENE_HEIGHT = 992;
-const WATERFALLS = [
-  { name: "left", x: 129, y: 343, width: 52, height: 165, duration: 3.4, delay: -.9 },
-  { name: "right", x: 1432, y: 382, width: 39, height: 129, duration: 3.1, delay: -1.8 },
-  { name: "right-far", x: 1508, y: 381, width: 36, height: 130, duration: 3.8, delay: -.6 },
-  { name: "upper-right", x: 1498, y: 148, width: 40, height: 161, duration: 3.5, delay: -2.2 },
-];
-
-function Waterfalls() {
-  return <>{WATERFALLS.map(({ name, x, y, width, height, duration, delay }) => {
-    const style = {
-      left: `${x / SCENE_WIDTH * 100}%`, top: `${y / SCENE_HEIGHT * 100}%`,
-      width: `${width / SCENE_WIDTH * 100}%`, height: `${height / SCENE_HEIGHT * 100}%`,
-      "--water-size": `${SCENE_WIDTH / width * 100}% ${SCENE_HEIGHT / height * 100}%`,
-      "--water-position": `${x / (SCENE_WIDTH - width) * 100}% ${y / (SCENE_HEIGHT - height) * 100}%`,
-      "--water-duration": `${duration}s`, "--water-delay": `${delay}s`,
-      "--water-second-delay": `${delay - duration / 2}s`,
-    } as CSSProperties;
-    return <div key={name} className={styles.waterfall} style={style} data-portal-waterfall={name}>
-      <i className={styles.waterTexture} />
-      <i className={`${styles.waterTexture} ${styles.waterTextureSecond}`} />
-    </div>;
-  })}</>;
-}
-
-const SCENERY = <div className={styles.scene} data-portal-scene="">
-  <img className={styles.sanctuary} src="/images/portal/sanctuary-v2.webp" alt="" decoding="async"
-    onError={(event) => {
-      const image = event.currentTarget;
-      if (image.dataset.fallback !== "true") {
-        image.dataset.fallback = "true";
-        image.src = "/images/portal/celestial-sanctuary.webp";
-      }
-    }} />
-  <Waterfalls />
-  <div className={`${styles.cloud} ${styles.cloudLeft}`} data-portal-cloud="left" />
-  <div className={`${styles.cloud} ${styles.cloudRight}`} data-portal-cloud="right" />
-  <div className={`${styles.cloud} ${styles.cloudHorizon}`} data-portal-cloud="horizon" />
-  <div className={`${styles.mist} ${styles.mistLeft}`} />
-  <div className={`${styles.mist} ${styles.mistRight}`} />
+// Use the supplied nebula as a responsive, lightweight image; motion is CSS-only.
+const SCENERY = <div className={styles.scene} data-portal-scene="nebula">
+  <img className={styles.nebulaImage} src="/images/portal/client-nebula.webp" alt=""
+    width={720} height={1280} decoding="async" loading="eager" draggable={false} />
 </div>;
 
 /** Shared with the home logo, which must follow the same visibility and motion policy. */
@@ -81,56 +42,23 @@ export function PortalMotionControl() {
   </button>;
 }
 
-function Galaxy() {
-  return <svg viewBox="0 0 300 180" focusable="false" fill="none">
-    <ellipse cx="150" cy="90" rx="78" ry="24" stroke="currentColor" strokeWidth="1.5" opacity=".5" />
-    <ellipse cx="150" cy="90" rx="108" ry="36" stroke="currentColor" opacity=".18" />
-    <path d="M150 90c-28-24-64-15-65 7-2 33 72 50 131 17 42-24 26-61-14-74M150 90c27 23 64 15 65-7 2-33-72-50-131-17-42 24-26 61 14 74" stroke="currentColor" strokeWidth="3" opacity=".35" />
-    <ellipse cx="150" cy="90" rx="9" ry="5" fill="#f7dfad" opacity=".72" />
-  </svg>;
-}
-
-function Constellation() {
-  return <svg viewBox="0 0 240 200" focusable="false" fill="none">
-    <path d="m24 122 52-76 55 33 61-44 25 110-86-66-27 96-80-53" stroke="currentColor" strokeWidth=".75" opacity=".48" />
-    {[[24, 122], [76, 46], [131, 79], [192, 35], [217, 145], [104, 175]].map(([cx, cy]) =>
-      <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="2" fill="currentColor" />)}
-    <path d="M76 37v18m-9-9h18M192 28v14m-7-7h14" stroke="currentColor" strokeWidth=".8" />
-  </svg>;
-}
-
-function ZodiacArch() {
-  return <svg viewBox="0 0 1400 760" focusable="false" fill="none">
-    <path d="M140 650a560 560 0 0 1 1120 0M158 650a542 542 0 0 1 1084 0" stroke="currentColor" strokeWidth=".7" opacity=".5" />
-    <path d="M168 648a532 532 0 0 1 1064 0" stroke="currentColor" strokeWidth="3" strokeDasharray="1 45" opacity=".3" />
-    <g stroke="currentColor" strokeWidth="1" opacity=".45">
-      <path d="m190 450 10-17 10 17-10 17-10-17m101-180 12-20 12 20-12 20-12-20m182-127 12-15 12 15-12 15-12-15" />
-      <path d="m1210 450-10-17-10 17 10 17 10-17m-101-180-12-20-12 20 12 20 12-20m-182-127-12-15-12 15 12 15 12-15" />
-    </g>
-  </svg>;
-}
-
+// Sparse branded meteors stay behind the UI and never receive pointer events.
+const METEORS = [
+  { top: "13%", duration: "34s", delay: "1s", size: "30px" },
+  { top: "54%", duration: "43s", delay: "14s", size: "23px" },
+  { top: "30%", duration: "53s", delay: "27s", size: "26px" },
+];
 const DECORATIONS = <>
-  <div className={`${styles.nebula} ${styles.nebulaLeft}`} />
-  <div className={`${styles.nebula} ${styles.nebulaRight}`} />
   <div className={styles.stars}>{STARS.map((style, index) => <i key={index} className={styles.star} style={style} />)}</div>
-  <div className={`${styles.galaxy} ${styles.galaxyLeft}`}><Galaxy /></div>
-  <div className={`${styles.galaxy} ${styles.galaxyRight}`}><Galaxy /></div>
-  <div className={`${styles.constellation} ${styles.constellationLeft}`}><Constellation /></div>
-  <div className={`${styles.constellation} ${styles.constellationRight}`}><Constellation /></div>
-  <div className={styles.zodiac}><ZodiacArch /></div>
-  <div className={styles.moon}><div className={styles.moonShadow} /></div>
-  <div className={`${styles.shootingStar} ${styles.shootingStarFirst}`} />
-  <div className={`${styles.shootingStar} ${styles.shootingStarSecond}`} />
-  <div className={styles.ship}>
-    <svg viewBox="0 0 80 32" focusable="false" fill="none">
-      <path d="m5 16 31-2" stroke="#a9dce8" strokeWidth="1" opacity=".48" />
-      <path d="m20 16 19-1" stroke="#efddb6" strokeWidth="2" opacity=".45" />
-      <path d="m33 16 10-7 28 7-28 7-10-7Z" fill="#b9c4d8" stroke="#f3d8a1" strokeWidth=".7" />
-      <path d="m43 16-7-13 22 13-22 13 7-13Z" fill="#717f98" stroke="#d4c39c" strokeWidth=".6" />
-      <path d="m47 16 13-2 11 2-11 2-13-2Z" fill="#f1ddae" />
-    </svg>
-  </div>
+  <div className={styles.meteors}>{METEORS.map((meteor, index) =>
+    <div key={index} className={styles.brandMeteor} data-portal-meteor="" style={{
+      top: meteor.top, "--meteor-duration": meteor.duration, "--meteor-delay": meteor.delay,
+      "--meteor-size": meteor.size,
+    } as CSSProperties}>
+      <span className={styles.meteorTrail} />
+      <img src="/images/portal/brand-meteor.webp" alt="" width={40} height={40} decoding="async" draggable={false} />
+    </div>
+  )}</div>
 </>;
 
 export default function CelestialPortal({ children }: { children?: ReactNode }) {
