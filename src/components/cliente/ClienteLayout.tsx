@@ -17,6 +17,8 @@ import universeStyles from "./ClienteUniverseLayout.module.css";
 import { ClientRitualAccess } from "./ClientPanelAccess";
 import { PortalMotionControl } from "./CelestialPortal";
 import runesStyles from "./RunesComingSoon.module.css";
+import halloweenStyles from "./HalloweenRaffleAtmosphere.module.css";
+import { HalloweenRaffleMotionControl } from "./HalloweenRaffleAtmosphere";
 
 const sb = supabaseClienteBrowser();
 const LEO_NOTIFICATION_KEY = "tc-leo-celestial-last-notification-v1";
@@ -263,12 +265,13 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   }
 
   const isHome = pathname === "/cliente/dashboard";
+  const isHalloweenRaffle = pathname === "/cliente/sorteo";
 
   const destination = universeDestination(pathname);
-  return <ClientRitualAccess.Provider value={ritualAccess}><PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell + (pathname === "/cliente/runas" ? " " + runesStyles.layout : "")} data-home={isHome ? "true" : "false"}>
+  return <ClientRitualAccess.Provider value={ritualAccess}><PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell + (pathname === "/cliente/runas" ? " " + runesStyles.layout : "") + (isHalloweenRaffle ? " " + halloweenStyles.layout : "")} data-home={isHome ? "true" : "false"}>
     
     <div className={universeStyles.container}>
-      {isHome ? <PortalMotionControl /> : <UniverseMotionControl />}
+      {isHome ? <PortalMotionControl /> : isHalloweenRaffle ? <HalloweenRaffleMotionControl /> : <UniverseMotionControl />}
       <header className={universeStyles.header}>
         <Link href="/cliente/dashboard" className={universeStyles.brand}><Image src="/Nuevo-logo-tarot.png" alt="" width={34} height={34}/><span>TAROT CELESTIAL</span></Link>
         <ClienteNavigation pathname={pathname} promoActive={promoActive} ritualAccess={ritualAccess} unreadNotifications={unreadNotifications} onLogout={logout}/>

@@ -7,12 +7,14 @@ import CelestialPortal from "@/components/cliente/CelestialPortal";
 import { isUniverseRoute } from "@/components/cliente/universe-motion";
 import styles from "@/components/cliente/CelestialUniverse.module.css";
 import runesStyles from "@/components/cliente/RunesComingSoon.module.css";
+import HalloweenRaffleAtmosphere from "@/components/cliente/HalloweenRaffleAtmosphere";
 
 /** The home portal is lightweight; planetary destinations share their camera and canvas. */
 export default function ClienteUniverseLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname() || "";
   if (!isUniverseRoute(pathname)) return children;
   if (pathname === "/cliente/runas") return <div className={runesStyles.pageBackdrop}>{children}</div>;
+  if (pathname === "/cliente/sorteo") return <HalloweenRaffleAtmosphere>{children}</HalloweenRaffleAtmosphere>;
   if (pathname === "/cliente/dashboard") return <div className={styles.worldFrame}><CelestialPortal><div className={styles.worldContent}>{children}</div></CelestialPortal></div>;
   return <div className={styles.worldFrame}>
     <CelestialUniverse pathname={pathname}>

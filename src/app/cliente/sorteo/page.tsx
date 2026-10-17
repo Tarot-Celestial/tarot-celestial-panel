@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Gift, KeyRound, LoaderCircle, RefreshCw, Sparkles, TicketCheck } from "lucide-react";
 import ClienteLayout from "@/components/cliente/ClienteLayout";
+import ClientRaffleView from "@/components/cliente/ClientRaffleView";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
-import styles from "./sorteo.module.css";
 import RaffleWinners from "@/components/cliente/RaffleWinners";
 
 const sb = supabaseClienteBrowser();
@@ -93,52 +92,12 @@ export default function ClienteSorteoPage() {
   return (
     <ClienteLayout
       title="Sorteo"
-      subtitle="Consulta aquí el número que te ha asignado tu central."
-      summaryItems={[{ label: "Números asignados", value: String(numbers.length), meta: raffleTitle, tone: "points" }]}
+      eyebrow="Tarot Celestial · Halloween"
+      subtitle="Consulta aquí los números que te ha asignado tu central."
     >
-      <section className={styles.root}>
-        <header className={styles.header}>
-          <div className={styles.icon}><Gift /></div>
-          <div><span>NOVEDAD CELESTIAL</span><h2>{raffleTitle}</h2><p>Tu participación se sincroniza automáticamente cuando la central te asigna un número.</p></div>
-          <button type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? styles.spin : undefined} /> Actualizar</button>
-        </header>
-
-        <article className={styles.secret}>
-          <div className={styles.secretIcon}><Sparkles /></div>
-          <div className={styles.secretContent}>
-            <span className={styles.secretEyebrow}>SECRETO CELESTIAL</span>
-            <h3>EL SECRETO CELESTIAL HA DESPERTADO</h3>
-            <p className={styles.secretLead}>Tu premio está escondido en algún lugar de tu panel... 👀</p>
-            <div className={styles.clue}>
-              <strong>PISTA:</strong>
-              <span>“No necesitas gastar para encontrarme. Pregunta al destino, donde una respuesta puede llegar sin pagar.” 🔮</span>
-            </div>
-            <p className={styles.secretFind}>Encuentra el símbolo celestial <span className={styles.secretKey} aria-label="llave dorada"><KeyRound /></span> y tócalo.</p>
-            <p className={styles.secretPrize}>Tu premio sigue siendo un secreto... 🎁</p>
-          </div>
-        </article>
-
-        {message ? <div className={styles.message} role="alert">{message}</div> : null}
-        {loading ? <div className={styles.loading}><LoaderCircle className={styles.spin} /> Consultando tu número…</div> : numbers.length ? (
-          <div className={styles.ticketGrid}>
-            {numbers.map((entry) => (
-              <article key={entry.id} className={styles.ticket}>
-                <div className={styles.ticketTop}><TicketCheck /><span>TU NÚMERO DE SORTEO</span></div>
-                <strong>{entry.number}</strong>
-                <p>Asignado el {new Date(entry.assigned_at).toLocaleString("es-ES")}</p>
-                <div><Sparkles /> Participación confirmada</div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className={styles.empty}>
-            <Gift />
-            <h3>Aún no tienes un número asignado</h3>
-            <p>Cuando tu central te añada al sorteo, tu número aparecerá aquí automáticamente.</p>
-          </div>
-        )}
+      <ClientRaffleView numbers={numbers} title={raffleTitle} loading={loading} message={message} onRefresh={() => void load()}>
         <RaffleWinners key={raffleId} />
-      </section>
+      </ClientRaffleView>
     </ClienteLayout>
   );
 }
