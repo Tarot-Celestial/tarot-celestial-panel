@@ -80,6 +80,7 @@ before(async () => {
   await db.exec('create function cliente_confirmar_compra_ruleta_v2(p jsonb) returns jsonb language sql as $$select cliente_confirmar_compra_ruleta_v3(p)$$;');
   await db.exec(fs.readFileSync(path.join(__dirname, '../supabase/migrations/20261006235223_paypal_crm_checkout.sql'), 'utf8'));
   await db.exec(migration);
+  await db.exec(fs.readFileSync(path.join(__dirname, "../supabase/migrations/20261017203606_allow_multiple_client_checkouts.sql"), "utf8"));
 });
 after(async () => { if (db) await db.close(); });
 
@@ -174,12 +175,16 @@ test('a captured transaction cannot be credited to two attempts or customers', a
   assert.equal(await scalar('select count(*)::integer v from crm_client_notes where cliente_id=$1', [second.client]), 0);
 });
 
-test('one pending client checkout per environment prevents different request IDs from creating parallel orders', async () => {
+test('multiple pending purchases coexist and settle independently', async () => {
   const first = await setup(260);
-  await assert.rejects(setup(261, packs[1], { client: first.client }), /one_client_pending/);
+  const second = await setup(261, packs[1], { client: first.client });
   await setup(262, packs[0], { client: first.client, environment: 'live' });
   await setup(263, packs[0], { client: first.client, kind: 'crm_collection' });
   await finish(first);
+  await finish(second);
+  assert.deepEqual((await balance(first.client)).slice(0,2), [37,3]);
+  assert.equal((await finish(first)).duplicated,true);
+  assert.equal((await finish(second)).duplicated,true);
   const next = await setup(264, packs[1], { client: first.client });
   await db.query('update crm_paypal_orders set status=\'cancelled\' where id=$1', [id(next.n)]);
   await setup(265, packs[1], { client: first.client });
@@ -205,10 +210,10 @@ test('orders and completion RPCs stay server-only; actor constraints and indepen
   assert.deepEqual(await scalar('select to_jsonb(s) v from cliente_payment_settings s where id=\'default\''), { id: 'default', provider: 'mollie', web_payments_enabled: false, paypal_client_enabled: true });
 });
 
-test('reapplying the migration preserves historical purchases, balances and collection links', async () => {
+test('reapplying the multiple checkout migration preserves historical purchases, balances and collection links', async () => {
   const before = await scalar('select jsonb_agg(to_jsonb(a) order by id) v from crm_paypal_orders a');
   const balances = await scalar('select jsonb_agg(to_jsonb(c) order by id) v from crm_clientes c');
-  await db.exec(migration);
+  await db.exec(fs.readFileSync(path.join(__dirname, "../supabase/migrations/20261017203606_allow_multiple_client_checkouts.sql"), "utf8"));
   assert.deepEqual(await scalar('select jsonb_agg(to_jsonb(a) order by id) v from crm_paypal_orders a'), before);
   assert.deepEqual(await scalar('select jsonb_agg(to_jsonb(c) order by id) v from crm_clientes c'), balances);
 });

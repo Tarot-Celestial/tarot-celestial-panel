@@ -30,16 +30,7 @@ export async function POST(req: Request) {
       a.cliente_id === cliente.id && a.environment === config.environment;
     if (attempt && (!owns(attempt) || attempt.pack_id !== packId)) throw new PayPalError("La operación no corresponde a esta compra.", 409);
 
-    // A second tab/device or a changed browser request ID must not create a
-    // second payable order while this customer's previous purchase is pending.
-    const active = async () => {
-      const result = await admin.from(PAYPAL_TABLE).select("*").eq("checkout_kind", "client_purchase")
-        .eq("cliente_id", cliente.id).eq("environment", config.environment).eq("status", "pending").maybeSingle();
-      if (result.error) throw result.error;
-      return result.data;
-    };
-    if (!attempt) attempt = await active();
-    if (attempt && !owns(attempt)) throw new PayPalError("Tu pago pendiente necesita revisión de la central.", 409);
+    // Each attempt is independent; retries only recover this exact request ID.
     if (!attempt) {
       // Deliberately independent from the legacy Mollie switch. Disabling new
       // purchases never disables reconciliation of a payment already created.
@@ -71,12 +62,11 @@ export async function POST(req: Request) {
         public_token: token, amount, currency: "EUR", pack_id: packId, pack_name: payload.pack_name,
         purchase_payload: payload, create_payload: createPayload }).select("*").single();
       if (inserted.error && inserted.error.code !== "23505") throw inserted.error;
-      attempt = inserted.data || await active();
-      if (!attempt || !owns(attempt)) throw new PayPalError("No se pudo recuperar esta compra. Reintenta con la misma operación.", 409);
+      const recovered = inserted.data ? null : await admin.from(PAYPAL_TABLE).select("*").eq("id", body.attemptId).maybeSingle();
+      if (recovered?.error) throw recovered.error;
+      attempt = inserted.data || recovered?.data;
+      if (!attempt || !owns(attempt) || attempt.pack_id !== packId) throw new PayPalError("No se pudo recuperar esta compra. Reintenta con la misma operación.", 409);
     }
-    if (attempt.pack_id !== packId) return NextResponse.json({ ok: false,
-      error: "Tienes otra compra pendiente. Revísala o cancélala antes de elegir un paquete diferente.",
-      attempt_id: attempt.id, url: attempt.order_id ? `${origin}/pago-tarjeta?ref=${attempt.public_token}` : null }, { status: 409, headers });
 
     if (!attempt.order_id) {
       // PayPal deduplicates creation for six hours. Outside that window we

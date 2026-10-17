@@ -60,8 +60,7 @@ function routeHarness() {
           if (state.settingsError) error = { message: 'fixture settings unavailable' };
           if (!single) data = [data];
         } else if (operation === 'insert') {
-          const pending = [...rows.values()].some(row => row.checkout_kind === 'client_purchase' && row.status === 'pending' && row.cliente_id === values.cliente_id && row.environment === values.environment);
-          if (rows.has(values.id) || pending) error = { code: '23505' };
+          if (rows.has(values.id)) error = { code: '23505' };
           else rows.set(values.id, { ...values, order_id: null, status: 'pending', remote_status: 'CREATING', created_at: new Date().toISOString() });
           data = error ? null : clean(rows.get(values.id));
         } else {
@@ -164,12 +163,14 @@ test('An attempt cannot be reused by another authenticated customer or for a dif
   assert.equal((await h.post({ packId: 'pack_30' })).status, 409); assert.equal(h.providerRequests.length, before);
 });
 
-test('Another pending pack is returned as a conflict instead of opening a second payment', async () => {
+test('Another pending pack opens an independent payment without cancelling the first', async () => {
   const h = routeHarness(); await h.post();
   const response = await h.post({ attemptId: id(11), packId: 'pack_30' });
-  assert.equal(response.status, 409); const body = await response.json();
-  assert.equal(body.attempt_id, id(10)); assert.ok(body.url);
-  assert.equal(h.rows.size, 1); assert.equal(h.remoteOrders.size, 1);
+  assert.equal(response.status, 200); const body = await response.json();
+  assert.equal(body.attempt_id, id(11)); assert.ok(body.url);
+  assert.equal(h.rows.size, 2); assert.equal(h.remoteOrders.size, 2);
+  assert.equal(h.rows.get(id(10)).status, "pending");
+  assert.notEqual(h.rows.get(id(10)).approval_url, body.url);
 });
 
 test('Provider failure preserves the attempt for retry and invalid packs or IDs create nothing', async () => {
@@ -364,7 +365,7 @@ test('Client creation on the custom domain keeps approval and return URLs on tha
   const retry = await h.post({}, { origin: domain }); assert.equal(retry.status, 200);
   assert.equal(new URL((await retry.json()).url).origin, domain); assert.equal(h.remoteOrders.size, 1);
   const conflict = await h.post({ attemptId: id(11), packId: 'pack_30' }, { origin: domain });
-  assert.equal(conflict.status, 409); assert.equal(new URL((await conflict.json()).url).origin, domain);
+  assert.equal(conflict.status, 200); assert.equal(new URL((await conflict.json()).url).origin, domain);
 });
 
 test('Missing, null and foreign origins cannot create client PayPal orders', async () => {
@@ -397,7 +398,7 @@ test('Active promotions use the card link and preserve server-owned prices and b
     assert.equal(saved.create_payload.purchase_units[0].amount.value,price.toFixed(2));
     h.state.promotion=null;
     assert.equal((await h.post({packId:'promo:'+id(51)})).status,200);assert.equal(h.remoteOrders.size,1);
-    assert.equal((await h.post({packId:'pack_30',attemptId:id(12)})).status,409);
+    assert.equal((await h.post({packId:'pack_30',attemptId:id(12)})).status,200);
   }
 });
 test('Inactive, missing and unsupported promotions cannot create payable orders',async()=>{
@@ -406,4 +407,10 @@ test('Inactive, missing and unsupported promotions cannot create payable orders'
     // Negative persisted minutes normalize to zero; the resulting empty pack is rejected.
     assert.equal((await h.post({packId:'promo:'+id(51)})).status,409);assert.equal(h.remoteOrders.size,0);assert.equal(h.rows.size,0);
   }
+});
+
+test('Separate intentional attempts for the same pack can coexist, while retrying each creates no duplicate', async()=>{
+ const h=routeHarness();const responses=await Promise.all([h.post(),h.post({attemptId:id(11)})]);
+ assert.ok(responses.every(r=>r.status===200));assert.equal(h.rows.size,2);assert.equal(h.remoteOrders.size,2);
+ await Promise.all([h.post(),h.post({attemptId:id(11)})]);assert.equal(h.remoteOrders.size,2);
 });

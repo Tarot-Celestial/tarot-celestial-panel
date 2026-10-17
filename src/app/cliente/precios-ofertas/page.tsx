@@ -183,8 +183,10 @@ export default function PreciosOfertasPage() {
         const raw = localStorage.getItem(key);
         if (raw) { const parsed = JSON.parse(raw); if (attemptUuid.test(parsed?.attemptId || "")) stored = parsed; }
       } catch { /* A damaged entry is replaced below before making a request. */ }
-      const attemptId = stored?.attemptId || crypto.randomUUID();
-      try { localStorage.setItem(key, JSON.stringify({ attemptId, ...(stored?.url ? { url: stored.url } : {}) })); }
+      // A confirmed link belongs to an earlier visit. A new click starts a new purchase;
+      // ambiguous or failed requests retain their ID so retrying cannot duplicate them.
+      const attemptId = stored?.url ? crypto.randomUUID() : stored?.attemptId || crypto.randomUUID();
+      try { localStorage.setItem(key, JSON.stringify({ attemptId })); }
       catch { throw new Error("Tu navegador no puede guardar este intento de compra. Permite el almacenamiento del sitio y vuelve a intentarlo."); }
       const controller = new AbortController();
       timeout = setTimeout(() => controller.abort(), 30000);
