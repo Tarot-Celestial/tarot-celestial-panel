@@ -1,34 +1,15 @@
 "use client";
 
-import { useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, BookOpen, CalendarDays, Gem, Sun } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarDays, Gem } from "lucide-react";
+import CrimsonRuneScene from "./CrimsonRuneScene";
 import styles from "./RunesComingSoon.module.css";
 
 export default function RunesComingSoon() {
-  const [illuminated, setIlluminated] = useState(false);
-
   return (
     <section className={styles.panel} aria-labelledby="runes-coming-soon-title">
       <div className={styles.exhibit}>
-        <span className={styles.artLabel}>Una nueva colección celestial</span>
-        <div className={styles.art}>
-          <div className={illuminated ? styles.illuminated : styles.light} aria-hidden="true" />
-          <Image
-            className={styles.relic}
-            src="/images/runas/runa-celestial-v1.webp"
-            alt="Runa de cristal oscuro con un símbolo dorado, luz amatista y una base de obsidiana."
-            width={800}
-            height={1200}
-            sizes="(max-width: 680px) 240px, (max-width: 1000px) 32vw, 360px"
-            priority
-          />
-        </div>
-        <button className={styles.previewButton} type="button" aria-pressed={illuminated} onClick={() => setIlluminated(value => !value)}>
-          <Sun size={17} aria-hidden="true" /> Iluminar runa
-          <span>Vista previa</span>
-        </button>
+        <CrimsonRuneScene />
       </div>
 
       <div className={styles.content}>

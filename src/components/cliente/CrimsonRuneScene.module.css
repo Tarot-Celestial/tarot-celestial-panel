@@ -1,0 +1,29 @@
+.scene{width:100%;max-width:480px;margin-inline:auto;color:#e7d7d3}
+.visual{--rune-float:0px;--rune-rotate:0deg;--rune-pulse:.2;--rune-shadow-scale:1;--rune-shadow-opacity:.3;--rune-tilt-x:0deg;--rune-tilt-y:0deg;position:relative;width:100%;height:540px;isolation:isolate;overflow:hidden;contain:layout paint}
+.halo{position:absolute;z-index:0;inset:2% 0 10%;pointer-events:none;background:radial-gradient(ellipse at 50% 43%,rgb(151 27 41 / .28),rgb(103 16 35 / .10) 47%,transparent 67%);opacity:calc(.8 + var(--rune-pulse)*.2)}
+.groundLight{position:absolute;z-index:2;left:18%;bottom:14%;width:64%;height:9%;border-radius:50%;background:radial-gradient(ellipse,#e1483659,#bc19362b 44%,transparent 70%);opacity:calc(.6 + var(--rune-pulse)*.35);transform:scale(var(--rune-shadow-scale));pointer-events:none}
+.base{position:absolute;z-index:1;left:14%;bottom:2%;width:72%;height:24%;pointer-events:none;filter:drop-shadow(0 12px 20px #0008)}
+.art{object-fit:contain;user-select:none;-webkit-user-drag:none;pointer-events:none}
+.reflection{position:absolute;z-index:2;left:36%;bottom:13%;width:28%;height:11%;pointer-events:none;transform:translateY(calc(var(--rune-float)*-.4)) scaleY(-1);opacity:calc(.16 + var(--rune-pulse)*.12);filter:blur(2px) saturate(.7);mask-image:linear-gradient(to top,#0009,transparent 82%);-webkit-mask-image:linear-gradient(to top,#0009,transparent 82%)}
+.reflection .art{object-fit:fill}
+.shadow{position:absolute;z-index:3;left:33%;bottom:16%;width:34%;height:4%;border-radius:50%;background:radial-gradient(ellipse,#050103d9,#06010399 42%,transparent 74%);opacity:var(--rune-shadow-opacity);transform:scale(var(--rune-shadow-scale));filter:blur(3px);pointer-events:none}
+.back,.front{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.back{z-index:4}.front{z-index:6}
+.stone{position:absolute;z-index:5;left:50%;top:0%;width:auto;height:78%;aspect-ratio:572/1100;margin:0;padding:0;border:0;border-radius:36%;background:transparent;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;transform:translate3d(-50%,var(--rune-float),0) perspective(700px) rotate(var(--rune-rotate)) rotateX(var(--rune-tilt-x)) rotateY(var(--rune-tilt-y));filter:drop-shadow(0 0 10px rgb(193 32 46 / .2)) drop-shadow(0 12px 20px #0007);outline:0}
+.stone::before{content:"";position:absolute;inset:7% 7% 7%;border-radius:48%;opacity:calc(.2 + var(--rune-pulse)*.55);background:radial-gradient(ellipse,#f63d4460,transparent 63%);pointer-events:none}
+.stone:focus-visible{outline:2px solid #f4c88a;outline-offset:8px;box-shadow:0 0 0 6px #19090be6}
+.stone .art{filter:brightness(calc(1 + var(--rune-pulse)*.18))}
+.staticResponse{position:absolute;z-index:7;left:var(--rune-hit-x,50%);top:var(--rune-hit-y,40%);width:34px;height:34px;border:1px solid #ffd2a5;border-radius:50%;box-shadow:0 0 16px #ff483d6b,inset 0 0 12px #ff8b5366;transform:translate(-50%,-50%) rotate(var(--rune-hit-turn,15deg));display:none;pointer-events:none}
+.staticResponse::before,.staticResponse::after{content:"";position:absolute;inset:8px -7px;border-block:1px solid #e77a59;border-radius:50%;transform:rotate(35deg)}
+.staticResponse::after{transform:rotate(-35deg);border-color:#dbab5f}
+.visual[data-static-response="true"] .staticResponse{display:block}
+.controls{display:flex;justify-content:center;align-items:center;gap:16px;flex-wrap:wrap;margin-top:-4px;position:relative;z-index:8}
+.controls p{margin:0;color:#ccada9;font-size:14px;font-weight:500}
+.pause{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:44px;padding:8px 13px;border-radius:999px;border:1px solid #b575624d;background:#1a0c1299;color:#ecd5c9;font-size:12px;font-weight:600;cursor:pointer}
+.pause:hover{background:#35131c;border-color:#be8a6a80}
+.pause:focus-visible{outline:2px solid #f4c88a;outline-offset:3px}
+.pause:disabled{cursor:default;background:#170d1280;color:#c7b6af}
+.response{text-align:center;min-height:18px;margin:10px 0 0;font-size:12px;line-height:1.5;color:#e8ae9b}
+.keyboardHelp{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:600px){.scene{max-width:350px}.visual{height:350px}.stone{width:auto;top:0%;height:80%}.base{left:18%;width:64%;bottom:0%;height:24%}.shadow{bottom:16%}.reflection{bottom:13%}.controls{gap:10px}.controls p{font-size:13px}.pause{min-height:44px}}
+@media(prefers-reduced-motion:reduce){.stone{transform:translateX(-50%)}.reflection{transform:scaleY(-1)}}

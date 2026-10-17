@@ -16,6 +16,7 @@ import { universeDestination, UniverseMotionControl } from "./CelestialUniverse"
 import universeStyles from "./ClienteUniverseLayout.module.css";
 import { ClientRitualAccess } from "./ClientPanelAccess";
 import { PortalMotionControl } from "./CelestialPortal";
+import runesStyles from "./RunesComingSoon.module.css";
 
 const sb = supabaseClienteBrowser();
 const LEO_NOTIFICATION_KEY = "tc-leo-celestial-last-notification-v1";
@@ -264,7 +265,7 @@ export default function ClienteLayout({ title, subtitle, eyebrow = "Tarot Celest
   const isHome = pathname === "/cliente/dashboard";
 
   const destination = universeDestination(pathname);
-  return <ClientRitualAccess.Provider value={ritualAccess}><PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell} data-home={isHome ? "true" : "false"}>
+  return <ClientRitualAccess.Provider value={ritualAccess}><PanelTheme rank={panelRank} className={universeStyles.shell + " " + styles.premiumShell + (pathname === "/cliente/runas" ? " " + runesStyles.layout : "")} data-home={isHome ? "true" : "false"}>
     
     <div className={universeStyles.container}>
       {isHome ? <PortalMotionControl /> : <UniverseMotionControl />}
