@@ -38,7 +38,8 @@ function routeHarness() {
   const rows = new Map(), providerRequests = [], remoteOrders = new Map(), reads = [];
   const auth = { user: { id: id(1) }, cliente: { id: id(2) } };
   const config = { environment: 'sandbox', origin: 'https://panel.test' };
-  const state = { enabled: true, settingsError: false, failCreate: false };
+  const state = { enabled: true, settingsError: false, failCreate: false, promotion: null };
+  const promotions = load('src/lib/server/client-promotions.ts', { '@/lib/ruleta': roulette, '@/lib/server/rank-benefits': {}, '@/lib/server/cliente-platform': {} });
   const admin = { from(table) {
     let filters = [], operation = 'read', values, single = false, limit;
     const query = {
@@ -94,6 +95,7 @@ function routeHarness() {
       return { ...auth, admin };
     } },
     '@/lib/server/cliente-minute-packs': packModule,
+    '@/lib/server/client-promotions': { ...promotions, loadActivePromotion: async () => state.promotion },
     '@/lib/server/client-paypal-checkout': checkoutModule(),
     '@/lib/server/paypal-crm': paypal,
   });
@@ -381,4 +383,27 @@ test('Custom-domain card access is limited to client purchases and never broaden
   const staff = cardRouteHarness('crm_collection'); staff.config.origin = alias;
   assert.equal((await staff.post('session', domain)).status, 403); assert.equal(staff.calls.length, 0);
   assert.equal((await staff.post('session', alias)).status, 200);
+});
+
+
+test('Active promotions use the card link and preserve server-owned prices and benefits', async () => {
+  for (const [minutes, price, coins, level, oracle] of [[30,20,50,1,0],[60,30,150,2,0],[120,59,300,3,2]]) {
+    const h=routeHarness();
+    h.state.promotion={id:id(50),name:'Halloween',packages:[{id:id(51),name:'Promo '+minutes,paid_minutes:minutes,free_minutes:0,price,currency:'EUR',coins,roulette_level:level,roulette_spins:1,oracle_credits:oracle,is_active:true}]};
+    const response=await h.post({packId:'promo:'+id(51),amount:0.01,normal:999,coins:9999});
+    assert.equal(response.status,200);assert.equal(new URL((await response.json()).url).pathname,'/pago-tarjeta');
+    const saved=h.rows.get(id(10));assert.equal(saved.amount,price);assert.equal(saved.purchase_payload.normal,minutes);assert.equal(saved.purchase_payload.free,0);
+    assert.equal(saved.purchase_payload.points,coins);assert.equal(saved.purchase_payload.oracle_credits,oracle);assert.equal(saved.purchase_payload.roulette_level,level);
+    assert.equal(saved.create_payload.purchase_units[0].amount.value,price.toFixed(2));
+    h.state.promotion=null;
+    assert.equal((await h.post({packId:'promo:'+id(51)})).status,200);assert.equal(h.remoteOrders.size,1);
+    assert.equal((await h.post({packId:'pack_30',attemptId:id(12)})).status,409);
+  }
+});
+test('Inactive, missing and unsupported promotions cannot create payable orders',async()=>{
+  for(const change of [null,{is_active:false},{currency:'USD'},{roulette_level:4},{paid_minutes:-1}]) {
+    const h=routeHarness();h.state.promotion=change===null?null:{id:id(50),packages:[{id:id(51),name:'Promo',paid_minutes:30,free_minutes:0,price:20,currency:'EUR',coins:50,roulette_level:1,roulette_spins:1,oracle_credits:0,...change}]};
+    // Negative persisted minutes normalize to zero; the resulting empty pack is rejected.
+    assert.equal((await h.post({packId:'promo:'+id(51)})).status,409);assert.equal(h.remoteOrders.size,0);assert.equal(h.rows.size,0);
+  }
 });

@@ -2,7 +2,8 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { rouletteClient, RouletteAccessError } from "@/lib/server/ruleta-access";
 import { getConfiguredMinutePack } from "@/lib/server/cliente-minute-packs";
-import { buildClientPurchaseSnapshot } from "@/lib/server/client-paypal-checkout";
+import { buildClientPurchaseSnapshot, buildPromotionPurchaseSnapshot } from "@/lib/server/client-paypal-checkout";
+import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
 import { PAYPAL_TABLE, PayPalError, paypalConfig, paypalRequest, clientPayPalOriginAllowed } from "@/lib/server/paypal-crm";
 
 export const runtime = "nodejs";
@@ -18,14 +19,16 @@ export async function POST(req: Request) {
     if (!clientPayPalOriginAllowed(origin, config.origin)) return NextResponse.json({ error: "Origen no válido." }, { status: 403, headers });
     const body = await req.json().catch(() => null);
     const pack = getConfiguredMinutePack(body?.packId);
-    if (!pack || !uuid.test(body?.attemptId || "")) throw new PayPalError("Selecciona un paquete válido e inténtalo de nuevo.", 400);
+    const packId = typeof body?.packId === "string" ? body.packId : "";
+    const promotionId = packId.startsWith("promo:") ? packId.slice(6) : "";
+    if ((!pack && !uuid.test(promotionId)) || !uuid.test(body?.attemptId || "")) throw new PayPalError("Selecciona un paquete válido e inténtalo de nuevo.", 400);
 
     const selected = await admin.from(PAYPAL_TABLE).select("*").eq("id", body.attemptId).maybeSingle();
     if (selected.error) throw selected.error;
     let attempt = selected.data;
     const owns = (a: any) => a.checkout_kind === "client_purchase" && a.purchaser_auth_user_id === user.id &&
       a.cliente_id === cliente.id && a.environment === config.environment;
-    if (attempt && (!owns(attempt) || attempt.pack_id !== pack.id)) throw new PayPalError("La operación no corresponde a esta compra.", 409);
+    if (attempt && (!owns(attempt) || attempt.pack_id !== packId)) throw new PayPalError("La operación no corresponde a esta compra.", 409);
 
     // A second tab/device or a changed browser request ID must not create a
     // second payable order while this customer's previous purchase is pending.
@@ -43,22 +46,35 @@ export async function POST(req: Request) {
       const setting = await admin.from("cliente_payment_settings").select("paypal_client_enabled").eq("id", "default").maybeSingle();
       if (setting.error || setting.data?.paypal_client_enabled !== true) throw new PayPalError("Las compras con tarjeta no están disponibles en este momento. Contacta con tu central.", 503);
       const id = body.attemptId, token = randomUUID();
-      const payload = buildClientPurchaseSnapshot(pack);
+      let payload;
+      let amount: number;
+      if (promotionId) {
+        const promotion = await loadActivePromotion(admin);
+        const promotionPack = promotion?.packages.find((row: any) => String(row.id) === promotionId && row.is_active !== false);
+        if (!promotionPack) throw new PayPalError("Esta promoción ya no está disponible.", 409);
+        const snapshot = promotionPackageSnapshot(promotion, promotionPack);
+        try { payload = buildPromotionPurchaseSnapshot(snapshot); }
+        catch { throw new PayPalError("Esta promoción necesita tramitarse con tu central.", 409); }
+        amount = snapshot.price;
+      } else {
+        payload = buildClientPurchaseSnapshot(pack!);
+        amount = pack!.priceUsd;
+      }
       const createPayload = { intent: "CAPTURE", purchase_units: [{ reference_id: id, custom_id: id, invoice_id: `TC-${id}`,
-        description: `Tarot Celestial · ${pack.nombre}`, amount: { currency_code: "EUR", value: pack.priceUsd.toFixed(2) } }],
+        description: `Tarot Celestial · ${payload.pack_name}`, amount: { currency_code: "EUR", value: amount.toFixed(2) } }],
         payment_source: { card: { attributes: { verification: { method: "SCA_WHEN_REQUIRED" } }, experience_context: {
           shipping_preference: "NO_SHIPPING", return_url: `${origin}/pago-tarjeta?ref=${token}`,
           cancel_url: `${origin}/pago-tarjeta?ref=${token}&cancel=1`,
         } } } };
       const inserted = await admin.from(PAYPAL_TABLE).insert({ id, cliente_id: cliente.id, worker_id: null,
         checkout_kind: "client_purchase", purchaser_auth_user_id: user.id, environment: config.environment,
-        public_token: token, amount: pack.priceUsd, currency: "EUR", pack_id: pack.id, pack_name: pack.nombre,
+        public_token: token, amount, currency: "EUR", pack_id: packId, pack_name: payload.pack_name,
         purchase_payload: payload, create_payload: createPayload }).select("*").single();
       if (inserted.error && inserted.error.code !== "23505") throw inserted.error;
       attempt = inserted.data || await active();
       if (!attempt || !owns(attempt)) throw new PayPalError("No se pudo recuperar esta compra. Reintenta con la misma operación.", 409);
     }
-    if (attempt.pack_id !== pack.id) return NextResponse.json({ ok: false,
+    if (attempt.pack_id !== packId) return NextResponse.json({ ok: false,
       error: "Tienes otra compra pendiente. Revísala o cancélala antes de elegir un paquete diferente.",
       attempt_id: attempt.id, url: attempt.order_id ? `${origin}/pago-tarjeta?ref=${attempt.public_token}` : null }, { status: 409, headers });
 

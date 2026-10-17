@@ -212,3 +212,17 @@ test('reapplying the migration preserves historical purchases, balances and coll
   assert.deepEqual(await scalar('select jsonb_agg(to_jsonb(a) order by id) v from crm_paypal_orders a'), before);
   assert.deepEqual(await scalar('select jsonb_agg(to_jsonb(c) order by id) v from crm_clientes c'), balances);
 });
+
+
+test('promotion snapshots settle exact advertised minutes through the existing client card RPC', async () => {
+  for (const [i,total,price,level,coins,oracle] of [[0,30,20,1,50,0],[1,60,30,2,150,0],[2,120,59,3,300,2]]) {
+    const a=await setup(800+i,{total,normal:total,free:0,price,level,spins:1,oracle},{payload:{points:coins}});
+    const promoId='promo:'+id(900+i), name='Halloween '+total;
+    await db.query("update crm_paypal_orders set pack_id=$2,pack_name=$3,purchase_payload=purchase_payload || jsonb_build_object('pack_id',$2::text,'pack_name',$3::text) where id=$1",[id(a.n),promoId,name]);
+    const result=await finish(a);assert.equal(result.ok,true);assert.deepEqual((await balance(a.client)).slice(0,2),[7+total,3]);
+    const payment=await scalar('select to_jsonb(p) v from crm_cliente_pagos p where id=$1',[result.payment_id]);
+    assert.equal(payment.pack_id,promoId);assert.equal(Number(payment.importe),price);assert.equal(Number(payment.paid_minutes),total);assert.equal(Number(payment.bonus_minutes),0);
+    assert.equal(payment.benefits_context.coins,coins);assert.equal(payment.benefits_context.oracle_credits,oracle);
+    assert.equal((await finish(a)).duplicated,true);assert.deepEqual((await balance(a.client)).slice(0,2),[7+total,3]);
+  }
+});

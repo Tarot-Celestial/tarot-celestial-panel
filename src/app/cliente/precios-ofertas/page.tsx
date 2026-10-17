@@ -166,7 +166,7 @@ export default function PreciosOfertasPage() {
   }
 
   async function checkoutMinutes(packId: string) {
-    if (purchaseInFlight.current || states.catalogue !== "ready") return;
+    if (purchaseInFlight.current || states[packId.startsWith("promo:") ? "promotion" : "catalogue"] !== "ready") return;
     purchaseInFlight.current = true;
     const checkoutGeneration = generation.current;
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -212,30 +212,6 @@ export default function PreciosOfertasPage() {
       if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error && error.name !== "AbortError" ? error.message : "La conexión ha tardado demasiado. Vuelve a intentarlo: recuperaremos el mismo intento de pago.");
     } finally {
       clearTimeout(timeout); purchaseInFlight.current = false;
-      if (mounted.current && generation.current === checkoutGeneration) setBusy("");
-    }
-  }
-
-  async function checkoutPromotion(packageId: string) {
-    const checkoutGeneration = generation.current;
-    try {
-      setBusy(`promo:${packageId}`);
-      setMessage("");
-      const { data } = await sb.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Sesión no válida");
-      const response = await fetch("/api/cliente/promotions/checkout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ package_id: packageId }),
-      });
-      const result = await response.json().catch(() => null);
-      if (!mounted.current || generation.current !== checkoutGeneration || owner.current !== data.session?.user.id) return;
-      if (!result?.ok || !result?.url) throw new Error(result?.error || "No hemos podido iniciar el pago");
-      window.location.href = result.url;
-    } catch (error) {
-      if (mounted.current && generation.current === checkoutGeneration) setMessage(error instanceof Error ? error.message : "No hemos podido iniciar el pago");
-    } finally {
       if (mounted.current && generation.current === checkoutGeneration) setBusy("");
     }
   }
@@ -311,7 +287,8 @@ export default function PreciosOfertasPage() {
                     {pack.rankBenefitsStatus === "unavailable" ? <span><strong>Beneficios de rango:</strong> no disponibles temporalmente. El pack y su precio siguen disponibles.</span> : null}
                     {pack.rankBenefitsStatus === "unmapped_package" ? <span><strong>Beneficios de rango:</strong> esta promoción aún no tiene nivel asignado.</span> : null}
                   </div>
-                  <ClientPurchaseAction className={styles.promoBuy}><button className={styles.promoBuy} disabled={busy === `promo:${pack.id}` || states.promotion !== "ready"} onClick={() => checkoutPromotion(pack.id)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
+                  <ClientPurchaseAction className={styles.promoBuy} checkoutEnabled><button type="button" className={styles.promoBuy} disabled={busy === `promo:${pack.id}` || states.promotion !== "ready"} onClick={() => checkoutMinutes(`promo:${pack.id}`)}>{busy === `promo:${pack.id}` ? "Conectando…" : "COMPRAR AHORA"}</button></ClientPurchaseAction>
+                  {checkoutMessagePack === `promo:${pack.id}` && message ? <div className={styles.message} role="alert">{message}{pendingCheckoutUrl ? <Link href={pendingCheckoutUrl}>Revisar compra pendiente</Link> : null}</div> : null}
                 </article>
               ))}
             </div>
