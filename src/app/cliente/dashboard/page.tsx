@@ -207,7 +207,13 @@ export default function ClienteDashboardPage() {
     const stale = version < walletAppliedAtRef.current;
 
     setCliente((current) => {
-      const base = incomingCliente ? { ...(current || {} as Cliente), ...incomingCliente } : current;
+      const base = incomingCliente ? {
+        ...(current || {} as Cliente), ...incomingCliente,
+        // Completion is confirmed by the profile write. An older dashboard
+        // snapshot must not reopen onboarding for the same account.
+        onboarding_completado: incomingCliente.onboarding_completado ||
+          (current?.id === incomingCliente.id && current?.onboarding_completado) || false,
+      } : current;
       if (!base) return base;
       if (stale) return base;
 
@@ -392,10 +398,8 @@ export default function ClienteDashboardPage() {
   }, [loadData, loadOracle, loadRouletteSummary]);
 
   useEffect(() => {
-    if (cliente && !cliente.onboarding_completado) {
-      setShowOnboarding(true);
-    }
-  }, [cliente]);
+    setShowOnboarding(Boolean(cliente && !cliente.onboarding_completado));
+  }, [cliente?.id, cliente?.onboarding_completado]);
 
   useEffect(() => {
     async function checkPasswordStatus() {
@@ -614,15 +618,24 @@ export default function ClienteDashboardPage() {
 
     const json = await res.json().catch(() => null);
 
-    if (!json?.ok) {
+    if (!res.ok || !json?.ok) {
       throw new Error(json?.error || "No hemos podido guardar tus datos");
     }
 
-    await loadData();
+    const updated = json.cliente as Cliente | undefined;
+    if (!updated?.id || updated.id !== cliente?.id || updated.onboarding_completado !== true) {
+      throw new Error("No se ha confirmado el perfil completo. Inténtalo de nuevo.");
+    }
+    // Commit the saved profile before closing, invalidating reads started before
+    // the write. Refresh balances separately without delaying wizard completion.
+    dataRevisionRef.current += 1;
+    setCliente((current) => current?.id === updated.id ? { ...current, ...updated } : current);
     setShowOnboarding(false);
+    void loadData();
 
   } catch (e: any) {
     setMsg(e?.message || "No hemos podido guardar tus datos");
+    throw e;
   } finally {
     setSavingOnboarding(false);
   }

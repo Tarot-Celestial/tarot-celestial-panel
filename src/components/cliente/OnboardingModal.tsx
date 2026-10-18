@@ -80,8 +80,8 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
     setMsg("");
     try {
       await onSave({ nombre: nombre.trim(), apellido: apellido.trim(), email: email.trim(), fecha_nacimiento: fechaNacimiento, onboarding_completado: true });
-    } catch {
-      setMsg("No hemos podido guardar el perfil. Inténtalo de nuevo.");
+    } catch (error) {
+      setMsg(error instanceof Error ? error.message : "No hemos podido guardar el perfil. Inténtalo de nuevo.");
     }
   }
 
