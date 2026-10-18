@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, Check, ChevronRight, MoonStar, Sparkles, UserRound } from "lucide-react";
 import styles from "./OnboardingModal.module.css";
 
-type Cliente = { nombre?: string | null; apellido?: string | null; email?: string | null; fecha_nacimiento?: string | null };
+type Cliente = { id: string; nombre?: string | null; apellido?: string | null; email?: string | null; fecha_nacimiento?: string | null };
 type Props = {
   open: boolean;
   cliente: Cliente | null;
@@ -44,8 +44,17 @@ export default function OnboardingModal({ open, cliente, saving, onSave }: Props
   const [editNombre, setEditNombre] = useState(false);
   const [editEmail, setEditEmail] = useState(false);
   const [msg, setMsg] = useState("");
+  const initializedClient = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!open || !cliente) {
+      initializedClient.current = null;
+      return;
+    }
+    // Wallet polling replaces the client object every five seconds. Initialize
+    // only when opening the wizard or changing accounts, never during editing.
+    if (initializedClient.current === cliente.id) return;
+    initializedClient.current = cliente.id;
     setNombre(cliente?.nombre || "");
     setApellido(cliente?.apellido || "");
     setEmail(cliente?.email || "");
