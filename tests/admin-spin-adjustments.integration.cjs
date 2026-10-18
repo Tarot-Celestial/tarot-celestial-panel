@@ -1,0 +1,23 @@
+const {test,before,after}=require('node:test');
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
+const {PGlite}=require('@electric-sql/pglite');
+let db;const id=n=>'00000000-0000-4000-8000-'+String(n).padStart(12,'0');
+const adjust=async(op,level,delta,actor=2)=>(await db.query('select tc_admin_adjust_spins($1,$2,$3,$4,$5,$6) v',[id(op),id(1),id(actor),level,delta,'Corrección de prueba'])).rows[0].v;
+before(async()=>{
+ db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;
+ create table crm_clientes(id uuid primary key);
+ create table workers(user_id uuid,role text,is_active boolean,display_name text,email text);
+ create table cliente_ruleta_giros(id uuid primary key default gen_random_uuid(),cliente_id uuid,payment_key text unique,source text,nivel smallint,estado text constraint cliente_ruleta_giros_estado_check check(estado in ('pending','used')),required_rank text,created_at timestamptz default now());
+ create table crm_client_notes(cliente_id text,texto text,author_user_id uuid,author_name text,event_type text,event_data jsonb,is_pinned boolean);
+ insert into crm_clientes values('${id(1)}');insert into workers values('${id(2)}','admin',true,'Admin','admin@example.test'),('${id(3)}','central',true,'Central','central@example.test'),('${id(4)}','admin',false,'Inactivo','inactive@example.test');`);
+ const dir=path.join(__dirname,'../supabase/migrations');
+ const file=fs.readdirSync(dir).find(x=>x.endsWith('_admin_spin_adjustments.sql'));
+ await db.exec(fs.readFileSync(file?path.join(dir,file):path.join(__dirname,'../supabase/admin-spin-adjustments.sql'),'utf8'));
+});
+after(async()=>db.close());
+test('adds real level 3 spins and repeated operation does not duplicate them',async()=>{const a=await adjust(10,3,3);assert.equal(a.after_count,3);assert.equal(a.spin_ids.length,3);const b=await adjust(10,3,3);assert.equal(b.replayed,true);assert.equal((await db.query('select count(*)::int n from cliente_ruleta_giros')).rows[0].n,3);await assert.rejects(adjust(10,3,4),/OPERATION_CONFLICT/);});
+test('removal preserves used spins and records the exact revoked rows and CRM note',async()=>{await db.exec("update cliente_ruleta_giros set estado='used' where id=(select id from cliente_ruleta_giros limit 1)");const a=await adjust(11,3,-2);assert.equal(a.before_count,2);assert.equal(a.after_count,0);const rows=(await db.query('select estado,count(*)::int n from cliente_ruleta_giros group by estado')).rows;assert.equal(rows.find(x=>x.estado==='used').n,1);assert.equal(rows.find(x=>x.estado==='revoked').n,2);assert.equal((await db.query('select count(*)::int n from crm_client_notes')).rows[0].n,2);});
+test('insufficient balance rolls back without creating audit or changing another level',async()=>{await adjust(12,1,2);await assert.rejects(adjust(13,3,-1),/INSUFFICIENT_SPINS/);assert.equal((await db.query('select count(*)::int n from tc_admin_spin_adjustments where operation_id=$1',[id(13)])).rows[0].n,0);assert.equal((await db.query("select count(*)::int n from cliente_ruleta_giros where nivel=1 and estado='pending'")).rows[0].n,2);});
+test('all levels preserve their selection, with rank requirement on Diamante',async()=>{for(const level of [2,4,5]){const a=await adjust(20+level,level,1);assert.equal(a.nivel,level);}assert.equal((await db.query('select required_rank from cliente_ruleta_giros where nivel=5')).rows[0].required_rank,'diamante');});
+test('invalid amounts and non-admin or inactive workers cannot mutate',async()=>{for(const delta of [0,101,-101])await assert.rejects(adjust(30,1,delta),/INVALID_ADJUSTMENT/);for(const actor of [3,4])await assert.rejects(adjust(31,1,1,actor),/FORBIDDEN/);await assert.rejects(adjust(32,6,1),/INVALID_ADJUSTMENT/);});
+test('browser roles have no permission to call the adjustment RPC or write audit',async()=>{const r=(await db.query("select has_function_privilege('authenticated','tc_admin_adjust_spins(uuid,uuid,uuid,integer,integer,text)','execute') f,has_table_privilege('anon','tc_admin_spin_adjustments','insert') t,relrowsecurity r from pg_class where relname='tc_admin_spin_adjustments'")).rows[0];assert.deepEqual(r,{f:false,t:false,r:true});});

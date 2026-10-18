@@ -54,6 +54,7 @@ const ClientRanksAdminPanel = nextDynamic(() => import("@/components/admin/Clien
 const ClientWebAdminPanel = nextDynamic(() => import("@/components/admin/ClientWebAdminPanel"), { ssr:false });
 const ClientCampaignsPanel = nextDynamic(() => import("@/components/admin/ClientCampaignsPanel"), { ssr:false });
 const ClientRouletteAdminPanel = nextDynamic(() => import("@/components/admin/ClientRouletteAdminPanel"), { ssr:false });
+const ClientBalancesPanel = nextDynamic(() => import("@/components/admin/ClientBalancesPanel"), { ssr:false });
 const ClientRitualsAdminPanel = nextDynamic(() => import("@/components/admin/ClientRitualsAdminPanel"), { ssr:false });
 const ManualInvoiceModal = nextDynamic(() => import("@/components/admin/ManualInvoiceModal"), { ssr:false });
 const BonusAdminPanel = nextDynamic(() => import("@/components/bonuses/BonusAdminPanel"), { ssr:false });
@@ -73,6 +74,7 @@ const ADMIN_NAV = [
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
   { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
+  { key: "client-balances", icon: Sparkles, label: "Giros y saldos", kicker: "Giros, Coins y minutos", tone: "gold" },
   { key: "welldone", icon: BarChart3, label: "WELLDONE", kicker: "Minutos y coste CALL", tone: "goldPurple" },
   { key: "rank-benefits", icon: Sparkles, label: "Beneficios de rangos y paquetes", kicker: "Coins y accesos por rango", tone: "goldPurple" },
   { key: "finance-center", icon: ReceiptText, label: "Factura de gastos, ingresos y ganancias", kicker: "Control económico y pendientes", tone: "goldPurple" },
@@ -178,6 +180,7 @@ type TabKey =
   | "dashboard"
   | "panel"
   | "facturas"
+  | "client-balances"
   | "welldone"
   | "rank-benefits"
   | "finance-center"
@@ -3023,6 +3026,7 @@ function AdminPage() {
 
           {tab === "rangos-clientes" && <ClientRanksAdminPanel />}
           {tab === "ruletas-clientes" && <ClientRouletteAdminPanel />}
+          {tab === "client-balances" && <ClientBalancesPanel />}
           {tab === "rituales-clientes" && <ClientRitualsAdminPanel />}
 
           {tab === "bonos-tarotistas" && <BonusAdminPanel />}
