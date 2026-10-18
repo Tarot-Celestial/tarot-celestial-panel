@@ -25,11 +25,12 @@ export async function GET(req: Request) {
    gate.admin.rpc("tc_client_state_snapshot",{p_cliente_id:id}),
    gate.admin.from("tc_admin_spin_adjustments").select("operation_id,nivel,delta,reason,before_count,after_count,created_at").eq("cliente_id",id).order("created_at",{ascending:false}).limit(20),
    ...[1,2,3,4,5].map(level=>gate.admin.from("cliente_ruleta_giros").select("id",{count:"exact",head:true}).eq("cliente_id",id).eq("nivel",level).eq("estado","pending")),
+   gate.admin.rpc("cliente_ruleta_resumen_ultra_v1",{p_cliente_id:id}),
   ]);
   for(const result of results) if(result.error) throw result.error;
   if(!results[0].data) return reply({ok:false,error:"Cliente no encontrado."},404);
   const wallet=results[1].data;
-  return reply({ok:true,cliente:results[0].data,wallet:{coins:wallet.coins,minutes_free:wallet.minutes_free,minutes_normal:wallet.minutes_normal,minutes_total:wallet.minutes_total,effective_rank:wallet.effective_rank},spins:results.slice(3).map((r,i)=>({level:i+1,count:r.count||0})),history:results[2].data});
+  return reply({ok:true,cliente:results[0].data,wallet:{coins:wallet.coins,minutes_free:wallet.minutes_free,minutes_normal:wallet.minutes_normal,minutes_total:wallet.minutes_total,effective_rank:wallet.effective_rank},spins:results.slice(3,8).map((r,i)=>({level:i+1,count:r.count||0,available:results[8].data[`level_${i+1}_spins`]})),history:results[2].data});
  }catch{ return reply({ok:false,error:"No se pudieron consultar los saldos. Reintenta."},503); }
 }
 export async function POST(req: Request) {

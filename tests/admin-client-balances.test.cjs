@@ -13,7 +13,7 @@ test('API rejects unauthorized reads/writes and derives actor from the admin ses
 });
 test('UI displays real balances and retries uncertain saves with the same operation id',async()=>{
  const client={id:'one',nombre:'Ana',apellido:'Prueba',telefono:'123',email:'test@example.test'};
- const detail={ok:true,cliente:client,wallet:{coins:87,minutes_total:19,minutes_free:7,minutes_normal:12,effective_rank:'oro'},spins:[1,2,3,4,5].map(level=>({level,count:level})),history:[]};
+ const detail={ok:true,cliente:client,wallet:{coins:87,minutes_total:19,minutes_free:7,minutes_normal:12,effective_rank:'oro'},spins:[1,2,3,4,5].map(level=>({level,count:level,available:level===5?0:level})),history:[]};
  const posts=[];let fail=true;
  const component=load('src/components/admin/ClientBalancesPanel.tsx',{'@/lib/supabase-browser':{supabaseBrowser:()=>({auth:{getSession:async()=>({data:{session:{access_token:'session'}}})}})}},{window:{setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}},document:{hidden:false},crypto:{randomUUID:()=> 'operation-one'},fetch:async(url,init)=>{
   if(init.method==='POST'){posts.push(JSON.parse(init.body));if(fail)throw Error('connection lost');return {ok:true,status:200,json:async()=>({ok:true})};}
@@ -33,4 +33,5 @@ test('UI displays real balances and retries uncertain saves with the same operat
  assert.equal(posts.length,2);assert.equal(posts[0].operation_id,posts[1].operation_id);assert.equal(view.root.findByType('fieldset').props.disabled,false);assert.ok(text(view.toJSON()).includes('Ajuste guardado'));
  act(()=>view.unmount());
 });
+
 
