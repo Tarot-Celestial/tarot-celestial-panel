@@ -278,6 +278,11 @@ function isUuid(value: unknown) {
 
 function friendlySubmitError(error: unknown) {
   const message = String(error || "").trim();
+  if (message === "OPERATION_CONFLICT") return "Esta operación ya se guardó con otros datos. Cierra el formulario y actualiza la ficha antes de continuar.";
+  if (message === "RECOVERY_REQUIRES_PURCHASE" || message === "PAYMENT_REQUIRED") return "Recuperado requiere una compra confirmada posterior al contacto. Para una compra ya registrada, confírmala desde Recuperar clientes.";
+  if (message === "CONTACT_FIRST") return "Marca primero «Fue contactada» en Recuperar clientes. La compra debe ser posterior a ese contacto.";
+  if (message === "OTHER_OWNER") return "Este cliente está asignado a otra central. Actualiza la ficha para comprobar su responsable.";
+  if (message === "NOT_ELIGIBLE" || message === "RECOVERY_NOT_ELIGIBLE") return "Este cliente no cumple las condiciones de recuperación. Actualiza su ficha antes de registrar la compra.";
   if (message === "INVALID_CALL_MINUTES") return "Revisa los minutos: deben ser positivos, con su código. Si guarda toda la compra para después, los utilizados pueden ser 0.";
   if (message === "PAYPAL_PAYMENT_ALREADY_CONFIRMED") return "Existe una compra histórica de PayPal de este importe pendiente de revisión. Administración debe comprobarla antes de registrar otra compra.";
   if (message === "PAYMENT_ALREADY_LINKED") return "Ese pago ya tiene una llamada vinculada. Vuelve a abrir la ficha; para otra llamada utiliza los minutos pendientes.";
@@ -698,6 +703,9 @@ export default function RegistrarLlamadaModal({
       if (j?.xp_event) {
         window.dispatchEvent(new CustomEvent("tc-xp-recorded", { detail: { event: j.xp_event, clienteId } }));
       }
+      if (j?.recovery) {
+        window.dispatchEvent(new Event("tc-recovery-mission-refresh"));
+      }
 
       if (onSuccess) await onSuccess(j?.message || "✅ Llamada registrada correctamente", {
         clienteId,
@@ -891,7 +899,7 @@ export default function RegistrarLlamadaModal({
                 {CLASIF_OPTIONS.map((opt) => (
                   <button key={opt.value} type="button" className={`${styles.choiceButton} ${styles[`classification_${opt.value}`]} ${clasificacion === opt.value ? styles.choiceSelected : ""}`} onClick={() => setClasificacion(opt.value)}>
                     <span className={styles.classificationIcon} aria-hidden="true">{opt.value === "captado" ? "★" : opt.value === "promo" ? "✦" : opt.value === "recuperado" ? "↗" : opt.value === "super_promo_ruleta" ? "🎡" : "•"}</span>
-                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"}</small> : opt.value === "super_promo_ruleta" ? <small>+1 giro exclusivo · Super Ruleta Nivel Especial</small> : null}</span>
+                    <span><b>{opt.label}</b>{opt.value === "captado" ? <small>{captureXp?.eligible ? `${captureXp.owner_name || "La captadora histórica"} recibirá +${captureXp.xp.toLocaleString("es-ES")} XP` : captureXp?.already_awarded ? "XP de captación ya concedido" : "Se validará la primera gestora"}</small> : opt.value === "recuperado" ? <small>Compra confirmada tras el contacto · +75 XP una sola vez · Cuenta para las 5 recuperaciones de tu turno</small> : opt.value === "super_promo_ruleta" ? <small>+1 giro exclusivo · Super Ruleta Nivel Especial</small> : null}</span>
                     {opt.value === "captado" && captureXp?.eligible ? <strong>+{captureXp.xp.toLocaleString("es-ES")} XP</strong> : null}
                   </button>
                 ))}
