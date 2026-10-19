@@ -16,6 +16,7 @@ const thread = (id, kind = 'message') => ({ id, kind, name: `Persona ${id}`, use
 function fixture(options = {}) {
   const requests = [], timers = new Map(), listeners = new Map();
   let tree, sequence = 0, requestSequence = 0, failSend = null, failDetail = null, failInbox = null, detailBlocked = null, pendingSend = null, requestStatus = null;
+  let sendError = 'Explicación en español del servidor.', detailError = 'La consulta falló.', inboxError = 'La consulta falló.';
   let connection = { connected: true, ready: true, username: 'tarotcelestialof' };
   let canReply = options.canReply ?? true, canPrivateReply = options.canPrivateReply ?? true;
   let session = { access_token: 'test-token', user: { id: 'worker-one' } }, authCallback, inboxResponse = options.inboxResponse, inboxBlocked = null;
@@ -36,18 +37,18 @@ function fixture(options = {}) {
       const params = new URL(url, 'https://test.local').searchParams;
       requests.push({ action: params.get('action'), params, ...init });
       if (params.get('action') === 'resolve') { pendingSend = null; return { ok: true, json: async () => ({ ok: true }) }; }
-      if (params.get('action') === 'send') return { ok: !failSend, json: async () => failSend ? { ok: false, code: failSend, error: 'Explicación en español del servidor.' } : { ok: true } };
+      if (params.get('action') === 'send') return { ok: !failSend, json: async () => failSend ? { ok: false, code: failSend, error: sendError } : { ok: true } };
       if (params.get('action') === 'inbox') {
-        if (failInbox) return { ok: false, json: async () => ({ ok: false, code: failInbox, error: 'La consulta falló.' }) };
+        if (failInbox) return { ok: false, json: async () => ({ ok: false, code: failInbox, error: inboxError }) };
         const kind = params.get('kind');
         const payload = inboxResponse ? inboxResponse(kind, params.get('cursor')) : { threads: [thread(params.get('cursor') ? 'older' : 'one', kind), ...(params.get('cursor') ? [] : [thread('two', kind)])], nextCursor: params.get('cursor') ? null : 'more' };
         if (inboxBlocked) await inboxBlocked;
         return { ok: true, json: async () => ({ ok: true, connection, ...payload }) };
       }
       const id = params.get('threadId');
-      if (failDetail) return { ok: false, json: async () => ({ ok: false, code: failDetail, error: 'La consulta falló.' }) };
+      if (failDetail) return { ok: false, json: async () => ({ ok: false, code: failDetail, error: detailError }) };
       if (detailBlocked?.id === id) await detailBlocked.promise;
-      return { ok: true, json: async () => ({ ok: true, messages: [{ id: `${id}-message`, text: `Mensaje de ${id}`, fromMe: false, createdAt: '2026-10-19T17:00:00Z' }], canReply: canReply && !pendingSend, canPrivateReply: canPrivateReply && !pendingSend, privateReplySent: false, lastReplyAt: null, pendingSend, requestStatus: params.has('requestId') ? requestStatus : null }) };
+      return { ok: true, json: async () => ({ ok: true, messages: [{ id: `${id}-message`, text: `Mensaje de ${id}`, fromMe: false, createdAt: '2026-10-19T17:00:00Z' }], canReply: canReply && !pendingSend, canPrivateReply: canPrivateReply && !pendingSend, replyHint: options.replyHint, privateReplyHint: options.privateReplyHint, privateReplySent: false, lastReplyAt: null, pendingSend, requestStatus: params.has('requestId') ? requestStatus : null }) };
     },
   }).default;
   const act = async fn => renderer.act(async () => { fn(); await new Promise(resolve => setImmediate(resolve)); });
@@ -63,8 +64,8 @@ function fixture(options = {}) {
     async send() { await act(() => { void tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); },
     async tick() { await act(() => { for (const timer of [...timers.values()]) timer.fn(); }); },
     async settle() { await act(() => {}); },
-    failSend(code) { failSend = code; }, blockDetail(id, promise) { detailBlocked = { id, promise }; },
-    failDetail(code) { failDetail = code; }, failInbox(code) { failInbox = code; },
+    failSend(code, message = 'Explicación en español del servidor.') { failSend = code; sendError = message; }, blockDetail(id, promise) { detailBlocked = { id, promise }; },
+    failDetail(code, message = 'La consulta falló.') { failDetail = code; detailError = message; }, failInbox(code, message = 'La consulta falló.') { failInbox = code; inboxError = message; },
     setPending(value) { pendingSend = value; }, setRequestStatus(value) { requestStatus = value; },
     setConnection(value) { connection = value; }, setCanReply(value) { canReply = value; },
     setInboxResponse(value) { inboxResponse = value; }, blockInbox(value) { inboxBlocked = value; },
@@ -279,4 +280,77 @@ test('logout clears loaded history and ignores late requests, then a new session
     assert.ok(f.button('Persona new-session')); assert.equal(Boolean(f.button('Persona older')), false);
     await f.click('Persona new-session'); assert.equal(f.tree.root.findByType('textarea').props.value, '');
   } finally { release?.(); await f.unmount(); }
+});
+
+test('a rejected conversation read preserves the server explanation without claiming a message was rejected', async () => {
+  const f = fixture(); await f.mount();
+  const explanation = 'Instagram no permite cargar esta conversación. Revisa la conexión y los permisos.';
+  try {
+    f.failDetail('META_REJECTED', explanation); await f.click('Persona one');
+    assert.equal(content(f.tree.root.findByProps({ role: 'alert' })), explanation);
+    assert.equal(f.tree.root.findByType('textarea').props.placeholder, explanation);
+    assert.equal(f.tree.root.findByType('textarea').props.disabled, true);
+    assert.equal(content(f.tree.root).includes('rechazó la respuesta'), false);
+    assert.equal(f.sends.length, 0);
+    await f.click('Actualizar');
+    assert.equal(content(f.tree.root.findByProps({ role: 'alert' })), explanation);
+    f.failDetail(null); await f.click('Actualizar');
+    assert.equal(f.tree.root.findAllByProps({ role: 'alert' }).length, 0);
+    assert.equal(f.tree.root.findByType('textarea').props.disabled, false);
+  } finally { await f.unmount(); }
+});
+
+test('read errors without server copy use the inbox or conversation context and never imply an attempted send', async () => {
+  const f = fixture(); await f.mount();
+  try {
+    f.failInbox('META_REJECTED', null); await f.click('Actualizar');
+    assert.match(content(f.tree.root.findByProps({ role: 'alert' })), /cargar la bandeja/);
+    f.failInbox(null); f.failDetail('META_REJECTED', null); await f.click('Persona one');
+    assert.match(content(f.tree.root.findByProps({ role: 'alert' })), /cargar esta conversación/);
+    assert.equal(content(f.tree.root).includes('rechazó la respuesta'), false);
+    assert.equal(f.sends.length, 0);
+  } finally { await f.unmount(); }
+});
+
+test('an actual rejected send retains the server explanation and the unsent draft', async () => {
+  const f = fixture(); await f.mount();
+  const explanation = 'Instagram rechazó este envío. Revisa la conversación antes de intentarlo de nuevo.';
+  try {
+    await f.click('Persona one'); await f.write('Respuesta que no se envió');
+    f.failSend('META_REJECTED', explanation); await f.send();
+    assert.equal(content(f.tree.root.findByProps({ role: 'alert' })), explanation);
+    assert.equal(f.tree.root.findByType('textarea').props.value, 'Respuesta que no se envió');
+    assert.equal(f.sends.length, 1);
+  } finally { await f.unmount(); }
+});
+
+test('the disabled composer distinguishes loading from a confirmed reply restriction', async () => {
+  const explanation = 'No hay un mensaje entrante que permita responder a esta conversación.';
+  const f = fixture({ canReply: false, replyHint: explanation }); await f.mount(); let release;
+  try {
+    f.blockDetail('one', new Promise(resolve => { release = resolve; })); await f.click('Persona one');
+    assert.equal(f.tree.root.findByType('textarea').props.placeholder, 'Cargando la conversación…');
+    assert.equal(f.tree.root.findByType('textarea').props.disabled, true);
+    release(); await f.settle();
+    assert.equal(f.tree.root.findByType('textarea').props.placeholder, explanation);
+    assert.equal(f.tree.root.findByType('textarea').props.disabled, true);
+    assert.equal(f.sends.length, 0);
+  } finally { release?.(); await f.unmount(); }
+});
+
+test('a missing reply reason stays neutral and detail failures replace any stale reply hint', async () => {
+  const f = fixture({ canReply: false }); await f.mount();
+  try {
+    await f.click('Persona one');
+    assert.equal(f.tree.root.findByType('textarea').props.placeholder, 'La respuesta no está disponible. Pulsa «Actualizar» para comprobar esta conversación.');
+    assert.doesNotMatch(f.tree.root.findByType('textarea').props.placeholder, /plazo|permisos|24 horas/);
+  } finally { await f.unmount(); }
+  const staleHint = 'Han pasado 24 horas desde el último mensaje de la persona.';
+  const g = fixture({ canReply: false, replyHint: staleHint }); await g.mount();
+  try {
+    await g.click('Persona one'); assert.ok(content(g.tree.root).includes(staleHint));
+    g.failDetail('META_REJECTED', 'No se pudo volver a consultar esta conversación.'); await g.tick();
+    assert.equal(content(g.tree.root).includes(staleHint), false);
+    assert.equal(g.tree.root.findByType('textarea').props.placeholder, 'No se pudo volver a consultar esta conversación.');
+  } finally { await g.unmount(); }
 });
