@@ -81,7 +81,15 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow) {
     if (!Array.isArray(list.messages?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió el historial de esta conversación. Actualiza para volver a intentarlo.');
     const details = await Promise.all(list.messages.data.slice(0, 20).map(async (item: any) => {
       if (!graphId(item?.id)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram devolvió un mensaje sin referencia válida. Actualiza la conversación.');
-      try { return await instagramGraph(account, item.id, { fields: 'id,created_time,from,to,message' }); }
+      try {
+        const detail = await instagramGraph(account, item.id, { fields: 'id,created_time,from,to,message' });
+        const actorIdValid = (actor: any) => typeof actor?.id === 'string' && /^\d{1,40}$/.test(actor.id);
+        if (detail.id !== item.id || !verifiedDate(detail.created_time) || !actorIdValid(detail.from) || !Array.isArray(detail.to?.data) || !detail.to.data.length || !detail.to.data.every(actorIdValid)) {
+          incompleteHistory = true;
+          return null;
+        }
+        return detail;
+      }
       catch (error) {
         if (error instanceof InstagramError && ['META_OBJECT_UNAVAILABLE', 'META_MESSAGE_UNAVAILABLE'].includes(error.code)) { incompleteHistory = true; return null; }
         throw error;

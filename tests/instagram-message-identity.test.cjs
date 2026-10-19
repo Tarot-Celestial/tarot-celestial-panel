@@ -86,8 +86,8 @@ test('several distinct non-self identities produce an ambiguous recipient instea
   assert.equal(identity()(account, [own, person], [{ from: { id: otherCustomer }, to: { data: [own] } }]).recipientId, null);
 });
 
-function inboxHarness({ participants = [own, person], messages = [], storedRecipient = ownAlias, detailErrors = {} } = {}) {
-  const calls = [], writes = [], updates = [];
+function inboxHarness({ participants = [own, person], messages = [], storedRecipient = ownAlias, detailErrors = {}, detailOverrides = {} } = {}) {
+  const calls = [], writes = [], updates = [], rpcCalls = [];
   let row = { id: '00000000-0000-4000-8000-000000000001', account_id: account.accountId, kind: 'message', remote_id: 'conversation-1', recipient_id: storedRecipient, name: 'Old cached name', username: 'old_cached', preview: 'Abrir conversación', remote_updated_at: new Date().toISOString(), last_reply_at: null, private_reply_sent: false };
   const db = {
     from(table) {
@@ -106,7 +106,7 @@ function inboxHarness({ participants = [own, person], messages = [], storedRecip
       };
       return query;
     },
-    rpc: async name => { assert.ok(['tc_instagram_claim_send', 'tc_instagram_finish_send'].includes(name)); return { data: {}, error: null }; },
+    rpc: async name => { rpcCalls.push(name); assert.ok(['tc_instagram_claim_send', 'tc_instagram_finish_send'].includes(name)); return { data: {}, error: null }; },
   };
   const helper = load('src/lib/server/instagram-message-identity.ts');
   const mod = load('src/lib/server/instagram-inbox.ts', {
@@ -119,6 +119,7 @@ function inboxHarness({ participants = [own, person], messages = [], storedRecip
         if (resource === `${account.accountId}/conversations`) return { data: [{ id: 'conversation-1', updated_time: new Date().toISOString(), participants: { data: participants } }] };
         if (resource === 'conversation-1') return { messages: { data: messages.map(message => ({ id: message.id })) } };
         if (Object.hasOwn(detailErrors, resource)) throw detailErrors[resource];
+        if (Object.hasOwn(detailOverrides, resource)) return detailOverrides[resource];
         const detail = messages.find(message => message.id === resource);
         if (detail) return detail;
         if (resource === `${account.accountId}/messages` && body) return { message_id: 'message-synthetic-1' };
@@ -126,7 +127,7 @@ function inboxHarness({ participants = [own, person], messages = [], storedRecip
       },
     },
   });
-  return { mod, calls, writes, updates, id: row.id, currentRow: () => row };
+  return { mod, calls, writes, updates, rpcCalls, id: row.id, currentRow: () => row };
 }
 
 test('real inbox ingestion selects the external customer, persists that id and uses it when sending', async () => {
@@ -200,4 +201,48 @@ test('a removed recent message preserves readable messages but blocks sends with
 test('permission failures in message details remain visible instead of being treated as deleted content', async () => {
   const h = inboxHarness({ messages: [{ id: 'private-1' }], detailErrors: { 'private-1': new InstagramError('META_PERMISSION', 'Synthetic permission missing') } });
   await assert.rejects(h.mod.instagramMessages(h.id), error => error.code === 'META_PERMISSION');
+});
+
+test('HTTP 200 malformed message details mark history incomplete and cannot authorize a send beside valid inbound data', async () => {
+  const valid = { id: 'malformed-1', from: person, to: { data: [own] }, created_time: new Date().toISOString() };
+  const cases = [
+    ['empty object', {}],
+    ['id only', { id: valid.id }],
+    ['different id', { ...valid, id: 'different-message' }],
+    ['missing timestamp', { ...valid, created_time: undefined }],
+    ['invalid timestamp', { ...valid, created_time: 'not-a-date' }],
+    ['missing sender', { ...valid, from: undefined }],
+    ['numeric sender id', { ...valid, from: { id: 12345 } }],
+    ['malformed sender id', { ...valid, from: { id: 'wrong/id' } }],
+    ['missing recipients', { ...valid, to: undefined }],
+    ['non-array recipients', { ...valid, to: { data: own } }],
+    ['empty recipients', { ...valid, to: { data: [] } }],
+    ['malformed recipient id', { ...valid, to: { data: [own, { id: 'wrong/id' }] } }],
+  ];
+  for (const [label, malformed] of cases) {
+    const h = inboxHarness({ messages: [
+      { id: 'valid-inbound-1', from: person, to: { data: [own] }, message: 'Readable valid inbound', created_time: new Date().toISOString() },
+      { id: valid.id },
+    ], detailOverrides: { [valid.id]: malformed } });
+    const result = await h.mod.instagramMessages(h.id);
+    assert.equal(result.messages.length, 1, label);
+    assert.equal(result.messages[0].id, 'valid-inbound-1', label);
+    assert.equal(result.canReply, false, label);
+    assert.equal(result.canPrivateReply, false, label);
+    assert.match(result.replyHint, /parte del historial/, label);
+    await assert.rejects(h.mod.instagramSend('synthetic-worker', { threadId: h.id, text: 'Do not send', replyMode: 'private', requestId: '00000000-0000-4000-8000-000000000007' }), error => error.code === 'INCOMPLETE_HISTORY', label);
+    assert.equal(h.calls.filter(call => call.body).length, 0, label);
+    assert.equal(h.rpcCalls.length, 0, label);
+  }
+});
+
+test('an attachment without message text remains readable when identity and timestamp metadata are valid', async () => {
+  const h = inboxHarness({ messages: [{ id: 'attachment-1', from: person, to: { data: [own] }, created_time: new Date().toISOString() }] });
+  const result = await h.mod.instagramMessages(h.id);
+  assert.equal(result.messages.length, 1);
+  assert.equal(result.messages[0].id, 'attachment-1');
+  assert.equal(result.messages[0].text, '[Contenido adjunto: consúltalo en Instagram]');
+  assert.equal(result.messages[0].fromMe, false);
+  assert.equal(result.canReply, true);
+  assert.equal(result.replyHint, null);
 });
