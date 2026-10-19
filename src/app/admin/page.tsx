@@ -11,6 +11,7 @@ import AppHeader from "@/components/AppHeader";
 import PanelTheme from "@/components/ui/PanelTheme";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { AtlasLauncher } from "@/features/admin/atlas/AtlasCharacter";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 
 
@@ -34,6 +35,7 @@ function invoiceLocalDate(value?: string) {
 }
 
 const sb = supabaseBrowser();
+const AtlasPanel = nextDynamic(() => import("@/features/admin/atlas/AtlasPanel"), { ssr:false });
 const DashboardPanel = nextDynamic(() => import("@/components/admin/DashboardPanel"), { ssr:false });
 const StatisticsPanel = nextDynamic(() => import("@/components/admin/StatisticsPanel"), { ssr:false });
 const OperatorPanel = nextDynamic(() => import("@/components/panel/OperatorPanel"), { ssr:false });
@@ -71,6 +73,7 @@ const SocialChannelAdminPanel = nextDynamic(() => import("@/components/admin/Soc
 
 
 const ADMIN_NAV = [
+  { key: "atlas", icon: Sparkles, label: "Atlas", kicker: "Tu mano derecha", tone: "goldPurple" },
   { key: "dashboard", icon: LayoutDashboard, label: "Dashboard", kicker: "Control ejecutivo", tone: "gold" },
   { key: "panel", icon: Phone, label: "Panel", kicker: "Extensiones y llamadas", tone: "cyan" },
   { key: "facturas", icon: CreditCard, label: "Facturación", kicker: "Ingresos y cierre", tone: "emerald" },
@@ -177,6 +180,7 @@ async function safeJson(res: Response) {
 }
 
 type TabKey =
+  | "atlas"
   | "dashboard"
   | "panel"
   | "facturas"
@@ -1948,6 +1952,7 @@ function AdminPage() {
           </section>
 
           <div className={`tc-main-content ${adminStyles.mainContent}`}>
+{tab === "atlas" && <AtlasPanel />}
 {tab === "dashboard" && <DashboardPanel month={month} />}
 
           {tab === "panel" && <OperatorPanel mode="admin" />}
@@ -3081,6 +3086,8 @@ function AdminPage() {
         </div>
       </main>
     </div>
+
+      {tab !== "atlas" && <AtlasLauncher onOpen={() => setTab("atlas")} />}
 
       {crmCloseNotif && (
         <div
