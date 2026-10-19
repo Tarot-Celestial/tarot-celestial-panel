@@ -8,6 +8,7 @@ import RouletteRewardArt from "./RouletteRewardArt";
 import ExperienceRail from "./ExperienceRail";
 import { useClientRitualAccess } from "./ClientPanelAccess";
 import { usePortalMotion } from "./CelestialPortal";
+import { ACTIVE_CONSULTATION_LINES } from "@/lib/instagram-inbox";
 import styles from "./HomeObservatory.module.css";
 type Props={name:string;rank:string;minutes:number;free:number;normal:number;coins:number;oracleCredits:number;oracleFree:boolean;oracleCountdown:string;roulette:RouletteSummary|null;highlight:string;benefits:string[];rankProgress:{next_label?:string|null;progress_percent:number;status_text?:string}|null;overrideLabel?:string;children:ReactNode};
 export default function HomeObservatory(p:Props){
@@ -37,8 +38,10 @@ export default function HomeObservatory(p:Props){
    <h1 id="celestial-welcome">Tu universo <em>empieza aquí</em></h1>
    <p className={styles.subtitle}>Un espacio para descubrir, conectar y continuar tu camino.</p>
    <div className={styles.actions}>
-    <Link className={styles.primary} href="/cliente/tarotistas"><Sparkles size={17} aria-hidden="true"/> Encontrar tarotista <ArrowRight size={16} aria-hidden="true"/></Link>
-    <Link className={styles.secondary} href={ritualAccess?"/cliente/ritual":"/cliente/rangos"}>{ritualAccess?"Continuar mi ritual":"Descubrir mis beneficios"} <ArrowRight size={13} aria-hidden="true"/></Link>
+    <Link className={styles.primary} href="/cliente/precios-ofertas"><Sparkles size={17} aria-hidden="true"/> Precios disponibles <ArrowRight size={16} aria-hidden="true"/></Link>
+    <div className={styles.phoneLines} aria-label="Líneas activas para llamar">
+     {ACTIVE_CONSULTATION_LINES.map(line=><a key={line.country} href={line.href} aria-label={`Llamar a nuestra línea de ${line.country}: ${line.display}`}><span aria-hidden="true">{line.flag}</span><span><small>{line.country}</small><strong>{line.display}</strong></span></a>)}
+    </div>
    </div>
   </section>
   <section className={styles.wallet} aria-label="Tus saldos y tu rango">

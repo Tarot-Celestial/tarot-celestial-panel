@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import nextDynamic from "next/dynamic";
 import {
   BarChart3,
   CalendarClock,
@@ -14,6 +15,7 @@ import {
   LayoutDashboard,
   Link2,
   Megaphone,
+  MessagesSquare,
   PlayCircle,
   Plus,
   RefreshCw,
@@ -29,8 +31,13 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import styles from "./SocialChannelAdminPanel.module.css";
 import TarotVideoStudio from "./TarotVideoStudio";
 
+const CentralInstagramPanel = nextDynamic(() => import("@/features/central/CentralInstagramPanel"), {
+  ssr: false,
+  loading: () => <section className={styles.card} role="status">Preparando la bandeja de Instagram…</section>,
+});
+
 type Provider = "instagram" | "tiktok";
-type Section = "resumen" | "crear" | "ia" | "programadas" | "calendario" | "publicaciones" | "promociones" | "biblioteca" | "analitica" | "conexion";
+type Section = "resumen" | "bandeja" | "crear" | "ia" | "programadas" | "calendario" | "publicaciones" | "promociones" | "biblioteca" | "analitica" | "conexion";
 
 type ContentItem = {
   id: string;
@@ -115,6 +122,7 @@ type AiStudioTab = "creator" | "video" | "planner";
 
 const sections: Array<{ key: Section; label: string; icon: any }> = [
   { key: "resumen", label: "Resumen", icon: LayoutDashboard },
+  { key: "bandeja", label: "Bandeja", icon: MessagesSquare },
   { key: "crear", label: "Crear", icon: Plus },
   { key: "ia", label: "IA Studio", icon: Sparkles },
   { key: "programadas", label: "Programadas", icon: CalendarClock },
@@ -401,6 +409,10 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
   }, [api, provider, analyticsRange]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (provider !== "instagram" && section === "bandeja") setSection("resumen");
+  }, [provider, section]);
 
   useEffect(() => {
     const connected = searchParams?.get("social_connected");
@@ -1232,10 +1244,12 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
       </section>
 
       <div className={styles.sectionNav}>
-        {sections.map(({ key, label, icon: NavIcon }) => <button key={key} className={section === key ? styles.sectionActive : ""} onClick={() => setSection(key)}><NavIcon size={15} />{label}</button>)}
+        {sections.filter(({ key }) => provider === "instagram" || key !== "bandeja").map(({ key, label, icon: NavIcon }) => <button key={key} className={section === key ? styles.sectionActive : ""} onClick={() => setSection(key)}><NavIcon size={15} />{label}</button>)}
       </div>
 
       {(message || error) && <div className={`${styles.notice} ${error ? styles.noticeError : styles.noticeOk}`}>{error || message}</div>}
+
+      {provider === "instagram" && section === "bandeja" && <CentralInstagramPanel />}
 
       {section === "resumen" && (
         <div className={styles.stack}>

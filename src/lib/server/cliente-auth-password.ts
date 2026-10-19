@@ -32,25 +32,10 @@ export function normalizePhoneDigits(value: string | null | undefined) {
 
 function phoneCandidates(value: string | null | undefined) {
   const raw = normalizePhoneDigits(value);
-  const set = new Set<string>();
-
   if (!raw) return [] as string[];
-
-  set.add(raw);
-  set.add(raw.replace(/^0+/, ""));
-
-  if (raw.length > 9) set.add(raw.slice(-9));
-  if (raw.length > 10) set.add(raw.slice(-10));
-  if (raw.length > 11) set.add(raw.slice(-11));
-
-  const knownPrefixes = ["34", "1", "52", "54", "56", "57", "58", "351", "44", "33", "39"];
-  for (const prefix of knownPrefixes) {
-    if (raw.startsWith(prefix) && raw.length > prefix.length + 6) {
-      set.add(raw.slice(prefix.length));
-    }
-  }
-
-  return [...set].filter(Boolean);
+  // National nine-digit records are a historical Spain-only representation.
+  // Never strip prefixes from other countries: equal suffixes are not identities.
+  return /^34[6-9]\d{8}$/.test(raw) ? [raw, raw.slice(2)] : [raw];
 }
 
 export function buildPasswordValidationError(password: string, confirm?: string) {
@@ -97,14 +82,15 @@ async function syncClientePhone(admin: ReturnType<typeof adminSupabase>, cliente
 }
 
 async function linkClienteAuthUser(admin: ReturnType<typeof adminSupabase>, clienteId: string, authUserId: string) {
-  const { error } = await admin
+  const { data, error } = await admin
     .from("crm_clientes")
     .update({ auth_user_id: authUserId })
-    .eq("id", clienteId);
-
-  if (error && !isMissingAuthUserIdColumnError(error)) {
-    throw error;
-  }
+    .eq("id", clienteId)
+    .or(`auth_user_id.is.null,auth_user_id.eq.${authUserId}`)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("ACCESO_WEB_YA_ASOCIADO_A_OTRA_FICHA");
 }
 
 export async function findClienteByPhone(phone: string) {
@@ -128,30 +114,6 @@ export async function findClienteByPhone(phone: string) {
   else if (exactRows.length === 1) data = exactRows[0];
   else if (exactRows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
 
-  if (!data) {
-    const longest = candidates.sort((a, b) => b.length - a.length)[0] || "";
-    const tail = longest.length > 9 ? longest.slice(-9) : longest;
-
-    if (tail) {
-      const fuzzy = await sb
-        .from("crm_clientes")
-        .select("id, nombre, apellido, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
-        .or(`telefono.ilike.%${tail}%,telefono_normalizado.ilike.%${tail}%`)
-        .limit(20);
-
-      if (fuzzy.error) throw fuzzy.error;
-      const fuzzyRows = fuzzy.data || [];
-      const linkedFuzzyRows = fuzzyRows.filter((row: any) => Boolean(row.auth_user_id));
-      if (linkedFuzzyRows.length === 1) data = linkedFuzzyRows[0];
-      else if (fuzzyRows.length === 1) data = fuzzyRows[0];
-      else if (fuzzyRows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
-    }
-  }
-
-  if (data?.id) {
-    const canonical = candidates[0];
-    if (canonical) await syncClientePhone(sb, data.id, canonical);
-  }
 
   return data;
 }
@@ -234,12 +196,12 @@ async function resolveClienteAuthUser(admin: ReturnType<typeof adminSupabase>, c
   const clientEmail = authEmail(cliente.email);
   const scored = users
     .map((user: any) => {
-      const metadata = user.user_metadata || {};
+      const metadata = user.app_metadata || {};
       let score = 0;
       if (String(metadata.crm_cliente_id || "").trim() === String(cliente.id)) score = 120;
       else if (authEmail(user.email) === authEmail(aliasEmail)) score = 110;
-      else if (clientEmail && authEmail(user.email) === clientEmail) score = 100;
-      else if (phoneDigits && authPhone(user.phone) === phoneDigits) score = 90;
+      else if (clientEmail && user.email_confirmed_at && authEmail(user.email) === clientEmail) score = 100;
+      else if (phoneDigits && user.phone_confirmed_at && authPhone(user.phone) === phoneDigits) score = 90;
       else if (phoneDigits && authPhone(metadata.telefono_normalizado || metadata.telefono || metadata.phone) === phoneDigits) score = 70;
       return { user, score };
     })
@@ -247,7 +209,7 @@ async function resolveClienteAuthUser(admin: ReturnType<typeof adminSupabase>, c
     .sort((a: any, b: any) => b.score - a.score);
 
   const match = scored[0]?.user || null;
-  if (match && String(match.id) !== directId) await linkClienteAuthUser(admin, cliente.id, match.id);
+  if (match && String(match.id) !== directId) await assertAuthUserNotLinkedToAnotherCliente(admin, match.id, cliente.id);
   return match;
 }
 

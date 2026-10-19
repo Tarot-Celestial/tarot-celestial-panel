@@ -38,14 +38,7 @@ export async function GET(req: Request) {
     if (entries.error) throw entries.error;
 
     const rows = entries.data || [];
-    if (rows.some((row: any) => String(row.client_auth_user_id || "") !== gate.uid)) {
-      const sync = await gate.admin
-        .from("raffle_entries")
-        .update({ client_auth_user_id: gate.uid })
-        .eq("raffle_id", raffle.data.id)
-        .eq("client_id", gate.cliente.id);
-      if (sync.error) throw sync.error;
-    }
+
 
     return NextResponse.json({
       ok: true,

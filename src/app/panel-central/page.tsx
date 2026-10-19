@@ -38,7 +38,7 @@ import PaymentMotivationWatcher from "@/components/motivation/PaymentMotivationW
 import OperatorPanel from "@/components/panel/OperatorPanel";
 import OperationalInbox from "@/components/central/OperationalInbox";
 import StaffDirectChatPanel from "@/components/chat/StaffDirectChatPanel";
-import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, LayoutDashboard, Megaphone, MessageCircle, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
+import { BarChart3, BadgeEuro, Bell, CalendarDays, CheckSquare, Gift, Headphones, Instagram, LayoutDashboard, Megaphone, MessageCircle, ShieldCheck, ShoppingBag, Sparkles, Star, Users, UsersRound, RotateCcw } from "lucide-react";
 
 const sb = supabaseBrowser();
 const tabLoading = () => <section className="tc-card" role="status"><div className="tc-sub">Preparando tu apartado…</div></section>;
@@ -55,6 +55,7 @@ const HabitualesPanel = nextDynamic(() => import("@/components/habituales/Habitu
 const RendimientoPanel = nextDynamic(() => import("@/components/rendimiento/RendimientoPanel"), { loading: tabLoading });
 const CentralTeamLivePanel = nextDynamic(() => import("@/features/central/CentralTeamLivePanel"), { loading: tabLoading });
 const CentralWhatsAppPanel = nextDynamic(() => import("@/features/central/CentralWhatsAppPanel"), { ssr: false, loading: tabLoading });
+const CentralInstagramPanel = nextDynamic(() => import("@/features/central/CentralInstagramPanel"), { ssr: false, loading: tabLoading });
 const CentralRafflePanel = nextDynamic(() => import("@/features/central/CentralRafflePanel"), {
   ssr: false,
   loading: () => <section className="tc-card"><div className="tc-sub">Preparando el sorteo…</div></section>,
@@ -86,6 +87,7 @@ const TABS = [
   "habituales",
   "ranking",
   "whatsapp",
+  "instagram",
 ] as const;
 
 type TabKey = typeof TABS[number];
@@ -123,6 +125,7 @@ const CENTRAL_NAV: CentralNavItem<TabKey>[] = [
     ],
   },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, kicker: "Chats con clientas" },
+  { key: "instagram", label: "Instagram", icon: Instagram, kicker: "@tarotcelestialof" },
   { key: "crm", label: "CRM", icon: Users },
   { key: "sorteo", label: "Sorteo", icon: Gift },
   { key: "captacion", label: "Captación", icon: Megaphone },
@@ -1617,6 +1620,7 @@ function CentralPage() {
           )}
 
           {tab === "whatsapp" && <CentralWhatsAppPanel />}
+          {tab === "instagram" && <CentralInstagramPanel />}
           {tab === "crm" && <CRMClientesPanel mode="central" showImportButton={false} />}
           {tab === "sorteo" && <CentralRafflePanel />}
           {tab === "captacion" && (

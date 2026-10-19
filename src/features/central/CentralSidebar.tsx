@@ -43,11 +43,12 @@ const NAV_TONES: Record<string, NavTone> = {
   rendimiento: { rgb: "110, 168, 255" },
   habituales: { rgb: "192, 132, 252" },
   whatsapp: { rgb: "37, 211, 102" },
+  instagram: { rgb: "232, 117, 179" },
 };
 
 const NAV_SECTIONS = [
   { key: "turno", title: "MI TURNO", keys: ["central", "panel", "reservas", "notificaciones", "primera-tarotista", "checklist", "llamadas", "diario"] },
-  { key: "clientas", title: "CLIENTAS Y SEGUIMIENTO", keys: ["mis-clientas", "recuperar-clientes", "crm", "whatsapp", "captacion", "incidencias", "habituales"] },
+  { key: "clientas", title: "CLIENTAS Y SEGUIMIENTO", keys: ["mis-clientas", "recuperar-clientes", "crm", "whatsapp", "instagram", "captacion", "incidencias", "habituales"] },
   { key: "equipo", title: "EQUIPO", keys: ["equipo", "chat"] },
   { key: "progreso", title: "PROGRESO Y RECOMPENSAS", keys: ["tu-sistema-xp", "tu-sistema-xp-niveles", "tu-sistema-xp-coins", "tienda", "mi-factura", "sorteo", "rendimiento", "ranking"] },
 ] as const;

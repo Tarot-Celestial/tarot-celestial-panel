@@ -39,6 +39,12 @@ export function friendlyAuthError(error: unknown, fallback: string) {
   const raw = error instanceof Error ? error.message : String(error || "");
   const normalized = raw.trim().toUpperCase().replace(/[\s-]+/g, "_");
 
+  if (normalized.includes("REGISTRATION_ACCOUNT_EXISTS") || normalized.includes("VERIFIED_ACCESS_REQUIRED")) return "Si ya eres cliente, usa tu contraseña o pulsa Recuperar o activar mi acceso. No se ha cambiado ninguna cuenta existente.";
+  if (normalized.includes("REGISTRATION_PASSWORD_TOO_SHORT")) return "La contraseña debe tener entre 8 y 128 caracteres.";
+  if (normalized.includes("REGISTRATION_EMAIL_UNAVAILABLE")) return "No hemos podido enviar el correo. Espera un momento y solicita otro código.";
+  if (normalized.includes("REGISTRATION_IN_PROGRESS")) return "Tu registro se está completando. Espera dos minutos y vuelve a pulsar Verificar y entrar.";
+  if (normalized.includes("EMAIL_INVALIDO")) return "Revisa tu correo electrónico.";
+  if (normalized.includes("NAME_INVALID")) return "Escribe un nombre válido de al menos dos caracteres.";
   if (normalized.includes("INVALID_LOGIN_CREDENTIALS")) return "Teléfono o contraseña incorrectos.";
   if (normalized.includes("CLIENTE_NO_ENCONTRADO")) return "No encontramos una cuenta asociada a ese teléfono.";
   if (normalized.includes("TELEFONO_INVALIDO") || normalized.includes("PHONE_NOT_FOUND") || normalized.includes("TELEFONO_NO_VALIDO")) {
