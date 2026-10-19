@@ -41,14 +41,25 @@ export type InstagramAccount = Awaited<ReturnType<typeof instagramConnection>>;
 // All resource paths and cursors are constructed locally; never fetch Meta's
 // paging.next URL, which can contain tokens or an unexpected destination.
 export async function instagramGraph(account: InstagramAccount, path: string, params: Record<string, string> = {}, body?: object) {
+  return graphRequest(account, path, params, body, false);
+}
+
+// Read-only compatibility check for Meta's documented query-token examples.
+// Keep the credential on the server and never log the URL or remote response.
+export async function instagramReadWithQueryToken(account: InstagramAccount, path: string, params: Record<string, string> = {}) {
+  return graphRequest(account, path, params, undefined, true);
+}
+
+async function graphRequest(account: InstagramAccount, path: string, params: Record<string, string>, body: object | undefined, queryToken: boolean) {
   const version = /^v\d+\.\d+$/.test(process.env.META_GRAPH_API_VERSION || '') ? process.env.META_GRAPH_API_VERSION : 'v24.0';
   const url = new URL(`https://graph.instagram.com/${version}/${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  if (queryToken) url.searchParams.set('access_token', account.token);
   let response: Response;
   try {
     response = await fetch(url, {
       method: body ? 'POST' : 'GET', cache: 'no-store', signal: AbortSignal.timeout(15000),
-      headers: { Authorization: `Bearer ${account.token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      headers: { ...(!queryToken ? { Authorization: `Bearer ${account.token}` } : {}), ...(body ? { 'Content-Type': 'application/json' } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
   } catch {
