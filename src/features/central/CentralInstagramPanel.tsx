@@ -9,9 +9,19 @@ import styles from "./CentralInstagramPanel.module.css";
 type Kind = InstagramThread["kind"];
 type ThreadDetail = InstagramMessagesResult & { threadId: string };
 type RequestPayload = { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal };
+type RequestContext = "inbox" | "messages" | "send" | "resolve";
 
-function errorCopy(error: unknown) {
+class InstagramRequestError extends Error {
+  constructor(code: string, readonly publicMessage: string | null) { super(code); }
+}
+
+function errorCopy(error: unknown, context: RequestContext) {
   const code = error instanceof Error ? error.message : "";
+  const publicMessage = error instanceof InstagramRequestError ? error.publicMessage : null;
+  const fallback = context === "inbox" ? "No se pudo cargar la bandeja de Instagram. Actualiza; si continúa, avisa a administración."
+    : context === "messages" ? "No se pudo cargar esta conversación. Actualiza; si continúa, avisa a administración."
+    : context === "resolve" ? "No se pudo guardar la comprobación del envío. Actualiza y vuelve a intentarlo."
+    : "No se pudo enviar la respuesta. Actualiza la conversación antes de volver a intentarlo.";
   switch (code) {
     case "NO_AUTH": case "UNAUTHORIZED": return "Tu sesión ha caducado. Vuelve a entrar en el panel.";
     case "FORBIDDEN": return "Tu usuario no tiene acceso a la bandeja de Instagram.";
@@ -25,8 +35,8 @@ function errorCopy(error: unknown) {
     case "SEND_UNCERTAIN": return "Instagram no ha confirmado el resultado del envío. Revisa la conversación en Instagram antes de volver a responder para evitar duplicarlo.";
     case "SEND_IN_PROGRESS": case "SEND_PENDING": return "Esta respuesta ya se está procesando. Actualiza la conversación antes de volver a intentarlo.";
     case "RATE_LIMITED": case "META_RATE_LIMIT": return "Instagram está limitando las consultas. Espera un momento y vuelve a intentarlo.";
-    case "META_REJECTED": return "Instagram rechazó la respuesta. Revisa los permisos y el plazo de la conversación antes de editar el mensaje y volver a intentarlo.";
-    default: return "No se pudo completar la acción. Vuelve a actualizar; si continúa, avisa a administración.";
+    case "META_REJECTED": return publicMessage || fallback;
+    default: return publicMessage || fallback;
   }
 }
 
@@ -63,6 +73,7 @@ export default function CentralInstagramPanel() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<{ threadId: string; message: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [replyMode, setReplyMode] = useState<"public" | "private">("private");
   const [error, setError] = useState<string | null>(null);
@@ -84,13 +95,20 @@ export default function CentralInstagramPanel() {
   selectedId.current = selected?.id ?? null;
   const draft = selected ? drafts[selected.id] || "" : "";
   const currentDetail = detail?.threadId === selected?.id ? detail : null;
+  const currentDetailError = detailError && detailError.threadId === selected?.id ? detailError.message : null;
   const blockedByUncertainty = Boolean(selected && uncertain[selected.id]);
   const privateComment = selected?.kind === "comment" && replyMode === "private";
   const publicComment = selected?.kind === "comment" && replyMode === "public";
-  const canReply = Boolean((privateComment ? currentDetail?.canPrivateReply : currentDetail?.canReply) && !blockedByUncertainty);
-  const canPrepareTemplate = Boolean((selected?.kind === "comment" ? currentDetail?.canPrivateReply : currentDetail?.canReply) && !blockedByUncertainty);
+  const canReply = Boolean((privateComment ? currentDetail?.canPrivateReply : currentDetail?.canReply) && !blockedByUncertainty && !currentDetailError);
+  const canPrepareTemplate = Boolean((selected?.kind === "comment" ? currentDetail?.canPrivateReply : currentDetail?.canReply) && !blockedByUncertainty && !currentDetailError);
   const pendingSend = currentDetail?.pendingSend;
   const canResolvePending = Boolean(pendingSend && Date.now() - Date.parse(pendingSend.createdAt) >= 60_000);
+  const replyHint = privateComment ? currentDetail?.privateReplyHint : currentDetail?.replyHint;
+  const disabledReplyReason = currentDetailError || (blockedByUncertainty || pendingSend
+    ? "Hay un envío pendiente de comprobar. Revisa su resultado en Instagram antes de responder."
+    : detailLoading ? "Cargando la conversación…"
+    : replyHint || "La respuesta no está disponible. Pulsa «Actualizar» para comprobar esta conversación.");
+  const visibleError = currentDetailError || error;
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { setCheckedPending(false); }, [pendingSend?.requestId]);
@@ -104,7 +122,7 @@ export default function CentralInstagramPanel() {
         selectedId.current = null; loadedOlder.current = false; attempts.current = {};
         setThreads([]); setSelected(null); setDetail(null); setCursor(null); setConnection(null);
         setDrafts({}); setUncertain({}); setQuery(""); setPartialHint(null); setNotice(null);
-        setError(null); setLoading(false); setLoadingMore(false); setDetailLoading(false);
+        setError(null); setDetailError(null); setLoading(false); setLoadingMore(false); setDetailLoading(false);
       }
       if (changed && owner) setAuthRevision(previous => previous + 1);
     });
@@ -123,7 +141,7 @@ export default function CentralInstagramPanel() {
     });
     const json = await response.json().catch(() => null);
     if (!json && init.method === "POST") throw new Error("SEND_UNCERTAIN");
-    if (!response.ok || !json?.ok) throw new Error(json?.code || json?.error || `HTTP_${response.status}`);
+    if (!response.ok || !json?.ok) throw new InstagramRequestError(json?.code || `HTTP_${response.status}`, typeof json?.error === "string" ? json.error : null);
     return json as T;
   }, [sb]);
 
@@ -143,8 +161,8 @@ export default function CentralInstagramPanel() {
       if (!quiet) setError(null);
     } catch (cause) {
       if (!signal?.aborted && mounted.current && currentKind.current === requestedKind && request === listRequest.current) {
-        setError(errorCopy(cause));
-        setConnection(previous => ({ username: previous?.username || "tarotcelestialof", connected: previous?.connected || false, ready: false, message: errorCopy(cause) }));
+        setError(errorCopy(cause, "inbox"));
+        setConnection(previous => ({ username: previous?.username || "tarotcelestialof", connected: previous?.connected || false, ready: false, message: errorCopy(cause, "inbox") }));
       }
     } finally {
       if (mounted.current && request === listRequest.current) { setLoading(false); setLoadingMore(false); }
@@ -161,6 +179,7 @@ export default function CentralInstagramPanel() {
       const result = await api<InstagramMessagesResult>(params, { signal });
       if (!mounted.current || selectedId.current !== threadId || request !== detailRequest.current) return;
       setDetail({ ...result, threadId });
+      setDetailError(null);
       if (attempt && attempts.current[threadId]?.requestId === attempt.requestId && !result.pendingSend) {
         const confirmed = result.requestStatus === "sent" || result.requestStatus === "confirmed_sent";
         const canTryAgain = ["failed", "not_found", "confirmed_not_sent"].includes(result.requestStatus || "");
@@ -175,7 +194,7 @@ export default function CentralInstagramPanel() {
       }
     } catch (cause) {
       if (!signal?.aborted && mounted.current && selectedId.current === threadId && request === detailRequest.current) {
-        setError(errorCopy(cause));
+        setDetailError({ threadId, message: errorCopy(cause, "messages") });
         setDetail(previous => previous?.threadId === threadId ? { ...previous, canReply: false, canPrivateReply: false } : previous);
       }
     } finally {
@@ -206,7 +225,7 @@ export default function CentralInstagramPanel() {
   const selectThread = (thread: InstagramThread) => {
     if (sendLock.current) return;
     if (selectedId.current === thread.id) { void loadDetail(thread.id); return; }
-    setSelected(thread); setDetail(null); setNotice(null); setError(null); setCheckedPending(false); setReplyMode(thread.kind === "comment" ? "public" : "private");
+    setSelected(thread); setDetail(null); setDetailError(null); setNotice(null); setError(null); setCheckedPending(false); setReplyMode(thread.kind === "comment" ? "public" : "private");
   };
   const updateDraft = (text: string) => {
     if (selected) setDrafts(previous => ({ ...previous, [selected.id]: text }));
@@ -237,9 +256,9 @@ export default function CentralInstagramPanel() {
       // operation ID and block a new send until a human checks the conversation.
       if (["SEND_UNCERTAIN", "SEND_IN_PROGRESS", "SEND_PENDING", "SERVICE_UNAVAILABLE"].includes(code) || cause instanceof TypeError || code.startsWith("HTTP_5")) {
         setUncertain(previousUncertain => ({ ...previousUncertain, [threadId]: true }));
-        setError(errorCopy(new Error("SEND_UNCERTAIN")));
+        setError(errorCopy(new Error("SEND_UNCERTAIN"), "send"));
       } else {
-        setError(errorCopy(cause));
+        setError(errorCopy(cause, "send"));
         if (["STALE_CONVERSATION", "REPLY_CONFLICT", "STALE_REPLY", "META_RATE_LIMIT", "META_PERMISSION", "TOKEN_EXPIRED", "META_REJECTED"].includes(code)) delete attempts.current[threadId];
       }
       await loadDetail(threadId, true);
@@ -263,7 +282,7 @@ export default function CentralInstagramPanel() {
       setNotice(outcome === "sent" ? "Comprobación guardada: el mensaje se envió." : "Comprobación guardada: no se envió. Puedes revisar el borrador antes de enviarlo.");
       await loadDetail(threadId, true);
     } catch (cause) {
-      if (mounted.current) setError(errorCopy(cause));
+      if (mounted.current) setError(errorCopy(cause, "resolve"));
     } finally {
       sendLock.current = false;
       if (mounted.current) setSending(false);
@@ -281,7 +300,7 @@ export default function CentralInstagramPanel() {
       <div className={styles.toolbar}><span className={`${styles.badge} ${connection?.ready ? styles.ready : ""}`}><i aria-hidden="true" />{connection?.ready ? "Cuenta disponible" : loading ? "Comprobando conexión" : "Conexión por revisar"}</span><button className={styles.ghostButton} type="button" disabled={loading || loadingMore || sending} onClick={() => { void loadInbox(kind); if (selected) void loadDetail(selected.id); }}><RefreshCw size={16} className={loading ? styles.spin : undefined} aria-hidden="true" /> Actualizar</button></div>
     </header>
 
-    {error ? <div className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden="true" /><span>{error}</span></div> : null}
+    {visibleError ? <div className={styles.error} role="alert"><TriangleAlert size={18} aria-hidden="true" /><span>{visibleError}</span></div> : null}
     {connection && !connection.ready ? <div className={styles.setup} role="status"><strong>Necesitamos revisar la conexión de Instagram</strong><p>{connection.message || "Administración debe comprobar la conexión y los permisos de esta cuenta. La bandeja mostrará aquí los mensajes y comentarios que Instagram permita consultar."}</p></div> : null}
     {connection?.ready && connection.message ? <p className={styles.hint}>{connection.message}</p> : null}
 
@@ -315,12 +334,12 @@ export default function CentralInstagramPanel() {
             {selected.kind === "comment" ? <div className={styles.replyModes} role="group" aria-label="Dónde enviar la respuesta"><button type="button" disabled={sending} aria-pressed={replyMode === "public"} onClick={() => setReplyMode("public")}>Respuesta pública</button><button type="button" disabled={sending || !currentDetail?.canPrivateReply} aria-pressed={replyMode === "private"} onClick={() => setReplyMode("private")}>Mensaje privado</button></div> : null}
             {publicComment ? <p className={styles.replyHint}>Esta respuesta será visible para todos. Las opciones de arriba preparan un mensaje privado con enlaces.</p> : null}
             {privateComment ? <p className={styles.replyHint}>Enviarás un mensaje privado a quien comentó. Solo se permite uno por comentario; espera su respuesta para continuar la conversación.</p> : null}
-            {(privateComment ? currentDetail?.privateReplyHint : currentDetail?.replyHint) ? <p className={styles.replyHint}>{privateComment ? currentDetail?.privateReplyHint : currentDetail?.replyHint}</p> : null}
+            {replyHint && !currentDetailError ? <p className={styles.replyHint}>{replyHint}</p> : null}
             {selected.kind === "comment" && currentDetail?.privateReplySent ? <p className={styles.replyHint}>Ya se envió un mensaje privado para este comentario.</p> : null}
             {blockedByUncertainty ? <p className={styles.replyHint}>Envío pendiente de comprobar. Revisa el resultado en Instagram; este panel no repetirá el mensaje automáticamente.</p> : null}
             {notice ? <p className={styles.success} role="status">{notice}</p> : null}
             <label className={styles.replyLabel} htmlFor="instagram-reply">{publicComment ? "Respuesta pública al comentario" : "Tu mensaje privado"}</label>
-            <textarea id="instagram-reply" ref={composer} maxLength={1000} rows={4} value={draft} disabled={sending || !canReply} onChange={event => updateDraft(event.target.value)} placeholder={canReply ? "Escribe tu respuesta o elige una de las opciones…" : "La respuesta se habilita al comprobar los permisos y el plazo de esta conversación."} />
+            <textarea id="instagram-reply" ref={composer} maxLength={1000} rows={4} value={draft} disabled={sending || !canReply} onChange={event => updateDraft(event.target.value)} placeholder={canReply ? "Escribe tu respuesta o elige una de las opciones…" : disabledReplyReason} />
             <div className={styles.sendRow}><small>{draft.length}/1000 · {publicComment ? "Visible en la publicación" : "Mensaje privado"}</small><button className={styles.sendButton} type="submit" disabled={sending || !canReply || !draft.trim()}><Send size={16} aria-hidden="true" />{sending ? "Enviando…" : publicComment ? "Publicar respuesta" : "Enviar mensaje privado"}</button></div>
           </form>
         </>}

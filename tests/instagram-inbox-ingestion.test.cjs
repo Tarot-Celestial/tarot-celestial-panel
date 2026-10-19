@@ -24,6 +24,12 @@ function harness(responses) {
   const exports = {};
   vm.runInNewContext(code, { exports, Date, require(name) {
     if (name === 'server-only') return {};
+    if (name === './instagram-message-identity') {
+      const helper = {};
+      const helperSource = fs.readFileSync(path.join(__dirname, '../src/lib/server/instagram-message-identity.ts'), 'utf8');
+      vm.runInNewContext(ts.transpileModule(helperSource, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: helper, Set });
+      return helper;
+    }
     if (name === '@/lib/supabase-admin') return { supabaseAdmin: () => db };
     if (name === './instagram-graph') return {
       InstagramError,

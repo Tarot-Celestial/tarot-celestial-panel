@@ -2,6 +2,7 @@ import 'server-only';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { instagramConnection, instagramGraph, InstagramError, graphId, replyWindowOpen, type InstagramAccount } from './instagram-graph';
 import type { InstagramMessage, InstagramThread } from '@/lib/instagram-inbox';
+import { resolveMessageIdentity } from './instagram-message-identity';
 
 const THREADS = 'tc_instagram_threads';
 const SENDS = 'tc_instagram_sends';
@@ -28,8 +29,11 @@ export async function instagramInbox(kind: 'message' | 'comment', cursor: string
   let partialHint: string | null = null;
   if (kind === 'message') {
     const result = await instagramGraph(account, `${account.accountId}/conversations`, { platform: 'instagram', fields: 'id,updated_time,participants', limit: '25', ...afterCursor(cursor) });
-    for (const conversation of result.data || []) {
-      const person = conversation.participants?.data?.find((p: any) => String(p.id) !== account.accountId);
+    if (!Array.isArray(result?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió una lista de conversaciones válida. Actualiza para volver a intentarlo.');
+    for (const conversation of result.data) {
+      const participants = Array.isArray(conversation.participants?.data) ? conversation.participants.data : [];
+      const identity = resolveMessageIdentity(account, participants, []);
+      const person = participants.find((p: any) => p.id === identity.recipientId);
       rows.push({ kind, remote_id: String(conversation.id), recipient_id: person?.id ? String(person.id) : null, name: person?.username || 'Conversación de Instagram', username: person?.username || null, preview: 'Abrir conversación', remote_updated_at: iso(conversation.updated_time) });
     }
     nextCursor = result.paging?.next ? result.paging?.cursors?.after || null : null;
@@ -67,14 +71,28 @@ async function threadForAccount(id: string, account: InstagramAccount) {
 
 async function loadMessages(account: InstagramAccount, row: ThreadRow) {
   const messages: InstagramMessage[] = [];
-  let recipientId = row.recipient_id;
+  let recipientId: string | null = null;
   let lastInbound: string | null = null;
+  let incompleteHistory = false;
   if (row.kind === 'message') {
-    const list = await instagramGraph(account, row.remote_id, { fields: 'messages.limit(20){id,created_time,from,to,message}' });
-    for (const message of list.messages?.data || []) {
-      const fromMe = String(message.from?.id) === account.accountId;
-      if (!fromMe && message.from?.id) {
-        recipientId = String(message.from.id);
+    // Meta documents listing message IDs first, then reading details. Only the
+    // latest 20 can be retrieved; a removed message must not hide the others.
+    const list = await instagramGraph(account, row.remote_id, { fields: 'messages' });
+    if (!Array.isArray(list.messages?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió el historial de esta conversación. Actualiza para volver a intentarlo.');
+    const details = await Promise.all(list.messages.data.slice(0, 20).map(async (item: any) => {
+      if (!graphId(item?.id)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram devolvió un mensaje sin referencia válida. Actualiza la conversación.');
+      try { return await instagramGraph(account, item.id, { fields: 'id,created_time,from,to,message' }); }
+      catch (error) {
+        if (error instanceof InstagramError && ['META_OBJECT_UNAVAILABLE', 'META_MESSAGE_UNAVAILABLE'].includes(error.code)) { incompleteHistory = true; return null; }
+        throw error;
+      }
+    }));
+    const available = details.filter((message): message is Record<string, any> => message !== null);
+    const identity = resolveMessageIdentity(account, [], available);
+    recipientId = identity.recipientId;
+    for (const message of available) {
+      const fromMe = identity.isOwnActor(message.from);
+      if (recipientId && message.from?.id === recipientId && !fromMe) {
         if (typeof message.created_time === 'string' && Number.isFinite(Date.parse(message.created_time)) && (!lastInbound || iso(message.created_time) > lastInbound)) lastInbound = iso(message.created_time);
       }
       messages.push({ id: String(message.id), text: String(message.message || '[Contenido adjunto: consúltalo en Instagram]'), fromMe, createdAt: iso(message.created_time), senderName: message.from?.username || (fromMe ? account.username : row.name) });
@@ -86,14 +104,18 @@ async function loadMessages(account: InstagramAccount, row: ThreadRow) {
     for (const reply of replies.data || []) messages.push({ id: String(reply.id), text: String(reply.text || ''), fromMe: String(reply.from?.id) === account.accountId, createdAt: iso(reply.timestamp), senderName: reply.from?.username || 'Instagram' });
   }
   messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  return { messages, recipientId, lastInbound };
+  return { messages, recipientId, lastInbound, incompleteHistory };
 }
 
 export async function instagramMessages(id: string, requestId?: string | null) {
   const account = await instagramConnection();
   const row = await threadForAccount(id, account);
   const loaded = await loadMessages(account, row);
-  const canReply = row.kind === 'comment' || (!!loaded.recipientId && replyWindowOpen(loaded.lastInbound, 24));
+  const canReply = row.kind === 'comment' || (!loaded.incompleteHistory && !!loaded.recipientId && replyWindowOpen(loaded.lastInbound, 24));
+  const unavailableHint = loaded.incompleteHistory ? 'Instagram no permite leer parte del historial. Puedes ver los mensajes disponibles, pero debes actualizar o continuar desde Instagram antes de responder.'
+    : !loaded.recipientId ? 'No hemos podido verificar el destinatario de esta conversación. Actualiza o revísala en Instagram.'
+    : !loaded.lastInbound ? 'No hay un mensaje entrante verificable del cliente. Espera a que la persona escriba para poder responder.'
+    : 'Han pasado 24 horas desde el último mensaje del cliente. Podrás responder aquí cuando vuelva a escribir.';
   const canPrivateReply = row.kind === 'message' ? canReply : !row.private_reply_sent && replyWindowOpen(row.remote_created_at, 7 * 24);
   const pending = await supabaseAdmin().from(SENDS).select('request_id,status,created_at,body').eq('thread_id', id).in('status', ['sending', 'uncertain']).limit(1);
   if (pending.error) throw pending.error;
@@ -108,7 +130,7 @@ export async function instagramMessages(id: string, requestId?: string | null) {
   return { ok: true, messages: loaded.messages, canReply: canReply && !blocked, canPrivateReply: canPrivateReply && !blocked, lastReplyAt: row.last_reply_at, privateReplySent: row.private_reply_sent,
     requestStatus,
     pendingSend: operation ? { requestId: operation.request_id, status: operation.status, createdAt: operation.created_at, text: operation.body } : null,
-    replyHint: blocked ? 'Hay un envío pendiente de confirmar. Comprueba su estado en Instagram antes de repetirlo.' : canReply ? null : 'Instagram permite responder durante las 24 horas posteriores al último mensaje de la persona.',
+    replyHint: blocked ? 'Hay un envío pendiente de confirmar. Comprueba su estado en Instagram antes de repetirlo.' : canReply ? null : unavailableHint,
     privateReplyHint: row.private_reply_sent ? 'Ya se envió la respuesta privada de este comentario. Continúa cuando la persona responda por mensaje.' : canPrivateReply ? null : 'La respuesta privada a un comentario está disponible una vez, durante siete días.' };
 }
 
@@ -128,6 +150,8 @@ export async function instagramSend(userId: string, input: any) {
     throw new InstagramError(existing.data.status === 'failed' ? 'META_REJECTED' : 'SEND_UNCERTAIN', 'Este envío ya se ha intentado. Actualiza y comprueba la conversación antes de repetirlo.', 409);
   }
   const loaded = await loadMessages(account, row);
+  if (row.kind === 'message' && loaded.incompleteHistory) throw new InstagramError('INCOMPLETE_HISTORY', 'Instagram no permite verificar todo el historial reciente. Actualiza o continúa desde Instagram antes de responder.', 409);
+  if (row.kind === 'message' && !loaded.recipientId) throw new InstagramError('RECIPIENT_UNVERIFIED', 'No hemos podido verificar el destinatario. Actualiza o revisa la conversación en Instagram antes de responder.', 409);
   if (row.kind === 'message' && (!loaded.recipientId || !replyWindowOpen(loaded.lastInbound, 24))) throw new InstagramError('REPLY_WINDOW_CLOSED', 'Espera a que la persona vuelva a escribir: han pasado 24 horas desde su último mensaje.', 409);
   if (row.kind === 'comment' && mode === 'private' && (row.private_reply_sent || !replyWindowOpen(row.remote_created_at, 168))) throw new InstagramError('PRIVATE_REPLY_CLOSED', 'Solo se permite una respuesta privada por comentario durante siete días.', 409);
   const claim = await db.rpc('tc_instagram_claim_send', { p_user: userId, p_thread: row.id, p_request: requestId, p_body: text, p_mode: mode, p_expected_reply: input.expectedLastReplyAt || null });
