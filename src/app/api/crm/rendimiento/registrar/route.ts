@@ -1,7 +1,6 @@
 
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { loadActivePromotion, promotionPackageSnapshot } from "@/lib/server/client-promotions";
 
 export const runtime = "nodejs";
@@ -119,12 +118,15 @@ function isUuid(value: unknown): value is string {
   return UUID_PATTERN.test(String(value ?? "").trim());
 }
 
-async function registerCallAtomic(admin: any, payload: any) {
+async function registerCallAtomic(admin: any, payload: any, userId: string) {
   // El adaptador vincula pagos existentes y delega el registro operativo en v8.
   // tc_confirm_rank_purchase es un adaptador de compras de la nueva Fase 1
   // que no debe envolver v8 porque v8 ya aplica sus propios beneficios/rangos.
-  const result = await admin.rpc("tc_register_call_minutes", { p_payload: payload });
-  return { ...result, rpcName: "tc_register_call_minutes" };
+  const rpcName = payload.recuperado ? "tc_register_call_recovery" : "tc_register_call_minutes";
+  const result = await admin.rpc(rpcName, payload.recuperado
+    ? { p_user: userId, p_payload: payload }
+    : { p_payload: payload });
+  return { ...result, rpcName };
 }
 
 async function ensureSuperPromoSpin(
@@ -406,6 +408,9 @@ export async function POST(req: Request) {
     if (clasificacion === "super_promo_ruleta" && !clienteCompra) {
       return NextResponse.json({ ok: false, error: "SUPER_PROMO_REQUIERE_COMPRA" }, { status: 400 });
     }
+    if (clasificacion === "recuperado" && !clienteCompra) {
+      return NextResponse.json({ ok: false, error: "RECOVERY_REQUIRES_PURCHASE" }, { status: 409 });
+    }
 
     if (!clienteCompra && usoTipo !== "minutos" && usoTipo !== "7free") {
       return NextResponse.json({ ok: false, error: "USO_TIPO_INVALIDO" }, { status: 400 });
@@ -444,7 +449,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "OPERATION_ID_INVALID" }, { status: 400 });
     }
 
-    if (clienteCompra) {
+    if (clienteCompra && clasificacion !== "recuperado") {
       const operationReference = `registrar_llamada:${operationId}`;
       const { data: existingPayment, error: existingPaymentError } = await admin
         .from("crm_cliente_pagos")
@@ -642,6 +647,7 @@ export async function POST(req: Request) {
     const { data: atomicResult, error: atomicError, rpcName } = await registerCallAtomic(
       admin,
       atomicPayload,
+      me.user_id,
     );
 
     if (atomicError) {
@@ -675,6 +681,13 @@ export async function POST(req: Request) {
 
       const technicalMessage = `${atomicError.message || ""} ${atomicError.details || ""}`.toUpperCase();
       const knownBalanceError = [
+        "RECOVERY_REQUIRES_PURCHASE",
+        "OPERATION_CONFLICT",
+        "RECOVERY_NOT_ELIGIBLE",
+        "CONTACT_FIRST",
+        "OTHER_OWNER",
+        "PAYMENT_REQUIRED",
+        "NOT_ELIGIBLE",
         "PAYPAL_PAYMENT_ALREADY_CONFIRMED",
         "PAYMENT_ALREADY_LINKED",
         "PAYMENT_OPERATION_CONFLICT",
@@ -751,7 +764,7 @@ export async function POST(req: Request) {
         // La clasificación Super Promo Ruleta no depende del subsistema de captación.
         // La compra y su giro especial ya han quedado persistidos correctamente, por
         // lo que un fallo de atribución no debe mostrar falsamente "no se aplicaron cambios".
-        if (superPromoRuleta || existingPaymentId) {
+        if (superPromoRuleta || existingPaymentId || recuperado) {
           console.error("[CRM registrar llamada] atribución de captación omitida en Super Promo Ruleta", {
             code: captureError.code || null,
             message: captureError.message || null,
@@ -772,9 +785,9 @@ export async function POST(req: Request) {
 
     // El HUD representa únicamente el evento XP que ya haya persistido la operación
     // atómica. Nunca calcula XP desde la configuración ni concede experiencia aquí.
-    let persistedXpEvent: any = null;
+    let persistedXpEvent: any = result?.recovery?.xp_event || null;
     let paymentCountToday: number | null = null;
-    if ((clienteCompra && economicPayment?.id) || captado) {
+    if (!recuperado && ((clienteCompra && economicPayment?.id) || captado)) {
       const eventSince = new Date(Date.now() - 60_000).toISOString();
       const { data: recentXpEvents } = await admin
         .from("worker_xp_events")
@@ -807,7 +820,7 @@ export async function POST(req: Request) {
 
     // A tag update must not turn an already committed linked call into a failed payment.
     try { await syncClienteMonthTag(admin, clienteId); }
-    catch (error) { if (!existingPaymentId) throw error; console.error("[CRM] Llamada vinculada; etiquetas pendientes", error); }
+    catch (error) { if (!existingPaymentId && !recuperado) throw error; console.error("[CRM] Llamada guardada; etiquetas pendientes", error); }
 
     const { data: awardedSpin } = clienteCompra && result?.rendimiento?.id
       ? await admin.from("cliente_ruleta_giros").select("id,nivel,estado,source").eq("payment_key", "rendimiento:" + result.rendimiento.id).maybeSingle()
@@ -828,6 +841,7 @@ export async function POST(req: Request) {
       currency: String(economicPayment?.moneda || "EUR"),
       payment_count_today: paymentCountToday,
       xp_event: persistedXpEvent,
+      recovery: result?.recovery || null,
       capture_assignment: captureAssignment,
       special_spin: specialSpin,
       created_at: result?.payment?.created_at || result?.rendimiento?.fecha_hora || new Date().toISOString(),

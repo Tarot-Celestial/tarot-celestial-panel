@@ -17,7 +17,8 @@ function harness(){
    then:resolve=>{const rows=table==='workers'?[{id:id(1),user_id:id(1),role:h.role,is_active:h.active}]:tables[table]||[];
     const selected=mode==='insert'?[{...value,id:id(9)}]:rows.filter(r=>filters.every(f=>f(r)));
     return Promise.resolve({data:one?selected[0]||null:selected,error:null}).then(resolve);}};return q;
- },rpc:async(name,{p_payload})=>{h.rpcCalls.push({name,payload:p_payload});
+ },rpc:async(name,{p_payload,p_user})=>{h.rpcCalls.push({name,payload:p_payload,user:p_user});
+  if(name==='tc_register_call_recovery')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:{id:id(3)},recovery:{xp_event:{id:id(10),worker_id:id(1),xp_amount:75},mission:{recovered:1}},duplicate_prevented:true},error:h.rpcError};
   if(name==='tc_register_call_minutes')return {data:h.rpcError?null:{rendimiento:{id:id(6)},payment:null,existing_payment_id:id(3),payment_linked:true,duplicate_prevented:true},error:h.rpcError};
   return {data:{status:'pending'},error:null};
  }};
@@ -43,7 +44,7 @@ test('Old listing and payment selection are disabled before mutation',async()=>{
 test('Balance endpoint reads authoritative split and prevents caching',async()=>{
  const h=harness();h.tables.crm_clientes[0].minutos_free_pendientes=10;h.tables.crm_clientes[0].minutos_normales_pendientes=10;
  const r=await h.api.GET(new Request('https://panel.test/api?mode=balance&cliente_id='+id(2),{headers:{authorization:'Bearer good'}}));
- assert.equal(r.status,200);assert.equal(r.headers.get('cache-control'),'no-store');
+ assert.equal(r.status,200);assert.match(r.headers.get('cache-control'),/(?:^|,\s*)no-store(?:,|$)/);
  assert.deepEqual((await r.json()).balance.minutos_free_pendientes,10);
 });
 test('Rejected consumption returns refreshed split without a second RPC',async()=>{
@@ -51,4 +52,19 @@ test('Rejected consumption returns refreshed split without a second RPC',async()
  h.rpcError={code:'P0001',message:'INSUFFICIENT_FREE_MINUTES'};
  const r=await h.post({...h.body,existing_payment_id:null});const j=await r.json();assert.equal(r.status,409);
  assert.equal(j.balance.minutos_free_pendientes,10);assert.equal(j.balance.minutos_normales_pendientes,10);assert.equal(h.rpcCalls.length,1);
+});
+
+
+test('Recuperado requires confirmed purchase and uses verified identity in atomic recovery wrapper',async()=>{
+ const h=harness();const body={...h.body,existing_payment_id:null,clasificacion:'recuperado'};
+ let r=await h.post(body);assert.equal(r.status,409);assert.equal((await r.json()).error,'RECOVERY_REQUIRES_PURCHASE');assert.equal(h.rpcCalls.length,0);
+ h.tables.crm_cliente_pagos[0].referencia_externa='registrar_llamada:'+id(7);
+ r=await h.post({...body,cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'TPV',user_id:id(99)});
+ const j=await r.json();assert.equal(r.status,200);assert.equal(h.rpcCalls[0].name,'tc_register_call_recovery');assert.equal(h.rpcCalls[0].user,id(1));
+ assert.equal(j.recovery.mission.recovered,1);assert.equal(j.xp_event.xp_amount,75);assert.equal(j.duplicate_prevented,true);
+});
+test('Recovery validation failure is visible as conflict; no capture side effect runs',async()=>{
+ const h=harness();h.rpcError={code:'P0001',message:'CONTACT_FIRST'};
+ const r=await h.post({...h.body,existing_payment_id:null,clasificacion:'recuperado',cliente_compra_minutos:true,minute_accounting_version:3,importe:22,forma_pago:'TPV'});
+ assert.equal(r.status,409);assert.equal((await r.json()).error,'CONTACT_FIRST');assert.equal(h.rpcCalls.length,1);
 });
