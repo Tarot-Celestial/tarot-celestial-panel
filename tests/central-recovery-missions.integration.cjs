@@ -48,6 +48,9 @@ before(async () => {
  const migration = fs.readFileSync(path.join(dir, fs.readdirSync(dir).find(f => f.endsWith('_central_recovery_missions.sql'))), 'utf8');
  await db.exec(migration);
  await db.exec(migration); // Rerunning preserves rows and definitions, without duplicate schedules/rules.
+ const enrollment = fs.readFileSync(path.join(dir, fs.readdirSync(dir).find(f => f.endsWith('_recovery_mission_contact_enrollment.sql'))), 'utf8');
+ await db.exec(enrollment);
+ await db.exec(enrollment);
  // Only the isolated test clock is replaced. The migration itself runs verbatim above.
  await db.exec('create or replace function tc_recovery_mission_now() returns timestamptz language sql stable security invoker set search_path=public,pg_temp as $$select tc_test_now()$$');
 });
@@ -106,17 +109,116 @@ test('30 unique valid contacts award 10 XP once, while retries and repeated clic
  assert.equal((await sql('select count(*)::int n from crm_recovery_contact_events'))[0].n,31);
 });
 
-test('no_response, unassigned, outside-shift and weekend contacts do not satisfy the daily goal', async () => {
+test('no_response, outside-shift and weekend contacts do not satisfy the daily goal', async () => {
  const { assigned_client_ids: clients } = await state(1,true);
  await act(clients[0],'no_response',{request:11000});
  assert.equal((await state()).managed,0);
- assert.equal((await act(id(200),'contacted',{request:11001})).count_reason,'not_assigned');
  await clock('2026-10-19T20:00:00Z');
  assert.equal((await act(clients[1],'contacted',{request:11002})).count_reason,'outside_shift');
  await clock('2026-10-24T12:00:00Z');
  assert.equal((await act(clients[2],'contacted',{request:11003})).count_reason,'outside_shift');
  assert.equal((await state(1,true)).assigned_count,0);
  assert.equal((await sql('select count(*)::int n from worker_xp_events'))[0].n,0);
+});
+
+test('eligible portfolio contacts enroll automatically and count even when thirty contacts were already prepared', async () => {
+ const {assigned_client_ids:clients}=await state(1,true);
+ assert.equal(clients.length,30);
+ assert.ok(!clients.includes(id(200)));
+ for(let n=0;n<30;n++) await act(clients[n],'contacted',{request:22000+n});
+ const result=await act(id(200),'contacted',{request:22100,revision:0});
+ assert.equal(result.counted,true);
+ assert.equal(result.count_reason,'counted');
+ assert.equal(result.mission.managed,31);
+ assert.equal(result.mission.assigned_count,31);
+ assert.equal((await sql('select responsible_id,version from crm_client_recovery where client_id=$1',[id(200)]))[0].responsible_id,ISA);
+ assert.equal(await version(id(200)),1); // Enrolment must not invalidate the submitted revision.
+ assert.equal((await sql("select count(*)::int n from worker_xp_events where action_key='recovery_daily_management'"))[0].n,1);
+ const replay=await act(id(200),'contacted',{request:22100,revision:0});
+ assert.equal(replay.duplicate_prevented,true);
+ assert.equal(replay.mission.managed,31);
+ assert.equal((await act(id(200),'contacted',{request:22101})).count_reason,'already_counted');
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_assignments where client_id=$1',[id(200)]))[0].n,1);
+});
+
+test('a portfolio no-response attempt reserves a contact without counting; its later contact counts once', async () => {
+ assert.equal((await state()).assigned_count,0);
+ const first=await act(id(200),'no_response',{request:22200,revision:0});
+ assert.equal(first.counted,false);
+ assert.equal(first.mission.managed,0);
+ assert.deepEqual(first.mission.assigned_client_ids,[id(200)]);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_contact_events'))[0].n,0);
+ const response=await act(id(200),'contacted',{request:22201});
+ assert.equal(response.counted,true);
+ assert.equal(response.mission.managed,1);
+ assert.equal((await act(id(200),'contacted',{request:22202})).count_reason,'already_counted');
+ assert.equal((await state()).managed,1);
+});
+
+test('automatic enrolment checks the old follow-up timestamp and skips recent unassigned contacts', async () => {
+ await sql("insert into crm_client_recovery(client_id,status,responsible_id,contacted_at) values($1,'contacted',$4,'2026-10-18T12:00:00Z'),($2,'no_response',$4,'2026-10-01T12:00:00Z'),($3,'contacted',$4,'2026-10-01T12:00:00Z')",[id(198),id(199),id(200),ISA]);
+ await sql("insert into crm_client_recovery_history(client_id,actor_id,status,created_at) values($1,$3,'no_response','2026-10-18T12:00:00Z'),($2,$3,'contacted','2026-10-12T12:00:00Z')",[id(199),id(200),ISA]);
+ assert.equal((await act(id(198),'contacted',{request:22300})).count_reason,'not_assigned');
+ assert.equal((await act(id(199),'contacted',{request:22301})).count_reason,'not_assigned');
+ const due=await act(id(200),'contacted',{request:22302});
+ assert.equal(due.counted,true);
+ assert.deepEqual((await state()).assigned_client_ids,[id(200)]);
+ await clock('2026-10-20T12:00:00Z');
+ assert.equal((await act(id(200),'contacted',{request:22303})).count_reason,'not_assigned');
+ assert.equal((await state()).managed,0);
+});
+
+test('a stale revision or invalid legacy action rolls automatic enrolment back with the request', async () => {
+ await assert.rejects(act(id(200),'contacted',{request:22400,revision:1}),/STALE_VERSION/);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_assignments'))[0].n,0);
+ assert.equal((await sql('select count(*)::int n from crm_client_recovery'))[0].n,0);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_requests'))[0].n,0);
+ const first=await act(id(200),'contacted',{request:22400,revision:0});
+ assert.equal(first.counted,true);
+ await assert.rejects(act(id(200),'contacted',{request:22400,revision:0,channel:'phone'}),/OPERATION_CONFLICT/);
+ const raced=await Promise.allSettled([
+  act(id(199),'contacted',{request:22401,revision:0}),
+  act(id(199),'contacted',{request:22402,revision:0})
+ ]);
+ assert.equal(raced.filter(r=>r.status==='fulfilled').length,1);
+ assert.match(String(raced.find(r=>r.status==='rejected').reason),/STALE_VERSION/);
+ assert.equal((await state()).managed,2);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_assignments'))[0].n,2);
+});
+
+test('automatic enrolment never takes another central ownership or same-day assignment', async () => {
+ await sql("insert into crm_client_recovery(client_id,status,responsible_id) values($1,'pending',$2)",[id(200),MARIA]);
+ await assert.rejects(act(id(200),'contacted',{request:22500}),/OTHER_OWNER/);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_assignments'))[0].n,0);
+ await sql("insert into crm_recovery_mission_assignments(mission_day,worker_id,client_id) values('2026-10-19',$1,$2)",[MARIA,id(199)]);
+ const foreign=(await sql("select tc_recovery_mission_enroll_contact($1,$2,'2026-10-19T12:00:00Z') v",[ISA,id(199)]))[0].v;
+ assert.equal(foreign,false);
+ assert.equal((await sql('select worker_id from crm_recovery_mission_assignments where client_id=$1',[id(199)]))[0].worker_id,MARIA);
+ await act(id(198),'contacted',{request:22501});
+ await clock('2026-10-19T20:00:00Z');
+ await assert.rejects(act(id(198),'contacted',{request:22502,user:2}),/OTHER_OWNER/);
+ assert.equal((await act(id(200),'contacted',{request:22503,user:2})).counted,true);
+ assert.equal((await sql("select count(*)::int n from (select mission_day,client_id from crm_recovery_mission_assignments group by mission_day,client_id having count(*)>1) d"))[0].n,0);
+});
+
+test('unprepared contacts outside shifts, weekends or without an active schedule do not enroll', async () => {
+ await clock('2026-10-19T20:00:00Z');
+ assert.equal((await act(id(200),'contacted',{request:22600})).count_reason,'outside_shift');
+ await clock('2026-10-24T12:00:00Z');
+ assert.equal((await act(id(199),'contacted',{request:22601})).count_reason,'outside_shift');
+ await clock('2026-10-19T12:00:00Z');
+ assert.equal((await act(id(198),'contacted',{request:22602,user:4})).count_reason,'outside_shift');
+ await assert.rejects(act(id(197),'contacted',{request:22603,user:5}),/FORBIDDEN/);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_assignments'))[0].n,0);
+ assert.equal((await sql('select count(*)::int n from worker_xp_events'))[0].n,0);
+});
+
+test('ineligible or recycled portfolio contacts cannot acquire a mission assignment', async () => {
+ await sql("update crm_clientes set origen='orion' where id=$1",[id(200)]);
+ await assert.rejects(act(id(200),'contacted',{request:22700}),/NOT_ELIGIBLE/);
+ await sql("insert into crm_client_recovery(client_id,status,responsible_id) values($1,'recycled',$2)",[id(199),ISA]);
+ await assert.rejects(act(id(199),'contacted',{request:22701}),/RESTORE_FIRST/);
+ assert.equal((await sql('select count(*)::int n from crm_recovery_mission_assignments'))[0].n,0);
 });
 
 test('the next working day skips recent contacts; a due follow-up is eligible after seven days', async () => {
@@ -172,6 +274,8 @@ test('admin overview is isolated; browser roles and inactive identities cannot a
  assert.equal(overview.missions.length,2);
  const permissions=(await sql("select has_function_privilege('authenticated','tc_recovery_act_v2(uuid,uuid,text,integer,uuid,text,text,uuid)','execute') f,has_function_privilege('anon','tc_recovery_mission_state(uuid,boolean)','execute') s,has_table_privilege('authenticated','crm_recovery_contact_events','insert') t"))[0];
  assert.deepEqual(permissions,{f:false,s:false,t:false});
+ const enrollmentPermissions=(await sql("select has_function_privilege('authenticated','tc_recovery_mission_enroll_contact(uuid,uuid,timestamptz)','execute') authenticated,has_function_privilege('anon','tc_recovery_mission_enroll_contact(uuid,uuid,timestamptz)','execute') anon,has_function_privilege('service_role','tc_recovery_mission_enroll_contact(uuid,uuid,timestamptz)','execute') service"))[0];
+ assert.deepEqual(enrollmentPermissions,{authenticated:false,anon:false,service:true});
  assert.equal((await sql("select count(*)::int n from pg_class where relkind='r' and relname like 'crm_recovery_%' and not relrowsecurity"))[0].n,0);
 });
 
