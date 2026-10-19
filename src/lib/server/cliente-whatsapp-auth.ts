@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
-import { findClienteByPhoneForAuth, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
+import { ensureClienteAuthUser, findClienteByPhoneForAuth, normalizePhoneDigits } from "@/lib/server/cliente-auth-password";
 
 type ClienteAuthChannel = "whatsapp" | "email";
 
@@ -143,7 +143,7 @@ export async function sendWhatsappVerification(phoneE164: string, code: string) 
 }
 
 function buildEmailHtml(nombre: string | null | undefined, code: string) {
-  const safeName = String(nombre || "").trim() || "";
+  const safeName = String(nombre || "").trim().replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] || char));
   const greeting = safeName ? `Hola ${safeName},` : "Hola,";
   return `
     <div style="background:#0b0912;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#f5efe6;">
@@ -201,7 +201,8 @@ function channelToLoginChannel(channel: ClienteAuthChannel): string {
 export async function createClienteMagicLinkFromChannel(phoneDigits: string, origin: string, channel: ClienteAuthChannel) {
   const admin = adminClient();
   const digits = normalizePhone(phoneDigits);
-  const email = clienteAuthAliasEmail(digits);
+  const identity = await ensureClienteAuthUser({ phone: digits });
+  const email = identity.alias_email;
   const redirectTo = `${origin.replace(/\/$/, "")}/cliente/dashboard`;
 
   const { data, error } = await admin.auth.admin.generateLink({

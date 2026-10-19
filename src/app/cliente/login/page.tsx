@@ -1,4 +1,5 @@
 "use client";
+import { clientDestination, clientRecoveryHref } from "@/lib/client-entry";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -36,14 +37,7 @@ const sb = supabaseClienteBrowser();
 
 type LoginMode = "password" | "setup";
 
-function getRedirectPath() {
-  const next = new URLSearchParams(window.location.search).get("next");
-  if (next === "rangos") return "/cliente/rangos";
-  if (next === "runas") return "/cliente/runas";
-  return next === "ruleta"
-    ? "/cliente/ruleta"
-    : "/cliente/dashboard";
-}
+function getRedirectPath() { return clientDestination(window.location.search); }
 
 export default function ClienteLoginPage() {
   const router = useRouter();
@@ -59,12 +53,18 @@ export default function ClienteLoginPage() {
   const [loading, setLoading] = useState(false);
   const [phoneError, setPhoneError] = useState("");
   const [msg, setMsg] = useState("");
+  const [name, setName] = useState("");
+  const [surname, setSurname] = useState("");
+  const [email, setEmail] = useState("");
+  const [challengeId, setChallengeId] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
 
   const selectedCountry = useMemo(() => getCountryByCode(countryCode), [countryCode]);
   const phone = useMemo(() => buildInternationalPhone(selectedCountry, phoneInput), [selectedCountry, phoneInput]);
   const phoneDigits = useMemo(() => phone.replace(/\D/g, ""), [phone]);
   useEffect(() => {
     setCountryCode(guessDefaultCountry().code);
+    if (new URLSearchParams(window.location.search).get("source") === "instagram") setMode("setup");
     sb.auth.getSession().then(({ data }) => {
       if (data.session?.user) router.replace(getRedirectPath());
     });
@@ -99,18 +99,14 @@ export default function ClienteLoginPage() {
     try {
       setLoading(true);
       setMsg("");
-      const res = await fetch("/api/cliente/auth/password/prepare", {
+      const res = await fetch("/api/cliente/auth/password/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneDigits }),
+        body: JSON.stringify({ phone: phoneDigits, password }),
       });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok || !json?.alias_email) throw new Error(json?.error || "PREPARE_FAILED");
-
-      const credentials = json.auth_phone
-        ? { phone: String(json.auth_phone), password }
-        : { email: String(json.alias_email), password };
-      const { error } = await sb.auth.signInWithPassword(credentials);
+      if (!res.ok || !json?.ok || !json?.access_token || !json?.refresh_token) throw new Error(json?.error || "INVALID_LOGIN_CREDENTIALS");
+      const { error } = await sb.auth.setSession({ access_token: json.access_token, refresh_token: json.refresh_token });
       if (error) throw error;
       router.replace(getRedirectPath());
     } catch (error) {
@@ -121,39 +117,26 @@ export default function ClienteLoginPage() {
   }
 
   async function createFirstAccessPassword() {
-    if (loading) return;
-    if (!validatePhone()) return;
-    if (createPassword.length < 6) {
-      setMsg("La nueva contraseña debe tener al menos 6 caracteres.");
-      return;
-    }
-    if (createPassword !== createPasswordConfirm) {
-      setMsg("Las contraseñas no coinciden.");
-      return;
-    }
-
+    if (loading || !validatePhone()) return;
+    if (name.trim().length < 2 || !email.includes("@")) { setMsg("Escribe tu nombre y un correo válido."); return; }
+    if (createPassword.length < 8) { setMsg("La contraseña debe tener al menos 8 caracteres."); return; }
+    if (createPassword !== createPasswordConfirm) { setMsg("Las contraseñas no coinciden."); return; }
     try {
-      setLoading(true);
-      setMsg("");
-      const res = await fetch("/api/cliente/auth/password/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneDigits, password: createPassword, password_confirm: createPasswordConfirm }),
-      });
+      setLoading(true); setMsg("");
+      const endpoint = challengeId ? "complete" : "start";
+      const payload = challengeId
+        ? { challenge_id: challengeId, code: verificationCode, password: createPassword, password_confirm: createPasswordConfirm }
+        : { name, surname, email, phone: phoneDigits, country: countryCode, source: new URLSearchParams(window.location.search).get("source") };
+      const res = await fetch(`/api/cliente/auth/register/${endpoint}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const json = await res.json().catch(() => null);
-      if (!res.ok || !json?.ok || !json?.alias_email) throw new Error(json?.error || "CREATE_FAILED");
-
-      const credentials = json.auth_phone
-        ? { phone: String(json.auth_phone), password: createPassword }
-        : { email: String(json.alias_email), password: createPassword };
-      const { error } = await sb.auth.signInWithPassword(credentials);
+      if (!res.ok || !json?.ok) throw new Error(json?.error || "REGISTRATION_UNAVAILABLE");
+      if (!challengeId) { setChallengeId(json.challenge_id); setMsg("Te hemos enviado un código a tu correo. Escríbelo para completar el registro."); return; }
+      const { error } = await sb.auth.signInWithPassword({ email: String(json.alias_email), password: createPassword });
       if (error) throw error;
       router.replace(getRedirectPath());
     } catch (error) {
-      setMsg(friendlyAuthError(error, "No hemos podido crear tu acceso. Inténtalo de nuevo."));
-    } finally {
-      setLoading(false);
-    }
+      setMsg(friendlyAuthError(error, "No hemos podido completar el registro. Inténtalo de nuevo."));
+    } finally { setLoading(false); }
   }
 
   function submitCurrentMode(event: FormEvent<HTMLFormElement>) {
@@ -188,7 +171,7 @@ export default function ClienteLoginPage() {
           onClick={() => updateMode("setup")}
           disabled={loading}
         >
-          <span className={styles.tabIcon}><Sparkles size={16} /></span><span><strong>Primer acceso</strong><small>Crear mi clave</small></span>
+          <span className={styles.tabIcon}><Sparkles size={16} /></span><span><strong>REGISTRARSE</strong><small>Crear mi cuenta</small></span>
         </button>
       </div>
 
@@ -207,7 +190,7 @@ export default function ClienteLoginPage() {
                 setPhoneError("");
                 setMsg("");
               }}
-              disabled={loading}
+              disabled={loading || (mode === "setup" && Boolean(challengeId))}
             >
               {COUNTRY_OPTIONS.map((country) => (
                 <option key={country.code} value={country.code}>
@@ -237,7 +220,7 @@ export default function ClienteLoginPage() {
               onBlur={validatePhone}
               aria-invalid={Boolean(phoneError)}
               aria-describedby={phoneError ? "client-phone-error" : "client-phone-help"}
-              disabled={loading}
+              disabled={loading || (mode === "setup" && Boolean(challengeId))}
             />
           </div>
           {phoneError ? (
@@ -275,29 +258,49 @@ export default function ClienteLoginPage() {
               {!loading ? <ArrowRight size={17} /> : null}
             </button>
 
-            <button type="button" className={styles.linkButton} onClick={() => router.push("/cliente/recuperar")} disabled={loading}>
-              He olvidado mi contraseña
+            <button type="button" className={styles.linkButton} onClick={() => router.push(clientRecoveryHref(window.location.search))} disabled={loading}>
+              Recuperar o activar mi acceso
             </button>
           </div>
         ) : (
           <div key="setup-mode" className={styles.modePanel} role="tabpanel">
             <div className={styles.note}>
               <Sparkles size={16} />
-              <span>Si ya eres cliente y nunca creaste una contraseña, configúrala aquí para entrar directamente.</span>
+              <span>Crea tu cuenta aunque todavía no estés en nuestro CRM. Verificaremos tu correo para proteger tu acceso.</span>
             </div>
 
-            <PasswordField id="client-new-password" label="Crea tu contraseña" value={createPassword} visible={showCreatePassword} setVisible={setShowCreatePassword} onChange={(value) => { setCreatePassword(value); if (msg) setMsg(""); }} loading={loading} placeholder="Mínimo 6 caracteres" />
-            <div className={styles.passwordGuide} data-valid={createPassword.length >= 6 ? "true" : "false"}>
-              <span><i /> Mínimo 6 caracteres</span>
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-name">Nombre</label>
+              <div className={styles.inputShell}><input id="register-name" className={styles.input} autoComplete="given-name" value={name} maxLength={80} onChange={event => setName(event.target.value)} disabled={loading || Boolean(challengeId)} /></div>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-surname">Apellidos (opcional)</label>
+              <div className={styles.inputShell}><input id="register-surname" className={styles.input} autoComplete="family-name" value={surname} maxLength={100} onChange={event => setSurname(event.target.value)} disabled={loading || Boolean(challengeId)} /></div>
+            </div>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-email">Correo electrónico</label>
+              <div className={styles.inputShell}><input id="register-email" className={styles.input} type="email" autoComplete="email" value={email} maxLength={254} onChange={event => setEmail(event.target.value)} disabled={loading || Boolean(challengeId)} /></div>
+              <span className={styles.help}>Te enviaremos un código para confirmar que este correo es tuyo.</span>
+            </div>
+            <PasswordField id="client-new-password" label="Crea tu contraseña" value={createPassword} visible={showCreatePassword} setVisible={setShowCreatePassword} onChange={(value) => { setCreatePassword(value); if (msg) setMsg(""); }} loading={loading} placeholder="Mínimo 8 caracteres" />
+            <div className={styles.passwordGuide} data-valid={createPassword.length >= 8 ? "true" : "false"}>
+              <span><i /> Mínimo 8 caracteres</span>
               <span><i /> Solo tú podrás usarla</span>
             </div>
             <PasswordField id="client-confirm-password" label="Repite la contraseña" value={createPasswordConfirm} visible={showCreateConfirm} setVisible={setShowCreateConfirm} onChange={(value) => { setCreatePasswordConfirm(value); if (msg) setMsg(""); }} loading={loading} placeholder="Vuelve a escribirla" />
 
+            {challengeId ? <div className={styles.field}>
+              <label className={styles.label} htmlFor="register-code">Código de tu correo</label>
+              <div className={styles.inputShell}><input id="register-code" className={styles.input} inputMode="numeric" autoComplete="one-time-code" value={verificationCode} maxLength={6} onChange={event => setVerificationCode(event.target.value.replace(/\D/g, ""))} disabled={loading} /></div>
+              <button type="button" className={styles.linkButton} disabled={loading} onClick={() => { setChallengeId(""); setVerificationCode(""); setMsg(""); }}>Cambiar datos o solicitar otro código</button>
+            </div> : null}
             <button type="submit" className={styles.primaryButton} disabled={loading}>
               {loading ? <LoaderCircle className={styles.spinner} size={18} /> : <Sparkles size={18} />}
-              {loading ? "Creando acceso..." : "Crear acceso y entrar"}
+              {loading ? "Comprobando..." : challengeId ? "Verificar y entrar" : "REGISTRARSE"}
               {!loading ? <ArrowRight size={17} /> : null}
             </button>
+            <button type="button" className={styles.linkButton} disabled={loading} onClick={() => router.push(clientRecoveryHref(window.location.search))}>Ya soy cliente: recuperar o activar acceso</button>
           </div>
         )}
       </form>

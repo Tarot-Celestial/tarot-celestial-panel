@@ -1,4 +1,5 @@
 "use client";
+import { clientDestination, clientLoginHref } from "@/lib/client-entry";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
@@ -135,7 +136,7 @@ export default function ClienteRecuperarPage() {
         : { email: String(json.alias_email), password };
       const { error } = await sb.auth.signInWithPassword(credentials);
       if (error) throw error;
-      router.replace("/cliente/dashboard");
+      router.replace(clientDestination(window.location.search));
     } catch (error) {
       setSuccessMessage(false);
       setMsg(friendlyAuthError(error, "No hemos podido actualizar tu contraseña."));
@@ -152,7 +153,7 @@ export default function ClienteRecuperarPage() {
   return (
     <ClientAuthShell
       eyebrow="Recuperación segura"
-      title="Recupera tu acceso"
+      title="Recupera o activa tu acceso"
       subtitle={step === "request" ? "Recupera tu acceso de forma sencilla y protegida." : "Verifica el código y crea una nueva contraseña."}
       footer="Solo utilizamos los datos ya asociados a tu cuenta."
     >
@@ -229,7 +230,7 @@ export default function ClienteRecuperarPage() {
             </button>
           </div>
 
-          <button type="button" className={styles.linkButton} onClick={() => router.push("/cliente/login")} disabled={loading}>
+          <button type="button" className={styles.linkButton} onClick={() => router.push(clientLoginHref(clientDestination(window.location.search).split("/").pop() || "dashboard"))} disabled={loading}>
             <ArrowLeft size={15} /> Volver al inicio de sesión
           </button>
         </div>

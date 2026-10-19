@@ -16,6 +16,10 @@
 .primary{padding:12px 24px;border-radius:99px;border:1px solid #ffe4a9;color:#301c0b;background:linear-gradient(115deg,#ffeab7,#d7a55c);box-shadow:0 4px 22px #f4bd5530,inset 0 1px 0 #fff8}
 .primary:hover{background:linear-gradient(115deg,#fff0c8,#ecc081)}
 .secondary{font-size:.9375rem;color:#ffe5b3;padding:9px 16px;border-radius:99px;background:#080b19e8;text-shadow:0 1px 3px #000}
+.phoneLines{display:flex;justify-content:center;flex-wrap:wrap;gap:8px;margin-top:12px}
+.phoneLines a{display:flex;align-items:center;gap:9px;min-height:48px;padding:8px 13px;border:1px solid #e6c18147;border-radius:14px;background:#080b19e8;color:#ffebc7;text-decoration:none;text-align:left;box-sizing:border-box}
+.phoneLines a:hover{border-color:#ffe4a9;background:#252038}
+.phoneLines a>span:first-child{font-size:1.25rem}.phoneLines small,.phoneLines strong{display:block;line-height:1.5}.phoneLines small{font-size:.6875rem;color:#e4d9e6}.phoneLines strong{font-size:.875rem;font-weight:600;white-space:nowrap}
 .wallet{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:960px;margin:4px auto 0;border:1px solid #ecc68165;border-radius:16px;background:linear-gradient(100deg,#11101cf5,#221b2bf5,#11101cf5);box-shadow:0 5px 35px #06041042}
 .resource{scroll-margin-top:24px;min-width:0;display:flex;align-items:center;justify-content:center;gap:13px;padding:17px 18px;position:relative}
 .resource+.resource::before{content:"";position:absolute;left:0;top:24%;bottom:24%;width:1px;background:linear-gradient(transparent,#efc57677,transparent)}

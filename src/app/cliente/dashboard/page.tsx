@@ -23,6 +23,7 @@ import OnboardingModal from "@/components/cliente/OnboardingModal";
 import CanjePuntos from "@/components/cliente/CanjePuntos";
 import BonusBienvenidaModal from "@/components/cliente/BonusBienvenidaModal";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
+import { clientLoginHref } from "@/lib/client-entry";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import RouletteBenefit from "@/components/cliente/RouletteBenefit";
 import RankDailyBonus from "@/components/cliente/RankDailyBonus";
@@ -264,7 +265,7 @@ export default function ClienteDashboardPage() {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) {
-      window.location.href = "/cliente/login";
+      window.location.href = clientLoginHref("dashboard", window.location.search);
       return;
     }
 

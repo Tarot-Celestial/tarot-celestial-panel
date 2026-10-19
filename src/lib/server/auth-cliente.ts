@@ -26,25 +26,6 @@ function isInternalClienteAuthEmail(email: string | null | undefined): boolean {
   return value.endsWith("@auth.tarotcelestial.local") && value.startsWith("cliente-");
 }
 
-function extractPhoneFromInternalClienteEmail(email: string | null | undefined): string {
-  const value = normalizeEmail(email);
-  const match = value.match(/^cliente-(\d+)@auth\.tarotcelestial\.local$/);
-  if (!match?.[1]) return "";
-  return match[1];
-}
-
-function guessNameFromEmail(email: string | null | undefined): string {
-  const local = normalizeEmail(email).split("@")[0] || "Cliente";
-  return (
-    local
-      .replace(/[._-]+/g, " ")
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ") || "Cliente"
-  );
-}
-
 export function adminClient() {
   return createClient(
     getEnv("NEXT_PUBLIC_SUPABASE_URL"),
@@ -82,26 +63,9 @@ export async function authUserFromBearer(req: Request): Promise<{
   const user: any = data.user || null;
   const rawEmail = normalizeEmail(user?.email || null);
 
-  const metadataPhone =
-    user?.user_metadata?.crm_phone ||
-    user?.app_metadata?.crm_phone ||
-    null;
-
-  const metadataEmail =
-    user?.user_metadata?.crm_email ||
-    user?.app_metadata?.crm_email ||
-    null;
-
-  const phoneFromInternalEmail = extractPhoneFromInternalClienteEmail(rawEmail);
-
-  const finalPhoneDigits =
-    phoneDigits(user?.phone) ||
-    phoneDigits(metadataPhone) ||
-    phoneFromInternalEmail ||
-    "";
-
-  const finalRealEmail =
-    normalizeEmail(metadataEmail || (isInternalClienteAuthEmail(rawEmail) ? "" : rawEmail)) || null;
+  // Contact claims are informative only. CRM authorization uses the immutable Auth id.
+  const finalPhoneDigits = phoneDigits(user?.phone) || null;
+  const finalRealEmail = isInternalClienteAuthEmail(rawEmail) ? null : rawEmail || null;
 
   return {
     uid: user?.id || null,
@@ -111,158 +75,12 @@ export async function authUserFromBearer(req: Request): Promise<{
   };
 }
 
-async function findClienteByPhone(admin: ReturnType<typeof adminClient>, phone: string | null) {
-  const digits = phoneDigits(phone);
-  const plus = normalizePhone(phone);
-
-  if (!digits) return null;
-
-  const { data, error } = await admin
-    .from("crm_clientes")
-    .select("*")
-    .or(
-      `telefono_normalizado.eq.${digits},telefono_normalizado.eq.${plus},telefono.eq.${digits},telefono.eq.${plus}`
-    )
-    .limit(20);
-
-  if (error) throw error;
-  const rows = data || [];
-  const linkedRows = rows.filter((row: any) => Boolean(row.auth_user_id));
-  if (linkedRows.length === 1) return linkedRows[0];
-  if (rows.length === 1) return rows[0];
-  if (rows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
-  return null;
-}
-
-async function findClienteByEmail(admin: ReturnType<typeof adminClient>, email: string | null) {
-  const normalizedEmail = normalizeEmail(email);
-  if (!normalizedEmail) return null;
-
-  const { data, error } = await admin
-    .from("crm_clientes")
-    .select("*")
-    .ilike("email", normalizedEmail)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data || null;
-}
-
 export async function clientFromRequest(req: Request) {
   const { uid, phone, email, realEmail } = await authUserFromBearer(req);
-
-  if (!uid || (!phone && !realEmail && !email)) {
-    return {
-      uid,
-      phone,
-      email: realEmail || email,
-      cliente: null as any,
-      admin: null as any,
-    };
-  }
-
+  if (!uid) return { uid, phone, email: realEmail || email, cliente: null as any, admin: null as any };
   const admin = adminClient();
-
-  const normalizedPhoneDigits = phoneDigits(phone);
-  const normalizedPhonePlus = normalizePhone(phone);
-  const normalizedEmail = normalizeEmail(realEmail);
-  const rawEmail = normalizeEmail(email);
-
-  let cliente: any = null;
-
-  // El vínculo Auth explícito es la fuente de verdad y evita resolver otra
-  // ficha cuando existen teléfonos históricos duplicados.
-  const linkedResult = await admin
-    .from("crm_clientes")
-    .select("*")
-    .eq("auth_user_id", uid)
-    .limit(2);
-  if (linkedResult.error) throw linkedResult.error;
-  if ((linkedResult.data || []).length > 1) throw new Error("AUTH_VINCULADO_A_VARIAS_FICHAS");
-  cliente = linkedResult.data?.[0] || null;
-
-  // Una identidad interna puede compartir email o teléfono con una ficha CRM.
-  // Si no existe un vínculo explícito, nunca debe heredar acceso al panel de
-  // clientes por una coincidencia indirecta.
-  if (!cliente) {
-    const { data: workerIdentity, error: workerIdentityError } = await admin
-      .from("workers")
-      .select("id")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (workerIdentityError) throw workerIdentityError;
-    if (workerIdentity) {
-      return {
-        uid,
-        phone: normalizedPhonePlus || null,
-        email: normalizedEmail || rawEmail || null,
-        cliente: null as any,
-        admin,
-      };
-    }
-  }
-
-  // 1) Buscar por teléfono
-  if (!cliente && normalizedPhoneDigits) {
-    cliente = await findClienteByPhone(admin, normalizedPhoneDigits);
-  }
-
-  // 2) Buscar por email real
-  if (!cliente && normalizedEmail) {
-    cliente = await findClienteByEmail(admin, normalizedEmail);
-  }
-
-  // 3) Buscar por email auth si no es interno
-  if (!cliente && rawEmail && !isInternalClienteAuthEmail(rawEmail)) {
-    cliente = await findClienteByEmail(admin, rawEmail);
-  }
-
-  // 4) Si encuentra ficha, solo corrige datos útiles
-  if (cliente) {
-    const updates: Record<string, any> = {};
-
-    if (normalizedPhoneDigits) {
-      if (!cliente.telefono_normalizado || String(cliente.telefono_normalizado).trim() !== normalizedPhoneDigits) {
-        updates.telefono_normalizado = normalizedPhoneDigits;
-      }
-
-      if (!cliente.telefono) {
-        updates.telefono = normalizedPhoneDigits;
-      }
-    }
-
-    if (!cliente.email && normalizedEmail) {
-      updates.email = normalizedEmail;
-    }
-
-    if (Object.keys(updates).length > 0) {
-      const { data, error } = await admin
-        .from("crm_clientes")
-        .update(updates)
-        .eq("id", cliente.id)
-        .select("*")
-        .maybeSingle();
-
-      if (error) throw error;
-      cliente = data || { ...cliente, ...updates };
-    }
-
-    return {
-      uid,
-      phone: normalizedPhonePlus || null,
-      email: normalizedEmail || rawEmail || null,
-      cliente,
-      admin,
-    };
-  }
-
-  // 5) NO crear clientes fantasma automáticamente
-  return {
-    uid,
-    phone: normalizedPhonePlus || null,
-    email: normalizedEmail || rawEmail || null,
-    cliente: null as any,
-    admin,
-  };
+  const linked = await admin.from("crm_clientes").select("*").eq("auth_user_id", uid).limit(2);
+  if (linked.error) throw linked.error;
+  if ((linked.data || []).length > 1) throw new Error("AUTH_VINCULADO_A_VARIAS_FICHAS");
+  return { uid, phone, email: realEmail || email, cliente: linked.data?.[0] || null, admin };
 }

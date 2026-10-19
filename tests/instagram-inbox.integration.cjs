@@ -1,0 +1,28 @@
+const {test,before,beforeEach,after}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path');
+const {PGlite}=require('@electric-sql/pglite');
+const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+let db;
+const query=async(q,p=[]) => (await db.query(q,p)).rows;
+const claim=(req=100,user=1,text='Hola',mode='private',expected=null)=>query('select tc_instagram_claim_send($1,$2,$3,$4,$5,$6) result',[id(user),id(10),id(req),text,mode,expected]);
+const finish=(req=100,status='sent',remote='ig-1')=>query('select tc_instagram_finish_send($1,$2,$3,$4)',[id(req),status,remote,null]);
+before(async()=>{db=new PGlite();await db.exec(`create role anon;create role authenticated;create role service_role bypassrls;create table workers(id uuid primary key,user_id uuid,role text,is_active bool);insert into workers values('${id(1)}','${id(1)}','central',true),('${id(2)}','${id(2)}','central',true),('${id(3)}','${id(3)}','central',false),('${id(4)}','${id(4)}','tarotista',true);`);
+const migration=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261019180222_instagram_central_inbox.sql'),'utf8');await db.exec(migration);await db.exec(migration);});
+beforeEach(async()=>{await db.exec(`truncate tc_instagram_sends,tc_instagram_threads,tc_instagram_webhook_events;insert into tc_instagram_threads(id,account_id,kind,remote_id,remote_created_at) values('${id(10)}','account','comment','comment-1',now());`);});
+after(async()=>db.close());
+test('tables and RPC deny browser roles; schema repeatable',async()=>{
+const rows=await query("select relrowsecurity,has_table_privilege('anon',oid,'SELECT') a,has_table_privilege('authenticated',oid,'UPDATE') u from pg_class where relname in ('tc_instagram_threads','tc_instagram_sends','tc_instagram_webhook_events')");assert.equal(rows.length,3);assert.ok(rows.every(r=>r.relrowsecurity&&!r.a&&!r.u));
+assert.equal((await query("select has_function_privilege('authenticated','tc_instagram_claim_send(uuid,uuid,uuid,text,text,timestamptz)','EXECUTE') p"))[0].p,false);
+});
+test('inactive, unrelated roles and forged actor denied',async()=>{for(const actor of[3,4,99])await assert.rejects(claim(100,actor),/FORBIDDEN/);});
+test('concurrent central cannot send while first operation pending',async()=>{await claim();await assert.rejects(claim(101,2),/SEND_PENDING/);assert.equal((await query('select count(*) n from tc_instagram_sends'))[0].n,1);});
+test('retry after sent returns receipt without another send',async()=>{await claim();await finish();const r=await claim();assert.equal(r[0].result.duplicate,true);assert.equal(r[0].result.remote_message_id,'ig-1');await assert.rejects(claim(100,2),/OPERATION_CONFLICT/);await assert.rejects(claim(100,1,'Otra respuesta'),/OPERATION_CONFLICT/);});
+test('stale conversation prevents overwriting another central response',async()=>{await claim(100,1,'Hola','public');await finish();await assert.rejects(claim(101,2,'Hola','public'),/STALE_REPLY/);const [row]=await query('select last_reply_at from tc_instagram_threads');await claim(101,2,'Seguimiento','public',row.last_reply_at);});
+test('private reply only once per comment even with fresh version',async()=>{await claim();await finish();const[row]=await query('select last_reply_at from tc_instagram_threads');await assert.rejects(claim(101,1,'Otro','private',row.last_reply_at),/PRIVATE_REPLY_CLOSED/);});
+test('private replies reject old and unknown comment date',async()=>{await db.exec("update tc_instagram_threads set remote_created_at=now()-interval '8 days'");await assert.rejects(claim(),/PRIVATE_REPLY_CLOSED/);await db.exec('update tc_instagram_threads set remote_created_at=null');await assert.rejects(claim(),/PRIVATE_REPLY_CLOSED/);});
+test('uncertain delivery stays blocked; explicit rejection allows new attempt',async()=>{await claim();await finish(100,'uncertain',null);await assert.rejects(claim(101),/SEND_PENDING/);await finish(100,'failed',null);await claim(101);});
+test('success requires real receipt and cannot be downgraded',async()=>{await claim();await assert.rejects(finish(100,'sent',null),/RECEIPT_REQUIRED/);await finish();await finish(100,'uncertain',null);assert.equal((await query('select status from tc_instagram_sends'))[0].status,'sent');});
+const resolve=(outcome='sent',user=1)=>query('select tc_instagram_resolve_send($1,$2,$3,$4)',[id(user),id(10),id(100),outcome]);
+test('manual verification waits for delivery and is attributed without fabricating Meta receipt',async()=>{await claim();await assert.rejects(resolve(),/SEND_IN_PROGRESS/);await db.exec("update tc_instagram_sends set created_at=now()-interval '2 minutes'");await assert.rejects(resolve('sent',3),/FORBIDDEN/);await resolve('sent',2);const[row]=await query('select * from tc_instagram_sends');assert.equal(row.status,'confirmed_sent');assert.equal(row.resolved_by,id(2));assert.equal(row.remote_message_id,null);assert.equal((await query('select private_reply_sent from tc_instagram_threads'))[0].private_reply_sent,true);});
+test('operator-confirmed non delivery unlocks without sending or claiming a reply',async()=>{await claim();await finish(100,'uncertain',null);await db.exec("update tc_instagram_sends set created_at=now()-interval '2 minutes'");await resolve('not_sent');assert.equal((await query('select last_reply_at from tc_instagram_threads'))[0].last_reply_at,null);await claim(101);assert.equal((await query("select count(*) n from tc_instagram_sends where status='sent'"))[0].n,0);});
