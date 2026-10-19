@@ -6,7 +6,7 @@ import { recoveryLabels, type RecoveryBucket, type RecoveryContact, type Recover
 import styles from "./ClientRecoveryPanel.module.css";
 import RecoveryMessageComposer from "./RecoveryMessageComposer";
 import { useRecoveryMission } from "./assistant/useRecoveryMission";
-import { RECOVERY_MISSION_REFRESH, recoveryMissionMessage, recoveryMissionPhase, recoveryMissionTime } from "@/lib/recovery-mission";
+import { RECOVERY_MISSION_REFRESH, recoveryContactReceipt, recoveryMissionMessage, recoveryMissionPhase, recoveryMissionTime } from "@/lib/recovery-mission";
 const sb = supabaseBrowser();
 const date = (v: string | null) => v ? new Date(v).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" }) : "Sin gestión registrada";
 const money = (v: number) => new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(v);
@@ -25,14 +25,15 @@ export default function ClientRecoveryPanel({ onXpChange }: { onXpChange?: () =>
  const missionState = useRecoveryMission();
  const mission = missionState.mission?.enabled ? missionState.mission : null;
  const missionPhase = recoveryMissionPhase(missionState.mission);
- const [missionOnly, setMissionOnly] = useState(false);
+ const [missionView, setMissionView] = useState<{ workerId: string; only: boolean } | null>(null);
+ const missionOnly = !!mission && (missionView?.workerId === mission.worker_id ? missionView.only : mission.is_workday && (mission.active || mission.assigned_client_ids.length > 0));
  const [bucket, setBucket] = useState<RecoveryBucket>("pending"), [status, setStatus] = useState(""), [tag, setTag] = useState(""), [search, setSearch] = useState(""), [query, setQuery] = useState(""), [page, setPage] = useState(1);
  const [feed, setFeed] = useState<Feed | null>(null), [loading, setLoading] = useState(true), [error, setError] = useState(""), [notice, setNotice] = useState("");
  const [modal, setModal] = useState<{ client: RecoveryContact; action: Action } | null>(null);
  const [payments, setPayments] = useState<RecoveryPayment[]>([]), [history, setHistory] = useState<RecoveryHistory[]>([]), [payment, setPayment] = useState(""), [note, setNote] = useState(""), [saving, setSaving] = useState(false), [detailLoading, setDetailLoading] = useState(false), [modalError, setModalError] = useState("");
  const [followPointer, setFollowPointer] = useState(true);
  const [channel, setChannel] = useState(""), [mutationRequestId, setMutationRequestId] = useState("");
- useEffect(() => { if (missionState.mission && !missionState.mission.enabled) { setMissionOnly(false); setPage(1); } }, [missionState.mission]);
+ useEffect(() => { setPage(1); }, [missionOnly]);
  const hoverTimer = useRef<ReturnType<typeof setTimeout>>();
  useEffect(() => () => clearTimeout(hoverTimer.current), []);
  const [messageClient, setMessageClient] = useState<RecoveryContact | null>(null);
@@ -81,8 +82,8 @@ export default function ClientRecoveryPanel({ onXpChange }: { onXpChange?: () =>
   busy.current = true; setSaving(true); setModalError("");
   try {
    const result = await request("", { client_id: modal.client.id, action: modal.action, version: modal.client.version, payment_id: payment || null, note, request_id: mutationRequestId, ...(modal.action === "contacted" ? { channel } : {}) });
-   setNotice(result.status === "recovered" ? "Cliente en recuperados. 75 XP registrados para la central responsable, una sola vez." : result.status === "recycled" ? "Contacto trasladado a Reciclaje. Su historial se conserva." : "Estado guardado. El contacto continúa en seguimiento.");
-   setModal(null); await load(); window.dispatchEvent(new Event(RECOVERY_MISSION_REFRESH)); onXpChange?.();
+   setNotice(result.status === "recovered" ? "Cliente en recuperados. 75 XP registrados para la central responsable, una sola vez." : result.status === "recycled" ? "Contacto trasladado a Reciclaje. Su historial se conserva." : modal.action === "contacted" ? recoveryContactReceipt(result) : "Estado guardado. El contacto continúa en seguimiento.");
+   setModal(null); window.dispatchEvent(new Event(RECOVERY_MISSION_REFRESH)); onXpChange?.();
   } catch (e: any) { setModalError(e.message); }
   finally { busy.current = false; setSaving(false); }
  }
@@ -97,9 +98,8 @@ export default function ClientRecoveryPanel({ onXpChange }: { onXpChange?: () =>
     <div className={styles.missionGoal}><div><span>Clientes recuperados</span><strong>{mission.recovered}<small> / {mission.recovery_target}</small></strong></div><progress aria-label="Clientes recuperados en tu turno" max={mission.recovery_target} value={Math.min(mission.recovered, mission.recovery_target)}/><p>{mission.recovery_bonus_awarded ? `${mission.recovery_bonus} XP extra registrados` : `75 XP por recuperación · +${mission.recovery_bonus} XP al llegar a ${mission.recovery_target}`}</p></div>
     <div className={styles.missionXp}><Sparkles size={22}/><strong>{mission.awarded_xp}<small> XP</small></strong><span>Registrados hoy</span></div>
    </div>}
-   <div className={styles.missionFoot}><p>{mission.is_workday ? <>Un cliente suma una gestión al día. {mission.assigned_client_ids.length > 0 ? `${mission.assigned_client_ids.length} contactos en tu misión.` : "Prepara tu lista de contactos disponibles."}{missionPhase === "behind" && <> Referencia actual: {mission.expected_managed} gestiones. El aviso no resta XP.</>}</> : "Las misiones se activan de lunes a viernes."}</p><div>{mission.is_workday && mission.active && mission.managed < mission.target && <button onClick={() => void missionState.prepare()} disabled={missionState.preparing || missionState.loading}><Sparkles size={15}/>{missionState.preparing ? "Preparando…" : mission.assigned_client_ids.length ? "Actualizar mi lista" : "Preparar mi misión"}</button>}<button aria-pressed={missionOnly} onClick={() => { setMissionOnly(value => !value); setPage(1); }}>{missionOnly ? "Ver toda la cartera" : "Ver mi misión"}</button></div></div>
+   <div className={styles.missionFoot}><p>{mission.is_workday ? <>Un cliente suma una gestión al día. {mission.assigned_client_ids.length > 0 ? `${mission.assigned_client_ids.length} contactos en tu misión.` : "Prepara tu lista de contactos disponibles."}{missionPhase === "behind" && <> Referencia actual: {mission.expected_managed} gestiones. El aviso no resta XP.</>}</> : "Las misiones se activan de lunes a viernes."}</p><div>{mission.is_workday && mission.active && mission.managed < mission.target && <button onClick={() => void missionState.prepare()} disabled={missionState.preparing || missionState.loading}><Sparkles size={15}/>{missionState.preparing ? "Preparando…" : mission.assigned_client_ids.length ? "Actualizar mi lista" : "Preparar mi misión"}</button>}<button aria-pressed={missionOnly} onClick={() => { setMissionView({ workerId: mission.worker_id, only: !missionOnly }); setPage(1); }}>{missionOnly ? "Ver toda la cartera" : "Ver mi misión"}</button></div></div>
   </section>}
-  {!mission && missionOnly && <p className={styles.missionUnavailable}>Mostrando los contactos de tu misión.<button onClick={() => { setMissionOnly(false); setPage(1); }}>Ver toda la cartera</button></p>}
   <div className={styles.rule}><Clock3 size={21}/><div><strong>Hasta junio de 2026 + sin etiqueta</strong><p>Se excluyen contactos con cualquier etiqueta desde julio de 2026. Las etiquetas sin fecha reconocible no se consideran antiguas.</p></div></div>
   <div className={styles.tabs} role="tablist" aria-label="Bandejas de recuperación">{([['pending','Por recuperar'],['recycled','Reciclaje'],['recovered','Clientes recuperados']] as const).map(([key,label]) => <button key={key} role="tab" aria-selected={bucket === key} onClick={() => { setBucket(key); setStatus(""); setPage(1); }}>{label}<span>{feed?.counts[key] ?? "—"}</span></button>)}</div>
   <div className={styles.filters}><label><Search size={18}/><input aria-label="Buscar nombre o teléfono" placeholder="Buscar nombre o teléfono" value={search} onChange={e => setSearch(e.target.value)}/></label><select aria-label="Filtrar por estado" value={status} disabled={bucket !== "pending"} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="">Todos los estados</option><option value="pending">Pendiente de contactar</option><option value="contacted">Contactada · Esperando resultado</option><option value="no_response">Sin respuesta · Decidir reciclaje</option></select><select aria-label="Filtrar por etiqueta" value={tag} onChange={e => { setTag(e.target.value); setPage(1); }}><option value="">Todas las etiquetas</option><option value="__none__">Sin etiqueta</option>{feed?.tags.map(t => <option key={t} value={t}>{t}</option>)}</select></div>

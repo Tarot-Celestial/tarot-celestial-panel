@@ -87,3 +87,24 @@ export function recoveryMissionMessage(mission: RecoveryMission): string {
   }
 }
 
+/** Describe the persisted receipt; saving a CRM state alone does not prove mission credit. */
+export function recoveryContactReceipt(value: unknown): string {
+  if (!record(value)) return 'Contacto guardado. Actualiza la misión para comprobar si esta gestión ha sumado.';
+  let progress = '';
+  try {
+    const mission = parseRecoveryMission(value.mission);
+    if (mission.enabled) progress = ` Llevas ${mission.managed}/${mission.target} gestiones.`;
+  } catch { /* A missing snapshot must never become an invented count. */ }
+  if (value.counted === true) {
+    return value.duplicate_prevented === true
+      ? `Esta gestión ya estaba guardada; el reintento no la ha duplicado.${progress}`
+      : `+1 gestión registrada en tu misión.${progress}`;
+  }
+  switch (value.count_reason) {
+    case 'already_counted': return `Esta clienta ya cuenta en la misión de hoy. No se suma otra vez.${progress}`;
+    case 'outside_shift': return 'Contacto guardado. No suma a la misión porque se registró fuera de tu turno de recuperación.';
+    case 'not_assigned': return 'Contacto guardado, pero no suma a tu misión: revisa la asignación o si ya corresponde su seguimiento.';
+    default: return 'Contacto guardado. No se ha confirmado que sume a la misión; actualiza para comprobar el progreso.';
+  }
+}
+

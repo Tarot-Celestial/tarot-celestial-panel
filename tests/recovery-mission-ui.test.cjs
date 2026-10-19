@@ -58,14 +58,18 @@ test('missing or malformed counts and mismatched workers fail closed instead of 
   assert.throws(() => shared.parseRecoveryMission(snapshot(), 'worker-maria'), /verificar la misión/);
 });
 
-function fixture() {
+function fixture({ copies = 1 } = {}) {
   const events = new Map(), timers = new Map(), calls = [];
   let latest, tree, authCallback, sequence = 0, responseMission = snapshot(), failure = false, waitForResponse;
+  const states = [];
+  const on = (name, fn) => { if (!events.has(name)) events.set(name, new Set()); events.get(name).add(fn); };
+  const off = (name, fn) => { const listeners = events.get(name); listeners?.delete(fn); if (!listeners?.size) events.delete(name); };
+  const emit = name => { for (const fn of events.get(name) || []) fn(new Event(name)); };
   let session = { access_token: 'test-token', user: { id: 'user-isa' } };
-  const document = { hidden: false, addEventListener(name, fn) { events.set(`document:${name}`, fn); }, removeEventListener(name) { events.delete(`document:${name}`); } };
+  const document = { hidden: false, addEventListener(name, fn) { on(`document:${name}`, fn); }, removeEventListener(name, fn) { off(`document:${name}`, fn); } };
   const window = {
-    addEventListener(name, fn) { events.set(name, fn); }, removeEventListener(name) { events.delete(name); },
-    dispatchEvent(event) { events.get(event.type)?.(event); return true; },
+    addEventListener: on, removeEventListener: off,
+    dispatchEvent(event) { emit(event.type); return true; },
     setTimeout(fn, delay) { timers.set(++sequence, { fn, delay, interval: false }); return sequence; }, clearTimeout(id) { timers.delete(id); },
     setInterval(fn, delay) { timers.set(++sequence, { fn, delay, interval: true }); return sequence; }, clearInterval(id) { timers.delete(id); },
   };
@@ -79,13 +83,13 @@ function fixture() {
   const { useRecoveryMission } = evaluate('src/features/central/assistant/useRecoveryMission.ts', {
     '@/lib/recovery-mission': shared, '@/lib/supabase-browser': { supabaseBrowser: () => ({ auth }) },
   }, { window, document, fetch });
-  function Component() { latest = useRecoveryMission({ workerId: 'worker-isa' }); return null; }
+  function Component({ index }) { states[index] = useRecoveryMission({ workerId: 'worker-isa' }); if (index === 0) latest = states[index]; return null; }
   const act = async fn => renderer.act(async () => { fn(); await new Promise(resolve => setImmediate(resolve)); });
   return {
-    calls, timers, events, get state() { return latest; },
-    async mount() { await act(() => { tree = renderer.create(React.createElement(Component)); }); },
+    calls, timers, events, states, get state() { return latest; },
+    async mount() { await act(() => { tree = renderer.create(React.createElement(React.Fragment, null, Array.from({ length: copies }, (_, index) => React.createElement(Component, { index, key: index })))); }); },
     async unmount() { await act(() => tree.unmount()); },
-    async event(name) { await act(() => events.get(name)?.(new Event(name))); },
+    async event(name) { await act(() => emit(name)); },
     async tick() { await act(() => { for (const timer of [...timers.values()]) if (timer.interval) timer.fn(); }); },
     async prepare() { await act(() => { void latest.prepare(); }); },
     async signOut() { await act(() => { session = null; authCallback('SIGNED_OUT', null); }); },
@@ -111,6 +115,16 @@ test('a refresh event discards an older response after a client management and s
   await f.unmount();
 });
 
+test('the shared management event refreshes both the mission panel and companion hook instances', async () => {
+  const f = fixture({ copies: 2 }); await f.mount();
+  try {
+    assert.deepEqual(f.states.map(state => state.mission.managed), [0, 0]);
+    f.setMission(snapshot({ managed: 2 })); await f.event(shared.RECOVERY_MISSION_REFRESH);
+    assert.deepEqual(f.states.map(state => state.mission.managed), [2, 2]);
+    assert.equal(f.calls.length, 4);
+  } finally { await f.unmount(); }
+});
+
 test('preparing reserves server-returned contacts and never credits imaginary activity', async () => {
   const f = fixture(); await f.mount();
   f.setMission(snapshot({ assigned_client_ids: ['one', 'two'] })); await f.prepare();
@@ -128,11 +142,12 @@ test('disconnecting clears pace indicators until the mission can be verified aga
   await f.unmount();
 });
 
-function panelFixture() {
-  const requests = [], events = new Map(); let tree, rejectPost = true, ids = 0;
+function panelFixture(options = {}) {
+  const requests = [], events = new Map(), dispatched = []; let tree, rejectPost = true, ids = 0;
   const contact = { id: 'client-one', nombre: 'Cliente prueba', telefono: '+34123456789', tags: [], status: 'pending', version: 0, responsible_id: null, responsible_name: null, contacted_at: null, updated_at: null, recovered_at: null, payment_id: null, purchase_amount: null, xp: 0 };
-  const mission = snapshot({ assigned_client_ids: ['client-one'] });
-  const window = { addEventListener(name, fn) { events.set(name, fn); }, removeEventListener(name) { events.delete(name); }, dispatchEvent(event) { events.get(event.type)?.(event); } };
+  let mission = Object.hasOwn(options, 'mission') ? options.mission : snapshot({ assigned_client_ids: ['client-one'] });
+  let receipt = { ok: true, status: 'contacted' };
+  const window = { addEventListener(name, fn) { events.set(name, fn); }, removeEventListener(name) { events.delete(name); }, dispatchEvent(event) { dispatched.push(event.type); events.get(event.type)?.(event); } };
   const document = { hidden: false, activeElement: null, body: { style: { overflow: '' } }, addEventListener() {}, removeEventListener() {} };
   const Component = evaluate('src/features/central/ClientRecoveryPanel.tsx', {
     '@/lib/recovery-mission': shared,
@@ -147,18 +162,20 @@ function panelFixture() {
     crypto: { randomUUID: () => `operation-${++ids}` },
     fetch: async (url, init) => {
       requests.push({ url, ...init });
-      if (init.method === 'POST') return { ok: !rejectPost, json: async () => rejectPost ? { ok: false, error: 'Reintenta la gestión' } : { ok: true, status: 'contacted' } };
+      if (init.method === 'POST') return { ok: !rejectPost, json: async () => rejectPost ? { ok: false, error: 'Reintenta la gestión' } : receipt };
       return { ok: true, json: async () => ({ ok: true, contacts: [contact], total: 1, counts: { pending: 1, recycled: 0, recovered: 0 }, tags: [] }) };
     },
   }).default;
   const act = async fn => renderer.act(async () => { fn(); await new Promise(resolve => setImmediate(resolve)); });
   const button = text => tree.root.findAllByType('button').find(node => node.children.includes(text));
   return {
-    requests, get tree() { return tree; }, button,
+    requests, dispatched, get tree() { return tree; }, button,
+    get notice() { return tree.root.findByProps({ className: 'notice' }).children.join(''); },
     async mount() { await act(() => { tree = renderer.create(React.createElement(Component)); }); },
     async click(text) { await act(() => button(text).props.onClick()); },
     async channel(value) { await act(() => tree.root.findByProps({ 'aria-label': 'Canal utilizado para contactar' }).props.onChange({ target: { value } })); },
-    accept() { rejectPost = false; },
+    accept(value = receipt) { rejectPost = false; receipt = value; },
+    async setMission(value) { await act(() => { mission = value; tree.update(React.createElement(Component)); }); },
     async unmount() { await act(() => tree.unmount()); },
   };
 }
@@ -175,12 +192,57 @@ test('contact registration requires a channel and retries the same operation wit
   } finally { await f.unmount(); }
 });
 
-test('My mission requests a server-filtered page rather than filtering the current 25 rows in the browser', async () => {
+test('enabled centrals start in their server-filtered mission and can explicitly open the full portfolio', async () => {
   const f = panelFixture(); await f.mount();
   try {
+    assert.match(f.requests[0].url, /mission=1/);
+    await f.click('Ver toda la cartera'); assert.doesNotMatch(f.requests.at(-1).url, /mission=1/);
+    await f.setMission(snapshot({ managed: 1 })); assert.ok(f.button('Ver mi misión'));
     await f.click('Ver mi misión'); const last = f.requests.at(-1);
     assert.match(last.url, /mission=1/); assert.match(last.url, /page=1/);
   } finally { await f.unmount(); }
+});
+
+test('an admin or worker without an enabled mission keeps the full portfolio, and a new enabled worker gets their own mission', async () => {
+  const f = panelFixture({ mission: { enabled: false, worker_id: 'admin', server_now: '2026-10-19T15:40:00Z' } }); await f.mount();
+  try {
+    assert.doesNotMatch(f.requests[0].url, /mission=1/);
+    assert.equal(f.button('Ver toda la cartera'), undefined);
+    await f.setMission(snapshot()); assert.match(f.requests.at(-1).url, /mission=1/);
+    await f.click('Ver toda la cartera');
+    await f.setMission(snapshot({ worker_id: 'worker-maria' }));
+    assert.match(f.requests.at(-1).url, /mission=1/);
+  } finally { await f.unmount(); }
+});
+
+test('an enabled central without work on a rest day starts in the portfolio and can still choose the mission explicitly', async () => {
+  const f = panelFixture({ mission: snapshot({ is_workday: false, active: false, assigned_client_ids: [] }) }); await f.mount();
+  try {
+    assert.doesNotMatch(f.requests[0].url, /mission=1/);
+    await f.click('Ver mi misión'); assert.match(f.requests.at(-1).url, /mission=1/);
+  } finally { await f.unmount(); }
+});
+
+for (const [name, receipt, expected] of [
+  ['counted contact', { counted: true, count_reason: 'counted', mission: snapshot({ managed: 2 }) }, /\+1 gestión registrada.*2\/30/],
+  ['same-day duplicate', { counted: false, count_reason: 'already_counted', mission: snapshot({ managed: 2 }) }, /ya cuenta.*No se suma otra vez.*2\/30/],
+  ['request replay', { counted: true, count_reason: 'counted', duplicate_prevented: true, mission: snapshot({ managed: 2 }) }, /ya estaba guardada.*no la ha duplicado.*2\/30/],
+  ['outside shift', { counted: false, count_reason: 'outside_shift' }, /guardado.*No suma.*fuera de tu turno/],
+  ['not assigned or follow-up not due', { counted: false, count_reason: 'not_assigned' }, /guardado.*no suma.*asignación.*seguimiento/],
+  ['missing mission receipt', {}, /No se ha confirmado que sume/],
+]) test(`contact receipt explains ${name} and triggers the shared counter refresh`, async () => {
+  const f = panelFixture(); await f.mount();
+  try {
+    await f.click('Fue contactada'); await f.channel('whatsapp');
+    f.accept({ ok: true, status: 'contacted', ...receipt }); await f.click('Guardar gestión');
+    assert.match(f.notice, expected);
+    if (name !== 'counted contact') assert.doesNotMatch(f.notice, /\+1 gestión/);
+    assert.deepEqual(f.dispatched, [shared.RECOVERY_MISSION_REFRESH]);
+  } finally { await f.unmount(); }
+});
+
+test('a counted receipt with an invalid mission snapshot never invents a numerical total', () => {
+  assert.equal(shared.recoveryContactReceipt({ counted: true, mission: snapshot({ managed: undefined }) }), '+1 gestión registrada en tu misión.');
 });
 
 test('a state-only mutation also keeps an operation id across retries without inventing a contact channel', async () => {
