@@ -34,17 +34,22 @@ export async function instagramInbox(kind: 'message' | 'comment', cursor: string
     }
     nextCursor = result.paging?.next ? result.paging?.cursors?.after || null : null;
   } else {
-    const media = await instagramGraph(account, `${account.accountId}/media`, { fields: 'id,permalink,caption,timestamp', limit: '8', ...afterCursor(cursor) });
-    const results = await Promise.allSettled((media.data || []).map(async (post: any) => {
+    const media = await instagramGraph(account, `${account.accountId}/media`, { fields: 'id,permalink,caption,timestamp,comments_count', limit: '8', ...afterCursor(cursor) });
+    if (!Array.isArray(media?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió una lista de publicaciones válida. Actualiza para volver a intentarlo.');
+    let commentsNotReturned = false;
+    const results = await Promise.allSettled(media.data.map(async (post: any) => {
       const comments = await instagramGraph(account, `${post.id}/comments`, { fields: 'id,text,timestamp,from', limit: '50' });
+      if (!Array.isArray(comments?.data)) throw new InstagramError('META_INVALID_RESPONSE', 'Instagram no devolvió una lista de comentarios válida. Actualiza para volver a intentarlo.');
+      if (typeof post.comments_count === 'number' && post.comments_count > 0 && comments.data.length === 0) commentsNotReturned = true;
       if (comments.paging?.next) partialHint = 'Hay publicaciones con más de 50 comentarios. Abre la publicación para consultar el resto.';
-      return (comments.data || []).map((comment: any) => ({ kind, remote_id: String(comment.id), recipient_id: comment.from?.id ? String(comment.from.id) : null, name: comment.from?.username || 'Comentario de Instagram', username: comment.from?.username || null, preview: String(comment.text || ''), remote_created_at: verifiedDate(comment.timestamp), remote_updated_at: iso(comment.timestamp), permalink: post.permalink || null }));
+      return comments.data.map((comment: any) => ({ kind, remote_id: String(comment.id), recipient_id: comment.from?.id ? String(comment.from.id) : null, name: comment.from?.username || 'Comentario de Instagram', username: comment.from?.username || null, preview: String(comment.text || ''), remote_created_at: verifiedDate(comment.timestamp), remote_updated_at: iso(comment.timestamp), permalink: post.permalink || null }));
     }));
     for (const result of results) {
       if (result.status === 'fulfilled') rows.push(...result.value);
       else if (!rows.length && results.every(r => r.status === 'rejected')) throw result.reason;
       else partialHint = 'No se han podido cargar todos los comentarios. Actualiza para volver a intentarlo.';
     }
+    if (commentsNotReturned) partialHint = 'Instagram indica comentarios en algunas publicaciones, pero no los ha devuelto. Administración debe revisar la conexión de Meta.';
     nextCursor = media.paging?.next ? media.paging?.cursors?.after || null : null;
   }
   const saved = await persist(account, rows);
