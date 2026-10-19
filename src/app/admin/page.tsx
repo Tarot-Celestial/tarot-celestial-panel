@@ -12,6 +12,8 @@ import PanelTheme from "@/components/ui/PanelTheme";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { AtlasLauncher } from "@/features/admin/atlas/AtlasCharacter";
+import { useAtlasWatches } from "@/features/admin/atlas/useAtlasWatches";
+import { atlasUnreadWatches } from "@/features/admin/atlas/atlas-watch-types";
 import { TC_EVENTS, TC_LEGACY_EVENTS, emitTcEvent, listenTcEvent } from "@/lib/tc-events";
 
 
@@ -333,6 +335,9 @@ function PreviousMonthComparison({ invoice }: { invoice: any }) {
 function AdminPage() {
   const searchParams = useSearchParams();
   const [ok, setOk] = useState(false);
+  const atlasWatches = useAtlasWatches(ok);
+  const atlasWatchAlerts = atlasUnreadWatches(atlasWatches.watches);
+  const [atlasOpenView, setAtlasOpenView] = useState<'chat' | 'supervision'>('chat');
   const [backgroundReady, setBackgroundReady] = useState(false);
   const [tab, setTab] = useState<TabKey>("dashboard");
   const [ranksMenuOpen, setRanksMenuOpen] = useState(false);
@@ -1952,7 +1957,7 @@ function AdminPage() {
           </section>
 
           <div className={`tc-main-content ${adminStyles.mainContent}`}>
-{tab === "atlas" && <AtlasPanel />}
+{tab === "atlas" && <AtlasPanel watches={atlasWatches} initialView={atlasOpenView} />}
 {tab === "dashboard" && <DashboardPanel month={month} />}
 
           {tab === "panel" && <OperatorPanel mode="admin" />}
@@ -3087,7 +3092,7 @@ function AdminPage() {
       </main>
     </div>
 
-      {tab !== "atlas" && <AtlasLauncher onOpen={() => setTab("atlas")} />}
+      {tab !== "atlas" && <AtlasLauncher alert={atlasWatchAlerts[0]} unreadCount={atlasWatchAlerts.length} stale={atlasWatches.stale} onOpen={() => { setAtlasOpenView(atlasWatchAlerts.length ? 'supervision' : 'chat'); setTab("atlas"); }} />}
 
       {crmCloseNotif && (
         <div

@@ -7,6 +7,7 @@ function harness(options = {}) {
     workers: [{ id: id(2), display_name: 'Isa', role: 'central', is_active: true }, { id: id(3), display_name: 'Maria', role: 'central', is_active: true }],
     tc_client_promotions: [{ id: id(20), name: 'Promo Locura', promotion_kind: 'standard', status: 'active', active_until_disabled: true, updated_at: '2026-10-19T10:00:00Z' }],
     tc_client_promotion_packages: [{ id: id(21), promotion_id: id(20), name: 'Pack', price: 20, currency: 'EUR', is_active: true, updated_at: '2026-10-19T10:00:00Z' }],
+    crm_clientes: options.clients || [{ id: id(10), nombre: 'Padron', apellido: 'Ester' }],
   };
   const proposals = [], operations = [];
   const summary = {
@@ -26,6 +27,7 @@ function harness(options = {}) {
       eq(key, val) { data = data.filter(r => r[key] === val); return q; },
       neq(key, val) { data = data.filter(r => r[key] !== val); return q; },
       in(key, val) { data = data.filter(r => val.includes(r[key])); return q; },
+      or(value) { const token = value.match(/\.ilike\.%(.*?)%/)?.[1]?.toLowerCase() || ''; data = data.filter(row => ['nombre', 'apellido', 'telefono', 'email'].some(key => String(row[key] || '').toLowerCase().includes(token))); return q; },
       insert(row) { proposals.push(row); data = [row]; return q; }, single() { one = true; return q; },
       then(resolve, reject) { return Promise.resolve({ data: one ? data[0] : data, error: null }).then(resolve, reject); } };
     return q;
@@ -57,6 +59,7 @@ function harness(options = {}) {
     if (name === './atlas-access') return { atlasChecked: async q => { const r = await q; if (r.error) throw r.error; return r.data; }, AtlasError: Error };
     if (name === './client-promotions') return { effectivePromotionStatus: r => r.status };
     if (name === './atlas-operations') return operationsModule;
+    if (name === './atlas-minute-watches') return { atlasMinuteWatches: async ctx => { operations.push({ name: 'minuteWatches', args: [ctx] }); if (options.watchError) throw new Error('Balance source unavailable'); return { watches: options.watches || [], unreadCount: 0 }; } };
     throw new Error(name);
   } });
   return { context, tables, proposals, operations, summary, run: (name, args) => exports.atlasRunTool(context, name, args) };
@@ -87,6 +90,52 @@ test('deactivation list and selected proposal preserve the operation without cha
   assert.match(list.text, /desactivar/); assert.match(list.cards[0].prompt, /^Desactiva /);
   const selected = await h.run('prepare_promotion', { query: id(20), activate: false });
   assert.equal(selected.proposal.kind, 'deactivate_promotion'); assert.equal(h.proposals[0].payload.promotion_id, id(20));
+});
+
+test('minute watches read the current exact client balance, threshold and pending state without proposing a mutation', async () => {
+  const watch = { id: id(40), clientId: id(10), clientName: 'Padron Ester', threshold: 30, enabled: true, balance: { state: 'known', free: 10, normal: 20, total: 30, observedAt: '2026-10-19T16:00:00Z' }, alert: { id: id(41), acknowledgedAt: null } };
+  const h = harness({ watches: [watch, { ...watch, id: id(42), clientId: id(11), clientName: 'Otra clienta' }] });
+  const reply = await h.run('minute_watches', { query: 'Ester' });
+  assert.equal(h.operations.length, 1); assert.equal(h.operations[0].name, 'minuteWatches'); assert.equal(h.operations[0].args[0], h.context);
+  assert.equal(reply.cards.length, 2); assert.equal(reply.cards[0].title, 'Padron Ester');
+  assert.match(reply.cards[0].description, /30 min registrados \(10 FREE \+ 20 normales\)/);
+  assert.match(reply.cards[0].description, /Umbral: 30 min o menos, incluido cero.*Seguimiento activo.*Aviso pendiente de revisar.*dentro del límite/);
+  assert.equal(reply.cards[1].title, 'Ver promociones'); assert.match(reply.cards[1].prompt, /muéstrame las promociones/);
+  assert.match(reply.cards[1].description, /general.*no activa una oferta individual/);
+  assert.equal(reply.proposal, undefined); assert.equal(h.proposals.length, 0);
+});
+
+test('zero and paused watches remain explicit while an unavailable balance never becomes zero', async () => {
+  const watch = { id: id(40), clientId: id(10), clientName: 'Padron Ester', threshold: 30, enabled: false, balance: { state: 'known', free: 0, normal: 0, total: 0 }, alert: { id: id(41), acknowledgedAt: null } };
+  const h = harness({ watches: [watch] });
+  let reply = await h.run('minute_watches', { configurationRequested: true });
+  assert.match(reply.cards[0].description, /0 min registrados.*Seguimiento en pausa.*No se emitirán avisos/);
+  assert.doesNotMatch(reply.cards[0].description, /Aviso pendiente de revisar/);
+  assert.match(reply.text, /no configura ni cambia avisos.*recuerdo guardado tampoco activa/);
+  watch.balance = { state: 'unavailable' }; reply = await h.run('minute_watches', {});
+  assert.match(reply.cards[0].description, /Saldo sin comprobar; no se interpreta como cero/);
+  assert.doesNotMatch(reply.cards[0].description, /0 min registrados|saldo actual está dentro/);
+  assert.equal(h.proposals.length, 0);
+});
+
+test('unconfigured or ambiguous client watches do not claim a future alert exists', async () => {
+  const h = harness(); let reply = await h.run('minute_watches', { query: id(10), configurationRequested: true });
+  assert.match(reply.text, /Padron Ester no tiene un aviso.*configurado.*Hace falta registrar/); assert.equal(reply.cards.length, 0);
+  h.tables.crm_clientes.push({ id: id(11), nombre: 'Otra', apellido: 'Ester' });
+  reply = await h.run('minute_watches', { query: 'Ester' });
+  assert.match(reply.text, /varias fichas.*Selecciona/); assert.equal(reply.cards.length, 2);
+  assert.equal(reply.cards[0].prompt, `Atlas, consulta los avisos de minutos de cliente ${id(10)}`);
+  assert.equal(h.operations.length, 1); assert.equal(h.proposals.length, 0);
+  const unavailable = harness({ watchError: true }); await assert.rejects(unavailable.run('minute_watches', {}), /Balance source unavailable/);
+});
+
+test('promotion lists and proposals declare a general activation rather than a private client offer', async () => {
+  const h = harness(); const list = await h.run('promotions', {});
+  assert.match(list.text, /generales del panel.*no es exclusiva para una clienta/);
+  const reply = await h.run('prepare_promotion', { query: id(20) });
+  assert.match(reply.proposal.description, /panel de clientes en general.*no será exclusiva/);
+  assert.equal(reply.proposal.details.find(d => d.label === 'Alcance').value, 'General para el panel de clientes; no individual');
+  assert.equal(reply.proposal.status, 'pending');
 });
 
 test('task approval shows the actual deadline for each responsible central', async () => {

@@ -110,7 +110,7 @@ export function productionSummary(payments: Row[], captures: Row[], contacts: Ro
 export async function overview(ctx: AtlasOperationsContext, now = new Date()) {
   admin(ctx);
   const day = ecuadorDay(now), month = day.slice(0, 7), firstDay = shiftedDay(day, -29), start = startOf(firstDay < `${month}-01` ? firstDay : `${month}-01`);
-  const labels = ['Misiones', 'Pagos confirmados', 'Captaciones', 'Gestiones', 'Recuperaciones', 'Encargos', 'Resultados de contactos', 'Seguimientos', 'Centrales', 'Objetivos', 'Incidencias', 'Seguimientos de Atlas'];
+  const labels = ['Misiones', 'Pagos confirmados', 'Captaciones', 'Gestiones', 'Recuperaciones', 'Encargos', 'Resultados de contactos', 'Seguimientos', 'Centrales', 'Objetivos', 'Incidencias', 'Seguimientos de Atlas', 'Avisos de minutos'];
   const sources = await Promise.allSettled([
     checked(ctx.db.rpc('tc_recovery_mission_overview', { p_user: ctx.worker.user_id })),
     businessPayments(ctx, start, now.toISOString()),
@@ -124,6 +124,7 @@ export async function overview(ctx: AtlasOperationsContext, now = new Date()) {
     checked(ctx.db.from('atlas_admin_settings').select('timezone,daily_revenue_goal,monthly_capture_goal').eq('singleton', true).single()),
     rows(() => ctx.db.from('v_attendance_incidents').select('id,worker_id,worker_name,pending_minutes,status,incident_date').in('status', ['pending', 'partial']).order('id')),
     rows(() => ctx.db.from('atlas_current_followups').select('id,job_id,worker_id,client_id,channel,next_contact_at,created_at').order('id')),
+    checked(ctx.db.rpc('tc_atlas_minute_watches', { p_user: ctx.worker.user_id })),
   ]);
   const unavailable = sources.flatMap((s, i) => s.status === 'rejected' ? [labels[i]] : []);
   const value = (i: number): any => sources[i].status === 'fulfilled' ? (sources[i] as PromiseFulfilledResult<any>).value : null;
@@ -144,6 +145,15 @@ export async function overview(ctx: AtlasOperationsContext, now = new Date()) {
     met: value(2) !== null && verifiedCaptures !== null && settings ? summary.monthCaptures >= Number(settings.monthly_capture_goal) : null,
     source: 'Captaciones confirmed de Tarot Celestial con primera compra positiva completed verificada; fecha de la primera compra en Ecuador.' };
   const alerts: Array<{ id: string; title: string; description: string; severity: 'info' | 'attention' | 'critical'; href?: string; prompt?: string; evidence?: string[] }> = [];
+  const minuteWatches: Row[] = Array.isArray(value(12)?.watches) ? value(12).watches : [];
+  for (const watch of minuteWatches.filter(w => w.enabled && w.alert && !w.alert.acknowledgedAt)) {
+    const balance = watch.balance;
+    alerts.push({ id: `minutes:${watch.alert.id}`, title: `${watch.clientName}: aviso de minutos`,
+      description: balance?.state === 'known' ? `${balance.total} minutos disponibles (${balance.free} FREE + ${balance.normal} normales). Umbral: ${watch.threshold} minutos. Puedes revisar las promociones; su activación afecta al panel de clientes en general.` : 'No se pudo comprobar el saldo actual. Actualiza antes de elegir una promoción.',
+      severity: balance?.state === 'known' && balance.total === 0 ? 'critical' : 'attention',
+      prompt: 'Atlas, muéstrame las promociones disponibles',
+      evidence: [`Aviso registrado: ${watch.alert.triggeredAt}`, `Saldo comprobado: ${balance?.observedAt || 'sin fecha disponible'}`] });
+  }
   for (const mission of missions) {
     const elapsed = now.getTime() - Date.parse(mission.notice_at || '');
     if (mission.active && elapsed >= 40 * 60000 && mission.managed < mission.expected_managed) alerts.push({ id: `pace:${mission.worker_id}`, title: `${mission.worker_name}: revisar avance`,
@@ -185,7 +195,7 @@ export async function overview(ctx: AtlasOperationsContext, now = new Date()) {
   const history = summary.history.map(h => ({ ...h, revenue: value(1) === null ? null : h.revenue, purchases: value(1) === null ? null : h.purchases,
     captures: value(2) === null || verifiedCaptures === null ? null : h.captures, managed: value(3) === null ? null : h.managed, recovered: value(4) === null ? null : h.recovered }));
   return { updatedAt: now.toISOString(), timezone: ZONE, revenue, acquisition, missions: value(0) === null ? null : missions, alerts, insights, anomalies,
-    pendingJobs: value(5) === null ? null : jobs.filter(j => OPEN.includes(j.status)), jobs, workers, history,
+    pendingJobs: value(5) === null ? null : jobs.filter(j => OPEN.includes(j.status)), jobs, workers, history, minuteWatches: value(12) === null ? null : minuteWatches,
     patterns: { periods: value(1) === null ? null : summary.periods, funnel: value(6) === null || value(1) === null ? null : summary.funnel },
     followups: openFollowups.sort((a, b) => Number(b.due) - Number(a.due) || String(a.next_contact_at || '').localeCompare(String(b.next_contact_at || ''))).slice(0, 100), followupSummary, incidents, unavailable,
     limitations: ['No se detecta una llamada real ni actividad fuera del panel.', 'Un contacto registrado no demuestra respuesta: se distinguen los resultados declarados y los pagos comprobados.', 'No se consultan memorias ni conversaciones privadas de las mascotas.'] };

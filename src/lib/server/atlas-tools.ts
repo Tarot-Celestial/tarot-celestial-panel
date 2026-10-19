@@ -4,6 +4,7 @@ import { atlasNormalize, atlasUuid } from '@/lib/atlas';
 import { atlasChecked as checked, AtlasError, type AtlasContext } from './atlas-access';
 import { effectivePromotionStatus } from './client-promotions';
 import { overview, candidates, prepareDispatch, prepareTask, ecuadorDay } from './atlas-operations';
+import { atlasMinuteWatches } from './atlas-minute-watches';
 
 const clientColumns = 'id,nombre,apellido,telefono,email,auth_user_id';
 const clientName = (c: any) => [c.nombre, c.apellido].filter(Boolean).join(' ') || 'Clienta sin nombre';
@@ -85,6 +86,28 @@ export async function atlasOverviewAnswer(ctx: AtlasContext) {
 }
 export async function atlasRunTool(ctx: AtlasContext, name: string, args: Record<string, any>): Promise<AtlasAnswer> {
   if (name === 'overview' || name === 'patterns') return atlasOverviewAnswer(ctx);
+  if (name === 'minute_watches') {
+    let client: any = null;
+    if (String(args.query || '').trim()) {
+      const resolved = await resolveClient(ctx, String(args.query), id => `Atlas, consulta los avisos de minutos de cliente ${id}`);
+      if (resolved.answer) return resolved.answer;
+      client = resolved.client;
+    }
+    const data = await atlasMinuteWatches(ctx);
+    const watches = client ? data.watches.filter(w => w.clientId === client.id) : data.watches;
+    const configuration = 'Esta consulta no configura ni cambia avisos. Un recuerdo guardado tampoco activa el seguimiento. Los seguimientos existentes se pausan o reanudan en «Clientas en el radar».';
+    if (!watches.length) return result(`${client ? clientName(client) + ' no tiene' : 'Todavía no tienes'} un aviso de minutos configurado en tu cuenta. Hace falta registrar el seguimiento para recibir avisos. ${configuration}`);
+    const cards: AtlasCard[] = watches.map(watch => {
+      const balance = watch.balance;
+      const amount = balance.state === 'known' ? `${balance.total} min registrados (${balance.free} FREE + ${balance.normal} normales)` : 'Saldo sin comprobar; no se interpreta como cero';
+      const low = balance.state === 'known' && balance.total <= watch.threshold;
+      const pending = Boolean(watch.enabled && watch.alert && !watch.alert.acknowledgedAt);
+      const alert = pending ? 'Aviso pendiente de revisar' : !watch.enabled ? 'No se emitirán avisos mientras esté en pausa' : watch.alert?.acknowledgedAt ? 'Aviso ya visto' : 'Sin aviso pendiente';
+      return { id: watch.id, kind: 'minute_watch', title: watch.clientName, description: `${amount}. Umbral: ${watch.threshold} min o menos, incluido cero. Seguimiento ${watch.enabled ? 'activo' : 'en pausa'}. ${alert}.${low ? ' El saldo actual está dentro del límite.' : ''}${balance.state === 'known' && balance.observedAt ? ` Comprobado: ${date(balance.observedAt)} (Ecuador).` : ''}` };
+    });
+    cards.push({ id: 'minute-watch-promotions', kind: 'promotion', title: 'Ver promociones', description: 'Las promociones se activan para el panel de clientes en general. Este aviso no activa una oferta individual ni envía mensajes a la clienta.', prompt: 'Atlas, muéstrame las promociones disponibles' });
+    return result(`Este es el estado comprobado de ${watches.length === 1 ? 'tu seguimiento' : 'tus seguimientos'} de minutos. Los saldos proceden del CRM.${args.configurationRequested ? ` ${configuration}` : ''}`, cards);
+  }
   if (name === 'find_client') {
     const clients = await atlasClients(ctx, args.query);
     return result(clients.length ? 'Estas son las fichas que coinciden.' : 'No encuentro esa clienta. Prueba con su teléfono o correo.', clientChoices(clients, id => `Atlas, consulta la última compra de cliente ${id}`));
@@ -126,12 +149,12 @@ export async function atlasRunTool(ctx: AtlasContext, name: string, args: Record
     const packages = promotions.length ? await checked<any[]>(ctx.db.from('tc_client_promotion_packages').select('id,promotion_id,name,price,currency,paid_minutes,free_minutes,is_active,updated_at').in('promotion_id', promotions.map(p => p.id))) : [];
     const pQuery = atlasNormalize(String(args.query || '')), activate = args.activate !== false;
     const matches = promotions.filter(p => p.id === args.query || atlasNormalize(p.name) === pQuery);
-    if (name === 'promotions' || !pQuery || matches.length !== 1) return result(`¿Qué promoción deseas ${activate ? 'activar' : 'desactivar'}? Estas son las promociones configuradas en el panel.`, promotions.map(p => ({ id: p.id, kind: 'promotion', title: p.name, description: `${promoState[effectivePromotionStatus(p)] || 'Estado sin verificar'} · ${packages.filter(x => x.promotion_id === p.id && x.is_active).map(x => `${x.name}: ${money(x.price, x.currency)}`).join(' · ') || 'Sin packs activos'}`, prompt: `${activate ? 'Activa' : 'Desactiva'} la promoción ${p.id}` })));
+    if (name === 'promotions' || !pQuery || matches.length !== 1) return result(`¿Qué promoción deseas ${activate ? 'activar' : 'desactivar'}? Estas son las promociones generales del panel de clientes; su activación no es exclusiva para una clienta.`, promotions.map(p => ({ id: p.id, kind: 'promotion', title: p.name, description: `${promoState[effectivePromotionStatus(p)] || 'Estado sin verificar'} · ${packages.filter(x => x.promotion_id === p.id && x.is_active).map(x => `${x.name}: ${money(x.price, x.currency)}`).join(' · ') || 'Sin packs activos'}`, prompt: `${activate ? 'Activa' : 'Desactiva'} la promoción ${p.id}` })));
     const p = matches[0];
     if (activate && !packages.some(x => x.promotion_id === p.id && x.is_active && Number(x.price) > 0)) return result('Esta promoción no tiene packs activos. Configura sus packs antes de activarla.');
     if (activate && !p.active_until_disabled && p.ends_at && Date.parse(p.ends_at) <= Date.now()) return result('Esta promoción tiene una fecha de fin vencida. Actualiza su vigencia en Promociones antes de activarla.', [{ id: p.id, kind: 'promotion', title: p.name, description: `Finalizó: ${date(p.ends_at)}`, href: '/admin?tab=precios-hoy' }]);
     const active = promotions.filter(x => x.status === 'active' && x.id !== p.id).map(x => x.name);
-    return atlasPropose(ctx, activate ? 'activate_promotion' : 'deactivate_promotion', `${activate ? 'Activar' : 'Desactivar'} ${p.name}`, { promotion_id: p.id, updated_at: p.updated_at, previous_active: promotions.filter(x => x.status === 'active' && x.id !== p.id).map(x => x.id).sort(), package_versions: packages.filter(x => x.promotion_id === p.id && x.is_active).map(x => ({ id: x.id, updated_at: x.updated_at })).sort((a,b) => a.id.localeCompare(b.id)), description: activate ? 'La promoción se activará ahora con sus packs y beneficios actuales.' : 'La promoción dejará de ofrecerse a nuevas compras.', details: [detail('Promoción', p.name), detail('Vigencia', p.active_until_disabled ? 'Hasta desactivarla' : date(p.ends_at)), ...(activate && active.length ? [detail('Se desactivarán', active.join(', '))] : [])] });
+    return atlasPropose(ctx, activate ? 'activate_promotion' : 'deactivate_promotion', `${activate ? 'Activar' : 'Desactivar'} ${p.name}`, { promotion_id: p.id, updated_at: p.updated_at, previous_active: promotions.filter(x => x.status === 'active' && x.id !== p.id).map(x => x.id).sort(), package_versions: packages.filter(x => x.promotion_id === p.id && x.is_active).map(x => ({ id: x.id, updated_at: x.updated_at })).sort((a,b) => a.id.localeCompare(b.id)), description: activate ? 'La promoción se activará para el panel de clientes en general con sus packs y beneficios actuales; no será exclusiva para una clienta.' : 'La promoción dejará de ofrecerse a nuevas compras en el panel de clientes en general.', details: [detail('Promoción', p.name), detail('Alcance', 'General para el panel de clientes; no individual'), detail('Vigencia', p.active_until_disabled ? 'Hasta desactivarla' : date(p.ends_at)), ...(activate && active.length ? [detail('Se desactivarán', active.join(', '))] : [])] });
   }
   if (name === 'candidates' || name === 'prepare_dispatch') {
     const kind = args.kind === 'capture' ? 'capture' : 'recovery', count = Math.min(30, Math.max(1, Number(args.count) || 10));

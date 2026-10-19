@@ -5,6 +5,8 @@ import { ArrowRight, Check, ChevronRight, CircleHelp, Clock3, Eye, ListChecks, L
 import { parseRecoveryMission, recoveryMissionPhase, recoveryMissionTime } from '@/lib/recovery-mission';
 import { AtlasCharacter } from './AtlasCharacter';
 import { useAtlas } from './useAtlas';
+import { AtlasWatchPanel } from './AtlasWatchPanel';
+import { atlasUnreadWatches, atlasWatchMinutes, type AtlasWatchesController } from './atlas-watch-types';
 import { atlasInternalHref, atlasNumber, atlasProgress, atlasStamp, type AtlasAnomaly, type AtlasCard, type AtlasJob, type AtlasMission, type AtlasOverview, type AtlasProposal, type AtlasSignal } from './atlas-types';
 import styles from './Atlas.module.css';
 
@@ -89,15 +91,16 @@ function Jobs({ jobs, overview }: { jobs: AtlasJob[]; overview: AtlasOverview | 
   </article>)}</div>;
 }
 
-export default function AtlasPanel() {
+export default function AtlasPanel({ watches, initialView = 'chat' }: { watches?: AtlasWatchesController; initialView?: 'chat' | 'supervision' } = {}) {
   const atlas = useAtlas();
-  const [view, setView] = useState<'chat' | 'supervision' | 'memory'>('chat');
+  const [view, setView] = useState<'chat' | 'supervision' | 'memory'>(initialView);
   const [draft, setDraft] = useState('');
   const [memoryDraft, setMemoryDraft] = useState('');
   const [deletingMemory, setDeletingMemory] = useState('');
   const input = useRef<HTMLTextAreaElement>(null);
   const conversation = useRef<HTMLDivElement>(null);
   const [followConversation, setFollowConversation] = useState(true);
+  const openingPromotions = useRef(false);
   const previousEpoch = useRef(atlas.identityEpoch);
   useEffect(() => {
     if (previousEpoch.current !== atlas.identityEpoch) { setDraft(''); setMemoryDraft(''); setDeletingMemory(''); previousEpoch.current = atlas.identityEpoch; }
@@ -117,10 +120,28 @@ export default function AtlasPanel() {
   const captureGoal = atlasNumber(overview?.acquisition?.goal) || 10;
   const jobs = atlas.jobs.length ? atlas.jobs : overview?.pendingJobs || [];
   const pendingCount = overview?.pendingJobs ? overview.pendingJobs.length : overview ? jobs.filter(job => ['pending', 'in_progress', 'blocked'].includes(job.status)).length : null;
-  const alerts = overview?.alerts || [];
+  // The shared watcher owns these notices, including acknowledgements made after the overview loaded.
+  const alerts = (overview?.alerts || []).filter(alert => !watches || !alert.id.startsWith('minutes:'));
   const insights = overview?.insights || [];
   const anomalies = overview?.anomalies || [];
   const missions = overview?.missions || [];
+  const watchAlerts = watches ? atlasUnreadWatches(watches.watches) : [];
+  const showPromotions = async () => {
+    setView('chat');
+    if (atlas.busy || openingPromotions.current) return;
+    openingPromotions.current = true;
+    const identity = atlas.identityEpoch;
+    try {
+      const previousAssistant = [...atlas.messages].reverse().find(message => message.role === 'assistant');
+      const protectedFlow = previousAssistant?.sensitiveFollowup || previousAssistant?.proposal?.kind === 'change_password' && ['pending', 'executing'].includes(previousAssistant.proposal.status);
+      // Leave only the protected conversation context; the password proposal remains unchanged.
+      if (protectedFlow && !await atlas.chat('otra cosa')) return;
+      if (previousEpoch.current !== identity) return;
+      const text = 'Atlas, muéstrame las promociones disponibles.';
+      setDraft(text);
+      await submit(text);
+    } finally { openingPromotions.current = false; }
+  };
 
   return <section className={styles.atlas} aria-label="Atlas, asistente de administración">
     <header className={styles.hero}>
@@ -137,9 +158,10 @@ export default function AtlasPanel() {
     {overview?.unavailable?.length ? <div className={styles.partial}><CircleHelp size={15} /><span>Hay fuentes pendientes: {overview.unavailable.join(' · ')}. Los datos no disponibles se muestran con —.</span></div> : null}
     <nav className={styles.tabs} aria-label="Secciones de Atlas">
       <button type="button" aria-current={view === 'chat' ? 'page' : undefined} onClick={() => setView('chat')}><MessageCircle size={16} />Conversación</button>
-      <button type="button" aria-current={view === 'supervision' ? 'page' : undefined} onClick={() => setView('supervision')}><ListChecks size={16} />Supervisión y encargos{alerts.length ? <span>{alerts.length}</span> : null}</button>
+      <button type="button" aria-current={view === 'supervision' ? 'page' : undefined} onClick={() => setView('supervision')}><ListChecks size={16} />Supervisión y encargos{alerts.length + watchAlerts.length ? <span>{alerts.length + watchAlerts.length}</span> : null}</button>
       <button type="button" aria-current={view === 'memory' ? 'page' : undefined} onClick={() => setView('memory')}><Sparkles size={16} />Nuestra memoria</button>
     </nav>
+    {watchAlerts.length && view !== 'supervision' ? <div className={styles.watchBanner} role="status"><span><strong>{watchAlerts[0].clientName}: {atlasWatchMinutes(watchAlerts[0])}</strong><small>{watches?.stale ? 'Último saldo pendiente de actualizar.' : 'Atlas ha detectado el límite de minutos que configuraste.'}{watchAlerts.length > 1 ? ` Hay ${watchAlerts.length} avisos pendientes.` : ''}</small></span><button type="button" className={styles.quietButton} onClick={() => setView('supervision')}>Revisar aviso <ArrowRight size={14} /></button></div> : null}
 
     {view === 'chat' ? <div className={styles.workspace}>
       <section className={styles.chat} aria-label="Conversación con Atlas">
@@ -165,6 +187,7 @@ export default function AtlasPanel() {
     </div> : null}
 
     {view === 'supervision' ? <div className={styles.supervision}>
+      {watches ? <AtlasWatchPanel controller={watches} onPromotions={showPromotions} /> : null}
       <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>Observar · organizar · comprobar</span><h2>Que cada pendiente tenga un siguiente paso</h2></div><button type="button" className={styles.primaryButton} onClick={() => preparePrompt('Atlas, prepara un encargo para mejorar la recuperación de esta semana. Muéstrame el plan y sus responsables.')}><ListChecks size={16} />Preparar un encargo</button></div>
       <div className={styles.missionGrid}>{missions.map(mission => <MissionCard key={mission.worker_id} mission={mission} overview={overview!} />)}</div>
       <div className={styles.analysisGrid}><section className={styles.surface}><h2>Requiere atención <span>{alerts.length}</span></h2>{alerts.length ? alerts.map(signal => <Signal key={signal.id} signal={signal} onPrompt={preparePrompt} />) : <p className={styles.noData}>{overview ? 'No hay alertas en esta consulta.' : 'Conecta los datos para revisar las alertas.'}</p>}</section>

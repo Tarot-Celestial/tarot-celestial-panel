@@ -38,3 +38,19 @@ yarn build
 ```
 
 Las pruebas de autorización y concurrencia usan datos sintéticos; no requieren cambiar saldos, contraseñas, promociones ni compras reales. La comprobación visual de producción requiere una sesión de administrador iniciada por su propietario.
+
+## Avisos de minutos de clientas
+
+Los seguimientos son privados de cada administrador y usan el mismo saldo del CRM: minutos FREE pendientes más minutos normales pendientes, cada componente limitado a cero como mínimo. El umbral predeterminado es 30 minutos, incluido cero. No incluyen pases potenciales ni Coins que aún no se hayan convertido en minutos.
+
+La actualización real del saldo dispara un registro persistente en `atlas_client_minute_alerts`, incluso con el panel cerrado. Hay un aviso por episodio: bajar de 30 a 20 y después a cero no lo duplica. Una recarga que supere el umbral resuelve el episodio y permite otro aviso al volver a bajar. Marcarlo visto no cambia el saldo ni borra el seguimiento. Pausar y reanudar tampoco duplica un episodio existente.
+
+El administrador ve el aviso en el lanzador de Atlas de cualquier sección y en «Supervisión y encargos». El panel visible actualiza cada 30 segundos y al recuperar foco/conexión; un error deja el último dato identificado como pendiente de actualizar. No se envían mensajes externos ni se requiere mantener abierto Codex. El aviso se consulta en el panel al volver a entrar.
+
+«Ver promociones» abre las promociones existentes. Su activación actual es general para el panel de clientes; el aviso no crea una oferta privada ni activa automáticamente una promoción. La conversación puede consultar los seguimientos con «Atlas, cómo van mis avisos de minutos».
+
+Configuración: `POST /api/admin/atlas/watches` con `action: upsert`, `clientId` y `threshold`; las acciones `set_enabled` y `acknowledge` usan respectivamente `watchId` y `alertId`. La identidad procede exclusivamente del bearer verificado. La RPC administrativa `tc_atlas_upsert_minute_watch` permite configurar un seguimiento por cliente y administrador sin duplicados. No se incluyen identidades de clientes reales en migraciones.
+
+El trigger interno reside en `atlas_private`, sin permisos de ejecución para roles de navegador. Las tablas tienen RLS y acceso solo del servidor; las RPC públicas verifican al administrador activo y también son exclusivas del servidor. La lectura GET es solo lectura. Todas las mutaciones y nuevos avisos dejan auditoría.
+
+El nuevo personaje se documenta en `ATLAS-CHARACTER.txt`; la versión WebP conserva transparencia y pesa aproximadamente 105 KiB.
