@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { InstagramError, instagramIdentity } from '@/lib/server/instagram-graph';
 import { instagramInbox, instagramMessages, instagramSend, instagramResolve } from '@/lib/server/instagram-inbox';
+import { instagramDiagnostics } from '@/lib/server/instagram-diagnostics';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,8 +13,12 @@ function failure(error: unknown) {
 }
 export async function GET(req: Request) {
   try {
-    await instagramIdentity(req);
+    const identity = await instagramIdentity(req);
     const params = new URL(req.url).searchParams;
+    if (params.get('action') === 'diagnostics') {
+      if (identity.worker.role !== 'admin') throw new InstagramError('FORBIDDEN', 'Solo administración puede comprobar la conexión.', 403);
+      return json(await instagramDiagnostics());
+    }
     if (params.get('action') === 'messages') return json(await instagramMessages(params.get('threadId') || '', params.get('requestId')));
     return json(await instagramInbox(params.get('kind') === 'comment' ? 'comment' : 'message', params.get('cursor')));
   } catch (error) { return failure(error); }

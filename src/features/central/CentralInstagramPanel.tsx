@@ -46,7 +46,7 @@ function instagramLink(value?: string | null) {
 function mergeThreads(current: InstagramThread[], incoming: InstagramThread[]) {
   const entries = new Map(current.map(thread => [thread.id, thread]));
   incoming.forEach(thread => entries.set(thread.id, thread));
-  return [...entries.values()];
+  return [...entries.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export default function CentralInstagramPanel() {
@@ -69,12 +69,15 @@ export default function CentralInstagramPanel() {
   const [notice, setNotice] = useState<string | null>(null);
   const [uncertain, setUncertain] = useState<Record<string, boolean>>({});
   const [checkedPending, setCheckedPending] = useState(false);
+  const [authRevision, setAuthRevision] = useState(0);
   const mounted = useRef(false);
   const currentKind = useRef(kind);
   const selectedId = useRef<string | null>(null);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
   const sendLock = useRef(false);
+  const loadedOlder = useRef(false);
+  const authOwner = useRef<string | null | undefined>(undefined);
   const attempts = useRef<Record<string, { text: string; requestId: string; expectedLastReplyAt: string | null; replyMode: "public" | "private" }>>({});
   const composer = useRef<HTMLTextAreaElement>(null);
   currentKind.current = kind;
@@ -91,11 +94,28 @@ export default function CentralInstagramPanel() {
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { setCheckedPending(false); }, [pendingSend?.requestId]);
+  useEffect(() => {
+    const { data } = sb.auth.onAuthStateChange((_event, session) => {
+      const owner = session?.user.id || null;
+      const changed = authOwner.current !== undefined && authOwner.current !== owner;
+      authOwner.current = owner;
+      if (!owner || changed) {
+        ++listRequest.current; ++detailRequest.current;
+        selectedId.current = null; loadedOlder.current = false; attempts.current = {};
+        setThreads([]); setSelected(null); setDetail(null); setCursor(null); setConnection(null);
+        setDrafts({}); setUncertain({}); setQuery(""); setPartialHint(null); setNotice(null);
+        setError(null); setLoading(false); setLoadingMore(false); setDetailLoading(false);
+      }
+      if (changed && owner) setAuthRevision(previous => previous + 1);
+    });
+    return () => data.subscription.unsubscribe();
+  }, [sb]);
 
   const api = useCallback(async <T,>(params: URLSearchParams, init: RequestPayload = {}): Promise<T> => {
     const { data } = await sb.auth.getSession();
     const token = data.session?.access_token;
     if (!token) throw new Error("NO_AUTH");
+    if (authOwner.current === undefined) authOwner.current = data.session?.user.id || null;
     const response = await fetch(`/api/central/instagram?${params}`, {
       method: init.method || "GET", cache: "no-store", signal: init.signal,
       headers: { Authorization: `Bearer ${token}`, ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}) },
@@ -116,8 +136,9 @@ export default function CentralInstagramPanel() {
       const result = await api<InstagramInboxResult>(params, { signal });
       if (!mounted.current || currentKind.current !== requestedKind || request !== listRequest.current) return;
       setConnection(result.connection);
-      setThreads(previous => next ? mergeThreads(previous, result.threads) : result.threads);
-      setCursor(result.nextCursor || null);
+      setThreads(previous => mergeThreads(previous, result.threads));
+      if (next || !loadedOlder.current) setCursor(result.nextCursor || null);
+      if (next) loadedOlder.current = true;
       setPartialHint(result.partialHint || null);
       if (!quiet) setError(null);
     } catch (cause) {
@@ -169,7 +190,7 @@ export default function CentralInstagramPanel() {
     const interval = window.setInterval(refresh, kind === "comment" ? 300_000 : 60_000);
     document.addEventListener("visibilitychange", refresh);
     return () => { controller.abort(); window.clearInterval(interval); document.removeEventListener("visibilitychange", refresh); };
-  }, [kind, loadInbox]);
+  }, [kind, loadInbox, authRevision]);
 
   useEffect(() => {
     if (!selected?.id) return;
@@ -249,7 +270,8 @@ export default function CentralInstagramPanel() {
     }
   }
 
-  const filtered = threads.filter(thread => `${thread.name} ${thread.username || ""} ${thread.preview}`.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es")));
+  const normalizedQuery = query.trim().replace(/^@/, "").toLocaleLowerCase("es");
+  const filtered = threads.filter(thread => `${thread.name} ${thread.username || ""} ${thread.preview}`.toLocaleLowerCase("es").includes(normalizedQuery));
   const selectedLink = instagramLink(selected?.permalink);
   const comments = kind === "comment";
 
@@ -266,12 +288,12 @@ export default function CentralInstagramPanel() {
     <div className={`${styles.inbox} ${selected ? styles.hasSelection : ""}`}>
       <div className={styles.threadList}>
         <div className={styles.tabs} role="group" aria-label="Tipo de conversación">
-          {([['message', 'Mensajes', MessagesSquare], ['comment', 'Comentarios', MessageCircle]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={kind === value} disabled={sending} className={kind === value ? styles.activeTab : ""} onClick={() => { if (kind === value) return; setKind(value); setThreads([]); setSelected(null); setDetail(null); setCursor(null); setQuery(""); setNotice(null); }}><Icon size={16} aria-hidden="true" />{label}</button>)}
+          {([['message', 'Mensajes', MessagesSquare], ['comment', 'Comentarios', MessageCircle]] as const).map(([value, label, Icon]) => <button key={value} type="button" aria-pressed={kind === value} disabled={sending} className={kind === value ? styles.activeTab : ""} onClick={() => { if (kind === value) return; ++listRequest.current; ++detailRequest.current; loadedOlder.current = false; setKind(value); setThreads([]); setSelected(null); setDetail(null); setCursor(null); setQuery(""); setNotice(null); setPartialHint(null); }}><Icon size={16} aria-hidden="true" />{label}</button>)}
         </div>
         <label className={styles.search}><Search size={16} aria-hidden="true" /><input aria-label={`Buscar ${comments ? "comentarios" : "mensajes"}`} placeholder="Buscar en la bandeja…" value={query} onChange={event => setQuery(event.target.value)} /></label>
         <div className={styles.listBody} aria-busy={loading}>
           {loading && !threads.length ? <p className={styles.empty} role="status">Consultando Instagram…</p> : null}
-          {!loading && !filtered.length ? <div className={styles.empty}><Instagram size={26} aria-hidden="true" /><strong>{query ? "No hay coincidencias" : comments ? "Sin comentarios disponibles" : "Sin mensajes disponibles"}</strong><p>{query ? "Prueba otro nombre o texto." : connection?.ready ? "Actualiza para consultar nuevas conversaciones de la cuenta." : "Los contactos aparecerán cuando Instagram permita consultar la bandeja."}</p></div> : null}
+          {!loading && !filtered.length ? <div className={styles.empty}><Instagram size={26} aria-hidden="true" /><strong>{normalizedQuery ? "Sin coincidencias entre los resultados cargados" : cursor ? comments ? "Sin comentarios en estas publicaciones" : "Sin mensajes en esta página" : comments ? "Sin comentarios disponibles" : "Sin mensajes disponibles"}</strong><p>{cursor ? comments ? "Quedan publicaciones por consultar. Pulsa «Cargar anteriores» para seguir revisando." : "Quedan conversaciones por consultar. Pulsa «Cargar anteriores» para continuar." : normalizedQuery ? "Prueba otro nombre o texto." : connection?.ready ? "Actualiza para consultar nuevas conversaciones de la cuenta." : "Los contactos aparecerán cuando Instagram permita consultar la bandeja."}</p></div> : null}
           <ul>{filtered.map(thread => <li key={thread.id}><button className={`${styles.thread} ${selected?.id === thread.id ? styles.activeThread : ""}`} aria-pressed={selected?.id === thread.id} disabled={sending} type="button" onClick={() => selectThread(thread)}><span className={styles.avatar} aria-hidden="true">{(thread.name || thread.username || "IG").slice(0, 2).toUpperCase()}</span><span className={styles.threadCopy}><span className={styles.threadTitle}><strong>{thread.name || thread.username || "Contacto de Instagram"}</strong><time dateTime={thread.updatedAt}>{timeLabel(thread.updatedAt)}</time></span><span className={styles.preview}>{thread.preview || (comments ? "Comentario en una publicación" : "Abrir conversación")}</span></span></button></li>)}</ul>
           {cursor ? <button type="button" className={styles.loadMore} disabled={loadingMore || loading || sending} onClick={() => void loadInbox(kind, cursor)}>{loadingMore ? "Cargando…" : "Cargar anteriores"}</button> : null}
           {partialHint ? <p className={styles.partial}>{partialHint}</p> : null}

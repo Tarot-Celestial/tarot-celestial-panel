@@ -119,6 +119,7 @@ type FlexiblePlan = {
 
 type Props = { provider: Provider };
 type AiStudioTab = "creator" | "video" | "planner";
+type InboxDiagnostics = { checks: Array<{ label: string; ok: boolean; count?: number; code?: string }>; postId: string | null };
 
 const sections: Array<{ key: Section; label: string; icon: any }> = [
   { key: "resumen", label: "Resumen", icon: LayoutDashboard },
@@ -294,6 +295,9 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [inboxDiagnostics, setInboxDiagnostics] = useState<InboxDiagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [diagnosticsError, setDiagnosticsError] = useState("");
   const [aiProgress, setAiProgress] = useState("");
   const [aiProgressCurrent, setAiProgressCurrent] = useState(0);
   const [aiProgressTotal, setAiProgressTotal] = useState(0);
@@ -380,6 +384,22 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
     if (!response.ok || json?.ok === false) throw new Error(json?.error || "Error de servidor");
     return json;
   }, [accessToken]);
+
+  async function checkInbox() {
+    if (diagnosticsLoading || provider !== "instagram") return;
+    setDiagnosticsLoading(true);
+    setDiagnosticsError("");
+    setInboxDiagnostics(null);
+    try {
+      const result = await api("/api/central/instagram?action=diagnostics", { method: "GET" });
+      if (!Array.isArray(result.checks)) throw new Error("La comprobación no devolvió resultados válidos.");
+      setInboxDiagnostics({ checks: result.checks, postId: result.postId || null });
+    } catch (e: any) {
+      setDiagnosticsError(e?.message || "No se pudo comprobar la bandeja. Inténtalo de nuevo.");
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1524,7 +1544,29 @@ export default function SocialChannelAdminPanel({ provider }: Props) {
         <section className={styles.card}><h3>Actividad del gestor</h3><div className={styles.metrics}><article><span>Total contenido</span><strong>{analytics?.totals?.content || 0}</strong><small>registrado</small></article><article><span>Publicadas</span><strong>{analytics?.totals?.published || 0}</strong><small>confirmadas</small></article><article><span>Programadas</span><strong>{analytics?.totals?.scheduled || 0}</strong><small>pendientes</small></article><article><span>Errores</span><strong>{analytics?.totals?.failed || 0}</strong><small>requieren revisión</small></article></div></section>
       </div>}
 
-      {section === "conexion" && <section className={styles.card}><div className={styles.connectionPanel}><div className={styles.connectionIcon}><Icon size={32} /></div><div><h3>Conexión oficial de {brand.name}</h3><p>OAuth propio de Tarot Celestial. Las credenciales y tokens se guardan cifrados en servidor y nunca se exponen al navegador.</p></div><span className={`${styles.bigState} ${connection ? styles.connected : ""}`}>{connection ? "CONECTADO" : "SIN CONECTAR"}</span></div><div className={styles.connectionRows}><div><span>Variables de entorno</span><b>{configured ? "Configuradas" : "Pendientes"}</b></div><div><span>Cuenta</span><b>{connection ? `@${connection.username || connection.display_name || "autorizada"}` : "—"}</b></div><div><span>Token</span><b>{connection?.token_expires_at ? `Caduca ${fmt(connection.token_expires_at)}` : "—"}</b></div></div><div className={styles.actions}>{connection ? <><button className={styles.secondary} onClick={() => void connect()} disabled={busy === "connect"}><RefreshCw size={16} />Reconectar</button><button className={styles.danger} onClick={() => void disconnect()} disabled={busy === "disconnect"}>Desconectar</button></> : <button className={styles.primary} onClick={() => void connect()} disabled={!configured || busy === "connect"}><Link2 size={16} />Conectar {brand.name}</button>}</div></section>}
+      {section === "conexion" && <section className={styles.card}>
+        <div className={styles.connectionPanel}><div className={styles.connectionIcon}><Icon size={32} /></div><div><h3>Conexión oficial de {brand.name}</h3><p>OAuth propio de Tarot Celestial. Las credenciales y tokens se guardan cifrados en servidor y nunca se exponen al navegador.</p></div><span className={`${styles.bigState} ${connection ? styles.connected : ""}`}>{connection ? "CONECTADO" : "SIN CONECTAR"}</span></div>
+        <div className={styles.connectionRows}><div><span>Variables de entorno</span><b>{configured ? "Configuradas" : "Pendientes"}</b></div><div><span>Cuenta</span><b>{connection ? `@${connection.username || connection.display_name || "autorizada"}` : "—"}</b></div><div><span>Token</span><b>{connection?.token_expires_at ? `Caduca ${fmt(connection.token_expires_at)}` : "—"}</b></div></div>
+        <div className={styles.actions}>
+          {provider === "instagram" && <button type="button" className={styles.secondary} onClick={() => void checkInbox()} disabled={!connection || diagnosticsLoading || Boolean(busy)}>
+            <RefreshCw size={16} className={diagnosticsLoading ? styles.spin : undefined} />{diagnosticsLoading ? "Comprobando bandeja…" : "Comprobar bandeja"}
+          </button>}
+          {connection ? <><button className={styles.secondary} onClick={() => void connect()} disabled={busy === "connect"}><RefreshCw size={16} />Reconectar</button><button className={styles.danger} onClick={() => void disconnect()} disabled={busy === "disconnect"}>Desconectar</button></> : <button className={styles.primary} onClick={() => void connect()} disabled={!configured || busy === "connect"}><Link2 size={16} />Conectar {brand.name}</button>}
+        </div>
+        {provider === "instagram" && <div aria-live="polite" aria-busy={diagnosticsLoading}>
+          {diagnosticsError && <p className={`${styles.notice} ${styles.noticeError}`} role="alert">{diagnosticsError}</p>}
+          {inboxDiagnostics && <div>
+            <h4>Comprobación de la bandeja</h4>
+            {inboxDiagnostics.postId && <p>Publicación comprobada: {inboxDiagnostics.postId}</p>}
+            <div className={styles.metricRows}>
+              {inboxDiagnostics.checks.map((check, index) => <div key={`${check.label}-${index}`}>
+                <span>{check.label}</span>
+                <b>{check.ok ? `Correcto${typeof check.count === "number" ? ` · ${check.count} resultado${check.count === 1 ? "" : "s"}` : ""}` : `Error${check.code ? ` · ${check.code}` : ""}`}</b>
+              </div>)}
+            </div>
+          </div>}
+        </div>}
+      </section>}
 
       {loading && <div className={styles.loading}><RefreshCw className={styles.spin} size={18} />Actualizando datos…</div>}
       {aiProgress && ["ai-week-schedule", "ai-flex-schedule", "ai-single", "ai-image", "ai-series-save", "ai-series-publish"].includes(busy) && <div className={styles.aiProgress}><Sparkles className={styles.spin} size={18} /><div><b>{aiProgressTotal > 0 ? `${aiProgressCurrent}/${aiProgressTotal}` : "Procesando"}</b><span>{aiProgress}</span></div></div>}

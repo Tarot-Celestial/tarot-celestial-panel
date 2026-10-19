@@ -18,10 +18,14 @@ function fixture(options = {}) {
   let tree, sequence = 0, requestSequence = 0, failSend = null, failDetail = null, failInbox = null, detailBlocked = null, pendingSend = null, requestStatus = null;
   let connection = { connected: true, ready: true, username: 'tarotcelestialof' };
   let canReply = options.canReply ?? true, canPrivateReply = options.canPrivateReply ?? true;
+  let session = { access_token: 'test-token', user: { id: 'worker-one' } }, authCallback, inboxResponse = options.inboxResponse, inboxBlocked = null;
   const document = { hidden: false, addEventListener(name, fn) { listeners.set(fn, name); }, removeEventListener(name, fn) { listeners.delete(fn); } };
   const Component = evaluate('src/features/central/CentralInstagramPanel.tsx', {
     '@/lib/instagram-inbox': shared,
-    '@/lib/supabase-browser': { supabaseBrowser: () => ({ auth: { getSession: async () => ({ data: { session: { access_token: 'test-token' } } }) } }) },
+    '@/lib/supabase-browser': { supabaseBrowser: () => ({ auth: {
+      getSession: async () => ({ data: { session } }),
+      onAuthStateChange(callback) { authCallback = callback; return { data: { subscription: { unsubscribe() { authCallback = null; } } } }; },
+    } }) },
     './CentralInstagramPanel.module.css': { default: new Proxy({}, { get: (_, name) => String(name) }) },
     'lucide-react': new Proxy({}, { get: (_, name) => props => React.createElement('span', { ...props, 'data-icon': name }) }),
   }, {
@@ -36,7 +40,9 @@ function fixture(options = {}) {
       if (params.get('action') === 'inbox') {
         if (failInbox) return { ok: false, json: async () => ({ ok: false, code: failInbox, error: 'La consulta falló.' }) };
         const kind = params.get('kind');
-        return { ok: true, json: async () => ({ ok: true, connection, threads: [thread(params.get('cursor') ? 'older' : 'one', kind), ...(params.get('cursor') ? [] : [thread('two', kind)])], nextCursor: params.get('cursor') ? null : 'more' }) };
+        const payload = inboxResponse ? inboxResponse(kind, params.get('cursor')) : { threads: [thread(params.get('cursor') ? 'older' : 'one', kind), ...(params.get('cursor') ? [] : [thread('two', kind)])], nextCursor: params.get('cursor') ? null : 'more' };
+        if (inboxBlocked) await inboxBlocked;
+        return { ok: true, json: async () => ({ ok: true, connection, ...payload }) };
       }
       const id = params.get('threadId');
       if (failDetail) return { ok: false, json: async () => ({ ok: false, code: failDetail, error: 'La consulta falló.' }) };
@@ -53,6 +59,7 @@ function fixture(options = {}) {
     async click(label) { const target = button(label); assert.ok(target, label); assert.equal(Boolean(target.props.disabled), false, label); await act(() => target.props.onClick()); },
     async write(text) { await act(() => tree.root.findByType('textarea').props.onChange({ target: { value: text } })); },
     async checkPending() { await act(() => tree.root.findByProps({ type: 'checkbox' }).props.onChange({ target: { checked: true } })); },
+    async search(text) { await act(() => tree.root.findAllByType('input').find(input => input.props.placeholder === 'Buscar en la bandeja…').props.onChange({ target: { value: text } })); },
     async send() { await act(() => { void tree.root.findByType('form').props.onSubmit({ preventDefault() {} }); }); },
     async tick() { await act(() => { for (const timer of [...timers.values()]) timer.fn(); }); },
     async settle() { await act(() => {}); },
@@ -60,6 +67,9 @@ function fixture(options = {}) {
     failDetail(code) { failDetail = code; }, failInbox(code) { failInbox = code; },
     setPending(value) { pendingSend = value; }, setRequestStatus(value) { requestStatus = value; },
     setConnection(value) { connection = value; }, setCanReply(value) { canReply = value; },
+    setInboxResponse(value) { inboxResponse = value; }, blockInbox(value) { inboxBlocked = value; },
+    async signOut() { await act(() => { session = null; authCallback('SIGNED_OUT', null); }); },
+    async signIn(id) { await act(() => { session = { access_token: `token-${id}`, user: { id } }; authCallback('SIGNED_IN', session); }); },
     async unmount() { await act(() => tree.unmount()); },
   };
 }
@@ -205,4 +215,68 @@ test('uncertain sends require explicit review and outcome confirmation; resoluti
     assert.deepEqual(JSON.parse(request.body), { threadId: 'one', requestId: '00000000-0000-4000-8000-000000000001', outcome: 'not_sent', confirmed: true });
     assert.equal(f.tree.root.findByType('textarea').props.disabled, false);
   } finally { await f.unmount(); }
+});
+
+test('an empty comment page with a cursor reports remaining publications and can load emoji-only comments', async () => {
+  const f = fixture({ inboxResponse: (kind, cursor) => ({ threads: cursor ? [{ ...thread('rvcricky', kind), username: 'rvcricky', preview: '❤️❤️' }] : [], nextCursor: cursor ? null : 'older-posts' }) });
+  await f.mount();
+  try {
+    await f.click('Comentarios');
+    assert.equal(content(f.tree.root).includes('Sin comentarios disponibles'), false);
+    assert.ok(content(f.tree.root).includes('Quedan publicaciones por consultar'));
+    await f.click('Cargar anteriores');
+    assert.ok(f.button('Persona rvcricky')); assert.ok(content(f.tree.root).includes('❤️❤️'));
+  } finally { await f.unmount(); }
+});
+
+test('refresh preserves loaded older pages, updates matching entries without duplicates and keeps the pagination cursor', async () => {
+  const f = fixture({ inboxResponse: (kind, cursor) => ({ threads: [thread(cursor || 'newest', kind)], nextCursor: cursor === 'page-two' ? 'page-three' : cursor === 'page-three' ? null : 'page-two' }) });
+  await f.mount();
+  try {
+    await f.click('Comentarios'); await f.click('Cargar anteriores');
+    f.setInboxResponse((kind, cursor) => ({ threads: [{ ...thread(cursor || 'newest', kind), preview: cursor ? 'Anterior' : 'Comentario actualizado' }], nextCursor: cursor === 'page-three' ? null : 'page-two' }));
+    await f.tick(); await f.click('Actualizar');
+    assert.ok(f.button('Persona page-two')); assert.ok(content(f.tree.root).includes('Comentario actualizado'));
+    assert.equal(f.tree.root.findAllByType('button').filter(button => content(button).includes('Persona newest')).length, 1);
+    await f.click('Cargar anteriores');
+    assert.equal(f.requests.filter(request => request.action === 'inbox').at(-1).params.get('cursor'), 'page-three');
+    assert.ok(f.button('Persona page-three')); assert.ok(f.button('Persona page-two'));
+    await f.tick(); assert.equal(Boolean(f.button('Cargar anteriores')), false);
+  } finally { await f.unmount(); }
+});
+
+test('username searches accept @, surrounding whitespace and case differences', async () => {
+  const f = fixture({ inboxResponse: kind => ({ threads: [{ ...thread('rvcricky', kind), username: 'rvcricky', preview: '❤️❤️' }], nextCursor: null }) });
+  await f.mount();
+  try {
+    await f.click('Comentarios'); await f.search('  @RVCRICKY  ');
+    assert.ok(f.button('Persona rvcricky'));
+    await f.search('❤️'); assert.ok(f.button('Persona rvcricky'));
+  } finally { await f.unmount(); }
+});
+
+test('changing inbox kinds resets loaded entries and cursor instead of mixing messages with comments', async () => {
+  const f = fixture({ inboxResponse: (kind, cursor) => ({ threads: [thread(`${kind}-${cursor || 'first'}`, kind)], nextCursor: cursor ? null : `${kind}-next` }) });
+  await f.mount();
+  try {
+    await f.click('Cargar anteriores'); assert.ok(f.button('Persona message-message-next'));
+    await f.click('Comentarios');
+    assert.equal(Boolean(f.button('Persona message-')), false); assert.ok(f.button('Persona comment-first'));
+    await f.click('Cargar anteriores');
+    assert.equal(f.requests.filter(request => request.action === 'inbox').at(-1).params.get('cursor'), 'comment-next');
+  } finally { await f.unmount(); }
+});
+
+test('logout clears loaded history and ignores late requests, then a new session starts with a fresh inbox', async () => {
+  const f = fixture(); await f.mount(); let release;
+  try {
+    await f.click('Cargar anteriores'); await f.click('Persona one'); await f.write('Borrador anterior');
+    f.blockInbox(new Promise(resolve => { release = resolve; })); await f.tick();
+    await f.signOut(); release(); await f.settle();
+    assert.equal(Boolean(f.button('Persona one')), false); assert.equal(Boolean(f.button('Persona older')), false);
+    assert.equal(f.tree.root.findAllByType('textarea').length, 0);
+    f.blockInbox(null); f.setInboxResponse(kind => ({ threads: [thread('new-session', kind)], nextCursor: null })); await f.signIn('worker-two');
+    assert.ok(f.button('Persona new-session')); assert.equal(Boolean(f.button('Persona older')), false);
+    await f.click('Persona new-session'); assert.equal(f.tree.root.findByType('textarea').props.value, '');
+  } finally { release?.(); await f.unmount(); }
 });
