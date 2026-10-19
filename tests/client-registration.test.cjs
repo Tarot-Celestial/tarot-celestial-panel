@@ -87,12 +87,71 @@ test('registration recovers only its own Auth attempt and never changes a previo
   await assert.rejects(mod.completeRegistration({challenge_id:id,code:'123456',password:'good-password',password_confirm:'good-password'}),/REGISTRATION_ACCOUNT_EXISTS/);assert.equal(creates,1);assert.equal(writes,0);
 });
 
+test('phone lookup never treats matching suffixes from different countries as the same customer', async () => {
+  let queries=[];
+  const rows=[{id:'spanish',telefono:'612345678',telefono_normalizado:'34612345678',auth_user_id:'spanish-owner'},
+    {id:'us',telefono:'1612345678',telefono_normalizado:'1612345678',auth_user_id:'us-owner'}];
+  const db={from:()=>({select:()=>({or:query=>({limit:async()=>{
+    queries.push(query);
+    return {data:rows.filter(row=>query.split(',').some(part=>{const [key,operator,...value]=part.split('.');assert.equal(operator,'eq');return row[key]===value.join('.')})),error:null};
+  }})})})};
+  const mod=load('src/lib/server/cliente-auth-password.ts',{'@supabase/supabase-js':{createClient:()=>db}});
+  assert.equal(await mod.findClienteByPhoneForAuth('54612345678'),null);
+  assert.equal((await mod.findClienteByPhoneForAuth('+34612345678')).id,'spanish');
+  assert.equal((await mod.findClienteByPhoneForAuth('612345678')).id,'spanish');
+  assert.equal((await mod.findClienteByPhoneForAuth('1612345678')).id,'us');
+  assert.doesNotMatch(queries[0],/eq\.612345678(?:,|$)/);assert.equal(queries.length,4);
+});
+
+test('a fresh verified challenge repairs an Auth orphan after expired completion, without resetting other accounts', async () => {
+  const oldId=randomUUID(),newId=randomUUID(),uid=randomUUID(),clientId=randomUUID();
+  let currentId=oldId, user=null, crm=null, failComplete=true, passwordChanges=0, authCreates=0, ready=false;
+  const profile={name:'Ana',email:'ana@example.test'};
+  const admin={
+    rpc:async name=>{
+      if(name==='tc_client_registration_claim') return {data:{ok:true,profile},error:null};
+      if(failComplete) return {data:null,error:{message:'temporary database failure'}};
+      crm={id:clientId,auth_user_id:uid};return {data:{ok:true,cliente_id:clientId},error:null};
+    },
+    auth:{admin:{
+      createUser:async input=>{if(user)return {data:{user:null},error:{message:'already exists'}};authCreates++;user={id:uid,email:input.email,email_confirmed_at:'2026-10-19',app_metadata:input.app_metadata};return {data:{user},error:null}},
+      getUserById:async()=>({data:{user},error:null}),
+      updateUserById:async(_,input)=>{if(input.password){assert.ok(crm,'No password mutation before CRM is created');passwordChanges++}if(input.app_metadata)user={...user,app_metadata:input.app_metadata};return {data:{user},error:null}},
+    }},
+    from:table=>{
+      let updates=null;
+      const query={select:()=>query,eq:()=>query,update:value=>{updates=value;return query},
+        limit:async()=>({data:table==='workers'?[]:crm?[crm]:[],error:null}),
+        maybeSingle:async()=>{if(table==='crm_clientes')return {data:crm,error:null};if(updates?.password_ready)ready=true;return {data:{id:currentId},error:null}},
+      };return query;
+    },
+  };
+  const mod=load('src/lib/server/cliente-registration.ts',{'@/lib/server/cliente-auth-password':{adminSupabase:()=>admin,findAuthUserByAliasEmail:async()=>user},'@/lib/server/cliente-whatsapp-auth':{},'@/lib/countries':{COUNTRY_OPTIONS:[]}});
+  const input=id=>({challenge_id:id,code:'123456',password:'fresh-password',password_confirm:'fresh-password'});
+  await assert.rejects(mod.completeRegistration(input(oldId)),/REGISTRATION_UNAVAILABLE/);assert.equal(passwordChanges,0);assert.ok(user);assert.equal(crm,null);
+  currentId=newId;failComplete=false;
+  const result=await mod.completeRegistration(input(newId));
+  assert.equal(result.ok,true);assert.equal(authCreates,1);assert.equal(passwordChanges,1);assert.equal(ready,true);assert.equal(user.app_metadata.registration_id,newId);assert.equal(crm.auth_user_id,uid);
+});
+
+test('orphan recovery rejects an existing CRM binding or worker even with the trusted registration marker', async () => {
+  for(const boundTable of ['crm_clientes','workers']) {
+    let mutations=0;
+    const user={id:randomUUID(),email:'ana@example.test',email_confirmed_at:'2026-10-19',app_metadata:{registration_id:randomUUID(),registration_origin:'tc-client-self-registration-v1'}};
+    const admin={rpc:async()=>({data:{ok:true,profile:{email:user.email}},error:null}),auth:{admin:{createUser:async()=>({data:{user:null},error:{message:'exists'}}),updateUserById:async()=>{mutations++;throw Error('must not mutate')}}},
+      from:table=>({select:()=>({eq:()=>({limit:async()=>({data:table===boundTable?[{id:'existing'}]:[],error:null})})})})};
+    const mod=load('src/lib/server/cliente-registration.ts',{'@/lib/server/cliente-auth-password':{adminSupabase:()=>admin,findAuthUserByAliasEmail:async()=>user},'@/lib/server/cliente-whatsapp-auth':{},'@/lib/countries':{COUNTRY_OPTIONS:[]}});
+    await assert.rejects(mod.completeRegistration({challenge_id:randomUUID(),code:'123456',password:'fresh-password',password_confirm:'fresh-password'}),/REGISTRATION_ACCOUNT_EXISTS/);assert.equal(mutations,0);
+  }
+});
+
 test('SQL registration is atomic, duplicate-safe, rate-limited and inaccessible to browser roles', async t => {
   const db=new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
     create table public.workers(id uuid default gen_random_uuid(),user_id uuid);
     create table public.crm_clientes(id uuid primary key default gen_random_uuid(),nombre text not null,apellido text,telefono text not null,telefono_normalizado text not null,email text,pais text,auth_user_id uuid unique,origen text,lead_source text,lead_status text,lead_created_at timestamptz);
     create table public.crm_etiquetas(id uuid primary key default gen_random_uuid(),nombre text not null,color text,activa boolean default true,created_at timestamptz default now());
+    create unique index crm_etiquetas_nombre_ci on public.crm_etiquetas(lower(btrim(nombre)));
     create table public.crm_cliente_etiquetas(id uuid primary key default gen_random_uuid(),cliente_id uuid,etiqueta_id uuid,unique(cliente_id,etiqueta_id));
     grant all on all tables in schema public to service_role;`);
   const migration=fs.readdirSync(path.join(__dirname,'../supabase/migrations')).find(name=>name.endsWith('_client_verified_registration.sql'));
@@ -103,13 +162,15 @@ test('SQL registration is atomic, duplicate-safe, rate-limited and inaccessible 
   const claim=async(id,lease,codeHash=hash)=>(await db.query('select public.tc_client_registration_claim($1,$2,$3) result',[id,codeHash,lease])).rows[0].result;
   const finish=async(id,lease,user)=>(await db.query('select public.tc_client_registration_complete($1,$2,$3) result',[id,lease,user])).rows[0].result;
   try {
+    await db.exec("insert into public.crm_etiquetas(nombre) values('Cliente Instagram')");
     await t.test('new verified Instagram registration creates exactly one CRM and tag, without XP/purchase side effects',async()=>{
       const id=randomUUID(),lease=randomUUID(),user=randomUUID();assert.equal((await start(id,profile())).ok,true);assert.equal((await claim(id,lease)).ok,true);
       await db.query('update public.tc_client_registration_challenges set auth_user_id=$2 where id=$1',[id,user]);
       const result=await finish(id,lease,user);assert.equal(result.ok,true);assert.equal((await finish(id,lease,user)).cliente_id,result.cliente_id);
       assert.equal((await claim(id,randomUUID())).completed,true);
       assert.equal((await db.query('select count(*)::int n from public.crm_clientes')).rows[0].n,1);
-      assert.equal((await db.query('select nombre from public.crm_etiquetas')).rows[0].nombre,'cliente instagram');
+      assert.equal((await db.query('select nombre from public.crm_etiquetas')).rows[0].nombre,'Cliente Instagram');
+      assert.equal((await db.query('select count(*)::int n from public.crm_etiquetas')).rows[0].n,1);
       assert.equal((await db.query('select count(*)::int n from public.crm_cliente_etiquetas')).rows[0].n,1);
     });
     await t.test('existing CRM telephone/email cannot be claimed and original Auth stays intact',async()=>{
@@ -138,6 +199,18 @@ test('SQL registration is atomic, duplicate-safe, rate-limited and inaccessible 
     });
     await t.test('email throttling prevents repeated verification sends',async()=>{
       const p=profile('6');assert.equal((await start(randomUUID(),p)).ok,true);assert.equal((await start(randomUUID(),p)).error,'REGISTRATION_RATE_LIMIT');
+    });
+    await t.test('fresh verified email challenge supersedes a stalled attempt and blocks its late completion',async()=>{
+      const oldId=randomUUID(),newId=randomUUID(),oldLease=randomUUID(),newLease=randomUUID(),uid=randomUUID();
+      await start(oldId,profile('8'));await claim(oldId,oldLease);
+      await db.query("update public.tc_client_registration_challenges set created_at=now()-interval '2 minutes',auth_user_id=$2 where id=$1",[oldId,uid]);
+      await start(newId,profile('8'));
+      assert.equal((await claim(newId,newLease)).error,'REGISTRATION_IN_PROGRESS');
+      await db.query("update public.tc_client_registration_challenges set lease_until=now()-interval '1 minute',expires_at=now()-interval '1 minute' where id=$1",[oldId]);
+      assert.equal((await claim(newId,newLease)).ok,true);
+      assert.equal((await finish(oldId,oldLease,uid)).ok,false);
+      const old=(await db.query('select state,lease_id from public.tc_client_registration_challenges where id=$1',[oldId])).rows[0];
+      assert.equal(old.state,'failed');assert.equal(old.lease_id,null);
     });
     await t.test('anon and authenticated cannot read challenges or execute registration RPCs',async()=>{
       for(const role of ['anon','authenticated']) {

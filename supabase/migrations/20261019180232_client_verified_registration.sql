@@ -9,6 +9,7 @@ create table public.tc_client_registration_challenges (
   lease_id uuid,
   lease_until timestamptz,
   auth_user_id uuid,
+  password_ready boolean not null default false,
   cliente_id uuid references public.crm_clientes(id),
   created_at timestamptz not null default now(),
   expires_at timestamptz not null default now() + interval '10 minutes'
@@ -51,6 +52,9 @@ create function public.tc_client_registration_claim(p_id uuid,p_code_hash text,p
 returns jsonb language plpgsql security invoker set search_path = '' as $$
 declare v public.tc_client_registration_challenges%rowtype;
 begin
+  select * into v from public.tc_client_registration_challenges where id=p_id;
+  if not found then return jsonb_build_object('ok',false,'error','OTP_EXPIRED'); end if;
+  perform pg_advisory_xact_lock(hashtextextended('registration-email:'||(v.profile->>'email'),0));
   select * into v from public.tc_client_registration_challenges where id=p_id for update;
   if not found or v.expires_at<now() or v.state='failed' or v.attempts>=5 then
     return jsonb_build_object('ok',false,'error','OTP_EXPIRED');
@@ -59,8 +63,17 @@ begin
     update public.tc_client_registration_challenges set attempts=attempts+1 where id=p_id;
     return jsonb_build_object('ok',false,'error','CODIGO_INVALIDO');
   end if;
-  if v.state='completed' then return jsonb_build_object('ok',true,'completed',true,'email',v.profile->>'email'); end if;
+  if v.state='completed' then return jsonb_build_object('ok',true,'completed',true,'email',v.profile->>'email',
+    'profile',v.profile,'auth_user_id',v.auth_user_id,'cliente_id',v.cliente_id,'password_ready',v.password_ready,'lease_id',v.lease_id); end if;
+  if exists(select 1 from public.tc_client_registration_challenges c where c.id<>p_id and c.profile->>'email'=v.profile->>'email'
+      and c.state='processing' and c.lease_until>now()) then
+    return jsonb_build_object('ok',false,'error','REGISTRATION_IN_PROGRESS');
+  end if;
   if v.state='processing' and v.lease_until>now() then return jsonb_build_object('ok',false,'error','REGISTRATION_IN_PROGRESS'); end if;
+  -- Supersede stalled attempts before adopting any orphan Auth identity. Old workers
+  -- can no longer bind their account or complete after this new verified lease.
+  update public.tc_client_registration_challenges set state='failed',lease_id=null,lease_until=null
+    where id<>p_id and profile->>'email'=v.profile->>'email' and state='processing' and lease_until<=now();
   update public.tc_client_registration_challenges set state='processing',lease_id=p_lease,lease_until=now()+interval '2 minutes' where id=p_id;
   return jsonb_build_object('ok',true,'profile',v.profile,'auth_user_id',v.auth_user_id);
 end $$;
@@ -69,6 +82,9 @@ create function public.tc_client_registration_complete(p_id uuid,p_lease uuid,p_
 returns jsonb language plpgsql security invoker set search_path = '' as $$
 declare v public.tc_client_registration_challenges%rowtype; v_cliente uuid; v_tag uuid; v_phone text; v_email text;
 begin
+  select * into v from public.tc_client_registration_challenges where id=p_id;
+  if not found then return jsonb_build_object('ok',false,'error','OTP_EXPIRED'); end if;
+  perform pg_advisory_xact_lock(hashtextextended('registration-email:'||(v.profile->>'email'),0));
   select * into v from public.tc_client_registration_challenges where id=p_id for update;
   if not found or v.lease_id is distinct from p_lease or v.auth_user_id is distinct from p_auth_user_id then
     return jsonb_build_object('ok',false,'error','REGISTRATION_IN_PROGRESS');
@@ -94,7 +110,7 @@ begin
          case when v.profile->>'source'='instagram' then 'instagram' else 'web' end,'nuevo',now()) returning id into v_cliente;
   if v.profile->>'source'='instagram' then
     perform pg_advisory_xact_lock(hashtextextended('crm-tag:cliente instagram',0));
-    select id into v_tag from public.crm_etiquetas where nombre='cliente instagram' order by created_at limit 1;
+    select id into v_tag from public.crm_etiquetas where lower(btrim(nombre))='cliente instagram' order by created_at limit 1;
     if v_tag is null then insert into public.crm_etiquetas(nombre,color,activa) values('cliente instagram','#d946ef',true) returning id into v_tag; end if;
     insert into public.crm_cliente_etiquetas(cliente_id,etiqueta_id) values(v_cliente,v_tag);
   end if;

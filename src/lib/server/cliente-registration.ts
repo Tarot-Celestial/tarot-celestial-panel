@@ -7,6 +7,45 @@ export class RegistrationError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }
 
+const REGISTRATION_ORIGIN = "tc-client-self-registration-v1";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function recoverOrphan(admin: ReturnType<typeof adminSupabase>, user: any, email: string, id: string) {
+  const previousId = String(user?.app_metadata?.registration_id || "");
+  if (!UUID.test(previousId) || user?.email?.toLowerCase() !== email || !user.email_confirmed_at) throw new RegistrationError("REGISTRATION_ACCOUNT_EXISTS", 409);
+  if (user.app_metadata.registration_origin !== REGISTRATION_ORIGIN) {
+    const previous = await admin.from("tc_client_registration_challenges").select("profile,state,auth_user_id").eq("id", previousId).maybeSingle();
+    if (previous.error || !previous.data || previous.data.profile?.email !== email || previous.data.state === "completed"
+      || (previous.data.auth_user_id && previous.data.auth_user_id !== user.id)) throw new RegistrationError("REGISTRATION_ACCOUNT_EXISTS", 409);
+  }
+  const [clients, workers] = await Promise.all([
+    admin.from("crm_clientes").select("id").eq("auth_user_id", user.id).limit(1),
+    admin.from("workers").select("id").eq("user_id", user.id).limit(1),
+  ]);
+  if (clients.error || workers.error) throw new Error("REGISTRATION_UNAVAILABLE");
+  if (clients.data?.length || workers.data?.length) throw new RegistrationError("REGISTRATION_ACCOUNT_EXISTS", 409);
+  // The new email code has already been verified and the database serializes
+  // attempts by email. Metadata alone changes here; no password changes yet.
+  const updated = await admin.auth.admin.updateUserById(user.id, { app_metadata: { ...user.app_metadata, registration_id: id, registration_origin: REGISTRATION_ORIGIN } });
+  if (updated.error || !updated.data.user) throw new Error("REGISTRATION_UNAVAILABLE");
+  return updated.data.user;
+}
+
+async function finishPassword(admin: ReturnType<typeof adminSupabase>, id: string, lease: string, authId: string, clientId: string, email: string, password: string) {
+  const [identity, linked, worker] = await Promise.all([
+    admin.auth.admin.getUserById(authId),
+    admin.from("crm_clientes").select("id").eq("id", clientId).eq("auth_user_id", authId).maybeSingle(),
+    admin.from("workers").select("id").eq("user_id", authId).limit(1),
+  ]);
+  const user = identity.data.user;
+  if (identity.error || linked.error || worker.error) throw new Error("REGISTRATION_UNAVAILABLE");
+  if (!linked.data || worker.data?.length || user?.app_metadata?.registration_id !== id || user?.email?.toLowerCase() !== email || !user.email_confirmed_at) throw new RegistrationError("REGISTRATION_ACCOUNT_EXISTS", 409);
+  const changed = await admin.auth.admin.updateUserById(authId, { password });
+  if (changed.error) throw new Error("REGISTRATION_UNAVAILABLE");
+  const saved = await admin.from("tc_client_registration_challenges").update({ password_ready: true }).eq("id", id).eq("lease_id", lease).eq("state", "completed").select("id").maybeSingle();
+  if (saved.error || !saved.data) throw new Error("REGISTRATION_UNAVAILABLE");
+}
+
 export function registrationProfile(body: any) {
   const name = String(body?.name || "").trim();
   const surname = String(body?.surname || "").trim();
@@ -60,34 +99,37 @@ export async function completeRegistration(body: any) {
   const id = String(body?.challenge_id || "");
   const code = String(body?.code || "").trim();
   const password = String(body?.password || "");
-  if (!/^[0-9a-f-]{36}$/i.test(id) || !/^\d{6}$/.test(code)) throw new RegistrationError("CODIGO_INVALIDO");
+  if (!UUID.test(id) || !/^\d{6}$/.test(code)) throw new RegistrationError("CODIGO_INVALIDO");
   if (password.length < 8 || password.length > 128) throw new RegistrationError("REGISTRATION_PASSWORD_TOO_SHORT");
   if (password !== body?.password_confirm) throw new RegistrationError("PASSWORDS_DO_NOT_MATCH");
   const admin = adminSupabase();
   const lease = randomUUID();
   const claim = await admin.rpc("tc_client_registration_claim", { p_id: id, p_code_hash: registrationCodeHash(id, code), p_lease: lease });
   const current = resultOrError(claim.data, claim.error);
-  if (current.completed) return { ok: true, alias_email: current.email, created: false };
+  if (current.completed) {
+    if (!current.password_ready) await finishPassword(admin, id, current.lease_id, current.auth_user_id, current.cliente_id, current.email, password);
+    return { ok: true, alias_email: current.email, created: false };
+  }
   const profile = current.profile;
-  // This account is new. Existing Auth identities are never reset, merged or claimed.
+  // A failed prior attempt may have created Auth without CRM. Only accounts
+  // marked by this trusted service can be recovered after fresh email proof.
   let authUser = current.auth_user_id ? (await admin.auth.admin.getUserById(current.auth_user_id)).data.user : null;
   if (!authUser) {
     const created = await admin.auth.admin.createUser({
-      email: profile.email, password, email_confirm: true,
-      app_metadata: { registration_id: id }, user_metadata: { display_name: profile.name },
+      email: profile.email, password: randomUUID() + randomUUID(), email_confirm: true,
+      app_metadata: { registration_id: id, registration_origin: REGISTRATION_ORIGIN }, user_metadata: { display_name: profile.name },
     });
     authUser = created.data.user;
     if (created.error) {
-      // A response may have been lost after account creation. Recover only our own exact attempt.
       const existing = await findAuthUserByAliasEmail(profile.email);
-      if (existing?.app_metadata?.registration_id !== id) throw new RegistrationError("REGISTRATION_ACCOUNT_EXISTS", 409);
-      authUser = existing;
+      authUser = await recoverOrphan(admin, existing, profile.email, id);
     }
   }
   if (!authUser || authUser.app_metadata?.registration_id !== id || authUser.email?.toLowerCase() !== profile.email || !authUser.email_confirmed_at) throw new RegistrationError("REGISTRATION_ACCOUNT_EXISTS", 409);
   const saved = await admin.from("tc_client_registration_challenges").update({ auth_user_id: authUser.id }).eq("id", id).eq("lease_id", lease).select("id").maybeSingle();
   if (saved.error || !saved.data) throw new RegistrationError("REGISTRATION_IN_PROGRESS", 409);
   const completed = await admin.rpc("tc_client_registration_complete", { p_id: id, p_lease: lease, p_auth_user_id: authUser.id });
-  resultOrError(completed.data, completed.error);
+  const final = resultOrError(completed.data, completed.error);
+  await finishPassword(admin, id, lease, authUser.id, final.cliente_id, profile.email, password);
   return { ok: true, alias_email: profile.email, created: true };
 }

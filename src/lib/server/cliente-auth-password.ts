@@ -32,25 +32,10 @@ export function normalizePhoneDigits(value: string | null | undefined) {
 
 function phoneCandidates(value: string | null | undefined) {
   const raw = normalizePhoneDigits(value);
-  const set = new Set<string>();
-
   if (!raw) return [] as string[];
-
-  set.add(raw);
-  set.add(raw.replace(/^0+/, ""));
-
-  if (raw.length > 9) set.add(raw.slice(-9));
-  if (raw.length > 10) set.add(raw.slice(-10));
-  if (raw.length > 11) set.add(raw.slice(-11));
-
-  const knownPrefixes = ["34", "1", "52", "54", "56", "57", "58", "351", "44", "33", "39"];
-  for (const prefix of knownPrefixes) {
-    if (raw.startsWith(prefix) && raw.length > prefix.length + 6) {
-      set.add(raw.slice(prefix.length));
-    }
-  }
-
-  return [...set].filter(Boolean);
+  // National nine-digit records are a historical Spain-only representation.
+  // Never strip prefixes from other countries: equal suffixes are not identities.
+  return /^34[6-9]\d{8}$/.test(raw) ? [raw, raw.slice(2)] : [raw];
 }
 
 export function buildPasswordValidationError(password: string, confirm?: string) {
@@ -128,26 +113,6 @@ export async function findClienteByPhone(phone: string) {
   if (linkedRows.length === 1) data = linkedRows[0];
   else if (exactRows.length === 1) data = exactRows[0];
   else if (exactRows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
-
-  if (!data) {
-    const longest = candidates.sort((a, b) => b.length - a.length)[0] || "";
-    const tail = longest.length > 9 ? longest.slice(-9) : longest;
-
-    if (tail) {
-      const fuzzy = await sb
-        .from("crm_clientes")
-        .select("id, nombre, apellido, telefono, telefono_normalizado, auth_user_id, email, onboarding_completado")
-        .or(`telefono.ilike.%${tail}%,telefono_normalizado.ilike.%${tail}%`)
-        .limit(20);
-
-      if (fuzzy.error) throw fuzzy.error;
-      const fuzzyRows = fuzzy.data || [];
-      const linkedFuzzyRows = fuzzyRows.filter((row: any) => Boolean(row.auth_user_id));
-      if (linkedFuzzyRows.length === 1) data = linkedFuzzyRows[0];
-      else if (fuzzyRows.length === 1) data = fuzzyRows[0];
-      else if (fuzzyRows.length > 1) throw new Error("TELEFONO_DUPLICADO_REQUIERE_REVISION");
-    }
-  }
 
 
   return data;

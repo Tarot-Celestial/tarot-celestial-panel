@@ -59,6 +59,7 @@ export async function instagramGraph(account: InstagramAccount, path: string, pa
   const json = await response.json().catch(() => null);
   if (!response.ok || json?.error) {
     const code = Number(json?.error?.code);
+    console.warn('instagram-api-error', { operation: body ? 'send' : 'read', status: response.status, code, subcode: Number(json?.error?.error_subcode || 0) });
     if (body && (response.status >= 500 || !json)) throw new InstagramError('SEND_UNCERTAIN', 'No se ha podido confirmar el envío. Revísalo en Instagram antes de repetirlo.');
     if (code === 190 || response.status === 401) throw new InstagramError('TOKEN_EXPIRED', 'Vuelve a conectar Instagram desde Administración; la autorización ya no es válida.');
     if ([10, 200].includes(code) || response.status === 403) throw new InstagramError('META_PERMISSION', 'Instagram no ha concedido el permiso necesario. Revisa los permisos de mensajes y comentarios en Administración.');

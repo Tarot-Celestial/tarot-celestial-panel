@@ -266,7 +266,7 @@ export default function ClienteLoginPage() {
           <div key="setup-mode" className={styles.modePanel} role="tabpanel">
             <div className={styles.note}>
               <Sparkles size={16} />
-              <span>Crea tu cuenta aunque todavía no estés en nuestro CRM. Verificaremos tu correo para proteger tu acceso.</span>
+              <span>Crea tu cuenta para acceder a tu espacio. Verificaremos tu correo para proteger tu acceso.</span>
             </div>
 
 
