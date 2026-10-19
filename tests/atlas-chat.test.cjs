@@ -60,3 +60,27 @@ test('password target clarification still resolves a client without allowing mem
  await h.atlasAnswer({},'recuerda que SECRET_TEST_ONLY',[{role:'assistant',result:first}]);
  assert.equal(h.calls.at(-1).name,'prepare_password');assert.equal(h.network.length,0);
 });
+
+test('minute balance questions and configured alert lists use the read-only watch tool',()=>{
+ const h=harness();
+ let intent=h.atlasIntent('Atlas, cómo va el saldo de Ester?'); assert.equal(intent.tool,'minute_watches'); assert.equal(intent.args.query,'Ester');
+ intent=h.atlasIntent('Atlas consulta los avisos de minutos de cliente 00000000-0000-4000-8000-000000000010'); assert.equal(intent.args.query,'00000000-0000-4000-8000-000000000010');
+ for(const text of ['Atlas, mis avisos de minutos','Atlas, avisos de saldo bajo']) {intent=h.atlasIntent(text);assert.equal(intent.tool,'minute_watches');assert.equal(intent.args.query,'');}
+ assert.equal(h.atlasIntent('Atlas avísame cuando a Padron Ester le queden 30 minutos o menos').args.query,'Padron Ester');
+ assert.equal(h.atlasIntent('Atlas agrega 50 coins a Ester').tool,'prepare_reward');
+ assert.equal(h.atlasIntent('Atlas agrega 30 minutos a Ester'),null);
+});
+
+test('future balance reminders consult actual watches instead of becoming an enabled memory promise',async()=>{
+ const h=harness({reply:()=>({text:'Esta consulta no configura avisos.',cards:[]})});
+ const reply=await h.atlasAnswer({},'Atlas recuerda que debes avisarme cuando Ester tenga 30 minutos',[]);
+ assert.equal(h.calls[0].name,'minute_watches');assert.equal(h.calls[0].args.configurationRequested,true);assert.equal(h.calls[0].args.query,'Ester');
+ assert.equal(reply.mode,'guided');assert.equal(reply.proposal,undefined);assert.equal(h.network.length,0);
+ const selected=h.atlasIntent('Padron Ester',{tool:'minute_watches',args:{configurationRequested:true}});assert.equal(selected.tool,'minute_watches');assert.equal(selected.args.query,'Padron Ester');assert.equal(selected.args.configurationRequested,true);
+});
+
+test('minute watch queries cannot escape a protected password followup',async()=>{
+ const h=harness({env:{OPENAI_API_KEY:'fixture',ATLAS_ASSISTANT_MODEL:'fixture'}});
+ const reply=await h.atlasAnswer({},'Atlas avísame cuando Ester tenga 30 minutos',[{role:'assistant',result:{proposal:{id:'test',kind:'change_password',status:'pending'}}}]);
+ assert.equal(reply.sensitiveFollowup,true);assert.equal(h.calls.length,0);assert.equal(h.network.length,0);
+});

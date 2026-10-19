@@ -11,6 +11,7 @@ function evaluate(file, imports = {}, globals = {}) {
   return exports;
 }
 const shared = evaluate('src/features/admin/atlas/atlas-types.ts');
+const watchShared = evaluate('src/features/admin/atlas/atlas-watch-types.ts');
 const missionShared = evaluate('src/lib/recovery-mission.ts');
 const styles = new Proxy({}, { get: (_, key) => String(key) });
 const initial = () => ({ ok: true, overview: { updatedAt: '2026-10-19T15:40:00Z', revenue: { today: 0, goal: 300 }, acquisition: { count: 0, goal: 10 }, missions: [], alerts: [], insights: [], pendingJobs: [] }, messages: [], memories: [], jobs: [], aiConfigured: true });
@@ -135,12 +136,13 @@ test('successful actions schedule a full history refresh so new memories appear'
   assert.equal(f.calls.at(-1).url, '/api/admin/atlas'); assert.equal(f.calls.at(-1).options.method, 'GET'); await f.close();
 });
 
-function panelFixture(overrides = {}) {
+function panelFixture(overrides = {}, props = {}) {
   const actions = [];
   const data = { ...initial(), loading: false, busy: '', error: '', stale: false, identityEpoch: 0, refresh() {}, chat: async () => true, action: async (...args) => { actions.push(args); return true; }, ...overrides };
-  const character = evaluate('src/features/admin/atlas/AtlasCharacter.tsx', { './Atlas.module.css': { default: styles } });
-  const { default: Panel } = evaluate('src/features/admin/atlas/AtlasPanel.tsx', { './useAtlas': { useAtlas: () => data }, './Atlas.module.css': { default: styles }, './AtlasCharacter': character, './atlas-types': shared, '@/lib/recovery-mission': missionShared }, { window: { setTimeout: fn => fn() } });
-  let tree; renderer.act(() => { tree = renderer.create(React.createElement(Panel)); });
+  const character = evaluate('src/features/admin/atlas/AtlasCharacter.tsx', { './Atlas.module.css': { default: styles }, './atlas-watch-types': watchShared });
+  const watchPanel = evaluate('src/features/admin/atlas/AtlasWatchPanel.tsx', { './Atlas.module.css': { default: styles }, './atlas-watch-types': watchShared, './atlas-types': shared });
+  const { default: Panel } = evaluate('src/features/admin/atlas/AtlasPanel.tsx', { './useAtlas': { useAtlas: () => data }, './Atlas.module.css': { default: styles }, './AtlasCharacter': character, './atlas-types': shared, './atlas-watch-types': watchShared, './AtlasWatchPanel': watchPanel, '@/lib/recovery-mission': missionShared }, { window: { setTimeout: fn => fn() } });
+  let tree; renderer.act(() => { tree = renderer.create(React.createElement(Panel, props)); });
   return { tree, actions };
 }
 
@@ -172,4 +174,35 @@ test('choosing a promotion card sends its exact preparation prompt without execu
   const card = tree.root.findAllByType('button').find(button => button.props.className === 'actionCard');
   await renderer.act(async () => { card.props.onClick(); await tick(); });
   assert.deepEqual(chats, ['Activa la promoción exact-id']); assert.equal(actions.length, 0); renderer.act(() => tree.unmount());
+});
+
+test('shared watch alerts replace overview minute alerts so acknowledgement cannot leave a duplicate count', () => {
+  const overview = { ...initial().overview, alerts: [{ id: 'minutes:old-alert', title: 'Saldo antiguo', description: 'Aviso ya visto' }] };
+  const watches = { watches: [], loading: false, busy: '', error: '', stale: false, refresh() {}, action: async () => true };
+  const { tree } = panelFixture({ overview }, { watches });
+  const supervision = tree.root.findAllByType('button').find(button => button.children.includes('Supervisión y encargos'));
+  assert.equal(supervision.findAllByType('span').length, 0); assert.doesNotMatch(JSON.stringify(tree.toJSON()), /Saldo antiguo/);
+  renderer.act(() => tree.unmount());
+});
+
+const watchedClient = () => ({ watches: [{ id: 'watch1', clientId: 'client1', clientName: 'Clienta de prueba', threshold: 30, enabled: true, balance: { state: 'known', free: 0, normal: 20, total: 20 }, alert: null }], loading: false, busy: '', error: '', stale: false, refresh() {}, action: async () => true });
+
+test('watch promotion CTA explicitly leaves password context then lists promotions without changing the password proposal', async () => {
+  const chats = [];
+  const proposal = { id: 'password1', kind: 'change_password', title: 'Cambiar acceso', status: 'pending', requiresPassword: true, details: [] };
+  const { tree, actions } = panelFixture({ chat: async text => { chats.push(text); return true; }, messages: [{ id: 'password-msg', role: 'assistant', text: 'Usa el campo protegido', cards: [], proposal }] }, { watches: watchedClient(), initialView: 'supervision' });
+  const button = tree.root.findAllByType('button').find(node => node.children.includes('Ver promociones'));
+  await renderer.act(async () => { await button.props.onClick(); await tick(); });
+  assert.deepEqual(chats, ['otra cosa', 'Atlas, muéstrame las promociones disponibles.']);
+  assert.equal(actions.length, 0); assert.equal(proposal.status, 'pending');
+  renderer.act(() => tree.unmount());
+});
+
+test('watch promotion CTA stops if exiting protected clarification fails', async () => {
+  const chats = [];
+  const { tree, actions } = panelFixture({ chat: async text => { chats.push(text); return false; }, messages: [{ id: 'password-msg', role: 'assistant', text: 'Selecciona una clienta', cards: [], sensitiveFollowup: true }] }, { watches: watchedClient(), initialView: 'supervision' });
+  const button = tree.root.findAllByType('button').find(node => node.children.includes('Ver promociones'));
+  await renderer.act(async () => { await button.props.onClick(); await tick(); });
+  assert.deepEqual(chats, ['otra cosa']); assert.equal(actions.length, 0);
+  renderer.act(() => tree.unmount());
 });

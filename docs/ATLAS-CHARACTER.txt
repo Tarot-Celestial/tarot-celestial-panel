@@ -1,0 +1,9 @@
+Atlas celestial, original character v2
+
+Generated with the built-in image_gen tool. Transparent source PNG is delivered
+as atlas-personaje.png in the task workspace. The production asset is
+public/companions/atlas-celestial-v2.webp (640 x 640, alpha preserved).
+Only size/format compression was applied for the web; no visual retouching.
+
+Final generation prompt:
+Create one original premium 3D mascot character portrait for an AI operations assistant named Atlas in the mystical Spanish brand Tarot Celestial. This is a brand-new character asset, stylized-concept. Subject: a small friendly celestial guardian with a softly rounded amethyst-purple body, oversized dark plum glasslike face area, two warm luminous golden eyes and a subtle reassuring smile. Short rounded arms and small floating feet, a tiny deep-violet cape with tasteful fine gold edges and a miniature four-pointed star clasp. A distinctive floating four-pointed golden compass star above his forehead and ONE delicate tilted orbital ring behind his shoulders, tiny sparse stardust accents. He holds one small luminous compass orb in his left hand, his right hand open welcomingly. Personality: thoughtful, calm, capable companion, charming but not infantile. Full body, centered, three-quarter front view, entire silhouette visible with generous padding all around. Luxury collectible 3D animation design, polished soft ceramic and velvet-like materials, richly detailed amethyst tones, champagne gold highlights, subtle lavender rim lighting, physically grounded soft studio lighting, clear small-size silhouette, beautifully expressive face. Isolated on genuinely TRANSPARENT background with alpha. No scene, no floor, no backdrop, no rectangle or badge, no lettering, no text, no watermark, no mockup, no UI. The finished square image must be ready to display in a dark purple admin panel, with all glows contained around the character and the outer canvas transparent.

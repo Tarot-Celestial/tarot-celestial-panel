@@ -108,3 +108,28 @@ test('Atlas promises remain visible after task completion, with due dates and pa
   h.errors.add('atlas_current_followups');result=await exportsObject.overview(h.ctx,new Date('2026-10-19T16:00:00Z'));
   assert.equal(result.followupSummary.partial,true);assert.ok(result.unavailable.includes('Seguimientos de Atlas'));
 });
+
+test('overview surfaces only own unread minute alerts and exposes unavailable sources honestly', async () => {
+  const h = overviewHarness();
+  const watch = { id:h.id(800), clientName:'Cliente de prueba', threshold:30, enabled:true,
+    balance:{state:'known',free:0,normal:0,total:0,observedAt:'2026-10-19T15:00:00Z'},
+    alert:{id:h.id(801),triggeredAt:'2026-10-19T15:00:00Z',acknowledgedAt:null} };
+  const previousRpc = h.ctx.db.rpc;
+  h.ctx.db.rpc = async (name,args) => {
+    if(name !== 'tc_atlas_minute_watches') return previousRpc(name,args);
+    assert.equal(args.p_user,h.ctx.worker.user_id);
+    return {data:{watches:[watch]},error:null};
+  };
+  let result = await exportsObject.overview(h.ctx,new Date('2026-10-19T16:00:00Z'));
+  const alert = result.alerts.find(a=>a.id.startsWith('minutes:'));
+  assert.equal(alert.severity,'critical');
+  assert.match(alert.description,/0 minutos.*FREE.*panel de clientes en general/);
+  assert.equal(result.minuteWatches.length,1);
+  watch.alert.acknowledgedAt='2026-10-19T15:30:00Z';
+  result=await exportsObject.overview(h.ctx,new Date('2026-10-19T16:00:00Z'));
+  assert.equal(result.alerts.some(a=>a.id.startsWith('minutes:')),false);
+  h.ctx.db.rpc=async(name,args)=>name==='tc_atlas_minute_watches'?{error:{code:'SOURCE_UNAVAILABLE'},data:null}:previousRpc(name,args);
+  result=await exportsObject.overview(h.ctx,new Date('2026-10-19T16:00:00Z'));
+  assert.equal(result.minuteWatches,null);
+  assert.ok(result.unavailable.includes('Avisos de minutos'));
+});
