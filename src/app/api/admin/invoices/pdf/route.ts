@@ -1,4 +1,4 @@
-import { invoiceHoursNote } from "@/lib/server/attendance-hours";
+import { loadInvoiceAttendance } from "@/lib/server/invoice-attendance";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import {
@@ -159,7 +159,7 @@ export async function GET(req: Request) {
       };
     });
 
-    const hoursNote = worker?.role === "tarotista" ? await invoiceHoursNote(admin, invoice.worker_id, invoice.month_key) : "";
+    const attendance = await loadInvoiceAttendance(admin, invoice.worker_id, invoice.month_key);
     const origin = new URL(req.url).origin;
     const html = renderInvoiceDocument({
       invoiceNumber,
@@ -174,7 +174,8 @@ export async function GET(req: Request) {
       vatPercent: 0,
       vatTotal: 0,
       total: Number(invoice.total || 0) || 0,
-      notes: [invoice.notes, hoursNote].filter(Boolean).join("\n\n") || null,
+      notes: invoice.notes || null,
+      attendance,
       logoUrl: `${origin}/Nuevo-logo-tarot.png`,
       progress: {
         currentLabel: monthLabel(String(invoice.month_key || "")),

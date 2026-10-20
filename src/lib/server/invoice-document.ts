@@ -1,3 +1,5 @@
+import type { InvoiceAttendanceReport } from "@/lib/invoice-attendance";
+
 export type InvoiceParty = {
   name: string;
   role?: string | null;
@@ -35,6 +37,7 @@ export type InvoiceDocumentInput = {
   logoUrl: string;
   progress?: InvoiceDocumentProgress | null;
   codeProgress?: InvoiceCodeProgress | null;
+  attendance?: InvoiceAttendanceReport | null;
 };
 
 export type InvoiceCodeProgress = {
@@ -161,6 +164,69 @@ export function invoiceIssuerFromEnvironment(): InvoiceParty {
   };
 }
 
+function attendanceDuration(value: number) {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 0) return "Sin dato";
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const formatted = remainder.toLocaleString("es-ES", { maximumFractionDigits: 2 });
+  return hours ? `${hours.toLocaleString("es-ES")} h${remainder ? ` ${formatted} min` : ""}` : `${formatted} min`;
+}
+
+function attendanceDateTime(value: string) {
+  const raw = validDateInput(value);
+  if (!raw) return value || "Fecha no registrada";
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Madrid",
+  }).format(new Date(raw));
+}
+
+function renderAttendance(report: InvoiceAttendanceReport) {
+  const dateLabel = (value: string) => formatInvoiceDate(value) || value || "Fecha no registrada";
+  const compactText = (values: string[]) => {
+    const text = values.join("\n");
+    return text.length <= 800 && text.split(/\r?\n/).length <= 10;
+  };
+  const statusLabels: Record<string, string> = {
+    pending: "Pendiente", open: "Abierta", partial: "Parcial", closed: "Cerrada", resolved: "Resuelta", recovered: "Recuperada", justified: "Justificada",
+  };
+  const durationValues = (values: InvoiceAttendanceReport["totals"]) => [
+    ["Ausencias registradas", values.missedMinutes], ["Recuperado", values.recoveredMinutes],
+    ["Justificado", values.justifiedMinutes], ["Pendiente", values.pendingMinutes],
+  ] as const;
+  const cards = durationValues(report.totals).map(([label, minutes]) => `<div class="attendance-stat"><span>${esc(label)}</span><strong>${esc(attendanceDuration(minutes))}</strong></div>`).join("");
+  const incidents = report.incidents.map((incident, index) => {
+    const interval = incident.startTime && incident.endTime ? `${incident.startTime} – ${incident.endTime}` : incident.startTime || incident.endTime || "Horario no registrado";
+    const balance = durationValues(incident).map(([label, minutes]) => `<span>${esc(label)} <b>${esc(attendanceDuration(minutes))}</b></span>`).join("");
+    const adjustments = incident.adjustments.map(adjustment => {
+      const label = adjustment.kind === "recovery" ? "Recuperación" : adjustment.kind === "justification" ? "Justificación" : String(adjustment.kind);
+      const date = adjustment.date ? dateLabel(adjustment.date) : `${attendanceDateTime(adjustment.recordedAt)} (registro, hora de Madrid)`;
+      const keepTogether = compactText([label, date, adjustment.reason, adjustment.recordedBy, adjustment.recordedAt]);
+      return `<li class="attendance-adjustment${keepTogether ? " attendance-adjustment-short" : ""}">
+        <div class="attendance-adjustment-head"><h5>${esc(label)} · ${esc(date)}</h5><strong>${esc(attendanceDuration(adjustment.minutes))}</strong></div>
+        <p class="attendance-text">${esc(adjustment.reason || "Sin motivo registrado.")}</p>
+        <p class="attendance-audit"><b>Registrado por:</b> ${esc(adjustment.recordedBy || "Responsable no indicado")} · ${esc(attendanceDateTime(adjustment.recordedAt))} (hora de Madrid)</p>
+      </li>`;
+    }).join("");
+    return `<article class="attendance-incident">
+      <header class="attendance-incident-head"><div><span class="attendance-label">Incidencia ${index + 1}</span><h4>${esc(dateLabel(incident.date))}</h4><p>${esc(interval)}</p></div><span class="attendance-state">${esc(statusLabels[incident.status] || incident.status || "Estado no registrado")}</span></header>
+      <div class="attendance-balance">${balance}</div>
+      <dl class="attendance-fields"><div><dt>Motivo</dt><dd>${esc(incident.reason || "Sin motivo registrado.")}</dd></div><div><dt>Observaciones</dt><dd>${esc(incident.notes || "Sin observaciones registradas.")}</dd></div></dl>
+      <p class="attendance-audit"><b>Registrado por:</b> ${esc(incident.recordedBy || "Responsable no indicado")} · ${esc(attendanceDateTime(incident.recordedAt))} (hora de Madrid)</p>
+      <div class="attendance-adjustments"><h5>Recuperaciones y justificaciones</h5>${adjustments ? `<ol>${adjustments}</ol>` : "<p class=\"attendance-text\">Sin ajustes registrados para esta incidencia.</p>"}</div>
+    </article>`;
+  }).join("");
+  return `<section class="attendance" aria-labelledby="invoice-attendance-title">
+    <div class="attendance-overview${compactText([report.month, report.generatedAt, ...(report.warnings || [])]) ? " attendance-overview-compact" : ""}">
+    <header class="attendance-head"><span class="attendance-label">REGISTROS DEL PERIODO · ${esc(report.month)}</span><h3 id="invoice-attendance-title">Registro de horas e incidencias</h3><p>Suma de los registros guardados. Datos consultados el ${esc(attendanceDateTime(report.generatedAt))} (hora de Madrid).</p></header>
+    <div class="attendance-summary">${cards}</div>
+    ${(report.warnings || []).map(warning => `<p class="attendance-warning"><b>Aviso de revisión</b>${esc(warning)}</p>`).join("")}
+    </div>
+    ${report.effectNote ? `<p class="attendance-effect">${esc(report.effectNote)}</p>` : ""}
+    ${incidents || "<p class=\"attendance-empty\">No hay incidencias horarias registradas para este periodo. La ausencia de registros no confirma por sí sola la asistencia completa.</p>"}
+  </section>`;
+}
+
 export function renderInvoiceDocument(input: InvoiceDocumentInput) {
   const issueDate = formatInvoiceDate(input.issueDate) || "—";
   const dueDate = formatInvoiceDate(input.dueDate);
@@ -279,10 +345,18 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     .progress{margin-top:26px;padding:17px;border:1px solid #decfaa;border-radius:14px;background:linear-gradient(135deg,#fffdf8,#f7f1fc);break-inside:avoid;page-break-inside:avoid}.progress-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.progress-kicker{font-size:10px;letter-spacing:.14em;color:#9a7024;font-weight:900}.progress h3{margin:4px 0 0;font-size:19px}.progress-badge{padding:7px 10px;border-radius:999px;font-size:12px;font-weight:900;white-space:nowrap}.progress-up .progress-badge{background:#e8f6ef;color:#16734f}.progress-down .progress-badge{background:#fbecef;color:#a53444}.progress-neutral .progress-badge{background:#eeeaf3;color:#665e70}.progress-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px}.progress-stat{padding:10px;background:rgba(255,255,255,.75);border:1px solid #ebe2d3;border-radius:9px}.progress-stat span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}.progress-stat strong{display:block;margin-top:5px;font-size:14px}.progress-chart{margin-top:13px}.progress-chart>b{display:block;margin-bottom:7px}.bars{display:grid;gap:6px}.bar-row{display:grid;grid-template-columns:105px 1fr;gap:7px;align-items:center;font-size:10px;color:var(--muted)}.bar-track{height:7px;border-radius:99px;background:#e9e1ed;overflow:hidden}.bar-fill{height:100%;border-radius:inherit;background:#b78a3b}.bar-fill.current{background:#7653ad}.progress-message{margin:13px 0 0;font-size:12px;line-height:1.45;color:#4a424f}.minutes-line{margin-top:11px;padding-top:10px;border-top:1px solid #e8decc;font-size:11.5px;color:#51495a}.minutes-line b{color:#2e2634}
     .code-progress{margin-top:16px;padding:15px 17px;border:1px solid #decfaa;border-radius:14px;background:linear-gradient(135deg,#fffdf8,#faf7fd);break-inside:avoid;page-break-inside:avoid}.code-progress-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.code-progress-head h3{margin:4px 0 0;font-size:18px}.code-summary{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.code-summary span{padding:5px 8px;border:1px solid #e1d6c3;border-radius:999px;background:#fff;color:#5b5261;font-size:9px;font-weight:800}.code-summary .best{color:#16734f;background:#e8f6ef;border-color:#cfeadd}.code-summary .opportunity{color:#8c4b57;background:#fbeff1;border-color:#efd9dd}.code-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}.code-card{padding:10px;border:1px solid #e8dece;border-radius:10px;background:rgba(255,255,255,.82);break-inside:avoid}.code-card-head,.code-delta{display:flex;align-items:center;justify-content:space-between;gap:8px}.code-card-head b{color:#7653ad;font-size:11px;letter-spacing:.08em}.code-card-head span{padding:3px 6px;border-radius:999px;background:#eeeaf3;color:#665e70;font-size:8.5px;font-weight:800}.code-up .code-card-head span{background:#e8f6ef;color:#16734f}.code-down .code-card-head span{background:#fbecef;color:#a53444}.code-numbers{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.code-numbers div{padding:6px 7px;border:1px solid #eee6db;border-radius:7px;background:#fff}.code-numbers small{display:block;color:var(--muted);font-size:8px;text-transform:capitalize}.code-numbers strong{display:block;margin-top:3px;font-size:12px}.code-delta{margin-top:7px}.code-delta b{font-size:11px}.code-delta span{color:#625968;font-size:9px;font-weight:800}.code-bars{display:grid;gap:4px;margin-top:7px}.code-bars>div{display:grid;grid-template-columns:43px 1fr;gap:5px;align-items:center}.code-bars small{color:var(--muted);font-size:7.5px}.code-bars i{display:block;height:5px;border-radius:99px;background:#e9e1ed;overflow:hidden}.code-bars u{display:block;height:100%;border-radius:inherit;background:#b78a3b;text-decoration:none}.code-bars u.current{background:#7653ad}.code-conclusion{margin:10px 0 0;padding-top:9px;border-top:1px solid #e8decc;color:#4a424f;font-size:10.5px;line-height:1.45}.code-conclusion b{color:#7653ad}
     .bonus-comparison{display:grid;grid-template-columns:35px 1fr;gap:10px;margin-top:12px;padding:10px;border:1px solid #e4d5b6;border-radius:10px;background:linear-gradient(135deg,#fffaf0,#faf4ff);break-inside:avoid}.bonus-icon{width:32px;height:32px;display:grid;place-items:center;border-radius:9px;background:#f4e4b9;color:#9a7024;font-size:16px}.bonus-content{min-width:0}.bonus-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.bonus-head span{color:#9a7024;font-size:8px;font-weight:900;letter-spacing:.1em}.bonus-head h4{margin:2px 0 0;font-size:18px}.bonus-head>b{padding:4px 7px;border-radius:999px;background:#eeeaf3;color:#665e70;font-size:8.5px}.bonus-up .bonus-head>b{background:#e8f6ef;color:#16734f}.bonus-down .bonus-head>b{background:#fbecef;color:#a53444}.bonus-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:7px}.bonus-stats span{display:grid;gap:2px;padding:5px 6px;border:1px solid #eee3d2;border-radius:6px;color:var(--muted);background:rgba(255,255,255,.72);font-size:7.5px}.bonus-stats strong{color:#302934;font-size:10px}.bonus-bars{display:grid;gap:3px;margin-top:6px}.bonus-bars>div{display:grid;grid-template-columns:43px 1fr;gap:5px;align-items:center}.bonus-bars small{color:var(--muted);font-size:7.5px}.bonus-bars i{display:block;height:5px;border-radius:99px;background:#e9e1ed;overflow:hidden}.bonus-bars u{display:block;height:100%;border-radius:inherit;background:#b78a3b;text-decoration:none}.bonus-bars u.current{background:#7653ad}
+    .attendance{margin-top:28px;color:var(--ink);font-size:13px;line-height:1.55;break-inside:auto;page-break-inside:auto;overflow-wrap:anywhere}
+    .attendance-overview{break-inside:auto;page-break-inside:auto}.attendance-overview-compact,.attendance-adjustment.attendance-adjustment-short{break-inside:avoid;page-break-inside:avoid}
+    .attendance-head{padding-top:16px;border-top:2px solid #c8a45d;break-inside:avoid;break-after:avoid-page}.attendance-label{font-size:11.5px;font-weight:700;letter-spacing:.08em;color:#8b672a}.attendance h3{margin:5px 0 7px;font-size:22px;line-height:1.2}.attendance-head>p{margin:0;color:#625a68;font-size:12px}
+    .attendance-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:16px 0;break-inside:avoid}.attendance-stat{padding:12px 11px;border:1px solid #e4d7c2;border-radius:10px;background:#faf7f1}.attendance-stat span{display:block;min-height:36px;color:#665b6b;font-size:11.5px;line-height:1.45}.attendance-stat strong{display:block;margin-top:6px;font-size:19px;line-height:1.25}.attendance-stat:last-child{background:#f5f0fb;border-color:#ddcfea}.attendance-stat:last-child strong{color:#674595}
+    .attendance-warning{padding:12px 14px;margin:12px 0;border-left:4px solid #b78a3b;background:#fff8e9;white-space:pre-wrap;orphans:3;widows:3}.attendance-warning>b{display:block;margin-bottom:3px;color:#745216}.attendance-effect,.attendance-empty{padding:12px 14px;margin:12px 0;background:#f8f6fa;border:1px solid #e6dfed;white-space:pre-wrap;orphans:3;widows:3}
+    .attendance-incident{margin-top:21px;padding-top:16px;border-top:1px solid #ddd1c3;break-inside:auto;page-break-inside:auto}.attendance-incident-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;break-inside:avoid;break-after:avoid-page}.attendance h4{margin:3px 0 0;font-size:18px;line-height:1.3}.attendance-incident-head p{margin:4px 0 0;font-size:13px}.attendance-state{display:block;max-width:45%;padding:5px 10px;border:1px solid #dfd5e9;border-radius:7px;background:#f6f1fa;color:#674b82;font-size:12px;font-weight:700}
+    .attendance-balance{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0;padding:10px 0;border-top:1px solid #eee8df;border-bottom:1px solid #eee8df;break-inside:avoid}.attendance-balance span{font-size:11.5px;color:#625a68}.attendance-balance b{display:block;color:var(--ink);font-size:13px;margin-top:3px}.attendance-fields{margin:12px 0}.attendance-fields>div{margin-top:10px;break-inside:auto}.attendance-fields dt{font-size:12px;font-weight:700;color:#6c557e;break-after:avoid-page}.attendance-fields dd{margin:3px 0 0;white-space:pre-wrap;orphans:3;widows:3}.attendance-audit{margin:10px 0;color:#625a68;font-size:11.5px;line-height:1.55;white-space:pre-wrap;orphans:2;widows:2}
+    .attendance-adjustments{margin-top:14px;break-inside:auto}.attendance h5{margin:0;font-size:13px;line-height:1.5;break-after:avoid-page}.attendance-adjustments>h5{padding-bottom:5px;color:#674595;border-bottom:1px solid #e6ddec}.attendance-adjustments ol{list-style:none;padding:0;margin:0}.attendance-adjustment{margin-top:12px;padding-left:12px;border-left:2px solid #d8c5e8;break-inside:auto;page-break-inside:auto}.attendance-adjustment-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;break-inside:avoid;break-after:avoid-page}.attendance-adjustment-head strong{font-size:13px;white-space:nowrap}.attendance-text{margin:5px 0 0;white-space:pre-wrap;orphans:3;widows:3}
     .foot{margin-top:24px;padding-top:10px;border-top:1px solid #eee7db;color:#8a828e;font-size:10.5px;text-align:center}
-    @page{size:A4 portrait;margin:0}
-    @media print{html,body{background:#fff}.page{margin:0;width:210mm;min-height:auto;padding:15mm 17mm}.no-print{display:none}}
-    @media(max-width:600px){.page{width:100%;min-height:0;padding:24px}.head{flex-direction:column}.invoice-meta{width:100%;max-width:none}.parties{grid-template-columns:1fr}}
+    @page{size:A4 portrait;margin:15mm 17mm}
+    @media print{html,body{background:#fff}.page{margin:0;width:auto;min-height:auto;padding:0}.no-print{display:none}}
+    @media(max-width:600px){.page{width:100%;min-height:0;padding:24px}.head{flex-direction:column}.invoice-meta{width:100%;max-width:none}.parties{grid-template-columns:1fr}.attendance-summary,.attendance-balance{grid-template-columns:repeat(2,minmax(0,1fr))}}
   </style>
 </head>
 <body>
@@ -332,6 +406,7 @@ export function renderInvoiceDocument(input: InvoiceDocumentInput) {
     </section>
 
     ${input.notes ? `<section class="notes"><b>Observaciones</b><p>${esc(input.notes)}</p></section>` : ""}
+    ${input.attendance ? renderAttendance(input.attendance) : ""}
     ${progress ? `<section class="progress progress-${progress.trend}">
       <div class="progress-head"><div><span class="progress-kicker">EVOLUCIÓN REAL</span><h3>Tu progreso este mes</h3></div><div class="progress-badge">${esc(progress.hasPrevious ? percent(progress.changePct) : "Primer mes")}</div></div>
       <div class="progress-grid">
