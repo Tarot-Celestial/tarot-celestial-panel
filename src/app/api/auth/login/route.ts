@@ -48,6 +48,15 @@ function json(body: Record<string, unknown>, status = 200) {
 export async function POST(request: Request) {
   const startedAt = Date.now();
   const requestId = request.headers.get("x-vercel-id");
+  let stage: "authentication" | "worker_lookup" = "authentication";
+  let upstreamStatus: number | null = null;
+  // The SDK can discard the HTTP status when a gateway returns HTML instead
+  // of JSON. Keep only the status, scoped to this login request.
+  const loginFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const response = await fetchWithTimeout(input, init);
+    upstreamStatus = response.status;
+    return response;
+  };
   console.log(JSON.stringify({
     level: "info",
     message: "login_started",
@@ -66,7 +75,7 @@ export async function POST(request: Request) {
 
     const url = env("NEXT_PUBLIC_SUPABASE_URL");
     const authClient = createClient(url, env("NEXT_PUBLIC_SUPABASE_ANON_KEY"), {
-      global: { fetch: fetchWithTimeout },
+      global: { fetch: loginFetch },
       auth: {
         autoRefreshToken: false,
         persistSession: false,
@@ -74,24 +83,15 @@ export async function POST(request: Request) {
       },
     });
     const { data, error } = await authClient.auth.signInWithPassword({ email, password });
-    if (error) {
-      const authMessage = String(error.message || "");
-      const authStatus = Number(error.status || 0);
-      if (
-        authStatus === 0 ||
-        authStatus >= 500 ||
-        /fetch|network|timeout|abort|connection|context canceled|deadline exceeded|starting up|shutting down/i.test(authMessage)
-      ) {
-        throw error;
-      }
-      return json({ ok: false, error: "INVALID_CREDENTIALS" }, 401);
-    }
+    if (error) throw error;
     if (!data.user || !data.session) {
-      return json({ ok: false, error: "INVALID_CREDENTIALS" }, 401);
+      throw new Error("Incomplete authentication response");
     }
 
+    stage = "worker_lookup";
+    upstreamStatus = null;
     const admin = createClient(url, env("SUPABASE_SERVICE_ROLE_KEY"), {
-      global: { fetch: fetchWithTimeout },
+      global: { fetch: loginFetch },
       auth: { autoRefreshToken: false, persistSession: false },
     });
     const { data: worker, error: workerError } = await admin
@@ -117,23 +117,49 @@ export async function POST(request: Request) {
     }));
     return json({ ok: true, role, session: data.session });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const timedOut = error instanceof Error && (
-      error.name === "AbortError" ||
-      error.name === "SupabaseTimeoutError" ||
-      /fetch|network|timeout|abort|connection/i.test(error.message)
+    const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
+    const errorStatus = Number(details.status);
+    const status = upstreamStatus ?? (Number.isInteger(errorStatus) && errorStatus >= 100 && errorStatus <= 599 ? errorStatus : null);
+    const upstreamCode = typeof details.code === "string" && /^[a-z0-9_]{1,64}$/i.test(details.code) ? details.code : null;
+    const timedOut = details.name === "AbortError" || details.name === "SupabaseTimeoutError" || (
+      typeof details.message === "string" && /fetch|network|timeout|abort|connection/i.test(details.message)
     );
+    let publicError = "AUTH_SERVICE_UNAVAILABLE";
+    let responseStatus = 503;
+    if (status === 402) {
+      publicError = "AUTH_SERVICE_RESTRICTED";
+      responseStatus = 402;
+    } else if (status === 429) {
+      publicError = "AUTH_RATE_LIMITED";
+      responseStatus = 429;
+    } else if (timedOut) {
+      publicError = "SUPABASE_TIMEOUT";
+    } else if (stage === "authentication" && status !== null && status >= 400 && status < 500) {
+      // Unknown client errors (including invalid API keys) are service errors,
+      // never evidence that the person's password was incorrect.
+      const knownErrors: Record<string, string> = {
+        invalid_credentials: "INVALID_CREDENTIALS",
+        email_not_confirmed: "AUTH_EMAIL_NOT_CONFIRMED",
+        user_banned: "AUTH_ACCOUNT_BLOCKED",
+        captcha_failed: "AUTH_CAPTCHA_FAILED",
+      };
+      const knownError = upstreamCode && Object.hasOwn(knownErrors, upstreamCode) ? knownErrors[upstreamCode] : undefined;
+      if (knownError) {
+        publicError = knownError;
+        responseStatus = knownError === "INVALID_CREDENTIALS" ? 401 : 403;
+      }
+    }
     console.error(JSON.stringify({
       level: "error",
-      message: timedOut ? "supabase_timeout" : "login_failed",
+      message: "login_failed",
       route: "/api/auth/login",
       requestId,
-      error: message,
+      stage,
+      error: publicError,
+      upstreamStatus: status,
+      upstreamCode,
       durationMs: Date.now() - startedAt,
     }));
-    return json({
-      ok: false,
-      error: timedOut ? "SUPABASE_TIMEOUT" : "AUTH_SERVICE_UNAVAILABLE",
-    }, 503);
+    return json({ ok: false, error: publicError }, responseStatus);
   }
 }
