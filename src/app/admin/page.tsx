@@ -11,6 +11,7 @@ import AppHeader from "@/components/AppHeader";
 import PanelTheme from "@/components/ui/PanelTheme";
 import { getActiveBrand } from "@/components/global/BrandSwitcher";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { normalizeMonthKey } from "@/lib/month-key";
 import { AtlasLauncher } from "@/features/admin/atlas/AtlasCharacter";
 import { useAtlasWatches } from "@/features/admin/atlas/useAtlasWatches";
 import { atlasUnreadWatches } from "@/features/admin/atlas/atlas-watch-types";
@@ -384,6 +385,7 @@ function AdminPage() {
   const [syncMsg, setSyncMsg] = useState<string>("");
 
   const [month, setMonth] = useState<string>(monthKeyNow());
+  const [monthError, setMonthError] = useState("");
 
   const [genLoading, setGenLoading] = useState(false);
   const [genMsg, setGenMsg] = useState<string>("");
@@ -450,6 +452,7 @@ function AdminPage() {
   const statsRefreshQueuedRef = useRef(false);
   const statsRealtimeTimerRef = useRef<number | null>(null);
   const invoiceRealtimeTimerRef = useRef<number | null>(null);
+  const invoiceListRequestRef = useRef(0);
   const statsSelectedMonthRef = useRef(month);
   const statsViewActiveRef = useRef(false);
   statsSelectedMonthRef.current = month;
@@ -522,13 +525,16 @@ function AdminPage() {
   useEffect(() => {
     try {
       const saved = localStorage.getItem("tc_month_admin");
-      if (saved) setMonth(saved);
+      if (saved) {
+        try { setMonth(normalizeMonthKey(saved)); }
+        catch { setMonthError(`El mes guardado no es válido. Se mantiene ${month}.`); }
+      }
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem("tc_month_admin", month);
+      localStorage.setItem("tc_month_admin", normalizeMonthKey(month));
     } catch {}
   }, [month]);
 
@@ -746,12 +752,28 @@ function AdminPage() {
     }
   }
 
+  function changeInvoiceMonth(value: string) {
+    if (genLoading) return;
+    try {
+      const nextMonth = normalizeMonthKey(value);
+      if (nextMonth !== month) {
+        ++invoiceListRequestRef.current;
+        setInvoices([]); setListMsg(""); setGenMsg(""); setListLoading(false);
+      }
+      setMonth(nextMonth);
+      setMonthError("");
+    } catch {
+      setMonthError(`Selecciona un mes válido. Se mantiene ${month}.`);
+    }
+  }
+
   async function generateInvoices() {
   if (genLoading) return;
   setGenLoading(true);
   setGenMsg("");
 
   try {
+    const requestMonth = normalizeMonthKey(month);
     const token = await getTokenOrLogin();
     if (!token) return;
 
@@ -761,7 +783,7 @@ function AdminPage() {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ month }),
+      body: JSON.stringify({ month: requestMonth }),
     });
 
     const j = await safeJson(r);
@@ -774,13 +796,15 @@ function AdminPage() {
     const updated = Number(j?.updated || 0);
     const sourceRows = Number(j?.source_rows || 0);
 
-    setGenMsg(`✅ Facturas generadas para ${month}. Nuevas: ${created} · Actualizadas: ${updated} · Registros de rendimiento usados: ${sourceRows}`);
+    setGenMsg(`✅ Facturas generadas para ${requestMonth}. Nuevas: ${created} · Actualizadas: ${updated} · Registros de rendimiento usados: ${sourceRows}`);
 
-    await listInvoices();
-    setTab("facturas");
+    if (requestMonth === statsSelectedMonthRef.current) {
+      await listInvoices();
+      setTab("facturas");
+    }
 
   } catch (e: any) {
-    setGenMsg(`❌ ${e?.message || "Error"}`);
+    setGenMsg(`❌ ${e?.message === "INVALID_MONTH_KEY" ? "Selecciona un mes válido antes de generar las facturas." : e?.message || "Error"}`);
   } finally {
     setGenLoading(false);
   }
@@ -788,17 +812,20 @@ function AdminPage() {
 
   async function listInvoices(silent = false) {
     if (listLoading && !silent) return;
+    const request = ++invoiceListRequestRef.current;
+    const requestMonth = month;
     if (!silent) {
       setListLoading(true);
       setListMsg("");
     }
 
     try {
+      const normalizedMonth = normalizeMonthKey(requestMonth);
       const token = await getTokenOrLogin();
       if (!token) return;
 
       const r = await fetch(
-        `/api/admin/invoices/list?month=${encodeURIComponent(month)}&t=${Date.now()}`,
+        `/api/admin/invoices/list?month=${encodeURIComponent(normalizedMonth)}&t=${Date.now()}`,
         {
           headers: { Authorization: `Bearer ${token}` },
           cache: "no-store",
@@ -808,12 +835,13 @@ function AdminPage() {
       const j = await safeJson(r);
       if (!j?._ok || !j?.ok) throw new Error(j?.error || `HTTP ${j?._status}. ${j?._raw || "(vacía)"}`);
 
+      if (request !== invoiceListRequestRef.current || requestMonth !== statsSelectedMonthRef.current) return;
       setInvoices(j.invoices || []);
-      if (!silent) setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${month}).`);
+      if (!silent) setListMsg(`✅ Cargadas ${j.invoices?.length ?? 0} facturas (${normalizedMonth}).`);
     } catch (e: any) {
-      if (!silent) setListMsg(`❌ ${e?.message || "Error"}`);
+      if (!silent && request === invoiceListRequestRef.current && requestMonth === statsSelectedMonthRef.current) setListMsg(`❌ ${e?.message === "INVALID_MONTH_KEY" ? "Selecciona un mes válido antes de consultar las facturas." : e?.message || "Error"}`);
     } finally {
-      if (!silent) setListLoading(false);
+      if (request === invoiceListRequestRef.current) setListLoading(false);
     }
   }
 
@@ -1070,7 +1098,7 @@ function AdminPage() {
     }
 
     statsFetchInFlightRef.current = true;
-    const requestMonth = statsSelectedMonthRef.current;
+    let requestMonth = statsSelectedMonthRef.current;
     if (!silent) {
       setStatsLoading(true);
       setStatsMsg("");
@@ -1078,6 +1106,7 @@ function AdminPage() {
     if (source === "realtime") setStatsLiveStatus("updating");
 
     try {
+      requestMonth = normalizeMonthKey(requestMonth);
       const token = await getTokenOrLogin();
       if (!token) return;
 
@@ -1126,7 +1155,7 @@ function AdminPage() {
       if (!silent) setStatsMsg("✅ Estadísticas sincronizadas con datos reales.");
       if (source === "realtime") setStatsLiveStatus("live");
     } catch (e: any) {
-      if (!silent) setStatsMsg(`❌ ${e?.message || "Error"}`);
+      if (!silent) setStatsMsg(`❌ ${e?.message === "INVALID_MONTH_KEY" ? "Selecciona un mes válido antes de consultar las estadísticas." : e?.message || "Error"}`);
       if (source === "realtime") setStatsLiveStatus("offline");
     } finally {
       statsFetchInFlightRef.current = false;
@@ -1949,12 +1978,13 @@ function AdminPage() {
             </div>
             <div className={`tc-row ${adminStyles.toolbarActions}`}>
               <span className={`tc-chip ${adminStyles.monthBadge}`}>Mes</span>
-              <input className="tc-input" value={month} onChange={(e) => setMonth(e.target.value)} placeholder="2026-02" style={{ width: 120 }} />
+              <input className="tc-input" type="month" required aria-label="Mes de facturación" aria-describedby={monthError ? "invoice-month-error" : undefined} value={month} disabled={genLoading} onChange={(e) => changeInvoiceMonth(e.target.value)} style={{ width: 170 }} />
               <button className="tc-btn tc-btn-purple" onClick={() => listInvoices()} disabled={listLoading}>
                 {listLoading ? "Cargando…" : "Refrescar"}
               </button>
             </div>
           </section>
+          {monthError ? <p id="invoice-month-error" role="alert" className="tc-sub">{monthError}</p> : null}
 
           <div className={`tc-main-content ${adminStyles.mainContent}`}>
 {tab === "atlas" && <AtlasPanel watches={atlasWatches} initialView={atlasOpenView} />}

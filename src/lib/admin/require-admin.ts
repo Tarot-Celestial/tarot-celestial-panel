@@ -78,11 +78,7 @@ export function normalizeRole(role: any): "admin" | "central" | "tarotista" {
   return value;
 }
 
-export function normalizeMonthKey(raw: any) {
-  const value = String(raw || "").trim();
-  if (!/^\d{4}-\d{2}$/.test(value)) throw new Error("INVALID_MONTH_KEY");
-  return value;
-}
+export { normalizeMonthKey } from "@/lib/month-key";
 
 export function roundMoney(n: any) {
   return Math.round((Number(n) || 0) * 100) / 100;

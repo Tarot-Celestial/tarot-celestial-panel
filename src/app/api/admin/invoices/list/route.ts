@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeMonthKey } from "@/lib/month-key";
 import { createClient } from "@supabase/supabase-js";
 import { getAuthUserFromRequest } from "@/lib/server/auth-fast";
 import { collaboratorReportToInvoiceRow, listActiveCollaborators, loadCollaboratorMonthlyReport } from "@/lib/server/collaborator-billing";
@@ -122,7 +123,7 @@ export async function GET(req: Request) {
     }
 
     const requestUrl = new URL(req.url);
-    const month = requestUrl.searchParams.get("month") || monthKeyNow();
+    const month = normalizeMonthKey(requestUrl.searchParams.get("month") ?? monthKeyNow());
     const previousMonth = previousMonthKey(month);
 
     const { data: activeWorkers, error: activeWorkersError } = await admin
@@ -284,6 +285,6 @@ export async function GET(req: Request) {
       }
     );
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || "ERR" }, { status: e?.message === "INVALID_MONTH_KEY" ? 400 : 500 });
   }
 }

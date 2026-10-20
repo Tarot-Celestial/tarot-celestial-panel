@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 import { NextRequest, NextResponse } from "next/server";
+import { normalizeMonthKey } from "@/lib/month-key";
 import { createClient } from "@supabase/supabase-js";
 import { brandFromRequest } from "@/lib/server/brand-filter";
 import { loadOfficialPayments, totalOfficialRevenue } from "@/lib/server/economic-payments";
@@ -13,9 +14,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-function normalizeMonthKey(value: string | null) {
-  const raw = String(value || "").trim();
-  if (/^\d{4}-\d{2}$/.test(raw)) return raw;
+function currentMonthKey() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -30,7 +29,7 @@ function monthBounds(month: string) {
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    const month = normalizeMonthKey(url.searchParams.get("month"));
+    const month = normalizeMonthKey(url.searchParams.get("month") ?? currentMonthKey());
     const { startIso, endIso } = monthBounds(month);
     const brand = brandFromRequest(req);
 
@@ -78,6 +77,6 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    return NextResponse.json({ ok: false, error: error?.message || "ERR_ADMIN_DASHBOARD" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: error?.message || "ERR_ADMIN_DASHBOARD" }, { status: error?.message === "INVALID_MONTH_KEY" ? 400 : 500 });
   }
 }

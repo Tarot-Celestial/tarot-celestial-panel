@@ -263,7 +263,7 @@ export async function POST(req: Request) {
       workers: Array.isArray(workers) ? workers.length : 0,
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || "INVOICE_GENERATE_ERROR" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || "INVOICE_GENERATE_ERROR" }, { status: e?.message === "INVALID_MONTH_KEY" ? 400 : 500 });
   }
 }
 
