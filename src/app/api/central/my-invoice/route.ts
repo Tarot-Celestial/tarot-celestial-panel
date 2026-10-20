@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { normalizeMonthKey } from "@/lib/month-key";
 import { createClient } from "@supabase/supabase-js";
 import { getBearerToken } from "@/lib/server/auth-fast";
 
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
     if (!worker || String(worker.role || "").toLowerCase() !== "central") return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
 
     const url = new URL(req.url);
-    const month = url.searchParams.get("month") || monthKey();
+    const month = normalizeMonthKey(url.searchParams.get("month") ?? monthKey());
     const previous = previousMonth(month);
     const { data: invoices, error: invoicesError } = await admin.from("invoices")
       .select("id,worker_id,month_key,status,total,created_at,updated_at")
@@ -114,6 +115,7 @@ export async function GET(req: Request) {
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const e = error as { code?: string; message?: string; details?: string; hint?: string };
+    if (e.message === "INVALID_MONTH_KEY") return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
     console.error("[central/my-invoice]", { code: e.code, message: e.message, details: e.details, hint: e.hint });
     return NextResponse.json({ ok: false, error: "MY_INVOICE_LOAD_FAILED" }, { status: 500 });
   }

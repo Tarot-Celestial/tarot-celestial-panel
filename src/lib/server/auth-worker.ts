@@ -63,11 +63,7 @@ export async function workerFromRequest(req: Request) {
   return { ...me, resolved_uid: uid || null, resolved_email: email || null };
 }
 
-export function normalizeMonthKey(raw: any) {
-  const value = String(raw || '').trim();
-  if (!/^\d{4}-\d{2}$/.test(value)) throw new Error('INVALID_MONTH_KEY');
-  return value;
-}
+export { normalizeMonthKey } from "@/lib/month-key";
 
 export function monthRange(monthKey: string) {
   const [year, month] = monthKey.split('-').map(Number);
