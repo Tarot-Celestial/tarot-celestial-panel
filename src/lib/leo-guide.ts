@@ -25,6 +25,7 @@ export type LeoSnapshot = {
   bonuses: Array<{ id: string; name: string; claimed_today?: boolean; next_available_at?: string }> | null;
   oracle: { credits: number; freeAvailable: boolean } | null;
   pending?: { level: number } | null;
+  pendingLevels?: Array<{ level: number }>;
   updatedAt: number;
 };
 export type LeoHelp = { title: string; message: string; actions: LeoAction[]; note?: string };
@@ -47,6 +48,7 @@ export function safeLeoPath(value: unknown): value is string {
   return typeof value === "string" && /^\/cliente\/(dashboard|precios-ofertas|rangos|oraculo|ruleta|sorteo|tarotistas|resenas|ritual|notificaciones|perfil)(?:[?#][^\s]*)?$/.test(value) && !value.includes('\\');
 }
 export function leoSelector(anchor: string): string | null {
+  if (/^roulette-recovery-[1-5]$/.test(anchor)) return `[data-leo-anchor="${anchor}"]`;
   if (/^roulette-[1-5]$/.test(anchor)) return `[data-leo-anchor="${anchor}"]`;
   if (/^rank-(bronce|plata|oro|diamante)$/.test(anchor)) return `#rango-${anchor.slice(5)}`;
   const map: Record<string, string> = {
@@ -74,7 +76,14 @@ export function leoHelp(data: LeoSnapshot, path: string, topic: LeoTopic): LeoHe
     return { title: `Te acompaño en ${section.label}`, message: section.hint, actions: [sectionAction(path, section.key === 'reviews' || section.key === 'profile' || section.key === 'notifications' || section.key === 'tarotists' || section.key === 'raffle' || section.key === 'ritual' ? section.key : 'content')], note: "Puedes preguntarme por tus giros, saldo, rango o cómo moverte por el panel." };
   }
   if (topic === 'roulette') {
-    if(data.pending) return { title: 'Vamos a comprobar tu último giro', message: 'Hay un resultado pendiente de confirmar. Utiliza «Comprobar giro pendiente» para recuperarlo sin gastar otro giro.', actions: [leoAction('recover','Comprobar mi resultado','/cliente/ruleta?nivel='+data.pending.level,'recovery','Pulsa «Comprobar giro pendiente». El sistema recuperará el resultado de ese mismo giro.',data.pending.level)] };
+    const pending = (data.pendingLevels || (data.pending ? [data.pending] : [])).filter(item => [1,2,3,4,5].includes(item.level));
+    if (pending.length) {
+      const available = leoSpins(data.roulette).filter(row => row.playable && !pending.some(item => item.level === row.level));
+      return { title: 'Tus giros por comprobar', message: `Hay resultados por comprobar en ${pending.map(item => LEO_LEVEL_NAMES[item.level]).join(', ')}. Puedes recuperar cada resultado sin gastar otro giro y utilizar tus giros disponibles de las otras ruletas.`, actions: [
+        ...pending.map(item => leoAction('recover-'+item.level, 'Comprobar '+LEO_LEVEL_NAMES[item.level], '/cliente/ruleta?nivel='+item.level, 'roulette-recovery-'+item.level, 'Pulsa «Comprobar pendiente». El sistema recuperará el resultado de ese mismo giro.', item.level)),
+        ...available.map(row => row.action),
+      ] };
+    }
     if (!data.roulette) return { title: "Vamos a encontrar tus giros", message: "Ahora no puedo confirmar tus giros. Actualiza la información o abre Ruleta para consultarlos.", actions: [sectionAction('/cliente/ruleta')] };
     const rows = leoSpins(data.roulette).filter(s => s.amount > 0), playable = rows.filter(s => s.playable);
     return { title: playable.length ? "Estas son tus ruletas" : rows.length ? "Tus giros necesitan atención" : "Tus ruletas, al día", message: rows.length ? rows.map(s => `${s.name}: ${s.amount} giro${s.amount === 1 ? '' : 's'}${s.playable ? '' : ' (' + s.reason.toLowerCase() + ')'}`).join(' · ') : "No tienes giros pendientes en este momento. Puedes revisar tus premios anteriores o consultar qué incluye cada paquete.", actions: rows.length ? rows.map(s => s.action) : [...(data.roulette.history?.length ? [leoAction('history','Ver mis premios','/cliente/ruleta','history','Este es el historial de tus giros y premios confirmados.')] : [sectionAction('/cliente/ruleta')]),sectionAction('/cliente/precios-ofertas')], note: "Tu rango de cliente y el nivel de tu ruleta son distintos. Cada giro pertenece a una ruleta concreta." };

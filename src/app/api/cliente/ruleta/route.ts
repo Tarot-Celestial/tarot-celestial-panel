@@ -10,8 +10,9 @@ function failure(error: unknown) {
     return NextResponse.json({ ok: false, error: error.message }, { status: error.status, headers });
   }
   const message = error && typeof error === "object" && "message" in error ? String((error as any).message) : "";
-  if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].some((code) => message.includes(code))) {
-    return NextResponse.json({ ok: false, error: "Este giro ya no está disponible. Actualiza para ver tus giros actuales." }, { status: 409, headers });
+  const invalidSpinCode = ["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].find((code) => message.includes(code));
+  if (invalidSpinCode) {
+    return NextResponse.json({ ok: false, code: invalidSpinCode, error: "Este giro ya no está disponible. Actualiza para ver tus giros actuales." }, { status: 409, headers });
   }
   if (message.includes("ROULETTE_NO_ACTIVE_CAMPAIGN")) {
     return NextResponse.json({ ok: false, error: "La Ruleta Ultra Sorpresas está temporalmente pausada." }, { status: 409, headers });

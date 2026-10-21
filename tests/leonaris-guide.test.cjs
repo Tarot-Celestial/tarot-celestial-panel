@@ -40,8 +40,11 @@ test('ritual navigation requires explicit access, not any mention of post-ritual
  assert.ok(!g.leoHelp(state,'/cliente/dashboard','sections').actions.some(a=>a.id==='ritual'));
  state.ranks.ranks[0].benefits=['Acceso a Mi ritual'];assert.ok(g.leoHelp(state,'/cliente/dashboard','sections').actions.some(a=>a.id==='ritual'));
 });
-test('an uncertain previous spin takes priority and recovery keeps its exact level',()=>{
- const state=g.emptyLeoSnapshot();state.roulette=summary;state.pending={level:2};const help=g.leoHelp(state,'/cliente/ruleta','roulette');assert.match(help.message,/sin gastar otro giro/);assert.equal(help.actions.length,1);assert.equal(help.actions[0].anchor,'recovery');assert.equal(help.actions[0].level,2);assert.ok(g.validLeoAction(help.actions[0]));
+test('pending recovery retains its level while other playable roulettes remain reachable',()=>{
+ const state=g.emptyLeoSnapshot();state.roulette=summary;state.pending={level:2};const help=g.leoHelp(state,'/cliente/ruleta','roulette');assert.match(help.message,/sin gastar otro giro/);assert.equal(help.actions.length,2);assert.equal(help.actions[0].anchor,'roulette-recovery-2');assert.equal(help.actions[0].level,2);assert.equal(help.actions[1].level,4);for(const action of help.actions)assert.ok(g.validLeoAction(action));
+});
+test('multiple pending levels each have their own recovery target and do not advertise a fresh spin there',()=>{
+ const state=g.emptyLeoSnapshot();state.roulette={...summary,diamond_access:true};state.pendingLevels=[{level:2},{level:4}];const help=g.leoHelp(state,'/cliente/ruleta','roulette');assert.equal(help.actions.length,3);assert.equal(help.actions[0].anchor,'roulette-recovery-2');assert.equal(help.actions[1].anchor,'roulette-recovery-4');assert.equal(help.actions[2].level,5);assert.match(help.message,/otras ruletas/);for(const action of help.actions)assert.ok(g.validLeoAction(action));
 });
 test('no prize history or active rewards produces an explicit empty state instead of missing-target links',()=>{
  const state=g.emptyLeoSnapshot();state.roulette={...summary,history:[],entitlements:[]};const help=g.leoHelp(state,'/cliente/ruleta','prizes');assert.match(help.message,/Todavía no aparecen/);assert.ok(!help.actions.some(a=>a.anchor==='history'||a.anchor==='prizes'));

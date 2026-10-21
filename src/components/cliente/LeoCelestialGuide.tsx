@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { ArrowRight, Check, Compass, EyeOff, Footprints, Gift, MessageCircle, RotateCw, Send, Sparkles, X, BellOff, Bell, ChevronLeft, Brain, Trash2, ThumbsUp, ThumbsDown } from "lucide-react";
 import { supabaseClienteBrowser } from "@/lib/supabase-browser";
 import { useRouletteSignal } from "@/hooks/useRouletteSignal";
+import { readRoulettePending, ROULETTE_PENDING_CHANGED } from "@/lib/roulette-pending";
 import { isLeoCelestialEventDetail, LEO_CELESTIAL_EVENT } from "@/lib/leo-celestial-events";
 import { emptyLeoSnapshot, leoAction, leoHelp, leoSection, leoSelector, leoSpins, validLeoAction, LEO_SELECT_ROULETTE, type LeoAction, type LeoSnapshot, type LeoTopic } from "@/lib/leo-guide";
 import { useLeonarisMotion } from "./useLeonarisMotion";
@@ -128,9 +129,8 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
       if(version!==epoch.current||account!==accountEpoch.current||userRef.current!==id||mutation!==mutationEpoch.current)return;
       if(controller.signal.aborted)return;
       setMemoryAvailable(!!leo?.companion);
-      let pending: {level:number}|null=null;
-      try { const saved=roulette?.cliente_id && JSON.parse(sessionStorage.getItem('tc-ruleta-pending:'+roulette.cliente_id)||'null');if(saved?.spin_id && [1,2,3,4,5].includes(saved.level))pending={level:saved.level}; }catch{}
-      setData({pending,wallet:leo?.facts||null,roulette,ranks,bonuses:bonus?.bonuses||null,oracle:oracle?{credits:oracle.credits,freeAvailable:!!oracle.freeAvailable}:null,updatedAt:Date.now()});
+      const pendingLevels = roulette?.cliente_id ? Object.values(readRoulettePending(roulette.cliente_id)).map(spin => ({ level: spin.level })) : [];
+      setData({pendingLevels,wallet:leo?.facts||null,roulette,ranks,bonuses:bonus?.bonuses||null,oracle:oracle?{credits:oracle.credits,freeAvailable:!!oracle.freeAvailable}:null,updatedAt:Date.now()});
       if(leo)applyLeo(leo,id);
       if(!readyRef.current){
         readyRef.current=true;
@@ -152,6 +152,16 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
   },[pathname,applyLeo]);
   useEffect(()=>{if(uid)void refresh();return()=>{++epoch.current;abort.current?.abort();};},[uid,refresh]);
   useRouletteSignal(sb,hidden?null:data.ranks?.cliente_id,refresh);
+  useEffect(() => {
+    const updatePending = (event: Event) => {
+      const clientId = (event as CustomEvent).detail?.clientId;
+      if (!clientId || clientId !== data.roulette?.cliente_id) return;
+      const pendingLevels = Object.values(readRoulettePending(clientId)).map(spin => ({ level: spin.level }));
+      setData(current => current.roulette?.cliente_id === clientId ? { ...current, pendingLevels } : current);
+    };
+    window.addEventListener(ROULETTE_PENDING_CHANGED, updatePending);
+    return () => window.removeEventListener(ROULETTE_PENDING_CHANGED, updatePending);
+  }, [data.roulette?.cliente_id]);
   useEffect(()=>{
     let active=true,revision=0;
     const accept=(session:any)=>{
@@ -241,7 +251,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
       setJourney(j=>j?{...j,stage:'walking'}:null);
       timers.push(setTimeout(place,motion?380:0));
       timers.push(setTimeout(()=>{if(!disposed){
-        const control=target?.querySelector<HTMLElement>('[data-leo-spin], [data-leo-explore]');
+        const control=target?.matches('[data-leo-spin], [data-leo-explore]')?target:target?.querySelector<HTMLElement>('[data-leo-spin], [data-leo-explore]');
         const panel=panelRef.current?.getBoundingClientRect();
         if(window.innerWidth<=600 && control && panel){const button=control.getBoundingClientRect();if(button.bottom>panel.top-18)window.scrollBy({top:button.bottom-panel.top+24,behavior:'auto'});}
         place();setJourney(j=>j?{...j,stage:'arrived'}:null);
@@ -376,7 +386,7 @@ export default function LeoCelestialGuide({ promoActive }: { promoActive: boolea
       </div>
     </section>}
     <div ref={pet.companionRef} className={styles.companion} data-dragging={pet.dragging} data-playful={pet.playful} data-near-left={nearLeft} data-near-top={nearTop} style={restPosition?{left:restPosition.x,top:restPosition.y,right:'auto',bottom:'auto'}:undefined}>
-      {!open&&!journey&&!muted&&!pet.dragging&&<button type="button" className={styles.teaser} style={restPosition?{position:'fixed',left:Math.max(8,Math.min(restPosition.x,window.innerWidth-288)),right:'auto',top:Math.max(8,Math.min(window.innerHeight-178,nearTop?restPosition.y+(pet.companionRef.current?.offsetHeight||170)+8:restPosition.y-160)),bottom:'auto'}:undefined} onClick={show}>{reaction?<><Gift size={18}/><span><strong>{reaction.title}</strong><small>{reaction.message}</small></span></>:<><MessageCircle size={18}/><span>{data.pending?'Resultado por comprobar':usable?`${usable} giro${usable===1?'':'s'} · Te llevo`:'¿Te acompaño?'}</span></>}</button>}
+      {!open&&!journey&&!muted&&!pet.dragging&&<button type="button" className={styles.teaser} style={restPosition?{position:'fixed',left:Math.max(8,Math.min(restPosition.x,window.innerWidth-288)),right:'auto',top:Math.max(8,Math.min(window.innerHeight-178,nearTop?restPosition.y+(pet.companionRef.current?.offsetHeight||170)+8:restPosition.y-160)),bottom:'auto'}:undefined} onClick={show}>{reaction?<><Gift size={18}/><span><strong>{reaction.title}</strong><small>{reaction.message}</small></span></>:<><MessageCircle size={18}/><span>{(data.pendingLevels?.length ?? (data.pending?1:0))?'Resultado por comprobar':usable?`${usable} giro${usable===1?'':'s'} · Te llevo`:'¿Te acompaño?'}</span></>}</button>}
       <button ref={characterRef} type="button" className={styles.character} {...pet.characterHandlers} onClick={()=>{if(pet.consumeClick())return;wake();if(open){setOpen(false);setJourney(null);}else show();}} aria-label={open?'Minimizar ayuda de Leonaris':'Abrir ayuda de Leonaris'} aria-describedby="leonaris-move-help" aria-expanded={open}>
         <span className={styles.floor} aria-hidden="true"/>
         <span className={styles.look} aria-hidden="true">{spriteSheet==='unavailable'?<span className={styles.fallback}>🦁</span>:spriteSheet==='loading'?<span className={styles.loadingArt}/>:<span className={styles.sprite} data-sheet={spriteSheet} data-pose={pose}/>}</span>
