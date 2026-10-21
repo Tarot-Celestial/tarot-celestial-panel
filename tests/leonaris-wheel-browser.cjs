@@ -130,6 +130,7 @@ async function check(name, run) {
     await check('Pending recovery waits for a click and reuses its exact ID despite no fresh spins or catalogue', async () => {
       const f = await fixture(browser, { pending: true, level: 1, spins: 0, missingId: true, emptyCatalogue: true });
       try {
+        await f.page.getByRole('button', { name: /Seleccionar Plata Celestial/ }).click();
         assert.equal(f.posts.length, 0); assert.equal(await f.page.locator(center).isEnabled(), true);
         assert.match(await f.page.locator(center).innerText(), /COMPROBAR/);
         await exactCenter(f.page); await f.page.getByText('Premio acreditado automáticamente en tu saldo real.', { exact: true }).waitFor();

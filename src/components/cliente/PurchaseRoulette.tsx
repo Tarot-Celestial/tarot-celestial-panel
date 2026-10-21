@@ -11,11 +11,10 @@ import { useRouletteSignal } from "@/hooks/useRouletteSignal";
 import { prizeLabel, rarityLabel, winningRotation, type RouletteLevel, type RouletteSummary, type RouletteReward, type RoulettePrize, type RouletteRewardType } from "@/lib/ruleta";
 import { announceLeoCelestial } from "@/lib/leo-celestial-events";
 import { LEO_SELECT_ROULETTE } from "@/lib/leo-guide";
+import { clearRoulettePending, confirmedRouletteReward, readRoulettePending, validRouletteSpinId, writeRoulettePending, type PendingRouletteSpins } from "@/lib/roulette-pending";
 import styles from "./PurchaseRoulette.module.css";
 
 const sb = supabaseClienteBrowser();
-type Pending = { spin_id: string; level: RouletteLevel };
-const storageKey = (id: string) => "tc-ruleta-pending:" + id;
 
 const rarityPower: Record<string, number> = {
   common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, ultra: 5, diamond: 6, jackpot: 7,
@@ -64,11 +63,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState<RouletteReward | null>(null);
   const [message, setMessage] = useState("");
-  const [pending, setPending] = useState<Pending | null>(null);
+  const [pendingByLevel, setPendingByLevel] = useState<PendingRouletteSpins>({});
   const [countdown, setCountdown] = useState<number | null>(null);
   const mounted = useRef(true), inFlight = useRef(false), loadingRef = useRef(false);
   const animation = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRef = useRef<Pending | null>(null);
+  const pendingRef = useRef<PendingRouletteSpins>({});
+  const pendingClient = useRef<string | null>(null);
+  const pending = pendingByLevel[level];
   const resultRef = useRef<HTMLElement | null>(null);
   const arenaRef = useRef<HTMLDivElement | null>(null);
 
@@ -92,15 +93,17 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
       if (!mounted.current) return;
       setSummary(json);
 
-      try {
-        const saved = JSON.parse(sessionStorage.getItem(storageKey(json.cliente_id)) || "null");
-        if (saved?.spin_id && [1, 2, 3, 4, 5].includes(saved.level)) {
-          pendingRef.current = saved;
-          setPending(saved);
-          setLevel(saved.level);
-          setMessage("Hay un giro pendiente de comprobar. Recupera su resultado sin gastar otro giro.");
-        }
-      } catch {}
+      // Hydrate once per account: background refreshes must not override the selected roulette.
+      if (pendingClient.current !== json.cliente_id) {
+        pendingClient.current = json.cliente_id;
+        const saved = readRoulettePending(json.cliente_id);
+        pendingRef.current = saved;
+        setPendingByLevel(saved);
+        writeRoulettePending(json.cliente_id, saved);
+        const requested = Number(new URLSearchParams(window.location.search).get("nivel"));
+        const firstPending = Object.values(saved)[0];
+        if (firstPending && ![1, 2, 3, 4, 5].includes(requested)) setLevel(firstPending.level);
+      }
     } catch (error) {
       if (mounted.current) setMessage(error instanceof Error ? error.message : "No hemos podido cargar tus giros. Vuelve a intentarlo.");
     } finally {
@@ -124,7 +127,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   useEffect(() => {
     const select = (event: Event) => {
       const requested = Number((event as CustomEvent).detail?.level);
-      if (inFlight.current || pendingRef.current || ![1,2,3,4,5].includes(requested)) return;
+      if (inFlight.current || ![1,2,3,4,5].includes(requested)) return;
       setLevel(requested as RouletteLevel); setResult(null); setRotation(0); setCountdown(null);
     };
     window.addEventListener(LEO_SELECT_ROULETTE, select);
@@ -150,7 +153,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     ? "La ruleta Diamante no está disponible con tu acceso actual."
     : prizes.length === 0 ? "No hay premios configurados para este nivel."
       : !available ? "No hay giros disponibles para este nivel."
-        : !nextSpinByLevel?.[level] ? "No se ha podido confirmar un giro disponible. Vuelve a cargar tus giros." : undefined;
+        : !validRouletteSpinId(nextSpinByLevel?.[level]) ? "No se ha podido confirmar un giro disponible. Vuelve a cargar tus giros." : undefined;
   const spinDisabled = busy || (!pending && !!unavailableReason);
 
   const selectedMaxMinutes = useMemo(() => Math.max(0, ...prizes.filter(p => p.reward_type === "minutes").map(p => Number(p.reward_value || 0))), [prizes]);
@@ -181,10 +184,17 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
   async function spin(targetLevel: RouletteLevel = level) {
     if (inFlight.current || !summary) return;
     // Recovery always reuses its original ID; fresh spins must meet the same guards as both buttons.
-    if (!pendingRef.current && ((targetLevel === 5 && !summary.diamond_access) ||
+    const previous = pendingRef.current[targetLevel];
+    if (!previous && ((targetLevel === 5 && !summary.diamond_access) ||
       Number(spinsByLevel?.[targetLevel] || 0) <= 0 || !summary.catalogue.some(prize => prize.nivel === targetLevel))) return;
-    const request = pendingRef.current || { spin_id: nextSpinByLevel?.[targetLevel] || "", level: targetLevel };
-    if (!request.spin_id) return;
+    const request = previous || { spin_id: nextSpinByLevel?.[targetLevel] || "", level: targetLevel };
+    if (!validRouletteSpinId(request.spin_id)) return;
+    const savePending = (spins: PendingRouletteSpins) => {
+      pendingRef.current = spins;
+      setPendingByLevel(spins);
+      writeRoulettePending(summary.cliente_id, spins);
+    };
+    const clearPending = () => savePending(clearRoulettePending(pendingRef.current, request));
     setLevel(request.level);
     inFlight.current = true;
     setBusy(true);
@@ -193,9 +203,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
     setResult(null);
     setCountdown(null);
     setMessage("");
-    pendingRef.current = request;
-    setPending(request);
-    try { sessionStorage.setItem(storageKey(summary.cliente_id), JSON.stringify(request)); } catch {}
+    savePending({ ...pendingRef.current, [request.level]: request });
 
     try {
       const { data } = await sb.auth.getSession();
@@ -206,15 +214,13 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         body: JSON.stringify(request),
         signal: AbortSignal.timeout(15000),
       });
-      const json = await response.json();
-      if (!response.ok || !json.ok) {
-        if (response.status === 409 || response.status === 403) {
-          pendingRef.current = null;
-          setPending(null);
-          try { sessionStorage.removeItem(storageKey(summary.cliente_id)); } catch {}
-        }
-        throw new Error(json.error || "No se ha podido confirmar el giro.");
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok) {
+        // Auth, campaign and connection failures do not establish whether an earlier request succeeded.
+        if (["INVALID_SPIN", "LEGACY_SPIN_ALREADY_USED"].includes(json?.code)) clearPending();
+        throw new Error(json?.error || "No se ha podido confirmar el giro. Puedes comprobarlo de nuevo sin gastar otro.");
       }
+      if (!confirmedRouletteReward(json, request, summary.cliente_id)) throw new Error("No hemos recibido un resultado completo de este giro. Puedes comprobarlo de nuevo sin gastar otro.");
       if (!mounted.current) return;
       const awardedPrizes = arrangeWheelPrizes((json.catalogue || []).filter((p: RoulettePrize) => p.nivel === request.level), request.level);
       const index = awardedPrizes.findIndex((p: RoulettePrize) => p.id === json.reward_id);
@@ -231,9 +237,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
         setResult(json);
         setBusy(false);
         inFlight.current = false;
-        setPending(null);
-        pendingRef.current = null;
-        try { sessionStorage.removeItem(storageKey(summary.cliente_id)); } catch {}
+        clearPending();
         const instant = json.reward_type === "coins" || json.reward_type === "minutes";
         announceLeoCelestial({
           id: `roulette:${json.spin_id}`,
@@ -303,19 +307,21 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           const meta = levelMeta[n];
           const count = spinsByLevel?.[n] ?? null;
           const locked = !!summary && n === 5 && !summary.diamond_access;
+          const levelPending = pendingByLevel[n];
           const catalogue = summary?.catalogue.filter(p => p.nivel === n);
           const highlights = [...(catalogue || [])]
             .sort((a, b) => Number(Boolean(b.special)) - Number(Boolean(a.special)) ||
               Number(a.sort_order || 0) - Number(b.sort_order || 0))
             .slice(0, 3);
           const canSpin = !locked && Number(count || 0) > 0 &&
-            !!catalogue?.length && !!nextSpinByLevel?.[n];
-          const status = !summary ? "Cargando" : locked ? "No disponible" :
+            !!catalogue?.length && validRouletteSpinId(nextSpinByLevel?.[n]);
+          const status = levelPending ? "Por comprobar" : !summary ? "Cargando" : locked ? "No disponible" :
             Number(count || 0) > 0 ? "Disponible" : "Sin giros";
           const description = n === 5 ? "Acceso según rango y campaña activa" :
             n === 4 ? "Giros Especial independientes" : "Giros incluidos en tus beneficios de compra";
           const title = n === 5 ? "Diamante" : n === 4 ? "Especial" : `Nivel ${n}`;
           const selectLevel = (reveal = false) => {
+            if (inFlight.current) return;
             setLevel(n); setRotation(0); setResult(null); setCountdown(null);
             if (reveal) requestAnimationFrame(() =>
               arenaRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }));
@@ -325,7 +331,7 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
             data-available={Number(count || 0) > 0 && !locked} data-locked={locked}>
             <button type="button" className={styles.cardSelect}
               aria-pressed={level === n} aria-label={`Seleccionar ${meta.name}: ${status}, ${count ?? "consultando"} giros`}
-              disabled={busy || !!pending} onClick={() => selectLevel()}>
+              disabled={busy} onClick={() => selectLevel()}>
               <span className={styles.cardArtwork} aria-hidden="true"/>
               <span className={styles.levelStatus}>{locked && <LockKeyhole size={11}/>} {status}</span>
               <span className={styles.cardName}>{meta.name}</span>
@@ -353,11 +359,12 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
               <small className={styles.levelCap}>{catalogue == null ? "Consultando premios…" : `${catalogue.length} premios`}</small>
             </div>
             <div className={styles.cardActions}>
-              {canSpin && <button type="button" className={styles.cardSpin} data-leo-spin="true"
-                disabled={busy || !!pending} onClick={() => void spin(n)}>
-                <Sparkles size={16}/>{busy && level === n ? "Girando…" : "Girar ahora"}
+              {(levelPending || canSpin) && <button type="button" className={styles.cardSpin} data-leo-spin="true"
+                data-leo-anchor={levelPending ? `roulette-recovery-${n}` : undefined}
+                disabled={busy} onClick={() => void spin(n)}>
+                <Sparkles size={16}/>{busy && level === n ? "Confirmando…" : levelPending ? `Comprobar pendiente · ${title}` : "Girar ahora"}
               </button>}
-              <button type="button" className={styles.cardExplore} data-leo-explore="true" disabled={busy || !!pending}
+              <button type="button" className={styles.cardExplore} data-leo-explore="true" disabled={busy}
                 onClick={() => selectLevel(true)}>
                 {locked ? <><LockKeyhole size={14}/> Ver condiciones</> : <>Explorar premios <ArrowRight size={14}/></>}
               </button>
@@ -365,7 +372,10 @@ export default function PurchaseRoulette({ onReward }: { onReward?: () => void |
           </article>;
         })}
       </div>
-      {message && <div className={styles.message} role="alert">{message} {!pending && <button type="button" onClick={() => void load()}>Volver a cargar</button>}</div>}
+      {Object.keys(pendingByLevel).length > 0 && <div className={styles.message} role="status">
+        Por comprobar: {Object.values(pendingByLevel).map(item => levelMeta[item.level].name).join(", ")}. Puedes comprobar cada resultado sin gastar otro giro o utilizar tus giros de las otras ruletas.
+      </div>}
+      {message && <div className={styles.message} role="alert">{message} <button type="button" disabled={busy} onClick={() => void load()}>Volver a cargar</button></div>}
 
       {loading ? <div className={styles.skeleton} role="status">Preparando tu experiencia…</div> : !summary ? <p>No mostramos un saldo hasta poder confirmarlo.</p> : <div ref={arenaRef} className={`${styles.arena} ${styles.orbScene}`} data-level={level}>
         <div className={styles.orbStage}>
