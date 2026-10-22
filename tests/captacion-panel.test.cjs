@@ -23,7 +23,7 @@ function fixture(options = {}) {
   };
   function target() { const listeners = new Map(); return { visibilityState: 'visible', addEventListener(name, fn) { if (!listeners.has(name)) listeners.set(name, new Set()); listeners.get(name).add(fn); }, removeEventListener(name, fn) { listeners.get(name)?.delete(fn); }, emit(name) { listeners.get(name)?.forEach(fn => fn({})); } }; }
   const win = { ...target(), setTimeout(fn, ms) { const id = ++timerId; timers.set(id, { fn, ms }); return id; }, clearTimeout(id) { timers.delete(id); }, setInterval(fn, ms) { const id = ++timerId; intervals.set(id, { fn, ms }); return id; }, clearInterval(id) { intervals.delete(id); } }, doc = target();
-  const sb = { auth: { getSession: async () => ({ data: { session: { access_token: 'fake-fixture', user: { id: 'fixture-user' } } } }), onAuthStateChange(fn) { authCallback = fn; return { data: { subscription: { unsubscribe() { authCallback = null; } } } }; } }, channel() { const channel = { change: null, status: null, on(_event, _filter, fn) { channel.change = fn; return channel; }, subscribe(fn) { channel.status = fn; fn('SUBSCRIBED'); return channel; } }; channels.push(channel); return channel; }, removeChannel() {} };
+  const sb = { auth: { getSession: async () => ({ data: { session: { access_token: 'fake-fixture', user: { id: 'fixture-user' } } } }), onAuthStateChange(fn) { authCallback = fn; return { data: { subscription: { unsubscribe() { authCallback = null; } } } }; } }, channel() { const channel = { change: null, status: null, on(_event, _filter, fn) { channel.change = fn; return channel; }, subscribe(fn) { channel.status = fn; if (options.subscribeImmediately !== false) fn('SUBSCRIBED'); return channel; } }; channels.push(channel); return channel; }, removeChannel() {} };
   const exports = {}, jsx = (type, props) => ({ type, props });
   vm.runInNewContext(compiled, { exports, require(name) {
     if (name === 'react') return react;
@@ -84,6 +84,57 @@ test('Realtime bursts coalesce and queue one refresh after the active read', asy
     await f.flush(); assert.equal(f.requests.length, 2);
     await f.respond(1, body([row('middle')])); await f.fireTimeout(100); assert.equal(f.requests.length, 3);
     await f.respond(2, body([row('latest')])); assert.equal(f.cards()[0].id, 'latest');
+  } finally { f.close(); }
+});
+
+test('subscription established before the first snapshot does not duplicate the initial read', async () => {
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0, body([row('initial')]));
+    f.channels.at(-1).status('SUBSCRIBED'); await f.fireTimeout(100);
+    assert.equal(f.requests.length, 1); assert.equal(f.cards()[0].id, 'initial');
+  } finally { f.close(); }
+});
+
+test('late subscription catches up after an in-flight snapshot without parallel or duplicate reads', async () => {
+  const f = fixture({ subscribeImmediately: false }); try {
+    await f.flush(); const channel = f.channels.at(-1);
+    channel.status('SUBSCRIBED'); channel.status('SUBSCRIBED'); await f.flush();
+    assert.equal(f.requests.length, 1); assert.equal(f.requests[0].options.signal.aborted, false);
+    await f.respond(0, body([row('before-subscription')])); await f.fireTimeout(100);
+    assert.equal(f.requests.length, 2);
+    await f.respond(1, body([row('before-subscription'), row('missed-in-gap')]));
+    await f.fireTimeout(100); assert.equal(f.requests.length, 2); assert.equal(f.count(), 2);
+  } finally { f.close(); }
+});
+
+test('Realtime reconnect immediately recovers missing leads and coalesces repeated connection transitions', async () => {
+  const f = fixture(); try {
+    await f.flush(); await f.respond(0, body([row('initial')]));
+    const channel = f.channels.at(-1);
+    channel.status('CHANNEL_ERROR'); await f.flush(); assert.match(f.text(), /ACTUALIZACIÓN PERIÓDICA/);
+    channel.status('SUBSCRIBED'); channel.status('SUBSCRIBED'); await f.flush();
+    assert.equal(f.requests.length, 2); assert.match(f.text(), /CAMBIOS EN DIRECTO/);
+    channel.status('TIMED_OUT'); channel.status('SUBSCRIBED'); channel.status('CLOSED'); channel.status('SUBSCRIBED'); await f.flush();
+    assert.equal(f.requests.length, 2); assert.equal(f.requests[1].options.signal.aborted, false);
+    await f.respond(1, body([row('initial'), row('reconnected')])); await f.fireTimeout(100);
+    assert.equal(f.requests.length, 3);
+    await f.respond(2, body([row('initial'), row('reconnected'), row('latest')]));
+    await f.fireTimeout(100); assert.equal(f.requests.length, 3); assert.equal(f.count(), 3);
+  } finally { f.close(); }
+});
+
+test('reconnecting during append also refreshes page zero to recover newly arrived leads', async () => {
+  const f = fixture(); try {
+    await f.flush();
+    for (let page = 0; page < 4; page++) await f.respond(page, body([row('page-' + page)], page + 1));
+    const channel = f.channels.at(-1);
+    nodes(f.tree()).find(node => node.type === 'button' && text(node) === 'Cargar más contactos').props.onClick();
+    channel.status('CHANNEL_ERROR'); channel.status('SUBSCRIBED'); await f.flush();
+    assert.equal(f.requests.length, 5); assert.match(f.requests[4].url, /page=4/);
+    await f.respond(4, body([row('last-page')])); await f.fireTimeout(100);
+    assert.equal(f.requests.length, 6); assert.match(f.requests[5].url, /page=0/);
+    await f.respond(5, body([row('newest'), row('last-page')]));
+    assert.ok(f.cards().some(item => item.id === 'newest'));
   } finally { f.close(); }
 });
 

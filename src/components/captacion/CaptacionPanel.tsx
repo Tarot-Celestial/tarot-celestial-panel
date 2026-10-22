@@ -136,7 +136,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
   const [lastRefreshed, setLastRefreshed] = useState<string | null>(null);
   const [metaDiagnostics, setMetaDiagnostics] = useState<MetaDiagnostics | null>(null);
   const [nextPage, setNextPage] = useState<number | null>(null);
-  const requestRef = useRef<{ id: number; key: string; controller: AbortController } | null>(null);
+  const requestRef = useRef<{ id: number; key: string; controller: AbortController; reading: boolean; firstPage: number } | null>(null);
   const sequenceRef = useRef(0);
   const pendingRefreshRef = useRef(false);
   const itemsRef = useRef(items);
@@ -171,7 +171,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
     requestRef.current?.controller.abort();
     const controller = new AbortController();
     const id = ++sequenceRef.current;
-    requestRef.current = { id, key: loadKey, controller };
+    requestRef.current = { id, key: loadKey, controller, reading: false, firstPage };
     pendingRefreshRef.current = false;
     const isCurrent = () => !controller.signal.aborted && requestRef.current?.id === id && currentKeyRef.current === loadKey;
     const deadline = window.setTimeout(() => {
@@ -193,6 +193,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       let completedPages = 0;
       let latest: any = null;
       const pageBudget = append ? 4 : pagesToLoadRef.current;
+      if (requestRef.current?.id === id) requestRef.current.reading = true;
       while (page !== null && completedPages < pageBudget) {
         const response: Response = await fetch(`/api/captacion/list?scope=${scope}&brand=${brand}&page=${page}&t=${Date.now()}`, {
           cache: "no-store", signal: controller.signal,
@@ -281,6 +282,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
 
   useEffect(() => {
     let active = true;
+    let subscribed = false;
     setLiveState("connecting");
     const channel = sb
       .channel(`captacion-live-${brand}`)
@@ -297,11 +299,21 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       })
       .subscribe((status) => {
         if (!active) return;
-        if (status === "SUBSCRIBED") setLiveState("live");
-        else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) setLiveState("degraded");
+        if (status === "SUBSCRIBED") {
+          setLiveState("live");
+          if (subscribed) return;
+          subscribed = true;
+          // Close the snapshot/subscription gap and recover changes missed while
+          // disconnected. A full read still waiting for Auth will be fresh;
+          // an already-started or appended page needs a catch-up from page 0.
+          if (requestRef.current?.key !== loadKey || requestRef.current.reading || requestRef.current.firstPage > 0) void load(false);
+        } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status)) {
+          subscribed = false;
+          setLiveState("degraded");
+        }
       });
     return () => { active = false; void sb.removeChannel(channel); };
-  }, [brand, load]);
+  }, [brand, load, loadKey]);
 
   const act = useCallback(async (lead: Lead, action: ActionKey, nextContactAt?: string) => {
     if (actionBusyRef.current) return;

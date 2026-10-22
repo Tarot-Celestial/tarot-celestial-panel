@@ -147,6 +147,26 @@ test('Graph requests use configured version, fixed host, auth header and timeout
   assert.equal(h.requests.length, 1);
 });
 
+test('Single-lead and form-lead queries only request supported Lead fields', async () => {
+  const h = harness();
+  await h.api.fetchMetaLeadById('101');
+  h.fetch = async () => new Response(JSON.stringify({ data: [] }));
+  assert.equal((await h.sync()).status, 200);
+  assert.equal(h.requests.length, 2);
+  const supportedLeadFields = new Set([
+    'id', 'created_time', 'field_data', 'campaign_id', 'campaign_name',
+    'ad_id', 'ad_name', 'form_id', 'is_organic', 'platform',
+  ]);
+  for (const request of h.requests) {
+    const fields = new URL(request.url).searchParams.get('fields').split(',');
+    assert.ok(fields.includes('field_data'));
+    assert.ok(fields.includes('form_id'));
+    assert.ok(fields.includes('campaign_name'));
+    assert.ok(!fields.includes('form_name'), 'Form name must be fetched from the form node, not Lead');
+    assert.ok(fields.every(field => supportedLeadFields.has(field)));
+  }
+});
+
 test('Timeouts are sanitized and malformed lead payloads never reach CRM', async () => {
   const h = harness(); h.fetch = async () => { const e = new Error('secret URL'); e.name = 'TimeoutError'; throw e; };
   await assert.rejects(h.api.processMetaLeadById('101'), /META_GRAPH_TIMEOUT/);
