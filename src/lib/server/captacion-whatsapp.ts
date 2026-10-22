@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { CAPTACION_BENEFITS_IMAGE, buildCaptacionMessage, captacionWhatsAppPhone } from "@/lib/captacion-whatsapp";
 import { COUNTRY_OPTIONS } from "@/lib/countries";
 import { originMatchesBrand } from "@/lib/server/brand-filter";
+import { whatsappGatewayConfig, whatsappGatewayFetch, whatsappSessionId } from "@/lib/server/whatsapp-gateway";
 
 export const CAPTACION_WHATSAPP_ORIGIN = "https://clientestarotcelestial.es";
 export const CAPTACION_WHATSAPP_CALLBACK_PATH = "/api/webhooks/captacion-whatsapp";
@@ -11,7 +12,7 @@ export const CAPTACION_WHATSAPP_BODY = buildCaptacionMessage({ id: "template", c
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SID = /^HX[0-9a-f]{32}$/i;
 const MESSAGE_SID = /^SM[0-9a-f]{32}$/i;
-const DELIVERY_FIELDS = "id,status,message_sid,request_id,submission_key,created_at,updated_at";
+const DELIVERY_FIELDS = "id,status,message_sid,request_id,submission_key,created_at,updated_at,provider,gateway_session_id,callback_token,from_number,to_number";
 type Row = Record<string, any>;
 export class CaptacionWhatsAppError extends Error {
   constructor(public code: string, public status = 503) { super(code); }
@@ -100,17 +101,18 @@ export function captacionWhatsAppRecipient(client: Row) {
   return /^\+[1-9]\d{7,14}$/.test(combined) ? combined : null;
 }
 export function captacionWhatsAppName(client: Row) {
-  return [client.nombre, client.apellido].filter(Boolean).join(" ").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) || "amiga";
+  return [client.nombre, client.apellido].filter(Boolean).join(" ").replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) || "amiga";
 }
 export function publicCaptacionWhatsAppDelivery(row: Row | null) {
-  return row ? { id: row.id, status: row.status, message_id: row.message_sid || null } : null;
+  return row ? { id: row.id, status: row.status, message_id: row.message_sid || null, provider: row.provider || "twilio" } : null;
 }
 export async function currentCaptacionWhatsAppDelivery(admin: any, context: Awaited<ReturnType<typeof captacionWhatsAppLead>>) {
   const { data, error } = await admin.from("captacion_whatsapp_deliveries").select(DELIVERY_FIELDS).eq("lead_id", context.lead.id).eq("submission_key", context.submission_key).maybeSingle();
   if (error) throw new CaptacionWhatsAppError("DATABASE_NOT_READY");
   return data;
 }
-export async function sendCaptacionWhatsApp(admin: any, worker: Row, context: Awaited<ReturnType<typeof captacionWhatsAppLead>>, requestId: string) {
+// Retained for legacy receipts/tests. The public capture endpoint uses only QR.
+export async function sendCaptacionWhatsAppOfficial(admin: any, worker: Row, context: Awaited<ReturnType<typeof captacionWhatsAppLead>>, requestId: string) {
   if (!UUID.test(requestId)) throw new CaptacionWhatsAppError("INVALID_REQUEST_ID", 400);
   const existing = await currentCaptacionWhatsAppDelivery(admin, context);
   if (existing) return { ok: true, status: existing.status, duplicate: true, delivery_id: existing.id, message_id: existing.message_sid || null };
@@ -146,4 +148,95 @@ export async function sendCaptacionWhatsApp(admin: any, worker: Row, context: Aw
   const saved = await admin.rpc("tc_captacion_whatsapp_record", { p_delivery_id: deliveryId, p_callback_token: callbackToken, p_message_sid: messageSid, p_status: status, p_error_code: code, p_source: "send_response" });
   if (saved.error || !saved.data) return { ok: true, status: "unknown", duplicate: false, delivery_id: deliveryId, message_id: messageSid };
   return { ok: true, status: saved.data.status, duplicate: false, delivery_id: deliveryId, message_id: saved.data.message_sid || null };
+}
+
+const QR_STATUSES = new Set(["sending", "accepted", "unknown", "failed", "delivered", "read"]);
+const QR_MESSAGE_ID = /^[A-Za-z0-9._:-]{1,160}$/;
+const QR_SESSION_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+export async function captacionWhatsAppQrSession(worker: Row) {
+  const config = whatsappGatewayConfig();
+  const sessionId = whatsappSessionId({ id: worker.id });
+  if (!config.configured) return { configured: false, ready: false, reason: "GATEWAY_NOT_CONFIGURED", session: null, sessionId, sender: null };
+  const result = await whatsappGatewayFetch(`/sessions/${sessionId}/status`);
+  const json = result.json;
+  const state = ["idle", "connecting", "qr", "connected"].includes(json?.state) ? json.state : "idle";
+  const sender = typeof json?.me?.phone === "string" ? json.me.phone.replace(/\D/g, "") : "";
+  const me = state === "connected" && /^[1-9]\d{7,14}$/.test(sender) ? {
+    id: String(json.me.id || ""), name: typeof json.me.name === "string" ? json.me.name : null, phone: sender,
+  } : null;
+  const session = { state, me };
+  let reason: string | null = !json?.ok || result.status >= 400 ? ["GATEWAY_NOT_CONFIGURED", "GATEWAY_TIMEOUT", "GATEWAY_UNREACHABLE"].includes(json?.error) ? json.error : "GATEWAY_UNREACHABLE" : null;
+  if (!reason && (state !== "connected" || !me)) reason = "NOT_CONNECTED";
+  if (!reason && json?.capabilities?.captacion !== true) reason = "QR_CAPTACION_UNAVAILABLE";
+  if (!reason && process.env.VERCEL_ENV !== "production") reason = "PRODUCTION_ONLY";
+  if (!reason && process.env.CAPTACION_WHATSAPP_QR_ENABLED !== "true") reason = "NOT_ENABLED";
+  return { configured: true, ready: !reason, reason, session, sessionId, sender: me?.phone || null };
+}
+
+function qrReceiptPayload(json: any, delivery: Row) {
+  if (!json?.ok || json.operationId !== delivery.id || !QR_STATUSES.has(json.status)) return null;
+  const expectedSender = String(delivery.from_number || "").replace(/^whatsapp:\+/, "");
+  if (json.sender !== expectedSender) return null;
+  const messageId = json.messageId || null;
+  if (messageId !== null && (typeof messageId !== "string" || !QR_MESSAGE_ID.test(messageId))) return null;
+  if (["accepted", "delivered", "read"].includes(json.status) && !messageId) return null;
+  return { status: String(json.status), messageId };
+}
+
+async function recordQrReceipt(admin: any, delivery: Row, receipt: { status: string; messageId: string | null }, source: "qr_response" | "qr_poll", errorCode: string | null = null) {
+  const saved = await admin.rpc("tc_captacion_whatsapp_record", {
+    p_delivery_id: delivery.id, p_callback_token: delivery.callback_token, p_message_sid: receipt.messageId,
+    p_status: receipt.status, p_error_code: errorCode, p_source: source,
+  });
+  return saved.error || !saved.data ? null : saved.data as Row;
+}
+
+export async function syncCaptacionWhatsAppQrDelivery(admin: any, delivery: Row | null) {
+  if (!delivery || delivery.provider !== "qr" || !QR_SESSION_ID.test(delivery.gateway_session_id || "") || delivery.status === "read") return delivery;
+  const result = await whatsappGatewayFetch(`/sessions/${delivery.gateway_session_id}/captacion/${delivery.id}`);
+  const receipt = result.status < 400 ? qrReceiptPayload(result.json, delivery) : null;
+  // A missing/temporarily offline local journal never authorizes another send.
+  if (!receipt) return delivery;
+  return await recordQrReceipt(admin, delivery, receipt, "qr_poll") || delivery;
+}
+
+export async function sendCaptacionWhatsApp(admin: any, worker: Row, context: Awaited<ReturnType<typeof captacionWhatsAppLead>>, requestId: string) {
+  if (!UUID.test(requestId)) throw new CaptacionWhatsAppError("INVALID_REQUEST_ID", 400);
+  const existing = await currentCaptacionWhatsAppDelivery(admin, context);
+  if (existing) {
+    const receipt = await syncCaptacionWhatsAppQrDelivery(admin, existing);
+    return { ok: true, provider: receipt?.provider || "twilio", status: receipt!.status, duplicate: true, delivery_id: receipt!.id, message_id: receipt!.message_sid || null };
+  }
+  const settings = await captacionWhatsAppQrSession(worker);
+  if (!settings.ready || !settings.sender) throw new CaptacionWhatsAppError(settings.reason || "NOT_CONNECTED", 409);
+  const to = captacionWhatsAppRecipient(context.client);
+  if (!to) throw new CaptacionWhatsAppError("INVALID_PHONE", 400);
+  if (context.lead.closed_at && (!context.submitted_at || Date.parse(context.lead.closed_at) >= Date.parse(context.submitted_at))) throw new CaptacionWhatsAppError("LEAD_CLOSED", 409);
+  const deliveryId = randomUUID(), callbackToken = randomUUID();
+  const clientSnapshot = Object.fromEntries(["telefono_normalizado", "telefono", "pais", "nombre", "apellido"].map(key => [key, context.client[key] ?? null]));
+  const { data: claim, error: claimError } = await admin.rpc("tc_captacion_whatsapp_qr_claim", {
+    p_delivery_id: deliveryId, p_request_id: requestId, p_lead_id: context.lead.id, p_worker_id: worker.id, p_auth_user_id: worker.user_id,
+    p_submission_key: context.submission_key, p_from_number: `whatsapp:+${settings.sender}`, p_to_number: `whatsapp:${to}`, p_callback_token: callbackToken,
+    p_expected_cliente_id: context.client.id, p_client_snapshot: clientSnapshot, p_gateway_session_id: settings.sessionId,
+  });
+  if (claimError && ["CLIENT_CHANGED", "SUBMISSION_CHANGED", "LEAD_CLOSED", "REQUEST_CONFLICT"].includes(String(claimError.message || ""))) throw new CaptacionWhatsAppError("LEAD_CHANGED", 409);
+  if (claimError || !claim?.delivery) throw new CaptacionWhatsAppError("CLAIM_UNAVAILABLE");
+  const delivery = claim.delivery as Row;
+  if (!claim.claimed) return { ok: true, provider: delivery.provider || "qr", status: delivery.status, duplicate: true, delivery_id: delivery.id, message_id: delivery.message_sid || null };
+  let receipt = { status: "unknown", messageId: null as string | null }, errorCode: string | null = null;
+  try {
+    const result = await whatsappGatewayFetch(`/sessions/${settings.sessionId}/captacion`, {
+      method: "POST", body: { operationId: delivery.id, phone: to, name: captacionWhatsAppName(context.client), expectedSender: settings.sender },
+    });
+    const confirmed = result.status < 400 ? qrReceiptPayload(result.json, delivery) : null;
+    if (confirmed) receipt = confirmed;
+    else {
+      const knownBeforeSend = new Set(["VALIDATION", "NOT_CONNECTED", "SENDER_CHANGED", "NOT_ON_WHATSAPP", "IMAGE_UNAVAILABLE", "JOURNAL_UNAVAILABLE"]);
+      errorCode = typeof result.json?.error === "string" ? result.json.error.slice(0, 30) : "INVALID_GATEWAY_RESPONSE";
+      if (errorCode && knownBeforeSend.has(errorCode)) receipt.status = "failed";
+    }
+  } catch { /* The local process may have sent it. Preserve the claim without retries. */ }
+  const saved = await recordQrReceipt(admin, delivery, receipt, "qr_response", errorCode);
+  return { ok: true, provider: "qr", status: saved?.status || "unknown", duplicate: false, delivery_id: delivery.id, message_id: saved?.message_sid || receipt.messageId };
 }

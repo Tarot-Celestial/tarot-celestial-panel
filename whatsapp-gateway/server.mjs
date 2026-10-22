@@ -24,8 +24,11 @@ import makeWASocket, {
   useMultiFileAuthState,
 } from "baileys";
 import { ChatStore, isGroup, isLid, isPn, normalizeJid, phoneFromJid } from "./store.mjs";
+import { CaptacionJournal, gatewayError, statusFromWhatsApp } from "./captacion-journal.mjs";
+import { createCaptacionSender } from "./captacion-sender.mjs";
 
 const PORT = Number(process.env.PORT || 8787);
+const HOST = String(process.env.HOST || "127.0.0.1");
 const SECRET = String(process.env.WA_GATEWAY_SECRET || "").trim();
 const DATA_DIR = path.resolve(process.env.WA_DATA_DIR || "./data");
 const INCLUDE_GROUPS = /^(1|true|yes|si)$/i.test(String(process.env.WA_INCLUDE_GROUPS || ""));
@@ -41,6 +44,12 @@ if (!SECRET || SECRET.length < 24) {
 const logger = pino({ level: process.env.WA_LOG_LEVEL || "warn" });
 const SESSIONS_DIR = path.join(DATA_DIR, "sessions");
 fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+// Keep accepted/uncertain operations even when an account is unlinked.
+const captacionJournal = new CaptacionJournal(path.join(DATA_DIR, "captacion-outbox"));
+const sendCaptacion = createCaptacionSender({
+  journal: captacionJournal,
+  onWarning: (code) => logger.warn({ code }, "no se pudo completar el registro de captación"),
+});
 
 let cachedVersion = null;
 async function waVersion() {
@@ -151,6 +160,7 @@ class WaSession {
       qr: this.state === "qr" ? this.qr : null,
       me: this.state === "connected" ? this.me : null,
       historyProgress: this.historyProgress,
+      capabilities: { captacion: true },
       rev: `${this.stateRev}.${this.store.rev}`,
     };
   }
@@ -259,13 +269,23 @@ class WaSession {
         for (const msg of messages) {
           const fromMe = Boolean(msg.key?.fromMe);
           this.#ingest(msg, { countUnread: type === "notify" && !fromMe, resetOnOwn: fromMe });
+          if (fromMe && typeof msg.status === "number") this.#captureReceipt(msg.key, statusFromWhatsApp(msg.status));
         }
       }
 
       if (events["messages.update"]) {
         for (const { key, update } of events["messages.update"]) {
           if (!key?.remoteJid || !key.id) continue;
-          if (typeof update?.status === "number") this.store.updateStatus(key.remoteJid, key.id, update.status);
+          if (typeof update?.status === "number") {
+            this.store.updateStatus(key.remoteJid, key.id, update.status);
+            this.#captureReceipt(key, statusFromWhatsApp(update.status));
+          }
+        }
+      }
+      if (events["message-receipt.update"]) {
+        for (const { key, receipt } of events["message-receipt.update"]) {
+          this.#captureReceipt(key, receipt?.readTimestamp || receipt?.playedTimestamp ? "read"
+            : receipt?.receiptTimestamp ? "delivered" : null);
         }
       }
     });
@@ -313,6 +333,35 @@ class WaSession {
     logger.error({ err: error, session: this.id }, "fallo al iniciar la sesión");
     this.sock = null;
     this.setState("idle", { qr: null, reason: "error" });
+  }
+
+  #captureReceipt(key, status) {
+    if (!status || key?.fromMe !== true || !key.id || !this.me?.phone) return;
+    try {
+      const jids = [key.remoteJid, key.remoteJidAlt].filter(Boolean);
+      for (const jid of new Set([...jids, ...jids.map((value) => this.store.canonical(value))])) {
+        captacionJournal.updateProviderReceipt({
+          sessionId: this.id, sender: this.me.phone, messageId: key.id,
+          chatId: normalizeJid(jid), status,
+        });
+      }
+    } catch {
+      logger.warn({ code: "CAPTACION_RECEIPT_WRITE_FAILED", session: this.id }, "recibo pendiente de comprobación");
+    }
+  }
+
+  onCaptacionSent(sent) {
+    this.sentCache.set(sent.key.id, sent.message);
+    if (this.sentCache.size > 500) this.sentCache.delete(this.sentCache.keys().next().value);
+    this.#ingest(sent, { countUnread: false, resetOnOwn: true });
+  }
+
+  async captacion(body) { return sendCaptacion(this, body); }
+
+  captacionReceipt(operationId) {
+    const receipt = captacionJournal.lookup(this.id, operationId);
+    if (!receipt) throw gatewayError("OPERATION_NOT_FOUND", 404);
+    return receipt;
   }
 
   #ingest(msg, opts) {
@@ -559,6 +608,10 @@ const server = http.createServer(async (req, res) => {
         const body = await readBody(req);
         return send(res, 200, await session.send(body));
       }
+      case "POST captacion":
+        return send(res, 200, await session.captacion(await readBody(req)));
+      case "GET captacion/:jid":
+        return send(res, 200, session.captacionReceipt(action[1]));
       default:
         return send(res, 404, { ok: false, error: "NOT_FOUND" });
     }
@@ -576,8 +629,8 @@ for (const id of fs.readdirSync(SESSIONS_DIR)) {
   if (session.hasCreds()) session.start().catch((e) => logger.error({ err: e, session: id }, "no se pudo reanudar"));
 }
 
-server.listen(PORT, () => {
-  console.log(`WhatsApp gateway escuchando en :${PORT} (datos en ${DATA_DIR})`);
+server.listen(PORT, HOST, () => {
+  console.log(`WhatsApp gateway escuchando en ${HOST}:${PORT} (datos en ${DATA_DIR})`);
 });
 
 async function shutdown(signal) {

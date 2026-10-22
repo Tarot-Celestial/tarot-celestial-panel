@@ -35,7 +35,7 @@ type Lead = {
   cliente?: { id?: string | null; nombre?: string | null; apellido?: string | null; telefono?: string | null; email?: string | null; origen?: string | null } | null;
 };
 
-type Props = { onOpenClient?: (clienteId: string) => void };
+type Props = { onOpenClient?: (clienteId: string) => void; onOpenWhatsApp?: () => void };
 type LiveState = "connecting" | "live" | "degraded";
 type MetaDiagnostics = {
   configuration: Record<string, boolean>;
@@ -117,7 +117,7 @@ function dateTimeInput(value?: string | null) {
   return local.toISOString().slice(0, 16);
 }
 
-export default function CaptacionPanel({ onOpenClient }: Props) {
+export default function CaptacionPanel({ onOpenClient, onOpenWhatsApp }: Props) {
   const [brand, setBrand] = useState<"celestial" | "orion">("celestial");
   const [items, setItems] = useState<Lead[]>([]);
   const [view, setView] = useState<ViewKey>("pendientes");
@@ -518,7 +518,7 @@ export default function CaptacionPanel({ onOpenClient }: Props) {
       {message ? <div className={styles.feedback}>{message}</div> : null}
     </header>
 
-    {brand === "celestial" ? <CaptacionWhatsAppComposer contacts={availableItems} selectedLeadId={messageLeadId} onSelectLead={setMessageLeadId} /> : null}
+    {brand === "celestial" ? <CaptacionWhatsAppComposer contacts={availableItems} selectedLeadId={messageLeadId} onSelectLead={setMessageLeadId} onOpenWhatsApp={onOpenWhatsApp} /> : null}
 
     {view === "cerrados" ? <div className={styles.closedList}>{filtered.length ? filtered.map((lead) => <LeadCard key={lead.id} lead={lead} fresh={newLeadIds.has(lead.id)} busy={busyId === lead.id} onAction={act} onOpen={openClient} onWhatsApp={brand === "celestial" ? prepareWhatsApp : undefined} />) : <Empty />}</div> : <>
       <div className={styles.mobileTabs}>{visibleColumns.map((column) => <button type="button" key={column.key} className={mobileColumn === column.key ? styles.active : ""} onClick={() => setMobileColumn(column.key)}>{column.short}<b>{byColumn[column.key].length}</b></button>)}</div>

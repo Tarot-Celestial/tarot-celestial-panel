@@ -21,7 +21,7 @@ const b = { id: 'b', cliente: { nombre: 'Guadalupe', apellido: 'Christobal', tel
 const content = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(content).join('') : node ? content(node.children) : '';
 
 function fixture(options = {}) {
-  const exports = {}, selected = [], copied = [], imageWrites = [], fetches = [], nodeActions = [], apiRequests = [];
+  const exports = {}, selected = [], copied = [], imageWrites = [], fetches = [], nodeActions = [], apiRequests = [], navigation = [];
   const navigator = options.navigator || { clipboard: { async writeText(text) { copied.push(text); }, async write(items) { imageWrites.push(items); for (const item of items) await Promise.all(Object.values(item.data)); } } };
   class ClipboardFixture { constructor(data) { this.data = data; } }
   vm.runInNewContext(component, {
@@ -29,7 +29,7 @@ function fixture(options = {}) {
     fetch(url, init) {
       if (url.startsWith('/api/captacion/whatsapp')) {
         apiRequests.push({ url, init });
-        return options.api ? options.api(url, init) : Promise.resolve(response({ ok: true, configured: false, ready: false, reason: 'CONFIGURATION_REQUIRED', template: null, delivery: null }));
+        return options.api ? options.api(url, init) : Promise.resolve(response({ ok: true, configured: false, ready: false, reason: 'CONFIGURATION_REQUIRED', provider: 'qr', session: { state: 'idle', me: null }, delivery: null }));
       }
       fetches.push({ url, init }); return options.fetch ? options.fetch(url, init) : Promise.resolve({ ok: true, blob: async () => ({ type: 'image/png' }) });
     },
@@ -43,11 +43,11 @@ function fixture(options = {}) {
       throw new Error(name);
     },
   });
-  const props = { contacts: [a, b], selectedLeadId: options.selectedLeadId === undefined ? 'a' : options.selectedLeadId, onSelectLead: id => selected.push(id) };
+  const props = { contacts: [a, b], selectedLeadId: options.selectedLeadId === undefined ? 'a' : options.selectedLeadId, onSelectLead: id => selected.push(id), onOpenWhatsApp: () => navigation.push('whatsapp') };
   let tree;
   act(() => { tree = renderer.create(React.createElement(exports.default, props), { createNodeMock: () => ({ focus() { nodeActions.push('focus'); }, select() { nodeActions.push('select'); } }) }); });
   return {
-    tree, selected, copied, imageWrites, fetches, nodeActions, apiRequests,
+    tree, selected, copied, imageWrites, fetches, nodeActions, apiRequests, navigation,
     text: () => content(tree.toJSON()),
     buttons: () => tree.root.findAllByType('button'),
     button: label => tree.root.findAllByType('button').find(node => content(node) === label),
@@ -62,7 +62,7 @@ function fixture(options = {}) {
   };
 }
 function response(body, status = 200) { return { ok: status >= 200 && status < 300, status, json: async () => body }; }
-const readyStatus = { ok: true, configured: true, ready: true, reason: null, template: { status: 'approved', name: 'bienvenida', body: buildCaptacionMessage({ id: 'template', cliente: { nombre: '{{1}}' } }), media_url: CAPTACION_BENEFITS_IMAGE }, delivery: null };
+const readyStatus = { ok: true, provider: 'qr', configured: true, ready: true, reason: null, session: { state: 'connected', me: { id: 'sender', name: 'Tarot Celestial', phone: '17875550188' } }, preview_message: buildCaptacionMessage(a), media_url: CAPTACION_BENEFITS_IMAGE, delivery: null };
 
 test('normalizes existing international prefixes without guessing a local country or accepting extensions', () => {
   for (const [input, expected] of [['+1 (787) 555-0101', '17875550101'], ['0017875550101', '17875550101'], ['17875550101', '17875550101'], ['+34 612 345 678', '34612345678'], ['+54 9 11 1234 5678', '5491112345678']]) assert.equal(captacionWhatsAppPhone(input), expected, input);
@@ -134,15 +134,49 @@ test('unsupported image clipboard and a missing image give a truthful download f
   } finally { missing.close(); }
 });
 
-test('official connection pending never claims a send or automatically posts', async () => {
+test('QR connection pending never claims a send or automatically posts', async () => {
   const f = fixture(); try {
-    await f.settle(); assert.match(f.text(), /conexión oficial está pendiente/);
+    await f.settle(); assert.match(f.text(), /conexión de WhatsApp está pendiente/);
     assert.equal(f.button('Enviar WhatsApp').props.disabled, true);
     assert.equal(f.apiRequests.filter(item => item.init.method === 'POST').length, 0);
   } finally { f.close(); }
 });
 
-test('official send posts only lead and stable request identity, ignoring editable manual text and phone', async () => {
+test('QR linking navigates to WhatsApp without sending, and connected readiness needs no template', async () => {
+  let status = { ...readyStatus, ready: false, reason: 'NOT_CONNECTED', session: { state: 'qr', me: null } };
+  const f = fixture({ api: async () => response(status) }); try {
+    await f.settle(); assert.match(f.text(), /código QR está listo/);
+    assert.equal(f.button('Enviar WhatsApp').props.disabled, true);
+    await f.click('Vincular WhatsApp'); assert.deepEqual(f.navigation, ['whatsapp']);
+    assert.equal(f.apiRequests.filter(item => item.init.method === 'POST').length, 0);
+    f.update({ onOpenWhatsApp: undefined });
+    assert.equal(f.links().some(link => link.props.href === '/panel-central?tab=whatsapp'), false);
+    assert.match(f.text(), /La vinculación se realiza desde WhatsApp en el panel de Centrales/);
+    f.update({ onOpenWhatsApp: () => f.navigation.push('whatsapp') });
+    status = readyStatus; await f.click('Comprobar estado');
+    assert.match(f.text(), /WhatsApp vinculado.*\+17875550188/);
+    assert.match(f.text(), /Tarot Celestial/);
+    assert.equal(f.button('Enviar WhatsApp').props.disabled, false);
+    assert.doesNotMatch(f.text(), /plantilla aprobada|Envío oficial/);
+    await f.click('Revisar WhatsApp'); assert.equal(f.navigation.length, 2);
+    status = { ...readyStatus, session: { state: 'idle', me: null } };
+    await f.click('Comprobar estado');
+    assert.equal(f.button('Enviar WhatsApp').props.disabled, true, 'never trust readiness with a disconnected QR session');
+    assert.doesNotMatch(f.text(), /Todo preparado/);
+  } finally { f.close(); }
+});
+
+test('a missing authenticated session cannot read QR readiness or send from the panel', async () => {
+  const f = fixture({ getSession: async () => ({ data: { session: null } }) }); try {
+    await f.settle(); assert.match(f.text(), /Tu sesión ha caducado/);
+    assert.equal(f.apiRequests.length, 0);
+    assert.equal(f.button('Enviar WhatsApp').props.disabled, true);
+    await f.click('Vincular WhatsApp'); assert.deepEqual(f.navigation, ['whatsapp']);
+    assert.equal(f.apiRequests.length, 0);
+  } finally { f.close(); }
+});
+
+test('QR send posts only lead and stable request identity, ignoring editable manual text and phone', async () => {
   let resolvePost;
   const f = fixture({ api: (_url, init) => init.method === 'POST' ? new Promise(resolve => { resolvePost = resolve; }) : Promise.resolve(response(readyStatus)) }); try {
     await f.settle(); f.change(f.editor(), 'Manual text for a different draft'); f.change(f.phone(), '+34600000000');
